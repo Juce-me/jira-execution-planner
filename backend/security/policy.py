@@ -85,6 +85,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("settings-version", "/api/version", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-groups-read", "/api/groups-config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-groups-write", "/api/groups-config", frozenset({"POST"}), "user_write"),
+    EndpointPolicy("settings-group-preferences-write", "/api/groups-preferences", frozenset({"POST"}), "user_write"),
     EndpointPolicy("settings-catalog-read", "/api/team-catalog", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-catalog-write", "/api/team-catalog", frozenset({"POST"}), "user_write"),
     EndpointPolicy("jira-catalogs", "/api/projects", PUBLIC_METHODS, "authenticated_read"),

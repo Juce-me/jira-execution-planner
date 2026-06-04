@@ -22,6 +22,7 @@ FORBIDDEN_VIEW_PAYLOAD_KEYS = (
         'service_integration_tokens',
         'serviceIntegrations',
         'serviceIntegrationTokens',
+        'teamGroups',
     }
 )
 

@@ -1,6 +1,6 @@
 # Shared Department Groups Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Do not hand-edit `frontend/dist/*`; run `npm run build` after frontend source changes.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. Do not hand-edit `frontend/dist/*`; run `npm run build` after frontend source changes.
 
 **Goal:** Make department/team-group definitions a workspace-shared configuration that any authenticated user can create or edit, while each user controls which shared groups appear in their dashboard controls.
 
@@ -12,7 +12,7 @@
 
 ## Status
 
-Draft plan created on 2026-06-04. Not implemented.
+Implemented on `feature/shared-department-groups` on 2026-06-04. The branch includes shared DB catalog/preference storage, DB import/export cleanup, route/security coverage, frontend first-run and per-user visibility flows, analytics/docs updates, generated frontend build output, and focused UI verification. `GATE-05-home-write-capability.md` remains blocked as expected because this plan does not add Home/Townsquare writes.
 
 ## Product Decisions
 
@@ -177,7 +177,7 @@ Conflict response shape:
 - Modify: `backend/db/models.py`
 - Test: `tests/test_shared_group_config_db.py`
 
-- [ ] **Step 1: Write migration/model tests**
+- [x] **Step 1: Write migration/model tests**
 
 Create `tests/test_shared_group_config_db.py` with tests that:
 
@@ -230,7 +230,7 @@ Run:
 
 Expected before implementation: fails because the migration and models do not exist.
 
-- [ ] **Step 2: Add the migration**
+- [x] **Step 2: Add the migration**
 
 Create revision `20260604_0006`, down revision `20260514_0005`, with:
 
@@ -273,11 +273,11 @@ op.create_index('ix_user_group_preferences_user_workspace', 'user_group_preferen
 
 The downgrade drops the index, `user_group_preferences`, then `workspace_group_configs`.
 
-- [ ] **Step 3: Add SQLAlchemy models**
+- [x] **Step 3: Add SQLAlchemy models**
 
 Add `WorkspaceGroupConfig` and `UserGroupPreference` to `backend/db/models.py` using existing model style. Use `_uuid` and `_utcnow`. Store `visible_group_ids` as JSON to preserve group ID order.
 
-- [ ] **Step 4: Verify schema tests**
+- [x] **Step 4: Verify schema tests**
 
 Run:
 
@@ -293,7 +293,7 @@ Expected after implementation: all tests pass.
 - Create: `backend/services/shared_group_config.py`
 - Test: `tests/test_shared_group_config_service.py`
 
-- [ ] **Step 1: Write service tests**
+- [x] **Step 1: Write service tests**
 
 Create tests for:
 
@@ -353,7 +353,7 @@ Run:
 
 Expected before implementation: fails because `backend.services.shared_group_config` does not exist.
 
-- [ ] **Step 2: Implement service exceptions and result helpers**
+- [x] **Step 2: Implement service exceptions and result helpers**
 
 Implement:
 
@@ -377,7 +377,7 @@ Add helpers:
 - `effective_visible_group_ids(groups_config, preferences)`
 - `is_first_run_required(context, groups_config, preference_exists, database_url=None)`
 
-- [ ] **Step 3: Preserve JSON/local compatibility**
+- [x] **Step 3: Preserve JSON/local compatibility**
 
 When DB storage is not enabled, route code keeps using the existing JSON/dashboard config path. The service still exposes pure normalization so JSON and DB modes return the same response shape where possible.
 
@@ -385,7 +385,7 @@ For DB mode, first load imports `teamGroups` from the explicit JSON fallback (`l
 
 For DB/OAuth mode, `load_group_preferences` returns `preferenceExists:false` and `onboardingRequired:true` when there is no preference row and the shared catalog has at least one group. It must return empty `visibleGroupIds`, empty `effectiveVisibleGroupIds`, and `activeGroupId:null` so the frontend pauses group-scoped requests until first-run selection completes.
 
-- [ ] **Step 4: Implement atomic revision writes**
+- [x] **Step 4: Implement atomic revision writes**
 
 `save_shared_groups` must update existing shared catalog rows with a single conditional statement:
 
@@ -411,7 +411,7 @@ if result.rowcount != 1:
 
 Do not implement conflict handling as read current revision, compare in Python, then write. Handle first-create races by catching the unique constraint `IntegrityError` for `uq_workspace_group_configs_workspace` and returning `GroupConfigConflict` with the current catalog.
 
-- [ ] **Step 5: Verify service tests**
+- [x] **Step 5: Verify service tests**
 
 Run:
 
@@ -430,7 +430,7 @@ Expected after implementation: all tests pass.
 - Test: `tests/test_shared_group_config_import.py`
 - Test: `tests/test_config_jsonfile_fallback.py`
 
-- [ ] **Step 1: Write source-of-truth migration tests**
+- [x] **Step 1: Write source-of-truth migration tests**
 
 Create `tests/test_shared_group_config_import.py` with tests that prove:
 
@@ -468,7 +468,7 @@ Run:
 
 Expected before implementation: fails because imported DB view payloads still include `teamGroups`.
 
-- [ ] **Step 2: Split `teamGroups` during DB import**
+- [x] **Step 2: Split `teamGroups` during DB import**
 
 In `backend/config/import_config.py`, when importing dashboard JSON in DB mode:
 
@@ -477,15 +477,15 @@ In `backend/config/import_config.py`, when importing dashboard JSON in DB mode:
 - Strip `teamGroups` from the payload before storing `ViewConfig.payload`.
 - Keep import idempotency based on the full source hash, but never expose private `viewConfig.view.teamGroups` through `/api/config?includeViewConfig=true`.
 
-- [ ] **Step 3: Merge shared groups during DB export/rollback**
+- [x] **Step 3: Merge shared groups during DB export/rollback**
 
 When exporting a DB view back to JSON, merge the current shared workspace catalog into the exported document as `teamGroups`. This preserves JSON rollback compatibility while keeping DB source of truth shared.
 
-- [ ] **Step 4: Guard private view payload validation**
+- [x] **Step 4: Guard private view payload validation**
 
 Update `backend/config/view_validation.py` so user-owned view payloads reject `teamGroups`. This prevents future private-view saves from reintroducing group definitions.
 
-- [ ] **Step 5: Verify import/export tests**
+- [x] **Step 5: Verify import/export tests**
 
 Run:
 
@@ -505,7 +505,7 @@ Expected after implementation: all tests pass, and `viewConfig.view` responses n
 - Test: `tests/test_endpoint_policy_inventory.py`
 - Test: `tests/test_endpoint_security_matrix.py`
 
-- [ ] **Step 1: Write route tests**
+- [x] **Step 1: Write route tests**
 
 Cover these cases:
 
@@ -610,7 +610,7 @@ Run:
 
 Expected before route changes: fails because `/api/groups-preferences` does not exist and `/api/groups-config` still reads private DB view config.
 
-- [ ] **Step 2: Implement route behavior**
+- [x] **Step 2: Implement route behavior**
 
 In `backend/routes/settings_routes.py`:
 
@@ -624,7 +624,7 @@ In `backend/routes/settings_routes.py`:
 - Group GET/POST routes must not call Jira REST, Jira writes, Home/Townsquare credential resolution, service integrations, or Home mutation helpers.
 - Both POST routes keep existing OAuth CSRF behavior through the security wrapper; do not add route-local CSRF logic.
 
-- [ ] **Step 3: Update endpoint policy coverage**
+- [x] **Step 3: Update endpoint policy coverage**
 
 Add:
 
@@ -634,7 +634,7 @@ EndpointPolicy("settings-group-preferences-write", "/api/groups-preferences", fr
 
 Update tests so `/api/groups-config` and `/api/groups-preferences` are classified as `user_write`, not `shared_admin_write`. Add both routes to `SECURITY_SAMPLES["user_write"]`, and add negative tests proving unauthenticated OAuth, missing `X-Requested-With`, missing CSRF, and invalid CSRF fail before route code executes.
 
-- [ ] **Step 4: Verify routes and security**
+- [x] **Step 4: Verify routes and security**
 
 Run:
 
@@ -652,7 +652,7 @@ Expected after implementation: all tests pass.
 - Test: `tests/test_frontend_api_source_guards.js`
 - Test: `tests/test_group_visibility_utils.js`
 
-- [ ] **Step 1: Write frontend helper tests**
+- [x] **Step 1: Write frontend helper tests**
 
 Create tests:
 
@@ -699,7 +699,7 @@ node tests/test_group_visibility_utils.js
 
 Expected before implementation: fails because the helper file does not exist.
 
-- [ ] **Step 2: Add API wrapper**
+- [x] **Step 2: Add API wrapper**
 
 Add to `frontend/src/api/configApi.js`:
 
@@ -713,7 +713,7 @@ export const saveGroupPreferences = (backendUrl, payload) =>
 
 Update `tests/test_frontend_api_source_guards.js` so endpoint construction remains in `configApi.js`.
 
-- [ ] **Step 3: Implement helper module**
+- [x] **Step 3: Implement helper module**
 
 `frontend/src/settings/groupVisibilityUtils.js` owns:
 
@@ -730,7 +730,7 @@ Do not put this logic directly in `frontend/src/dashboard.jsx`.
 
 Also update frontend normalization so `groupsConfig` and `groupDraft` preserve `configRevision`, `source`, and `preferences`. Current `normalizeGroupsConfig` drops unknown fields; that must change before the backend enforces `baseRevision`.
 
-- [ ] **Step 4: Verify frontend unit/source tests**
+- [x] **Step 4: Verify frontend unit/source tests**
 
 Run:
 
@@ -749,7 +749,7 @@ Expected after implementation: all tests pass.
 - Test: `tests/test_epm_settings_source_guards.js`
 - Test: `tests/ui/shared_department_groups.spec.js`
 
-- [ ] **Step 1: Write source guard expectations**
+- [x] **Step 1: Write source guard expectations**
 
 Extend `tests/test_epm_settings_source_guards.js` to assert:
 
@@ -763,7 +763,7 @@ Extend `tests/test_epm_settings_source_guards.js` to assert:
 - `saveGroupsConfig` sends `baseRevision: groupDraft.configRevision` for shared catalog saves.
 - Department saves do not call admin-only save functions outside the existing `canEditSharedConfiguration` guard.
 
-- [ ] **Step 2: Add Settings props and UI**
+- [x] **Step 2: Add Settings props and UI**
 
 In `TeamGroupsSettings.jsx`, add props for:
 
@@ -788,7 +788,7 @@ Render a compact checkbox/switch in the active group editor header, or restructu
 
 Keep the shared default star in the editor header, but update its tooltip/aria label to make the shared scope clear.
 
-- [ ] **Step 3: Update dashboard state and save behavior**
+- [x] **Step 3: Update dashboard state and save behavior**
 
 In `dashboard.jsx`:
 
@@ -804,7 +804,7 @@ In `dashboard.jsx`:
 - Handle `401`, `403 csrf_required`, and `auth_required/session_expired` from CSRF fetches or POSTs by keeping drafts, showing an actionable re-auth/retry message, and tracking `settings_action` `save_result=failure`.
 - Do not save visibility preferences to `teamGroups`, Scenario drafts, EPM config, selected projects, or admin settings.
 
-- [ ] **Step 4: Verify Settings source guards**
+- [x] **Step 4: Verify Settings source guards**
 
 Run:
 
@@ -823,7 +823,7 @@ Expected after implementation: all tests pass.
 - Test: `tests/ui/shared_department_groups.spec.js`
 - Test: `tests/ui/codebase_structure_smoke.spec.js`
 
-- [ ] **Step 1: Write Playwright tests**
+- [x] **Step 1: Write Playwright tests**
 
 Add coverage that stubs:
 
@@ -855,7 +855,7 @@ Add first-run state coverage:
 - Compact sticky controls and mobile viewport: visible groups match the main dropdown.
 - Auth recovery: `/api/auth/csrf` returning `401` and `POST /api/groups-config` or `POST /api/groups-preferences` returning `403 csrf_required` keep drafts open, show a retry/re-auth path, and do not lose unsaved shared or visibility edits.
 
-- [ ] **Step 2: Add the first-run selection modal**
+- [x] **Step 2: Add the first-run selection modal**
 
 Create `FirstRunGroupSelectionModal.jsx` with:
 
@@ -870,7 +870,7 @@ Create `FirstRunGroupSelectionModal.jsx` with:
 
 Use existing modal and settings CSS patterns. The modal must be keyboard accessible, trap focus through the existing modal infrastructure if available, and keep text short. The Continue button is disabled when `selectedGroupIds.length === 0` or saving. For a long group list, include a compact search field inside the modal; for one group, keep the list visible instead of hiding the decision.
 
-- [ ] **Step 3: Filter control groups through helper output**
+- [x] **Step 3: Filter control groups through helper output**
 
 Use `visibleGroupsForControls(groupsConfig, groupPreferences)` for the dashboard dropdown only. Settings must continue to show all shared groups.
 
@@ -889,7 +889,7 @@ When the active group becomes hidden or deleted, reset to:
 2. First visible group.
 3. `null` only when no groups exist.
 
-- [ ] **Step 4: Save first-run preferences**
+- [x] **Step 4: Save first-run preferences**
 
 On first-run Continue:
 
@@ -901,11 +901,11 @@ On first-run Continue:
 
 If the save returns `401`, `403 csrf_required`, or `auth_required/session_expired`, keep the modal open, preserve selected groups, and show the same visible re-auth/retry path used by Settings saves.
 
-- [ ] **Step 5: Preserve startup performance**
+- [x] **Step 5: Preserve startup performance**
 
 Do not add a second startup request. `GET /api/groups-config` returns preferences with the shared catalog. Keep the existing `tests/ui/codebase_structure_smoke.spec.js` startup assertion at one groups-config request; update only fixtures, not the expected request count.
 
-- [ ] **Step 6: Verify visual/interaction behavior**
+- [x] **Step 6: Verify visual/interaction behavior**
 
 Run:
 
@@ -923,7 +923,7 @@ Expected after implementation: all tests pass. Assertions must be scoped to `.gr
 - Test: `tests/test_analytics_events.js`
 - Test: `tests/test_analytics_source_guards.js`
 
-- [ ] **Step 1: Document analytics impact**
+- [x] **Step 1: Document analytics impact**
 
 Update `docs/README_ANALYTICS.md`:
 
@@ -933,7 +933,7 @@ Update `docs/README_ANALYTICS.md`:
 - Visibility preference changes may use `settings_action` with `workflow_action=preference_change`, `section=departments`, and bucketed counts.
 - Do not send group names, team names, team IDs, Jira labels, config payloads, validation text, workspace IDs, cloud IDs, URLs, account IDs, emails, or local file paths.
 
-- [ ] **Step 2: Add analytics tests**
+- [x] **Step 2: Add analytics tests**
 
 Add or update tests that capture:
 
@@ -945,7 +945,7 @@ Add or update tests that capture:
 
 If `preference_change` or a new allowed parameter is needed, update `frontend/src/analytics/events.js` and `tests/test_analytics_events.js`. If existing values already allow this, add a no-new-schema note to `docs/README_ANALYTICS.md` and leave the event schema unchanged, but still test the emitted payload.
 
-- [ ] **Step 3: Verify analytics guards**
+- [x] **Step 3: Verify analytics guards**
 
 Run:
 
@@ -961,7 +961,7 @@ Expected after implementation: all tests pass, with no raw group/team identifier
 **Files:**
 - Modify generated `frontend/dist/*` only through `npm run build`.
 
-- [ ] **Step 1: Run focused backend tests**
+- [x] **Step 1: Run focused backend tests**
 
 ```bash
 .venv/bin/python -m unittest tests.test_shared_group_config_db tests.test_shared_group_config_service tests.test_shared_group_config_import tests.test_shared_group_config_routes tests.test_config_jsonfile_fallback tests.test_oauth_settings_routes tests.test_pre_db_admin_gates tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_codebase_structure_budgets
@@ -969,7 +969,7 @@ Expected after implementation: all tests pass, with no raw group/team identifier
 
 Expected: all pass.
 
-- [ ] **Step 2: Run focused frontend tests**
+- [x] **Step 2: Run focused frontend tests**
 
 ```bash
 node tests/test_group_visibility_utils.js
@@ -981,7 +981,7 @@ node tests/test_analytics_source_guards.js
 
 Expected: all pass.
 
-- [ ] **Step 3: Build frontend**
+- [x] **Step 3: Build frontend**
 
 ```bash
 npm run build
@@ -989,7 +989,7 @@ npm run build
 
 Expected: build succeeds and regenerated `frontend/dist/*` matches source changes.
 
-- [ ] **Step 4: Run UI verification**
+- [x] **Step 4: Run UI verification**
 
 ```bash
 npx playwright test tests/ui/shared_department_groups.spec.js tests/ui/codebase_structure_smoke.spec.js
@@ -997,7 +997,7 @@ npx playwright test tests/ui/shared_department_groups.spec.js tests/ui/codebase_
 
 Expected: all pass. Include screenshots in PR notes because the first-run Department picker, Settings Departments UI, and dashboard dropdown changed. The implementation agent must also share the first-run available-groups screenshot in chat before marking the plan complete.
 
-- [ ] **Step 5: Run startup preflight**
+- [x] **Step 5: Run startup preflight**
 
 ```bash
 .venv/bin/python scripts/check_startup_preflight.py
@@ -1005,7 +1005,7 @@ Expected: all pass. Include screenshots in PR notes because the first-run Depart
 
 Expected: preflight passes.
 
-- [ ] **Step 6: Run the full test suite before push**
+- [x] **Step 6: Run the full test suite before push**
 
 ```bash
 python3 -m unittest discover -s tests

@@ -14,7 +14,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Auto-refresh** - Reload button for tasks and sprints
 - ✅ **Secure Credentials** - Local secrets stay outside git; DB/OAuth user tokens are encrypted in database storage
 - ✅ **Team-aware filtering** - Multi-team JQL plus UI dropdown to slice per team and see team name on each story
-- ✅ **Team groups** - Define multiple named team groups (1-12 teams), choose a default, and scope the dashboard per group
+- ✅ **Team groups** - Define workspace-shared department groups (1-12 teams), choose a shared default, and let each user choose which groups appear in dashboard controls
 - ✅ **Epic grouping** - Stories grouped under their epic with assignee and story-point totals
 - ✅ **Dependency focus** - Click Depends On/Dependents to highlight related tasks and show missing deps inline
 - ✅ **Planning rollups** - Selected story points summarized per team, project, and overall
@@ -257,7 +257,7 @@ make verify
 2. **Frontend** (`jira-dashboard.html`):
    - Displays tasks in a clean, animated interface
    - **Sprint Selector** - Dropdown to choose sprint (2025Q1, 2025Q2, etc.)
-   - **Team Groups + Sticky Controls** - Group, Sprint, and Teams controls stay available in a compact sticky header while scrolling
+   - **Team Groups + Sticky Controls** - Workspace-shared Group, Sprint, and Teams controls stay available in a compact sticky header while scrolling
    - Auto-selects current quarter on first load
    - Sorted by priority (Highest → Lowest)
    - Filter toggles for Done/Killed/Tech/Product tasks
@@ -352,7 +352,7 @@ See the full guide:
 - Connect the signed-in user's Home/Townsquare token in `Settings -> Connections`; EPM is intentionally hidden until that encrypted user token exists.
 
 **"No tasks found":**
-- Verify your configured projects and team groups match your Jira setup
+- Verify your configured projects and shared team groups match your Jira setup
 - Check that the sprint exists and has tasks
 - If you use a custom JQL override, try simplifying it
 

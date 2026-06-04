@@ -1,0 +1,76 @@
+import * as React from 'react';
+
+export default function FirstRunGroupSelectionModal(props) {
+    const {
+        groups = [],
+        selectedGroupIds = [],
+        onToggleGroup,
+        onContinue,
+        onAddGroup,
+        saving = false,
+        error = '',
+    } = props;
+    const [query, setQuery] = React.useState('');
+    const selectedSet = React.useMemo(() => new Set(selectedGroupIds || []), [selectedGroupIds]);
+    const trimmedQuery = query.trim().toLowerCase();
+    const visibleGroups = React.useMemo(() => {
+        if (!trimmedQuery) return groups;
+        return groups.filter(group => String(group?.name || group?.id || '').toLowerCase().includes(trimmedQuery));
+    }, [groups, trimmedQuery]);
+
+    return (
+        <div className="department-first-run-backdrop" role="dialog" aria-modal="true" aria-labelledby="department-first-run-title">
+            <div className="department-first-run-modal">
+                <div className="department-first-run-header">
+                    <div id="department-first-run-title" className="department-first-run-title">Choose departments</div>
+                    <div className="department-first-run-subtitle">Select at least one group</div>
+                </div>
+                {groups.length > 4 && (
+                    <input
+                        type="text"
+                        className="group-filter-input"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder="Search groups..."
+                        aria-label="Search groups"
+                    />
+                )}
+                <div className="department-first-run-list">
+                    {groups.length === 0 ? (
+                        <div className="group-pane-empty">No groups yet.</div>
+                    ) : visibleGroups.length === 0 ? (
+                        <div className="group-pane-empty">No groups match this search.</div>
+                    ) : visibleGroups.map(group => (
+                        <label key={group.id} className="department-first-run-option">
+                            <input
+                                type="checkbox"
+                                checked={selectedSet.has(group.id)}
+                                onChange={() => onToggleGroup(group.id)}
+                            />
+                            <span className="department-first-run-option-main">
+                                <span className="department-first-run-option-name">{group.name || group.id}</span>
+                                <span className="department-first-run-option-meta">{(group.teamIds || []).length} team{(group.teamIds || []).length === 1 ? '' : 's'}</span>
+                            </span>
+                        </label>
+                    ))}
+                </div>
+                {error && <div className="group-modal-warning">{error}</div>}
+                <div className="department-first-run-actions">
+                    {groups.length === 0 && (
+                        <button className="secondary compact" type="button" onClick={onAddGroup}>
+                            Add group
+                        </button>
+                    )}
+                    <button
+                        className="compact"
+                        type="button"
+                        onClick={onContinue}
+                        disabled={saving || selectedGroupIds.length === 0}
+                    >
+                        {saving ? 'Saving...' : 'Continue'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}

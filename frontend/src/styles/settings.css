@@ -302,6 +302,97 @@
             gap: 0.6rem;
         }
 
+        .department-first-run-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(19, 16, 12, 0.42);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: var(--modal-popup-z);
+        }
+
+        .department-first-run-modal {
+            width: min(520px, 92vw);
+            max-height: min(78vh, 640px);
+            overflow: auto;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+
+        .department-first-run-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .department-first-run-subtitle {
+            color: #4a4a4a;
+            font-size: 0.8rem;
+            margin-top: 0.2rem;
+        }
+
+        .department-first-run-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            max-height: 320px;
+            overflow: auto;
+        }
+
+        .department-first-run-option {
+            display: flex;
+            gap: 0.6rem;
+            align-items: flex-start;
+            justify-content: flex-start;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            padding: 0.55rem 0.6rem;
+            background: #fff;
+            text-align: left;
+        }
+
+        .department-first-run-option input {
+            flex: 0 0 auto;
+            width: auto;
+            min-width: 0;
+            margin-top: 0.12rem;
+        }
+
+        .department-first-run-option-main {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .department-first-run-option-name {
+            font-size: 0.88rem;
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+
+        .department-first-run-option-meta {
+            font-size: 0.72rem;
+            color: #555;
+        }
+
+        .department-first-run-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.6rem;
+        }
+
         .group-modal-header {
             padding: 0.6rem 0.9rem;
             border-bottom: 1px solid var(--border);
@@ -1194,6 +1285,17 @@
             display: flex;
             align-items: center;
             gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+
+        .group-visible-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            min-height: 26px;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
         }
 
         .group-editor-actions {
@@ -1776,4 +1878,3 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
-

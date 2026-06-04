@@ -108,6 +108,14 @@ import {
     saveIssueTypesConfig as requestSaveIssueTypesConfig,
     fetchAvailableIssueTypes as requestAvailableIssueTypes,
 } from './api/configApi.js';
+import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.jsx';
+import { applyLocalGroupPreferences, buildGroupId, buildTeamCatalogList, mergeTeamCatalog, normalizeGroupsConfig, parseTeamIdList, resolveInitialGroupId } from './settings/groupConfigUtils.js';
+import { useGroupVisibilityPreferences } from './settings/useGroupVisibilityPreferences.js';
+import {
+    buildSharedGroupsPayload,
+    effectiveVisibleGroupIds,
+    resolveVisibleActiveGroupId,
+} from './settings/groupVisibilityUtils.js';
 import {
     fetchEpmConfig,
     fetchEpmScope,
@@ -890,6 +898,39 @@ import {
                 trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, serverConnectionError });
+            const {
+                groupPreferences,
+                setGroupPreferences,
+                visibleGroupDraftIds,
+                setVisibleGroupDraftIds,
+                setGroupPreferencesSaving,
+                groupVisibilitySaving,
+                isGroupVisibilityDraftDirty,
+                visibleControlGroups,
+                initializeGroupPreferencesDraft,
+                isGroupVisibleInControls,
+                toggleGroupVisibleInControls,
+                firstRunSelectedGroupIds,
+                toggleFirstRunGroup,
+                saveFirstRunGroupPreferences,
+                openFirstRunAddGroup,
+                firstRunSaving,
+                firstRunError,
+                persistGroupPreferences,
+            } = useGroupVisibilityPreferences({
+                backendUrl: BACKEND_URL,
+                groupsConfig,
+                groupsLoading,
+                groupDraft,
+                activeGroupId,
+                setActiveGroupId,
+                setShowGroupManage,
+                setGroupManageTab,
+                setDepartmentSettingsTab,
+                trackSettingsAction,
+                bucketCount,
+                useBackendPreferences: groupsConfig.source === 'workspace_db',
+            });
             useEffect(() => {
                 if (!homeTokenConnectionLoaded) return;
                 if (showEpmNavigation) {
@@ -1546,11 +1587,8 @@ import {
                 if (!showGroupManage) return;
                 const normalized = normalizeGroupsConfig(groupsConfig);
                 setGroupDraft(normalized);
-                groupDraftBaselineRef.current = JSON.stringify({
-                    version: normalized.version || 1,
-                    groups: normalized.groups || [],
-                    defaultGroupId: normalized.defaultGroupId || '',
-                });
+                groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
+                initializeGroupPreferencesDraft(normalized, activeGroupId);
                 setGroupDraftError('');
                 setGroupImportText('');
                 setShowGroupImport(false);
@@ -1791,34 +1829,6 @@ import {
                 return normalized === 'done' || normalized === 'killed' || normalized === 'incomplete';
             }, []);
 
-            const normalizeGroupsConfig = (config) => {
-                const rawGroups = Array.isArray(config?.groups) ? config.groups : [];
-                const groups = rawGroups
-                    .map(group => ({
-                        id: String(group?.id || '').trim(),
-                        name: String(group?.name || '').trim(),
-                        teamIds: Array.isArray(group?.teamIds)
-                            ? group.teamIds.map(id => String(id || '').trim()).filter(Boolean)
-                            : [],
-                        missingInfoComponents: Array.isArray(group?.missingInfoComponents)
-                            ? group.missingInfoComponents.map(c => String(c || '').trim()).filter(Boolean)
-                            : (group?.missingInfoComponent ? [String(group.missingInfoComponent).trim()] : []),
-                        excludedCapacityEpics: Array.isArray(group?.excludedCapacityEpics)
-                            ? group.excludedCapacityEpics.map(key => String(key || '').trim().toUpperCase()).filter(Boolean)
-                            : [],
-                        teamLabels: Object.fromEntries(
-                            Object.entries(group?.teamLabels || {})
-                                .map(([teamId, label]) => [String(teamId || '').trim(), String(label || '').trim()])
-                                .filter(([teamId, label]) => teamId && label)
-                        )
-                    }))
-                    .filter(group => group.id && group.name);
-                return {
-                    version: Number(config?.version) || 1,
-                    groups,
-                    defaultGroupId: String(config?.defaultGroupId || '').trim(),
-                };
-            };
             const normalizeEpmConfigDraft = (config) => {
                 const sourceProjects = config?.projects && typeof config.projects === 'object' ? config.projects : {};
                 const projects = {};
@@ -1963,16 +1973,6 @@ import {
                 }
             };
 
-            const resolveInitialGroupId = (config) => {
-                if (!config?.groups?.length) return null;
-                if (config.defaultGroupId && config.groups.some(group => group.id === config.defaultGroupId)) {
-                    return config.defaultGroupId;
-                }
-                const defaultGroup = config.groups.find(group => group.name.toLowerCase() === 'default');
-                if (defaultGroup) return defaultGroup.id;
-                return config.groups[0].id;
-            };
-
             const loadGroupsConfig = async () => {
                 setGroupsLoading(true);
                 setGroupsError('');
@@ -1982,20 +1982,16 @@ import {
                         throw new Error(`Groups config error ${response.status}`);
                     }
                     const payload = await response.json();
-                    const normalized = normalizeGroupsConfig(payload);
+                    const normalized = applyLocalGroupPreferences(payload, savedPrefsRef.current);
                     clearServerConnectionError();
                     setGroupsConfig(normalized);
+                    setGroupPreferences(normalized.preferences);
                     setGroupWarnings(payload.warnings || []);
-                    setGroupConfigSource(payload.source || '');
+                    setGroupConfigSource(normalized.source || payload.source || '');
                     setActiveGroupId(prev => {
-                        const preferred = savedPrefsRef.current.activeGroupId;
-                        if (preferred && normalized.groups.some(group => group.id === preferred)) {
-                            return preferred;
-                        }
-                        if (prev && normalized.groups.some(group => group.id === prev)) {
-                            return prev;
-                        }
-                        return resolveInitialGroupId(normalized);
+                        const effectiveIds = effectiveVisibleGroupIds(normalized, normalized.preferences);
+                        const preferred = normalized.preferences?.activeGroupId || savedPrefsRef.current.activeGroupId || prev;
+                        return resolveVisibleActiveGroupId(normalized, effectiveIds, preferred);
                     });
                 } catch (err) {
                     if (reportServerConnectionError(err)) {
@@ -2006,43 +2002,6 @@ import {
                 } finally {
                     setGroupsLoading(false);
                 }
-            };
-
-            const buildGroupId = (name, existingIds) => {
-                const base = String(name || 'group')
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, '-')
-                    .replace(/(^-|-$)/g, '') || 'group';
-                let candidate = base;
-                let index = 1;
-                while (existingIds.has(candidate)) {
-                    candidate = `${base}-${index}`;
-                    index += 1;
-                }
-                return candidate;
-            };
-
-            const parseTeamIdList = (raw) => {
-                return String(raw || '')
-                    .split(',')
-                    .map(value => value.trim())
-                    .filter(Boolean);
-            };
-
-            const buildTeamCatalogList = (catalog) => {
-                if (!catalog || typeof catalog !== 'object') return [];
-                return Object.values(catalog)
-                    .filter(entry => entry && entry.id && entry.name)
-                    .sort((a, b) => a.name.localeCompare(b.name));
-            };
-
-            const mergeTeamCatalog = (catalog, teams) => {
-                const next = { ...(catalog || {}) };
-                (teams || []).forEach(team => {
-                    if (!team?.id || !team?.name) return;
-                    next[String(team.id)] = { id: String(team.id), name: String(team.name) };
-                });
-                return next;
             };
 
             const loadTeamCatalog = async () => {
@@ -2197,11 +2156,7 @@ import {
 
             const groupDraftSignature = React.useMemo(() => {
                 if (!groupDraft) return '';
-                return JSON.stringify({
-                    version: groupDraft.version || 1,
-                    groups: groupDraft.groups || [],
-                    defaultGroupId: groupDraft.defaultGroupId || '',
-                });
+                return JSON.stringify(buildSharedGroupsPayload(groupDraft));
             }, [groupDraft]);
 
             const isProjectsDraftDirty = React.useMemo(() => {
@@ -2441,9 +2396,10 @@ import {
             const isGroupDraftDirty = React.useMemo(() => {
                 if (canEditSharedConfiguration && isSharedConfigurationDraftDirty) return true;
                 if (canEditEpmConfiguration && isEpmConfigDirty) return true;
+                if (isGroupVisibilityDraftDirty) return true;
                 if (!groupDraft) return false;
                 return groupDraftSignature !== groupDraftBaselineRef.current;
-            }, [groupDraftSignature, groupDraft, canEditSharedConfiguration, canEditEpmConfiguration, isSharedConfigurationDraftDirty, isEpmConfigDirty]);
+            }, [groupDraftSignature, groupDraft, canEditSharedConfiguration, canEditEpmConfiguration, isSharedConfigurationDraftDirty, isEpmConfigDirty, isGroupVisibilityDraftDirty]);
             const unsavedSectionsCount = React.useMemo(() => {
                 return [
                     canEditSharedConfiguration && isProjectsDraftDirty,
@@ -2456,9 +2412,10 @@ import {
                     canEditSharedConfiguration && isStoryPointsFieldDirty,
                     canEditSharedConfiguration && isTeamFieldDirty,
                     canEditEpmConfiguration && isEpmConfigDirty,
-                    Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current)
+                    Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current),
+                    isGroupVisibilityDraftDirty
                 ].filter(Boolean).length;
-            }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty, groupDraft, groupDraftSignature]);
+            }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isSprintFieldDirty, isParentNameFieldDirty, isStoryPointsFieldDirty, isTeamFieldDirty, isEpmConfigDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
             const priorityWeightsValidationError = React.useMemo(() => {
                 for (const row of (priorityWeightsDraft || [])) {
                     const label = String(row?.priority || '').trim() || 'Priority';
@@ -2481,7 +2438,7 @@ import {
             }, [priorityWeightsDraft]);
             const groupConfigValidationErrors = React.useMemo(() => {
                 const errors = [];
-                if (canEditSharedConfiguration) {
+                if (canEditSharedConfiguration && ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)) {
                     if (!selectedProjectsDraft.length) {
                         errors.push('Add at least one dashboard project before saving.');
                     }
@@ -2508,7 +2465,7 @@ import {
                     }
                 }
                 return errors;
-            }, [canEditSharedConfiguration, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError]);
+            }, [canEditSharedConfiguration, groupManageTab, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving) return 'Save in progress';
                 if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
@@ -2707,6 +2664,7 @@ import {
                 });
                 if (nextId) {
                     setActiveGroupDraftId(nextId);
+                    setVisibleGroupDraftIds(prev => prev.includes(nextId) ? prev : [...prev, nextId]);
                     setShowGroupListMobile(false);
                 }
             };
@@ -2740,6 +2698,7 @@ import {
                 });
                 if (nextId) {
                     setActiveGroupDraftId(nextId);
+                    setVisibleGroupDraftIds(prev => prev.includes(nextId) ? prev : [...prev, nextId]);
                     setShowGroupListMobile(false);
                 }
             };
@@ -2970,6 +2929,7 @@ import {
                 if (activeGroupDraftId === groupId) {
                     setActiveGroupDraftId(nextActiveId);
                 }
+                setVisibleGroupDraftIds(prev => prev.filter(id => id !== groupId));
             };
 
             const toggleDefaultGroupDraft = (groupId) => {
@@ -3010,9 +2970,8 @@ import {
                 setGroupDraftError('');
                 trackSettingsAction(groupManageTab, 'save', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
                 try {
-                    if (canEditEpmConfiguration && isEpmConfigDirty) {
-                        await saveEpmConfig();
-                    }
+                    const savingAdminSettings = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab);
+                    const savingDepartmentSettings = DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab);
 
                     let projectsChanged = false;
                     let priorityWeightsChanged = false;
@@ -3021,7 +2980,7 @@ import {
                     let fieldConfigsChanged = false;
                     let issueTypesChanged = false;
 
-                    if (canEditSharedConfiguration) {
+                    if (canEditSharedConfiguration && savingAdminSettings) {
                         // Save project selection if changed
                         projectsChanged = isProjectsDraftDirty;
                         if (projectsChanged) {
@@ -3062,48 +3021,59 @@ import {
                     const currentActiveGroup = activeGroupId ? (groupsConfig.groups || []).find(g => g.id === activeGroupId) : null;
                     const currentTeamSignature = currentActiveGroup ? (currentActiveGroup.teamIds || []).join('|') : null;
 
-                    const response = await requestSaveGroupsConfig(BACKEND_URL, {
-                        version: groupDraft.version || 1,
-                        groups: groupDraft.groups || [],
-                        defaultGroupId: groupDraft.defaultGroupId || '',
-                    });
-                    if (!response.ok) {
-                        const errorPayload = await response.json().catch(() => ({}));
-                        const errorMessage = (errorPayload.errors || []).join(' ') || errorPayload.error || `Save failed (${response.status})`;
-                        throw new Error(errorMessage);
+                    const sharedGroupsChanged = savingDepartmentSettings && Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current);
+                    let normalized = groupsConfig;
+                    let payload = null;
+                    if (sharedGroupsChanged) {
+                        const response = await requestSaveGroupsConfig(BACKEND_URL, buildSharedGroupsPayload(groupDraft));
+                        if (!response.ok) {
+                            const errorPayload = await response.json().catch(() => ({}));
+                            const errorMessage = errorPayload.message || (errorPayload.errors || []).join(' ') || errorPayload.error || `Save failed (${response.status})`;
+                            if (response.status === 409 && errorPayload.current) {
+                                setGroupDraft(prev => prev ? { ...prev, configRevision: errorPayload.current.configRevision } : prev);
+                            }
+                            throw new Error(errorMessage);
+                        }
+                        payload = await response.json();
+                        normalized = applyLocalGroupPreferences(payload, savedPrefsRef.current);
                     }
-                    const payload = await response.json();
-                    const normalized = normalizeGroupsConfig(payload);
                     const refreshTarget = getConfigSaveRefreshTarget({
                         selectedSprint,
                         showScenario
                     });
 
-                    // Check if the active group's team IDs changed
-                    if (activeGroupId && currentTeamSignature !== null) {
-                        const updatedActiveGroup = (normalized.groups || []).find(g => g.id === activeGroupId);
-                        const updatedTeamSignature = updatedActiveGroup ? (updatedActiveGroup.teamIds || []).join('|') : null;
+                    if (sharedGroupsChanged) {
+                        // Check if the active group's team IDs changed
+                        if (activeGroupId && currentTeamSignature !== null) {
+                            const updatedActiveGroup = (normalized.groups || []).find(g => g.id === activeGroupId);
+                            const updatedTeamSignature = updatedActiveGroup ? (updatedActiveGroup.teamIds || []).join('|') : null;
 
-                        // If team IDs changed, invalidate the cache for this group to force data reload
-                        if (currentTeamSignature !== updatedTeamSignature) {
-                            groupStateRef.current.delete(activeGroupId);
+                            // If team IDs changed, invalidate the cache for this group to force data reload
+                            if (currentTeamSignature !== updatedTeamSignature) {
+                                groupStateRef.current.delete(activeGroupId);
+                            }
                         }
+
+                        setGroupsConfig(normalized);
+                        setGroupPreferences(normalized.preferences);
+                        setGroupWarnings(payload?.warnings || []);
+                        setGroupConfigSource(normalized.source || payload?.source || '');
+                        setGroupDraft(normalized);
+                        groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
+                        setActiveGroupId(prev => {
+                            const effectiveIds = effectiveVisibleGroupIds(normalized, normalized.preferences);
+                            return resolveVisibleActiveGroupId(normalized, effectiveIds, prev);
+                        });
+                    }
+
+                    if (savingDepartmentSettings && isGroupVisibilityDraftDirty) {
+                        await persistGroupPreferences(normalized);
                     }
 
                     // If projects or capacity changed, invalidate all group caches to refetch with new scope
                     if (projectsChanged || priorityWeightsChanged || boardChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
                         groupStateRef.current.clear();
                     }
-
-                    setGroupsConfig(normalized);
-                    setGroupWarnings(payload.warnings || []);
-                    setGroupConfigSource(payload.source || '');
-                    setActiveGroupId(prev => {
-                        if (prev && normalized.groups.some(group => group.id === prev)) {
-                            return prev;
-                        }
-                        return resolveInitialGroupId(normalized);
-                    });
 
                     // Re-fetch config to update capacityEnabled and other derived state
                     try {
@@ -3129,6 +3099,7 @@ import {
                     setGroupDraftError(err.message || 'Failed to save groups.');
                     trackSettingsAction(groupManageTab, 'save_result', { result: 'failure' });
                 } finally {
+                    setGroupPreferencesSaving(false);
                     setGroupSaving(false);
                 }
             };
@@ -4289,8 +4260,8 @@ import {
             };
 
             const activeGroup = React.useMemo(() => {
-                return (groupsConfig.groups || []).find(group => group.id === activeGroupId) || null;
-            }, [groupsConfig, activeGroupId]);
+                return (visibleControlGroups || []).find(group => group.id === activeGroupId) || null;
+            }, [visibleControlGroups, activeGroupId]);
             const activeGroupTeamLabels = React.useMemo(() => {
                 return activeGroup?.teamLabels || {};
             }, [activeGroup]);
@@ -5107,6 +5078,7 @@ import {
                     showEmptyEpicAlert,
                     showDoneEpicAlert,
                     showAlertsPanel,
+                    groupVisibilityPreferences: { visibleGroupIds: groupPreferences.visibleGroupIds || [], activeGroupId: groupPreferences.activeGroupId || activeGroupId },
                     updateDismissedHash
                 });
             }, [
@@ -5156,6 +5128,7 @@ import {
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
                 showAlertsPanel,
+                groupPreferences.visibleGroupIds, groupPreferences.activeGroupId,
                 updateDismissedHash
             ]);
 
@@ -5192,6 +5165,9 @@ import {
                 if (groupsLoading) {
                     return;
                 }
+                if (groupPreferences.onboardingRequired) {
+                    return;
+                }
 
                 const forceConfigRefresh =
                     configRefreshNonce !== 0 &&
@@ -5224,7 +5200,7 @@ import {
                 loadProductTasks();
                 loadTechTasks();
                 fetchMissingPlanningInfo(selectedSprint);
-            }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, (activeGroup?.missingInfoComponents || []).join(','), configRefreshNonce]);
+            }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, (activeGroup?.missingInfoComponents || []).join(','), configRefreshNonce]);
 
             useEffect(() => {
                 if (!isStatsSourceOnlyStatsView) return;
@@ -5992,6 +5968,7 @@ import {
                     return;
                 }
                 if (groupsLoading) return;
+                if (groupPreferences.onboardingRequired) return;
                 if (activeGroupId && activeGroupTeamIds.length === 0) {
                     setBacklogProductEpics([]);
                     setBacklogTechEpics([]);
@@ -6016,12 +5993,13 @@ import {
                 return () => {
                     cancelled = true;
                 };
-            }, [selectedView, isFutureSprintSelected, groupsLoading, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, configRefreshNonce]);
+            }, [selectedView, isFutureSprintSelected, groupsLoading, groupPreferences.onboardingRequired, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, configRefreshNonce]);
 
             useEffect(() => {
                 if (!showScenario) return;
                 if (!selectedSprint) return;
                 if (groupsLoading) return;
+                if (groupPreferences.onboardingRequired) return;
                 if (configRefreshTargetRef.current !== 'scenario') return;
                 if (scenarioRefreshNonceRef.current === configRefreshNonce) return;
                 if (configRefreshNonce === 0) return;
@@ -6037,7 +6015,8 @@ import {
                 productTasksLoading,
                 techTasksLoading,
                 activeGroupId,
-                activeGroupTeamIds.join('|')
+                activeGroupTeamIds.join('|'),
+                groupPreferences.onboardingRequired
             ]);
 
             const effectivePriorityWeightMap = React.useMemo(
@@ -6369,6 +6348,7 @@ import {
 
             useEffect(() => {
                 if (!showStats || statsView !== 'burnout') return;
+                if (groupPreferences.onboardingRequired) { setBurnoutData(null); setBurnoutError(''); setBurnoutLoading(false); return; }
                 const sprintLabel = selectedSprintInfo?.name || '';
                 if (!sprintLabel) {
                     setBurnoutData(null);
@@ -6464,7 +6444,8 @@ import {
                 burnoutQueryKey,
                 burnoutScopedTeamSignature,
                 burnoutIssueKeysSignature,
-                isCompletedSprintSelected
+                isCompletedSprintSelected,
+                groupPreferences.onboardingRequired
             ]);
 
             useEffect(() => {
@@ -6501,6 +6482,7 @@ import {
 
             useEffect(() => {
                 if (!showStats || statsView !== 'cohort') return;
+                if (groupPreferences.onboardingRequired) { setCohortData(null); setCohortError(''); setCohortLoading(false); return; }
                 const startQuarter = String(cohortStartQuarter || '').trim();
                 if (!startQuarter) {
                     setCohortData(null);
@@ -6574,7 +6556,7 @@ import {
                         // ignore abort errors
                     }
                 };
-            }, [showStats, statsView, cohortStartQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents]);
+            }, [showStats, statsView, cohortStartQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, groupPreferences.onboardingRequired]);
 
             const cohortQuarterOptions = React.useMemo(() => {
                 return buildQuarterOptions(getCurrentQuarterLabel(), 16);
@@ -6754,6 +6736,7 @@ import {
             }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature]);
             useEffect(() => {
                 if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare')) return;
+                if (groupPreferences.onboardingRequired) { setExcludedCapacityData(null); setExcludedCapacityError(''); setExcludedCapacityLoading(false); return; }
                 if (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length) {
                     setExcludedCapacityData(null);
                     setExcludedCapacityError('No excluded capacity epics are configured for this team group.');
@@ -6894,7 +6877,8 @@ import {
                 excludedCapacityEpicOptions,
                 activeGroupId,
                 activeGroupTeamIds.length,
-                excludedCapacityRefreshNonce
+                excludedCapacityRefreshNonce,
+                groupPreferences.onboardingRequired
             ]);
             const excludedCapacityIssues = React.useMemo(() => {
                 return Array.isArray(excludedCapacityData?.issues) ? excludedCapacityData.issues : [];
@@ -11648,7 +11632,7 @@ import {
                 '--epic-sticky-top': `${epicStickyTop}px`,
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
-            const showGroupControl = (groupsConfig.groups || []).length > 1;
+            const showGroupControl = (visibleControlGroups || []).length > 1;
             const searchActive = Boolean(String(searchInput || searchQuery || '').trim());
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
 
@@ -11877,10 +11861,10 @@ import {
                                     <div className="group-dropdown-panel">
                                         {groupsLoading ? (
                                             <div className="group-dropdown-option">Loading groups...</div>
-                                        ) : (groupsConfig.groups || []).length === 0 ? (
+                                        ) : (visibleControlGroups || []).length === 0 ? (
                                             <div className="group-dropdown-option">No groups yet</div>
                                         ) : (
-                                            (groupsConfig.groups || []).map(group => (
+                                            (visibleControlGroups || []).map(group => (
                                                 <div
                                                     key={group.id}
                                                     className="group-dropdown-option"
@@ -14837,6 +14821,10 @@ import {
                                         filteredGroupDrafts,
                                         activeGroupDraft,
                                         groupDraft,
+                                        visibleGroupDraftIds,
+                                        toggleGroupVisibleInControls,
+                                        isGroupVisibleInControls,
+                                        groupVisibilitySaving,
                                         setActiveGroupDraftId,
                                         groupsError,
                                         groupWarnings,
@@ -15021,6 +15009,18 @@ import {
                                 </>
                                 )}
                         </SettingsModal>
+                    )}
+                    {groupPreferences.onboardingRequired && !showGroupManage && (
+                        <FirstRunGroupSelectionModal
+                            groups={groupsConfig.groups || []}
+                            defaultGroupId={groupsConfig.defaultGroupId || ''}
+                            selectedGroupIds={firstRunSelectedGroupIds}
+                            onToggleGroup={toggleFirstRunGroup}
+                            onContinue={saveFirstRunGroupPreferences}
+                            onAddGroup={openFirstRunAddGroup}
+                            saving={firstRunSaving}
+                            error={firstRunError}
+                        />
                     )}
                     {showUpdateModal && updateNoticeVisible && (
                         <div

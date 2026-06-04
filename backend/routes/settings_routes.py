@@ -2,8 +2,10 @@
 
 from flask import Blueprint
 
+from backend.auth.db_context import is_db_auth_context
 from backend.config.db_repository import ViewConfigNotFound
 from backend.config.repository import config_storage_db_enabled, db_repository
+from backend.services import shared_group_config
 
 from . import bind_server_globals
 
@@ -28,6 +30,35 @@ def _has_dashboard_config_value(value):
     if isinstance(value, dict):
         return any(_has_dashboard_config_value(item) for item in value.values())
     return value not in (None, False)
+
+
+_UNSUPPORTED_GROUP_CONFIG_FIELDS = {
+    'workspaceId',
+    'workspace_id',
+    'userId',
+    'user_id',
+    'cloudId',
+    'cloud_id',
+    'siteUrl',
+    'site_url',
+    'accountId',
+    'account_id',
+}
+
+
+def _unsupported_group_fields(payload):
+    if not isinstance(payload, dict):
+        return []
+    return sorted(field for field in _UNSUPPORTED_GROUP_CONFIG_FIELDS if field in payload)
+
+
+def _shared_group_db_auth_context():
+    if not config_storage_db_enabled():
+        return None
+    auth_context = current_request_auth_context()
+    if not is_db_auth_context(auth_context):
+        return None
+    return auth_context
 
 
 def _environment_dashboard_config_exists():
@@ -303,6 +334,16 @@ def get_version():
 @bp.route('/api/groups-config', methods=['GET'])
 def get_groups_config():
     """Return the saved team groups configuration."""
+    auth_context = _shared_group_db_auth_context()
+    if auth_context is not None:
+        config = shared_group_config.load_shared_groups(
+            auth_context,
+            fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+            validate_groups_config_fn=validate_groups_config,
+        )
+        config['preferences'] = shared_group_config.load_group_preferences(auth_context, config)
+        return jsonify(config)
+
     warnings = []
     config_source = 'auto'
 
@@ -338,6 +379,12 @@ def get_groups_config():
     if warnings:
         config['warnings'] = warnings
     config['source'] = config_source
+    config['preferences'] = shared_group_config.normalize_group_preferences(
+        {},
+        config,
+        preference_exists=False,
+        require_first_run=False,
+    )
     return jsonify(config)
 
 
@@ -345,6 +392,36 @@ def get_groups_config():
 def save_groups_config():
     """Persist team groups configuration to disk."""
     payload = request.get_json(silent=True) or {}
+    if _unsupported_group_fields(payload):
+        return jsonify({'error': 'unsupported_group_config_field'}), 400
+
+    auth_context = _shared_group_db_auth_context()
+    if auth_context is not None:
+        current = shared_group_config.load_shared_groups(
+            auth_context,
+            fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+            validate_groups_config_fn=validate_groups_config,
+        )
+        if not payload.get('clearGroups') and not payload.get('groups') and _has_dashboard_config_value(current.get('groups')):
+            return jsonify({'error': 'team_groups_cannot_be_cleared_implicitly'}), 400
+        try:
+            saved = shared_group_config.save_shared_groups(
+                auth_context,
+                payload,
+                payload.get('baseRevision'),
+                validate_groups_config_fn=validate_groups_config,
+            )
+        except shared_group_config.GroupConfigConflict as error:
+            return jsonify({
+                'error': 'group_config_conflict',
+                'message': 'Team groups were changed by another user. Reload the latest groups before saving.',
+                'current': error.current,
+            }), 409
+        except shared_group_config.InvalidSharedGroupConfig as error:
+            return jsonify({'error': 'invalid_groups_config', 'errors': list(error.errors)}), 400
+        saved['preferences'] = shared_group_config.load_group_preferences(auth_context, saved)
+        return jsonify(saved)
+
     normalized, errors, warnings = validate_groups_config(payload, allow_empty=True)
     if errors:
         return jsonify({'errors': errors}), 400
@@ -354,7 +431,7 @@ def save_groups_config():
         dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}}
         existing_team_groups = dashboard_config.get('teamGroups') or {}
         existing_groups = existing_team_groups.get('groups') if isinstance(existing_team_groups, dict) else []
-        if not normalized.get('groups') and _has_dashboard_config_value(existing_groups):
+        if not payload.get('clearGroups') and not normalized.get('groups') and _has_dashboard_config_value(existing_groups):
             return jsonify({'error': 'team groups cannot be cleared implicitly'}), 400
         dashboard_config['teamGroups'] = normalized
         save_dashboard_config(dashboard_config)
@@ -364,7 +441,39 @@ def save_groups_config():
     if warnings:
         normalized['warnings'] = warnings
     normalized['source'] = 'file'
+    normalized['preferences'] = shared_group_config.normalize_group_preferences(
+        {},
+        normalized,
+        preference_exists=False,
+        require_first_run=False,
+    )
     return jsonify(normalized)
+
+
+@bp.route('/api/groups-preferences', methods=['POST'])
+def save_groups_preferences():
+    """Persist the current user's visible Department group preferences."""
+    payload = request.get_json(silent=True) or {}
+    if _unsupported_group_fields(payload):
+        return jsonify({'error': 'unsupported_group_preference_field'}), 400
+    auth_context = _shared_group_db_auth_context()
+    if auth_context is None:
+        return jsonify({'error': 'group_preferences_db_required'}), 409
+
+    groups_config = shared_group_config.load_shared_groups(
+        auth_context,
+        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        validate_groups_config_fn=validate_groups_config,
+    )
+    try:
+        preferences = shared_group_config.save_group_preferences(
+            auth_context,
+            payload,
+            groups_config,
+        )
+    except shared_group_config.InvalidGroupPreferences as error:
+        return jsonify({'error': 'invalid_group_preferences', 'message': str(error)}), 400
+    return jsonify({'preferences': preferences})
 
 
 @bp.route('/api/team-catalog', methods=['GET'])

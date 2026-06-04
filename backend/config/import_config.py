@@ -10,10 +10,11 @@ from pathlib import Path
 from sqlalchemy import func, select
 
 from backend.auth.token_crypto import redact_token_material
-from backend.config.db_repository import infer_view_type
+from backend.config.db_repository import infer_view_type, strip_private_team_groups
 from backend.config.view_validation import validate_user_view_payload
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.services import shared_group_config
 
 
 @dataclass(frozen=True)
@@ -62,10 +63,19 @@ def _default_view(session, context):
 def import_dashboard_config(*, database_url=None, context, source_path, actor_user_id=None):
     source_path = str(source_path)
     source_hash = _source_hash(source_path)
-    payload = _load_json(source_path)
+    source_payload = _load_json(source_path)
+    team_groups = source_payload.get('teamGroups') if isinstance(source_payload.get('teamGroups'), dict) else None
+    payload = strip_private_team_groups(source_payload)
     validate_user_view_payload(payload)
     actor_user_id = actor_user_id or context.user_id
     with db_engine.session_scope(database_url) as session:
+        if team_groups is not None:
+            shared_group_config.ensure_workspace_group_config(
+                session,
+                context,
+                team_groups,
+                validate_groups_config_fn=_validate_groups_config,
+            )
         existing = session.execute(
             select(models.ViewConfig).where(
                 models.ViewConfig.workspace_id == context.workspace_id,
@@ -144,8 +154,21 @@ def export_view_config_json(*, database_url=None, context, view_config_id, outpu
         ).scalars().first()
         if view is None:
             raise ValueError('view config not found')
-        payload = redact_token_material(dict(view.payload or {}))
+        payload = strip_private_team_groups(view.payload)
+        shared_groups = shared_group_config.current_shared_groups_config(session, context)
+        payload['teamGroups'] = {
+            'version': shared_groups.get('version') or 1,
+            'groups': shared_groups.get('groups') or [],
+            'defaultGroupId': shared_groups.get('defaultGroupId') or '',
+        }
+        payload = redact_token_material(payload)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)
     return str(output_path)
+
+
+def _validate_groups_config(payload, allow_empty=False):
+    import jira_server
+
+    return jira_server.validate_groups_config(payload, allow_empty=allow_empty)

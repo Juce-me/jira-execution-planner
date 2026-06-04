@@ -11,6 +11,10 @@ export default function TeamGroupsSettings(props) {
         filteredGroupDrafts,
         activeGroupDraft,
         groupDraft,
+        visibleGroupDraftIds,
+        toggleGroupVisibleInControls,
+        isGroupVisibleInControls,
+        groupVisibilitySaving,
         setActiveGroupDraftId,
         groupsError,
         groupWarnings,
@@ -189,14 +193,23 @@ export default function TeamGroupsSettings(props) {
                                                     <button
                                                         className={`group-star-button ${groupDraft?.defaultGroupId === activeGroupDraft.id ? 'active' : ''}`}
                                                         onClick={() => toggleDefaultGroupDraft(activeGroupDraft.id)}
-                                                        title="Set as default group"
-                                                        aria-label={groupDraft?.defaultGroupId === activeGroupDraft.id ? 'Unset default group' : 'Set as default group'}
+                                                        title="Set as shared default group"
+                                                        aria-label={groupDraft?.defaultGroupId === activeGroupDraft.id ? 'Unset shared default group' : 'Set as shared default group'}
                                                         type="button"
                                                     >
                                                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                                             <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.6 9.6l5.8-.8L12 3.5z"/>
                                                         </svg>
                                                     </button>
+                                                    <label className="group-visible-control">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isGroupVisibleInControls(activeGroupDraft.id)}
+                                                            disabled={groupVisibilitySaving || groupDraft?.defaultGroupId === activeGroupDraft.id}
+                                                            onChange={() => toggleGroupVisibleInControls(activeGroupDraft.id)}
+                                                        />
+                                                        <span>Show in my controls</span>
+                                                    </label>
                                                     <button
                                                         className="secondary compact"
                                                         onClick={() => duplicateGroupDraft(activeGroupDraft.id)}

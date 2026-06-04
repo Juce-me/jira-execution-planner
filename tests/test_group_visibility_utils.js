@@ -21,6 +21,19 @@ function loadGroupVisibilityUtils() {
     };`)();
 }
 
+function loadGroupConfigUtils() {
+    const visibilityPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'groupVisibilityUtils.js');
+    const configPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'groupConfigUtils.js');
+    assert.ok(fs.existsSync(configPath), 'Expected frontend/src/settings/groupConfigUtils.js to exist');
+    const visibilitySource = fs.readFileSync(visibilityPath, 'utf8')
+        .replaceAll('export const ', 'const ')
+        .replaceAll('export function ', 'function ');
+    const configSource = fs.readFileSync(configPath, 'utf8')
+        .replace(/import .*groupVisibilityUtils\.js';\n/, '')
+        .replaceAll('export function ', 'function ');
+    return new Function(`${visibilitySource}\n${configSource}; return { applyLocalGroupPreferences };`)();
+}
+
 test('effectiveVisibleGroupIds shows all groups before customization', () => {
     const { effectiveVisibleGroupIds } = loadGroupVisibilityUtils();
     const groups = [{ id: 'default' }, { id: 'platform' }];
@@ -149,6 +162,7 @@ test('normalizeGroupPreferences preserves backend metadata and nested preference
             customized: true,
             onboardingRequired: false,
             visibleGroupIds: ['platform'],
+            effectiveVisibleGroupIds: ['default', 'platform'],
             activeGroupId: 'platform',
         },
     });
@@ -160,6 +174,7 @@ test('normalizeGroupPreferences preserves backend metadata and nested preference
         customized: true,
         onboardingRequired: false,
         visibleGroupIds: ['platform'],
+        effectiveVisibleGroupIds: ['default', 'platform'],
         activeGroupId: 'platform',
     });
 });
@@ -171,4 +186,29 @@ test('groupPreferencesSignature is stable for duplicate and unsorted visible ids
         groupPreferencesSignature({ visibleGroupIds: ['mobile', 'platform', 'mobile'], activeGroupId: 'platform' }),
         groupPreferencesSignature({ visibleGroupIds: ['platform', 'mobile'], activeGroupId: 'platform' })
     );
+});
+
+test('applyLocalGroupPreferences overlays browser visibility only for JSON sources', () => {
+    const { applyLocalGroupPreferences } = loadGroupConfigUtils();
+    const config = {
+        version: 1,
+        source: 'file',
+        groups: [{ id: 'default', name: 'Default' }, { id: 'platform', name: 'Platform' }],
+        defaultGroupId: 'default',
+    };
+    const normalized = applyLocalGroupPreferences(config, {
+        groupVisibilityPreferences: {
+            visibleGroupIds: ['platform'],
+            activeGroupId: 'platform',
+        },
+    });
+
+    assert.deepEqual(normalized.preferences.visibleGroupIds, ['platform']);
+    assert.deepEqual(normalized.preferences.effectiveVisibleGroupIds, ['default', 'platform']);
+    assert.equal(normalized.preferences.activeGroupId, 'platform');
+
+    const dbConfig = applyLocalGroupPreferences({ ...config, source: 'workspace_db' }, {
+        groupVisibilityPreferences: { visibleGroupIds: ['platform'], activeGroupId: 'platform' },
+    });
+    assert.equal(dbConfig.preferences.customized, false);
 });

@@ -191,6 +191,41 @@ class ViewConfigVersion(Base):
     change_note: Mapped[Optional[str]] = mapped_column(String(255))
 
 
+class WorkspaceGroupConfig(Base):
+    __tablename__ = 'workspace_group_configs'
+    __table_args__ = (
+        UniqueConstraint('workspace_id', name='uq_workspace_group_configs_workspace'),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    payload_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    updated_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class UserGroupPreference(Base):
+    __tablename__ = 'user_group_preferences'
+    __table_args__ = (
+        UniqueConstraint('workspace_id', 'user_id', name='uq_user_group_preferences_workspace_user'),
+        Index('ix_user_group_preferences_user_workspace', 'user_id', 'workspace_id'),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    payload_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    visible_group_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    active_group_id: Mapped[Optional[str]] = mapped_column(String(255))
+    customized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
 class ScenarioDraft(Base):
     __tablename__ = 'scenario_drafts'
     __table_args__ = (

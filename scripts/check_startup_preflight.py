@@ -80,6 +80,8 @@ def _check_oauth_local_token_store(env: dict[str, str]) -> str:
     config = _auth_config_from_env(env)
     if config.auth_mode != AUTH_MODE_ATLASSIAN_OAUTH:
         return "not required for basic auth"
+    if db_engine.database_storage_enabled(env):
+        return "not required for db oauth"
     environment = str(env.get("APP_ENVIRONMENT_KEY") or "local").strip().lower()
     if environment not in {"local", "dev"} or not _env_flag(env, "OAUTH_LOCAL_TOKEN_STORE_ALLOWED"):
         raise PreflightError(
@@ -119,6 +121,10 @@ def _check_token_encryption(env: dict[str, str]) -> str:
         return "not required for jsonfile config storage"
     try:
         provider = key_provider_from_env(env)
+        probe_dek = bytes(range(32))
+        wrapped = provider.wrap_key(probe_dek, b"startup-preflight")
+        if provider.unwrap_key(wrapped, b"startup-preflight") != probe_dek:
+            raise PreflightError("Token encryption key probe failed.")
     except KeyProviderConfigurationError as error:
         raise PreflightError(str(error)) from error
     return f"key id {provider.primary_key_id()}"

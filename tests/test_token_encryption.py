@@ -114,6 +114,31 @@ class TokenEncryptionTests(unittest.TestCase):
         with self.assertRaises(KeyProviderConfigurationError):
             key_provider_from_env(environ)
 
+    def test_env_key_source_allows_master_key_outside_local_dev(self):
+        env = {
+            "APP_ENVIRONMENT_KEY": "production",
+            "TOKEN_ENCRYPTION_KEY_SOURCE": "env",
+            "TOKEN_ENCRYPTION_MASTER_KEY_B64": base64.b64encode(bytes([3]) * 32).decode("ascii"),
+            "TOKEN_ENCRYPTION_KEY_ID": "container-key",
+        }
+
+        provider = key_provider_from_env(env)
+        wrapped = provider.wrap_key(bytes([4]) * 32, b"aad")
+
+        self.assertEqual(provider.primary_key_id(), "container-key")
+        self.assertEqual(provider.unwrap_key(wrapped, b"aad"), bytes([4]) * 32)
+
+    def test_key_id_only_external_provider_fails_closed_until_adapter_exists(self):
+        env = {
+            "APP_ENVIRONMENT_KEY": "production",
+            "TOKEN_ENCRYPTION_KEY_ID": "kms-key",
+        }
+
+        with self.assertRaises(KeyProviderConfigurationError) as raised:
+            key_provider_from_env(env)
+
+        self.assertIn("TOKEN_ENCRYPTION_KEY_SOURCE=env", str(raised.exception))
+
     def test_local_key_provider_from_env(self):
         environ = {
             'APP_ENVIRONMENT_KEY': 'local',

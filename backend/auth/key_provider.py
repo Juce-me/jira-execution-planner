@@ -137,17 +137,21 @@ def key_provider_from_env(environ: dict[str, str] | None = None) -> KeyProvider:
     environment_key = str(env.get('APP_ENVIRONMENT_KEY') or 'local').strip().lower()
     local_key = str(env.get('TOKEN_ENCRYPTION_MASTER_KEY_B64') or '').strip()
     key_id = str(env.get('TOKEN_ENCRYPTION_KEY_ID') or '').strip()
+    key_source = str(env.get('TOKEN_ENCRYPTION_KEY_SOURCE') or '').strip().lower()
 
     if local_key:
-        if environment_key not in LOCAL_KEY_ENVIRONMENTS:
+        if environment_key not in LOCAL_KEY_ENVIRONMENTS and key_source != 'env':
             raise KeyProviderConfigurationError(
-                'TOKEN_ENCRYPTION_MASTER_KEY_B64 is allowed only when APP_ENVIRONMENT_KEY is local or dev.'
+                'TOKEN_ENCRYPTION_MASTER_KEY_B64 outside local/dev requires TOKEN_ENCRYPTION_KEY_SOURCE=env.'
             )
         return LocalKeyProvider(
-            primary_key_id=key_id or 'local-dev',
+            primary_key_id=key_id or ('local-dev' if environment_key in LOCAL_KEY_ENVIRONMENTS else 'env'),
             primary_key=_decode_key(local_key, 'TOKEN_ENCRYPTION_MASTER_KEY_B64'),
             retired_keys=_retired_keys_from_env(env),
         )
     if key_id:
-        return ExternalKeyProvider(key_id=key_id)
+        raise KeyProviderConfigurationError(
+            'External token encryption key provider is not configured; use '
+            'TOKEN_ENCRYPTION_KEY_SOURCE=env with TOKEN_ENCRYPTION_MASTER_KEY_B64 or add a real external adapter.'
+        )
     raise KeyProviderConfigurationError('TOKEN_ENCRYPTION_MASTER_KEY_B64 or TOKEN_ENCRYPTION_KEY_ID is required.')

@@ -688,7 +688,10 @@ class ScenarioDraftServiceTests(unittest.TestCase):
             workspace_id=self.workspace_id,
             user_id=self.user_id,
             database_url=self.database_url,
-            environ={'SCENARIO_DRAFT_LEGACY_IMPORT_WORKSPACE_ID': self.workspace_id},
+            environ={
+                'LOCAL_FILE_STATE_ENABLED': 'true',
+                'SCENARIO_DRAFT_LEGACY_IMPORT_WORKSPACE_ID': self.workspace_id,
+            },
         )
         imported = get_active_draft(explicit_context, 'legacy-scope', legacy_loader=legacy_loader)
 
@@ -699,12 +702,43 @@ class ScenarioDraftServiceTests(unittest.TestCase):
         self.assertEqual(imported['versions'][0]['versionNumber'], 1)
         self.assertEqual(imported['versions'][0]['overrides'], {'ENG-1': {'start': '2026-05-18'}})
 
+    def test_legacy_import_partial_env_inherits_process_environment_policy(self):
+        calls = []
+
+        def legacy_loader():
+            calls.append('load')
+            return {
+                'version': 1,
+                'scenarios': {
+                    'legacy-scope': {
+                        'name': 'Legacy draft',
+                        'overrides': {'ENG-1': {'start': '2026-05-18'}},
+                    },
+                },
+            }
+
+        context = SimpleNamespace(
+            workspace_id=self.workspace_id,
+            user_id=self.user_id,
+            database_url=self.database_url,
+            environ={'SCENARIO_DRAFT_LEGACY_IMPORT_WORKSPACE_ID': self.workspace_id},
+        )
+
+        with patch.dict(os.environ, {'APP_ENVIRONMENT_KEY': 'production'}, clear=False):
+            blocked = get_active_draft(context, 'legacy-scope', legacy_loader=legacy_loader)
+
+        self.assertIsNone(blocked['activeDraft'])
+        self.assertEqual(calls, [])
+
     def test_legacy_import_rejects_explicit_falsy_non_object_scope_payload(self):
         explicit_context = SimpleNamespace(
             workspace_id=self.workspace_id,
             user_id=self.user_id,
             database_url=self.database_url,
-            environ={'SCENARIO_DRAFT_LEGACY_IMPORT_WORKSPACE_ID': self.workspace_id},
+            environ={
+                'LOCAL_FILE_STATE_ENABLED': 'true',
+                'SCENARIO_DRAFT_LEGACY_IMPORT_WORKSPACE_ID': self.workspace_id,
+            },
         )
 
         for scope_payload in (False, 0, '', []):

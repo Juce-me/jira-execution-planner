@@ -124,7 +124,10 @@ class DbAdminRoutesTests(unittest.TestCase):
     def _install_session(self, *, account_id, connection_id):
         session_id = f'session-{account_id}'
         with self.client.session_transaction() as flask_session:
-            flask_session['atlassian_oauth_session_id'] = session_id
+            flask_session['db_oauth_session'] = {
+                'db_auth_connection_id': connection_id,
+                'db_token_version': '1',
+            }
         jira_server.OAUTH_TOKEN_STORE[session_id] = {
             'access_token': 'access-123',
             'refresh_token': 'refresh-123',

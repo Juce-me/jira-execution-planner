@@ -84,6 +84,7 @@ load_dotenv()
 from backend.app import create_app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
+from backend import runtime_state as _runtime_state
 from backend.services import capacity as _capacity_service
 from backend.services import sprints as _sprints_service
 from backend.services import stats_cache as _stats_cache_service
@@ -154,26 +155,7 @@ UPDATE_CHECK_REMOTE = os.getenv('UPDATE_CHECK_REMOTE', 'origin').strip() or 'ori
 UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
 UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
 
-
-def local_file_state_enabled(environ=None):
-    env = os.environ if environ is None else environ
-    raw = str(env.get("LOCAL_FILE_STATE_ENABLED") or "").strip().lower()
-    if raw in {"1", "true", "yes"}:
-        return True
-    if raw in {"0", "false", "no"}:
-        return False
-    environment = str(env.get("APP_ENVIRONMENT_KEY") or APP_ENVIRONMENT_KEY or "local").strip().lower()
-    return environment in {"local", "dev"}
-
-
-def scenario_legacy_import_enabled(environ=None):
-    env = os.environ if environ is None else environ
-    raw = str(env.get("SCENARIO_DRAFT_LEGACY_IMPORT_ENABLED") or "").strip().lower()
-    if raw in {"1", "true", "yes"}:
-        return True
-    if raw in {"0", "false", "no"}:
-        return False
-    return local_file_state_enabled(env)
+def local_file_state_enabled(environ=None): return _runtime_state.local_file_state_enabled(environ, default_environment=APP_ENVIRONMENT_KEY)
 UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info.json').strip() or 'release-info.json'
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
 JIRA_RETRY_MAX_ATTEMPTS = int(os.getenv('JIRA_RETRY_MAX_ATTEMPTS', '4'))
@@ -473,29 +455,22 @@ def strict_db_oauth_browser_session_data():
     return {}
 
 
+def _drop_browser_local_oauth_session():
+    session_id = session.pop('atlassian_oauth_session_id', None)
+    if session_id:
+        with (_LOCAL_OAUTH_STORE.existing_refresh_lock(session_id) or nullcontext()):
+            _drop_oauth_session(session_id)
+
+
 def save_oauth_session(data):
     if not data:
         session.pop('db_oauth_session', None)
-        session_id = session.pop('atlassian_oauth_session_id', None)
-        if session_id:
-            refresh_lock = _LOCAL_OAUTH_STORE.existing_refresh_lock(session_id)
-            if refresh_lock:
-                with refresh_lock:
-                    _drop_oauth_session(session_id)
-            else:
-                _drop_oauth_session(session_id)
+        _drop_browser_local_oauth_session()
         return
     payload = _db_oauth_browser_session_payload(data)
     if payload:
         session['db_oauth_session'] = payload
-        session_id = session.pop('atlassian_oauth_session_id', None)
-        if session_id:
-            refresh_lock = _LOCAL_OAUTH_STORE.existing_refresh_lock(session_id)
-            if refresh_lock:
-                with refresh_lock:
-                    _drop_oauth_session(session_id)
-            else:
-                _drop_oauth_session(session_id)
+        _drop_browser_local_oauth_session()
         return
     _LOCAL_OAUTH_STORE.save_session(session, data)
 
@@ -769,9 +744,7 @@ def auth_recovery_url(error_code):
 
 
 def validate_local_token_store_allowed():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return
-    if database_storage_enabled():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or database_storage_enabled():
         return
     environment = APP_ENVIRONMENT_KEY.strip().lower()
     if environment not in {'local', 'dev'} or not OAUTH_LOCAL_TOKEN_STORE_ALLOWED:
@@ -1392,18 +1365,11 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
 # Cache helper functions
 def load_sprints_cache():
     """Load sprints from cache file"""
-    if not local_file_state_enabled():
-        return None
-    return _sprints_service.load_sprints_cache(
-        SPRINTS_CACHE_FILE,
-        log_warning_fn=log_warning,
-    )
+    return _sprints_service.load_sprints_cache(SPRINTS_CACHE_FILE, log_warning_fn=log_warning) if local_file_state_enabled() else None
 
 
 def save_sprints_cache(sprints):
     """Save sprints to cache file"""
-    if not local_file_state_enabled():
-        return False
     return _sprints_service.save_sprints_cache(
         sprints,
         cache_file=SPRINTS_CACHE_FILE,
@@ -1411,13 +1377,11 @@ def save_sprints_cache(sprints):
         now_fn=datetime.now,
         log_info_fn=log_info,
         log_warning_fn=log_warning,
-    )
+    ) if local_file_state_enabled() else False
 
 
 def is_cache_valid():
     """Check if cache exists, is not expired, and matches the current board config"""
-    if not local_file_state_enabled():
-        return False
     cache_data = load_sprints_cache()
     return _sprints_service.is_sprints_cache_valid(
         cache_data,
@@ -1432,20 +1396,16 @@ def is_cache_valid():
 
 def load_stats_cache():
     """Load stats cache from disk."""
-    if not local_file_state_enabled():
-        return {}
-    return _stats_cache_service.load_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning)
+    return _stats_cache_service.load_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning) if local_file_state_enabled() else {}
 
 
 def save_stats_cache(cache_data):
     """Persist stats cache to disk."""
-    if not local_file_state_enabled():
-        return False
     return _stats_cache_service.save_stats_cache(
         cache_data,
         cache_file=STATS_CACHE_FILE,
         log_warning_fn=log_warning,
-    )
+    ) if local_file_state_enabled() else False
 
 
 def build_stats_cache_key(sprint_name, base_jql, team_ids, group_id=None):
@@ -1794,9 +1754,7 @@ def clear_epm_caches():
 
 
 def invalidate_stats_cache():
-    if not local_file_state_enabled():
-        return False
-    return _stats_cache_service.invalidate_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning)
+    return _stats_cache_service.invalidate_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning) if local_file_state_enabled() else False
 
 
 def clear_auth_sensitive_caches(reason='auth_context_change'):
@@ -2336,12 +2294,7 @@ def parse_groups_config_env():
 
 
 def invalidate_sprints_cache():
-    if not local_file_state_enabled():
-        return False
-    return _sprints_service.invalidate_sprints_cache(
-        SPRINTS_CACHE_FILE,
-        log_warning_fn=log_warning,
-    )
+    return _sprints_service.invalidate_sprints_cache(SPRINTS_CACHE_FILE, log_warning_fn=log_warning) if local_file_state_enabled() else False
 
 
 def run_git_command(args):
@@ -5931,9 +5884,7 @@ def main():
         log_info(f'   Auth mode: {JIRA_AUTH_MODE}')
         if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
             log_info(f'   Email: {JIRA_EMAIL}')
-        effective_board_id = ''
-        if not (config_storage_db_enabled() and not local_file_state_enabled()):
-            effective_board_id = get_effective_board_id(source='jsonfile')
+        effective_board_id = '' if config_storage_db_enabled() and not local_file_state_enabled() else get_effective_board_id(source='jsonfile')
         if effective_board_id:
             log_info(f'   Board: {effective_board_id}')
         if GROUPS_CONFIG_PATH and os.path.exists(GROUPS_CONFIG_PATH):

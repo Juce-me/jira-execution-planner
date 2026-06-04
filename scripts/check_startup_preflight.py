@@ -81,6 +81,11 @@ def _check_oauth_local_token_store(env: dict[str, str]) -> str:
     if config.auth_mode != AUTH_MODE_ATLASSIAN_OAUTH:
         return "not required for basic auth"
     if db_engine.database_storage_enabled(env):
+        if _env_flag(env, "OAUTH_LOCAL_TOKEN_STORE_ALLOWED"):
+            host = str(env.get("APP_BIND_HOST") or "127.0.0.1").strip() or "127.0.0.1"
+            environment = str(env.get("APP_ENVIRONMENT_KEY") or "local").strip().lower()
+            if host not in {"127.0.0.1", "localhost", "::1"} or environment not in {"local", "dev"}:
+                raise PreflightError("DB/OAuth hosted mode must not enable OAUTH_LOCAL_TOKEN_STORE_ALLOWED.")
         return "not required for db oauth"
     environment = str(env.get("APP_ENVIRONMENT_KEY") or "local").strip().lower()
     if environment not in {"local", "dev"} or not _env_flag(env, "OAUTH_LOCAL_TOKEN_STORE_ALLOWED"):
@@ -155,8 +160,16 @@ def _check_network_bind(env: dict[str, str]) -> str:
             raise PreflightError(
                 "Basic auth network bind requires ALLOW_BASIC_AUTH_ON_NETWORK=true and APP_ENVIRONMENT_KEY=local."
             )
-    if auth_mode == AUTH_MODE_ATLASSIAN_OAUTH and not _env_flag(env, "SESSION_COOKIE_SECURE"):
-        raise PreflightError("OAuth network bind requires SESSION_COOKIE_SECURE=true.")
+    if auth_mode == AUTH_MODE_ATLASSIAN_OAUTH:
+        if not _env_flag(env, "SESSION_COOKIE_SECURE"):
+            raise PreflightError("OAuth network bind requires SESSION_COOKIE_SECURE=true.")
+        origins = [origin.strip() for origin in str(env.get("APP_ALLOWED_ORIGINS") or "").split(",") if origin.strip()]
+        if not origins or "*" in origins:
+            raise PreflightError("OAuth network bind requires explicit APP_ALLOWED_ORIGINS without *.")
+        if not str(env.get("FLASK_SECRET_KEY") or "").strip():
+            raise PreflightError("OAuth network bind requires FLASK_SECRET_KEY.")
+        if _env_flag(env, "OAUTH_LOCAL_TOKEN_STORE_ALLOWED"):
+            raise PreflightError("Local OAuth token storage cannot be used with network bind.")
     return host
 
 

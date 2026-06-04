@@ -16,6 +16,18 @@ http://localhost:5050/api/auth/atlassian/callback
 
 The callback URL in the Atlassian app must exactly match `ATLASSIAN_REDIRECT_URI`. `localhost` and `127.0.0.1` are different redirect URIs.
 
+### Hosted Callback URL
+
+For internal container hosting, register the HTTPS ingress callback URL in the Atlassian app, not the localhost callback:
+
+```text
+<https-origin>/api/auth/atlassian/callback
+```
+
+Set `ATLASSIAN_REDIRECT_URI` to that exact HTTPS callback URL and set `APP_ALLOWED_ORIGINS` to the same HTTPS origin. OAuth2 Proxy may enforce perimeter identity at ingress, but it does not replace app-level Atlassian OAuth. Jira REST calls still use the signed-in user's Atlassian OAuth 2.0 (3LO) session, and Home/Townsquare EPM metadata still requires the user's connected Home token in DB storage.
+
+If Microsoft Entra SSO is enforced for the organization, keep using the Atlassian OAuth app. Entra remains part of the Atlassian login flow; do not replace the Atlassian app with a Microsoft OAuth app for Jira REST or Home/Townsquare token flows.
+
 ## Add Required APIs And Scopes
 
 Open the app's `Permissions` page and add/configure these APIs.

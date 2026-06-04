@@ -318,6 +318,7 @@ test('settings config API module owns config request endpoint construction', () 
     assert.ok(configApiSource.includes("from './http.js'"), 'Expected config API module to use shared HTTP helpers');
     assert.ok(configApiSource.includes('/api/config'), 'Expected app config URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/groups-config'), 'Expected groups config URL construction in configApi.js');
+    assert.ok(configApiSource.includes('/api/groups-preferences'), 'Expected group preferences URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/projects/selected'), 'Expected selected projects URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/board-config'), 'Expected board config URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/capacity/config'), 'Expected capacity config URL construction in configApi.js');
@@ -463,11 +464,13 @@ test('settings API wrappers preserve save body shapes and no-cache reads', async
     const configApi = loadApiModule('configApi.js', [
         'fetchAppConfig',
         'fetchBoardConfig',
+        'saveGroupPreferences',
         'saveGroupsConfig',
         'savePriorityWeightsConfig',
         'saveSelectedProjects',
     ], { getJson });
     const groupsPayload = { version: 1, groups: [{ id: 'default' }], defaultGroupId: 'default' };
+    const preferencesPayload = { visibleGroupIds: ['platform'], activeGroupId: 'platform' };
     const weights = [{ priority: 'High', weight: 2 }];
     const selected = [{ key: 'ABC', type: 'product' }];
 
@@ -475,6 +478,7 @@ test('settings API wrappers preserve save body shapes and no-cache reads', async
         const appConfig = await configApi.fetchAppConfig('http://backend');
         await configApi.fetchBoardConfig('http://backend');
         await configApi.saveGroupsConfig('http://backend', groupsPayload);
+        await configApi.saveGroupPreferences('http://backend', preferencesPayload);
         await configApi.savePriorityWeightsConfig('http://backend', weights);
         await configApi.saveSelectedProjects('http://backend', selected);
 
@@ -495,24 +499,64 @@ test('settings API wrappers preserve save body shapes and no-cache reads', async
         assertJsonHeader(calls[3].options);
 
         assert.equal(calls[4].url, 'http://backend/api/auth/csrf');
-        assert.equal(calls[5].url, 'http://backend/api/stats/priority-weights-config');
+        assert.equal(calls[5].url, 'http://backend/api/groups-preferences');
         assert.equal(calls[5].options.method, 'POST');
-        assert.equal(calls[5].options.body, JSON.stringify({ weights }));
+        assert.equal(calls[5].options.body, JSON.stringify(preferencesPayload));
         assert.equal(new Headers(calls[5].options.headers).get('X-CSRF-Token'), 'csrf-token-4');
         assertJsonHeader(calls[5].options);
 
         assert.equal(calls[6].url, 'http://backend/api/auth/csrf');
-        assert.equal(calls[7].url, 'http://backend/api/projects/selected');
+        assert.equal(calls[7].url, 'http://backend/api/stats/priority-weights-config');
         assert.equal(calls[7].options.method, 'POST');
-        assert.equal(calls[7].options.body, JSON.stringify({ selected }));
+        assert.equal(calls[7].options.body, JSON.stringify({ weights }));
         assert.equal(new Headers(calls[7].options.headers).get('X-CSRF-Token'), 'csrf-token-6');
         assertJsonHeader(calls[7].options);
+
+        assert.equal(calls[8].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[9].url, 'http://backend/api/projects/selected');
+        assert.equal(calls[9].options.method, 'POST');
+        assert.equal(calls[9].options.body, JSON.stringify({ selected }));
+        assert.equal(new Headers(calls[9].options.headers).get('X-CSRF-Token'), 'csrf-token-8');
+        assertJsonHeader(calls[9].options);
     }, (url, _options, index) => {
         if (String(url).endsWith('/api/auth/csrf')) {
             return jsonResponse({ csrfToken: `csrf-token-${index}` });
         }
         return jsonResponse({ ok: true });
     });
+});
+
+test('group preferences save wrapper uses settings analytics metadata', async () => {
+    const { getJson } = loadHttpHelpers();
+    const trackedCalls = [];
+    const configApi = loadApiModule('configApi.js', [
+        'saveGroupPreferences',
+    ], {
+        getJson,
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            trackedCalls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ ok: true });
+        },
+    });
+
+    await withMockFetch(async () => {
+        await configApi.saveGroupPreferences('http://backend', {
+            visibleGroupIds: ['platform'],
+            activeGroupId: 'platform',
+        });
+    }, (url) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: 'csrf-token' });
+        }
+        return jsonResponse({ ok: true });
+    });
+
+    assert.equal(trackedCalls.length, 1);
+    assert.equal(trackedCalls[0].apiSurface, 'settings_save');
+    assert.equal(trackedCalls[0].url, 'http://backend/api/groups-preferences');
+    assert.deepEqual(trackedCalls[0].analyticsParams, { featureName: 'settings' });
+    assert.equal(new Headers(trackedCalls[0].options.headers).get('X-CSRF-Token'), 'csrf-token');
+    assertJsonHeader(trackedCalls[0].options);
 });
 
 test('excluded capacity stats source wrapper can request a backend refresh', async () => {

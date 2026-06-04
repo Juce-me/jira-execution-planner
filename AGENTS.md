@@ -322,6 +322,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - EPM project board status pills must reuse the existing status-pill sizing, casing, and success green; do not create one-off completed badge styling.
 - When preparing PRs, keep feature commits on the feature branch; never merge feature work into local `main` just to create or test the PR branch.
 - When frontend source changes, run `npm run build` and commit generated `frontend/dist` output if `.github/workflows/verify-frontend-build.yml` requires a clean post-build diff; do not hand-edit dist.
+- For first-ever DB/OAuth users, require a focused department group-selection popup before dashboard group-scoped data loads; do not silently default them into all groups.
 - Startup paths that read dashboard config before a Flask request exists must pass `source="jsonfile"` explicitly in DB config mode.
 - In ENG story subtask rows, keep desktop columns table-aligned and drop low-priority mobile cells instead of cramming every column into narrow cards.
 - Place ENG story subtask controls after the story Last Update meta on desktop; do not use title-row chips or status-stack placement.

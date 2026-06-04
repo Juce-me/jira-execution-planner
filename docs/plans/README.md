@@ -42,6 +42,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 7. `FUTURE-db-additional-features.md`
    - Execute only after the DB auth and user-configuration phases are complete and explicitly reopened.
 
+8. `EXEC-shared-department-groups.md`
+   - Active implementation plan for moving department/team-group definitions to workspace-shared configuration while keeping per-user visible-group preferences.
+   - Expected output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, shared saves are revision-conflict protected, and the existing default-group star remains shared.
+
 ## Completed Scenario Planner Workflow
 
 1. `DONE-scenario-planner-quarter-drafts-00-overview.md`

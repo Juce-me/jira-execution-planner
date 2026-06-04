@@ -153,6 +153,27 @@ UPDATE_CHECK_ENABLED = os.getenv('UPDATE_CHECK', 'true').lower() not in ('0', 'f
 UPDATE_CHECK_REMOTE = os.getenv('UPDATE_CHECK_REMOTE', 'origin').strip() or 'origin'
 UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
 UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
+
+
+def local_file_state_enabled(environ=None):
+    env = os.environ if environ is None else environ
+    raw = str(env.get("LOCAL_FILE_STATE_ENABLED") or "").strip().lower()
+    if raw in {"1", "true", "yes"}:
+        return True
+    if raw in {"0", "false", "no"}:
+        return False
+    environment = str(env.get("APP_ENVIRONMENT_KEY") or APP_ENVIRONMENT_KEY or "local").strip().lower()
+    return environment in {"local", "dev"}
+
+
+def scenario_legacy_import_enabled(environ=None):
+    env = os.environ if environ is None else environ
+    raw = str(env.get("SCENARIO_DRAFT_LEGACY_IMPORT_ENABLED") or "").strip().lower()
+    if raw in {"1", "true", "yes"}:
+        return True
+    if raw in {"0", "false", "no"}:
+        return False
+    return local_file_state_enabled(env)
 UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info.json').strip() or 'release-info.json'
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
 JIRA_RETRY_MAX_ATTEMPTS = int(os.getenv('JIRA_RETRY_MAX_ATTEMPTS', '4'))
@@ -1371,6 +1392,8 @@ def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
 # Cache helper functions
 def load_sprints_cache():
     """Load sprints from cache file"""
+    if not local_file_state_enabled():
+        return None
     return _sprints_service.load_sprints_cache(
         SPRINTS_CACHE_FILE,
         log_warning_fn=log_warning,
@@ -1379,6 +1402,8 @@ def load_sprints_cache():
 
 def save_sprints_cache(sprints):
     """Save sprints to cache file"""
+    if not local_file_state_enabled():
+        return False
     return _sprints_service.save_sprints_cache(
         sprints,
         cache_file=SPRINTS_CACHE_FILE,
@@ -1391,6 +1416,8 @@ def save_sprints_cache(sprints):
 
 def is_cache_valid():
     """Check if cache exists, is not expired, and matches the current board config"""
+    if not local_file_state_enabled():
+        return False
     cache_data = load_sprints_cache()
     return _sprints_service.is_sprints_cache_valid(
         cache_data,
@@ -1405,11 +1432,15 @@ def is_cache_valid():
 
 def load_stats_cache():
     """Load stats cache from disk."""
+    if not local_file_state_enabled():
+        return {}
     return _stats_cache_service.load_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning)
 
 
 def save_stats_cache(cache_data):
     """Persist stats cache to disk."""
+    if not local_file_state_enabled():
+        return False
     return _stats_cache_service.save_stats_cache(
         cache_data,
         cache_file=STATS_CACHE_FILE,
@@ -1763,6 +1794,8 @@ def clear_epm_caches():
 
 
 def invalidate_stats_cache():
+    if not local_file_state_enabled():
+        return False
     return _stats_cache_service.invalidate_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning)
 
 
@@ -1796,8 +1829,9 @@ def clear_auth_sensitive_caches(reason='auth_context_change'):
         EPIC_LINK_FIELD_CACHE = None
         CAPACITY_FIELD_CACHE = None
     clear_epm_caches()
-    invalidate_sprints_cache()
-    invalidate_stats_cache()
+    if local_file_state_enabled():
+        invalidate_sprints_cache()
+        invalidate_stats_cache()
     log_info(f'Cleared auth-sensitive caches reason={reason}')
 
 
@@ -2302,6 +2336,8 @@ def parse_groups_config_env():
 
 
 def invalidate_sprints_cache():
+    if not local_file_state_enabled():
+        return False
     return _sprints_service.invalidate_sprints_cache(
         SPRINTS_CACHE_FILE,
         log_warning_fn=log_warning,
@@ -5895,7 +5931,9 @@ def main():
         log_info(f'   Auth mode: {JIRA_AUTH_MODE}')
         if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
             log_info(f'   Email: {JIRA_EMAIL}')
-        effective_board_id = get_effective_board_id(source='jsonfile')
+        effective_board_id = ''
+        if not (config_storage_db_enabled() and not local_file_state_enabled()):
+            effective_board_id = get_effective_board_id(source='jsonfile')
         if effective_board_id:
             log_info(f'   Board: {effective_board_id}')
         if GROUPS_CONFIG_PATH and os.path.exists(GROUPS_CONFIG_PATH):

@@ -6,6 +6,7 @@ import os
 import multiprocessing
 import queue
 import signal
+import sys
 import threading
 import warnings
 from copy import deepcopy
@@ -995,11 +996,36 @@ def _serialize_datetime(value):
 
 def _legacy_import_allowed(session, context):
     env = getattr(context, 'environ', None) or os.environ
+    if not _scenario_legacy_import_enabled(env):
+        return False
     explicit_workspace = str(env.get('SCENARIO_DRAFT_LEGACY_IMPORT_WORKSPACE_ID') or '').strip()
     if explicit_workspace:
         return explicit_workspace == context.workspace_id
     workspace_count = session.execute(select(func.count()).select_from(models.Workspace)).scalar_one()
     return int(workspace_count or 0) == 1
+
+
+def _scenario_legacy_import_enabled(env):
+    server = sys.modules.get('jira_server')
+    if server is None:
+        main_module = sys.modules.get('__main__')
+        if main_module is not None and os.path.basename(str(getattr(main_module, '__file__', ''))) == 'jira_server.py':
+            server = main_module
+    helper = getattr(server, 'scenario_legacy_import_enabled', None) if server is not None else None
+    if helper is not None:
+        return helper(env)
+
+    raw = str(env.get("SCENARIO_DRAFT_LEGACY_IMPORT_ENABLED") or "").strip().lower()
+    if raw in {"1", "true", "yes"}:
+        return True
+    if raw in {"0", "false", "no"}:
+        return False
+    raw_file_state = str(env.get("LOCAL_FILE_STATE_ENABLED") or "").strip().lower()
+    if raw_file_state in {"1", "true", "yes"}:
+        return True
+    if raw_file_state in {"0", "false", "no"}:
+        return False
+    return str(env.get("APP_ENVIRONMENT_KEY") or "local").strip().lower() in {"local", "dev"}
 
 
 def _import_legacy_scope(session, context, scope_key, legacy_loader):

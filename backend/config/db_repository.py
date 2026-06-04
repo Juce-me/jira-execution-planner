@@ -25,6 +25,12 @@ def infer_view_type(payload):
     return 'eng'
 
 
+def strip_private_team_groups(payload):
+    payload = dict(payload or {})
+    payload.pop('teamGroups', None)
+    return payload
+
+
 class DbConfigRepository:
     def __init__(self, *, database_url=None):
         self.database_url = database_url
@@ -66,9 +72,12 @@ class DbConfigRepository:
         with db_engine.session_scope(self.database_url) as session:
             view = self._default_view(session, context)
             if view is not None:
-                return dict(view.payload or {})
+                return strip_private_team_groups(view.payload)
         if fallback_loader is not None:
-            return fallback_loader()
+            fallback_payload = fallback_loader()
+            if fallback_payload is None:
+                return None
+            return strip_private_team_groups(fallback_payload)
         return None
 
     def resolve_effective_view_config(self, context, *, view_config_id=None):
@@ -85,12 +94,12 @@ class DbConfigRepository:
                 'workspaceId': view.workspace_id,
                 'viewConfigId': view.id,
                 'viewType': view.view_type,
-                'view': dict(view.payload or {}),
+                'view': strip_private_team_groups(view.payload),
             }
 
     def save_dashboard_config(self, context, payload, *, actor_user_id=None, change_note='compatibility save'):
         actor_user_id = actor_user_id or context.user_id
-        payload = dict(payload or {})
+        payload = strip_private_team_groups(payload)
         validate_user_view_payload(payload)
         with db_engine.session_scope(self.database_url) as session:
             view = self._default_view(session, context)

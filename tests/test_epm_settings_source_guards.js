@@ -8,6 +8,7 @@ const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.j
 const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
 const settingsModalPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'SettingsModal.jsx');
 const teamGroupsSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx');
+const groupVisibilityHookPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'useGroupVisibilityPreferences.js');
 const jiraFieldSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'JiraFieldSettings.jsx');
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
 const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
@@ -22,6 +23,7 @@ const dashboardCssSource = readDashboardCssSource(path.join(__dirname, '..'));
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const settingsModalSource = fs.existsSync(settingsModalPath) ? fs.readFileSync(settingsModalPath, 'utf8') : '';
 const teamGroupsSettingsSource = fs.existsSync(teamGroupsSettingsPath) ? fs.readFileSync(teamGroupsSettingsPath, 'utf8') : '';
+const groupVisibilityHookSource = fs.existsSync(groupVisibilityHookPath) ? fs.readFileSync(groupVisibilityHookPath, 'utf8') : '';
 const jiraFieldSettingsSource = fs.existsSync(jiraFieldSettingsPath) ? fs.readFileSync(jiraFieldSettingsPath, 'utf8') : '';
 const epmSettingsUiSource = epmSettingsSource || dashboardSource;
 const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
@@ -231,7 +233,8 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const handleEpmRootGoalSearchKeyDown = (event) => {'), 'Expected root goal keyboard handler');
     assert.ok(dashboardSource.includes('const handleEpmSubGoalSearchKeyDown = (event) => {'), 'Expected sub-goal keyboard handler');
     assert.ok(dashboardSource.includes('void saveEpmConfig().catch(() => {});'), 'Expected direct EPM save callers to consume rejections');
-    assert.ok(dashboardSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) {') && dashboardSource.includes('await saveEpmConfig();'), 'Expected save path to persist EPM settings when dirty and allowed');
+    assert.ok(dashboardSource.includes("const settingsSaveHandler = groupManageTab === 'epm'"), 'Expected EPM saves to stay on the EPM settings handler');
+    assert.ok(!dashboardSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) {'), 'General settings save must not bundle EPM writes');
     assert.ok(dashboardSource.includes("setGroupDraftError(message);") && dashboardSource.includes('throw err;'), 'Expected EPM save failures to surface and block shared save');
     assert.ok(epmSettingsUiSource.includes('Atlassian site'), 'Expected Atlassian site copy');
     assert.ok(epmSettingsUiSource.includes('Main goal'), 'Expected Main goal copy');
@@ -608,9 +611,16 @@ test('team group save does not bundle admin-only shared config writes for normal
     const saveSource = dashboardSource.slice(saveStart, saveEnd);
 
     assert.ok(!saveSource.includes('Tool admin access is required for shared configuration changes.'), 'Team group save must not block normal-user changes because hidden shared config drafts are dirty');
-    assert.ok(saveSource.includes('if (canEditSharedConfiguration) {'), 'Expected shared config writes to be gated by tool-admin edit permission');
-    assert.ok(saveSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) {'), 'Expected EPM config writes to use user-owned EPM edit permission');
-    const gatedStart = saveSource.indexOf('if (canEditSharedConfiguration) {');
+    assert.ok(saveSource.includes('const savingAdminSettings = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab);'), 'Expected save path to know whether the active tab is Admin');
+    assert.ok(saveSource.includes('if (canEditSharedConfiguration && savingAdminSettings) {'), 'Expected shared admin config writes to be gated by tool-admin permission and Admin tab');
+    assert.ok(!saveSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) {'), 'Departments save must not bundle EPM config writes');
+    assert.ok(saveSource.includes('await persistGroupPreferences(normalized);'), 'Expected Department visibility preferences to save separately from shared catalog');
+    assert.ok(dashboardSource.includes("useBackendPreferences: groupsConfig.source === 'workspace_db'"), 'Expected JSON/basic Department visibility to stay browser-local');
+    assert.ok(groupVisibilityHookSource.includes('requestSaveGroupPreferences'), 'Expected Department visibility preference helper to own the preference POST');
+    assert.ok(groupVisibilityHookSource.includes('if (!useBackendPreferences) {'), 'Expected preference helper to avoid DB-only endpoint outside workspace DB mode');
+    assert.ok(groupVisibilityHookSource.includes('buildGroupPreferencesPayload'), 'Expected Department visibility preference helper to send only user visibility preferences');
+    assert.ok(saveSource.includes('buildSharedGroupsPayload(groupDraft)'), 'Expected shared Department catalog save to include baseRevision');
+    const gatedStart = saveSource.indexOf('if (canEditSharedConfiguration && savingAdminSettings) {');
     const groupSaveStart = saveSource.indexOf('const response = await requestSaveGroupsConfig');
     assert.ok(gatedStart !== -1 && groupSaveStart > gatedStart, 'Expected shared config gate before group config save');
     const beforeGate = saveSource.slice(0, gatedStart);
@@ -629,6 +639,15 @@ test('team group save does not bundle admin-only shared config writes for normal
         assert.ok(!beforeGate.includes(call), `Did not expect ${call} before shared config permission gate`);
         assert.ok(gatedSource.includes(call), `Expected ${call} inside shared config permission gate`);
     });
+});
+
+test('department visibility controls are prop-owned and separate from shared default star', () => {
+    assert.ok(!teamGroupsSettingsSource.includes('useState('), 'TeamGroupsSettings must not own visibility state');
+    assert.ok(teamGroupsSettingsSource.includes('Show in my controls'), 'Expected explicit personal visibility label');
+    assert.ok(teamGroupsSettingsSource.includes('toggleGroupVisibleInControls(activeGroupDraft.id)'), 'Expected visibility toggle handler prop');
+    assert.ok(teamGroupsSettingsSource.includes('disabled={groupVisibilitySaving || groupDraft?.defaultGroupId === activeGroupDraft.id}'), 'Expected shared default group visibility to be forced on');
+    assert.ok(teamGroupsSettingsSource.includes('Set as shared default group'), 'Expected shared default star accessible label');
+    assert.ok(!teamGroupsSettingsSource.includes('<input') || teamGroupsSettingsSource.indexOf('className="group-visible-control"') > teamGroupsSettingsSource.indexOf('className="group-editor-header"'), 'Expected visibility input in editor header, not group list row');
 });
 
 test('group labels tab is available for the current group draft', () => {

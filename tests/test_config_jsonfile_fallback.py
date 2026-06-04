@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from backend.auth.context import RequestAuthContext
 from backend.config.import_config import export_view_config_json, import_dashboard_config
+from backend.config.repository import db_repository
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
@@ -197,8 +198,15 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         after_import = self._route_payloads(backend='db')
         rollback = self._route_payloads(backend='jsonfile')
 
-        self.assertEqual(after_import, before)
+        self.assertEqual(after_import['/api/config'], before['/api/config'])
+        self.assertEqual(after_import['/api/epm/config'], before['/api/epm/config'])
         self.assertEqual(rollback, before)
+        self.assertEqual(after_import['/api/groups-config']['groups'], before['/api/groups-config']['groups'])
+        self.assertEqual(after_import['/api/groups-config']['defaultGroupId'], before['/api/groups-config']['defaultGroupId'])
+        self.assertEqual(after_import['/api/groups-config']['source'], 'workspace_db')
+        self.assertEqual(after_import['/api/groups-config']['configRevision'], 1)
+        self.assertTrue(after_import['/api/groups-config']['preferences']['onboardingRequired'])
+        self.assertEqual(after_import['/api/groups-config']['preferences']['effectiveVisibleGroupIds'], [])
 
         export_path = os.path.join(self._tmpdir.name, 'rollback-export.json')
         export_view_config_json(
@@ -209,8 +217,28 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         )
         with open(export_path, 'r', encoding='utf-8') as handle:
             exported = json.load(handle)
-        self.assertEqual(exported, self._dashboard_config())
+        expected = self._dashboard_config()
+        self.assertEqual(exported['projects'], expected['projects'])
+        self.assertEqual(exported['board'], expected['board'])
+        self.assertEqual(exported['capacity'], expected['capacity'])
+        self.assertEqual(exported['epm'], expected['epm'])
+        self.assertEqual(exported['teamGroups']['groups'][0]['id'], 'platform')
+        self.assertEqual(exported['teamGroups']['groups'][0]['teamIds'], ['team-a'])
+        self.assertEqual(exported['teamGroups']['defaultGroupId'], 'platform')
         self.assertNotIn('api_token', json.dumps(exported).lower())
+
+    def test_db_dashboard_save_strips_legacy_team_groups_from_private_view(self):
+        repository = db_repository(database_url=self.database_url)
+        view_id = repository.save_dashboard_config(
+            self.context,
+            self._dashboard_config(),
+            actor_user_id=self.user_id,
+        )
+        resolved = repository.resolve_effective_view_config(self.context)
+
+        self.assertEqual(resolved['viewConfigId'], view_id)
+        self.assertNotIn('teamGroups', resolved['view'])
+        self.assertEqual(resolved['view']['projects']['selected'][0]['key'], 'PROD')
 
 
 if __name__ == '__main__':

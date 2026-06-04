@@ -19,7 +19,7 @@ SECURITY_SAMPLES = {
         ("GET", "/api/stats"),
         ("GET", "/api/scenario/drafts"),
     ],
-    "user_write": [("POST", "/api/me/views"), ("POST", "/api/export-excel")],
+    "user_write": [("POST", "/api/me/views"), ("POST", "/api/groups-preferences"), ("POST", "/api/export-excel")],
     "workspace_write": [
         ("POST", "/api/scenario/drafts"),
         ("POST", "/api/scenario/drafts/draft-1/rollback"),

@@ -46,6 +46,12 @@ export const fetchGroupsConfig = (backendUrl) =>
 export const saveGroupsConfig = (backendUrl, payload) =>
     postJsonWithCsrf(backendUrl, '/api/groups-config', payload, { apiSurface: 'settings_save' });
 
+export const saveGroupPreferences = (backendUrl, payload) =>
+    postJsonWithCsrf(backendUrl, '/api/groups-preferences', payload, {
+        apiSurface: 'settings_save',
+        featureName: 'settings'
+    });
+
 export const fetchSelectedProjects = (backendUrl) =>
     fetch(`${backendUrl}/api/projects/selected`, {
         method: 'GET',

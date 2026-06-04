@@ -1,7 +1,6 @@
 import base64
 import os
 import tempfile
-import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -87,20 +86,10 @@ class CsrfTokenBoundTests(unittest.TestCase):
 
     def _install_session(self, client, *, session_id, account_id, connection_id):
         with client.session_transaction() as flask_session:
-            flask_session['atlassian_oauth_session_id'] = session_id
-        jira_server.OAUTH_TOKEN_STORE[session_id] = {
-            'access_token': 'access-123',
-            'refresh_token': 'refresh-123',
-            'expires_at': time.time() + 3600,
-            'scope': FULL_SCOPE,
-            'cloudid': 'cloud-123',
-            'site_url': 'https://example.atlassian.net',
-            'account_id': account_id,
-            'account_status': 'active',
-            'db_auth_connection_id': connection_id,
-            'db_token_version': '1',
-            'stored_at': time.time(),
-        }
+            flask_session['db_oauth_session'] = {
+                'db_auth_connection_id': connection_id,
+                'db_token_version': '1',
+            }
 
     def _env_patch(self):
         return patch.dict(os.environ, {
@@ -162,6 +151,19 @@ class CsrfTokenBoundTests(unittest.TestCase):
         self.assertEqual(wrong.get_json()['error'], 'csrf_required')
         self.assertEqual(cross_session.get_json()['error'], 'csrf_required')
         self.assertEqual(reused.get_json()['error'], 'csrf_required')
+
+    def test_db_oauth_csrf_succeeds_without_local_oauth_session(self):
+        with self.client.session_transaction() as session:
+            session['db_oauth_session'] = {
+                'db_auth_connection_id': self.admin_connection_id,
+                'db_token_version': '1',
+            }
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/api/auth/csrf')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertIn('csrfToken', response.get_json())
 
 
 if __name__ == '__main__':

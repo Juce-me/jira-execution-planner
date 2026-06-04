@@ -1,3 +1,4 @@
+import os
 import time
 import unittest
 from unittest.mock import patch
@@ -109,7 +110,8 @@ class TestAuthRoutes(unittest.TestCase):
              patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
              patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
              patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True):
+             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=False):
             response = self.client.get('/api/auth/atlassian/login')
         self.assertEqual(response.status_code, 302)
         self.assertIn('https://auth.atlassian.com/authorize?', response.headers['Location'])
@@ -149,7 +151,8 @@ class TestAuthRoutes(unittest.TestCase):
              patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
              patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
              patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True):
+             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=False):
             response = self.client.get('/api/auth/atlassian/login')
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()['error'], 'local_token_store_not_allowed')
@@ -162,7 +165,8 @@ class TestAuthRoutes(unittest.TestCase):
              patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
              patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
              patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', False):
+             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', False), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=False):
             response = self.client.get('/api/auth/atlassian/login')
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()['error'], 'local_token_store_not_allowed')
@@ -245,6 +249,42 @@ class TestAuthRoutes(unittest.TestCase):
 
             mocked_drop.assert_called_once_with('session-123')
 
+    def test_save_oauth_session_db_payload_waits_for_in_flight_refresh(self):
+        class RecordingLock:
+            def __init__(self):
+                self.acquired = False
+
+            def __enter__(self):
+                self.acquired = True
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                self.acquired = False
+
+        lock = RecordingLock()
+        with jira_server.app.test_request_context('/'):
+            jira_server.session['atlassian_oauth_session_id'] = 'session-123'
+            jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
+            jira_server.OAUTH_REFRESH_LOCKS['session-123'] = lock
+
+            def drop_session(session_id):
+                self.assertTrue(lock.acquired)
+
+            with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                 patch.object(jira_server, 'database_storage_enabled', return_value=True), \
+                 patch.object(jira_server, '_drop_oauth_session', side_effect=drop_session) as mocked_drop:
+                jira_server.save_oauth_session({
+                    'db_auth_connection_id': 'connection-1',
+                    'db_token_version': '2',
+                })
+
+            mocked_drop.assert_called_once_with('session-123')
+            self.assertNotIn('atlassian_oauth_session_id', jira_server.session)
+            self.assertEqual(jira_server.session['db_oauth_session'], {
+                'db_auth_connection_id': 'connection-1',
+                'db_token_version': '2',
+            })
+
     def test_oauth_session_data_sweeps_expired_store_entries(self):
         now = 1000
         with jira_server.app.test_request_context('/'):
@@ -320,11 +360,24 @@ class TestAuthRoutes(unittest.TestCase):
              patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
              patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
              patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
-             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'):
+             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=False):
             with self.assertRaises(jira_server.AuthError) as raised:
                 jira_server.validate_startup_auth_config()
 
         self.assertEqual(raised.exception.code, 'local_token_store_not_allowed')
+
+    def test_db_oauth_startup_does_not_require_local_token_store(self):
+        with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db'}), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', False), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
+             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
+             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
+             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
+             patch.object(jira_server, 'validate_config_storage_startup', return_value=None):
+            jira_server.validate_startup_auth_config()
 
     def test_startup_auth_validation_rejects_too_short_local_token_store_ttl(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
@@ -335,7 +388,8 @@ class TestAuthRoutes(unittest.TestCase):
              patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
              patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
              patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
-             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'):
+             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=False):
             with self.assertRaises(jira_server.AuthError) as raised:
                 jira_server.validate_startup_auth_config()
 
@@ -431,7 +485,8 @@ class TestAuthRoutes(unittest.TestCase):
              patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
              patch.object(jira_server, 'exchange_authorization_code', return_value=token_data), \
              patch.object(jira_server, 'fetch_current_user', return_value=user_profile), \
-             patch.object(jira_server, 'fetch_accessible_resources', return_value=[resource]):
+             patch.object(jira_server, 'fetch_accessible_resources', return_value=[resource]), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=False):
             response = self.client.get('/api/auth/atlassian/callback?state=state-123&code=abc')
 
         self.assertEqual(response.status_code, 400)

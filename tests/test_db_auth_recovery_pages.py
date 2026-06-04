@@ -1,6 +1,5 @@
 import os
 import tempfile
-import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -84,22 +83,11 @@ class DbAuthRecoveryPagesTests(unittest.TestCase):
             return workspace.id, user.id, connection.id
 
     def _install_session(self, *, account_id, connection_id):
-        session_id = f'session-{account_id}'
         with self.client.session_transaction() as flask_session:
-            flask_session['atlassian_oauth_session_id'] = session_id
-        jira_server.OAUTH_TOKEN_STORE[session_id] = {
-            'access_token': 'access-123',
-            'refresh_token': 'refresh-123',
-            'expires_at': time.time() + 3600,
-            'scope': FULL_SCOPE,
-            'cloudid': 'cloud-123',
-            'site_url': 'https://example.atlassian.net',
-            'account_id': account_id,
-            'account_status': 'active',
-            'db_auth_connection_id': connection_id,
-            'db_token_version': '1',
-            'stored_at': time.time(),
-        }
+            flask_session['db_oauth_session'] = {
+                'db_auth_connection_id': connection_id,
+                'db_token_version': '1',
+            }
 
     def _env_patch(self):
         return patch.dict(os.environ, {

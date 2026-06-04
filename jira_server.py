@@ -419,7 +419,11 @@ def _db_oauth_browser_session_payload(data):
     connection_id = str((data or {}).get('db_auth_connection_id') or '').strip()
     if not connection_id:
         return {}
-    return {'db_auth_connection_id': connection_id}
+    payload = {'db_auth_connection_id': connection_id}
+    token_version = str((data or {}).get('db_token_version') or '').strip()
+    if token_version:
+        payload['db_token_version'] = token_version
+    return payload
 
 
 def remember_db_oauth_browser_session(data):
@@ -435,14 +439,8 @@ def db_oauth_browser_session_data():
         return {}
     stored = session.get('db_oauth_session')
     if isinstance(stored, dict):
-        payload = _db_oauth_browser_session_payload(stored)
-        if payload:
-            return payload
-    local_session = oauth_session_data()
-    payload = _db_oauth_browser_session_payload(local_session)
-    if payload:
-        session['db_oauth_session'] = payload
-    return payload
+        return _db_oauth_browser_session_payload(stored)
+    return {}
 
 
 def strict_db_oauth_browser_session_data():
@@ -466,7 +464,18 @@ def save_oauth_session(data):
             else:
                 _drop_oauth_session(session_id)
         return
-    remember_db_oauth_browser_session(data)
+    payload = _db_oauth_browser_session_payload(data)
+    if payload:
+        session['db_oauth_session'] = payload
+        session_id = session.pop('atlassian_oauth_session_id', None)
+        if session_id:
+            refresh_lock = _LOCAL_OAUTH_STORE.existing_refresh_lock(session_id)
+            if refresh_lock:
+                with refresh_lock:
+                    _drop_oauth_session(session_id)
+            else:
+                _drop_oauth_session(session_id)
+        return
     _LOCAL_OAUTH_STORE.save_session(session, data)
 
 
@@ -740,6 +749,8 @@ def auth_recovery_url(error_code):
 
 def validate_local_token_store_allowed():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return
+    if database_storage_enabled():
         return
     environment = APP_ENVIRONMENT_KEY.strip().lower()
     if environment not in {'local', 'dev'} or not OAUTH_LOCAL_TOKEN_STORE_ALLOWED:

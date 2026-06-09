@@ -180,7 +180,16 @@ import {
     shouldUseEpmSprint,
     sortEpmSettingsProjects
 } from './epm/epmProjectUtils.mjs';
-import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
+import {
+    PLANNING_SELECTION_MODE_DEFAULT_ALL,
+    PLANNING_SELECTION_MODE_MANUAL,
+    buildPlanningScopeKey,
+    hasPlanningState,
+    loadPlanningState,
+    resolvePlanningSelectionState,
+    resolvePlanningTeamSelection,
+    savePlanningState
+} from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 import {
@@ -588,6 +597,8 @@ import {
             const pageLoadRefreshRef = useRef(false);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
+            const [planningSelectionMode, setPlanningSelectionMode] = useState(PLANNING_SELECTION_MODE_MANUAL);
+            const [canUndoPlanningSelection, setCanUndoPlanningSelection] = useState(false);
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
             const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
             const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
@@ -616,6 +627,8 @@ import {
             const [isPlanningStuck, setIsPlanningStuck] = useState(false);
             const planningPanelRef = useRef(null);
             const planningHydratedScopeRef = useRef('');
+            const planningLoadedSelectionRef = useRef(null);
+            const planningBaselineScopeRef = useRef('');
             const teamSelectionHydratedScopeRef = useRef('');
             const teamSelectionSkipPersistScopeRef = useRef('');
             const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort' || value === 'excludedCapacity' || value === 'monoCrossShare') ? value : 'teams';
@@ -4324,6 +4337,9 @@ import {
                 const planningState = planningScopeKey
                     ? loadPlanningState(window.localStorage, planningScopeKey)
                     : null;
+                const selectionModeFromPlanning = hasStoredPlanningState
+                    ? (planningState?.selectionMode || PLANNING_SELECTION_MODE_MANUAL)
+                    : (isFutureSprintSelected ? PLANNING_SELECTION_MODE_DEFAULT_ALL : PLANNING_SELECTION_MODE_MANUAL);
                 const storedTeamSelectionState = teamSelectionScopeKey
                     ? loadTeamSelectionState(window.localStorage, teamSelectionScopeKey)
                     : null;
@@ -4345,6 +4361,7 @@ import {
                     : {};
                 return {
                     sprintId: selectedSprint,
+                    planningScopeKey,
                     teamIdsSignature: activeGroupTeamIds.join('|'),
                     productTasks: [],
                     techTasks: [],
@@ -4369,6 +4386,7 @@ import {
                     searchQuery: savedPrefsRef.current.searchQuery ?? '',
                     selectedTeams: selectedTeamsFromPlanning,
                     selectedTasks: selectedTasksFromPlanning,
+                    planningSelectionMode: selectionModeFromPlanning,
                     showPlanning: savedPrefsRef.current.showPlanning ?? false,
                     showStats: savedPrefsRef.current.showStats ?? false,
                     showScenario: false,
@@ -4445,6 +4463,7 @@ import {
 
             const buildGroupStateSnapshot = () => ({
                 sprintId: selectedSprint,
+                planningScopeKey,
                 teamIdsSignature: activeGroupTeamIds.join('|'),
                 productTasks,
                 techTasks,
@@ -4469,6 +4488,7 @@ import {
                 searchQuery,
                 selectedTeams,
                 selectedTasks,
+                planningSelectionMode,
                 showPlanning,
                 showStats,
                 showScenario,
@@ -4571,6 +4591,8 @@ import {
                 setSearchQuery(nextState.searchQuery ?? '');
                 setSelectedTeams(normalizeSelectedTeams(nextState.selectedTeams));
                 setSelectedTasks(nextState.selectedTasks || {});
+                setPlanningSelectionMode(nextState.planningSelectionMode || PLANNING_SELECTION_MODE_MANUAL);
+                setCanUndoPlanningSelection(false);
                 setShowPlanning(nextState.showPlanning ?? false);
                 setShowStats(nextState.showStats ?? false);
                 setShowScenario(nextState.showScenario ?? false);
@@ -4652,6 +4674,7 @@ import {
 
             const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), [
                 selectedSprint, missingInfoEpics,
+                planningScopeKey,
                 activeGroupTeamIds.join('|'),
                 productTasks,
                 techTasks,
@@ -4675,6 +4698,7 @@ import {
                 searchQuery,
                 selectedTeams,
                 selectedTasks,
+                planningSelectionMode,
                 showPlanning,
                 showStats,
                 showScenario,
@@ -4733,8 +4757,9 @@ import {
             useEffect(() => {
                 if (!activeGroupId) return;
                 if (activeGroupRef.current !== activeGroupId) return;
+                if (planningScopeKey && planningHydratedScopeRef.current !== planningScopeKey) return;
                 groupStateRef.current.set(activeGroupId, groupStateSnapshot);
-            }, [activeGroupId, groupStateSnapshot]);
+            }, [activeGroupId, groupStateSnapshot, planningScopeKey]);
 
             useEffect(() => {
                 if (!activeGroupId) return;
@@ -4742,6 +4767,7 @@ import {
                 activeGroupRef.current = activeGroupId;
                 const cached = groupStateRef.current.get(activeGroupId);
                 const matchesScope = cached &&
+                    cached.planningScopeKey === planningScopeKey &&
                     cached.sprintId === selectedSprint &&
                     cached.teamIdsSignature === activeGroupTeamIds.join('|');
                 if (matchesScope) {
@@ -4758,7 +4784,10 @@ import {
                 if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
                 if (planningHydratedScopeRef.current === planningScopeKey) return;
                 const cached = activeGroupId ? groupStateRef.current.get(activeGroupId) : null;
-                if (cached && cached.sprintId === selectedSprint && cached.teamIdsSignature === activeGroupTeamIds.join('|')) {
+                if (cached &&
+                    cached.planningScopeKey === planningScopeKey &&
+                    cached.sprintId === selectedSprint &&
+                    cached.teamIdsSignature === activeGroupTeamIds.join('|')) {
                     planningHydratedScopeRef.current = planningScopeKey;
                     return;
                 }
@@ -4788,10 +4817,10 @@ import {
             }, [showPlanning, isCompletedSprintSelected]);
 
             useEffect(() => {
-                if (showPlanning && !isCompletedSprintSelected) {
+                if (showPlanning && !isCompletedSprintSelected && !isFutureSprintSelected) {
                     includePlanningTasksByStatus(['Accepted', 'In Progress']);
                 }
-            }, [showPlanning, isCompletedSprintSelected]);
+            }, [showPlanning, isCompletedSprintSelected, isFutureSprintSelected]);
 
             useEffect(() => {
                 if (!selectedSprint) return;
@@ -9566,10 +9595,24 @@ import {
                     .map(team => String(team?.id || '').trim())
                     .filter(id => id && id !== 'all');
 
-                const nextSelectedTaskKeys = Object.keys(selectedTasks || {})
+                const currentSelectedTaskKeys = Object.keys(selectedTasks || {})
                     .filter(key => selectedTasks[key] && validTaskKeySet.has(key))
                     .sort();
-                const nextSelectedTeams = sanitizeSelectedTeamsForScope(selectedTeams, {
+                const currentPlanningState = {
+                    selectedTaskKeys: currentSelectedTaskKeys,
+                    selectedTeams,
+                    selectionMode: planningSelectionMode
+                };
+                const resolvedPlanningState = resolvePlanningSelectionState({
+                    hasStoredState: true,
+                    storedState: currentPlanningState,
+                    isFutureSprint: isFutureSprintSelected,
+                    validTaskKeys: validTaskKeySet,
+                    validTeamIds: new Set(validTeamIds)
+                });
+                const nextSelectedTaskKeys = resolvedPlanningState.selectedTaskKeys;
+                const nextSelectionMode = resolvedPlanningState.selectionMode;
+                const nextSelectedTeams = sanitizeSelectedTeamsForScope(resolvedPlanningState.selectedTeams, {
                     activeGroupTeamIds,
                     availableTeamIds: validTeamIds
                 });
@@ -9590,14 +9633,28 @@ import {
                     return sameTeams ? prev : nextSelectedTeams;
                 });
 
+                setPlanningSelectionMode(prev => prev === nextSelectionMode ? prev : nextSelectionMode);
+
                 savePlanningState(window.localStorage, planningScopeKey, {
                     selectedTaskKeys: nextSelectedTaskKeys,
-                    selectedTeams: nextSelectedTeams
+                    selectedTeams: nextSelectedTeams,
+                    selectionMode: nextSelectionMode
                 });
+
+                if (planningBaselineScopeRef.current !== planningScopeKey) {
+                    planningLoadedSelectionRef.current = {
+                        scopeKey: planningScopeKey,
+                        selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys),
+                        selectionMode: nextSelectionMode
+                    };
+                    planningBaselineScopeRef.current = planningScopeKey;
+                    setCanUndoPlanningSelection(false);
+                }
             }, [
                 planningScopeKey,
                 activeGroupId,
                 selectedSprint,
+                isFutureSprintSelected,
                 tasksFetched,
                 productTasksLoading,
                 techTasksLoading,
@@ -9605,6 +9662,7 @@ import {
                 teamOptions,
                 selectedTasks,
                 selectedTeams,
+                planningSelectionMode,
                 activeGroupTeamIds.join('|')
             ]);
 
@@ -10390,22 +10448,33 @@ import {
                 } else {
                     newSelected[taskKey] = true;
                 }
+                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks(newSelected);
                 trackPlanningSelection('toggle_task', newSelected, selectionTasks);
             };
 
+            const markPlanningBulkSelectionChanged = () => {
+                if (planningLoadedSelectionRef.current?.scopeKey === planningScopeKey) {
+                    setCanUndoPlanningSelection(true);
+                }
+            };
+
             const clearSelectedTasks = () => {
+                markPlanningBulkSelectionChanged();
+                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks({});
                 trackPlanningSelection('clear_selection', {}, selectionTasks);
             };
 
             const selectAllVisiblePlanningTasks = () => {
+                markPlanningBulkSelectionChanged();
                 const next = {};
                 visibleTasksForList.forEach(task => {
                     if (task?.key) {
                         next[task.key] = true;
                     }
                 });
+                setPlanningSelectionMode(isFutureSprintSelected ? PLANNING_SELECTION_MODE_DEFAULT_ALL : PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks(next);
                 trackPlanningSelection('select_all_visible', next, selectionTasks);
             };
@@ -10419,12 +10488,15 @@ import {
                         next[task.key] = true;
                     }
                 });
+                markPlanningBulkSelectionChanged();
+                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks(next);
                 trackPlanningSelection('select_status', next, selectionTasks);
             };
 
             const includePlanningTasksByStatus = (statuses) => {
                 const allowed = new Set((statuses || []).map(normalizeStatus));
+                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks(prev => {
                     const next = { ...prev };
                     selectionTasks.forEach(task => {
@@ -10451,8 +10523,21 @@ import {
                         next[task.key] = true;
                     }
                 });
+                markPlanningBulkSelectionChanged();
+                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks(next);
                 trackPlanningSelection(allSelected ? 'exclude_status' : 'include_status', next, selectionTasks);
+            };
+
+            const undoPlanningSelectionChange = () => {
+                const baseline = planningLoadedSelectionRef.current;
+                if (!baseline || baseline.scopeKey !== planningScopeKey) return;
+                const nextSelectedTasks = baseline.selectedTasks || {};
+                const nextSelectionMode = baseline.selectionMode || PLANNING_SELECTION_MODE_MANUAL;
+                setSelectedTasks(nextSelectedTasks);
+                setPlanningSelectionMode(nextSelectionMode);
+                setCanUndoPlanningSelection(false);
+                trackPlanningSelection('undo_selection', nextSelectedTasks, selectionTasks);
             };
 
             // Calculate sum of Story Points for selected tasks

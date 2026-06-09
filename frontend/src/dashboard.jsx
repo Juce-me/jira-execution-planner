@@ -110,7 +110,16 @@ import {
     fetchAvailableIssueTypes as requestAvailableIssueTypes,
 } from './api/configApi.js';
 import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.jsx';
-import { applyLocalGroupPreferences, buildGroupId, buildTeamCatalogList, mergeTeamCatalog, normalizeGroupsConfig, parseTeamIdList, resolveInitialGroupId } from './settings/groupConfigUtils.js';
+import {
+    applyLocalGroupPreferences,
+    buildGroupId,
+    buildGroupsConfigWithExcludedCapacityToggle,
+    buildTeamCatalogList,
+    mergeTeamCatalog,
+    normalizeGroupsConfig,
+    parseTeamIdList,
+    resolveInitialGroupId
+} from './settings/groupConfigUtils.js';
 import { useGroupVisibilityPreferences } from './settings/useGroupVisibilityPreferences.js';
 import {
     buildSharedGroupsPayload,
@@ -808,7 +817,6 @@ import {
             const [dependencyHover, setDependencyHover] = useState(null);
             const [dependencyLookupCache, setDependencyLookupCache] = useState({});
             const [dependencyLookupLoading, setDependencyLookupLoading] = useState(false);
-            const [excludedStatsEpics, setExcludedStatsEpics] = useState(savedPrefsRef.current.excludedStatsEpics ?? []);
             const [hideExcludedStats, setHideExcludedStats] = useState(savedPrefsRef.current.hideExcludedStats ?? true);
             const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
             const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
@@ -2969,6 +2977,21 @@ import {
                 }
             };
 
+            const applySavedGroupsConfig = (payload) => {
+                const normalized = applyLocalGroupPreferences(payload, savedPrefsRef.current);
+                setGroupsConfig(normalized);
+                setGroupPreferences(normalized.preferences);
+                setGroupWarnings(payload?.warnings || []);
+                setGroupConfigSource(normalized.source || payload?.source || '');
+                setGroupDraft(normalized);
+                groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
+                setActiveGroupId(prev => {
+                    const effectiveIds = effectiveVisibleGroupIds(normalized, normalized.preferences);
+                    return resolveVisibleActiveGroupId(normalized, effectiveIds, prev);
+                });
+                return normalized;
+            };
+
             const saveGroupsConfig = async () => {
                 if (!groupDraft) return;
                 if (groupConfigValidationErrors.length > 0) {
@@ -3040,12 +3063,12 @@ import {
                             const errorPayload = await response.json().catch(() => ({}));
                             const errorMessage = errorPayload.message || (errorPayload.errors || []).join(' ') || errorPayload.error || `Save failed (${response.status})`;
                             if (response.status === 409 && errorPayload.current) {
-                                setGroupDraft(prev => prev ? { ...prev, configRevision: errorPayload.current.configRevision } : prev);
+                                applySavedGroupsConfig(errorPayload.current);
                             }
                             throw new Error(errorMessage);
                         }
                         payload = await response.json();
-                        normalized = applyLocalGroupPreferences(payload, savedPrefsRef.current);
+                        normalized = applySavedGroupsConfig(payload);
                     }
                     const refreshTarget = getConfigSaveRefreshTarget({
                         selectedSprint,
@@ -3064,16 +3087,6 @@ import {
                             }
                         }
 
-                        setGroupsConfig(normalized);
-                        setGroupPreferences(normalized.preferences);
-                        setGroupWarnings(payload?.warnings || []);
-                        setGroupConfigSource(normalized.source || payload?.source || '');
-                        setGroupDraft(normalized);
-                        groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
-                        setActiveGroupId(prev => {
-                            const effectiveIds = effectiveVisibleGroupIds(normalized, normalized.preferences);
-                            return resolveVisibleActiveGroupId(normalized, effectiveIds, prev);
-                        });
                     }
 
                     if (savingDepartmentSettings && isGroupVisibilityDraftDirty) {
@@ -4440,7 +4453,6 @@ import {
                         assignee: null,
                         team: null
                     },
-                    excludedStatsEpics: savedPrefsRef.current.excludedStatsEpics ?? [],
                     hideExcludedStats: savedPrefsRef.current.hideExcludedStats ?? true,
                     showMissingAlert: savedPrefsRef.current.showMissingAlert ?? true,
                     showBlockedAlert: savedPrefsRef.current.showBlockedAlert ?? true,
@@ -4525,7 +4537,6 @@ import {
                 scenarioLayout,
                 scenarioEdgeRender,
                 scenarioTooltip,
-                excludedStatsEpics,
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
@@ -4646,7 +4657,6 @@ import {
                     assignee: null,
                     team: null
                 });
-                setExcludedStatsEpics(nextState.excludedStatsEpics || []);
                 setHideExcludedStats(nextState.hideExcludedStats ?? true);
                 setShowMissingAlert(nextState.showMissingAlert ?? true);
                 setShowBlockedAlert(nextState.showBlockedAlert ?? true);
@@ -4735,7 +4745,6 @@ import {
                 scenarioLayout,
                 scenarioEdgeRender,
                 scenarioTooltip,
-                excludedStatsEpics,
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
@@ -5091,7 +5100,6 @@ import {
                     excludedCapacityChartMode,
                     excludedCapacityMetric,
                     scenarioLaneMode,
-                    excludedStatsEpics,
                     hideExcludedStats,
                     showMissingAlert,
                     showBlockedAlert,
@@ -5141,7 +5149,6 @@ import {
                 excludedCapacityChartMode,
                 excludedCapacityMetric,
                 scenarioLaneMode,
-                excludedStatsEpics,
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
@@ -6243,12 +6250,8 @@ import {
                     const normalized = String(key || '').trim().toUpperCase();
                     if (normalized) set.add(normalized);
                 });
-                (excludedStatsEpics || []).forEach((key) => {
-                    const normalized = String(key || '').trim().toUpperCase();
-                    if (normalized) set.add(normalized);
-                });
                 return set;
-            }, [excludedStatsEpics, activeGroupExcludedCapacityEpics]);
+            }, [activeGroupExcludedCapacityEpics]);
             const statsTaskList = React.useMemo(() => {
                 if (!capacityTasks.length) return [];
                 return capacityTasks.filter(task => {
@@ -10540,6 +10543,77 @@ import {
                 trackPlanningSelection('undo_selection', nextSelectedTasks, selectionTasks);
             };
 
+            const canToggleSharedGroupExcludedCapacity = canEditSharedConfiguration && !(showGroupManage && isGroupDraftDirty);
+
+            const toggleSharedGroupExcludedCapacityEpic = async (epicKey) => {
+                const normalizedEpicKey = String(epicKey || '').trim().toUpperCase();
+                if (!normalizedEpicKey || !activeGroupId) return;
+                const sourceSurface = showPlanning ? 'planning' : 'statistics';
+                if (!canEditSharedConfiguration) {
+                    setGroupDraftError('You do not have permission to edit shared department configuration.');
+                    trackSettingsAction('departments', 'toggle_excluded_capacity', {
+                        source_surface: sourceSurface,
+                        result: 'failure'
+                    });
+                    return;
+                }
+                if (showGroupManage && isGroupDraftDirty) {
+                    setGroupDraftError('Save or discard open Department settings changes before changing excluded capacity from the board.');
+                    trackSettingsAction('departments', 'toggle_excluded_capacity', {
+                        source_surface: sourceSurface,
+                        result: 'failure'
+                    });
+                    return;
+                }
+
+                const { config: nextGroupsConfig, changed, nextExcluded } = buildGroupsConfigWithExcludedCapacityToggle(
+                    groupsConfig,
+                    activeGroupId,
+                    normalizedEpicKey
+                );
+                if (!changed) return;
+
+                setGroupDraftError('');
+                trackSettingsAction('departments', 'toggle_excluded_capacity', {
+                    source_surface: sourceSurface,
+                    value_state: nextExcluded ? 'selected' : 'cleared'
+                });
+
+                try {
+                    const response = await requestSaveGroupsConfig(BACKEND_URL, buildSharedGroupsPayload(nextGroupsConfig));
+                    if (!response.ok) {
+                        const errorPayload = await response.json().catch(() => ({}));
+                        if (response.status === 409 && errorPayload.current) {
+                            applySavedGroupsConfig(errorPayload.current);
+                            setGroupDraftError('Department groups were changed by another user. Reloaded latest group configuration; retry the excluded-capacity change.');
+                        } else {
+                            const errorMessage = errorPayload.message || (errorPayload.errors || []).join(' ') || errorPayload.error || `Save failed (${response.status})`;
+                            setGroupDraftError(errorMessage);
+                        }
+                        trackSettingsAction('departments', 'toggle_excluded_capacity_result', {
+                            source_surface: sourceSurface,
+                            result: 'failure'
+                        });
+                        return;
+                    }
+
+                    const payload = await response.json();
+                    applySavedGroupsConfig(payload);
+                    groupStateRef.current.delete(activeGroupId);
+                    excludedCapacityCacheRef.current = {};
+                    trackSettingsAction('departments', 'toggle_excluded_capacity_result', {
+                        source_surface: sourceSurface,
+                        result: 'success'
+                    });
+                } catch (err) {
+                    setGroupDraftError(err.message || 'Failed to update excluded capacity.');
+                    trackSettingsAction('departments', 'toggle_excluded_capacity_result', {
+                        source_surface: sourceSurface,
+                        result: 'failure'
+                    });
+                }
+            };
+
             // Calculate sum of Story Points for selected tasks
             const calculateSelectedSP = () => {
                 let sum = 0;
@@ -12120,19 +12194,13 @@ import {
                                             {(showStats || showPlanning) && (
                                                 <button
                                                     className={`epic-stat-toggle ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? '' : 'active'}`}
-                                                    onClick={() => {
-                                                        const epicKey = String(epicGroup.key || 'NO_EPIC').trim().toUpperCase();
-                                                        setExcludedStatsEpics((prev) => {
-                                                            const set = new Set(prev || []);
-                                                            if (set.has(epicKey)) {
-                                                                set.delete(epicKey);
-                                                            } else {
-                                                                set.add(epicKey);
-                                                            }
-                                                            return Array.from(set);
-                                                        });
-                                                    }}
-                                                    title="Include/exclude epic in sprint stats and planning capacity"
+                                                    onClick={() => toggleSharedGroupExcludedCapacityEpic(epicGroup.key)}
+                                                    disabled={!canToggleSharedGroupExcludedCapacity}
+                                                    title={!canEditSharedConfiguration
+                                                        ? 'You do not have permission to edit shared group capacity settings'
+                                                        : (showGroupManage && isGroupDraftDirty)
+                                                            ? 'Save or discard open Department settings changes before changing excluded capacity'
+                                                            : 'Include/exclude this epic in shared group capacity and reporting'}
                                                 >
                                                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                                         <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />

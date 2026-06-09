@@ -583,3 +583,39 @@ test('excluded-capacity controls reserve the wide column for the epic filter', (
         'Expected excluded epic filter to sit in the wide first column'
     );
 });
+
+test('planning and reporting excluded capacity are backed by shared group config', () => {
+    assert.ok(
+        dashboardSource.includes('buildGroupsConfigWithExcludedCapacityToggle'),
+        'Expected dashboard to use the shared group excluded-capacity toggle helper'
+    );
+    assert.ok(
+        dashboardSource.includes("trackSettingsAction('departments', 'toggle_excluded_capacity'"),
+        'Expected shared excluded-capacity toggles to emit settings_action analytics'
+    );
+    assert.ok(
+        dashboardSource.includes('requestSaveGroupsConfig(BACKEND_URL, buildSharedGroupsPayload(nextGroupsConfig))'),
+        'Expected excluded-capacity toggle to save through /api/groups-config'
+    );
+    assert.ok(
+        dashboardSource.includes('showGroupManage && isGroupDraftDirty'),
+        'Expected inline excluded-capacity toggles to guard against open dirty Department settings drafts'
+    );
+    assert.ok(
+        dashboardSource.includes("setGroupDraftError('Save or discard open Department settings changes before changing excluded capacity from the board.')"),
+        'Expected dirty draft guard to tell users how to recover'
+    );
+    assert.ok(
+        dashboardSource.includes('applySavedGroupsConfig(payload)'),
+        'Expected shared group saves to reuse the same config application helper'
+    );
+    assert.ok(
+        /const excludedEpicSet = React\.useMemo\(\(\) => \{\s*const set = new Set\(\);\s*\(activeGroupExcludedCapacityEpics \|\| \[\]\)\.forEach/.test(dashboardSource),
+        'Expected excludedEpicSet to be derived from activeGroupExcludedCapacityEpics'
+    );
+    assert.doesNotMatch(
+        dashboardSource,
+        /excludedStatsEpics/,
+        'Local excludedStatsEpics must not drive Planning or Reporting excluded capacity'
+    );
+});

@@ -1,5 +1,7 @@
 # Planning Defaults, Shared Excluded Capacity, And Undo Implementation Plan
 
+> **Status:** Done. Executed across implementation commits `4cbb5e7`, `758220b`, `a720459`, `37d513f`, and `d7da228`; verified locally on 2026-06-09. Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Future ENG Planning sprint scopes with no saved selection should default to Select All, Planning/Reporting excluded-capacity toggles should update the selected group's shared DB-backed configuration, and users should have one-click Undo for bulk Planning selection changes.

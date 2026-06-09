@@ -31,11 +31,11 @@ class ContainerPackagingTests(unittest.TestCase):
         ):
             self.assertIn(required, dockerfile)
 
-    def test_dockerfile_does_not_silently_opt_into_network_bind(self):
+    def test_dockerfile_defaults_to_container_network_bind(self):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf8")
 
-        self.assertNotIn("APP_BIND_HOST=0.0.0.0", dockerfile)
-        self.assertNotIn("ALLOW_NETWORK_BIND=true", dockerfile)
+        self.assertIn("APP_BIND_HOST=0.0.0.0", dockerfile)
+        self.assertIn("ALLOW_NETWORK_BIND=true", dockerfile)
 
     def test_dockerignore_excludes_local_secret_and_cache_files(self):
         ignored = (ROOT / ".dockerignore").read_text(encoding="utf8")
@@ -58,11 +58,10 @@ class ContainerPackagingTests(unittest.TestCase):
         self.assertLess(entrypoint.index("alembic"), entrypoint.index("check_startup_preflight.py"))
         self.assertIn("exec gunicorn", entrypoint)
 
-    def test_entrypoint_uses_preflight_validated_bind_host(self):
+    def test_entrypoint_uses_configurable_container_bind_host(self):
         entrypoint = (ROOT / "scripts" / "docker-entrypoint.sh").read_text(encoding="utf8")
 
-        self.assertIn('${APP_BIND_HOST:-127.0.0.1}:${PORT:-5050}', entrypoint)
-        self.assertNotIn('--bind "0.0.0.0:${PORT:-5050}"', entrypoint)
+        self.assertIn('${APP_BIND_HOST:-0.0.0.0}:${PORT:-5050}', entrypoint)
 
     def test_container_workflow_builds_image_without_deploying(self):
         workflow = (ROOT / ".github" / "workflows" / "verify-container.yml").read_text(

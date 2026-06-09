@@ -227,7 +227,7 @@ RUN_DB_MIGRATIONS=false
 GA4_ENABLED=false
 ```
 
-`PORT=5050` is the container/Gunicorn listener port used by `scripts/docker-entrypoint.sh`; source-checkout Flask runs still use `SERVER_PORT` unless a command-line port is supplied. Hosted containers should bind to `APP_BIND_HOST=0.0.0.0` with `ALLOW_NETWORK_BIND=true`, sit behind HTTPS ingress, set `SESSION_COOKIE_SECURE=true`, and use `APP_ALLOWED_ORIGINS` for the exact HTTPS origin.
+`PORT=5050` is the container/Gunicorn listener port used by `scripts/docker-entrypoint.sh`; source-checkout Flask runs still use `SERVER_PORT` unless a command-line port is supplied. The Docker image defaults to `APP_BIND_HOST=0.0.0.0` and `ALLOW_NETWORK_BIND=true` so GCP service networking can reach Gunicorn; startup preflight still fails closed unless hosted OAuth sits behind HTTPS ingress, sets `SESSION_COOKIE_SECURE=true`, uses a real `FLASK_SECRET_KEY`, and provides `APP_ALLOWED_ORIGINS` for the exact HTTPS origin.
 
 Use `RUN_DB_MIGRATIONS=true` only when a single app container is the agreed migration owner for an internal deployment. For multi-replica deployments, run Alembic in a separate release job or init step, then start web containers with `RUN_DB_MIGRATIONS=false`.
 

@@ -8,7 +8,7 @@ fi
 python scripts/check_startup_preflight.py
 
 exec gunicorn \
-  --bind "${APP_BIND_HOST:-127.0.0.1}:${PORT:-5050}" \
+  --bind "${APP_BIND_HOST:-0.0.0.0}:${PORT:-5050}" \
   --workers "${WEB_CONCURRENCY:-1}" \
   --threads "${GUNICORN_THREADS:-8}" \
   --timeout "${GUNICORN_TIMEOUT:-120}" \

@@ -51,6 +51,47 @@ const issueDependenciesSource = fs.existsSync(issueDependenciesPath) ? fs.readFi
 const engSprintDataSource = fs.existsSync(engSprintDataPath) ? fs.readFileSync(engSprintDataPath, 'utf8') : '';
 const helperSource = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
 
+function cssRuleBodies(source, selector) {
+    const bodies = [];
+    const ruleStart = `${selector} {`;
+    let searchFrom = 0;
+    while (searchFrom < source.length) {
+        const start = source.indexOf(ruleStart, searchFrom);
+        if (start === -1) break;
+        let boundaryIndex = start - 1;
+        while (boundaryIndex >= 0 && (source[boundaryIndex] === ' ' || source[boundaryIndex] === '\t')) {
+            boundaryIndex -= 1;
+        }
+        const previous = boundaryIndex < 0 ? '' : source[boundaryIndex];
+        if (previous && previous !== '\n' && previous !== '\r' && previous !== '}') {
+            searchFrom = start + selector.length;
+            continue;
+        }
+        const openBrace = source.indexOf('{', start);
+        const closeBrace = source.indexOf('}', openBrace);
+        assert.notStrictEqual(closeBrace, -1, `Expected CSS selector ${selector} to have a closing brace`);
+        bodies.push(source.slice(openBrace + 1, closeBrace));
+        searchFrom = closeBrace + 1;
+    }
+    assert.ok(bodies.length > 0, `Expected CSS selector ${selector}`);
+    return bodies;
+}
+
+function assertRuleIncludes(selector, declaration) {
+    assert.ok(
+        cssRuleBodies(dashboardCssSource, selector).some(body => body.includes(declaration)),
+        `Expected ${selector} to include ${declaration}`
+    );
+}
+
+function assertRuleExcludes(selector, declaration) {
+    assert.equal(
+        cssRuleBodies(dashboardCssSource, selector).some(body => body.includes(declaration)),
+        false,
+        `Expected ${selector} not to include compact declaration ${declaration}`
+    );
+}
+
 function countOccurrences(source, needle) {
     return (source.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
 }
@@ -217,6 +258,65 @@ function assertAllEngTaskEffectsGuarded() {
         assertUseEffectGuardedForEng(`useEffect #${effect.index}`, effect.body, effect.firstEngWorkIndex);
     });
 }
+
+test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
+    assert.ok(
+        epmRollupPanelSource.includes('task-list epm-issue-board epm-portfolio-board'),
+        'Expected EPM portfolio rollup wrapper to keep epm-issue-board'
+    );
+    assert.ok(
+        epmRollupPanelSource.includes('task-list epm-issue-board ${'),
+        'Expected EPM selected-project rollup wrapper to keep epm-issue-board'
+    );
+
+    [
+        '.filters-strip .stats',
+        '.filters-strip .stat-card',
+        '.filters-strip .stat-value',
+        '.filters-strip .stat-label',
+        '.filters-strip .stat-card .stats-note',
+        '.task-list:not(.epm-issue-board) > .epic-block',
+        '.task-list:not(.epm-issue-board) > .epic-block > .epic-header',
+        '.task-list:not(.epm-issue-board) > .epic-block > .task-item',
+        '.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-header',
+        '.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-headline',
+        '.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-title',
+        '.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-meta',
+        '.task-list:not(.epm-issue-board) > .epic-block > .task-item .dependency-strip'
+    ].forEach(selector => {
+        assert.ok(
+            dashboardCssSource.includes(selector),
+            `Expected compact layout selector to be scoped as ${selector}`
+        );
+    });
+
+    assert.equal(
+        dashboardCssSource.includes('.task-list :not(.epm-issue-board)'),
+        false,
+        'Do not use descendant :not() for EPM exclusion; scope :not() on the task-list itself'
+    );
+
+    assertRuleIncludes('.filters-strip .stat-card', 'min-height: 0;');
+    assertRuleIncludes('.filters-strip .stat-card', 'padding: 0.36rem 0.5rem;');
+    assertRuleIncludes('.filters-strip .stat-card', 'grid-template-columns: auto minmax(0, 1fr);');
+    assertRuleIncludes('.filters-strip .stat-label', 'font-size: 0.58rem;');
+    assertRuleIncludes('.filters-strip .stat-card .stats-note', 'font-size: 0.58rem;');
+    assertRuleIncludes('.task-list:not(.epm-issue-board) > .epic-block > .task-item', 'padding: 0.72rem 0.95rem;');
+    assertRuleIncludes('.task-list:not(.epm-issue-board) > .epic-block > .task-item', 'margin-bottom: 0.55rem;');
+    assertRuleIncludes('.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-title', 'font-size: 0.98rem;');
+
+    assertRuleExcludes('.stat-card', 'min-height: 0;');
+    assertRuleExcludes('.stat-card', 'padding: 0.36rem 0.5rem;');
+    assertRuleExcludes('.stat-card', 'grid-template-columns: auto minmax(0, 1fr);');
+    assertRuleExcludes('.task-item', 'padding: 0.72rem 0.95rem;');
+    assertRuleExcludes('.task-item', 'margin-bottom: 0.55rem;');
+    assertRuleExcludes('.task-title', 'font-size: 0.98rem;');
+    assertRuleExcludes('.epic-block', 'padding: 0.55rem;');
+    assertRuleExcludes('.epic-block', 'margin-bottom: 0.8rem;');
+    assertRuleExcludes('.epic-header', 'padding: 0.32rem 0;');
+    assertRuleExcludes('.epic-header', 'margin-bottom: 0.5rem;');
+    assertRuleExcludes('.epic-header', 'gap: 0.65rem;');
+});
 
 test('dashboard source keeps the ENG and EPM switch contract', () => {
     assert.ok(dashboardSource.includes('selectedView'), 'Expected selectedView state in dashboard.jsx');

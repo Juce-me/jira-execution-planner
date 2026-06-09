@@ -75,12 +75,16 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Active implementation plan for lightweight ENG story subtask visibility.
    - Expected output: existing ENG task fetch includes a cheap embedded subtask summary, exact subtask rows load only after a user expands the story subtask control, no startup subtask fan-out is introduced, and count-based progress uses done/in-progress subtask counts rather than story points.
 
-2. `DONE-statistics-module-extraction.md`
+2. `EXEC-eng-compact-filter-epic-layout.md`
+   - Active desktop-focused implementation plan for compacting ENG Catch Up filter cards and epic/story blocks with CSS-only scoped overrides.
+   - Expected output: ENG `Show only` filters render as compact readable desktop controls, ENG epic/story cards use denser spacing, source guards prevent unscoped `.stat-card`/`.task-list` changes, and EPM issue-board rollups remain visually compatible through `.task-list:not(.epm-issue-board)` scoping.
+
+3. `DONE-statistics-module-extraction.md`
    - Completed Statistics module extraction. Use for audit and prerequisite evidence; do not execute as active work.
    - Supersedes the stale root-level `statistics_module_extraction_plan.md` from `origin/plan/statistics-module-extraction`.
    - Output: remaining legacy Statistics Teams, Priority, and Burndown utilities/components extracted from `frontend/src/dashboard.jsx` into the existing `frontend/src/stats/` package, with source guards, focused Node tests, full unit verification, Playwright smoke coverage, regenerated frontend dist output, and shared bounded hover positioning for stats chart readouts.
 
-3. `DONE-epm-project-reading-experience.md`
+4. `DONE-epm-project-reading-experience.md`
    - Completed EPM project reading experience plan in PR #41 (`94b759b`). Use for audit and prerequisite evidence; do not execute as active work.
    - Output: Home update freshness classification, stale/missing/unknown badges, stale date styling, visual fixture coverage, and freshness source guards for the EPM project board.
 

@@ -14313,6 +14313,8 @@ import {
                             onTogglePostponed={() => toggleIncludeByStatus(['Postponed'])}
                             onToggleAwaitingValidation={() => toggleIncludeByStatus(['Awaiting Validation'])}
                             onSelectAllVisible={selectAllVisiblePlanningTasks}
+                            canUndoPlanningSelection={canUndoPlanningSelection}
+                            onUndoPlanningSelection={undoPlanningSelectionChange}
                             onClearSelected={clearSelectedTasks}
                             onOpenSelectedInJira={openSelectedInJira}
                         />

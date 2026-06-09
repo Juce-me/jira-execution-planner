@@ -17,6 +17,8 @@ export default function PlanningActionBar({
     onTogglePostponed,
     onToggleAwaitingValidation,
     onSelectAllVisible,
+    canUndoPlanningSelection,
+    onUndoPlanningSelection,
     onClearSelected,
     onOpenSelectedInJira,
 }) {
@@ -61,6 +63,14 @@ export default function PlanningActionBar({
                 title="Select every task currently visible in the planning list"
             >
                 Select All
+            </button>
+            <button
+                className="planning-action-button"
+                onClick={onUndoPlanningSelection}
+                disabled={!canUndoPlanningSelection}
+                title="Undo bulk selection changes and restore the loaded planning selection"
+            >
+                Undo
             </button>
             <button
                 className="uncheck-button"

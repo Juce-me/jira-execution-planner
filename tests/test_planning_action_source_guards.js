@@ -32,6 +32,22 @@ test('planning action row includes select all for currently visible planning tas
     assert.match(componentSource, />\s*Select All\s*</);
 });
 
+test('planning action row exposes undo for bulk selection changes', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningActionBar.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
+
+    assert.match(source, /const undoPlanningSelectionChange = \(\) => \{/);
+    assert.match(source, /canUndoPlanningSelection=\{canUndoPlanningSelection\}/);
+    assert.match(source, /onUndoPlanningSelection=\{undoPlanningSelectionChange\}/);
+    assert.match(source, /trackPlanningSelection\('undo_selection'/);
+    assert.match(componentSource, /canUndoPlanningSelection/);
+    assert.match(componentSource, /onUndoPlanningSelection/);
+    assert.match(componentSource, /disabled=\{!canUndoPlanningSelection\}/);
+    assert.match(componentSource, />\s*Undo\s*</);
+});
+
 test('planning panel no longer renders capacity bar footer rows', () => {
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');

@@ -62,6 +62,12 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Future Jira publish/write-back must use only the signed-in user's OAuth Jira REST context; do not use Jira/Home API tokens, Basic credentials, service integrations, Home/Townsquare APIs, or local token-store helpers.
    - Scenario group scope is a shared environment-scoped PM/EPM-managed configuration reference; drafts may reference groups but must not create private group definitions or own group membership.
 
+## Active Frontend Planning Workflow
+
+1. `EXEC-planning-default-selection-undo.md`
+   - Active implementation plan for future-sprint Planning selection defaults, DB-backed group excluded-capacity toggles, and bulk-selection undo.
+   - Expected output: unseen future sprint/group scopes default to all visible Planning stories selected, Planning/Reporting epic Included/Excluded toggles persist to the selected group's shared `excludedCapacityEpics` config, manual checkbox edits persist until Select All, bulk status/select/clear actions can be undone to the loaded-page baseline, existing analytics events cover undo and shared excluded-capacity toggles, and focused Node/Python plus Playwright coverage verifies the behavior.
+
 ## Project Grade Security Hardening
 
 1. `DONE-project-grade-security-hardening.md`

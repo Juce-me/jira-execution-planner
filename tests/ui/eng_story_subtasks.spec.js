@@ -10,6 +10,8 @@ const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
 const groupTeamIds = ['team-alpha'];
+const longEpicSummary = 'Add OS-Level Targeting and Conditional IFA Requirements to TGroup Configuration With Additional Partner Validation Rules That Should Not Break The Card Layout';
+const longStorySummary = '[BSWUI] Allow Multiple Filters in Trading Summary Report in the UI With Regional Override Controls and Expanded Validation Copy';
 let dashboardJs;
 let dashboardCss;
 
@@ -27,12 +29,14 @@ test.beforeAll(() => {
     dashboardCss = result.outputFiles.find(file => file.path.endsWith('.css')).text;
 });
 
-function parentStory() {
+function parentStory(overrides = {}) {
+    const summary = overrides.summary || 'Parent story with subtasks';
+    const parentSummary = overrides.parentSummary || 'Product delivery epic';
     return {
         id: 'PROD-1',
         key: 'PROD-1',
         fields: {
-            summary: 'Parent story with subtasks',
+            summary,
             status: { name: 'In Progress' },
             priority: { name: 'Major' },
             issuetype: { name: 'Story' },
@@ -40,7 +44,7 @@ function parentStory() {
             updated: '2026-05-01T00:00:00.000+0000',
             customfield_10004: 2,
             epicKey: 'PROD-EPIC',
-            parentSummary: 'Product delivery epic',
+            parentSummary,
             projectKey: 'PROD',
             teamId: 'team-alpha',
             teamName: 'Alpha Team',
@@ -57,10 +61,11 @@ function parentStory() {
     };
 }
 
-function productEpic() {
+function productEpic(overrides = {}) {
+    const summary = overrides.summary || 'Product delivery epic';
     return {
         key: 'PROD-EPIC',
-        summary: 'Product delivery epic',
+        summary,
         status: { name: 'In Progress' },
         assignee: { displayName: 'Product Lead' },
         teamId: 'team-alpha',
@@ -226,6 +231,42 @@ async function collectStorySubtaskControlMetrics(page) {
     });
 }
 
+async function collectLongTitleMetrics(page) {
+    return page.locator('.epic-block').first().evaluate((block) => {
+        const rectFor = (selector) => {
+            const node = block.querySelector(selector);
+            if (!node) return null;
+            const rect = node.getBoundingClientRect();
+            return {
+                x: rect.x,
+                y: rect.y,
+                right: rect.right,
+                bottom: rect.bottom,
+                width: rect.width,
+                height: rect.height,
+            };
+        };
+        const lineCountFor = (selector) => {
+            const node = block.querySelector(selector);
+            if (!node) return 0;
+            const style = getComputedStyle(node);
+            const lineHeight = Number.parseFloat(style.lineHeight) || (Number.parseFloat(style.fontSize) * 1.2);
+            return Math.round(node.getBoundingClientRect().height / lineHeight);
+        };
+        return {
+            epicHeader: rectFor('.epic-header'),
+            epicLink: rectFor('.epic-link'),
+            epicName: rectFor('.epic-name'),
+            epicMeta: rectFor('.epic-meta'),
+            epicNameLines: lineCountFor('.epic-name'),
+            storyHeader: rectFor('.task-header'),
+            storyTitle: rectFor('.task-title'),
+            storyInlineMeta: rectFor('.task-inline-meta'),
+            storyTitleLines: lineCountFor('.task-title'),
+        };
+    });
+}
+
 async function expectUpdateConnectedSubtaskControl(page) {
     const metrics = await collectStorySubtaskControlMetrics(page);
     const verticalCenter = (rect) => rect.y + (rect.height / 2);
@@ -278,7 +319,7 @@ async function expectMobileSubtaskTableLayout(page) {
     expect(overflow).toBeLessThanOrEqual(1);
 }
 
-async function installEngSubtasksFixture(page, calls, { subtaskResponse } = {}) {
+async function installEngSubtasksFixture(page, calls, { subtaskResponse, longSummaries = false } = {}) {
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
@@ -338,8 +379,10 @@ async function installEngSubtasksFixture(page, calls, { subtaskResponse } = {}) 
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
-            const issues = project === 'product' && !purpose ? [parentStory()] : [];
-            const epics = project === 'product' ? { 'PROD-EPIC': productEpic() } : {};
+            const issueOverrides = longSummaries ? { summary: longStorySummary, parentSummary: longEpicSummary } : {};
+            const epicOverrides = longSummaries ? { summary: longEpicSummary } : {};
+            const issues = project === 'product' && !purpose ? [parentStory(issueOverrides)] : [];
+            const epics = project === 'product' ? { 'PROD-EPIC': productEpic(epicOverrides) } : {};
             return json({ issues, epics, epicsInScope: Object.values(epics), names: {} });
         }
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
@@ -354,6 +397,38 @@ async function installEngSubtasksFixture(page, calls, { subtaskResponse } = {}) 
         return json({});
     });
 }
+
+test('ENG long epic and story summaries stay contained and expose full names', async ({ page }) => {
+    const calls = [];
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await installEngSubtasksFixture(page, calls, { longSummaries: true });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        showPlanning: false,
+        showScenario: false,
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await expect(page.locator('.epic-link')).toHaveAttribute('title', longEpicSummary);
+    await expect(page.locator('.task-title a')).toHaveAttribute('title', longStorySummary);
+
+    const metrics = await collectLongTitleMetrics(page);
+    expect(metrics.epicNameLines).toBeLessThanOrEqual(2);
+    expect(metrics.storyTitleLines).toBeLessThanOrEqual(2);
+    expect(metrics.epicLink.right).toBeLessThan(metrics.epicMeta.x);
+    expect(metrics.epicMeta.right).toBeLessThanOrEqual(metrics.epicHeader.right + 1);
+    expect(metrics.storyTitle.right).toBeLessThan(metrics.storyInlineMeta.x);
+    expect(metrics.storyInlineMeta.right).toBeLessThanOrEqual(metrics.storyHeader.right + 1);
+
+    await waitForVisualSettled(page);
+    await page.screenshot({ path: `${screenshotDir}/long-title-contained.png`, fullPage: true });
+});
 
 async function runSubtaskFlow(page, viewport, screenshotName) {
     const calls = [];

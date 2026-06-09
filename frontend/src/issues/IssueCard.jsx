@@ -102,7 +102,13 @@ export default function IssueCard({
                     {renderPriorityIcon(task.fields.priority?.name, task.key)}
                     <h3 className="task-title">
                         {isIncomplete && <span className="task-incomplete-icon" title="Incomplete - work started but not finished this sprint">&#9680;</span>}
-                        <a href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'} target="_blank" rel="noopener noreferrer">
+                        <a
+                            href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={task.fields.summary || task.key}
+                            aria-label={task.fields.summary || task.key}
+                        >
                             {task.fields.summary}
                         </a>
                     </h3>

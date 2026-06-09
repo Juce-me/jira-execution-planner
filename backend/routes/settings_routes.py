@@ -98,6 +98,12 @@ def _resolve_bootstrap_view_config(auth_context):
         return None
 
 
+def _load_team_catalog_dashboard_config():
+    if config_storage_db_enabled() and not local_file_state_enabled():
+        return db_repository().load_dashboard_config(current_request_auth_context()) or {}
+    return load_dashboard_config() or {}
+
+
 @bp.route('/api/boards', methods=['GET'])
 def get_boards():
     """Fetch available boards from Jira API"""
@@ -479,6 +485,13 @@ def save_groups_preferences():
 @bp.route('/api/team-catalog', methods=['GET'])
 def get_team_catalog():
     """Return the team name catalog."""
+    if config_storage_db_enabled():
+        config = _load_team_catalog_dashboard_config()
+        team_catalog = config.get("teamCatalog") or {}
+        return jsonify({
+            "catalog": normalize_team_catalog(team_catalog.get("catalog") or {}),
+            "meta": normalize_team_catalog_meta(team_catalog.get("meta") or {}),
+        })
     migrate_team_catalog_from_config()
     data = load_team_catalog()
     return jsonify(data)
@@ -494,9 +507,23 @@ def post_team_catalog():
         'meta': normalize_team_catalog_meta(payload.get('meta') or {})
     }
     if merge:
-        existing = load_team_catalog()
+        if config_storage_db_enabled():
+            config = _load_team_catalog_dashboard_config()
+            team_catalog = config.get("teamCatalog") or {}
+            existing = {
+                "catalog": normalize_team_catalog(team_catalog.get("catalog") or {}),
+                "meta": normalize_team_catalog_meta(team_catalog.get("meta") or {}),
+            }
+        else:
+            existing = load_team_catalog()
         merged_catalog = {**existing['catalog'], **incoming['catalog']}
         incoming['catalog'] = merged_catalog
+    if config_storage_db_enabled():
+        config = _load_team_catalog_dashboard_config() or {"version": 1, "projects": {"selected": []}, "teamGroups": {}}
+        config["teamCatalog"] = incoming
+        save_dashboard_config(config)
+        saved = incoming
+        return jsonify(saved)
     saved = save_team_catalog_file(incoming)
     return jsonify(saved)
 

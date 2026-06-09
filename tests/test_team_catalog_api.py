@@ -2,8 +2,10 @@ import json
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from backend.routes import settings_routes
 from tests.auth_mode_test_utils import force_basic_auth_mode
 
 try:
@@ -98,6 +100,57 @@ class TestTeamCatalogAPI(unittest.TestCase):
         data = resp.get_json()
         self.assertIn('t1', data['catalog'])
         self.assertIn('t2', data['catalog'])
+
+    def test_db_stateless_team_catalog_get_does_not_touch_json_file(self):
+        repository = SimpleNamespace(
+            load_dashboard_config=lambda context: {
+                "teamCatalog": {
+                    "catalog": {"t1": {"id": "t1", "name": "Team One"}},
+                    "meta": {"source": "db"},
+                }
+            }
+        )
+        with patch.object(jira_server, "config_storage_db_enabled", return_value=True), \
+             patch.object(jira_server, "local_file_state_enabled", return_value=False), \
+             patch.object(settings_routes, "db_repository", return_value=repository), \
+             patch.object(jira_server, "current_request_auth_context", return_value=object()), \
+             patch.object(jira_server, "_load_dashboard_config_json", side_effect=AssertionError("json fallback forbidden")), \
+             patch.object(jira_server, "migrate_team_catalog_from_config", side_effect=AssertionError("json migration forbidden")), \
+             patch.object(jira_server, "load_team_catalog", side_effect=AssertionError("json load forbidden")):
+            response = self.client.get("/api/team-catalog")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["catalog"]["t1"]["name"], "Team One")
+
+    def test_db_team_catalog_post_updates_dashboard_config(self):
+        saved_configs = []
+
+        def save_config(config):
+            saved_configs.append(config)
+            return 'view-config-id'
+
+        repository = SimpleNamespace(
+            load_dashboard_config=lambda context: {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        )
+        payload = {
+            'catalog': {'t1': {'id': 't1', 'name': 'Team One'}},
+            'meta': {'updatedAt': '2026-03-06T00:00:00Z', 'source': 'sprint'}
+        }
+        with patch.object(jira_server, 'config_storage_db_enabled', return_value=True), \
+             patch.object(jira_server, 'local_file_state_enabled', return_value=False), \
+             patch.object(settings_routes, 'db_repository', return_value=repository), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=object()), \
+             patch.object(jira_server, '_load_dashboard_config_json', side_effect=AssertionError('json fallback forbidden')), \
+             patch.object(jira_server, 'save_dashboard_config', side_effect=save_config), \
+             patch.object(jira_server, 'save_team_catalog_file', side_effect=AssertionError('json save forbidden')):
+            response = self.client.post('/api/team-catalog',
+                                        data=json.dumps(payload),
+                                        content_type='application/json')
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data['catalog']['t1']['name'], 'Team One')
+        self.assertEqual(saved_configs[0]['teamCatalog']['catalog']['t1']['name'], 'Team One')
 
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')

@@ -38,6 +38,20 @@ class NetworkBindGuardTests(unittest.TestCase):
                 jira_server.validate_network_bind("0.0.0.0")
         self.assertEqual(raised.exception.code, "local_token_store_network_bind_not_allowed")
 
+    def test_oauth_db_mode_allows_secure_network_bind_without_local_token_store(self):
+        env = {
+            "ALLOW_NETWORK_BIND": "true",
+            "APP_ENVIRONMENT_KEY": "production",
+            "APP_ALLOWED_ORIGINS": "https://planner.example.test",
+            "FLASK_SECRET_KEY": "secret",
+            "OAUTH_LOCAL_TOKEN_STORE_ALLOWED": "false",
+            "SESSION_COOKIE_SECURE": "true",
+            "CONFIG_STORAGE_BACKEND": "db",
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.dict("os.environ", env, clear=False):
+            self.assertEqual(jira_server.validate_network_bind("0.0.0.0"), "0.0.0.0")
+
     def test_main_validates_bind_host_before_app_run(self):
         args = SimpleNamespace(
             jira_url=None,

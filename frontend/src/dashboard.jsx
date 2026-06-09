@@ -88,6 +88,7 @@ import {
     fetchDependencies as requestDependencies,
     fetchExcludedCapacityStatsSource as requestExcludedCapacityStatsSource,
 } from './api/engApi.js';
+import { resolveBackendUrl } from './api/backendUrl.js';
 import {
     fetchAppConfig,
     fetchVersionInfo,
@@ -210,11 +211,7 @@ import {
         });
 
         // Backend server URL
-        const DEFAULT_BACKEND_PORT = 5050;
-        const BACKEND_URL = window.BACKEND_URL ||
-            (window.location.protocol.startsWith('http')
-                ? `${window.location.protocol}//${window.location.hostname}:${DEFAULT_BACKEND_PORT}`
-                : `http://localhost:${DEFAULT_BACKEND_PORT}`);
+        const BACKEND_URL = resolveBackendUrl(window);
 
         function isBackendConnectionFailure(err) {
             if (!err || err.name === 'AbortError') return false;

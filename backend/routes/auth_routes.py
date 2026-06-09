@@ -4,7 +4,7 @@ import os
 
 from flask import Blueprint, jsonify, redirect, request, session
 
-from backend.auth.csrf import bind_csrf_token, issue_csrf_token
+from backend.auth.csrf import issue_csrf_token
 from backend.auth.jira_auth import ensure_oauth_token, missing_oauth_scopes
 from backend.epm import home as epm_home
 
@@ -325,6 +325,23 @@ def auth_service_credentials_page():
 def api_auth_csrf():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return jsonify({'csrfToken': issue_csrf_token(session, {})})
+    if database_storage_enabled() and db_oauth_browser_session_data():
+        try:
+            context = current_request_auth_context()
+            csrf_data = {
+                'db_auth_connection_id': context.auth_connection_id,
+                'db_token_version': context.token_version,
+                'account_id': context.atlassian_account_id,
+            }
+            token = issue_csrf_token(session, csrf_data)
+        except AuthError as error:
+            return auth_error_response(error, 401)
+        except DatabaseConfigurationError:
+            return jsonify({
+                'error': 'config_storage_unavailable',
+                'message': 'Database-backed authentication is unavailable.',
+            }), 503
+        return jsonify({'csrfToken': token})
     data = oauth_session_data()
     if not data.get('access_token') or not data.get('cloudid'):
         save_oauth_session({})
@@ -338,16 +355,6 @@ def api_auth_csrf():
     except AuthError as error:
         return auth_error_response(error, 401)
     token = issue_csrf_token(session, data)
-    if database_storage_enabled() and db_oauth_browser_session_data():
-        try:
-            bind_csrf_token(session, token, csrf_session_data_for_request())
-        except AuthError as error:
-            return auth_error_response(error, 401)
-        except DatabaseConfigurationError:
-            return jsonify({
-                'error': 'config_storage_unavailable',
-                'message': 'Database-backed authentication is unavailable.',
-            }), 503
     return jsonify({'csrfToken': token})
 
 
@@ -479,31 +486,46 @@ def api_dev_home_graphql_oauth_probe():
         return jsonify({'error': 'not_found'}), 404
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return jsonify({'error': 'oauth_required'}), 400
-    data = oauth_session_data()
-    if not data.get('access_token') or not data.get('cloudid'):
-        save_oauth_session({})
-        return jsonify({
-            'error': 'auth_required',
-            'message': 'Your Jira sign-in expired. Sign in again to continue.',
-            'loginUrl': '/login?reason=session_expired',
-        }), 401
-    try:
-        active = ensure_oauth_token(
-            current_auth_config(),
-            data,
-            save_oauth_session,
-            reload_session=oauth_session_data,
-            refresh_lock=oauth_refresh_lock(),
-        )
-    except AuthError as error:
-        if error.code == 'auth_required':
+    if database_storage_enabled() and db_oauth_browser_session_data():
+        try:
+            context = current_request_auth_context()
+            active = current_jira_session_data(context)
+            remember_db_oauth_browser_session(active)
+        except AuthError as error:
+            if error.code == 'auth_required':
+                save_oauth_session({})
+                return jsonify({
+                    'error': 'auth_required',
+                    'message': 'Your Jira sign-in expired. Sign in again to continue.',
+                    'loginUrl': '/login?reason=session_expired',
+                }), 401
+            return auth_error_response(error, 401)
+    else:
+        data = oauth_session_data()
+        if not data.get('access_token') or not data.get('cloudid'):
             save_oauth_session({})
             return jsonify({
                 'error': 'auth_required',
                 'message': 'Your Jira sign-in expired. Sign in again to continue.',
                 'loginUrl': '/login?reason=session_expired',
             }), 401
-        return auth_error_response(error, 401)
+        try:
+            active = ensure_oauth_token(
+                current_auth_config(),
+                data,
+                save_oauth_session,
+                reload_session=oauth_session_data,
+                refresh_lock=oauth_refresh_lock(),
+            )
+        except AuthError as error:
+            if error.code == 'auth_required':
+                save_oauth_session({})
+                return jsonify({
+                    'error': 'auth_required',
+                    'message': 'Your Jira sign-in expired. Sign in again to continue.',
+                    'loginUrl': '/login?reason=session_expired',
+                }), 401
+            return auth_error_response(error, 401)
 
     epm_config = get_epm_config()
     scope = epm_config.get('scope') or {}

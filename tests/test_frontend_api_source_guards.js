@@ -81,6 +81,39 @@ function assertJsonHeader(options) {
     assert.equal(headers.get('Content-Type'), 'application/json');
 }
 
+test('backend URL resolver uses same origin for hosted HTTP pages', () => {
+    const { resolveBackendUrl } = loadApiModule('backendUrl.js', ['resolveBackendUrl']);
+
+    assert.equal(resolveBackendUrl({
+        BACKEND_URL: '',
+        location: { protocol: 'https:', origin: 'https://planner.example.test' },
+    }), 'https://planner.example.test');
+
+    assert.equal(resolveBackendUrl({
+        BACKEND_URL: '',
+        location: { protocol: 'http:', origin: 'http://localhost:5051' },
+    }), 'http://localhost:5051');
+});
+
+test('backend URL resolver preserves explicit override and file fallback', () => {
+    const { resolveBackendUrl } = loadApiModule('backendUrl.js', ['resolveBackendUrl']);
+
+    assert.equal(resolveBackendUrl({
+        BACKEND_URL: 'https://api.example.test',
+        location: { protocol: 'https:', origin: 'https://planner.example.test' },
+    }), 'https://api.example.test');
+
+    assert.equal(resolveBackendUrl({
+        BACKEND_URL: '',
+        location: { protocol: 'file:', origin: 'null' },
+    }), 'http://localhost:5050');
+});
+
+test('dashboard no longer hardcodes 5050 for HTTP-served pages', () => {
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    assert.ok(!dashboardSource.includes('`${window.location.protocol}//${window.location.hostname}:${DEFAULT_BACKEND_PORT}`'));
+});
+
 test('EPM frontend modules do not call ENG, planning, or scenario endpoints', () => {
     const epmFiles = listSourceFiles(path.join(frontendSrcPath, 'epm'));
     assert.ok(epmFiles.length > 0, 'Expected EPM frontend modules to exist');

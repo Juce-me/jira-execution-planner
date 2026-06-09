@@ -289,6 +289,10 @@ class UserApiTokenConnectionTokenTests(unittest.TestCase):
         session_id = 'session-admin'
         with self.client.session_transaction() as flask_session:
             flask_session['atlassian_oauth_session_id'] = session_id
+            flask_session['db_oauth_session'] = {
+                'db_auth_connection_id': self.admin_connection_id,
+                'db_token_version': '1',
+            }
         jira_server.OAUTH_TOKEN_STORE[session_id] = {
             'access_token': 'access-123',
             'refresh_token': 'refresh-123',
@@ -406,6 +410,10 @@ class TestUserApiTokenConnections(unittest.TestCase):
         session_id = 'session-normal'
         with self.client.session_transaction() as flask_session:
             flask_session['atlassian_oauth_session_id'] = session_id
+            flask_session['db_oauth_session'] = {
+                'db_auth_connection_id': self.oauth_connection_id,
+                'db_token_version': '1',
+            }
         data = {
             'access_token': 'access-123',
             'refresh_token': 'refresh-123',
@@ -422,6 +430,10 @@ class TestUserApiTokenConnections(unittest.TestCase):
         }
         if email is not None:
             data['email'] = email
+            with self.factory() as session:
+                user = session.get(models.User, self.user_id)
+                user.email = email
+                session.commit()
         jira_server.OAUTH_TOKEN_STORE[session_id] = data
 
     def _env_patch(self):

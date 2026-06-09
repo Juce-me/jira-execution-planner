@@ -191,7 +191,57 @@ DB/OAuth EPM separates three storage concerns:
 
 Do not seed a Home/Townsquare service integration for the DB/OAuth EPM read path. The EPM tab appears only after the signed-in user connects their own Home token.
 
-## 8. Common Failures
+## 8. Internal Hosting Pre-SRE Checklist
+
+The repository provides a handoff skeleton for GitLab verification and container build. It deliberately does not ship production registry push, Helm values, Kubernetes manifests, or deployment jobs.
+
+Can prepare now:
+- Build the image with `docker build -t "$IMAGE_NAME:$CI_COMMIT_SHA" .` or the GitLab `container` stage, using the committed `Dockerfile`.
+- Run backend/frontend verification in CI: Python dependencies, editable install, `python -m unittest discover -s tests`, `npm ci`, `npm run build`, frontend unit tests, and the committed `frontend/dist` check.
+- Keep hosted env values owned by the runtime platform: app secrets, Atlassian OAuth settings, token encryption, DB URL, allowed origins, and optional GA4 values.
+
+Container env contract:
+
+```env
+APP_ENVIRONMENT_KEY=production
+PORT=5050
+APP_BIND_HOST=0.0.0.0
+ALLOW_NETWORK_BIND=true
+JIRA_URL=https://your-company.atlassian.net
+JIRA_AUTH_MODE=atlassian_oauth
+CONFIG_STORAGE_BACKEND=db
+DATABASE_URL=<postgresql-url-from-secret>
+ATLASSIAN_CLIENT_ID=<from-secret>
+ATLASSIAN_CLIENT_SECRET=<from-secret>
+ATLASSIAN_REDIRECT_URI=<https-origin>/api/auth/atlassian/callback
+SESSION_COOKIE_SECURE=true
+APP_ALLOWED_ORIGINS=<https-origin>
+FLASK_SECRET_KEY=<from-secret>
+TOKEN_ENCRYPTION_KEY_SOURCE=env
+TOKEN_ENCRYPTION_MASTER_KEY_B64=<from-secret>
+TOKEN_ENCRYPTION_KEY_ID=<key-id>
+OAUTH_LOCAL_TOKEN_STORE_ALLOWED=false
+LOCAL_FILE_STATE_ENABLED=false
+SCENARIO_DRAFT_LEGACY_IMPORT_ENABLED=false
+RUN_DB_MIGRATIONS=false
+GA4_ENABLED=false
+```
+
+`PORT=5050` is the container/Gunicorn listener port used by `scripts/docker-entrypoint.sh`; source-checkout Flask runs still use `SERVER_PORT` unless a command-line port is supplied. The Docker image defaults to `APP_BIND_HOST=0.0.0.0` and `ALLOW_NETWORK_BIND=true` so GCP service networking can reach Gunicorn; startup preflight still fails closed unless hosted OAuth sits behind HTTPS ingress, sets `SESSION_COOKIE_SECURE=true`, uses a real `FLASK_SECRET_KEY`, and provides `APP_ALLOWED_ORIGINS` for the exact HTTPS origin.
+
+Use `RUN_DB_MIGRATIONS=true` only when a single app container is the agreed migration owner for an internal deployment. For multi-replica deployments, run Alembic in a separate release job or init step, then start web containers with `RUN_DB_MIGRATIONS=false`.
+
+OAuth2 Proxy may protect the ingress perimeter, but it does not replace app-level Atlassian OAuth. The app still needs Atlassian OAuth 2.0 (3LO) for Jira REST reads and the per-user Home token connection for Home/Townsquare EPM metadata.
+
+Needs SRE ownership or confirmation:
+- GitLab group/repo path, registry/image path, runner build method, default branch/tag policy, and the exact point when image push may be enabled with `PUSH_IMAGE=true`.
+- Internal hostname, TLS/proxy termination, OAuth2 Proxy policy, Atlassian redirect/callback URL registration, secure cookie settings, and `APP_ALLOWED_ORIGINS`.
+- PostgreSQL provisioning, migration execution owner, durable persistence, log retention, backup/restore ownership, resource limits, and readiness/liveness probe policy.
+
+Blocked until deployment reference:
+- Production registry credentials/path, secret references, migration release strategy, Helm or Kubernetes values, namespace/routing/VPN/proxy details, TLS secret names, and real release jobs.
+
+## 9. Common Failures
 
 `DATABASE_URL is required when CONFIG_STORAGE_BACKEND=db`
 

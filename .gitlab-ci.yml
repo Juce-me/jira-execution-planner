@@ -1,0 +1,64 @@
+stages:
+  - verify
+  - container
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  JIRA_AUTH_MODE: "basic"
+  CONFIG_STORAGE_BACKEND: "jsonfile"
+  APP_ENVIRONMENT_KEY: "local"
+  JIRA_URL: "https://example.atlassian.net"
+  JIRA_EMAIL: "ci@example.invalid"
+  JIRA_TOKEN: "ci-placeholder"
+  IMAGE_NAME: "$CI_REGISTRY_IMAGE"
+  PUSH_IMAGE: "false"
+
+cache:
+  key:
+    files:
+      - package-lock.json
+      - requirements.txt
+  paths:
+    - .npm/
+    - .cache/pip/
+
+verify:
+  image: python:3.11-bookworm
+  stage: verify
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends ca-certificates curl git
+    - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    - apt-get install -y --no-install-recommends nodejs
+    - python -m pip install --upgrade pip
+    - python -m pip install -r requirements.txt
+    - python -m pip install -e .
+    - npm ci --cache .npm --prefer-offline
+  script:
+    - python -m unittest discover -s tests
+    - npm run build
+    - npm run test:frontend:unit
+    - git diff --exit-code frontend/dist
+
+container_build:
+  image: docker:27
+  stage: container
+  when: manual
+  allow_failure: true
+  services:
+    - docker:27-dind
+  needs:
+    - verify
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - test -n "${IMAGE_NAME:-}" || (echo "IMAGE_NAME is required for container builds" && exit 1)
+    - docker build --pull -f Dockerfile -t "$IMAGE_NAME:$CI_COMMIT_SHA" .
+    - |
+      if [ "$PUSH_IMAGE" = "true" ]; then
+        test -n "${CI_REGISTRY:-}" || (echo "CI_REGISTRY is required when PUSH_IMAGE=true" && exit 1)
+        case "$IMAGE_NAME" in "$CI_REGISTRY"/*) ;; *) echo "IMAGE_NAME must start with CI_REGISTRY when PUSH_IMAGE=true" && exit 1 ;; esac
+        echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+        docker push "$IMAGE_NAME:$CI_COMMIT_SHA"
+      fi

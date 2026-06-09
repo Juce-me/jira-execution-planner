@@ -33,6 +33,12 @@ def oauth_session_payload(**overrides):
 def install_oauth_session(client, session_id="session-1", **overrides):
     with client.session_transaction() as flask_session:
         flask_session["atlassian_oauth_session_id"] = session_id
+        connection_id = str(overrides.get("db_auth_connection_id") or "").strip()
+        if connection_id:
+            flask_session["db_oauth_session"] = {"db_auth_connection_id": connection_id}
+            token_version = str(overrides.get("db_token_version") or "").strip()
+            if token_version:
+                flask_session["db_oauth_session"]["db_token_version"] = token_version
     jira_server.OAUTH_TOKEN_STORE[session_id] = oauth_session_payload(**overrides)
     jira_server.OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
 

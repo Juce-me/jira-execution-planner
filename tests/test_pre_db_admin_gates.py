@@ -9,9 +9,12 @@ class PreDbToolAdminGateTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
+        self.env_patch = patch.dict("os.environ", {"CONFIG_STORAGE_BACKEND": "jsonfile"}, clear=False)
+        self.env_patch.start()
         self.client = jira_server.app.test_client()
 
     def tearDown(self):
+        self.env_patch.stop()
         jira_server.OAUTH_TOKEN_STORE.clear()
         jira_server.OAUTH_REFRESH_LOCKS.clear()
 

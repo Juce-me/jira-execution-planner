@@ -3,15 +3,16 @@ import unittest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DOC_PATHS = [
-    REPO_ROOT / ".env.example",
-    REPO_ROOT / "README.md",
-    REPO_ROOT / "INSTALL.md",
-    REPO_ROOT / "QUICKSTART_ENV.txt",
-    REPO_ROOT / "docs" / "SUPPORT-atlassian-oauth-setup.md",
-    REPO_ROOT / "docs" / "plans" / "README.md",
-    REPO_ROOT / "AGENTS.md",
-]
+HOSTED_ENV_TERMS = (
+    "PORT=5050",
+    "TOKEN_ENCRYPTION_KEY_SOURCE=env",
+    "LOCAL_FILE_STATE_ENABLED=false",
+    "SESSION_COOKIE_SECURE=true",
+    "APP_ALLOWED_ORIGINS",
+    "ATLASSIAN_REDIRECT_URI",
+    "RUN_DB_MIGRATIONS",
+    "JIRA_URL",
+)
 
 FORBIDDEN_DB_OAUTH_EPM_ENV_NAMES = (
     "JIRA_" + "EMAIL",
@@ -19,6 +20,14 @@ FORBIDDEN_DB_OAUTH_EPM_ENV_NAMES = (
     "ATLASSIAN_" + "EMAIL",
     "ATLASSIAN_" + "API_" + "TOKEN",
 )
+
+
+def _section(text, heading):
+    start = text.index(heading)
+    next_heading = text.find("\n## ", start + len(heading))
+    if next_heading == -1:
+        return text[start:]
+    return text[start:next_heading]
 
 
 class EnvConfigDocsTests(unittest.TestCase):
@@ -45,13 +54,32 @@ class EnvConfigDocsTests(unittest.TestCase):
                 self.assertIn("OpenSSL 1.1.1+", text)
                 self.assertIn("LibreSSL", text)
 
-    def test_db_oauth_epm_docs_do_not_reference_basic_credential_env_names(self):
-        offenders = []
-        for path in DOC_PATHS:
+    def test_hosted_container_env_contract_is_documented(self):
+        docs = (
+            REPO_ROOT / ".env.example",
+            REPO_ROOT / "README.md",
+            REPO_ROOT / "INSTALL.md",
+        )
+
+        for path in docs:
             text = path.read_text(encoding="utf8")
+            for env_term in HOSTED_ENV_TERMS:
+                with self.subTest(path=path.relative_to(REPO_ROOT), env_term=env_term):
+                    self.assertIn(env_term, text)
+
+    def test_hosted_db_oauth_sections_do_not_tell_users_to_set_basic_credentials(self):
+        section_by_path = {
+            REPO_ROOT / "README.md": "## Internal Hosting",
+            REPO_ROOT / "INSTALL.md": "## 8. Internal Hosting",
+            REPO_ROOT / ".env.example": "# Container/internal hosting profile",
+        }
+
+        offenders = []
+        for path, heading in section_by_path.items():
+            hosted_section = _section(path.read_text(encoding="utf8"), heading)
             for env_name in FORBIDDEN_DB_OAUTH_EPM_ENV_NAMES:
-                if env_name in text:
-                    offenders.append(f"{path.relative_to(REPO_ROOT)} contains {env_name}")
+                if env_name in hosted_section:
+                    offenders.append(f"{path.relative_to(REPO_ROOT)} hosted section contains {env_name}")
 
         self.assertEqual(offenders, [])
 

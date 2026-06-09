@@ -203,6 +203,16 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         self.assertIsNone(response.get_json()['activeDraft'])
         loader.assert_not_called()
 
+    def test_get_active_draft_stateless_mode_skips_legacy_import(self):
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'local_file_state_enabled', return_value=False), \
+             self._route_patch(self.context), \
+             patch.object(jira_server, 'load_scenario_overrides', side_effect=AssertionError('legacy loader must not run')):
+            response = self.client.get('/api/scenario/drafts?scope_key=scope-stateless')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertIsNone(response.get_json()['activeDraft'])
+
     def test_post_create_first_draft_allows_null_base_revision(self):
         payload = {'scope_key': 'scope-create', 'name': 'Create', 'overrides': {'ENG-1': {'start': '2026-05-18'}}, 'baseDraftRevision': None, 'scope': {'groupId': 'platform'}}
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), self._route_patch():

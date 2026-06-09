@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.db import engine as db_engine
 from backend.db import models
+from backend import runtime_state
 
 
 MEMBERSHIP_SCOPE_KEYS = {
@@ -995,11 +996,17 @@ def _serialize_datetime(value):
 
 def _legacy_import_allowed(session, context):
     env = getattr(context, 'environ', None) or os.environ
+    if not _scenario_legacy_import_enabled(env):
+        return False
     explicit_workspace = str(env.get('SCENARIO_DRAFT_LEGACY_IMPORT_WORKSPACE_ID') or '').strip()
     if explicit_workspace:
         return explicit_workspace == context.workspace_id
     workspace_count = session.execute(select(func.count()).select_from(models.Workspace)).scalar_one()
     return int(workspace_count or 0) == 1
+
+
+def _scenario_legacy_import_enabled(env):
+    return runtime_state.scenario_legacy_import_enabled(env)
 
 
 def _import_legacy_scope(session, context, scope_key, legacy_loader):

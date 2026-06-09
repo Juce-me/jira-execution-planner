@@ -244,6 +244,56 @@ Run the local CI-style verification path before preparing a PR:
 make verify
 ```
 
+## Internal Hosting Pre-SRE Checklist
+
+This repo now ships a GitLab CI skeleton for verification and container image build only. It does not include production registry push, release, or deployment automation.
+
+Can prepare now:
+- Build the container from `Dockerfile`, keep `frontend/dist` current, run startup preflight, and expose `/health` as shallow liveness.
+- Run GitLab verify/container stages that install backend/frontend dependencies, run tests/builds, and tag the image with `CI_COMMIT_SHA`.
+- Keep runtime env ownership explicit: app secrets, Atlassian OAuth settings, DB URL, token encryption, GA4 toggles, and local defaults remain outside the image.
+
+Container env contract:
+
+```env
+APP_ENVIRONMENT_KEY=production
+PORT=5050
+APP_BIND_HOST=0.0.0.0
+ALLOW_NETWORK_BIND=true
+JIRA_URL=https://your-company.atlassian.net
+JIRA_AUTH_MODE=atlassian_oauth
+CONFIG_STORAGE_BACKEND=db
+DATABASE_URL=<postgresql-url-from-secret>
+ATLASSIAN_CLIENT_ID=<from-secret>
+ATLASSIAN_CLIENT_SECRET=<from-secret>
+ATLASSIAN_REDIRECT_URI=<https-origin>/api/auth/atlassian/callback
+SESSION_COOKIE_SECURE=true
+APP_ALLOWED_ORIGINS=<https-origin>
+FLASK_SECRET_KEY=<from-secret>
+TOKEN_ENCRYPTION_KEY_SOURCE=env
+TOKEN_ENCRYPTION_MASTER_KEY_B64=<from-secret>
+TOKEN_ENCRYPTION_KEY_ID=<key-id>
+OAUTH_LOCAL_TOKEN_STORE_ALLOWED=false
+LOCAL_FILE_STATE_ENABLED=false
+SCENARIO_DRAFT_LEGACY_IMPORT_ENABLED=false
+RUN_DB_MIGRATIONS=false
+GA4_ENABLED=false
+```
+
+`PORT=5050` is the container/Gunicorn listener port. `SERVER_PORT` remains a local Flask compatibility setting for source-checkout runs. The Docker image defaults to `APP_BIND_HOST=0.0.0.0` and `ALLOW_NETWORK_BIND=true` so GCP service networking can reach Gunicorn; startup preflight still fails closed unless hosted OAuth sets `SESSION_COOKIE_SECURE=true`, a real `FLASK_SECRET_KEY`, and an explicit `APP_ALLOWED_ORIGINS` value matching the HTTPS origin.
+
+For migrations, use `RUN_DB_MIGRATIONS=true` only for a single-instance internal deployment where the app container is the agreed migration owner. For multi-replica deployments, run Alembic as a separate release job or init step before rolling out app replicas, and keep `RUN_DB_MIGRATIONS=false` on the web containers.
+
+OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads require the user's connected Home token stored encrypted in DB.
+
+Needs SRE ownership or confirmation:
+- GitLab project path, registry/image path, runner container-build method, branch/tag policy, and when `PUSH_IMAGE=true` may be enabled.
+- Hosted HTTPS origin, Atlassian OAuth redirect/callback registration, OAuth2 Proxy boundary, TLS termination, secure cookie settings, and `APP_ALLOWED_ORIGINS`.
+- PostgreSQL provisioning, migration owner, persistence/backups, log retention, resource limits, and production readiness probe policy.
+
+Blocked until deployment reference:
+- Production registry credentials/path, secret references, migration release strategy, Helm or Kubernetes values, namespace/routing/VPN/proxy details, TLS secret names, and real release jobs.
+
 ## 🔧 How it works
 
 1. **Backend** (`jira_server.py`):

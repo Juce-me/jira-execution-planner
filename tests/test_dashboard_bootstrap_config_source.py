@@ -1,6 +1,5 @@
 import os
 import tempfile
-import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -87,20 +86,10 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
             connection_id = connection.id
 
         with client.session_transaction() as flask_session:
-            flask_session['atlassian_oauth_session_id'] = 'session-normal'
-        jira_server.OAUTH_TOKEN_STORE['session-normal'] = {
-            'access_token': 'access-123',
-            'refresh_token': 'refresh-123',
-            'expires_at': time.time() + 3600,
-            'scope': FULL_SCOPE,
-            'cloudid': 'cloud-1',
-            'site_url': 'https://example.atlassian.net',
-            'account_id': 'normal-account',
-            'account_status': 'active',
-            'db_auth_connection_id': connection_id,
-            'db_token_version': '1',
-            'stored_at': time.time(),
-        }
+            flask_session['db_oauth_session'] = {
+                'db_auth_connection_id': connection_id,
+                'db_token_version': '1',
+            }
 
         with patch.dict(os.environ, {
             'CONFIG_STORAGE_BACKEND': 'db',

@@ -203,7 +203,10 @@ async function installPlanningFixture(page) {
 }
 
 async function openFuturePlanning(page) {
-    await page.locator('.sprint-dropdown').first().click();
+    const sprintDropdown = page.locator('.sprint-dropdown').first();
+    const sprintToggle = sprintDropdown.locator('.sprint-dropdown-toggle');
+    await expect(sprintToggle).toHaveAttribute('aria-disabled', 'false');
+    await sprintToggle.click();
     await page.locator('.sprint-dropdown-option', { hasText: futureSprintName }).click();
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();

@@ -19,13 +19,15 @@ test('planning action row includes postponed and awaiting validation bulk action
 
 test('planning action row includes select all for currently visible planning tasks', () => {
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const helperPath = path.resolve(__dirname, '../frontend/src/eng/planningSelectionActions.js');
     const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningActionBar.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');
+    const helperSource = fs.readFileSync(helperPath, 'utf8');
     const componentSource = fs.readFileSync(componentPath, 'utf8');
 
-    assert.match(source, /const selectAllVisiblePlanningTasks = \(\) => \{/);
-    assert.match(source, /visibleTasksForList\.forEach\(task => \{/);
-    assert.match(source, /next\[task\.key\] = true;/);
+    assert.match(helperSource, /selectAllVisiblePlanningTasks\(\) \{/);
+    assert.match(helperSource, /selectAllVisiblePlanningTasksMap\(visibleTasksForList\)/);
+    assert.match(helperSource, /next\[task\.key\] = true;/);
     assert.match(source, /hasVisiblePlanningTasks=\{visibleTasksForList\.length > 0\}/);
     assert.match(componentSource, /onSelectAllVisible/);
     assert.match(componentSource, /disabled=\{!hasVisiblePlanningTasks\}/);
@@ -34,14 +36,16 @@ test('planning action row includes select all for currently visible planning tas
 
 test('planning action row exposes undo for bulk selection changes', () => {
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const helperPath = path.resolve(__dirname, '../frontend/src/eng/planningSelectionActions.js');
     const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningActionBar.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');
+    const helperSource = fs.readFileSync(helperPath, 'utf8');
     const componentSource = fs.readFileSync(componentPath, 'utf8');
 
-    assert.match(source, /const undoPlanningSelectionChange = \(\) => \{/);
+    assert.match(helperSource, /undoPlanningSelectionChange\(\) \{/);
     assert.match(source, /canUndoPlanningSelection=\{canUndoPlanningSelection\}/);
     assert.match(source, /onUndoPlanningSelection=\{undoPlanningSelectionChange\}/);
-    assert.match(source, /trackPlanningSelection\('undo_selection'/);
+    assert.match(helperSource, /trackPlanningSelection\('undo_selection'/);
     assert.match(componentSource, /canUndoPlanningSelection/);
     assert.match(componentSource, /onUndoPlanningSelection/);
     assert.match(componentSource, /disabled=\{!canUndoPlanningSelection\}/);
@@ -59,7 +63,7 @@ test('planning selection persistence effect is declared after selectionTasks', (
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');
     const selectionTasksIndex = source.indexOf('const selectionTasks = baseFilteredTasks;');
-    const effectIndex = source.indexOf('savePlanningState(window.localStorage, planningScopeKey, {');
+    const effectIndex = source.indexOf('persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey');
 
     assert.notEqual(selectionTasksIndex, -1);
     assert.notEqual(effectIndex, -1);

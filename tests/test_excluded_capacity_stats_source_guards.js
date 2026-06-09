@@ -10,6 +10,7 @@ const cssSource = readDashboardCssSource(repoRoot);
 const lineChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'ExcludedCapacityLineChart.jsx'), 'utf8');
 const effortSplitChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'EffortTypeSplitChart.jsx'), 'utf8');
 const hoverBubblePositionSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'ui', 'hoverBubblePosition.js'), 'utf8');
+const sharedExcludedToggleSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'settings', 'sharedExcludedCapacityToggle.js'), 'utf8');
 
 test('dashboard wires excluded-capacity analytics into the existing Statistics view', () => {
     assert.ok(
@@ -586,27 +587,27 @@ test('excluded-capacity controls reserve the wide column for the epic filter', (
 
 test('planning and reporting excluded capacity are backed by shared group config', () => {
     assert.ok(
-        dashboardSource.includes('buildGroupsConfigWithExcludedCapacityToggle'),
+        sharedExcludedToggleSource.includes('buildGroupsConfigWithExcludedCapacityToggle'),
         'Expected dashboard to use the shared group excluded-capacity toggle helper'
     );
     assert.ok(
-        dashboardSource.includes("trackSettingsAction('departments', 'toggle_excluded_capacity'"),
+        sharedExcludedToggleSource.includes("trackSettingsAction('departments', 'toggle_excluded_capacity'"),
         'Expected shared excluded-capacity toggles to emit settings_action analytics'
     );
     assert.ok(
-        dashboardSource.includes('requestSaveGroupsConfig(BACKEND_URL, buildSharedGroupsPayload(nextGroupsConfig))'),
+        sharedExcludedToggleSource.includes('requestSaveGroupsConfig(backendUrl, buildSharedGroupsPayload(nextGroupsConfig))'),
         'Expected excluded-capacity toggle to save through /api/groups-config'
     );
     assert.ok(
-        dashboardSource.includes('showGroupManage && isGroupDraftDirty'),
+        sharedExcludedToggleSource.includes('showGroupManage && isGroupDraftDirty'),
         'Expected inline excluded-capacity toggles to guard against open dirty Department settings drafts'
     );
     assert.ok(
-        dashboardSource.includes("setGroupDraftError('Save or discard open Department settings changes before changing excluded capacity from the board.')"),
+        sharedExcludedToggleSource.includes("setGroupDraftError('Save or discard open Department settings changes before changing excluded capacity from the board.')"),
         'Expected dirty draft guard to tell users how to recover'
     );
     assert.ok(
-        dashboardSource.includes('applySavedGroupsConfig(payload)'),
+        sharedExcludedToggleSource.includes('applySavedGroupsConfig(payload)'),
         'Expected shared group saves to reuse the same config application helper'
     );
     assert.ok(

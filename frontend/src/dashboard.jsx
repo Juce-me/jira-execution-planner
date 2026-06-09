@@ -26,6 +26,7 @@ import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam } from './eng/engTaskUtils.js';
+import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import {
@@ -113,13 +114,13 @@ import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.
 import {
     applyLocalGroupPreferences,
     buildGroupId,
-    buildGroupsConfigWithExcludedCapacityToggle,
     buildTeamCatalogList,
     mergeTeamCatalog,
     normalizeGroupsConfig,
     parseTeamIdList,
     resolveInitialGroupId
 } from './settings/groupConfigUtils.js';
+import { saveSharedExcludedCapacityToggle } from './settings/sharedExcludedCapacityToggle.js';
 import { useGroupVisibilityPreferences } from './settings/useGroupVisibilityPreferences.js';
 import {
     buildSharedGroupsPayload,
@@ -195,9 +196,7 @@ import {
     buildPlanningScopeKey,
     hasPlanningState,
     loadPlanningState,
-    resolvePlanningSelectionState,
-    resolvePlanningTeamSelection,
-    savePlanningState
+    resolvePlanningTeamSelection
 } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
@@ -4332,17 +4331,6 @@ import {
                 if (selectedSprint === null || !activeGroupId) return '';
                 return buildTeamSelectionScopeKey({ sprintId: selectedSprint, groupId: activeGroupId });
             }, [selectedSprint, activeGroupId]);
-            const selectedTaskMapFromKeys = (keys) => {
-                const next = {};
-                (keys || []).forEach((key) => {
-                    const normalizedKey = String(key || '').trim();
-                    if (normalizedKey) {
-                        next[normalizedKey] = true;
-                    }
-                });
-                return next;
-            };
-
             const buildDefaultGroupState = (groupId) => {
                 const hasStoredPlanningState = planningScopeKey
                     ? hasPlanningState(window.localStorage, planningScopeKey)
@@ -9589,41 +9577,18 @@ import {
                 if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
                 if (!tasksFetched || productTasksLoading || techTasksLoading) return;
 
-                const validTaskKeySet = new Set(
-                    (selectionTasks || [])
-                        .map(task => String(task?.key || '').trim())
-                        .filter(Boolean)
-                );
-                const validTeamIds = teamOptions
-                    .map(team => String(team?.id || '').trim())
-                    .filter(id => id && id !== 'all');
-
-                const currentSelectedTaskKeys = Object.keys(selectedTasks || {})
-                    .filter(key => selectedTasks[key] && validTaskKeySet.has(key))
-                    .sort();
-                const currentPlanningState = {
-                    selectedTaskKeys: currentSelectedTaskKeys,
+                const { validTaskKeySet, nextSelectedTaskKeys, nextSelectionMode, nextSelectedTeams } = resolvePlanningSelectionForDashboard({
+                    selectedTasks,
                     selectedTeams,
-                    selectionMode: planningSelectionMode
-                };
-                const resolvedPlanningState = resolvePlanningSelectionState({
-                    hasStoredState: true,
-                    storedState: currentPlanningState,
-                    isFutureSprint: isFutureSprintSelected,
-                    validTaskKeys: validTaskKeySet,
-                    validTeamIds: new Set(validTeamIds)
-                });
-                const nextSelectedTaskKeys = resolvedPlanningState.selectedTaskKeys;
-                const nextSelectionMode = resolvedPlanningState.selectionMode;
-                const nextSelectedTeams = sanitizeSelectedTeamsForScope(resolvedPlanningState.selectedTeams, {
+                    planningSelectionMode,
+                    isFutureSprintSelected,
+                    selectionTasks,
+                    teamOptions,
                     activeGroupTeamIds,
-                    availableTeamIds: validTeamIds
                 });
 
                 setSelectedTasks(prev => {
-                    const prevKeys = Object.keys(prev || {})
-                        .filter(key => prev[key] && validTaskKeySet.has(key))
-                        .sort();
+                    const prevKeys = selectedTaskKeysFromMap(prev, validTaskKeySet);
                     const sameLength = prevKeys.length === nextSelectedTaskKeys.length;
                     const sameKeys = sameLength && prevKeys.every((key, index) => key === nextSelectedTaskKeys[index]);
                     return sameKeys ? prev : selectedTaskMapFromKeys(nextSelectedTaskKeys);
@@ -9638,11 +9603,7 @@ import {
 
                 setPlanningSelectionMode(prev => prev === nextSelectionMode ? prev : nextSelectionMode);
 
-                savePlanningState(window.localStorage, planningScopeKey, {
-                    selectedTaskKeys: nextSelectedTaskKeys,
-                    selectedTeams: nextSelectedTeams,
-                    selectionMode: nextSelectionMode
-                });
+                persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys), selectionMode: nextSelectionMode, selectedTeams: nextSelectedTeams, normalizeSelectedTeams });
 
                 if (planningBaselineScopeRef.current !== planningScopeKey) {
                     planningLoadedSelectionRef.current = {
@@ -10444,194 +10405,48 @@ import {
                 };
             }, [dependencyFocus, dependencyLookupCache]);
 
-            const toggleTaskSelection = (taskKey) => {
-                const newSelected = { ...selectedTasks };
-                if (newSelected[taskKey]) {
-                    delete newSelected[taskKey];
-                } else {
-                    newSelected[taskKey] = true;
-                }
-                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-                persistPlanningSelectionState(newSelected, PLANNING_SELECTION_MODE_MANUAL);
-                setSelectedTasks(newSelected);
-                trackPlanningSelection('toggle_task', newSelected, selectionTasks);
-            };
-
-            const markPlanningBulkSelectionChanged = () => {
-                if (planningLoadedSelectionRef.current?.scopeKey === planningScopeKey) {
-                    setCanUndoPlanningSelection(true);
-                }
-            };
-
-            const persistPlanningSelectionState = (nextSelectedTasks, nextSelectionMode, nextSelectedTeams = selectedTeams) => {
-                if (!planningScopeKey) return;
-                const selectedTaskKeys = Object.keys(nextSelectedTasks || {})
-                    .filter(key => nextSelectedTasks[key])
-                    .sort();
-                savePlanningState(window.localStorage, planningScopeKey, {
-                    selectedTaskKeys,
-                    selectedTeams: normalizeSelectedTeams(nextSelectedTeams),
-                    selectionMode: nextSelectionMode
-                });
-            };
-
-            const clearSelectedTasks = () => {
-                markPlanningBulkSelectionChanged();
-                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-                persistPlanningSelectionState({}, PLANNING_SELECTION_MODE_MANUAL);
-                setSelectedTasks({});
-                trackPlanningSelection('clear_selection', {}, selectionTasks);
-            };
-
-            const selectAllVisiblePlanningTasks = () => {
-                markPlanningBulkSelectionChanged();
-                const next = {};
-                visibleTasksForList.forEach(task => {
-                    if (task?.key) {
-                        next[task.key] = true;
-                    }
-                });
-                setPlanningSelectionMode(isFutureSprintSelected ? PLANNING_SELECTION_MODE_DEFAULT_ALL : PLANNING_SELECTION_MODE_MANUAL);
-                persistPlanningSelectionState(next, isFutureSprintSelected ? PLANNING_SELECTION_MODE_DEFAULT_ALL : PLANNING_SELECTION_MODE_MANUAL);
-                setSelectedTasks(next);
-                trackPlanningSelection('select_all_visible', next, selectionTasks);
-            };
-
-            const selectPlanningTasksByStatus = (statuses) => {
-                const allowed = new Set((statuses || []).map(normalizeStatus));
-                const next = {};
-                selectionTasks.forEach(task => {
-                    const status = normalizeStatus(task.fields.status?.name);
-                    if (allowed.has(status)) {
-                        next[task.key] = true;
-                    }
-                });
-                markPlanningBulkSelectionChanged();
-                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-                persistPlanningSelectionState(next, PLANNING_SELECTION_MODE_MANUAL);
-                setSelectedTasks(next);
-                trackPlanningSelection('select_status', next, selectionTasks);
-            };
-
-            const includePlanningTasksByStatus = (statuses) => {
-                const allowed = new Set((statuses || []).map(normalizeStatus));
-                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-                setSelectedTasks(prev => {
-                    const next = { ...prev };
-                    selectionTasks.forEach(task => {
-                        const status = normalizeStatus(task.fields.status?.name);
-                        if (allowed.has(status)) {
-                            next[task.key] = true;
-                        }
-                    });
-                    persistPlanningSelectionState(next, PLANNING_SELECTION_MODE_MANUAL);
-                    return next;
-                });
-            };
-
-            const toggleIncludeByStatus = (statuses) => {
-                const allowed = new Set((statuses || []).map(normalizeStatus));
-                const next = { ...selectedTasks };
-                const matching = selectionTasks.filter(task =>
-                    allowed.has(normalizeStatus(task.fields.status?.name))
-                );
-                const allSelected = matching.length > 0 && matching.every(task => selectedTasks[task.key]);
-                matching.forEach(task => {
-                    if (allSelected) {
-                        delete next[task.key];
-                    } else {
-                        next[task.key] = true;
-                    }
-                });
-                markPlanningBulkSelectionChanged();
-                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-                persistPlanningSelectionState(next, PLANNING_SELECTION_MODE_MANUAL);
-                setSelectedTasks(next);
-                trackPlanningSelection(allSelected ? 'exclude_status' : 'include_status', next, selectionTasks);
-            };
-
-            const undoPlanningSelectionChange = () => {
-                const baseline = planningLoadedSelectionRef.current;
-                if (!baseline || baseline.scopeKey !== planningScopeKey) return;
-                const nextSelectedTasks = baseline.selectedTasks || {};
-                const nextSelectionMode = baseline.selectionMode || PLANNING_SELECTION_MODE_MANUAL;
-                setSelectedTasks(nextSelectedTasks);
-                setPlanningSelectionMode(nextSelectionMode);
-                persistPlanningSelectionState(nextSelectedTasks, nextSelectionMode);
-                setCanUndoPlanningSelection(false);
-                trackPlanningSelection('undo_selection', nextSelectedTasks, selectionTasks);
-            };
+            const {
+                toggleTaskSelection,
+                clearSelectedTasks,
+                selectAllVisiblePlanningTasks,
+                selectPlanningTasksByStatus,
+                includePlanningTasksByStatus,
+                toggleIncludeByStatus,
+                undoPlanningSelectionChange
+            } = createPlanningSelectionHandlers({
+                storage: window.localStorage,
+                planningScopeKey,
+                selectedTasks,
+                selectedTeams,
+                selectionTasks,
+                visibleTasksForList,
+                isFutureSprintSelected,
+                normalizeStatus,
+                normalizeSelectedTeams,
+                setPlanningSelectionMode,
+                setCanUndoPlanningSelection,
+                setSelectedTasks,
+                trackPlanningSelection,
+                planningLoadedSelectionRef
+            });
 
             const canToggleSharedGroupExcludedCapacity = canEditSharedConfiguration && !(showGroupManage && isGroupDraftDirty);
 
-            const toggleSharedGroupExcludedCapacityEpic = async (epicKey) => {
-                const normalizedEpicKey = String(epicKey || '').trim().toUpperCase();
-                if (!normalizedEpicKey || !activeGroupId) return;
-                const sourceSurface = showPlanning ? 'planning' : 'statistics';
-                if (!canEditSharedConfiguration) {
-                    setGroupDraftError('You do not have permission to edit shared department configuration.');
-                    trackSettingsAction('departments', 'toggle_excluded_capacity', {
-                        source_surface: sourceSurface,
-                        result: 'failure'
-                    });
-                    return;
-                }
-                if (showGroupManage && isGroupDraftDirty) {
-                    setGroupDraftError('Save or discard open Department settings changes before changing excluded capacity from the board.');
-                    trackSettingsAction('departments', 'toggle_excluded_capacity', {
-                        source_surface: sourceSurface,
-                        result: 'failure'
-                    });
-                    return;
-                }
-
-                const { config: nextGroupsConfig, changed, nextExcluded } = buildGroupsConfigWithExcludedCapacityToggle(
-                    groupsConfig,
-                    activeGroupId,
-                    normalizedEpicKey
-                );
-                if (!changed) return;
-
-                setGroupDraftError('');
-                trackSettingsAction('departments', 'toggle_excluded_capacity', {
-                    source_surface: sourceSurface,
-                    value_state: nextExcluded ? 'selected' : 'cleared'
-                });
-
-                try {
-                    const response = await requestSaveGroupsConfig(BACKEND_URL, buildSharedGroupsPayload(nextGroupsConfig));
-                    if (!response.ok) {
-                        const errorPayload = await response.json().catch(() => ({}));
-                        if (response.status === 409 && errorPayload.current) {
-                            applySavedGroupsConfig(errorPayload.current);
-                            setGroupDraftError('Department groups were changed by another user. Reloaded latest group configuration; retry the excluded-capacity change.');
-                        } else {
-                            const errorMessage = errorPayload.message || (errorPayload.errors || []).join(' ') || errorPayload.error || `Save failed (${response.status})`;
-                            setGroupDraftError(errorMessage);
-                        }
-                        trackSettingsAction('departments', 'toggle_excluded_capacity_result', {
-                            source_surface: sourceSurface,
-                            result: 'failure'
-                        });
-                        return;
-                    }
-
-                    const payload = await response.json();
-                    applySavedGroupsConfig(payload);
-                    groupStateRef.current.delete(activeGroupId);
-                    excludedCapacityCacheRef.current = {};
-                    trackSettingsAction('departments', 'toggle_excluded_capacity_result', {
-                        source_surface: sourceSurface,
-                        result: 'success'
-                    });
-                } catch (err) {
-                    setGroupDraftError(err.message || 'Failed to update excluded capacity.');
-                    trackSettingsAction('departments', 'toggle_excluded_capacity_result', {
-                        source_surface: sourceSurface,
-                        result: 'failure'
-                    });
-                }
-            };
+            const toggleSharedGroupExcludedCapacityEpic = (epicKey) => saveSharedExcludedCapacityToggle({
+                backendUrl: BACKEND_URL,
+                epicKey,
+                activeGroupId,
+                canEditSharedConfiguration,
+                showGroupManage,
+                isGroupDraftDirty,
+                showPlanning,
+                groupsConfig,
+                applySavedGroupsConfig,
+                setGroupDraftError,
+                trackSettingsAction,
+                groupStateRef,
+                excludedCapacityCacheRef
+            });
 
             // Calculate sum of Story Points for selected tasks
             const calculateSelectedSP = () => {

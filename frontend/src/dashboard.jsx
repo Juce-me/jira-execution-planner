@@ -10452,6 +10452,7 @@ import {
                     newSelected[taskKey] = true;
                 }
                 setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
+                persistPlanningSelectionState(newSelected, PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks(newSelected);
                 trackPlanningSelection('toggle_task', newSelected, selectionTasks);
             };
@@ -10462,9 +10463,22 @@ import {
                 }
             };
 
+            const persistPlanningSelectionState = (nextSelectedTasks, nextSelectionMode, nextSelectedTeams = selectedTeams) => {
+                if (!planningScopeKey) return;
+                const selectedTaskKeys = Object.keys(nextSelectedTasks || {})
+                    .filter(key => nextSelectedTasks[key])
+                    .sort();
+                savePlanningState(window.localStorage, planningScopeKey, {
+                    selectedTaskKeys,
+                    selectedTeams: normalizeSelectedTeams(nextSelectedTeams),
+                    selectionMode: nextSelectionMode
+                });
+            };
+
             const clearSelectedTasks = () => {
                 markPlanningBulkSelectionChanged();
                 setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
+                persistPlanningSelectionState({}, PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks({});
                 trackPlanningSelection('clear_selection', {}, selectionTasks);
             };
@@ -10478,6 +10492,7 @@ import {
                     }
                 });
                 setPlanningSelectionMode(isFutureSprintSelected ? PLANNING_SELECTION_MODE_DEFAULT_ALL : PLANNING_SELECTION_MODE_MANUAL);
+                persistPlanningSelectionState(next, isFutureSprintSelected ? PLANNING_SELECTION_MODE_DEFAULT_ALL : PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks(next);
                 trackPlanningSelection('select_all_visible', next, selectionTasks);
             };
@@ -10493,6 +10508,7 @@ import {
                 });
                 markPlanningBulkSelectionChanged();
                 setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
+                persistPlanningSelectionState(next, PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks(next);
                 trackPlanningSelection('select_status', next, selectionTasks);
             };
@@ -10508,6 +10524,7 @@ import {
                             next[task.key] = true;
                         }
                     });
+                    persistPlanningSelectionState(next, PLANNING_SELECTION_MODE_MANUAL);
                     return next;
                 });
             };
@@ -10528,6 +10545,7 @@ import {
                 });
                 markPlanningBulkSelectionChanged();
                 setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
+                persistPlanningSelectionState(next, PLANNING_SELECTION_MODE_MANUAL);
                 setSelectedTasks(next);
                 trackPlanningSelection(allSelected ? 'exclude_status' : 'include_status', next, selectionTasks);
             };
@@ -10539,6 +10557,7 @@ import {
                 const nextSelectionMode = baseline.selectionMode || PLANNING_SELECTION_MODE_MANUAL;
                 setSelectedTasks(nextSelectedTasks);
                 setPlanningSelectionMode(nextSelectionMode);
+                persistPlanningSelectionState(nextSelectedTasks, nextSelectionMode);
                 setCanUndoPlanningSelection(false);
                 trackPlanningSelection('undo_selection', nextSelectedTasks, selectionTasks);
             };

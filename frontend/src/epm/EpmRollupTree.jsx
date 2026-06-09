@@ -20,6 +20,8 @@ export function EpmRollupIssue({ issue, jiraUrl, extraClassName = '' }) {
                             href={issueHref}
                             target="_blank"
                             rel="noopener noreferrer"
+                            title={issue.summary || issue.key}
+                            aria-label={issue.summary || issue.key}
                             analyticsMeta={buildJiraBrowseLinkAnalytics({
                                 issueKind: issue.issueType === 'Epic' ? 'epic' : 'story',
                                 sourceSurface: 'epm'

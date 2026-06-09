@@ -1267,6 +1267,70 @@
             box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.16), 0 8px 20px rgba(15, 23, 42, 0.06);
         }
 
+        .task-list:not(.epm-issue-board) > .epic-block {
+            padding: 0.55rem;
+            margin-bottom: 0.8rem;
+            border-radius: 8px;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .epic-header {
+            padding: 0.32rem 0;
+            margin-bottom: 0.5rem;
+            gap: 0.65rem;
+            align-items: flex-start;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-title-row {
+            gap: 0.45rem;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
+            gap: 0.45rem 0.65rem;
+            padding-top: 0.05rem;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .task-item {
+            padding: 0.72rem 0.95rem;
+            margin-bottom: 0.55rem;
+            border-radius: 8px;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .task-item .task-header {
+            margin-bottom: 0.32rem;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .task-item .task-headline {
+            gap: 0.42rem;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .task-item .task-title {
+            font-size: 0.98rem;
+            line-height: 1.23;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .task-item .task-meta {
+            gap: 0.42rem 0.7rem;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .task-item .dependency-strip {
+            margin-top: 0.38rem;
+            padding-top: 0.32rem;
+            gap: 0.48rem;
+        }
+
+        @media (max-width: 760px) {
+            .task-list:not(.epm-issue-board) > .epic-block > .epic-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
+                max-width: none;
+                min-width: 0;
+                justify-content: flex-start;
+            }
+        }
+
         .dependency-strip {
             margin-top: 0.55rem;
             padding-top: 0.45rem;

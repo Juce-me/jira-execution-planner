@@ -686,7 +686,11 @@
 
             .epm-project-board-body {
                 margin-left: 0.8rem;
-                padding-left: 1.18rem;
+                padding-left: 1.32rem;
+            }
+
+            .epm-project-board-body::before {
+                left: 0.72rem;
             }
         }
 

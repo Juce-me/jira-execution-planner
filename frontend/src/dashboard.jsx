@@ -12024,7 +12024,7 @@ import {
                                                     className="epic-link"
                                                     href={jiraUrl ? `${jiraUrl}/browse/${epicGroup.key}` : '#'}
                                                     target="_blank"
-                                                    rel="noopener noreferrer"
+                                                    rel="noopener noreferrer" title={epicTitle} aria-label={epicTitle}
                                                 >
                                                     <span className="epic-name">{epicTitle}</span>
                                                     <span className="epic-key">{epicGroup.key}</span>

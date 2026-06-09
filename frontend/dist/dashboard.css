@@ -3068,6 +3068,7 @@ button.toggle.active {
   align-items: center;
   margin-bottom: 0.5rem;
   position: relative;
+  min-width: 0;
 }
 .task-remove {
   position: absolute;
@@ -3118,9 +3119,17 @@ button.toggle.active {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 2.2rem;
 }
 .task-title {
+  display: -webkit-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: 1.05rem;
   font-weight: 400;
   line-height: 1.25;
@@ -3131,6 +3140,11 @@ button.toggle.active {
   opacity: 0.8;
 }
 .task-title a {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
   color: inherit;
   text-decoration: none;
   border-bottom: 1px solid transparent;
@@ -3140,6 +3154,7 @@ button.toggle.active {
   border-bottom-color: var(--text-primary);
 }
 .task-inline-meta {
+  flex: 0 0 auto;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.68rem;
   color: var(--text-secondary);
@@ -3148,6 +3163,7 @@ button.toggle.active {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  white-space: nowrap;
 }
 .task-key-link {
   color: inherit;
@@ -3637,6 +3653,8 @@ a.dependency-missing-item:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
+  min-width: 0;
   border-bottom: 1px solid var(--border);
   padding: 0.5rem 0;
   margin-bottom: 0.75rem;
@@ -3693,17 +3711,23 @@ a.dependency-missing-item:hover {
   font-size: 1.1rem;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 0.15rem;
+  min-width: 0;
 }
 .epic-title-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
 }
 .epic-link {
-  display: inline-flex;
+  display: flex;
   align-items: baseline;
+  flex: 1 1 auto;
   gap: 0.45rem;
+  min-width: 0;
+  overflow: hidden;
   color: inherit;
   text-decoration: none;
 }
@@ -3713,9 +3737,16 @@ a.dependency-missing-item:hover {
   text-underline-offset: 3px;
 }
 .epic-name {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
   font-weight: 600;
 }
 .epic-key {
+  flex: 0 0 auto;
   font-family: "IBM Plex Mono", monospace;
   color: var(--text-secondary);
   font-size: 0.9rem;
@@ -3726,6 +3757,7 @@ a.dependency-missing-item:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
 }
 .epic-icon svg {
   width: 18px;
@@ -3741,13 +3773,18 @@ a.dependency-missing-item:hover {
   letter-spacing: 0.05em;
 }
 .epic-meta {
+  flex: 0 0 auto;
   font-family: "IBM Plex Mono", monospace;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.65rem;
+  max-width: 42%;
+  min-width: 16rem;
+  flex-wrap: wrap;
 }
 .epic-assignee {
   text-transform: none;

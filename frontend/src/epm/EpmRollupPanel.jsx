@@ -562,6 +562,8 @@ export function EpmRollupPanel({
                                     href={jiraUrl ? `${jiraUrl}/browse/${key}` : '#'}
                                     target="_blank"
                                     rel="noopener noreferrer"
+                                    title={epicTitle}
+                                    aria-label={epicTitle}
                                     analyticsMeta={buildJiraBrowseLinkAnalytics({
                                         issueKind: 'epic',
                                         sourceSurface: 'epm'

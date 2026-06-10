@@ -2563,11 +2563,18 @@ button.toggle.active {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  animation: task-appear 0.18s ease-out both;
 }
 .filters-group {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  animation: none;
+}
+.filters-strip .stats > .stat-card,
+.filters-strip .stats > .stat-card:nth-child(n) {
+  animation: none;
+  animation-delay: 0s;
 }
 .filters-label {
   font-family: "IBM Plex Mono", monospace;
@@ -2971,6 +2978,11 @@ button.toggle.active {
   border-radius: 10px;
   animation: task-appear 0.18s ease-out both;
 }
+.task-item.is-removing {
+  pointer-events: none;
+  overflow: hidden;
+  animation: task-remove-dissolve 0.24s ease-out forwards;
+}
 .task-item::after {
   content: "";
   position: absolute;
@@ -3092,7 +3104,11 @@ button.toggle.active {
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: all 0.2s;
+  transition:
+    opacity 0.12s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
   padding: 0;
   margin: 0;
   border-radius: 8px;
@@ -3102,11 +3118,25 @@ button.toggle.active {
 .task-item:hover .task-remove {
   opacity: 1;
 }
+.task-item.is-removing .task-remove {
+  opacity: 0;
+  pointer-events: none;
+}
 .task-remove:hover {
   background: var(--accent);
   color: white;
   border-color: var(--accent);
   transform: none;
+}
+@keyframes task-remove-dissolve {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 .alert-story .alert-remove {
   position: static;
@@ -3612,6 +3642,32 @@ a.dependency-missing-item:hover {
   width: 100%;
   min-width: 0;
   font-family: "IBM Plex Mono", monospace;
+  overflow: hidden;
+  animation: story-subtasks-panel-enter 0.16s ease-out both;
+}
+.story-subtasks-panel.is-closing {
+  pointer-events: none;
+  animation: story-subtasks-panel-exit 0.14s ease-in forwards;
+}
+@keyframes story-subtasks-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes story-subtasks-panel-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
 }
 .story-subtasks-message {
   color: var(--text-secondary);
@@ -3720,6 +3776,12 @@ a.dependency-missing-item:hover {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .filters-strip,
+  .task-item.is-removing,
+  .story-subtasks-panel,
+  .story-subtasks-panel.is-closing {
+    animation: none;
+  }
   .story-subtasks-progress-in-progress {
     animation: none;
     background-position: 0 0;

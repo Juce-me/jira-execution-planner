@@ -256,3 +256,100 @@ test('ENG header dependency pill sits below story meta without remove overlap', 
     expect(metrics.removeOpacity).toBeGreaterThan(0.9);
     await page.screenshot({ path: `${screenshotDir}/header-pill-no-remove-overlap.png`, fullPage: false });
 });
+
+test('ENG task remove dissolves before removing the card', async ({ page }) => {
+    await installDashboardShell(page);
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        showPlanning: false,
+        showScenario: false,
+    });
+    await page.route('**/api/**', route => {
+        const url = new URL(route.request().url());
+        const json = (body) => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(body),
+        });
+        if (url.pathname === '/api/config') {
+            return json({
+                jiraUrl: 'https://jira.example',
+                projectsConfigured: true,
+                settingsAdminOnly: false,
+                userCanEditSettings: true,
+                epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
+            });
+        }
+        if (url.pathname === '/api/version') return json({ enabled: false });
+        if (url.pathname === '/api/groups-config') {
+            return json({
+                version: 1,
+                groups: [{ id: 'grp-default', name: 'Default', teamIds: ['team-rnd'], teamLabels: { 'team-rnd': 'R&D BSW UI' } }],
+                defaultGroupId: 'grp-default',
+            });
+        }
+        if (url.pathname === '/api/projects/selected') return json({ selected: [] });
+        if (url.pathname === '/api/sprints') return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+        if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
+        if (url.pathname === '/api/tasks-with-team-name') {
+            const project = url.searchParams.get('project');
+            const issues = project === 'product' && !url.searchParams.get('purpose')
+                ? [story('PRODUCT-34047', 'Accepted', 'Develop a new Sync Slicer')]
+                : [];
+            return json({
+                issues,
+                epics: {
+                    'PRODUCT-27078': {
+                        key: 'PRODUCT-27078',
+                        summary: 'Sync monitoring process reboot',
+                        status: { name: 'In Progress' },
+                        teamId: 'team-rnd',
+                        teamName: 'R&D BSW UI',
+                        sprint: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+                    },
+                },
+                epicsInScope: [],
+                names: {},
+            });
+        }
+        if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
+        if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
+        return json({});
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
+    const task = page.locator('.task-item[data-task-key="PRODUCT-34047"]');
+    await expect(task).toBeVisible();
+    await task.hover();
+    const remove = task.locator('.task-remove');
+    await expect(remove).toBeVisible();
+    await remove.click();
+    await expect.poll(async () => task.evaluate((card) => (
+        card.classList.contains('is-removing')
+    )), {
+        intervals: [10, 20, 30],
+        timeout: 200,
+    }).toBe(true);
+    const removeMotion = await task.evaluate((card) => {
+        const button = card.querySelector('.task-remove');
+        const style = getComputedStyle(card);
+        return {
+            cardClassName: card.className,
+            buttonClassName: button.className,
+            disabled: button.disabled,
+            animationName: style.animationName,
+            animationDuration: style.animationDuration,
+        };
+    });
+    expect(removeMotion.cardClassName).toContain('is-removing');
+    expect(removeMotion.buttonClassName).not.toContain('is-removing');
+    expect(removeMotion.disabled).toBe(true);
+    expect(removeMotion.animationName).toBe('task-remove-dissolve');
+    expect(removeMotion.animationDuration).toBe('0.24s');
+    await expect(task).toHaveCount(0);
+});

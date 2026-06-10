@@ -321,7 +321,7 @@ async function expectMobileSubtaskTableLayout(page) {
     expect(overflow).toBeLessThanOrEqual(1);
 }
 
-async function installEngSubtasksFixture(page, calls, { subtaskResponse, longSummaries = false } = {}) {
+async function installEngSubtasksFixture(page, calls, { subtaskResponse, longSummaries = false, dependencies = {} } = {}) {
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
@@ -333,7 +333,7 @@ async function installEngSubtasksFixture(page, calls, { subtaskResponse, longSum
         contentType: 'text/css',
         body: dashboardCss,
     }));
-    await page.route('**/api/**', route => {
+    await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
         calls.push({
@@ -388,9 +388,9 @@ async function installEngSubtasksFixture(page, calls, { subtaskResponse, longSum
             return json({ issues, epics, epicsInScope: Object.values(epics), names: {} });
         }
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
-        if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
+        if (url.pathname === '/api/dependencies') return json({ dependencies });
         if (url.pathname === '/api/issues/subtasks') {
-            const response = subtaskResponse ? subtaskResponse(url) : subtaskPayload();
+            const response = subtaskResponse ? await subtaskResponse(url) : subtaskPayload();
             if (response && Object.prototype.hasOwnProperty.call(response, 'body')) {
                 return json(response.body, response.status || 200);
             }
@@ -432,6 +432,96 @@ test('ENG long epic and story summaries stay contained and expose full names', a
 
     await waitForVisualSettled(page);
     await page.screenshot({ path: `${screenshotDir}/long-title-contained.png`, fullPage: true });
+});
+
+test('ENG loaded filters and story subtask panel use compact motion', async ({ page }) => {
+    const calls = [];
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await installEngSubtasksFixture(page, calls, {
+        subtaskResponse: async () => {
+            await new Promise(resolve => setTimeout(resolve, 250));
+            return subtaskPayload();
+        },
+        dependencies: {
+            'PROD-1': [{
+                key: 'PROD-9',
+                category: 'block',
+                direction: 'inward',
+                relation: 'is blocked by',
+                status: 'In Progress',
+                summary: 'Upstream dependency',
+                teamName: 'Beta Team',
+                assignee: 'Dependency Owner',
+                prereqKey: 'PROD-9',
+                dependentKey: 'PROD-1',
+            }],
+        },
+    });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        showPlanning: false,
+        showScenario: false,
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator('.filters-strip')).toBeVisible();
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await expect(page.locator('.dependency-strip')).toBeVisible();
+
+    const loadedMotion = await page.evaluate(() => {
+        const filterStrip = document.querySelector('.filters-strip');
+        const firstFilterGroup = document.querySelector('.filters-group');
+        const firstStatCard = document.querySelector('.filters-strip .stat-card');
+        return {
+            filterStripAnimation: getComputedStyle(filterStrip).animationName,
+            filterGroupAnimation: getComputedStyle(firstFilterGroup).animationName,
+            statCardAnimation: getComputedStyle(firstStatCard).animationName,
+            statCardDelay: getComputedStyle(firstStatCard).animationDelay,
+        };
+    });
+    expect(loadedMotion.filterStripAnimation).toBe('task-appear');
+    expect(loadedMotion.filterGroupAnimation).toBe('none');
+    expect(loadedMotion.statCardAnimation).toBe('none');
+    expect(loadedMotion.statCardDelay).toBe('0s');
+
+    const toggle = page.locator('.story-subtasks-toggle').first();
+    await toggle.click();
+    await waitForCallCount(calls, call => call.pathname === '/api/issues/subtasks', 1);
+    await expect(page.locator('.story-subtasks-message')).toBeVisible();
+    const openingMotion = await page.locator('.task-item[data-task-key="PROD-1"]').evaluate((card) => {
+        const panel = card.querySelector('.story-subtasks-panel');
+        const strip = card.querySelector('.dependency-strip');
+        const panelStyle = getComputedStyle(panel);
+        const stripStyle = getComputedStyle(strip);
+        return {
+            panelAnimationName: panelStyle.animationName,
+            panelAnimationDuration: panelStyle.animationDuration,
+            stripAnimationName: stripStyle.animationName,
+        };
+    });
+    expect(openingMotion.panelAnimationName).toBe('story-subtasks-panel-enter');
+    expect(openingMotion.panelAnimationDuration).toBe('0.16s');
+    expect(openingMotion.stripAnimationName).toBe('none');
+
+    await waitForVisualSettled(page);
+    await toggle.click();
+    const closingMotion = await page.locator('.story-subtasks-panel').evaluate((panel) => {
+        const style = getComputedStyle(panel);
+        return {
+            className: panel.className,
+            animationName: style.animationName,
+            animationDuration: style.animationDuration,
+        };
+    });
+    expect(closingMotion.className).toContain('is-closing');
+    expect(closingMotion.animationName).toBe('story-subtasks-panel-exit');
+    expect(closingMotion.animationDuration).toBe('0.14s');
+    await expect(page.locator('.story-subtasks-panel')).toHaveCount(0);
 });
 
 async function runSubtaskFlow(page, viewport, screenshotName) {

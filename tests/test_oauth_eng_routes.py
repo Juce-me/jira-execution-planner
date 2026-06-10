@@ -160,6 +160,19 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "auth_required")
         self.assertEqual(response.get_json()["loginUrl"], "/login?reason=session_expired")
 
+    def test_tasks_with_team_name_stale_oauth_returns_reconnect_payload(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "build_base_jql", return_value='project = "PROD"'), \
+             patch.object(jira_server, "get_configured_issue_types", return_value=[]), \
+             patch.object(jira_server, "resolve_team_field_id", side_effect=jira_server.AuthError("auth_connection_stale", "Your Jira connection changed. Reconnect to continue.")):
+            response = self.client.get("/api/tasks-with-team-name?sprint=2026Q2&project=all&refresh=true")
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body["error"], "auth_connection_stale")
+        self.assertEqual(body["message"], "Your Jira connection changed. Reconnect to continue.")
+        self.assertEqual(body["recoveryUrl"], "/auth/reconnect")
+
     def test_tasks_with_team_name_uses_oauth_partitioned_cache(self):
         stored_at = time.time()
         install_oauth_session(self.client, stored_at=stored_at)
@@ -246,6 +259,17 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["issues"], [])
         mock_search.assert_called()
+
+    def test_missing_info_stale_oauth_returns_reconnect_payload(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "resolve_team_field_id", side_effect=jira_server.AuthError("auth_connection_stale", "Your Jira connection changed. Reconnect to continue.")):
+            response = self.client.get("/api/missing-info?sprint=2026Q2")
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body["error"], "auth_connection_stale")
+        self.assertEqual(body["message"], "Your Jira connection changed. Reconnect to continue.")
+        self.assertEqual(body["recoveryUrl"], "/auth/reconnect")
 
     def test_missing_info_uses_oauth_partitioned_cache_and_timing(self):
         stored_at = time.time()

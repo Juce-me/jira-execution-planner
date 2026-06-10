@@ -2,8 +2,23 @@ export function normalizeIssueStatus(status) {
     return String(status || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+const WAITING_STATUS_CLASSES = new Set([
+    'awaiting validation',
+    'pending',
+    'to do',
+    'todo',
+]);
+
+function getIssueStatusClass(status) {
+    const normalizedStatus = normalizeIssueStatus(status);
+    if (!normalizedStatus) return '';
+    if (normalizedStatus.includes('in progress') || normalizedStatus === 'analysis') return 'in-progress';
+    if (WAITING_STATUS_CLASSES.has(normalizedStatus)) return 'waiting';
+    return normalizedStatus.replace(/\s+/g, '-');
+}
+
 export function getIssueStatusClassName(status, extraClassName = '') {
-    const statusClass = normalizeIssueStatus(status).replace(/\s+/g, '-');
+    const statusClass = getIssueStatusClass(status);
     return ['task-status', extraClassName, statusClass].filter(Boolean).join(' ');
 }
 

@@ -721,11 +721,13 @@ test('auth API wrappers preserve Home token request details and CSRF use', async
         'deleteHomeTokenConnection',
         'fetchAuthStatus',
         'fetchHomeTokenConnection',
+        'refreshAuthSession',
     ], { json, getJson, postJson });
 
     await withMockFetch(async (calls) => {
         await authApi.fetchAuthStatus('http://backend');
         await authApi.fetchHomeTokenConnection('http://backend');
+        await authApi.refreshAuthSession('http://backend');
         await authApi.connectHomeTokenConnection('http://backend', {
             email: 'user@example.com',
             apiToken: 'plain-user-token',
@@ -738,21 +740,26 @@ test('auth API wrappers preserve Home token request details and CSRF use', async
         assert.equal(calls[1].url, 'http://backend/api/me/connections/home-token');
         assert.equal(calls[1].options.cache, 'no-cache');
 
-        assert.equal(calls[2].url, 'http://backend/api/auth/csrf');
-        assert.equal(calls[3].url, 'http://backend/api/me/connections/home-token');
-        assert.equal(calls[3].options.method, 'POST');
-        assert.equal(calls[3].options.body, JSON.stringify({
+        assert.equal(calls[2].url, 'http://backend/api/auth/refresh');
+        assert.equal(calls[2].options.method, 'POST');
+        assert.equal(calls[2].options.credentials, 'same-origin');
+        assert.equal(new Headers(calls[2].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+
+        assert.equal(calls[3].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[4].url, 'http://backend/api/me/connections/home-token');
+        assert.equal(calls[4].options.method, 'POST');
+        assert.equal(calls[4].options.body, JSON.stringify({
             email: 'user@example.com',
             apiToken: 'plain-user-token',
         }));
-        assert.equal(new Headers(calls[3].options.headers).get('X-CSRF-Token'), 'csrf-token-2');
-        assertJsonHeader(calls[3].options);
+        assert.equal(new Headers(calls[4].options.headers).get('X-CSRF-Token'), 'csrf-token-3');
+        assertJsonHeader(calls[4].options);
 
-        assert.equal(calls[4].url, 'http://backend/api/auth/csrf');
-        assert.equal(calls[5].url, 'http://backend/api/me/connections/home-token');
-        assert.equal(calls[5].options.method, 'DELETE');
-        assert.equal(new Headers(calls[5].options.headers).get('X-CSRF-Token'), 'csrf-token-4');
-        assertJsonHeader(calls[5].options);
+        assert.equal(calls[5].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[6].url, 'http://backend/api/me/connections/home-token');
+        assert.equal(calls[6].options.method, 'DELETE');
+        assert.equal(new Headers(calls[6].options.headers).get('X-CSRF-Token'), 'csrf-token-5');
+        assertJsonHeader(calls[6].options);
     }, (url, _options, index) => {
         if (String(url).endsWith('/api/auth/csrf')) {
             return jsonResponse({ csrfToken: `csrf-token-${index}` });

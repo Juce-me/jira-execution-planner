@@ -119,6 +119,87 @@ function subtaskPayload() {
     };
 }
 
+function statusColorSubtaskPayload() {
+    return {
+        parentKey: 'PROD-1',
+        sprint: String(selectedSprintId),
+        cached: false,
+        summary: {
+            total: 7,
+            done: 0,
+            inProgress: 2,
+            waiting: 3,
+            percentComplete: 0,
+            statusCounts: { Killed: 1, Incomplete: 1, 'To Do': 1, Pending: 1, 'Awaiting Validation': 1, 'In Progress': 1, Accepted: 1 },
+        },
+        subtasks: [
+            {
+                id: 'SUB-TODO',
+                key: 'PROD-20',
+                summary: 'Todo subtask',
+                status: { name: 'To Do' },
+                progressPercent: null,
+                assignee: { displayName: 'Todo Owner' },
+                updated: '2026-05-01T00:00:00.000+0000',
+            },
+            {
+                id: 'SUB-PENDING',
+                key: 'PROD-21',
+                summary: 'Pending subtask',
+                status: { name: 'Pending' },
+                progressPercent: null,
+                assignee: { displayName: 'Pending Owner' },
+                updated: '2026-05-02T00:00:00.000+0000',
+            },
+            {
+                id: 'SUB-VALIDATION',
+                key: 'PROD-22',
+                summary: 'Validation subtask',
+                status: { name: 'Awaiting Validation' },
+                progressPercent: null,
+                assignee: { displayName: 'Validation Owner' },
+                updated: '2026-05-03T00:00:00.000+0000',
+            },
+            {
+                id: 'SUB-PROGRESS',
+                key: 'PROD-23',
+                summary: 'Progress subtask',
+                status: { name: 'In Progress' },
+                progressPercent: null,
+                assignee: { displayName: 'Progress Owner' },
+                updated: '2026-05-04T00:00:00.000+0000',
+            },
+            {
+                id: 'SUB-ACCEPTED',
+                key: 'PROD-24',
+                summary: 'Accepted subtask',
+                status: { name: 'Accepted' },
+                progressPercent: null,
+                assignee: { displayName: 'Accepted Owner' },
+                updated: '2026-05-05T00:00:00.000+0000',
+            },
+            {
+                id: 'SUB-KILLED',
+                key: 'PROD-25',
+                summary: 'Killed subtask',
+                status: { name: 'Killed' },
+                progressPercent: null,
+                assignee: { displayName: 'Killed Owner' },
+                updated: '2026-05-06T00:00:00.000+0000',
+            },
+            {
+                id: 'SUB-INCOMPLETE',
+                key: 'PROD-26',
+                summary: 'Incomplete subtask',
+                status: { name: 'Incomplete' },
+                progressPercent: null,
+                assignee: { displayName: 'Incomplete Owner' },
+                updated: '2026-05-07T00:00:00.000+0000',
+            },
+        ],
+    };
+}
+
 function summarizeCalls(calls) {
     return calls.reduce((acc, call) => {
         const key = `${call.method} ${call.pathname}`;
@@ -580,6 +661,47 @@ async function runSubtaskFlow(page, viewport, screenshotName) {
         expect(call.params.refresh).toBeUndefined();
     }
 }
+
+test('ENG story subtask status pills inherit shared status colors', async ({ page }) => {
+    const calls = [];
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await installEngSubtasksFixture(page, calls, { subtaskResponse: () => statusColorSubtaskPayload() });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        showPlanning: false,
+        showScenario: false,
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.locator('.story-subtasks-toggle').first().click();
+    await waitForCallCount(calls, call => call.pathname === '/api/issues/subtasks', 1);
+    await expect(page.locator('.story-subtask-row')).toHaveCount(7);
+
+    const rowsByStatus = Object.fromEntries(
+        (await collectSubtaskRowMetrics(page)).map(row => [row.statusText.trim(), row])
+    );
+    for (const statusName of ['To Do', 'Pending', 'Awaiting Validation']) {
+        expect(rowsByStatus[statusName].statusClassName).toContain('waiting');
+        expect(rowsByStatus[statusName].statusBackgroundColor).toBe('rgb(140, 140, 140)');
+    }
+    expect(rowsByStatus['In Progress'].statusClassName).toContain('in-progress');
+    expect(rowsByStatus['In Progress'].statusBackgroundColor).toBe('rgb(105, 192, 255)');
+    expect(rowsByStatus.Accepted.statusClassName).toContain('accepted');
+    expect(rowsByStatus.Accepted.statusBackgroundColor).toBe('rgb(105, 192, 255)');
+    for (const statusName of ['Killed', 'Incomplete']) {
+        expect(rowsByStatus[statusName].statusClassName).toContain(statusName.toLowerCase());
+        expect(rowsByStatus[statusName].statusBackgroundColor).toBe('rgb(82, 196, 26)');
+    }
+
+    await waitForVisualSettled(page);
+    await page.screenshot({ path: `${screenshotDir}/status-colors-expanded.png`, fullPage: true });
+});
 
 for (const { name, viewport } of [
     { name: 'desktop', viewport: { width: 1280, height: 760 } },

@@ -4071,19 +4071,14 @@ button.toggle.initiative-toggle.active {
   font-weight: 500;
   white-space: nowrap;
 }
-.task-status.killed {
-  background: #595959;
-  color: white;
-}
-.task-status.done {
+.task-status.done,
+.task-status.killed,
+.task-status.incomplete {
   background: #52c41a;
   color: white;
 }
-.task-status.in-progress {
-  background: #69c0ff;
-  color: white;
-}
-.task-status.analysis {
+.task-status.in-progress,
+.task-status.accepted {
   background: #69c0ff;
   color: white;
 }
@@ -4092,27 +4087,18 @@ button.toggle.initiative-toggle.active {
   background: #13c2c2;
   color: white;
 }
-.task-status.to-do {
-  background: #597ef7;
-  color: white;
-}
 .task-status.blocked {
   background: #ff4d4f;
   color: white;
 }
-.task-status.accepted {
-  background: #597ef7;
-  color: white;
-}
+.task-status.waiting,
+.task-status.to-do,
+.task-status.awaiting-validation,
 .task-status.pending {
-  background: #597ef7;
+  background: #8c8c8c;
   color: white;
 }
 .task-status.postponed {
-  background: #fa8c16;
-  color: white;
-}
-.task-status.incomplete {
   background: #fa8c16;
   color: white;
 }
@@ -7889,8 +7875,9 @@ button.toggle.initiative-toggle.active {
   background: #ff4d4f;
   color: white;
 }
+.epm-project-board-status-pill.task-status.waiting,
 .epm-project-board-status-pill.task-status.pending {
-  background: #597ef7;
+  background: #8c8c8c;
   color: white;
 }
 .epm-project-board-status-pill.task-status.completed {

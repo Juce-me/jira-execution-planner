@@ -452,7 +452,7 @@ test('EPM compact sticky controls show project picker without settings or state 
     await expect(sticky.getByRole('button', { name: 'Select sprint' })).toBeVisible();
     await expect(sticky.getByRole('button', { name: 'Filter EPM sub-goals' })).toBeVisible();
     await expect(sticky.getByRole('button', { name: 'Select Project' })).toBeVisible();
-    await expect(sticky.getByRole('button', { name: 'Collapse all projects' })).toBeVisible();
+    await expect(sticky.getByRole('button', { name: 'Expand all projects' })).toBeVisible();
     await expect(sticky.getByRole('button', { name: 'Open EPM settings' })).toHaveCount(0);
     await expect(sticky.getByRole('radiogroup', { name: 'EPM project state' })).toHaveCount(0);
     await expect(sticky.locator('.epm-project-collapse-all-icon')).toBeVisible();
@@ -463,7 +463,7 @@ test('EPM compact sticky controls show project picker without settings or state 
     const subGoalBox = await box(sticky.getByRole('button', { name: 'Filter EPM sub-goals' }));
     const projectToggle = sticky.getByRole('button', { name: 'Select Project' });
     const projectBox = await box(projectToggle);
-    const collapseBox = await box(sticky.getByRole('button', { name: 'Collapse all projects' }));
+    const collapseBox = await box(sticky.getByRole('button', { name: 'Expand all projects' }));
     expect(boxesOverlap(sprintBox, subGoalBox)).toBe(false);
     expect(boxesOverlap(subGoalBox, projectBox)).toBe(false);
     expect(boxesOverlap(projectBox, collapseBox)).toBe(false);

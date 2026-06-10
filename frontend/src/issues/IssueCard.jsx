@@ -5,6 +5,8 @@ import IssueDependencies, { buildIssueDependencyViewModel } from './IssueDepende
 import { buildStorySubtaskProgress, formatSubtaskUpdatedDate } from './subtaskProgressUtils.js';
 
 export const IssueCardContext = React.createContext({});
+const REMOVE_FADE_MS = 240;
+const SUBTASK_PANEL_EXIT_MS = 140;
 
 export default function IssueCard({
     task,
@@ -35,6 +37,38 @@ export default function IssueCard({
     const showSubtaskControl = subtaskProgress.total > 0 || subtaskState?.expanded || subtaskState?.loading;
     const subtaskPanelId = `story-subtasks-${task.key}`;
     const subtaskCountLabel = `${subtaskProgress.total} ${subtaskProgress.total === 1 ? 'subtask' : 'subtasks'}`;
+    const [isRemoveFading, setIsRemoveFading] = React.useState(false);
+    const removeTimerRef = React.useRef(null);
+    const [renderSubtaskPanel, setRenderSubtaskPanel] = React.useState(!!subtaskState?.expanded);
+    const [isSubtaskPanelClosing, setIsSubtaskPanelClosing] = React.useState(false);
+    React.useEffect(() => {
+        return () => {
+            if (removeTimerRef.current) {
+                window.clearTimeout(removeTimerRef.current);
+            }
+        };
+    }, []);
+    React.useEffect(() => {
+        if (subtaskState?.expanded) {
+            setRenderSubtaskPanel(true);
+            setIsSubtaskPanelClosing(false);
+            return undefined;
+        }
+        if (!renderSubtaskPanel) return undefined;
+        setIsSubtaskPanelClosing(true);
+        const timer = window.setTimeout(() => {
+            setRenderSubtaskPanel(false);
+            setIsSubtaskPanelClosing(false);
+        }, SUBTASK_PANEL_EXIT_MS);
+        return () => window.clearTimeout(timer);
+    }, [subtaskState?.expanded, renderSubtaskPanel]);
+    const handleRemove = () => {
+        if (isRemoveFading) return;
+        setIsRemoveFading(true);
+        removeTimerRef.current = window.setTimeout(() => {
+            onRemove?.(task);
+        }, REMOVE_FADE_MS);
+    };
     const subtaskToggle = showSubtaskControl ? (
         <button
             type="button"
@@ -78,7 +112,7 @@ export default function IssueCard({
 
     return (
         <div
-            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${dependencyModel.isFocusActive && !dependencyModel.isRelated ? 'is-dimmed' : ''} ${dependencyModel.isFocused ? 'is-focused' : ''} ${dependencyModel.isUpstream ? 'is-upstream' : ''} ${dependencyModel.isDownstream ? 'is-downstream' : ''}`}
+            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${dependencyModel.isFocusActive && !dependencyModel.isRelated ? 'is-dimmed' : ''} ${dependencyModel.isFocused ? 'is-focused' : ''} ${dependencyModel.isUpstream ? 'is-upstream' : ''} ${dependencyModel.isDownstream ? 'is-downstream' : ''} ${isRemoveFading ? 'is-removing' : ''}`}
             data-task-key={task.key}
             data-task-id={task.id || task.key}
             data-issue-key={task.key}
@@ -87,8 +121,10 @@ export default function IssueCard({
                 {onRemove && (
                     <button
                         className="task-remove"
-                        onClick={() => onRemove(task)}
+                        onClick={handleRemove}
+                        disabled={isRemoveFading}
                         title="Remove task from view"
+                        type="button"
                     >
                         &times;
                     </button>
@@ -185,11 +221,11 @@ export default function IssueCard({
                 onHoverEnter={dependencyContext.onHoverEnter}
                 onHoverLeave={dependencyContext.onHoverLeave}
             />
-            {subtaskState?.expanded && (
-                <div id={subtaskPanelId} className="story-subtasks-panel" aria-live="polite">
-                    {subtaskState.loading ? (
+            {renderSubtaskPanel && (
+                <div id={subtaskPanelId} className={`story-subtasks-panel${isSubtaskPanelClosing ? ' is-closing' : ''}`} aria-live="polite">
+                    {subtaskState?.loading ? (
                         <div className="story-subtasks-message">Loading subtasks...</div>
-                    ) : subtaskState.error ? (
+                    ) : subtaskState?.error ? (
                         <div className="story-subtasks-message story-subtasks-error">
                             <span>{subtaskState.error}</span>
                             <button
@@ -202,7 +238,7 @@ export default function IssueCard({
                                 Retry
                             </button>
                         </div>
-                    ) : (subtaskState.items || []).length === 0 ? (
+                    ) : (subtaskState?.items || []).length === 0 ? (
                         <div className="story-subtasks-message">No subtasks in selected sprint.</div>
                     ) : (
                         <div className="story-subtasks-rows">

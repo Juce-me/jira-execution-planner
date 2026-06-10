@@ -2289,15 +2289,11 @@ import {
 
             useEffect(() => {
                 if (selectedView !== 'epm' || epmSelectedProjectId || !Array.isArray(visibleEpmRollupBoards)) return;
-                if (epmTab === 'archived') {
-                    setEpmCollapsedProjectIds((prev) => {
-                        const next = new Set(prev);
-                        epmVisibleProjectKeys.forEach((key) => next.add(key));
-                        return next;
-                    });
-                    return;
-                }
-                setEpmCollapsedProjectIds(new Set());
+                setEpmCollapsedProjectIds((prev) => {
+                    const next = new Set(prev);
+                    epmVisibleProjectKeys.forEach((key) => next.add(key));
+                    return next;
+                });
             }, [selectedView, epmSelectedProjectId, epmTab, epmVisibleProjectKeysSignature]);
 
             const toggleAllVisibleEpmProjectsCollapsed = () => {

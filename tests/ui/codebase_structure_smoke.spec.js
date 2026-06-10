@@ -1200,7 +1200,8 @@ test('EPM all-project rollup retries after sprint selection arrives during proje
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.epm-project-board-name', { hasText: 'Active Project' })).toBeVisible();
-    await expect(page.locator('.epm-portfolio-board .epic-header').first()).toBeVisible();
+    await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(1);
+    await expect(page.locator('.epm-portfolio-board .epic-header').first()).toBeHidden();
 
     const activeRollups = callsFor(calls, '/api/epm/projects/rollup/all')
         .filter(call => (call.params.tab || 'active') === 'active');
@@ -1224,15 +1225,11 @@ test('EPM all-project board can collapse and expand all visible projects', async
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.locator('.epm-project-board')).toHaveCount(3);
-    await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(0);
+    await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(3);
     const collapseAllButton = page.getByRole('button', { name: 'Collapse all projects' }).first();
     const expandAllButton = page.getByRole('button', { name: 'Expand all projects' }).first();
-    await expect(collapseAllButton).toBeVisible();
+    await expect(expandAllButton).toBeVisible();
     await page.screenshot({ path: `${screenshotDir}/epm-collapse-all-projects.png`, fullPage: true });
-
-    await collapseAllButton.click();
-    await expect(page.locator('.epm-project-board.is-collapsed')).toHaveCount(3);
-    await expect(page.locator('.epm-project-board:not(.is-collapsed) .epic-header')).toHaveCount(0);
 
     const project2Board = page.locator('.epm-project-board', {
         has: page.locator('.epm-project-board-name', { hasText: 'Active Project 2' }),

@@ -329,6 +329,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep expanded ENG story subtask lists compact and visually quiet; constrain desktop width instead of stretching rows across the whole card.
 - Map ENG subtask workflow statuses such as Analysis and Release to colored progress chips, and keep story meta rows vertically centered.
 - Keep ENG Show only cards in one desktop row and tighten widths/gaps before allowing filter-card wrapping or floating dependency-pill spacing.
+- Keep ENG header dependency pills in the detail row/right lane so they do not increase the story title/header row height.
 
 ---
 

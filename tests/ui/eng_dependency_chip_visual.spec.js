@@ -223,31 +223,35 @@ test('ENG header dependency pill sits below story meta without remove overlap', 
                 height: rect.height,
             };
         };
-        const meta = rectFor('.task-inline-meta');
+        const issueMeta = rectFor('.task-inline-meta');
         const pill = rectFor('.dependency-pill.blocker');
         const remove = rectFor('.task-remove');
         const taskMeta = rectFor('.task-meta');
+        const title = rectFor('.task-title');
+        const headerRight = rectFor('.task-header-right');
         const overlapsRemove = pill.x < remove.right &&
             pill.right > remove.x &&
             pill.y < remove.bottom &&
             pill.bottom > remove.y;
         return {
-            meta,
+            issueMeta,
             pill,
             remove,
             taskMeta,
+            title,
+            headerRight,
             removeOpacity: Number.parseFloat(getComputedStyle(element.querySelector('.task-remove')).opacity),
-            pillInHeaderRight: Boolean(element.querySelector('.task-header-right .dependency-pill.blocker')),
             metaInHeaderRight: Boolean(element.querySelector('.task-header-right .task-inline-meta')),
             overlapsRemove,
         };
     });
 
     expect(metrics.metaInHeaderRight).toBe(true);
-    expect(metrics.pillInHeaderRight).toBe(true);
-    expect(metrics.pill.y).toBeGreaterThanOrEqual(metrics.meta.bottom);
-    expect(metrics.pill.y - metrics.meta.bottom).toBeLessThanOrEqual(4);
-    expect(metrics.taskMeta.y - metrics.pill.bottom).toBeLessThanOrEqual(6);
+    expect(metrics.pill.y).toBeGreaterThanOrEqual(metrics.issueMeta.bottom);
+    expect(metrics.pill.y - metrics.issueMeta.bottom).toBeLessThanOrEqual(8);
+    expect(Math.abs(metrics.pill.right - metrics.headerRight.right)).toBeLessThanOrEqual(2);
+    expect(metrics.taskMeta.y - metrics.title.bottom).toBeLessThanOrEqual(6);
+    expect(Math.abs(metrics.pill.y - metrics.taskMeta.y)).toBeLessThanOrEqual(4);
     expect(metrics.overlapsRemove).toBe(false);
     expect(metrics.removeOpacity).toBeGreaterThan(0.9);
     await page.screenshot({ path: `${screenshotDir}/header-pill-no-remove-overlap.png`, fullPage: false });

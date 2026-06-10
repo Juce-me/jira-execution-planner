@@ -1218,6 +1218,20 @@
             flex-wrap: wrap;
         }
 
+        .task-detail-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.75rem;
+            min-width: 0;
+            padding-right: 2.2rem;
+        }
+
+        .task-detail-row .task-meta {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
         .task-team {
             background: #f6f4ff;
             color: #4b3fb0;

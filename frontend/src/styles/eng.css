@@ -985,7 +985,9 @@
         }
 
         .task-title {
-            display: block;
+            display: flex;
+            align-items: baseline;
+            gap: 0.3rem;
             flex: 1 1 auto;
             min-width: 0;
             overflow: hidden;
@@ -997,13 +999,15 @@
         }
 
         .task-incomplete-icon {
-            margin-right: 0.3rem;
             font-size: 0.85em;
             opacity: 0.8;
+            flex: 0 0 auto;
         }
 
         .task-title a {
             display: block;
+            flex: 1 1 auto;
+            min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;

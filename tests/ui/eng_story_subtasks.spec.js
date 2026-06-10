@@ -37,7 +37,7 @@ function parentStory(overrides = {}) {
         key: 'PROD-1',
         fields: {
             summary,
-            status: { name: 'In Progress' },
+            status: { name: overrides.status || 'In Progress' },
             priority: { name: 'Major' },
             issuetype: { name: 'Story' },
             assignee: { displayName: 'Synthetic Owner' },
@@ -381,7 +381,7 @@ async function installEngSubtasksFixture(page, calls, { subtaskResponse, longSum
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
-            const issueOverrides = longSummaries ? { summary: longStorySummary, parentSummary: longEpicSummary } : {};
+            const issueOverrides = longSummaries ? { summary: longStorySummary, parentSummary: longEpicSummary, status: 'Incomplete' } : {};
             const epicOverrides = longSummaries ? { summary: longEpicSummary } : {};
             const issues = project === 'product' && !purpose ? [parentStory(issueOverrides)] : [];
             const epics = project === 'product' ? { 'PROD-EPIC': productEpic(epicOverrides) } : {};

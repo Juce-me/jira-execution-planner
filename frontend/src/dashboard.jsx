@@ -4388,9 +4388,9 @@ import {
                     selectedTeams: selectedTeamsFromPlanning,
                     selectedTasks: selectedTasksFromPlanning,
                     planningSelectionMode: selectionModeFromPlanning,
-                    showPlanning: savedPrefsRef.current.showPlanning ?? false,
-                    showStats: savedPrefsRef.current.showStats ?? false,
-                    showScenario: false,
+                    showPlanning,
+                    showStats,
+                    showScenario,
                     showDependencies: true,
                     epicDetails: {},
                     statsView: resolveStatsView(savedPrefsRef.current.statsView),
@@ -9576,6 +9576,7 @@ import {
             useEffect(() => {
                 if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
                 if (!tasksFetched || productTasksLoading || techTasksLoading) return;
+                if (lastLoadedSprintRef.current !== selectedSprint) return;
 
                 const { validTaskKeySet, nextSelectedTaskKeys, nextSelectionMode, nextSelectedTeams } = resolvePlanningSelectionForDashboard({
                     selectedTasks,

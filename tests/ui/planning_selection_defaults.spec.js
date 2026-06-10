@@ -9,6 +9,8 @@ const activeSprintId = 3001;
 const activeSprintName = '2026Q2 Sprint 42';
 const futureSprintId = 4002;
 const futureSprintName = '2026Q3 Sprint 1';
+const secondFutureSprintId = 5003;
+const secondFutureSprintName = '2026Q3 Sprint 2';
 const groupTeamIds = ['team-alpha'];
 let dashboardJs;
 
@@ -40,7 +42,7 @@ function requestBody(request) {
     }
 }
 
-function makeStory(key, status) {
+function makeStory(key, status, sprintId = futureSprintId, sprintName = futureSprintName, epicKey = 'PLAN-EPIC') {
     return {
         id: key,
         key,
@@ -51,26 +53,26 @@ function makeStory(key, status) {
             issuetype: { name: 'Story' },
             assignee: { displayName: 'Alpha Owner' },
             customfield_10004: 1,
-            epicKey: 'PLAN-EPIC',
+            epicKey,
             parentSummary: 'Future planning epic',
             projectKey: 'PLAN',
             teamId: 'team-alpha',
             teamName: 'Alpha Team',
-            sprint: [{ id: futureSprintId, name: futureSprintName, state: 'future' }],
+            sprint: [{ id: sprintId, name: sprintName, state: 'future' }],
         },
     };
 }
 
-function makeEpic() {
+function makeEpic(sprintId = futureSprintId, sprintName = futureSprintName, epicKey = 'PLAN-EPIC') {
     return {
-        key: 'PLAN-EPIC',
+        key: epicKey,
         summary: 'Future planning epic',
         status: { name: 'In Progress' },
         assignee: { displayName: 'Alpha Lead' },
         teamId: 'team-alpha',
         teamName: 'Alpha Team',
         labels: ['alpha_label'],
-        sprint: [{ id: futureSprintId, name: futureSprintName, state: 'future' }],
+        sprint: [{ id: sprintId, name: sprintName, state: 'future' }],
     };
 }
 
@@ -78,6 +80,10 @@ const futureStories = [
     makeStory('PLAN-1', 'To Do'),
     makeStory('PLAN-2', 'Pending'),
     makeStory('PLAN-3', 'Accepted'),
+];
+const secondFutureStories = [
+    makeStory('PLAN-4', 'To Do', secondFutureSprintId, secondFutureSprintName, 'PLAN-EPIC-2'),
+    makeStory('PLAN-5', 'Accepted', secondFutureSprintId, secondFutureSprintName, 'PLAN-EPIC-2'),
 ];
 
 async function installPlanningFixture(page) {
@@ -178,14 +184,20 @@ async function installPlanningFixture(page) {
                 sprints: [
                     { id: activeSprintId, name: activeSprintName, state: 'active', startDate: '2026-05-01' },
                     { id: futureSprintId, name: futureSprintName, state: 'future', startDate: '2026-07-01' },
+                    { id: secondFutureSprintId, name: secondFutureSprintName, state: 'future', startDate: '2026-07-15' },
                 ],
             });
         }
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
-            const issues = project === 'product' && !purpose ? futureStories : [];
-            const epic = makeEpic();
+            const sprint = url.searchParams.get('sprint');
+            const issues = project === 'product' && !purpose
+                ? (String(sprint) === String(secondFutureSprintId) ? secondFutureStories : futureStories)
+                : [];
+            const epic = String(sprint) === String(secondFutureSprintId)
+                ? makeEpic(secondFutureSprintId, secondFutureSprintName, 'PLAN-EPIC-2')
+                : makeEpic();
             return json(route, {
                 issues,
                 epics: { [epic.key]: epic },
@@ -203,14 +215,21 @@ async function installPlanningFixture(page) {
 }
 
 async function openFuturePlanning(page) {
-    const sprintDropdown = page.locator('.sprint-dropdown').first();
-    const sprintToggle = sprintDropdown.locator('.sprint-dropdown-toggle');
-    await expect(sprintToggle).toHaveAttribute('aria-disabled', 'false');
-    await sprintToggle.click();
-    await page.locator('.sprint-dropdown-option', { hasText: futureSprintName }).click();
+    await selectSprint(page, futureSprintName);
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
     await expect(page.locator('.task-list .epic-block', { hasText: 'PLAN-EPIC' })).toBeVisible();
+}
+
+async function selectSprint(page, sprintName) {
+    const sprintDropdown = page.locator('.sprint-dropdown').first();
+    const sprintToggle = sprintDropdown.locator('.sprint-dropdown-toggle');
+    await expect(sprintToggle).toHaveAttribute('aria-disabled', 'false');
+    if ((await sprintToggle.textContent() || '').includes(sprintName)) {
+        return;
+    }
+    await sprintToggle.click();
+    await page.locator('.sprint-dropdown-option', { hasText: sprintName }).click();
 }
 
 function selectedStat(page) {
@@ -271,6 +290,34 @@ test('planning undo restores loaded selection after a bulk status action', async
     await page.getByRole('button', { name: 'Undo' }).click();
     await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
     await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
+});
+
+test('select all remains scoped when switching future planning sprints', async ({ page }) => {
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+    await openFuturePlanning(page);
+
+    await page.getByRole('button', { name: 'Select All' }).click();
+    await selectSprint(page, secondFutureSprintName);
+    await expect(page.locator('.task-list .epic-block', { hasText: 'PLAN-EPIC-2' })).toBeVisible();
+    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
+
+    await expect.poll(async () => page.evaluate(({ firstSprintId, secondSprintId }) => {
+        const payload = JSON.parse(window.localStorage.getItem('jira_dashboard_planning_state_v1') || '{}');
+        const first = payload[`planning::${firstSprintId}::group-alpha`] || {};
+        const second = payload[`planning::${secondSprintId}::group-alpha`] || {};
+        return {
+            firstTaskKeys: first.selectedTaskKeys || [],
+            firstMode: first.selectionMode || '',
+            secondTaskKeys: second.selectedTaskKeys || [],
+            secondMode: second.selectionMode || '',
+        };
+    }, { firstSprintId: futureSprintId, secondSprintId: secondFutureSprintId })).toEqual({
+        firstTaskKeys: ['PLAN-1', 'PLAN-2', 'PLAN-3'],
+        firstMode: 'default_all',
+        secondTaskKeys: ['PLAN-4', 'PLAN-5'],
+        secondMode: 'default_all',
+    });
 });
 
 test('planning epic excluded-capacity toggle updates shared group config', async ({ page }) => {

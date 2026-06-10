@@ -328,6 +328,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Place ENG story subtask controls after the story Last Update meta on desktop; do not use title-row chips or status-stack placement.
 - Keep expanded ENG story subtask lists compact and visually quiet; constrain desktop width instead of stretching rows across the whole card.
 - Map ENG subtask workflow statuses such as Analysis and Release to colored progress chips, and keep story meta rows vertically centered.
+- Keep ENG Show only cards in one desktop row and tighten widths/gaps before allowing filter-card wrapping or floating dependency-pill spacing.
 
 ---
 

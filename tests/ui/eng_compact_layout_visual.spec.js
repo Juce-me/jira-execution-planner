@@ -202,7 +202,7 @@ async function openEngCatchUp(page, viewport) {
     await waitForVisualSettled(page);
 }
 
-async function expectCompactLayout(page, screenshotName) {
+async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1, expectedStatsFlexWrap = 'nowrap' } = {}) {
     const metrics = await page.evaluate(() => {
         const parsePx = (value) => Number.parseFloat(value) || 0;
         const lineCount = (node) => {
@@ -239,9 +239,11 @@ async function expectCompactLayout(page, screenshotName) {
         const epicName = epicBlock.querySelector('.epic-name');
         const activeModeButton = document.querySelector('.eng-mode-control .segmented-control-button.active');
         const activeModeButtonStyle = getComputedStyle(activeModeButton);
+        const cardRows = new Set(cards.map(card => Math.round(card.getBoundingClientRect().top))).size;
         return {
             statsDisplay: getComputedStyle(stats).display,
             statsFlexWrap: getComputedStyle(stats).flexWrap,
+            cardRows,
             cardWidths: cards.map(card => card.getBoundingClientRect().width),
             cardHeights: cards.map(card => card.getBoundingClientRect().height),
             labelFontSize: parsePx(getComputedStyle(longLabel).fontSize),
@@ -264,7 +266,8 @@ async function expectCompactLayout(page, screenshotName) {
     });
 
     expect(metrics.statsDisplay).toBe('flex');
-    expect(metrics.statsFlexWrap).toBe('wrap');
+    expect(metrics.statsFlexWrap).toBe(expectedStatsFlexWrap);
+    expect(metrics.cardRows).toBe(expectedCardRows);
     expect(Math.max(...metrics.cardWidths)).toBeLessThanOrEqual(203);
     expect(Math.max(...metrics.cardHeights)).toBeLessThanOrEqual(58);
     expect(metrics.labelFontSize).toBeGreaterThanOrEqual(9);
@@ -326,12 +329,12 @@ async function expectSprintOptionsStaySingleLine(page) {
 }
 
 test('ENG compact filters and epic rows stay readable on desktop', async ({ page }) => {
-    await openEngCatchUp(page, { width: 1028, height: 720 });
+    await openEngCatchUp(page, { width: 1440, height: 760 });
     await expectCompactLayout(page, 'desktop');
     await expectSprintOptionsStaySingleLine(page);
 });
 
 test('ENG compact filters and epic rows stay readable on narrow screens', async ({ page }) => {
     await openEngCatchUp(page, { width: 390, height: 760 });
-    await expectCompactLayout(page, 'mobile');
+    await expectCompactLayout(page, 'mobile', { expectedCardRows: 6, expectedStatsFlexWrap: 'wrap' });
 });

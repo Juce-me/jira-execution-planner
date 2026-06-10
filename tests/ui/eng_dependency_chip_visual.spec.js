@@ -226,6 +226,7 @@ test('ENG header dependency pill sits below story meta without remove overlap', 
         const meta = rectFor('.task-inline-meta');
         const pill = rectFor('.dependency-pill.blocker');
         const remove = rectFor('.task-remove');
+        const taskMeta = rectFor('.task-meta');
         const overlapsRemove = pill.x < remove.right &&
             pill.right > remove.x &&
             pill.y < remove.bottom &&
@@ -234,6 +235,7 @@ test('ENG header dependency pill sits below story meta without remove overlap', 
             meta,
             pill,
             remove,
+            taskMeta,
             removeOpacity: Number.parseFloat(getComputedStyle(element.querySelector('.task-remove')).opacity),
             pillInHeaderRight: Boolean(element.querySelector('.task-header-right .dependency-pill.blocker')),
             metaInHeaderRight: Boolean(element.querySelector('.task-header-right .task-inline-meta')),
@@ -244,6 +246,8 @@ test('ENG header dependency pill sits below story meta without remove overlap', 
     expect(metrics.metaInHeaderRight).toBe(true);
     expect(metrics.pillInHeaderRight).toBe(true);
     expect(metrics.pill.y).toBeGreaterThanOrEqual(metrics.meta.bottom);
+    expect(metrics.pill.y - metrics.meta.bottom).toBeLessThanOrEqual(4);
+    expect(metrics.taskMeta.y - metrics.pill.bottom).toBeLessThanOrEqual(6);
     expect(metrics.overlapsRemove).toBe(false);
     expect(metrics.removeOpacity).toBeGreaterThan(0.9);
     await page.screenshot({ path: `${screenshotDir}/header-pill-no-remove-overlap.png`, fullPage: false });

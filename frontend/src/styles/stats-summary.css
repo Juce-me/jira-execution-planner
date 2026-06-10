@@ -112,16 +112,16 @@
         .filters-strip .stat-card {
             min-height: 0;
             width: auto;
-            min-width: 9.2rem;
+            min-width: 11.4rem;
             max-width: 12.6rem;
-            padding: 0.36rem 0.5rem;
+            padding: 0.36rem 0.34rem;
             border-radius: 8px;
-            grid-template-columns: auto minmax(0, 1fr);
-            grid-template-rows: auto auto;
-            column-gap: 0.55rem;
+            grid-template-columns: 1.7rem minmax(0, 1fr);
+            grid-template-rows: 1fr auto auto 1fr;
+            column-gap: 0.24rem;
             row-gap: 0.1rem;
-            text-align: left;
-            align-items: center;
+            text-align: center;
+            align-items: stretch;
             transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
         }
 
@@ -131,24 +131,53 @@
         }
 
         .filters-strip .stat-value {
-            grid-row: 1 / span 2;
+            grid-column: 1;
+            grid-row: 1 / span 4;
             font-size: 0.98rem;
             align-self: center;
-            min-width: 2.25rem;
-            text-align: right;
+            justify-self: center;
+            min-width: 0;
+            text-align: center;
         }
 
         .filters-strip .stat-label {
-            justify-content: flex-start;
-            text-align: left;
-            font-size: 0.58rem;
-            letter-spacing: 0.07em;
-            line-height: 1.22;
+            grid-column: 2;
+            grid-row: 2;
+            justify-content: center;
+            justify-self: stretch;
+            text-align: center;
+            font-size: 0.563rem;
+            letter-spacing: 0;
+            line-height: 1.15;
+            min-width: 0;
+            white-space: nowrap;
         }
 
         .filters-strip .stat-card .stats-note {
+            grid-column: 2;
+            grid-row: 3;
             font-size: 0.58rem;
             align-self: start;
+            justify-self: center;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        @media (min-width: 1200px) {
+            .filters-strip .stats {
+                flex-wrap: nowrap;
+            }
+
+            .filters-strip .stat-card {
+                flex: 1 1 9.2rem;
+                min-width: 9.2rem;
+                max-width: 12.6rem;
+            }
+
+            .filters-strip .stat-card.todo-accepted {
+                flex-grow: 1.45;
+                min-width: 11.4rem;
+            }
         }
 
         .empty-state {

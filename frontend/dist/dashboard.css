@@ -523,7 +523,7 @@ h1 {
   top: calc(100% + 0.35rem);
   left: 0;
   right: auto;
-  width: 100%;
+  width: max-content;
   min-width: 100%;
   max-width: var(--sprint-dropdown-max-width);
   background: #fff;
@@ -562,6 +562,10 @@ h1 {
   letter-spacing: normal;
   line-height: 1.2;
   cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sprint-dropdown-option:hover {
   background: var(--bg-primary);
@@ -3066,10 +3070,11 @@ button.toggle.active {
 .task-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
+  align-items: flex-start;
+  margin-bottom: 0.25rem;
   position: relative;
   min-width: 0;
+  padding-right: 2.2rem;
 }
 .task-remove {
   position: absolute;
@@ -3122,30 +3127,33 @@ button.toggle.active {
   gap: 0.6rem;
   flex: 1 1 auto;
   min-width: 0;
-  padding-right: 2.2rem;
+  padding-right: 0;
 }
 .task-title {
-  display: -webkit-box;
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 1.05rem;
   font-weight: 400;
   line-height: 1.25;
 }
 .task-incomplete-icon {
-  margin-right: 0.3rem;
   font-size: 0.85em;
   opacity: 0.8;
+  flex: 0 0 auto;
 }
 .task-title a {
-  display: -webkit-box;
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: inherit;
   text-decoration: none;
   border-bottom: 1px solid transparent;
@@ -3326,6 +3334,18 @@ button.toggle.active {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   flex-wrap: wrap;
+}
+.task-detail-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  padding-right: 2.2rem;
+}
+.task-detail-row .task-meta {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .task-team {
   background: #f6f4ff;
@@ -3513,13 +3533,16 @@ button.toggle.active {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.35rem;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+  max-width: 34%;
+  min-width: 7rem;
 }
 .dependency-pill-stack {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.25rem;
+  gap: 0.12rem;
 }
 .dependency-pill {
   font-family: "IBM Plex Mono", monospace;
@@ -3790,12 +3813,11 @@ a.dependency-missing-item:hover {
   text-underline-offset: 3px;
 }
 .epic-name {
-  display: -webkit-box;
+  display: block;
   min-width: 0;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
 }
 .epic-key {
@@ -4280,16 +4302,16 @@ button.toggle.initiative-toggle.active {
 .filters-strip .stat-card {
   min-height: 0;
   width: auto;
-  min-width: 9.2rem;
+  min-width: 11.4rem;
   max-width: 12.6rem;
-  padding: 0.36rem 0.5rem;
+  padding: 0.36rem 0.34rem;
   border-radius: 8px;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: 0.55rem;
+  grid-template-columns: 1.7rem minmax(0, 1fr);
+  grid-template-rows: 1fr auto auto 1fr;
+  column-gap: 0.24rem;
   row-gap: 0.1rem;
-  text-align: left;
-  align-items: center;
+  text-align: center;
+  align-items: stretch;
   transition:
     border-color 0.16s ease,
     box-shadow 0.16s ease,
@@ -4300,22 +4322,48 @@ button.toggle.initiative-toggle.active {
   box-shadow: 0 4px 10px rgba(89, 126, 247, 0.10);
 }
 .filters-strip .stat-value {
-  grid-row: 1 / span 2;
+  grid-column: 1;
+  grid-row: 1 / span 4;
   font-size: 0.98rem;
   align-self: center;
-  min-width: 2.25rem;
-  text-align: right;
+  justify-self: center;
+  min-width: 0;
+  text-align: center;
 }
 .filters-strip .stat-label {
-  justify-content: flex-start;
-  text-align: left;
-  font-size: 0.58rem;
-  letter-spacing: 0.07em;
-  line-height: 1.22;
+  grid-column: 2;
+  grid-row: 2;
+  justify-content: center;
+  justify-self: stretch;
+  text-align: center;
+  font-size: 0.563rem;
+  letter-spacing: 0;
+  line-height: 1.15;
+  min-width: 0;
+  white-space: nowrap;
 }
 .filters-strip .stat-card .stats-note {
+  grid-column: 2;
+  grid-row: 3;
   font-size: 0.58rem;
   align-self: start;
+  justify-self: center;
+  text-align: center;
+  white-space: nowrap;
+}
+@media (min-width: 1200px) {
+  .filters-strip .stats {
+    flex-wrap: nowrap;
+  }
+  .filters-strip .stat-card {
+    flex: 1 1 9.2rem;
+    min-width: 9.2rem;
+    max-width: 12.6rem;
+  }
+  .filters-strip .stat-card.todo-accepted {
+    flex-grow: 1.45;
+    min-width: 11.4rem;
+  }
 }
 .empty-state {
   text-align: center;

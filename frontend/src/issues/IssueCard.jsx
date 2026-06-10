@@ -112,6 +112,17 @@ export default function IssueCard({
                             {task.fields.summary}
                         </a>
                     </h3>
+                    {canSelect && (
+                        <input
+                            type="checkbox"
+                            className="task-checkbox"
+                            checked={isSelected}
+                            onChange={() => onToggleSelection(task.key)}
+                            title="Select for sprint planning"
+                        />
+                    )}
+                </div>
+                <div className="task-header-right">
                     <span className="task-inline-meta">
                         <a
                             className="task-key-link"
@@ -127,52 +138,43 @@ export default function IssueCard({
                             </span>
                         )}
                     </span>
-                    {canSelect && (
-                        <input
-                            type="checkbox"
-                            className="task-checkbox"
-                            checked={isSelected}
-                            onChange={() => onToggleSelection(task.key)}
-                            title="Select for sprint planning"
-                        />
-                    )}
-                </div>
-                <div className="task-header-right">
-                    <IssueDependencies
-                        task={task}
-                        jiraUrl={jiraUrl}
-                        model={dependencyModel}
-                        placement="header"
-                    />
                 </div>
             </div>
-            <div className="task-meta">
-                <StatusPill
-                    className={statusClassName || getIssueStatusClassName(statusName)}
-                    label={statusName}
-                />
-                <span className="task-team">{teamLabel || getIssueTeamLabel(teamInfo)}</span>
-                {task.fields.assignee && (
-                    <span className="task-assignee">
-                        <span className="task-assignee-icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <path d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Z" stroke="currentColor" strokeWidth="1.6"/>
-                                <path d="M4 20c1.8-4 6-5.5 8-5.5S18.2 16 20 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                            </svg>
+            <div className="task-detail-row">
+                <div className="task-meta">
+                    <StatusPill
+                        className={statusClassName || getIssueStatusClassName(statusName)}
+                        label={statusName}
+                    />
+                    <span className="task-team">{teamLabel || getIssueTeamLabel(teamInfo)}</span>
+                    {task.fields.assignee && (
+                        <span className="task-assignee">
+                            <span className="task-assignee-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none">
+                                    <path d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Z" stroke="currentColor" strokeWidth="1.6"/>
+                                    <path d="M4 20c1.8-4 6-5.5 8-5.5S18.2 16 20 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                                </svg>
+                            </span>
+                            {task.fields.assignee.displayName}
                         </span>
-                        {task.fields.assignee.displayName}
-                    </span>
-                )}
-                {task.fields.updated && (
-                    <span className="task-updated">
-                        Last Update: {new Date(task.fields.updated).toLocaleDateString('en-CA')}
-                    </span>
-                )}
-                {subtaskToggle && (
-                    <span className="task-subtask-meta">
-                        {subtaskToggle}
-                    </span>
-                )}
+                    )}
+                    {task.fields.updated && (
+                        <span className="task-updated">
+                            Last Update: {new Date(task.fields.updated).toLocaleDateString('en-CA')}
+                        </span>
+                    )}
+                    {subtaskToggle && (
+                        <span className="task-subtask-meta">
+                            {subtaskToggle}
+                        </span>
+                    )}
+                </div>
+                <IssueDependencies
+                    task={task}
+                    jiraUrl={jiraUrl}
+                    model={dependencyModel}
+                    placement="header"
+                />
             </div>
             <IssueDependencies
                 task={task}

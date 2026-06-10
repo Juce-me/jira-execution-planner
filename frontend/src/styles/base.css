@@ -585,7 +585,7 @@
             top: calc(100% + 0.35rem);
             left: 0;
             right: auto;
-            width: 100%;
+            width: max-content;
             min-width: 100%;
             max-width: var(--sprint-dropdown-max-width);
             background: #fff;
@@ -627,6 +627,10 @@
             letter-spacing: normal;
             line-height: 1.2;
             cursor: pointer;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .sprint-dropdown-option:hover {

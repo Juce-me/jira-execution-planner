@@ -65,6 +65,49 @@ export function resolveInitialGroupId(config) {
     return config.groups[0].id;
 }
 
+export function buildGroupsConfigWithExcludedCapacityToggle(config, groupId, epicKey) {
+    const targetGroupId = String(groupId || '').trim();
+    const normalizedEpicKey = String(epicKey || '').trim().toUpperCase();
+    if (!targetGroupId || !normalizedEpicKey) {
+        return { config, changed: false, nextExcluded: false };
+    }
+
+    let changed = false;
+    let nextExcluded = false;
+    const groups = (config?.groups || []).map(group => {
+        if (String(group?.id || '').trim() !== targetGroupId) return group;
+        const existing = Array.isArray(group.excludedCapacityEpics)
+            ? group.excludedCapacityEpics.map(key => String(key || '').trim().toUpperCase()).filter(Boolean)
+            : [];
+        const seen = new Set();
+        const normalizedExisting = [];
+        existing.forEach(key => {
+            if (!key || seen.has(key)) return;
+            seen.add(key);
+            normalizedExisting.push(key);
+        });
+        const hasKey = seen.has(normalizedEpicKey);
+        changed = true;
+        nextExcluded = !hasKey;
+        return {
+            ...group,
+            excludedCapacityEpics: hasKey
+                ? normalizedExisting.filter(key => key !== normalizedEpicKey)
+                : [...normalizedExisting, normalizedEpicKey]
+        };
+    });
+
+    if (!changed) return { config, changed: false, nextExcluded: false };
+    return {
+        config: {
+            ...config,
+            groups
+        },
+        changed,
+        nextExcluded
+    };
+}
+
 export function buildGroupId(name, existingIds) {
     const base = String(name || 'group')
         .toLowerCase()

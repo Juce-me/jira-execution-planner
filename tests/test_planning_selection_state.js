@@ -28,7 +28,8 @@ test('reconcilePlanningSelection drops invalid stories and resets invalid team s
         {
             selectedTaskKeys: ['A-2'],
             selectedTeams: ['all'],
-            selectedTeamId: 'all'
+            selectedTeamId: 'all',
+            selectionMode: 'manual'
         }
     );
 });
@@ -52,7 +53,8 @@ test('hydratePlanningState preserves the team-array contract after reconciliatio
         {
             selectedTaskKeys: ['A-2'],
             selectedTeams: ['team-a'],
-            selectedTeamId: 'team-a'
+            selectedTeamId: 'team-a',
+            selectionMode: 'manual'
         }
     );
 });
@@ -86,7 +88,8 @@ test('planning state round-trips through scoped browser storage', async () => {
         {
             selectedTaskKeys: ['A-1', 'A-2'],
             selectedTeams: ['team-a'],
-            selectedTeamId: 'team-a'
+            selectedTeamId: 'team-a',
+            selectionMode: 'manual'
         }
     );
 
@@ -101,7 +104,8 @@ test('planning state round-trips through scoped browser storage', async () => {
         {
             selectedTaskKeys: [],
             selectedTeams: ['all'],
-            selectedTeamId: 'all'
+            selectedTeamId: 'all',
+            selectionMode: 'manual'
         }
     );
 });
@@ -118,5 +122,91 @@ test('resolvePlanningTeamSelection prefers live selection when no scoped state e
             savedPrefsSelectedTeams: ['team-saved']
         }),
         ['team-live']
+    );
+});
+
+test('future planning scopes without stored state default to all valid tasks', async () => {
+    const {
+        resolvePlanningSelectionState
+    } = await import('../frontend/src/planningSelectionState.mjs');
+
+    assert.deepEqual(
+        resolvePlanningSelectionState({
+            hasStoredState: false,
+            storedState: null,
+            isFutureSprint: true,
+            validTaskKeys: new Set(['PLAN-2', 'PLAN-1']),
+            validTeamIds: new Set(['team-a'])
+        }),
+        {
+            selectedTaskKeys: ['PLAN-1', 'PLAN-2'],
+            selectedTeams: ['all'],
+            selectedTeamId: 'all',
+            selectionMode: 'default_all'
+        }
+    );
+});
+
+test('future planning manual mode preserves clicked task state', async () => {
+    const {
+        resolvePlanningSelectionState
+    } = await import('../frontend/src/planningSelectionState.mjs');
+
+    assert.deepEqual(
+        resolvePlanningSelectionState({
+            hasStoredState: true,
+            storedState: {
+                selectedTaskKeys: ['PLAN-2'],
+                selectedTeams: ['team-a'],
+                selectionMode: 'manual'
+            },
+            isFutureSprint: true,
+            validTaskKeys: new Set(['PLAN-1', 'PLAN-2', 'PLAN-3']),
+            validTeamIds: new Set(['team-a'])
+        }),
+        {
+            selectedTaskKeys: ['PLAN-2'],
+            selectedTeams: ['team-a'],
+            selectedTeamId: 'team-a',
+            selectionMode: 'manual'
+        }
+    );
+});
+
+test('future planning default all mode reselects new valid tasks', async () => {
+    const {
+        resolvePlanningSelectionState
+    } = await import('../frontend/src/planningSelectionState.mjs');
+
+    assert.deepEqual(
+        resolvePlanningSelectionState({
+            hasStoredState: true,
+            storedState: {
+                selectedTaskKeys: ['PLAN-1'],
+                selectedTeams: ['all'],
+                selectionMode: 'default_all'
+            },
+            isFutureSprint: true,
+            validTaskKeys: new Set(['PLAN-1', 'PLAN-2']),
+            validTeamIds: new Set(['team-a'])
+        }).selectedTaskKeys,
+        ['PLAN-1', 'PLAN-2']
+    );
+});
+
+test('active planning scopes without stored state keep the current empty selection default', async () => {
+    const {
+        resolvePlanningSelectionState
+    } = await import('../frontend/src/planningSelectionState.mjs');
+
+    assert.deepEqual(
+        resolvePlanningSelectionState({
+            hasStoredState: false,
+            storedState: null,
+            isFutureSprint: false,
+            validTaskKeys: new Set(['PLAN-1']),
+            validTeamIds: new Set(['team-a'])
+        }).selectedTaskKeys,
+        []
     );
 });

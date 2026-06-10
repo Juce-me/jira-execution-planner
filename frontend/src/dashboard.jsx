@@ -26,6 +26,7 @@ import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam } from './eng/engTaskUtils.js';
+import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import {
@@ -110,7 +111,16 @@ import {
     fetchAvailableIssueTypes as requestAvailableIssueTypes,
 } from './api/configApi.js';
 import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.jsx';
-import { applyLocalGroupPreferences, buildGroupId, buildTeamCatalogList, mergeTeamCatalog, normalizeGroupsConfig, parseTeamIdList, resolveInitialGroupId } from './settings/groupConfigUtils.js';
+import {
+    applyLocalGroupPreferences,
+    buildGroupId,
+    buildTeamCatalogList,
+    mergeTeamCatalog,
+    normalizeGroupsConfig,
+    parseTeamIdList,
+    resolveInitialGroupId
+} from './settings/groupConfigUtils.js';
+import { saveSharedExcludedCapacityToggle } from './settings/sharedExcludedCapacityToggle.js';
 import { useGroupVisibilityPreferences } from './settings/useGroupVisibilityPreferences.js';
 import {
     buildSharedGroupsPayload,
@@ -180,7 +190,14 @@ import {
     shouldUseEpmSprint,
     sortEpmSettingsProjects
 } from './epm/epmProjectUtils.mjs';
-import { buildPlanningScopeKey, hasPlanningState, loadPlanningState, resolvePlanningTeamSelection, savePlanningState } from './planningSelectionState.mjs';
+import {
+    PLANNING_SELECTION_MODE_DEFAULT_ALL,
+    PLANNING_SELECTION_MODE_MANUAL,
+    buildPlanningScopeKey,
+    hasPlanningState,
+    loadPlanningState,
+    resolvePlanningTeamSelection
+} from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
 import {
@@ -588,6 +605,8 @@ import {
             const pageLoadRefreshRef = useRef(false);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
+            const [planningSelectionMode, setPlanningSelectionMode] = useState(PLANNING_SELECTION_MODE_MANUAL);
+            const [canUndoPlanningSelection, setCanUndoPlanningSelection] = useState(false);
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
             const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
             const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
@@ -616,6 +635,8 @@ import {
             const [isPlanningStuck, setIsPlanningStuck] = useState(false);
             const planningPanelRef = useRef(null);
             const planningHydratedScopeRef = useRef('');
+            const planningLoadedSelectionRef = useRef(null);
+            const planningBaselineScopeRef = useRef('');
             const teamSelectionHydratedScopeRef = useRef('');
             const teamSelectionSkipPersistScopeRef = useRef('');
             const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort' || value === 'excludedCapacity' || value === 'monoCrossShare') ? value : 'teams';
@@ -795,7 +816,6 @@ import {
             const [dependencyHover, setDependencyHover] = useState(null);
             const [dependencyLookupCache, setDependencyLookupCache] = useState({});
             const [dependencyLookupLoading, setDependencyLookupLoading] = useState(false);
-            const [excludedStatsEpics, setExcludedStatsEpics] = useState(savedPrefsRef.current.excludedStatsEpics ?? []);
             const [hideExcludedStats, setHideExcludedStats] = useState(savedPrefsRef.current.hideExcludedStats ?? true);
             const [showMissingAlert, setShowMissingAlert] = useState(savedPrefsRef.current.showMissingAlert ?? true);
             const [showBlockedAlert, setShowBlockedAlert] = useState(savedPrefsRef.current.showBlockedAlert ?? true);
@@ -2956,6 +2976,21 @@ import {
                 }
             };
 
+            const applySavedGroupsConfig = (payload) => {
+                const normalized = applyLocalGroupPreferences(payload, savedPrefsRef.current);
+                setGroupsConfig(normalized);
+                setGroupPreferences(normalized.preferences);
+                setGroupWarnings(payload?.warnings || []);
+                setGroupConfigSource(normalized.source || payload?.source || '');
+                setGroupDraft(normalized);
+                groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
+                setActiveGroupId(prev => {
+                    const effectiveIds = effectiveVisibleGroupIds(normalized, normalized.preferences);
+                    return resolveVisibleActiveGroupId(normalized, effectiveIds, prev);
+                });
+                return normalized;
+            };
+
             const saveGroupsConfig = async () => {
                 if (!groupDraft) return;
                 if (groupConfigValidationErrors.length > 0) {
@@ -3027,12 +3062,12 @@ import {
                             const errorPayload = await response.json().catch(() => ({}));
                             const errorMessage = errorPayload.message || (errorPayload.errors || []).join(' ') || errorPayload.error || `Save failed (${response.status})`;
                             if (response.status === 409 && errorPayload.current) {
-                                setGroupDraft(prev => prev ? { ...prev, configRevision: errorPayload.current.configRevision } : prev);
+                                applySavedGroupsConfig(errorPayload.current);
                             }
                             throw new Error(errorMessage);
                         }
                         payload = await response.json();
-                        normalized = applyLocalGroupPreferences(payload, savedPrefsRef.current);
+                        normalized = applySavedGroupsConfig(payload);
                     }
                     const refreshTarget = getConfigSaveRefreshTarget({
                         selectedSprint,
@@ -3051,16 +3086,6 @@ import {
                             }
                         }
 
-                        setGroupsConfig(normalized);
-                        setGroupPreferences(normalized.preferences);
-                        setGroupWarnings(payload?.warnings || []);
-                        setGroupConfigSource(normalized.source || payload?.source || '');
-                        setGroupDraft(normalized);
-                        groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
-                        setActiveGroupId(prev => {
-                            const effectiveIds = effectiveVisibleGroupIds(normalized, normalized.preferences);
-                            return resolveVisibleActiveGroupId(normalized, effectiveIds, prev);
-                        });
                     }
 
                     if (savingDepartmentSettings && isGroupVisibilityDraftDirty) {
@@ -4306,17 +4331,6 @@ import {
                 if (selectedSprint === null || !activeGroupId) return '';
                 return buildTeamSelectionScopeKey({ sprintId: selectedSprint, groupId: activeGroupId });
             }, [selectedSprint, activeGroupId]);
-            const selectedTaskMapFromKeys = (keys) => {
-                const next = {};
-                (keys || []).forEach((key) => {
-                    const normalizedKey = String(key || '').trim();
-                    if (normalizedKey) {
-                        next[normalizedKey] = true;
-                    }
-                });
-                return next;
-            };
-
             const buildDefaultGroupState = (groupId) => {
                 const hasStoredPlanningState = planningScopeKey
                     ? hasPlanningState(window.localStorage, planningScopeKey)
@@ -4324,6 +4338,9 @@ import {
                 const planningState = planningScopeKey
                     ? loadPlanningState(window.localStorage, planningScopeKey)
                     : null;
+                const selectionModeFromPlanning = hasStoredPlanningState
+                    ? (planningState?.selectionMode || PLANNING_SELECTION_MODE_MANUAL)
+                    : (isFutureSprintSelected ? PLANNING_SELECTION_MODE_DEFAULT_ALL : PLANNING_SELECTION_MODE_MANUAL);
                 const storedTeamSelectionState = teamSelectionScopeKey
                     ? loadTeamSelectionState(window.localStorage, teamSelectionScopeKey)
                     : null;
@@ -4345,6 +4362,7 @@ import {
                     : {};
                 return {
                     sprintId: selectedSprint,
+                    planningScopeKey,
                     teamIdsSignature: activeGroupTeamIds.join('|'),
                     productTasks: [],
                     techTasks: [],
@@ -4369,9 +4387,10 @@ import {
                     searchQuery: savedPrefsRef.current.searchQuery ?? '',
                     selectedTeams: selectedTeamsFromPlanning,
                     selectedTasks: selectedTasksFromPlanning,
-                    showPlanning: savedPrefsRef.current.showPlanning ?? false,
-                    showStats: savedPrefsRef.current.showStats ?? false,
-                    showScenario: false,
+                    planningSelectionMode: selectionModeFromPlanning,
+                    showPlanning,
+                    showStats,
+                    showScenario,
                     showDependencies: true,
                     epicDetails: {},
                     statsView: resolveStatsView(savedPrefsRef.current.statsView),
@@ -4422,7 +4441,6 @@ import {
                         assignee: null,
                         team: null
                     },
-                    excludedStatsEpics: savedPrefsRef.current.excludedStatsEpics ?? [],
                     hideExcludedStats: savedPrefsRef.current.hideExcludedStats ?? true,
                     showMissingAlert: savedPrefsRef.current.showMissingAlert ?? true,
                     showBlockedAlert: savedPrefsRef.current.showBlockedAlert ?? true,
@@ -4445,6 +4463,7 @@ import {
 
             const buildGroupStateSnapshot = () => ({
                 sprintId: selectedSprint,
+                planningScopeKey,
                 teamIdsSignature: activeGroupTeamIds.join('|'),
                 productTasks,
                 techTasks,
@@ -4469,6 +4488,7 @@ import {
                 searchQuery,
                 selectedTeams,
                 selectedTasks,
+                planningSelectionMode,
                 showPlanning,
                 showStats,
                 showScenario,
@@ -4505,7 +4525,6 @@ import {
                 scenarioLayout,
                 scenarioEdgeRender,
                 scenarioTooltip,
-                excludedStatsEpics,
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
@@ -4571,6 +4590,8 @@ import {
                 setSearchQuery(nextState.searchQuery ?? '');
                 setSelectedTeams(normalizeSelectedTeams(nextState.selectedTeams));
                 setSelectedTasks(nextState.selectedTasks || {});
+                setPlanningSelectionMode(nextState.planningSelectionMode || PLANNING_SELECTION_MODE_MANUAL);
+                setCanUndoPlanningSelection(false);
                 setShowPlanning(nextState.showPlanning ?? false);
                 setShowStats(nextState.showStats ?? false);
                 setShowScenario(nextState.showScenario ?? false);
@@ -4624,7 +4645,6 @@ import {
                     assignee: null,
                     team: null
                 });
-                setExcludedStatsEpics(nextState.excludedStatsEpics || []);
                 setHideExcludedStats(nextState.hideExcludedStats ?? true);
                 setShowMissingAlert(nextState.showMissingAlert ?? true);
                 setShowBlockedAlert(nextState.showBlockedAlert ?? true);
@@ -4652,6 +4672,7 @@ import {
 
             const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), [
                 selectedSprint, missingInfoEpics,
+                planningScopeKey,
                 activeGroupTeamIds.join('|'),
                 productTasks,
                 techTasks,
@@ -4675,6 +4696,7 @@ import {
                 searchQuery,
                 selectedTeams,
                 selectedTasks,
+                planningSelectionMode,
                 showPlanning,
                 showStats,
                 showScenario,
@@ -4711,7 +4733,6 @@ import {
                 scenarioLayout,
                 scenarioEdgeRender,
                 scenarioTooltip,
-                excludedStatsEpics,
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
@@ -4733,8 +4754,9 @@ import {
             useEffect(() => {
                 if (!activeGroupId) return;
                 if (activeGroupRef.current !== activeGroupId) return;
+                if (planningScopeKey && planningHydratedScopeRef.current !== planningScopeKey) return;
                 groupStateRef.current.set(activeGroupId, groupStateSnapshot);
-            }, [activeGroupId, groupStateSnapshot]);
+            }, [activeGroupId, groupStateSnapshot, planningScopeKey]);
 
             useEffect(() => {
                 if (!activeGroupId) return;
@@ -4742,6 +4764,7 @@ import {
                 activeGroupRef.current = activeGroupId;
                 const cached = groupStateRef.current.get(activeGroupId);
                 const matchesScope = cached &&
+                    cached.planningScopeKey === planningScopeKey &&
                     cached.sprintId === selectedSprint &&
                     cached.teamIdsSignature === activeGroupTeamIds.join('|');
                 if (matchesScope) {
@@ -4758,7 +4781,10 @@ import {
                 if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
                 if (planningHydratedScopeRef.current === planningScopeKey) return;
                 const cached = activeGroupId ? groupStateRef.current.get(activeGroupId) : null;
-                if (cached && cached.sprintId === selectedSprint && cached.teamIdsSignature === activeGroupTeamIds.join('|')) {
+                if (cached &&
+                    cached.planningScopeKey === planningScopeKey &&
+                    cached.sprintId === selectedSprint &&
+                    cached.teamIdsSignature === activeGroupTeamIds.join('|')) {
                     planningHydratedScopeRef.current = planningScopeKey;
                     return;
                 }
@@ -4788,10 +4814,10 @@ import {
             }, [showPlanning, isCompletedSprintSelected]);
 
             useEffect(() => {
-                if (showPlanning && !isCompletedSprintSelected) {
+                if (showPlanning && !isCompletedSprintSelected && !isFutureSprintSelected) {
                     includePlanningTasksByStatus(['Accepted', 'In Progress']);
                 }
-            }, [showPlanning, isCompletedSprintSelected]);
+            }, [showPlanning, isCompletedSprintSelected, isFutureSprintSelected]);
 
             useEffect(() => {
                 if (!selectedSprint) return;
@@ -5062,7 +5088,6 @@ import {
                     excludedCapacityChartMode,
                     excludedCapacityMetric,
                     scenarioLaneMode,
-                    excludedStatsEpics,
                     hideExcludedStats,
                     showMissingAlert,
                     showBlockedAlert,
@@ -5112,7 +5137,6 @@ import {
                 excludedCapacityChartMode,
                 excludedCapacityMetric,
                 scenarioLaneMode,
-                excludedStatsEpics,
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
@@ -6214,12 +6238,8 @@ import {
                     const normalized = String(key || '').trim().toUpperCase();
                     if (normalized) set.add(normalized);
                 });
-                (excludedStatsEpics || []).forEach((key) => {
-                    const normalized = String(key || '').trim().toUpperCase();
-                    if (normalized) set.add(normalized);
-                });
                 return set;
-            }, [excludedStatsEpics, activeGroupExcludedCapacityEpics]);
+            }, [activeGroupExcludedCapacityEpics]);
             const statsTaskList = React.useMemo(() => {
                 if (!capacityTasks.length) return [];
                 return capacityTasks.filter(task => {
@@ -9556,28 +9576,20 @@ import {
             useEffect(() => {
                 if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
                 if (!tasksFetched || productTasksLoading || techTasksLoading) return;
+                if (lastLoadedSprintRef.current !== selectedSprint) return;
 
-                const validTaskKeySet = new Set(
-                    (selectionTasks || [])
-                        .map(task => String(task?.key || '').trim())
-                        .filter(Boolean)
-                );
-                const validTeamIds = teamOptions
-                    .map(team => String(team?.id || '').trim())
-                    .filter(id => id && id !== 'all');
-
-                const nextSelectedTaskKeys = Object.keys(selectedTasks || {})
-                    .filter(key => selectedTasks[key] && validTaskKeySet.has(key))
-                    .sort();
-                const nextSelectedTeams = sanitizeSelectedTeamsForScope(selectedTeams, {
+                const { validTaskKeySet, nextSelectedTaskKeys, nextSelectionMode, nextSelectedTeams } = resolvePlanningSelectionForDashboard({
+                    selectedTasks,
+                    selectedTeams,
+                    planningSelectionMode,
+                    isFutureSprintSelected,
+                    selectionTasks,
+                    teamOptions,
                     activeGroupTeamIds,
-                    availableTeamIds: validTeamIds
                 });
 
                 setSelectedTasks(prev => {
-                    const prevKeys = Object.keys(prev || {})
-                        .filter(key => prev[key] && validTaskKeySet.has(key))
-                        .sort();
+                    const prevKeys = selectedTaskKeysFromMap(prev, validTaskKeySet);
                     const sameLength = prevKeys.length === nextSelectedTaskKeys.length;
                     const sameKeys = sameLength && prevKeys.every((key, index) => key === nextSelectedTaskKeys[index]);
                     return sameKeys ? prev : selectedTaskMapFromKeys(nextSelectedTaskKeys);
@@ -9590,14 +9602,24 @@ import {
                     return sameTeams ? prev : nextSelectedTeams;
                 });
 
-                savePlanningState(window.localStorage, planningScopeKey, {
-                    selectedTaskKeys: nextSelectedTaskKeys,
-                    selectedTeams: nextSelectedTeams
-                });
+                setPlanningSelectionMode(prev => prev === nextSelectionMode ? prev : nextSelectionMode);
+
+                persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys), selectionMode: nextSelectionMode, selectedTeams: nextSelectedTeams, normalizeSelectedTeams });
+
+                if (planningBaselineScopeRef.current !== planningScopeKey) {
+                    planningLoadedSelectionRef.current = {
+                        scopeKey: planningScopeKey,
+                        selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys),
+                        selectionMode: nextSelectionMode
+                    };
+                    planningBaselineScopeRef.current = planningScopeKey;
+                    setCanUndoPlanningSelection(false);
+                }
             }, [
                 planningScopeKey,
                 activeGroupId,
                 selectedSprint,
+                isFutureSprintSelected,
                 tasksFetched,
                 productTasksLoading,
                 techTasksLoading,
@@ -9605,6 +9627,7 @@ import {
                 teamOptions,
                 selectedTasks,
                 selectedTeams,
+                planningSelectionMode,
                 activeGroupTeamIds.join('|')
             ]);
 
@@ -10383,77 +10406,48 @@ import {
                 };
             }, [dependencyFocus, dependencyLookupCache]);
 
-            const toggleTaskSelection = (taskKey) => {
-                const newSelected = { ...selectedTasks };
-                if (newSelected[taskKey]) {
-                    delete newSelected[taskKey];
-                } else {
-                    newSelected[taskKey] = true;
-                }
-                setSelectedTasks(newSelected);
-                trackPlanningSelection('toggle_task', newSelected, selectionTasks);
-            };
+            const {
+                toggleTaskSelection,
+                clearSelectedTasks,
+                selectAllVisiblePlanningTasks,
+                selectPlanningTasksByStatus,
+                includePlanningTasksByStatus,
+                toggleIncludeByStatus,
+                undoPlanningSelectionChange
+            } = createPlanningSelectionHandlers({
+                storage: window.localStorage,
+                planningScopeKey,
+                selectedTasks,
+                selectedTeams,
+                selectionTasks,
+                visibleTasksForList,
+                isFutureSprintSelected,
+                normalizeStatus,
+                normalizeSelectedTeams,
+                setPlanningSelectionMode,
+                setCanUndoPlanningSelection,
+                setSelectedTasks,
+                trackPlanningSelection,
+                planningLoadedSelectionRef
+            });
 
-            const clearSelectedTasks = () => {
-                setSelectedTasks({});
-                trackPlanningSelection('clear_selection', {}, selectionTasks);
-            };
+            const canToggleSharedGroupExcludedCapacity = canEditSharedConfiguration && !(showGroupManage && isGroupDraftDirty);
 
-            const selectAllVisiblePlanningTasks = () => {
-                const next = {};
-                visibleTasksForList.forEach(task => {
-                    if (task?.key) {
-                        next[task.key] = true;
-                    }
-                });
-                setSelectedTasks(next);
-                trackPlanningSelection('select_all_visible', next, selectionTasks);
-            };
-
-            const selectPlanningTasksByStatus = (statuses) => {
-                const allowed = new Set((statuses || []).map(normalizeStatus));
-                const next = {};
-                selectionTasks.forEach(task => {
-                    const status = normalizeStatus(task.fields.status?.name);
-                    if (allowed.has(status)) {
-                        next[task.key] = true;
-                    }
-                });
-                setSelectedTasks(next);
-                trackPlanningSelection('select_status', next, selectionTasks);
-            };
-
-            const includePlanningTasksByStatus = (statuses) => {
-                const allowed = new Set((statuses || []).map(normalizeStatus));
-                setSelectedTasks(prev => {
-                    const next = { ...prev };
-                    selectionTasks.forEach(task => {
-                        const status = normalizeStatus(task.fields.status?.name);
-                        if (allowed.has(status)) {
-                            next[task.key] = true;
-                        }
-                    });
-                    return next;
-                });
-            };
-
-            const toggleIncludeByStatus = (statuses) => {
-                const allowed = new Set((statuses || []).map(normalizeStatus));
-                const next = { ...selectedTasks };
-                const matching = selectionTasks.filter(task =>
-                    allowed.has(normalizeStatus(task.fields.status?.name))
-                );
-                const allSelected = matching.length > 0 && matching.every(task => selectedTasks[task.key]);
-                matching.forEach(task => {
-                    if (allSelected) {
-                        delete next[task.key];
-                    } else {
-                        next[task.key] = true;
-                    }
-                });
-                setSelectedTasks(next);
-                trackPlanningSelection(allSelected ? 'exclude_status' : 'include_status', next, selectionTasks);
-            };
+            const toggleSharedGroupExcludedCapacityEpic = (epicKey) => saveSharedExcludedCapacityToggle({
+                backendUrl: BACKEND_URL,
+                epicKey,
+                activeGroupId,
+                canEditSharedConfiguration,
+                showGroupManage,
+                isGroupDraftDirty,
+                showPlanning,
+                groupsConfig,
+                applySavedGroupsConfig,
+                setGroupDraftError,
+                trackSettingsAction,
+                groupStateRef,
+                excludedCapacityCacheRef
+            });
 
             // Calculate sum of Story Points for selected tasks
             const calculateSelectedSP = () => {
@@ -12035,19 +12029,13 @@ import {
                                             {(showStats || showPlanning) && (
                                                 <button
                                                     className={`epic-stat-toggle ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? '' : 'active'}`}
-                                                    onClick={() => {
-                                                        const epicKey = String(epicGroup.key || 'NO_EPIC').trim().toUpperCase();
-                                                        setExcludedStatsEpics((prev) => {
-                                                            const set = new Set(prev || []);
-                                                            if (set.has(epicKey)) {
-                                                                set.delete(epicKey);
-                                                            } else {
-                                                                set.add(epicKey);
-                                                            }
-                                                            return Array.from(set);
-                                                        });
-                                                    }}
-                                                    title="Include/exclude epic in sprint stats and planning capacity"
+                                                    onClick={() => toggleSharedGroupExcludedCapacityEpic(epicGroup.key)}
+                                                    disabled={!canToggleSharedGroupExcludedCapacity}
+                                                    title={!canEditSharedConfiguration
+                                                        ? 'You do not have permission to edit shared group capacity settings'
+                                                        : (showGroupManage && isGroupDraftDirty)
+                                                            ? 'Save or discard open Department settings changes before changing excluded capacity'
+                                                            : 'Include/exclude this epic in shared group capacity and reporting'}
                                                 >
                                                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                                         <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
@@ -14228,6 +14216,8 @@ import {
                             onTogglePostponed={() => toggleIncludeByStatus(['Postponed'])}
                             onToggleAwaitingValidation={() => toggleIncludeByStatus(['Awaiting Validation'])}
                             onSelectAllVisible={selectAllVisiblePlanningTasks}
+                            canUndoPlanningSelection={canUndoPlanningSelection}
+                            onUndoPlanningSelection={undoPlanningSelectionChange}
                             onClearSelected={clearSelectedTasks}
                             onOpenSelectedInJira={openSelectedInJira}
                         />

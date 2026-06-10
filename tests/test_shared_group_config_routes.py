@@ -145,6 +145,38 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         self.assertEqual(stale.get_json()['error'], 'group_config_conflict')
         self.assertIn('current', stale.get_json())
 
+    def test_post_groups_config_persists_excluded_capacity_epics_as_shared_catalog(self):
+        loaded = self._get_groups_config().get_json()
+        payload = {
+            'version': 1,
+            'baseRevision': loaded['configRevision'],
+            'groups': [{
+                'id': 'platform',
+                'name': 'Platform',
+                'teamIds': ['team-a'],
+                'excludedCapacityEpics': ['PLAN-EPIC'],
+            }],
+            'defaultGroupId': 'platform',
+        }
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            saved = self.client.post('/api/groups-config', json=payload, headers=self._csrf_headers())
+
+        self._install_session('session-2', 'account-2', self.other_connection_id)
+        loaded_for_other_user = self._get_groups_config(fallback={'version': 1}).get_json()
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            preferences = self.client.post(
+                '/api/groups-preferences',
+                json={'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+                headers=self._csrf_headers(),
+            )
+        after_preferences = self._get_groups_config(fallback={'version': 1}).get_json()
+
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        self.assertEqual(saved.get_json()['groups'][0]['excludedCapacityEpics'], ['PLAN-EPIC'])
+        self.assertEqual(loaded_for_other_user['groups'][0]['excludedCapacityEpics'], ['PLAN-EPIC'])
+        self.assertEqual(preferences.status_code, 200, preferences.get_data(as_text=True))
+        self.assertEqual(after_preferences['groups'][0]['excludedCapacityEpics'], ['PLAN-EPIC'])
+
     def test_post_groups_config_rejects_identity_spoofing_fields(self):
         loaded = self._get_groups_config().get_json()
         payload = {

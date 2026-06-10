@@ -42,6 +42,14 @@ function toSet(value) {
 }
 
 const PLANNING_STORAGE_KEY = 'jira_dashboard_planning_state_v1';
+export const PLANNING_SELECTION_MODE_MANUAL = 'manual';
+export const PLANNING_SELECTION_MODE_DEFAULT_ALL = 'default_all';
+
+function normalizeSelectionMode(value) {
+    return value === PLANNING_SELECTION_MODE_DEFAULT_ALL
+        ? PLANNING_SELECTION_MODE_DEFAULT_ALL
+        : PLANNING_SELECTION_MODE_MANUAL;
+}
 
 export function buildPlanningScopeKey({ sprintId, groupId } = {}) {
     return `planning::${toTrimmedString(sprintId)}::${toTrimmedString(groupId)}`;
@@ -52,7 +60,8 @@ function normalizePlanningState(storedState) {
     return {
         selectedTaskKeys: normalizeKeyList(storedState?.selectedTaskKeys),
         selectedTeams,
-        selectedTeamId: selectedTeams.length === 1 ? selectedTeams[0] : selectedTeams[0] || 'all'
+        selectedTeamId: selectedTeams.length === 1 ? selectedTeams[0] : selectedTeams[0] || 'all',
+        selectionMode: normalizeSelectionMode(storedState?.selectionMode)
     };
 }
 
@@ -82,7 +91,8 @@ function normalizeStoredScopeState(storedState) {
     return {
         selectedTaskKeys: normalized.selectedTaskKeys,
         selectedTeams: normalized.selectedTeams,
-        selectedTeamId: normalized.selectedTeamId
+        selectedTeamId: normalized.selectedTeamId,
+        selectionMode: normalized.selectionMode
     };
 }
 
@@ -102,7 +112,8 @@ function normalizeReconciledPlanningState(storedState, {
     return {
         selectedTaskKeys,
         selectedTeams: nextSelectedTeams,
-        selectedTeamId
+        selectedTeamId,
+        selectionMode: normalized.selectionMode
     };
 }
 
@@ -153,6 +164,36 @@ export function reconcilePlanningSelection(
         validTaskKeys,
         validTeamIds
     });
+}
+
+export function resolvePlanningSelectionState({
+    hasStoredState = false,
+    storedState,
+    isFutureSprint = false,
+    validTaskKeys = new Set(),
+    validTeamIds = new Set()
+} = {}) {
+    const validTaskKeySet = toSet(validTaskKeys);
+    const allValidTaskKeys = Array.from(validTaskKeySet)
+        .map(toTrimmedString)
+        .filter(Boolean)
+        .sort();
+    const reconciled = reconcilePlanningSelection(storedState, {
+        validTaskKeys: validTaskKeySet,
+        validTeamIds
+    });
+    const selectionMode = hasStoredState
+        ? reconciled.selectionMode
+        : (isFutureSprint ? PLANNING_SELECTION_MODE_DEFAULT_ALL : PLANNING_SELECTION_MODE_MANUAL);
+    const selectedTaskKeys = isFutureSprint && selectionMode === PLANNING_SELECTION_MODE_DEFAULT_ALL
+        ? allValidTaskKeys
+        : reconciled.selectedTaskKeys;
+
+    return {
+        ...reconciled,
+        selectedTaskKeys,
+        selectionMode
+    };
 }
 
 export function hydratePlanningState({

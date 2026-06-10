@@ -17,6 +17,14 @@ export const fetchHomeTokenConnection = (backendUrl) =>
 export const fetchCsrfToken = (backendUrl) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' });
 
+export const refreshAuthSession = (backendUrl) =>
+    fetch(`${backendUrl}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-cache',
+        headers: { 'X-Requested-With': 'jira-execution-planner' },
+    });
+
 export function connectHomeTokenConnection(backendUrl, payload) {
     return fetchCsrfToken(backendUrl).then(({ csrfToken }) => postJson(
         homeTokenUrl(backendUrl),

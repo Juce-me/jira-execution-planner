@@ -27,6 +27,13 @@ def _sync_server_globals():
     bind_server_globals(globals())
 
 
+def _eng_auth_error_response(error):
+    if error.code == "auth_required":
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
+    return auth_error_response(error, 401)
+
+
 @bp.route('/api/dependencies', methods=['POST'])
 def get_dependencies():
     """Fetch dependency links for a set of issues."""
@@ -63,10 +70,7 @@ def get_dependencies():
         response.headers['Server-Timing'] = f'collect;dur={collect_ms}, total;dur={total_ms}'
         return response
     except AuthError as error:
-        if error.code == "auth_required":
-            payload, status = oauth_auth_required_payload()
-            return jsonify(payload), status
-        raise
+        return _eng_auth_error_response(error)
     except Exception as e:
         logger.exception('Dependencies endpoint error')
         return jsonify({'error': 'Failed to fetch dependencies', 'message': str(e)}), 500
@@ -128,10 +132,7 @@ def lookup_issues():
 
         return jsonify({'issues': snapshots})
     except AuthError as error:
-        if error.code == "auth_required":
-            payload, status = oauth_auth_required_payload()
-            return jsonify(payload), status
-        raise
+        return _eng_auth_error_response(error)
     except Exception as e:
         logger.exception('Issue lookup error')
         return jsonify({'error': 'Failed to lookup issues', 'message': str(e)}), 500
@@ -202,10 +203,7 @@ def get_story_subtasks():
         response.headers['X-Cache'] = 'MISS'
         return response
     except AuthError as error:
-        if error.code == "auth_required":
-            payload, status = oauth_auth_required_payload()
-            return jsonify(payload), status
-        raise
+        return _eng_auth_error_response(error)
     except SubtasksFetchError:
         logger.exception('Story subtasks Jira fetch failed')
         return jsonify({'error': 'subtasks_fetch_failed', 'message': 'Failed to fetch subtasks from Jira.'}), 502
@@ -447,10 +445,7 @@ def get_missing_info():
         response.headers['Server-Timing'] = f'total;dur={round((time.perf_counter() - started_at) * 1000, 1)}'
         return response
     except AuthError as error:
-        if error.code == "auth_required":
-            payload, status = oauth_auth_required_payload()
-            return jsonify(payload), status
-        raise
+        return _eng_auth_error_response(error)
     except Exception as e:
         logger.exception('Missing-info error')
         return jsonify({'error': 'Failed to compute missing-info', 'message': str(e)}), 500
@@ -601,10 +596,7 @@ def get_teams():
         return jsonify({'teams': teams_list})
 
     except AuthError as error:
-        if error.code == "auth_required":
-            payload, status = oauth_auth_required_payload()
-            return jsonify(payload), status
-        raise
+        return _eng_auth_error_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to fetch teams', 'details': str(e)}), 500
 
@@ -675,10 +667,7 @@ def resolve_team_names():
         return jsonify({'teams': list(teams_map.values()), 'missing': missing})
 
     except AuthError as error:
-        if error.code == "auth_required":
-            payload, status = oauth_auth_required_payload()
-            return jsonify(payload), status
-        raise
+        return _eng_auth_error_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to resolve teams', 'details': str(e)}), 500
 
@@ -774,10 +763,7 @@ def get_all_teams_list():
         })
 
     except AuthError as error:
-        if error.code == "auth_required":
-            payload, status = oauth_auth_required_payload()
-            return jsonify(payload), status
-        raise
+        return _eng_auth_error_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to fetch all teams', 'details': str(e)}), 500
 
@@ -835,9 +821,6 @@ def get_backlog_epics():
         )
         return jsonify({'epics': epics})
     except AuthError as error:
-        if error.code == "auth_required":
-            payload, status = oauth_auth_required_payload()
-            return jsonify(payload), status
-        raise
+        return _eng_auth_error_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to fetch backlog epics', 'details': str(e)}), 500

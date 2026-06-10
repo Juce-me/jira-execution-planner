@@ -2,6 +2,7 @@ import {
     fetchBacklogEpics as requestBacklogEpics,
     fetchEngTasks,
 } from '../api/engApi.js';
+import { refreshAuthSession } from '../api/authApi.js';
 import {
     PRIORITY_ORDER,
     filterEpicsByTaskEpicKeys,
@@ -11,6 +12,32 @@ import {
 } from './engTaskUtils.js';
 
 const OAUTH_ROUTE_NOT_READY_TASKS_MESSAGE = 'OAuth login succeeded, but this dashboard data route has not been migrated to Atlassian OAuth yet.';
+
+function isStaleAuthError(err) {
+    return err?.code === 'auth_connection_stale' && err?.status === 401;
+}
+
+async function buildTaskResponseError(response) {
+    const errorData = await response.json().catch(() => ({
+        error: `HTTP ${response.status}`
+    }));
+    console.error('Error data:', errorData);
+    const error = new Error(errorData.message || errorData.error || `Error ${response.status}`);
+    error.code = errorData.error;
+    error.loginUrl = errorData.loginUrl;
+    error.recoveryUrl = errorData.recoveryUrl;
+    error.status = response.status;
+    return error;
+}
+
+async function refreshStaleAuthSession(backendUrl) {
+    try {
+        const response = await refreshAuthSession(backendUrl);
+        return response.ok;
+    } catch (err) {
+        return false;
+    }
+}
 
 export function authRecoveryLoginUrl(err) {
     const loginUrl = String(err.loginUrl || '').trim();
@@ -39,6 +66,18 @@ function taskLoadErrorMessage(err, backendUrl) {
     }
     if (err.code === 'missing_project_access') {
         return 'Jira project access is not confirmed for this view. Ask a tool admin to refresh your project access, then retry.';
+    }
+    if (err.code === 'auth_connection_stale') {
+        return 'Your Jira connection changed. I tried refreshing your session, but Jira still needs you to reconnect. Open the reconnect page, then retry.';
+    }
+    if (err.code === 'auth_connection_revoked') {
+        return 'Your Jira connection was revoked. Reconnect Jira to continue.';
+    }
+    if (err.code === 'account_disabled') {
+        return 'Your account is disabled. Contact a tool admin before retrying.';
+    }
+    if (err.code === 'missing_oauth_scope') {
+        return 'Your Jira sign-in needs updated permissions. Sign in with Atlassian again to continue.';
     }
     if (authRecoveryLoginUrl(err)) {
         return 'Sign in with Atlassian again to continue loading tasks.';
@@ -101,7 +140,7 @@ export function useEngSprintData({
                 refresh = true;
                 pageLoadRefreshRef.current = false;
             }
-            const response = await fetchEngTasks(backendUrl, {
+            const requestTasks = () => fetchEngTasks(backendUrl, {
                 project,
                 sprint: sprintParam,
                 groupId: activeGroupId,
@@ -111,20 +150,24 @@ export function useEngSprintData({
                 epicKeys: options.epicKeys,
                 signal: controller.signal
             });
+            let response = await requestTasks();
 
             console.log('Response status:', response.status);
             console.log('Response ok:', response.ok);
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({
-                    error: `HTTP ${response.status}`
-                }));
-                console.error('Error data:', errorData);
-                const error = new Error(errorData.error || `Error ${response.status}`);
-                error.code = errorData.error;
-                error.loginUrl = errorData.loginUrl;
-                error.status = response.status;
-                throw error;
+                let error = await buildTaskResponseError(response);
+                if (isStaleAuthError(error) && await refreshStaleAuthSession(backendUrl)) {
+                    response = await requestTasks();
+                    console.log('Response status:', response.status);
+                    console.log('Response ok:', response.ok);
+                    if (!response.ok) {
+                        error = await buildTaskResponseError(response);
+                    }
+                }
+                if (!response.ok) {
+                    throw error;
+                }
             }
 
             const data = await response.json();

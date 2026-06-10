@@ -10,6 +10,8 @@ const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngVie
 const engSprintDataPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
 const engTaskUtilsPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engTaskUtils.js');
 const engAlertsPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngAlertsPanel.jsx');
+const engCssPath = path.join(__dirname, '..', 'frontend', 'src', 'styles', 'eng.css');
+const epmCssPath = path.join(__dirname, '..', 'frontend', 'src', 'styles', 'epm.css');
 
 function loadIssueViewUtils() {
     assert.equal(fs.existsSync(issueViewUtilsPath), true, 'Expected shared issueViewUtils helper module');
@@ -148,7 +150,14 @@ test('issue view helpers preserve status, priority, and team display behavior', 
 
     assert.equal(normalizeIssueStatus(' In   Progress '), 'in progress');
     assert.equal(getIssueStatusClassName('In Progress'), 'task-status in-progress');
-    assert.equal(getIssueStatusClassName('To Do', 'mapping-preview-dimmable accepted'), 'task-status mapping-preview-dimmable accepted to-do');
+    assert.equal(getIssueStatusClassName('To Do', 'mapping-preview-dimmable accepted'), 'task-status mapping-preview-dimmable accepted waiting');
+    assert.equal(getIssueStatusClassName('Pending'), 'task-status waiting');
+    assert.equal(getIssueStatusClassName('Awaiting Validation'), 'task-status waiting');
+    assert.equal(getIssueStatusClassName('Accepted'), 'task-status accepted');
+    assert.equal(getIssueStatusClassName('Killed'), 'task-status killed');
+    assert.equal(getIssueStatusClassName('Incomplete'), 'task-status incomplete');
+    assert.equal(getIssueStatusClassName('Analysis'), 'task-status in-progress');
+    assert.equal(getIssueStatusClassName('Work In Progress'), 'task-status in-progress');
     assert.equal(getIssueStatusClassName(''), 'task-status');
 
     assert.equal(getIssueTeamLabel({ name: 'Platform' }), 'Platform');
@@ -168,4 +177,32 @@ test('issue view helpers preserve status, priority, and team display behavior', 
     assert.equal(formatPriorityShort('Low'), 'LOW');
     assert.equal(formatPriorityShort(''), 'NONE');
     assert.equal(formatPriorityShort('Custom'), 'CUST');
+});
+
+test('issue status CSS keeps waiting statuses gray, progress statuses blue, and closed subtask statuses green', () => {
+    const engCss = fs.readFileSync(engCssPath, 'utf8');
+    const epmCss = fs.readFileSync(epmCssPath, 'utf8');
+    const taskStatusRules = engCss.slice(
+        engCss.indexOf('.task-status.done'),
+        engCss.indexOf('.epic-status-pill.task-status')
+    );
+    const waitingRule = taskStatusRules.slice(
+        taskStatusRules.indexOf('.task-status.waiting,'),
+        taskStatusRules.indexOf('.task-status.postponed')
+    );
+
+    assert.ok(taskStatusRules.includes('.task-status.in-progress'));
+    assert.ok(taskStatusRules.includes('.task-status.accepted'));
+    assert.ok(taskStatusRules.includes('.task-status.done'));
+    assert.ok(taskStatusRules.includes('.task-status.killed'));
+    assert.ok(taskStatusRules.includes('.task-status.incomplete'));
+    assert.match(taskStatusRules, /\.task-status\.done,[\s\S]*\.task-status\.killed,[\s\S]*\.task-status\.incomplete[\s\S]*background: #52c41a;/);
+    assert.ok(taskStatusRules.includes('background: #69c0ff;'));
+    assert.ok(waitingRule.includes('.task-status.to-do,'));
+    assert.equal(waitingRule.includes('.task-status.accepted'), false);
+    assert.ok(waitingRule.includes('.task-status.awaiting-validation,'));
+    assert.ok(waitingRule.includes('.task-status.pending'));
+    assert.ok(waitingRule.includes('background: #8c8c8c;'));
+    assert.equal(taskStatusRules.includes('background: #597ef7;'), false);
+    assert.match(epmCss, /\.epm-project-board-status-pill\.task-status\.waiting,[\s\S]*\.epm-project-board-status-pill\.task-status\.pending[\s\S]*background: #8c8c8c;/);
 });

@@ -3287,7 +3287,7 @@ def fetch_tasks(include_team_name=False):
         if error.code == "auth_required":
             payload, status = oauth_auth_required_payload()
             return jsonify(payload), status
-        raise
+        return auth_error_response(error, 401)
     except Exception as e:
         logger.exception('Failed to fetch tasks from Jira')
         error_response = jsonify({

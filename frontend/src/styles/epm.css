@@ -298,8 +298,9 @@
             color: white;
         }
 
+        .epm-project-board-status-pill.task-status.waiting,
         .epm-project-board-status-pill.task-status.pending {
-            background: #597ef7;
+            background: #8c8c8c;
             color: white;
         }
 

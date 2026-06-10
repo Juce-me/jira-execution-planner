@@ -4,7 +4,7 @@
 
 ## Goal
 
-Introduce a database-backed identity and auth foundation for Jira Execution Planner without changing the current dashboard configuration model yet. This phase creates the storage boundary needed for authenticated users, the configured workspace/site context, encrypted integration tokens, and admin user inspection.
+Introduce a database-backed identity and auth foundation for Jira Delivery Planner without changing the current dashboard configuration model yet. This phase creates the storage boundary needed for authenticated users, the configured workspace/site context, encrypted integration tokens, and admin user inspection.
 
 > **Checklist reconciliation:** Task checkboxes were updated on 2026-05-12 from the branch commit history. This records completed task commits; it is not a fresh rerun of every verification command.
 
@@ -193,7 +193,7 @@ One row for the configured Jira/Atlassian site or deployment scope.
 | `jira_cloud_id` | Atlassian cloud id when OAuth is used. |
 | `created_by`, `created_at`, `updated_at` | Ownership and lifecycle. |
 
-Use a unique constraint on `(environment_key, jira_cloud_id)` when `jira_cloud_id` is present and on `(environment_key, jira_site_url)` for local Basic mode. This table is not an access-control list in this phase. Jira project permissions come from Jira, not from Jira Execution Planner workspace membership.
+Use a unique constraint on `(environment_key, jira_cloud_id)` when `jira_cloud_id` is present and on `(environment_key, jira_site_url)` for local Basic mode. This table is not an access-control list in this phase. Jira project permissions come from Jira, not from Jira Delivery Planner workspace membership.
 
 ### `auth_connections`
 

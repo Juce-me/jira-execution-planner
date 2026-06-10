@@ -5,7 +5,7 @@
 
 ## Problem
 
-Jira Execution Planner currently requires every local operator to create an Atlassian API token and configure `JIRA_EMAIL` plus `JIRA_TOKEN`. That works for a personal script, but it is the wrong default for a company tool: users expect to sign in with the company identity flow they already use for Jira and Confluence.
+Jira Delivery Planner currently requires every local operator to create an Atlassian API token and configure `JIRA_EMAIL` plus `JIRA_TOKEN`. That works for a personal script, but it is the wrong default for a company tool: users expect to sign in with the company identity flow they already use for Jira and Confluence.
 
 Microsoft Entra ID, formerly Azure Active Directory, cannot be used as a bearer token issuer for Jira Cloud REST APIs directly. Jira Cloud accepts Atlassian authentication. If the company's Atlassian organization is configured for SAML SSO through Microsoft Entra ID, Atlassian login will send the user through Entra during the Atlassian OAuth consent flow.
 

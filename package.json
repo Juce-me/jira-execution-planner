@@ -2,7 +2,7 @@
   "name": "jira-execution-planner-frontend",
   "private": true,
   "version": "0.0.0",
-  "description": "Frontend build for Jira Execution Planner",
+  "description": "Frontend build for Jira Delivery Planner",
   "engines": {
     "node": "20.x"
   },

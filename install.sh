@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "Installing Python dependencies for Jira Execution Planner..."
+echo "Installing Python dependencies for Jira Delivery Planner..."
 echo ""
 
 if [ ! -d .venv ]; then

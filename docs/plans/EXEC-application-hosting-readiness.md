@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Jira Execution Planner deployable as a prebuilt Docker image under the Internal Applications Hosting workflow: one HTTP container, DB-backed OAuth/config state, no required local mutable files, explicit secret/runtime config, and a production-capable WSGI runtime.
+**Goal:** Make Jira Delivery Planner deployable as a prebuilt Docker image under the Internal Applications Hosting workflow: one HTTP container, DB-backed OAuth/config state, no required local mutable files, explicit secret/runtime config, and a production-capable WSGI runtime.
 
 **Architecture:** Keep the app as one Flask web service serving the existing static frontend and API. Add a hosted DB/OAuth profile that uses encrypted DB token/config storage instead of local OAuth token files or JSON config files, make frontend API calls same-origin by default, and add container packaging around the existing app rather than changing the product surface. The platform OAuth2 proxy remains perimeter access only; the app still performs Atlassian OAuth 3LO for Jira REST and user-owned Home/Townsquare token connection for EPM reads.
 

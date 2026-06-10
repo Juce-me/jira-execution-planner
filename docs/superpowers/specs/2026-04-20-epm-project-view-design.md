@@ -5,19 +5,19 @@
 
 ## Problem
 
-Jira Execution Planner is currently organized around engineering delivery by sprint, group, and team. That works for delivery leads, but it does not give Engineering Program Managers a project-centered view across multiple teams. EPMs need to pivot the dashboard around Jira Home projects and then pull the matching Jira work under each project.
+Jira Delivery Planner is currently organized around engineering delivery by sprint, group, and team. That works for delivery leads, but it does not give Engineering Program Managers a project-centered view across multiple teams. EPMs need to pivot the dashboard around Jira Home projects and then pull the matching Jira work under each project.
 
 ## Goal
 
-Add a first-class `EPM` view that keeps the existing `ENG` experience intact while introducing a project-centered workflow driven by Jira Home project discovery, Jira epic / label linkage, and optional augmentation in JEP settings.
+Add a first-class `EPM` view that keeps the existing `ENG` experience intact while introducing a project-centered workflow driven by Jira Home project discovery, Jira epic / label linkage, and optional augmentation in JDP settings.
 
 ## Terminology
 
-- **ENG view**: the current Jira Execution Planner team-first dashboard.
+- **ENG view**: the current Jira Delivery Planner team-first dashboard.
 - **EPM view**: the new project-first dashboard mode.
 - **Jira Home project**: a project discovered from Atlassian Home / Goals & Projects.
-- **JEP project configuration**: optional Jira linkage stored in Jira Execution Planner settings to improve or complete Jira Home metadata.
-- **Resolved linkage**: the union of Jira Home linkage and JEP configuration linkage for one Home project.
+- **JDP project configuration**: optional Jira linkage stored in Jira Delivery Planner settings to improve or complete Jira Home metadata.
+- **Resolved linkage**: the union of Jira Home linkage and JDP configuration linkage for one Home project.
 
 ## Design
 
@@ -67,16 +67,16 @@ The EPM project list is discovered from Atlassian Home using shared `.env` crede
 - last update date
 - latest update or comment snippet
 - Jira linkage from Jira Home, if present
-- Jira linkage from JEP config, if present
+- Jira linkage from JDP config, if present
 - merged linkage summary
 - tab bucket
 - match state
 
-The EPM project picker is read-only in the main dashboard flow. Users do not create standalone local projects in JEP for v1.
+The EPM project picker is read-only in the main dashboard flow. Users do not create standalone local projects in JDP for v1.
 
-### 4. JEP Project Configuration
+### 4. JDP Project Configuration
 
-JEP must expose an EPM configuration section inside the existing settings UI.
+JDP must expose an EPM configuration section inside the existing settings UI.
 
 This section is an augmentation layer for Jira Home projects, not a separate catalog. It shows discovered Jira Home projects and lets the user optionally enrich each one with:
 
@@ -85,22 +85,22 @@ This section is an augmentation layer for Jira Home projects, not a separate cat
 
 v1 supports one optional label and one optional epic key per Home project. The structure should leave room to grow into multiple values later.
 
-If Jira Home already contains Jira linkage, the JEP settings do not replace it. They improve it.
+If Jira Home already contains Jira linkage, the JDP settings do not replace it. They improve it.
 
 ### 5. Linkage Resolution Rules
 
-For each Jira Home project, JEP resolves Jira scope using the union of all available linkage:
+For each Jira Home project, JDP resolves Jira scope using the union of all available linkage:
 
 1. Jira Home label
 2. Jira Home epic key
-3. JEP-config label
-4. JEP-config epic key
+3. JDP-config label
+4. JDP-config epic key
 
 The project scope is the OR-union of these matches, de-duplicated.
 
-There is no automatic slug-based fallback that derives `rnd_project_*` from the project name. If Jira Home has no Jira linkage, the fallback is explicit JEP configuration entered in settings.
+There is no automatic slug-based fallback that derives `rnd_project_*` from the project name. If Jira Home has no Jira linkage, the fallback is explicit JDP configuration entered in settings.
 
-If neither Jira Home nor JEP config provides Jira linkage, the project remains visible as metadata-only.
+If neither Jira Home nor JDP config provides Jira linkage, the project remains visible as metadata-only.
 
 ### 6. Jira Fetch Behavior
 
@@ -210,7 +210,7 @@ Backend coverage:
 - EPM config normalization and persistence
 - Jira Home project normalization and tab bucketing
 - latest update extraction
-- linkage merge between Jira Home and JEP config
+- linkage merge between Jira Home and JDP config
 - OR-union Jira scope building
 - de-duplication
 - sprint filtering only for `Active`
@@ -235,4 +235,4 @@ Manual verification:
 - per-user credential storage outside `.env`
 - manual creation of EPM projects that do not exist in Jira Home
 - multi-label / multi-epic editing UI
-- changing Jira Home metadata directly from JEP
+- changing Jira Home metadata directly from JDP

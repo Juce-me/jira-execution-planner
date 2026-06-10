@@ -213,6 +213,23 @@ async function expectCompactLayout(page, screenshotName) {
         const stats = document.querySelector('.filters-strip .stats');
         const cards = Array.from(document.querySelectorAll('.filters-strip .stat-card'));
         const longLabel = document.querySelector('.filters-strip .todo-accepted .stat-label');
+        const labelLines = cards.map(card => lineCount(card.querySelector('.stat-label')));
+        const labelOverflows = cards.map(card => {
+            const label = card.querySelector('.stat-label');
+            return label.scrollWidth - label.clientWidth;
+        });
+        const cardAlignments = cards.map(card => {
+            const cardRect = card.getBoundingClientRect();
+            const valueRect = card.querySelector('.stat-value').getBoundingClientRect();
+            const labelRect = card.querySelector('.stat-label').getBoundingClientRect();
+            const noteRect = card.querySelector('.stats-note').getBoundingClientRect();
+            return {
+                valueLeft: valueRect.left - cardRect.left,
+                valueTopOffset: Math.abs((valueRect.top + valueRect.height / 2) - (cardRect.top + cardRect.height / 2)),
+                labelNoteOffset: Math.abs((labelRect.left + labelRect.width / 2) - (noteRect.left + noteRect.width / 2)),
+                labelLeftOfValue: (labelRect.left + labelRect.width / 2) - (valueRect.left + valueRect.width / 2),
+            };
+        });
         const firstStory = document.querySelector('.task-list:not(.epm-issue-board) > .epic-block > .task-item');
         const storyStyle = getComputedStyle(firstStory);
         const title = firstStory.querySelector('.task-title');
@@ -230,6 +247,9 @@ async function expectCompactLayout(page, screenshotName) {
             labelFontSize: parsePx(getComputedStyle(longLabel).fontSize),
             noteFontSize: parsePx(getComputedStyle(document.querySelector('.filters-strip .todo-accepted .stats-note')).fontSize),
             longLabelLines: lineCount(longLabel),
+            labelLines,
+            labelOverflows,
+            cardAlignments,
             storyPaddingTop: parsePx(storyStyle.paddingTop),
             storyPaddingLeft: parsePx(storyStyle.paddingLeft),
             storyTitleFontSize: parsePx(titleStyle.fontSize),
@@ -249,7 +269,15 @@ async function expectCompactLayout(page, screenshotName) {
     expect(Math.max(...metrics.cardHeights)).toBeLessThanOrEqual(58);
     expect(metrics.labelFontSize).toBeGreaterThanOrEqual(9);
     expect(metrics.noteFontSize).toBeGreaterThanOrEqual(9);
-    expect(metrics.longLabelLines).toBeLessThanOrEqual(2);
+    expect(metrics.longLabelLines).toBe(1);
+    expect(Math.max(...metrics.labelLines)).toBe(1);
+    expect(Math.max(...metrics.labelOverflows)).toBeLessThanOrEqual(1);
+    metrics.cardAlignments.forEach(alignment => {
+        expect(alignment.valueLeft).toBeLessThanOrEqual(28);
+        expect(alignment.valueTopOffset).toBeLessThanOrEqual(2);
+        expect(alignment.labelNoteOffset).toBeLessThanOrEqual(2);
+        expect(alignment.labelLeftOfValue).toBeGreaterThan(42);
+    });
     expect(metrics.storyPaddingTop).toBeGreaterThanOrEqual(11);
     expect(metrics.storyPaddingTop).toBeLessThanOrEqual(12);
     expect(metrics.storyPaddingLeft).toBeGreaterThanOrEqual(15);
@@ -267,9 +295,40 @@ async function expectCompactLayout(page, screenshotName) {
     await page.screenshot({ path: `${screenshotDir}/${screenshotName}.png`, fullPage: true });
 }
 
+async function expectSprintOptionsStaySingleLine(page) {
+    await page.evaluate(() => window.scrollTo(0, 420));
+    await expect(page.locator('.compact-sticky-header.is-visible')).toBeVisible();
+    const sprintDropdown = page.locator('.compact-sticky-header .sprint-dropdown').first();
+    await sprintDropdown.locator('.sprint-dropdown-toggle').click();
+    await expect(sprintDropdown.locator('.sprint-dropdown-panel')).toBeVisible();
+    const metrics = await sprintDropdown.locator('.sprint-dropdown-option').evaluateAll((options) => {
+        return options.map(option => {
+            const style = getComputedStyle(option);
+            const range = document.createRange();
+            range.selectNodeContents(option);
+            const lineTops = Array.from(range.getClientRects())
+                .filter(rect => rect.width > 0 && rect.height > 0)
+                .map(rect => Math.round(rect.top));
+            range.detach();
+            return {
+                lines: new Set(lineTops).size,
+                overflowX: option.scrollWidth - option.clientWidth,
+                whiteSpace: style.whiteSpace,
+            };
+        });
+    });
+    metrics.forEach(metric => {
+        expect(metric.lines).toBe(1);
+        expect(metric.overflowX).toBeLessThanOrEqual(1);
+        expect(metric.whiteSpace).toBe('nowrap');
+    });
+    await page.screenshot({ path: `${screenshotDir}/desktop-sticky-sprint-dropdown.png`, fullPage: false });
+}
+
 test('ENG compact filters and epic rows stay readable on desktop', async ({ page }) => {
     await openEngCatchUp(page, { width: 1028, height: 720 });
     await expectCompactLayout(page, 'desktop');
+    await expectSprintOptionsStaySingleLine(page);
 });
 
 test('ENG compact filters and epic rows stay readable on narrow screens', async ({ page }) => {

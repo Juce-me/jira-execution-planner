@@ -260,9 +260,11 @@ async function collectLongTitleMetrics(page) {
             epicMeta: rectFor('.epic-meta'),
             epicNameLines: lineCountFor('.epic-name'),
             storyHeader: rectFor('.task-header'),
+            storyHeaderRight: rectFor('.task-header-right'),
             storyTitle: rectFor('.task-title'),
             storyInlineMeta: rectFor('.task-inline-meta'),
             storyTitleLines: lineCountFor('.task-title'),
+            storyInlineMetaInHeaderRight: Boolean(block.querySelector('.task-header-right .task-inline-meta')),
         };
     });
 }
@@ -419,12 +421,14 @@ test('ENG long epic and story summaries stay contained and expose full names', a
     await expect(page.locator('.task-title a')).toHaveAttribute('title', longStorySummary);
 
     const metrics = await collectLongTitleMetrics(page);
-    expect(metrics.epicNameLines).toBeLessThanOrEqual(2);
-    expect(metrics.storyTitleLines).toBeLessThanOrEqual(2);
+    expect(metrics.epicNameLines).toBe(1);
+    expect(metrics.storyTitleLines).toBe(1);
     expect(metrics.epicLink.right).toBeLessThan(metrics.epicMeta.x);
     expect(metrics.epicMeta.right).toBeLessThanOrEqual(metrics.epicHeader.right + 1);
-    expect(metrics.storyTitle.right).toBeLessThan(metrics.storyInlineMeta.x);
-    expect(metrics.storyInlineMeta.right).toBeLessThanOrEqual(metrics.storyHeader.right + 1);
+    expect(metrics.storyInlineMetaInHeaderRight).toBe(true);
+    expect(metrics.storyTitle.right).toBeLessThanOrEqual(metrics.storyHeaderRight.x + 1);
+    expect(metrics.storyInlineMeta.right).toBeLessThanOrEqual(metrics.storyHeaderRight.right + 1);
+    expect(metrics.storyHeaderRight.right).toBeLessThanOrEqual(metrics.storyHeader.right + 1);
 
     await waitForVisualSettled(page);
     await page.screenshot({ path: `${screenshotDir}/long-title-contained.png`, fullPage: true });

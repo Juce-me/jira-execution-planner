@@ -112,6 +112,17 @@ export default function IssueCard({
                             {task.fields.summary}
                         </a>
                     </h3>
+                    {canSelect && (
+                        <input
+                            type="checkbox"
+                            className="task-checkbox"
+                            checked={isSelected}
+                            onChange={() => onToggleSelection(task.key)}
+                            title="Select for sprint planning"
+                        />
+                    )}
+                </div>
+                <div className="task-header-right">
                     <span className="task-inline-meta">
                         <a
                             className="task-key-link"
@@ -127,17 +138,6 @@ export default function IssueCard({
                             </span>
                         )}
                     </span>
-                    {canSelect && (
-                        <input
-                            type="checkbox"
-                            className="task-checkbox"
-                            checked={isSelected}
-                            onChange={() => onToggleSelection(task.key)}
-                            title="Select for sprint planning"
-                        />
-                    )}
-                </div>
-                <div className="task-header-right">
                     <IssueDependencies
                         task={task}
                         jiraUrl={jiraUrl}

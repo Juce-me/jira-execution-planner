@@ -29,6 +29,15 @@ test('dashboard alert logic does not redeclare epicMatchesSelectedSprint locally
     );
 });
 
+test('ready-to-close alert treats only done killed and incomplete stories as closed', () => {
+    const source = fs.readFileSync(dashboardPath, 'utf8');
+
+    assert.match(
+        source,
+        /const readyToCloseStoryStatuses = new Set\(\['done', 'killed', 'incomplete'\]\);/
+    );
+});
+
 test('backlog alert header chip links to the backlog epic key list in Jira', () => {
     assert.equal(fs.existsSync(engAlertsPanelPath), true, 'Expected ENG alerts panel module');
     const source = fs.readFileSync(engAlertsPanelPath, 'utf8');

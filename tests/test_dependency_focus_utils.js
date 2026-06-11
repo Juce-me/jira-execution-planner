@@ -89,3 +89,37 @@ test('buildDependencyFocusPayload includes related and missing keys', async () =
         }
     );
 });
+
+test('buildDependencyFocusWithScreenState records loaded dependencies outside the viewport', async () => {
+    const { buildDependencyFocusWithScreenState } = await loadUtils();
+    const nodes = new Map([
+        ['PROD-2', { getBoundingClientRect: () => ({ top: 20, bottom: 60 }) }],
+        ['PROD-3', { getBoundingClientRect: () => ({ top: 110, bottom: 150 }) }],
+        ['PROD-4', { getBoundingClientRect: () => ({ top: -60, bottom: -10 }) }],
+    ]);
+    const documentRef = {
+        querySelector: (selector) => {
+            const match = selector.match(/data-issue-key="([^"]+)"/);
+            return match ? nodes.get(match[1]) || null : null;
+        },
+    };
+    const payload = {
+        taskKey: 'PROD-1',
+        action: 'blocked-by',
+        relatedKeys: ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4', 'PROD-5'],
+        dependencyKeys: ['PROD-2', 'PROD-3', 'PROD-4', 'PROD-5'],
+        missingKeys: ['PROD-5'],
+    };
+
+    assert.deepEqual(
+        buildDependencyFocusWithScreenState(payload, {
+            documentRef,
+            cssRef: { escape: value => value },
+            viewportHeight: 100,
+        }),
+        {
+            ...payload,
+            offscreenKeys: ['PROD-3', 'PROD-4'],
+        }
+    );
+});

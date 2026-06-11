@@ -15,7 +15,7 @@ import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
-import { buildDependencyFocusPayload, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
+import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
 import { useStorySubtasks } from './issues/useStorySubtasks.js';
 import EngView from './eng/EngView.jsx';
@@ -10305,12 +10305,13 @@ import {
                         setDependencyFocus(null);
                         return;
                     }
-                    setDependencyFocus(buildDependencyFocusPayload({
+                    const nextFocus = buildDependencyFocusWithScreenState(buildDependencyFocusPayload({
                         taskKey,
                         action,
                         dependencyData,
                         issueByKey
                     }));
+                    setDependencyFocus(nextFocus);
                     return;
                 }
                 if (dependencyFocus && !event.target.closest('.task-item')) {

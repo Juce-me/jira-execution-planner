@@ -165,7 +165,7 @@ test('ENG alerts toolbar summary CSS is responsive and uses passive pill styles'
     );
     assert.match(
         css,
-        /\.alerts-panel-summary-pill\s*\{[\s\S]*border-radius: 10px;[\s\S]*cursor: default;/
+        /\.alerts-panel-summary-pill\s*\{[\s\S]*min-height: 30px;[\s\S]*padding: 0\.28rem 0\.5rem;[\s\S]*border-radius: 10px;[\s\S]*font-size: 0\.68rem;[\s\S]*cursor: default;/
     );
 });
 

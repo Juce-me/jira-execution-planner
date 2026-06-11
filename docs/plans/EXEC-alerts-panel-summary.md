@@ -4,7 +4,7 @@
 
 **Goal:** Add a persistent alert summary next to the ENG alerts panel toggle that shows total alerts and every non-zero alert type.
 
-> **Execution update 2026-06-11:** Implemented locally on `docs/alerts-panel-summary-plan`. After review feedback, the summary chips were moved into the toggle cluster and restyled with the dashboard's rounded-rectangle control shape. Verified with focused source guards, full frontend unit guards, frontend build, and the new desktop/narrow Playwright visual spec. Keep this as `EXEC-*` until the change is accepted or merged.
+> **Execution update 2026-06-11:** Implemented locally on `docs/alerts-panel-summary-plan`. After review feedback, the summary chips were moved into the toggle cluster, tightened to a compact stat-chip size, and restyled with the dashboard's rounded-rectangle control shape. Verified with focused source guards, full frontend unit guards, frontend build, and the new desktop/narrow Playwright visual spec. Keep this as `EXEC-*` until the change is accepted or merged.
 
 **Architecture:** Reuse the existing `alertCounts` object computed in `frontend/src/dashboard.jsx` and pass it into `EngAlertsPanel` alongside `alertItemCount`. Render a non-interactive summary in the existing alerts toolbar, styled from existing alert pill/card colors, with responsive wrapping and visual tests for open and collapsed states.
 
@@ -360,7 +360,7 @@ Add:
             display: inline-flex;
             align-items: center;
             justify-content: flex-start;
-            gap: 0.3rem;
+            gap: 0.25rem;
             flex-wrap: wrap;
             min-width: 0;
             color: var(--text-secondary);
@@ -369,15 +369,15 @@ Add:
         .alerts-panel-summary-pill {
             display: inline-flex;
             align-items: center;
-            gap: 0.28rem;
-            min-height: 34px;
-            padding: 0.36rem 0.6rem;
+            gap: 0.22rem;
+            min-height: 30px;
+            padding: 0.28rem 0.5rem;
             border: 1px solid var(--border);
             border-radius: 10px;
             background: #fff;
             color: #444;
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.72rem;
+            font-size: 0.68rem;
             line-height: 1;
             white-space: nowrap;
             cursor: default;

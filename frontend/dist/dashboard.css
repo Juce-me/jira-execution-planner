@@ -2653,7 +2653,7 @@ button.toggle.active {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 0.3rem;
+  gap: 0.25rem;
   flex-wrap: wrap;
   min-width: 0;
   color: var(--text-secondary);
@@ -2661,15 +2661,15 @@ button.toggle.active {
 .alerts-panel-summary-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
-  min-height: 34px;
-  padding: 0.36rem 0.6rem;
+  gap: 0.22rem;
+  min-height: 30px;
+  padding: 0.28rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: #fff;
   color: #444;
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   line-height: 1;
   white-space: nowrap;
   cursor: default;

@@ -1,8 +1,22 @@
 import * as React from 'react';
 
+const ALERT_SUMMARY_CONFIG = [
+    { key: 'missing', label: 'Missing info', tone: 'missing' },
+    { key: 'blocked', label: 'Blocked', tone: 'blocked' },
+    { key: 'followup', label: 'Postponed', tone: 'following' },
+    { key: 'backlog', label: 'Backlog', tone: 'following' },
+    { key: 'missingTeam', label: 'Missing team', tone: 'following' },
+    { key: 'missingLabels', label: 'Missing labels', tone: 'following' },
+    { key: 'needsStories', label: 'Needs stories', tone: 'following' },
+    { key: 'waiting', label: 'Waiting', tone: 'following' },
+    { key: 'empty', label: 'Empty epic', tone: 'empty' },
+    { key: 'done', label: 'Ready to close', tone: 'done' },
+];
+
 export default function EngAlertsPanel({
     selectedView,
     alertItemCount,
+    alertCounts = {},
     showAlertsPanel,
     setShowAlertsPanel,
     collapsed,
@@ -66,6 +80,10 @@ export default function EngAlertsPanel({
         return null;
     }
 
+    const alertSummaryItems = ALERT_SUMMARY_CONFIG
+        .map(item => ({ ...item, count: Number(alertCounts[item.key] || 0) }))
+        .filter(item => item.count > 0);
+
     return (
         <div className="alerts-panel-shell">
             <div className="alerts-panel-toolbar">
@@ -74,6 +92,8 @@ export default function EngAlertsPanel({
                     onClick={() => setShowAlertsPanel(prev => !prev)}
                     title={showAlertsPanel ? 'Hide the alerts section' : 'Show the alerts section'}
                     type="button"
+                    aria-expanded={showAlertsPanel}
+                    aria-controls="eng-alert-panels"
                 >
                     <span className="alerts-panel-toggle-icon" aria-hidden="true">
                         <svg className={`alerts-panel-toggle-chevron ${showAlertsPanel ? '' : 'collapsed'}`} viewBox="0 0 12 12">
@@ -84,9 +104,24 @@ export default function EngAlertsPanel({
                         {showAlertsPanel ? 'Hide Alerts' : 'Show Alerts'}
                     </span>
                 </button>
+                <div className="alerts-panel-summary" aria-live="polite" aria-label={`${alertItemCount} total alerts`}>
+                    <span className="alerts-panel-summary-pill total">
+                        {alertItemCount} total
+                    </span>
+                    {alertSummaryItems.map(item => (
+                        <span
+                            key={item.key}
+                            className={`alerts-panel-summary-pill ${item.tone}`}
+                            aria-label={`${item.count} ${item.label} ${item.count === 1 ? 'alert' : 'alerts'}`}
+                        >
+                            <span className="alerts-panel-summary-count">{item.count}</span>
+                            <span> {item.label}</span>
+                        </span>
+                    ))}
+                </div>
             </div>
             {showAlertsPanel && (
-                <div className={`alert-panels ${collapsed ? 'collapsed' : ''}`}>
+                <div className={`alert-panels ${collapsed ? 'collapsed' : ''}`} id="eng-alert-panels">
 		                                    {consolidatedMissingStories.length > 0 && (
 		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
 	                                            <div className="alert-card-header">

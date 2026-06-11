@@ -14317,6 +14317,7 @@ import {
                                         <EngAlertsPanel
                                             selectedView={selectedView}
                                             alertItemCount={alertItemCount}
+                                            alertCounts={alertCounts}
                                             showAlertsPanel={showAlertsPanel}
                                             setShowAlertsPanel={setShowAlertsPanel}
                                             collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}

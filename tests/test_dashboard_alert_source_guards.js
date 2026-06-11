@@ -72,6 +72,101 @@ test('dashboard defines a persisted global alerts panel toggle', () => {
         alertsSource,
         /\{showAlertsPanel && \(\s*<div className=\{`alert-panels/
     );
+    assert.match(
+        source,
+        /alertCounts=\{alertCounts\}/
+    );
+    assert.match(
+        alertsSource,
+        /alertCounts = \{\}/
+    );
+    assert.match(
+        alertsSource,
+        /const alertSummaryItems = ALERT_SUMMARY_CONFIG/
+    );
+    assert.match(
+        alertsSource,
+        /className="alerts-panel-summary"/
+    );
+    assert.match(
+        alertsSource,
+        /className=\{`alerts-panel-summary-pill/
+    );
+    assert.doesNotMatch(
+        alertsSource,
+        /alerts-panel-summary[\s\S]{0,400}<a/
+    );
+});
+
+test('ENG alerts toolbar summary lists every alert category in panel order', () => {
+    const alertsSource = fs.readFileSync(engAlertsPanelPath, 'utf8');
+    const expectedOrder = [
+        'missing',
+        'blocked',
+        'followup',
+        'backlog',
+        'missingTeam',
+        'missingLabels',
+        'needsStories',
+        'waiting',
+        'empty',
+        'done',
+    ];
+    const indexes = expectedOrder.map(key => {
+        const index = alertsSource.indexOf(`key: '${key}'`);
+        assert.notEqual(index, -1, `Expected alert summary config to include ${key}`);
+        return index;
+    });
+    indexes.forEach((index, position) => {
+        if (position === 0) return;
+        assert.ok(index > indexes[position - 1], `Expected ${expectedOrder[position]} after ${expectedOrder[position - 1]}`);
+    });
+    [
+        'Missing info',
+        'Blocked',
+        'Postponed',
+        'Backlog',
+        'Missing team',
+        'Missing labels',
+        'Needs stories',
+        'Waiting',
+        'Empty epic',
+        'Ready to close',
+    ].forEach(label => {
+        assert.ok(alertsSource.includes(`label: '${label}'`), `Expected alert summary label ${label}`);
+    });
+});
+
+test('ENG alerts toolbar summary CSS is responsive and uses passive pill styles', () => {
+    const css = fs.readFileSync(engCssPath, 'utf8');
+    [
+        '.alerts-panel-summary',
+        '.alerts-panel-summary-pill',
+        '.alerts-panel-summary-pill.total',
+        '.alerts-panel-summary-pill.missing',
+        '.alerts-panel-summary-pill.blocked',
+        '.alerts-panel-summary-pill.following',
+        '.alerts-panel-summary-pill.empty',
+        '.alerts-panel-summary-pill.done',
+    ].forEach(selector => {
+        assert.ok(css.includes(selector), `Expected ${selector} in ENG CSS`);
+    });
+    assert.match(
+        css,
+        /@media \(max-width: 760px\)[\s\S]*\.alerts-panel-toolbar[\s\S]*flex-direction: column;/
+    );
+    assert.match(
+        css,
+        /\.alerts-panel-toolbar\s*\{[\s\S]*justify-content: flex-start;[\s\S]*flex-wrap: wrap;/
+    );
+    assert.match(
+        css,
+        /\.alerts-panel-toggle\s*\{[\s\S]*border-radius: 10px;/
+    );
+    assert.match(
+        css,
+        /\.alerts-panel-summary-pill\s*\{[\s\S]*border-radius: 10px;[\s\S]*cursor: default;/
+    );
 });
 
 test('dashboard delegates ENG data loading and view rendering to ENG modules', () => {

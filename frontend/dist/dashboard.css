@@ -2600,24 +2600,27 @@ button.toggle.active {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 0.45rem;
+  flex-wrap: wrap;
   margin-bottom: 0.45rem;
+  min-width: 0;
 }
 .alerts-panel-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 10px;
   background: var(--bg-secondary);
   color: var(--text-primary);
-  padding: 0.42rem 0.9rem;
+  padding: 0.45rem 0.9rem;
   min-height: 34px;
-  box-shadow: 0 8px 20px rgba(20, 20, 20, 0.06);
+  margin: 0;
 }
 .alerts-panel-toggle:hover {
-  background: #fff;
+  background: var(--bg-primary);
   transform: none;
-  box-shadow: 0 10px 22px rgba(20, 20, 20, 0.1);
+  box-shadow: none;
 }
 .alerts-panel-toggle-icon {
   width: 1.15rem;
@@ -2645,6 +2648,80 @@ button.toggle.active {
   font-size: 0.72rem;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+.alerts-panel-summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+.alerts-panel-summary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-height: 34px;
+  padding: 0.36rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: #444;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+.alerts-panel-summary-pill.total {
+  background: #1a1a1a;
+  border-color: #1a1a1a;
+  color: #fff;
+}
+.alerts-panel-summary-pill.missing,
+.alerts-panel-summary-pill.empty {
+  background: rgba(250, 140, 22, 0.1);
+  border-color: rgba(250, 140, 22, 0.36);
+  color: var(--alert-missing);
+}
+.alerts-panel-summary-pill.blocked {
+  background: rgba(212, 56, 13, 0.1);
+  border-color: rgba(212, 56, 13, 0.36);
+  color: var(--alert-blocked);
+}
+.alerts-panel-summary-pill.following {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.32);
+  color: #4338ca;
+}
+.alerts-panel-summary-pill.done {
+  background: rgba(82, 196, 26, 0.1);
+  border-color: rgba(82, 196, 26, 0.32);
+  color: #237804;
+}
+.alerts-panel-summary-count {
+  font-weight: 700;
+  color: currentColor;
+}
+@media (max-width: 760px) {
+  .alerts-panel-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .alerts-panel-toggle {
+    justify-content: flex-start;
+    width: max-content;
+    max-width: 100%;
+  }
+  .alerts-panel-summary {
+    justify-content: flex-start;
+    width: 100%;
+  }
+  .alerts-panel-summary-pill {
+    max-width: 100%;
+  }
 }
 .alert-panels.collapsed {
   gap: 0.5rem;

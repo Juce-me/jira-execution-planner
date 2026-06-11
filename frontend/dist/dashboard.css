@@ -1053,6 +1053,13 @@ h1 {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+.group-modal > [role=tabpanel] {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
 .group-projects-section {
   display: flex;
   flex-direction: column;

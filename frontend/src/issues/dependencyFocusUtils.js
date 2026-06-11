@@ -102,3 +102,30 @@ export function buildDependencyFocusPayload({
         missingKeys
     };
 }
+
+export function findIssueElementByKey(taskKey, documentRef = globalThis.document, cssRef = globalThis.CSS) {
+    const key = String(taskKey || '');
+    if (!key || !documentRef) return null;
+    if (cssRef && typeof cssRef.escape === 'function' && typeof documentRef.querySelector === 'function') {
+        return documentRef.querySelector(`[data-issue-key="${cssRef.escape(key)}"]`);
+    }
+    if (typeof documentRef.querySelectorAll !== 'function') return null;
+    return Array.from(documentRef.querySelectorAll('[data-issue-key]'))
+        .find(element => element.getAttribute('data-issue-key') === key) || null;
+}
+
+export function buildDependencyFocusWithScreenState(payload, options = {}) {
+    if (!payload) return null;
+    const documentRef = options.documentRef || globalThis.document;
+    const viewportBottom = options.viewportHeight
+        ?? globalThis.window?.innerHeight
+        ?? documentRef?.documentElement?.clientHeight
+        ?? 0;
+    const offscreenKeys = (payload.dependencyKeys || []).filter(key => {
+        const element = findIssueElementByKey(key, documentRef, options.cssRef || globalThis.CSS);
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        return rect.bottom <= 0 || rect.top >= viewportBottom;
+    });
+    return { ...payload, offscreenKeys };
+}

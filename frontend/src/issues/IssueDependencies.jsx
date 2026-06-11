@@ -15,6 +15,17 @@ function buildMissingLine({ key, lookup, info, normalizeStatus }) {
     return { key, status, summary, teamName, assignee, isDone };
 }
 
+function buildLoadedLine({ key, lookup, info, normalizeStatus, getTeamInfo }) {
+    const status = lookup?.fields?.status?.name || lookup?.status?.name || lookup?.status || info.status || 'Unknown';
+    const summary = lookup?.fields?.summary || lookup?.summary || info.summary || 'Unknown summary';
+    const teamName = lookup?.fields && getTeamInfo
+        ? getTeamInfo(lookup).name
+        : (lookup?.teamName || info.teamName || 'Unknown team');
+    const assignee = lookup?.fields?.assignee?.displayName || lookup?.assignee?.displayName || info.assignee || 'Unassigned';
+    const isDone = normalizeStatus(status) === 'done';
+    return { key, status, summary, teamName, assignee, isDone };
+}
+
 export function buildIssueDependencyViewModel({
     task,
     shouldRender = false,
@@ -49,6 +60,7 @@ export function buildIssueDependencyViewModel({
         isDownstream: false,
         missingLines: [],
         hiddenLines: [],
+        offscreenLines: [],
     };
     if (!task?.key || !shouldRender) return empty;
 
@@ -113,6 +125,7 @@ export function buildIssueDependencyViewModel({
         focusRelatedSet.has(task.key);
 
     const missingKeys = isFocused ? (dependencyFocus?.missingKeys || []) : [];
+    const offscreenKeys = isFocused ? (dependencyFocus?.offscreenKeys || []) : [];
     const dependencyKeyList = dependencyFocus?.dependencyKeys
         || (dependencyFocus?.relatedKeys || []).filter(key => key !== task.key);
     const hiddenKeys = isFocused
@@ -127,20 +140,18 @@ export function buildIssueDependencyViewModel({
     const missingLines = missingKeys.map(key => buildMissingLine({
         key,
         lookup: dependencyLookupCache[key],
-        info: missingInfoByKey[key] || {},
+        info: missingInfoByKey[key] || blockInfoByKey.get(key) || {},
         normalizeStatus,
     }));
     const hiddenLines = hiddenKeys.map(key => {
         const lookup = issueByKey.get(key);
-        const info = missingInfoByKey[key] || {};
-        const status = lookup?.fields?.status?.name || lookup?.status?.name || lookup?.status || info.status || 'Unknown';
-        const summary = lookup?.fields?.summary || lookup?.summary || info.summary || 'Unknown summary';
-        const teamName = lookup?.fields && getTeamInfo
-            ? getTeamInfo(lookup).name
-            : (lookup?.teamName || info.teamName || 'Unknown team');
-        const assignee = lookup?.fields?.assignee?.displayName || lookup?.assignee?.displayName || info.assignee || 'Unassigned';
-        const isDone = normalizeStatus(status) === 'done';
-        return { key, status, summary, teamName, assignee, isDone };
+        const info = missingInfoByKey[key] || blockInfoByKey.get(key) || {};
+        return buildLoadedLine({ key, lookup, info, normalizeStatus, getTeamInfo });
+    });
+    const offscreenLines = offscreenKeys.map(key => {
+        const lookup = issueByKey.get(key);
+        const info = missingInfoByKey[key] || blockInfoByKey.get(key) || {};
+        return buildLoadedLine({ key, lookup, info, normalizeStatus, getTeamInfo });
     });
 
     return {
@@ -163,10 +174,11 @@ export function buildIssueDependencyViewModel({
         isDownstream,
         missingLines,
         hiddenLines,
+        offscreenLines,
     };
 }
 
-function MissingIssueLine({ item, jiraUrl }) {
+function DependencyIssueLine({ item, jiraUrl }) {
     const content = (
         <>
             <span>{item.teamName}</span>
@@ -181,12 +193,12 @@ function MissingIssueLine({ item, jiraUrl }) {
         </>
     );
     if (!jiraUrl) {
-        return <div className="dependency-missing-item" key={`missing-${item.key}`}>{content}</div>;
+        return <div className="dependency-missing-item" key={`dependency-${item.key}`}>{content}</div>;
     }
     return (
         <a
             className="dependency-missing-item"
-            key={`missing-${item.key}`}
+            key={`dependency-${item.key}`}
             href={`${jiraUrl}/browse/${item.key}`}
             target="_blank"
             rel="noopener noreferrer"
@@ -288,23 +300,21 @@ export default function IssueDependencies({
                     )}
                 </div>
             )}
-            {model.isFocused && (model.missingLines.length > 0 || model.hiddenLines.length > 0) && (
+            {model.isFocused && (model.missingLines.length > 0 || model.hiddenLines.length > 0 || model.offscreenLines.length > 0) && (
                 <div className="dependency-missing">
+                    {model.offscreenLines.length > 0 && (
+                        <>
+                            <div className="dependency-missing-label hidden">Not on screen</div>
+                            {model.offscreenLines.map(item => (
+                                <DependencyIssueLine item={item} jiraUrl={jiraUrl} key={`offscreen-${item.key}`} />
+                            ))}
+                        </>
+                    )}
                     {model.hiddenLines.length > 0 && (
                         <>
                             <div className="dependency-missing-label hidden">Hidden by filter</div>
                             {model.hiddenLines.map(item => (
-                                <div className="dependency-missing-item" key={`hidden-${item.key}`}>
-                                    <span>{item.teamName}</span>
-                                    <span className="dependency-missing-sep">&middot;</span>
-                                    <span>{item.assignee}</span>
-                                    <span className="dependency-missing-sep">&middot;</span>
-                                    <span>{item.summary}</span>
-                                    <span className="dependency-missing-sep">&middot;</span>
-                                    <span>{item.key}</span>
-                                    <span className="dependency-missing-sep">&middot;</span>
-                                    <span className={`dependency-missing-status ${item.isDone ? 'done' : ''}`}>{item.status}</span>
-                                </div>
+                                <DependencyIssueLine item={item} jiraUrl={jiraUrl} key={`hidden-${item.key}`} />
                             ))}
                         </>
                     )}
@@ -312,7 +322,7 @@ export default function IssueDependencies({
                         <>
                             <div className="dependency-missing-label">Not loaded</div>
                             {model.missingLines.map(item => (
-                                <MissingIssueLine item={item} jiraUrl={jiraUrl} key={`missing-${item.key}`} />
+                                <DependencyIssueLine item={item} jiraUrl={jiraUrl} key={`missing-${item.key}`} />
                             ))}
                             {dependencyLookupLoading && (
                                 <div className="dependency-missing-item">Loading issue details...</div>

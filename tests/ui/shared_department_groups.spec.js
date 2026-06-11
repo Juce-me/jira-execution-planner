@@ -17,8 +17,31 @@ function requestBody(request) {
     }
 }
 
-async function mockFirstRunDashboard(page) {
+function defaultGroupPreferences(overrides = {}) {
+    return {
+        customized: false,
+        preferenceExists: false,
+        onboardingRequired: true,
+        visibleGroupIds: [],
+        activeGroupId: null,
+        effectiveVisibleGroupIds: [],
+        ...overrides,
+    };
+}
+
+async function mockFirstRunDashboard(page, options = {}) {
     const calls = [];
+    const groupsConfig = options.groupsConfig || {
+        version: 1,
+        groups: [
+            { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+            { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+        ],
+        defaultGroupId: 'platform',
+        configRevision: 2,
+        source: 'workspace_db',
+    };
+    const preferences = options.preferences || defaultGroupPreferences();
     await installDashboardShell(page);
     await page.addInitScript(() => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
@@ -55,22 +78,8 @@ async function mockFirstRunDashboard(page) {
         }
         if (url.pathname === '/api/groups-config') {
             return json({
-                version: 1,
-                groups: [
-                    { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
-                    { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
-                ],
-                defaultGroupId: 'platform',
-                configRevision: 2,
-                source: 'workspace_db',
-                preferences: {
-                    customized: false,
-                    preferenceExists: false,
-                    onboardingRequired: true,
-                    visibleGroupIds: [],
-                    activeGroupId: null,
-                    effectiveVisibleGroupIds: [],
-                },
+                ...groupsConfig,
+                preferences,
             });
         }
         if (url.pathname === '/api/groups-preferences') {
@@ -106,6 +115,22 @@ async function mockFirstRunDashboard(page) {
     return calls;
 }
 
+function overflowGroupConfig() {
+    return {
+        version: 1,
+        groups: [{
+            id: 'bidswitch',
+            name: 'Bidswitch',
+            teamIds: Array.from({ length: 12 }, (_, index) => `team-${index + 1}`),
+            missingInfoComponents: Array.from({ length: 8 }, (_, index) => `ATS Component ${index + 1}`),
+            excludedCapacityEpics: Array.from({ length: 28 }, (_, index) => `TECH-${26000 + index}`),
+        }],
+        defaultGroupId: 'bidswitch',
+        configRevision: 4,
+        source: 'workspace_db',
+    };
+}
+
 test('first-run department selection blocks group-scoped task loads until preferences are saved', async ({ page }) => {
     const calls = await mockFirstRunDashboard(page);
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
@@ -129,4 +154,46 @@ test('first-run department selection blocks group-scoped task loads until prefer
     const taskCalls = calls.filter(call => call.pathname === '/api/tasks-with-team-name');
     expect(taskCalls.every(call => call.params.groupId === 'platform')).toBe(true);
     expect(taskCalls.every(call => call.params.teamIds === 'team-platform')).toBe(true);
+});
+
+test('department group editor keeps save visible when selected group content overflows', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const groupsConfig = overflowGroupConfig();
+    await mockFirstRunDashboard(page, {
+        groupsConfig,
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['bidswitch'],
+            activeGroupId: 'bidswitch',
+            effectiveVisibleGroupIds: ['bidswitch'],
+        }),
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+
+    const dialog = page.locator('.group-modal');
+    await expect(dialog.locator('.group-modal-tab.active', { hasText: 'Departments' })).toBeVisible();
+    await expect(dialog.getByRole('tab', { name: 'Team groups' })).toHaveAttribute('aria-selected', 'true');
+
+    const saveButton = dialog.getByRole('button', { name: 'Save' });
+    await dialog.getByPlaceholder('Group name').fill('Bidswitch updated');
+    await expect(dialog.getByText(/Unsaved changes/)).toBeVisible();
+    await expect(saveButton).toBeEnabled();
+
+    const paneScrollable = await dialog.locator('.group-pane-right').evaluate((node) => (
+        node.scrollHeight > node.clientHeight + 8
+    ));
+    expect(paneScrollable).toBe(true);
+
+    const saveBox = await saveButton.boundingBox();
+    const modalBox = await dialog.boundingBox();
+    expect(saveBox).not.toBeNull();
+    expect(modalBox).not.toBeNull();
+    expect(saveBox.y + saveBox.height).toBeLessThanOrEqual(modalBox.y + modalBox.height - 6);
+    expect(saveBox.y).toBeGreaterThanOrEqual(modalBox.y);
+
+    await page.screenshot({ path: `${screenshotDir}/settings-save-footer-visible.png`, fullPage: true });
 });

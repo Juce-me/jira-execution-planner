@@ -173,7 +173,7 @@ async function installAlertsFixture(page) {
     });
 }
 
-async function openEng(page, viewport, showAlertsPanel = true) {
+async function openEng(page, viewport, showAlertsPanel = true, prefOverrides = {}) {
     await page.setViewportSize(viewport);
     await installAlertsFixture(page);
     await page.addInitScript((prefs) => {
@@ -186,6 +186,7 @@ async function openEng(page, viewport, showAlertsPanel = true) {
         showPlanning: false,
         showScenario: false,
         showAlertsPanel,
+        ...prefOverrides,
     });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
@@ -283,4 +284,53 @@ test('ENG alerts summary wraps without overflow on narrow screens', async ({ pag
     await expect(page.getByRole('button', { name: /Show Alerts/ })).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('#eng-alert-panels')).toHaveCount(0);
     await captureSummaryState(page, 'narrow-collapsed');
+});
+
+test('ENG alerts summary chips open and focus their matching alert section', async ({ page }) => {
+    await openEng(page, { width: 1280, height: 520 }, false, { showBlockedAlert: false });
+
+    await expect(page.getByRole('button', { name: /Show Alerts/ })).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#eng-alert-panels')).toHaveCount(0);
+
+    await page.getByRole('button', { name: /4 Blocked/ }).click();
+
+    const blockedSection = page.locator('#eng-alert-blocked');
+    await expect(page.getByRole('button', { name: /Hide Alerts/ })).toHaveAttribute('aria-expanded', 'true');
+    await expect(blockedSection).toBeVisible();
+    await expect(blockedSection).not.toHaveClass(/collapsed/);
+    await expect(blockedSection.locator('.alert-title')).toContainText('Blocked');
+    await expect(blockedSection.locator('.alert-card-body')).not.toHaveClass(/collapsed/);
+    await expect(blockedSection).toBeFocused();
+
+    await page.waitForFunction(() => {
+        const node = document.getElementById('eng-alert-blocked');
+        if (!node) return false;
+        const rect = node.getBoundingClientRect();
+        const title = node.querySelector('.alert-title');
+        if (!title) return false;
+        const titleRect = title.getBoundingClientRect();
+        return rect.bottom > 0
+            && rect.top >= 48
+            && rect.top < window.innerHeight * 0.65
+            && titleRect.top >= rect.top
+            && titleRect.bottom < window.innerHeight;
+    });
+
+    const blockedViewportPosition = await blockedSection.evaluate(node => {
+        const rect = node.getBoundingClientRect();
+        const title = node.querySelector('.alert-title');
+        const titleRect = title.getBoundingClientRect();
+        return {
+            top: rect.top,
+            bottom: rect.bottom,
+            titleTop: titleRect.top,
+            titleBottom: titleRect.bottom,
+            viewportHeight: window.innerHeight,
+        };
+    });
+    expect(blockedViewportPosition.bottom).toBeGreaterThan(0);
+    expect(blockedViewportPosition.top).toBeGreaterThanOrEqual(48);
+    expect(blockedViewportPosition.top).toBeLessThan(blockedViewportPosition.viewportHeight * 0.65);
+    expect(blockedViewportPosition.titleTop).toBeGreaterThanOrEqual(blockedViewportPosition.top);
+    expect(blockedViewportPosition.titleBottom).toBeLessThan(blockedViewportPosition.viewportHeight);
 });

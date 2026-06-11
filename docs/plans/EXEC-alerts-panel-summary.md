@@ -4,9 +4,9 @@
 
 **Goal:** Add a persistent alert summary next to the ENG alerts panel toggle that shows total alerts and every non-zero alert type.
 
-> **Execution update 2026-06-11:** Implemented locally on `docs/alerts-panel-summary-plan`. After review feedback, the summary chips were moved into the toggle cluster, tightened to a compact stat-chip size, and restyled with the dashboard's rounded-rectangle control shape. Verified with focused source guards, full frontend unit guards, frontend build, and the new desktop/narrow Playwright visual spec. Keep this as `EXEC-*` until the change is accepted or merged.
+> **Execution update 2026-06-11:** Implemented locally on `docs/alerts-panel-summary-plan`. After review feedback, the summary chips were moved into the toggle cluster, sized to match the alert button, and restyled with the dashboard's rounded-rectangle control shape. Category chips now open the alerts panel, expand their matching alert-card section, focus the card, and smoothly scroll it into view with enough offset to keep the panel header visible. Verified with focused source guards, full frontend unit guards, frontend build, and the desktop/narrow/click-navigation Playwright visual spec. Keep this as `EXEC-*` until the change is accepted or merged.
 
-**Architecture:** Reuse the existing `alertCounts` object computed in `frontend/src/dashboard.jsx` and pass it into `EngAlertsPanel` alongside `alertItemCount`. Render a non-interactive summary in the existing alerts toolbar, styled from existing alert pill/card colors, with responsive wrapping and visual tests for open and collapsed states.
+**Architecture:** Reuse the existing `alertCounts` object computed in `frontend/src/dashboard.jsx` and pass it into `EngAlertsPanel` alongside `alertItemCount`. Render a toolbar summary in `EngAlertsPanel`: the total chip is passive, while each category chip is a button that opens the panel, expands the matching section, focuses it, and scrolls it into view. Style the controls from existing alert pill/card colors, with responsive wrapping and visual tests for open, collapsed, and chip-navigation states.
 
 **Tech Stack:** React 19, existing ENG JSX components, CSS partials bundled through `frontend/src/styles/dashboard.css`, Node `node:test`, Playwright UI specs, esbuild.
 
@@ -28,14 +28,14 @@ Rejected approaches:
 - Three fixed category chips: rejected because future-sprint categories such as `Backlog`, `Missing Team`, `Missing Labels`, and `Needs Stories` can make the total larger than the displayed chips.
 - Recount inside `EngAlertsPanel`: rejected because `dashboard.jsx` already computes dismissed/scoped category counts, and recounting in the child risks drift.
 
-Analytics impact: no new analytics event is needed. This is a visibility enhancement to an existing toggle; existing toggle behavior and persistence remain unchanged.
+Analytics impact: no new analytics event is needed. This is an in-page navigation enhancement to an existing alert toolbar; it does not submit data, change saved alert content, or leave the dashboard.
 
 ## Subagent Validation
 
 Two read-only subagents validated the plan direction:
 
 - Data-flow validation: `alertCounts` is computed in `frontend/src/dashboard.jsx`, only `alertItemCount` is currently passed, and the right implementation is to pass `alertCounts` rather than deriving counts from DOM, groups, or server totals.
-- UI validation: keep the summary in `EngAlertsPanel`, reuse the existing toolbar/toggle shape, use passive pill-style spans instead of clickable `alert-chip` styling, keep the summary visible open and closed, and add desktop/mobile visual assertions.
+- UI validation: keep the summary in `EngAlertsPanel`, reuse the existing toolbar/toggle shape, use category chip buttons instead of Jira-link `alert-chip` styling, keep the summary visible open and closed, and add desktop/mobile plus click-navigation visual assertions.
 
 ## File Map
 
@@ -44,16 +44,16 @@ Two read-only subagents validated the plan direction:
 - Modify: `frontend/src/eng/EngAlertsPanel.jsx`
   - Accept `alertCounts`.
   - Add a local summary config mapping count keys to labels and tone classes.
-  - Render a non-interactive summary beside the existing toggle.
+  - Render a passive total summary and clickable category chips beside the existing toggle.
   - Add `aria-expanded` and `aria-controls` to the existing toggle.
 - Modify: `frontend/src/styles/eng.css`
   - Extend `.alerts-panel-toolbar` layout.
   - Add `.alerts-panel-summary` and `.alerts-panel-summary-pill` styles using the established alert colors.
-  - Add narrow-width wrapping so the toolbar does not overflow.
+  - Add narrow-width wrapping so the toolbar does not overflow, plus scroll margin on alert-card targets so chip navigation lands on the panel header.
 - Modify: `tests/test_dashboard_alert_source_guards.js`
-  - Guard data pass-through, summary rendering ownership, class names, and non-clickable summary semantics.
+  - Guard data pass-through, summary rendering ownership, class names, clickable category chips, and non-link summary semantics.
 - Create: `tests/ui/eng_alerts_panel_summary.spec.js`
-  - Fixture ENG alerts and verify desktop/mobile layout, open/closed visibility, exact counts, and no horizontal overflow.
+  - Fixture ENG alerts and verify desktop/mobile layout, open/closed visibility, exact counts, no horizontal overflow, and chip navigation to the matching alert section.
 - Generated by build: `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, `frontend/dist/dashboard.css`
   - Rebuild with `npm run build`; do not hand-edit generated dist files.
 
@@ -162,7 +162,7 @@ test('ENG alerts toolbar summary lists every alert category in panel order', () 
 Add this test in the same file:
 
 ```js
-test('ENG alerts toolbar summary CSS is responsive and uses passive pill styles', () => {
+test('ENG alerts toolbar summary CSS is responsive and uses clickable chip styles', () => {
     const css = fs.readFileSync(engCssPath, 'utf8');
     [
         '.alerts-panel-summary',
@@ -305,19 +305,23 @@ After the `</button>` for `.alerts-panel-toggle`, add:
                         {alertItemCount} total
                     </span>
                     {alertSummaryItems.map(item => (
-                        <span
+                        <button
                             key={item.key}
                             className={`alerts-panel-summary-pill ${item.tone}`}
-                            aria-label={`${item.count} ${item.label} ${item.count === 1 ? 'alert' : 'alerts'}`}
+                            type="button"
+                            aria-controls={item.sectionId}
+                            aria-expanded={Boolean(showAlertsPanel && item.isExpanded)}
+                            aria-label={`Open ${item.count} ${item.label} ${item.count === 1 ? 'alert' : 'alerts'}`}
+                            onClick={() => handleAlertSummaryClick(item)}
                         >
                             <span className="alerts-panel-summary-count">{item.count}</span>
                             <span>{item.label}</span>
-                        </span>
+                        </button>
                     ))}
                 </div>
 ```
 
-Keep these as `span`s, not links or buttons.
+Keep the total as a `span`. Category chips are buttons, not Jira links.
 
 - [x] **Step 4: Run the focused source guard**
 
@@ -369,18 +373,27 @@ Add:
         .alerts-panel-summary-pill {
             display: inline-flex;
             align-items: center;
-            gap: 0.22rem;
-            min-height: 30px;
-            padding: 0.28rem 0.5rem;
+            gap: 0.4rem;
+            min-height: 34px;
+            padding: 0.45rem 0.75rem;
             border: 1px solid var(--border);
             border-radius: 10px;
             background: #fff;
             color: #444;
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.68rem;
+            font-size: 0.72rem;
             line-height: 1;
+            letter-spacing: 0;
+            text-transform: none;
             white-space: nowrap;
+            margin: 0;
+            box-shadow: none;
+            transform: none;
             cursor: default;
+        }
+
+        button.alerts-panel-summary-pill {
+            cursor: pointer;
         }
 
         .alerts-panel-summary-pill.total {

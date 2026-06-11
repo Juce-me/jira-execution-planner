@@ -92,6 +92,32 @@ test('dashboard defines a persisted global alerts panel toggle', () => {
         alertsSource,
         /className=\{`alerts-panel-summary-pill/
     );
+    assert.match(
+        alertsSource,
+        /<button[\s\S]{0,320}className=\{`alerts-panel-summary-pill/
+    );
+    assert.match(
+        alertsSource,
+        /onClick=\{\(\) => handleAlertSummaryClick\(item\)\}/
+    );
+    assert.match(
+        alertsSource,
+        /document\.getElementById\(sectionId\)/
+    );
+    [
+        'eng-alert-missing',
+        'eng-alert-blocked',
+        'eng-alert-followup',
+        'eng-alert-backlog',
+        'eng-alert-missing-team',
+        'eng-alert-missing-labels',
+        'eng-alert-needs-stories',
+        'eng-alert-waiting',
+        'eng-alert-empty',
+        'eng-alert-done',
+    ].forEach(sectionId => {
+        assert.ok(alertsSource.includes(`id="${sectionId}" tabIndex={-1}`), `Expected focusable alert section ${sectionId}`);
+    });
     assert.doesNotMatch(
         alertsSource,
         /alerts-panel-summary[\s\S]{0,400}<a/
@@ -137,7 +163,7 @@ test('ENG alerts toolbar summary lists every alert category in panel order', () 
     });
 });
 
-test('ENG alerts toolbar summary CSS is responsive and uses passive pill styles', () => {
+test('ENG alerts toolbar summary CSS is responsive and uses clickable chip styles', () => {
     const css = fs.readFileSync(engCssPath, 'utf8');
     [
         '.alerts-panel-summary',
@@ -165,7 +191,19 @@ test('ENG alerts toolbar summary CSS is responsive and uses passive pill styles'
     );
     assert.match(
         css,
-        /\.alerts-panel-summary-pill\s*\{[\s\S]*min-height: 30px;[\s\S]*padding: 0\.28rem 0\.5rem;[\s\S]*border-radius: 10px;[\s\S]*font-size: 0\.68rem;[\s\S]*cursor: default;/
+        /\.alerts-panel-summary-pill\s*\{[\s\S]*min-height: 34px;[\s\S]*padding: 0\.45rem 0\.75rem;[\s\S]*border-radius: 10px;[\s\S]*font-size: 0\.72rem;[\s\S]*cursor: default;/
+    );
+    assert.match(
+        css,
+        /button\.alerts-panel-summary-pill\s*\{[\s\S]*cursor: pointer;/
+    );
+    assert.match(
+        css,
+        /button\.alerts-panel-summary-pill\.blocked:hover\s*\{[\s\S]*background: rgba\(212, 56, 13, 0\.14\);/
+    );
+    assert.match(
+        css,
+        /\.alert-card\[id\^="eng-alert-"\]\s*\{[\s\S]*scroll-margin-top:/
     );
 });
 

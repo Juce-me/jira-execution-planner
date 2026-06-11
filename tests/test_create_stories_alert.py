@@ -100,6 +100,37 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         self.assertEqual(fields.get('epicKey'), 'EPIC-1')
         self.assertEqual(fields.get('customfield_10101'), jira_payload['issues'][0]['fields']['customfield_sprint'])
 
+    def test_ready_to_close_fetch_limits_child_scan_to_stories(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+
+        search_mock = Mock(return_value=_mock_response(200, {
+            'issues': [],
+            'names': {
+                'customfield_team': 'Team[Team]',
+                'customfield_epic_link': 'Epic Link',
+                'customfield_sprint': 'Sprint',
+            },
+            'total': 0,
+            'isLast': True,
+        }))
+
+        with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+             patch.object(jira_server, 'get_selected_projects_typed', return_value=[]), \
+             patch.object(jira_server, 'get_configured_issue_types', return_value=['Story', 'Task']), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+             patch.object(jira_server, 'fetch_epics_for_empty_alert', return_value=[]), \
+             patch.object(jira_server, 'jira_search_request', search_mock):
+            response = client.get('/api/tasks-with-team-name?project=product&purpose=ready-to-close&epicKeys=EPIC-1&refresh=true')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        task_jql = search_mock.call_args_list[0].args[0].get('jql', '')
+        self.assertIn('type = "Story"', task_jql)
+        self.assertNotIn('"Task"', task_jql)
+
     def test_fetch_epics_for_empty_alert_returns_labels(self):
         payload = {
             'issues': [{

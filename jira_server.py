@@ -2970,8 +2970,8 @@ def fetch_tasks(include_team_name=False):
                 project_name = JIRA_PRODUCT_PROJECT if project_filter == 'product' else JIRA_TECH_PROJECT
                 jql = add_clause_to_jql(jql, f'project = "{project_name}"')
 
-        # Apply issue type filter from config
-        issue_types = get_configured_issue_types()
+        # Ready-to-close evaluates Story children only; other task loads use the configured issue types.
+        issue_types = ['Story'] if lightweight_ready_to_close else get_configured_issue_types()
         if issue_types:
             if len(issue_types) == 1:
                 jql = add_clause_to_jql(jql, f'type = "{issue_types[0]}"')

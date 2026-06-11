@@ -72,6 +72,139 @@ test('dashboard defines a persisted global alerts panel toggle', () => {
         alertsSource,
         /\{showAlertsPanel && \(\s*<div className=\{`alert-panels/
     );
+    assert.match(
+        source,
+        /alertCounts=\{alertCounts\}/
+    );
+    assert.match(
+        alertsSource,
+        /alertCounts = \{\}/
+    );
+    assert.match(
+        alertsSource,
+        /const alertSummaryItems = ALERT_SUMMARY_CONFIG/
+    );
+    assert.match(
+        alertsSource,
+        /className="alerts-panel-summary"/
+    );
+    assert.match(
+        alertsSource,
+        /className=\{`alerts-panel-summary-pill/
+    );
+    assert.match(
+        alertsSource,
+        /<button[\s\S]{0,320}className=\{`alerts-panel-summary-pill/
+    );
+    assert.match(
+        alertsSource,
+        /onClick=\{\(\) => handleAlertSummaryClick\(item\)\}/
+    );
+    assert.match(
+        alertsSource,
+        /document\.getElementById\(sectionId\)/
+    );
+    [
+        'eng-alert-missing',
+        'eng-alert-blocked',
+        'eng-alert-followup',
+        'eng-alert-backlog',
+        'eng-alert-missing-team',
+        'eng-alert-missing-labels',
+        'eng-alert-needs-stories',
+        'eng-alert-waiting',
+        'eng-alert-empty',
+        'eng-alert-done',
+    ].forEach(sectionId => {
+        assert.ok(alertsSource.includes(`id="${sectionId}" tabIndex={-1}`), `Expected focusable alert section ${sectionId}`);
+    });
+    assert.doesNotMatch(
+        alertsSource,
+        /alerts-panel-summary[\s\S]{0,400}<a/
+    );
+});
+
+test('ENG alerts toolbar summary lists every alert category in panel order', () => {
+    const alertsSource = fs.readFileSync(engAlertsPanelPath, 'utf8');
+    const expectedOrder = [
+        'missing',
+        'blocked',
+        'followup',
+        'backlog',
+        'missingTeam',
+        'missingLabels',
+        'needsStories',
+        'waiting',
+        'empty',
+        'done',
+    ];
+    const indexes = expectedOrder.map(key => {
+        const index = alertsSource.indexOf(`key: '${key}'`);
+        assert.notEqual(index, -1, `Expected alert summary config to include ${key}`);
+        return index;
+    });
+    indexes.forEach((index, position) => {
+        if (position === 0) return;
+        assert.ok(index > indexes[position - 1], `Expected ${expectedOrder[position]} after ${expectedOrder[position - 1]}`);
+    });
+    [
+        'Missing info',
+        'Blocked',
+        'Postponed',
+        'Backlog',
+        'Missing team',
+        'Missing labels',
+        'Needs stories',
+        'Waiting',
+        'Empty epic',
+        'Ready to close',
+    ].forEach(label => {
+        assert.ok(alertsSource.includes(`label: '${label}'`), `Expected alert summary label ${label}`);
+    });
+});
+
+test('ENG alerts toolbar summary CSS is responsive and uses clickable chip styles', () => {
+    const css = fs.readFileSync(engCssPath, 'utf8');
+    [
+        '.alerts-panel-summary',
+        '.alerts-panel-summary-pill',
+        '.alerts-panel-summary-pill.total',
+        '.alerts-panel-summary-pill.missing',
+        '.alerts-panel-summary-pill.blocked',
+        '.alerts-panel-summary-pill.following',
+        '.alerts-panel-summary-pill.empty',
+        '.alerts-panel-summary-pill.done',
+    ].forEach(selector => {
+        assert.ok(css.includes(selector), `Expected ${selector} in ENG CSS`);
+    });
+    assert.match(
+        css,
+        /@media \(max-width: 760px\)[\s\S]*\.alerts-panel-toolbar[\s\S]*flex-direction: column;/
+    );
+    assert.match(
+        css,
+        /\.alerts-panel-toolbar\s*\{[\s\S]*justify-content: flex-start;[\s\S]*flex-wrap: wrap;/
+    );
+    assert.match(
+        css,
+        /\.alerts-panel-toggle\s*\{[\s\S]*border-radius: 10px;/
+    );
+    assert.match(
+        css,
+        /\.alerts-panel-summary-pill\s*\{[\s\S]*min-height: 34px;[\s\S]*padding: 0\.45rem 0\.75rem;[\s\S]*border-radius: 10px;[\s\S]*font-size: 0\.72rem;[\s\S]*cursor: default;/
+    );
+    assert.match(
+        css,
+        /button\.alerts-panel-summary-pill\s*\{[\s\S]*cursor: pointer;/
+    );
+    assert.match(
+        css,
+        /button\.alerts-panel-summary-pill\.blocked:hover\s*\{[\s\S]*background: rgba\(212, 56, 13, 0\.14\);/
+    );
+    assert.match(
+        css,
+        /\.alert-card\[id\^="eng-alert-"\]\s*\{[\s\S]*scroll-margin-top:/
+    );
 });
 
 test('dashboard delegates ENG data loading and view rendering to ENG modules', () => {

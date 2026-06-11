@@ -1,8 +1,22 @@
 import * as React from 'react';
 
+const ALERT_SUMMARY_CONFIG = [
+    { key: 'missing', label: 'Missing info', tone: 'missing', sectionId: 'eng-alert-missing' },
+    { key: 'blocked', label: 'Blocked', tone: 'blocked', sectionId: 'eng-alert-blocked' },
+    { key: 'followup', label: 'Postponed', tone: 'following', sectionId: 'eng-alert-followup' },
+    { key: 'backlog', label: 'Backlog', tone: 'following', sectionId: 'eng-alert-backlog' },
+    { key: 'missingTeam', label: 'Missing team', tone: 'following', sectionId: 'eng-alert-missing-team' },
+    { key: 'missingLabels', label: 'Missing labels', tone: 'following', sectionId: 'eng-alert-missing-labels' },
+    { key: 'needsStories', label: 'Needs stories', tone: 'following', sectionId: 'eng-alert-needs-stories' },
+    { key: 'waiting', label: 'Waiting', tone: 'following', sectionId: 'eng-alert-waiting' },
+    { key: 'empty', label: 'Empty epic', tone: 'empty', sectionId: 'eng-alert-empty' },
+    { key: 'done', label: 'Ready to close', tone: 'done', sectionId: 'eng-alert-done' },
+];
+
 export default function EngAlertsPanel({
     selectedView,
     alertItemCount,
+    alertCounts = {},
     showAlertsPanel,
     setShowAlertsPanel,
     collapsed,
@@ -62,9 +76,48 @@ export default function EngAlertsPanel({
         waitingForStoriesEpics,
     } = alertProps;
 
+    const focusAlertSection = React.useCallback((sectionId) => {
+        if (!sectionId || typeof window === 'undefined' || typeof document === 'undefined') {
+            return;
+        }
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+                const target = document.getElementById(sectionId);
+                if (!target) return;
+                target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                target.focus({ preventScroll: true });
+            });
+        });
+    }, []);
+
+    const handleAlertSummaryClick = React.useCallback((item) => {
+        setShowAlertsPanel(true);
+        if (item.setExpanded) {
+            item.setExpanded(true);
+        }
+        focusAlertSection(item.sectionId);
+    }, [focusAlertSection, setShowAlertsPanel]);
+
     if (selectedView !== 'eng' || alertItemCount <= 0) {
         return null;
     }
+
+    const alertSummaryActions = {
+        missing: { setExpanded: setShowMissingAlert, isExpanded: showMissingAlert },
+        blocked: { setExpanded: setShowBlockedAlert, isExpanded: showBlockedAlert },
+        followup: { setExpanded: setShowPostponedAlert, isExpanded: showPostponedAlert },
+        backlog: { setExpanded: setShowBacklogAlert, isExpanded: showBacklogAlert },
+        missingTeam: { setExpanded: setShowMissingTeamAlert, isExpanded: showMissingTeamAlert },
+        missingLabels: { setExpanded: setShowMissingLabelsAlert, isExpanded: showMissingLabelsAlert },
+        needsStories: { setExpanded: setShowNeedsStoriesAlert, isExpanded: showNeedsStoriesAlert },
+        waiting: { setExpanded: setShowWaitingAlert, isExpanded: showWaitingAlert },
+        empty: { setExpanded: setShowEmptyEpicAlert, isExpanded: showEmptyEpicAlert },
+        done: { setExpanded: setShowDoneEpicAlert, isExpanded: showDoneEpicAlert },
+    };
+
+    const alertSummaryItems = ALERT_SUMMARY_CONFIG
+        .map(item => ({ ...item, ...alertSummaryActions[item.key], count: Number(alertCounts[item.key] || 0) }))
+        .filter(item => item.count > 0);
 
     return (
         <div className="alerts-panel-shell">
@@ -74,6 +127,8 @@ export default function EngAlertsPanel({
                     onClick={() => setShowAlertsPanel(prev => !prev)}
                     title={showAlertsPanel ? 'Hide the alerts section' : 'Show the alerts section'}
                     type="button"
+                    aria-expanded={showAlertsPanel}
+                    aria-controls="eng-alert-panels"
                 >
                     <span className="alerts-panel-toggle-icon" aria-hidden="true">
                         <svg className={`alerts-panel-toggle-chevron ${showAlertsPanel ? '' : 'collapsed'}`} viewBox="0 0 12 12">
@@ -84,11 +139,30 @@ export default function EngAlertsPanel({
                         {showAlertsPanel ? 'Hide Alerts' : 'Show Alerts'}
                     </span>
                 </button>
+                <div className="alerts-panel-summary" aria-live="polite" aria-label={`${alertItemCount} total alerts`}>
+                    <span className="alerts-panel-summary-pill total">
+                        {alertItemCount} total
+                    </span>
+                    {alertSummaryItems.map(item => (
+                        <button
+                            key={item.key}
+                            className={`alerts-panel-summary-pill ${item.tone}`}
+                            type="button"
+                            aria-controls={item.sectionId}
+                            aria-expanded={Boolean(showAlertsPanel && item.isExpanded)}
+                            aria-label={`Open ${item.count} ${item.label} ${item.count === 1 ? 'alert' : 'alerts'}`}
+                            onClick={() => handleAlertSummaryClick(item)}
+                        >
+                            <span className="alerts-panel-summary-count">{item.count}</span>
+                            <span> {item.label}</span>
+                        </button>
+                    ))}
+                </div>
             </div>
             {showAlertsPanel && (
-                <div className={`alert-panels ${collapsed ? 'collapsed' : ''}`}>
+                <div className={`alert-panels ${collapsed ? 'collapsed' : ''}`} id="eng-alert-panels">
 		                                    {consolidatedMissingStories.length > 0 && (
-		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`}>
+		                                        <div className={`alert-card missing ${showMissingAlert ? '' : 'collapsed'}`} id="eng-alert-missing" tabIndex={-1}>
 	                                            <div className="alert-card-header">
 	                                                <button
 	                                                    className="alert-toggle"
@@ -200,7 +274,7 @@ export default function EngAlertsPanel({
 	                                    )}
 
 	                                    {blockedTasks.length > 0 && (
-	                                        <div className={`alert-card blocked ${showBlockedAlert ? '' : 'collapsed'}`}>
+	                                        <div className={`alert-card blocked ${showBlockedAlert ? '' : 'collapsed'}`} id="eng-alert-blocked" tabIndex={-1}>
                                             <div className="alert-card-header">
                                                 <button
                                                     className="alert-toggle"
@@ -305,7 +379,7 @@ export default function EngAlertsPanel({
 	                                    )}
 
                                         {(postponedTasks.length > 0 || futureRoutedEpics.length > 0) && (
-                                            <div className={`alert-card following ${showPostponedAlert ? '' : 'collapsed'}`}>
+                                            <div className={`alert-card following ${showPostponedAlert ? '' : 'collapsed'}`} id="eng-alert-followup" tabIndex={-1}>
                                                 <div className="alert-card-header">
                                                     <button
                                                         className="alert-toggle"
@@ -476,7 +550,7 @@ export default function EngAlertsPanel({
                                         )}
 
                                         {backlogEpics.length > 0 && (
-                                            <div className={`alert-card following ${showBacklogAlert ? '' : 'collapsed'}`}>
+                                            <div className={`alert-card following ${showBacklogAlert ? '' : 'collapsed'}`} id="eng-alert-backlog" tabIndex={-1}>
                                                 <div className="alert-card-header">
                                                     <button className="alert-toggle" onClick={() => setShowBacklogAlert(prev => !prev)} title={showBacklogAlert ? 'Collapse backlog panel' : 'Expand backlog panel'}>
                                                         <span className="alert-toggle-icon" aria-hidden="true">
@@ -545,7 +619,7 @@ export default function EngAlertsPanel({
                                         )}
 
                                         {missingTeamEpics.length > 0 && (
-                                            <div className={`alert-card following ${showMissingTeamAlert ? '' : 'collapsed'}`}>
+                                            <div className={`alert-card following ${showMissingTeamAlert ? '' : 'collapsed'}`} id="eng-alert-missing-team" tabIndex={-1}>
                                                 <div className="alert-card-header">
                                                     <button className="alert-toggle" onClick={() => setShowMissingTeamAlert(prev => !prev)} title={showMissingTeamAlert ? 'Collapse missing team panel' : 'Expand missing team panel'}>
                                                         <span className="alert-toggle-icon" aria-hidden="true">
@@ -597,7 +671,7 @@ export default function EngAlertsPanel({
                                         )}
 
                                         {missingLabelEpics.length > 0 && (
-                                            <div className={`alert-card following ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
+                                            <div className={`alert-card following ${showMissingLabelsAlert ? '' : 'collapsed'}`} id="eng-alert-missing-labels" tabIndex={-1}>
                                                 <div className="alert-card-header">
                                                     <button className="alert-toggle" onClick={() => setShowMissingLabelsAlert(prev => !prev)} title={showMissingLabelsAlert ? 'Collapse missing labels panel' : 'Expand missing labels panel'}>
                                                         <span className="alert-toggle-icon" aria-hidden="true">
@@ -649,7 +723,7 @@ export default function EngAlertsPanel({
                                         )}
 
                                         {isFutureSprintSelected && needsStoriesEntries.length > 0 && (
-                                            <div className={`alert-card following ${showNeedsStoriesAlert ? '' : 'collapsed'}`}>
+                                            <div className={`alert-card following ${showNeedsStoriesAlert ? '' : 'collapsed'}`} id="eng-alert-needs-stories" tabIndex={-1}>
                                                 <div className="alert-card-header">
                                                     <button className="alert-toggle" onClick={() => setShowNeedsStoriesAlert(prev => !prev)} title={showNeedsStoriesAlert ? 'Collapse needs stories panel' : 'Expand needs stories panel'}>
                                                         <span className="alert-toggle-icon" aria-hidden="true">
@@ -704,7 +778,7 @@ export default function EngAlertsPanel({
                                         )}
 
                                         {!isFutureSprintSelected && waitingForStoriesEpics.length > 0 && (
-                                            <div className={`alert-card following ${showWaitingAlert ? '' : 'collapsed'}`}>
+                                            <div className={`alert-card following ${showWaitingAlert ? '' : 'collapsed'}`} id="eng-alert-waiting" tabIndex={-1}>
                                                 <div className="alert-card-header">
                                                     <button
                                                         className="alert-toggle"
@@ -811,7 +885,7 @@ export default function EngAlertsPanel({
                                         )}
 
 		                                    {emptyEpicsForAlert.length > 0 && (
-		                                        <div className={`alert-card empty-epic ${showEmptyEpicAlert ? '' : 'collapsed'}`}>
+		                                        <div className={`alert-card empty-epic ${showEmptyEpicAlert ? '' : 'collapsed'}`} id="eng-alert-empty" tabIndex={-1}>
 	                                            <div className="alert-card-header">
 	                                                <button
 	                                                    className="alert-toggle"
@@ -925,7 +999,7 @@ export default function EngAlertsPanel({
 		                                    )}
 
 		                                    {doneStoryEpics.length > 0 && (
-		                                        <div className={`alert-card done-epic ${showDoneEpicAlert ? '' : 'collapsed'}`}>
+		                                        <div className={`alert-card done-epic ${showDoneEpicAlert ? '' : 'collapsed'}`} id="eng-alert-done" tabIndex={-1}>
 	                                            <div className="alert-card-header">
 	                                                <button
 	                                                    className="alert-toggle"

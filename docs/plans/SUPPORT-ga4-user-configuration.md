@@ -6,7 +6,7 @@
 - 2026-05-28: Re-verified the GA4/GTM configuration instructions against current Google docs and the latest `google-analytics-implementation-planner` MCP guidance. Added the custom MCP boundary, API-backed automation rules, and the dry-run desired-state spec at `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml`.
 - 2026-05-29: Re-verified the MCP handoff against the current `ga4-gtm-config-mcp` validator. The YAML spec now uses the strict validator schema, a concrete `target.environment` enum, supported GTM built-ins only, and current MCP-supported tag/config resources. Google tag setup, Enhanced Measurement toggles, retention, ads/signals settings, and full sparse event-parameter mapping remain manual runbook steps unless a later MCP release adds those resource types.
 
-**Audience:** The GA4 property owner or operator configuring Google Analytics for Jira Execution Planner.
+**Audience:** The GA4 property owner or operator configuring Google Analytics for Jira Delivery Planner.
 
 **Important ID note:** `G-6QERX19WB0` is the GA4 web stream Measurement ID configured inside Google Tag Manager. GA Admin may also show a separate numeric property ID; do not place that numeric ID in app code or GTM tags.
 
@@ -81,7 +81,7 @@ MCP publish gates:
 
 1. Open Google Analytics Admin.
 2. Select the property that contains the web stream with Measurement ID `G-6QERX19WB0`.
-3. Go to **Data streams** and confirm the web stream URL matches the deployed Jira Execution Planner URL.
+3. Go to **Data streams** and confirm the web stream URL matches the deployed Jira Delivery Planner URL.
 4. Create or select the GTM web container whose public ID is deployed as `GTM_CONTAINER_ID`.
 5. In GTM, create a Google tag or GA4 configuration tag for Measurement ID `G-6QERX19WB0`, set `send_page_view=false`, and do not paste the GA4 numeric property ID into GTM. This app sends logical page views through the dedicated `pageview` Custom Event trigger; leaving automatic page views enabled can double-count page views.
 6. Keep Google Signals and ad personalization disabled unless legal/privacy review explicitly approves advertising use.

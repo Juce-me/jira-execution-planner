@@ -3,7 +3,7 @@
 Status: implemented in app code; GA4/GTM operator setup remains deployment-gated
 Type: product analytics contract
 
-This is the durable source of truth for Jira Execution Planner analytics. While `docs/plans/EXEC-ga4-instrumentation.md` is still active, that plan owns implementation sequencing; this document owns the product contract future feature work must keep current.
+This is the durable source of truth for Jira Delivery Planner analytics. While `docs/plans/EXEC-ga4-instrumentation.md` is still active, that plan owns implementation sequencing; this document owns the product contract future feature work must keep current.
 
 ## Scope
 

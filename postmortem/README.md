@@ -1,6 +1,6 @@
 # Postmortem Index
 
-This directory contains postmortem analyses of significant issues discovered and resolved in the Jira Execution Planner project.
+This directory contains postmortem analyses of significant issues discovered and resolved in the Jira Delivery Planner project.
 
 ## Purpose
 

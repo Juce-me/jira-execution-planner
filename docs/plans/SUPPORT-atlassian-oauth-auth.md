@@ -2,7 +2,7 @@
 
 > **Support status:** Do not execute the unchecked task list in this file as a fresh implementation plan. The active checkout already contains the OAuth foundation and Jira REST migration primitives. Use the "Execution Status Reconciliation" table below as verification input and `docs/plans/DONE-01-db-auth-foundation.md` as completed DB foundation audit context.
 
-**Goal:** Add optional Atlassian OAuth 2.0 3LO login so Jira Execution Planner can call Jira on behalf of the signed-in user without requiring a personal API token.
+**Goal:** Add optional Atlassian OAuth 2.0 3LO login so Jira Delivery Planner can call Jira on behalf of the signed-in user without requiring a personal API token.
 
 **Architecture:** Keep `basic` auth as the default and introduce `atlassian_oauth` behind `JIRA_AUTH_MODE`. Add a small backend auth/client boundary in the current `backend/` package, migrate only the first Jira endpoints through it, and keep auth-mode changes isolated from `frontend/src/dashboard.jsx`. Serve the unauthenticated OAuth entry screen outside the dashboard bundle so `dashboard.jsx` stays focused on authenticated product state. This slice is a developer-only local OAuth bridge: the supported OAuth route surface is `/login`, `/api/auth/*`, `/api/auth/status`, and the migrated `/api/test`; every other API route must fail clearly with `route_not_oauth_ready`/501 until it is migrated through the auth/client boundary. This slice is the prerequisite for later database-backed identity and token storage; it does not create database tables or production multi-user persistence.
 
@@ -1684,7 +1684,7 @@ def auth_entry_page():
   </head>
   <body>
     <main>
-      <h1>Sign in to Jira Execution Planner</h1>
+      <h1>Sign in to Jira Delivery Planner</h1>
       {message}
       <a href="/api/auth/atlassian/login">Sign in with Atlassian</a>
     </main>

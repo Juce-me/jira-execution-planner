@@ -205,7 +205,7 @@ def auth_entry_page():
   <body>
     <main class="auth-entry">
       <section class="auth-card" aria-labelledby="auth-title">
-        <h1 id="auth-title">Sign in to Jira Execution Planner</h1>
+        <h1 id="auth-title">Sign in to Jira Delivery Planner</h1>
         <p class="auth-copy">Use your Atlassian account to continue.</p>
         {message}
         <a class="auth-action" href="{login_url}">Sign in with Atlassian</a>
@@ -281,7 +281,7 @@ def _recovery_page(title, copy, action_label=None, action_href=None):
 def auth_account_disabled_page():
     return _recovery_page(
         'Account disabled',
-        'Your Jira Execution Planner account is disabled. Contact a tool admin to restore access.',
+        'Your Jira Delivery Planner account is disabled. Contact a tool admin to restore access.',
     )
 
 
@@ -307,7 +307,7 @@ def auth_missing_project_access_page():
 def auth_admin_required_page():
     return _recovery_page(
         'Tool admin access required',
-        'This area is limited to Jira Execution Planner tool admins.',
+        'This area is limited to Jira Delivery Planner tool admins.',
     )
 
 

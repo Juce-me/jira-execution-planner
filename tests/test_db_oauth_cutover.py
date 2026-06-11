@@ -315,7 +315,7 @@ class DbOauthCutoverTests(unittest.TestCase):
             response = self.client.get('/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('Jira Execution Planner', response.get_data(as_text=True))
+        self.assertIn('Jira Delivery Planner', response.get_data(as_text=True))
         self.assertNotIn('/login', response.headers.get('Location', ''))
 
     def test_auth_refresh_uses_database_token_without_local_token_store(self):

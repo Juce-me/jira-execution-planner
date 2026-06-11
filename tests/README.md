@@ -1,6 +1,6 @@
 # Tests
 
-This directory contains automated tests for the Jira Execution Planner.
+This directory contains automated tests for the Jira Delivery Planner.
 
 ## Test Organization
 

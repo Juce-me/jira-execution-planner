@@ -7,7 +7,7 @@
 Copy this into Claude from the repository root:
 
 ```text
-You are reviewing the Jira Execution Planner auth/DB/Home migration plan set on branch cdx/auth-db-context-plan.
+You are reviewing the Jira Delivery Planner auth/DB/Home migration plan set on branch cdx/auth-db-context-plan.
 
 This is a plan review, not an implementation. Do not edit files. Do not implement tasks. Produce findings and a go/no-go recommendation for execution readiness.
 

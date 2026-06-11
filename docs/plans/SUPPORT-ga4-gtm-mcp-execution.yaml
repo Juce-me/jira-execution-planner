@@ -1,4 +1,4 @@
-# Dry-run desired state for configuring Jira Execution Planner GA4/GTM with
+# Dry-run desired state for configuring Jira Delivery Planner GA4/GTM with
 # the current ga4-gtm-config-mcp validator. Replace placeholder resource names
 # before any non-dry-run apply. `target.environment` must be one of
 # dev/staging/prod; use "prod" only with production IDs and explicit approval.

@@ -1,4 +1,4 @@
-# Jira Execution Planner
+# Jira Delivery Planner
 
 Simple local dashboard to display Jira sprint tasks sorted by priority with Python Flask backend.
 

@@ -240,6 +240,54 @@ function storyCheckbox(page, key) {
     return page.locator('.task-item', { hasText: key }).locator('input.task-checkbox');
 }
 
+async function planningCardLayout(page, key) {
+    return page.locator(`.task-item[data-task-key="${key}"]`).evaluate((card) => {
+        const rectFor = (selector) => {
+            const node = card.querySelector(selector);
+            if (!node) return null;
+            const rect = node.getBoundingClientRect();
+            return {
+                x: rect.x,
+                y: rect.y,
+                right: rect.right,
+                bottom: rect.bottom,
+                width: rect.width,
+                height: rect.height,
+                centerY: rect.y + rect.height / 2,
+            };
+        };
+        const planningMeta = card.querySelector('.planning-selection-meta');
+        const checkbox = card.querySelector('.planning-selection-meta .task-checkbox');
+        const storyPoints = card.querySelector('.planning-selection-meta .task-inline-sp');
+        const keyLink = card.querySelector('.planning-selection-meta .task-key-link');
+        const planningMetaStyle = planningMeta ? getComputedStyle(planningMeta) : null;
+        const cardStyle = getComputedStyle(card);
+        return {
+            cardClassName: card.className,
+            checkboxInHeadline: Boolean(card.querySelector('.task-headline .task-checkbox')),
+            headerRightInlineMeta: Boolean(card.querySelector('.task-header-right .task-inline-meta')),
+            planningMetaInTaskMeta: Boolean(card.querySelector('.task-meta .planning-selection-meta')),
+            planningMetaText: planningMeta?.textContent || '',
+            planningMetaMarginLeft: planningMetaStyle?.marginLeft || '',
+            planningMetaWidth: planningMeta ? planningMeta.getBoundingClientRect().width : 0,
+            checkboxAriaLabel: checkbox?.getAttribute('aria-label') || '',
+            checkboxChecked: Boolean(checkbox?.checked),
+            checkboxBorderRadius: checkbox ? getComputedStyle(checkbox).borderRadius : '',
+            checkboxBoxShadow: checkbox ? getComputedStyle(checkbox).boxShadow : '',
+            selectedBoxShadow: cardStyle.boxShadow,
+            selectedBackgroundImage: cardStyle.backgroundImage,
+            borderLeftColor: cardStyle.borderLeftColor,
+            cardClientWidth: card.clientWidth,
+            cardScrollWidth: card.scrollWidth,
+            documentClientWidth: card.ownerDocument.documentElement.clientWidth,
+            documentScrollWidth: card.ownerDocument.documentElement.scrollWidth,
+            storyPoints: rectFor('.planning-selection-meta .task-inline-sp'),
+            checkbox: rectFor('.planning-selection-meta .task-checkbox'),
+            keyLink: rectFor('.planning-selection-meta .task-key-link'),
+        };
+    });
+}
+
 test('new future planning sprint defaults to all selected stories', async ({ page }) => {
     await installPlanningFixture(page);
     await page.goto(appBaseUrl);
@@ -247,6 +295,70 @@ test('new future planning sprint defaults to all selected stories', async ({ pag
 
     await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
     await expect(page.getByRole('button', { name: 'Select All' })).toHaveClass(/active/);
+});
+
+test('planning story selection controls align with story-point metadata', async ({ page }) => {
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+    await openFuturePlanning(page);
+
+    const layout = await planningCardLayout(page, 'PLAN-1');
+    expect(layout.cardClassName).toContain('is-planning-selectable');
+    expect(layout.cardClassName).toContain('is-planning-selected');
+    expect(layout.checkboxInHeadline).toBe(false);
+    expect(layout.headerRightInlineMeta).toBe(false);
+    expect(layout.planningMetaInTaskMeta).toBe(true);
+    expect(layout.planningMetaText).toMatch(/1 SP\s*PLAN-1/);
+    expect(layout.checkboxAriaLabel).toBe('Select PLAN-1 for sprint planning');
+    expect(layout.checkboxChecked).toBe(true);
+    expect(layout.storyPoints).toBeTruthy();
+    expect(layout.checkbox).toBeTruthy();
+    expect(layout.keyLink).toBeTruthy();
+    expect(layout.checkbox.x).toBeGreaterThan(layout.storyPoints.right);
+    expect(layout.keyLink.x).toBeGreaterThan(layout.checkbox.right);
+    expect(Math.abs(layout.checkbox.centerY - layout.storyPoints.centerY)).toBeLessThanOrEqual(4);
+    expect(Math.abs(layout.keyLink.centerY - layout.checkbox.centerY)).toBeLessThanOrEqual(4);
+    expect(Number.parseFloat(layout.checkboxBorderRadius)).toBeGreaterThanOrEqual(6);
+    expect(layout.selectedBoxShadow).not.toBe('none');
+    expect(layout.selectedBoxShadow).toContain('47, 128, 237');
+    expect(layout.selectedBackgroundImage).toContain('47, 128, 237');
+    expect(layout.borderLeftColor).not.toBe('rgb(82, 196, 26)');
+});
+
+test('planning story checkbox toggles selected card treatment', async ({ page }) => {
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+    await openFuturePlanning(page);
+
+    await storyCheckbox(page, 'PLAN-2').click();
+    const unselected = await planningCardLayout(page, 'PLAN-2');
+    expect(unselected.cardClassName).not.toContain('is-planning-selected');
+    expect(unselected.checkboxChecked).toBe(false);
+
+    await storyCheckbox(page, 'PLAN-2').click();
+    const selected = await planningCardLayout(page, 'PLAN-2');
+    expect(selected.cardClassName).toContain('is-planning-selected');
+    expect(selected.checkboxChecked).toBe(true);
+    expect(selected.selectedBoxShadow).not.toBe('none');
+    expect(selected.selectedBackgroundImage).not.toBe('none');
+    expect(selected.borderLeftColor).not.toBe('rgb(82, 196, 26)');
+});
+
+test('planning selection meta wraps without horizontal overflow on narrow screens', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 820 });
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+    await openFuturePlanning(page);
+
+    const layout = await planningCardLayout(page, 'PLAN-1');
+    expect(layout.planningMetaInTaskMeta).toBe(true);
+    expect(layout.checkbox).toBeTruthy();
+    expect(layout.storyPoints).toBeTruthy();
+    expect(layout.keyLink).toBeTruthy();
+    expect(layout.planningMetaMarginLeft).toBe('0px');
+    expect(layout.planningMetaWidth).toBeLessThanOrEqual(layout.cardClientWidth);
+    expect(layout.cardScrollWidth - layout.cardClientWidth).toBeLessThanOrEqual(1);
+    expect(layout.documentScrollWidth - layout.documentClientWidth).toBeLessThanOrEqual(1);
 });
 
 test('manual future planning checkbox edits persist until Select All is clicked', async ({ page }) => {

@@ -109,10 +109,38 @@ export default function IssueCard({
         normalizeStatus: dependencyContext.normalizeStatus || normalizeIssueStatus,
         getTeamInfo: dependencyContext.getTeamInfo,
     });
+    const storyPoints = task.fields.customfield_10004;
+    const taskKeyHref = jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#';
+    const taskKeyLink = (
+        <a
+            className="task-key-link"
+            href={taskKeyHref}
+            target="_blank"
+            rel="noopener noreferrer"
+        >
+            {task.key}
+        </a>
+    );
+    const storyPointsNode = storyPoints ? (
+        <span className="task-inline-sp">
+            {storyPoints} SP
+        </span>
+    ) : null;
+    const planningSelectionLabel = `Select ${task.key} for sprint planning`;
+    const selectionCheckbox = canSelect ? (
+        <input
+            type="checkbox"
+            className="task-checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelection(task.key)}
+            title="Select for sprint planning"
+            aria-label={planningSelectionLabel}
+        />
+    ) : null;
 
     return (
         <div
-            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${dependencyModel.isFocusActive && !dependencyModel.isRelated ? 'is-dimmed' : ''} ${dependencyModel.isFocused ? 'is-focused' : ''} ${dependencyModel.isUpstream ? 'is-upstream' : ''} ${dependencyModel.isDownstream ? 'is-downstream' : ''} ${isRemoveFading ? 'is-removing' : ''}`}
+            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${showPlanning ? 'is-planning-selectable' : ''} ${showPlanning && isSelected ? 'is-planning-selected' : ''} ${dependencyModel.isFocusActive && !dependencyModel.isRelated ? 'is-dimmed' : ''} ${dependencyModel.isFocused ? 'is-focused' : ''} ${dependencyModel.isUpstream ? 'is-upstream' : ''} ${dependencyModel.isDownstream ? 'is-downstream' : ''} ${isRemoveFading ? 'is-removing' : ''}`}
             data-task-key={task.key}
             data-task-id={task.id || task.key}
             data-issue-key={task.key}
@@ -148,33 +176,16 @@ export default function IssueCard({
                             {task.fields.summary}
                         </a>
                     </h3>
-                    {canSelect && (
-                        <input
-                            type="checkbox"
-                            className="task-checkbox"
-                            checked={isSelected}
-                            onChange={() => onToggleSelection(task.key)}
-                            title="Select for sprint planning"
-                        />
-                    )}
+                    {canSelect && !showPlanning && selectionCheckbox}
                 </div>
-                <div className="task-header-right">
-                    <span className="task-inline-meta">
-                        <a
-                            className="task-key-link"
-                            href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                        >
-                            {task.key}
-                        </a>
-                        {task.fields.customfield_10004 && (
-                            <span className="task-inline-sp">
-                                {task.fields.customfield_10004} SP
-                            </span>
-                        )}
-                    </span>
-                </div>
+                {!showPlanning && (
+                    <div className="task-header-right">
+                        <span className="task-inline-meta">
+                            {taskKeyLink}
+                            {storyPointsNode}
+                        </span>
+                    </div>
+                )}
             </div>
             <div className="task-detail-row">
                 <div className="task-meta">
@@ -202,6 +213,13 @@ export default function IssueCard({
                     {subtaskToggle && (
                         <span className="task-subtask-meta">
                             {subtaskToggle}
+                        </span>
+                    )}
+                    {showPlanning && (
+                        <span className="task-inline-meta planning-selection-meta">
+                            {storyPointsNode}
+                            {selectionCheckbox}
+                            {taskKeyLink}
                         </span>
                     )}
                 </div>

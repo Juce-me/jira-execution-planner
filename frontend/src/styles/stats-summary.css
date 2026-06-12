@@ -74,6 +74,10 @@
             color: #9254de;
         }
 
+        .stat-card.killed .stat-value {
+            color: #d46b08;
+        }
+
         .stat-card.high-priority .stat-value {
             color: #d4380d;
         }
@@ -274,7 +278,7 @@
             z-index: var(--sticky-stats-z);
             background: var(--bg-secondary);
             border-color: var(--border);
-            max-height: 2000px;
+            max-height: none;
             padding: 0.75rem;
             margin-top: 1rem;
             margin-bottom: 1rem;

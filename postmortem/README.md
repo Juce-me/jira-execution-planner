@@ -34,6 +34,7 @@ Postmortems serve to:
 | [MRT015](./MRT015-epm-first-load-home-fanout-overfetch.md) | EPM First Load Home Fan-Out and Overfetch | 2026-05-01 | High | Resolved | Slow first EPM load came from per-project Home enrichment fan-out and unscoped all-project metadata fetches |
 | [MRT016](./MRT016-exec-02-plan-file-map-drift.md) | EXEC-02 Plan File Map Drift | 2026-05-11 | Medium | Resolved | EXEC-02 frontend task referenced future files as existing files and crossed task boundaries |
 | [MRT017](./MRT017-chart-hover-readout-placement.md) | Chart Hover Readout Placement Regression | 2026-05-20 | Medium | Resolved | Chart hover readouts were offset by transformed containers and clipped by center-only edge clamping |
+| [MRT018](./MRT018-lead-times-stats-panel-overflow.md) | Lead Times Stats Panel Overflow | 2026-06-12 | High | Resolved | Lead Times long lists clipped inside nested stats view caps and lacked load-more validation |
 
 ## Postmortem Template
 
@@ -87,8 +88,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 17
-- **Metadata complete (Date/Severity/Status)**: 17 (MRT001-MRT017)
+- **Total postmortems**: 18
+- **Metadata complete (Date/Severity/Status)**: 18 (MRT001-MRT018)
 
 ## Common Themes
 
@@ -146,5 +147,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-05-20*
-*Total Postmortems: 17*
+*Last Updated: 2026-06-12*
+*Total Postmortems: 18*

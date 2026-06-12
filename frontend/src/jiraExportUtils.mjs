@@ -79,6 +79,52 @@ export function buildJiraIssueSearchUrl(jiraUrl, keys = []) {
     return `${baseUrl}/issues/?jql=${encodeURIComponent(jql)}`;
 }
 
+export function buildJiraIssueSearchUrlFromJql(jiraUrl, jql) {
+    const baseUrl = String(jiraUrl || '').trim().replace(/\/+$/, '');
+    const query = String(jql || '').trim();
+    if (!baseUrl || !query) return '';
+    return `${baseUrl}/issues/?jql=${encodeURIComponent(query)}`;
+}
+
+function escapeJqlLiteral(value) {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function quoteJqlList(values = []) {
+    return values.map(value => `"${escapeJqlLiteral(value)}"`).join(', ');
+}
+
+function startDateFromQuarterLabel(label) {
+    const match = String(label || '').trim().match(/^(\d{4})Q([1-4])$/i);
+    if (!match) return '';
+    const year = Number(match[1]);
+    const quarter = Number(match[2]);
+    const month = ((quarter - 1) * 3) + 1;
+    return `${year}-${String(month).padStart(2, '0')}-01`;
+}
+
+export function buildJiraCohortStatusSearchUrl({
+    jiraUrl,
+    startQuarter,
+    statuses = [],
+    issueType = 'Epic',
+} = {}) {
+    const normalizedStatuses = (statuses || []).map(status => String(status || '').trim()).filter(Boolean);
+    const startDate = startDateFromQuarterLabel(startQuarter);
+    if (!normalizedStatuses.length || !startDate) return '';
+
+    const clauses = [
+        `issuetype = "${escapeJqlLiteral(issueType)}"`,
+        `created >= "${startDate}"`
+    ];
+    if (normalizedStatuses.length === 1) {
+        clauses.push(`status = "${escapeJqlLiteral(normalizedStatuses[0])}"`);
+    } else {
+        clauses.push(`status in (${quoteJqlList(normalizedStatuses)})`);
+    }
+    return buildJiraIssueSearchUrlFromJql(jiraUrl, clauses.join(' AND '));
+}
+
 export function openJiraIssueSearch({
     jiraUrl,
     keys,

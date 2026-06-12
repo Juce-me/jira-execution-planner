@@ -51,6 +51,10 @@ export function normalizeCohortStatus(value) {
     return 'open';
 }
 
+function normalizeCohortJiraStatus(value) {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 export function isTerminalCohortStatus(statusKey) {
     return TERMINAL_STATUS_KEYS.has(normalizeCohortStatus(statusKey));
 }
@@ -140,11 +144,20 @@ export function aggregateCohortSummary(issues) {
         incomplete: 0,
         postponed: 0,
         open: 0,
+        inProgress: 0,
+        awaitingValidation: 0,
         resolvedWithDate: 0
     };
     source.forEach((issue) => {
         const status = normalizeCohortStatus(issue?.status);
         summary[status] += 1;
+        const jiraStatus = normalizeCohortJiraStatus(issue?.jiraStatus || issue?.status);
+        if (jiraStatus === 'in progress') {
+            summary.inProgress += 1;
+        }
+        if (jiraStatus === 'awaiting validation') {
+            summary.awaitingValidation += 1;
+        }
         if (status !== 'open' && issue?.terminalDate) {
             summary.resolvedWithDate += 1;
         }
@@ -318,9 +331,12 @@ export function buildOpenEpicsBars(issues, options = {}) {
     const groupBy = options.groupBy === 'month' ? 'month' : 'quarter';
     const rowKey = options.rowKey || null;
     const todayDate = options.today instanceof Date ? options.today : new Date();
-    const limit = Math.max(1, Number(options.limit) || 30);
+    const explicitLimit = Number(options.limit);
+    const limit = Number.isFinite(explicitLimit) && explicitLimit > 0
+        ? Math.max(1, explicitLimit)
+        : null;
 
-    return source
+    const rows = source
         .filter((issue) => {
             const status = normalizeCohortStatus(issue?.status);
             if (status !== 'open') return false;
@@ -344,17 +360,20 @@ export function buildOpenEpicsBars(issues, options = {}) {
                 daysOpen
             };
         })
-        .sort((a, b) => b.daysOpen - a.daysOpen)
-        .slice(0, limit);
+        .sort((a, b) => b.daysOpen - a.daysOpen);
+    return limit ? rows.slice(0, limit) : rows;
 }
 
 export function buildCompletedEpicsBars(issues, options = {}) {
     const source = Array.isArray(issues) ? issues : [];
     const groupBy = options.groupBy === 'month' ? 'month' : 'quarter';
     const rowKey = options.rowKey || null;
-    const limit = Math.max(1, Number(options.limit) || 30);
+    const explicitLimit = Number(options.limit);
+    const limit = Number.isFinite(explicitLimit) && explicitLimit > 0
+        ? Math.max(1, explicitLimit)
+        : null;
 
-    return source
+    const rows = source
         .filter((issue) => {
             const status = normalizeCohortStatus(issue?.status);
             if (status === 'open') return false;
@@ -373,6 +392,6 @@ export function buildCompletedEpicsBars(issues, options = {}) {
             assigneeName: issue?.assignee?.name || 'Unassigned',
             daysOpen: Math.max(0, Number(issue?.leadTimeDays || 0))
         }))
-        .sort((a, b) => b.daysOpen - a.daysOpen)
-        .slice(0, limit);
+        .sort((a, b) => b.daysOpen - a.daysOpen);
+    return limit ? rows.slice(0, limit) : rows;
 }

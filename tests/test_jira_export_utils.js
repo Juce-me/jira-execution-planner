@@ -15,7 +15,9 @@ test('collectJiraExportKeysFromTasks returns unique sorted epic and story keys f
     const {
         collectJiraExportKeysFromTasks,
         buildJiraKeyInJql,
-        buildJiraIssueSearchUrl
+        buildJiraIssueSearchUrl,
+        buildJiraIssueSearchUrlFromJql,
+        buildJiraCohortStatusSearchUrl
     } = await import('../frontend/src/jiraExportUtils.mjs');
     const tasks = [
         story('APP-2', 'APP-10'),
@@ -31,6 +33,22 @@ test('collectJiraExportKeysFromTasks returns unique sorted epic and story keys f
     assert.equal(
         buildJiraIssueSearchUrl('https://jira.example.com/', ['APP-2', 'APP-1']),
         'https://jira.example.com/issues/?jql=key%20in%20(APP-1%2C%20APP-2)'
+    );
+    assert.equal(
+        buildJiraIssueSearchUrlFromJql('https://jira.example.com/', 'status = "In Progress"'),
+        'https://jira.example.com/issues/?jql=status%20%3D%20%22In%20Progress%22'
+    );
+
+    const statusUrl = buildJiraCohortStatusSearchUrl({
+        jiraUrl: 'https://jira.example.com/',
+        startQuarter: '2026Q2',
+        statuses: ['In Progress', 'Postponed', 'Awaiting Validation'],
+        issueType: 'Epic'
+    });
+    const decodedJql = decodeURIComponent(new URL(statusUrl).searchParams.get('jql'));
+    assert.equal(
+        decodedJql,
+        'issuetype = "Epic" AND created >= "2026-04-01" AND status in ("In Progress", "Postponed", "Awaiting Validation")'
     );
 });
 

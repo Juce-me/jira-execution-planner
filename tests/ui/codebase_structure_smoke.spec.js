@@ -95,6 +95,39 @@ function makeEpic(project) {
     };
 }
 
+function makeOpenCohortEpic(index) {
+    const projectKey = index % 2 === 0 ? 'PROD' : 'TECH';
+    const day = String((index % 28) + 1).padStart(2, '0');
+    return {
+        key: `${projectKey}-OPEN-${index + 1}`,
+        summary: `Open cohort epic ${index + 1}`,
+        projectKey,
+        status: 'open',
+        jiraStatus: 'In Progress',
+        createdDate: `2026-01-${day}`,
+        terminalDate: null,
+        leadTimeDays: null,
+        assignee: { id: `${projectKey.toLowerCase()}-lead`, name: `${projectKey} Lead` },
+    };
+}
+
+function makeCompletedCohortEpic(index) {
+    const projectKey = index % 2 === 0 ? 'PROD' : 'TECH';
+    const createdDay = String((index % 28) + 1).padStart(2, '0');
+    const terminalDay = String((index % 28) + 1).padStart(2, '0');
+    return {
+        key: `${projectKey}-DONE-${index + 1}`,
+        summary: `Completed cohort epic ${index + 1}`,
+        projectKey,
+        status: 'done',
+        jiraStatus: 'Done',
+        createdDate: `2026-01-${createdDay}`,
+        terminalDate: `2026-04-${terminalDay}`,
+        leadTimeDays: 90 + index,
+        assignee: { id: `${projectKey.toLowerCase()}-lead`, name: `${projectKey} Lead` },
+    };
+}
+
 function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey }) {
     return {
         id: key,
@@ -741,7 +774,7 @@ async function installApiMocks(page, calls, options = {}) {
             return json({
                 data: {
                     range: { startDate: '2026-01-01', endDate: '2026-06-30' },
-                    issues: [
+                    issues: options.cohortIssues || [
                         {
                             key: 'PROD-EPIC',
                             summary: 'Product delivery epic',
@@ -757,10 +790,22 @@ async function installApiMocks(page, calls, options = {}) {
                             summary: 'Tech delivery epic',
                             projectKey: 'TECH',
                             status: 'open',
+                            jiraStatus: 'In Progress',
                             createdDate: '2026-02-12',
                             terminalDate: null,
                             leadTimeDays: null,
                             assignee: { id: 'beta-lead', name: 'Beta Lead' },
+                        },
+                        {
+                            key: 'VALIDATION-EPIC',
+                            summary: 'Validation delivery epic',
+                            projectKey: 'PROD',
+                            status: 'open',
+                            jiraStatus: 'Awaiting Validation',
+                            createdDate: '2026-04-12',
+                            terminalDate: null,
+                            leadTimeDays: null,
+                            assignee: { id: 'alpha-lead', name: 'Alpha Lead' },
                         },
                     ],
                     meta: { warnings: [] },
@@ -1022,8 +1067,18 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
 
     await statsTabs.getByRole('radio', { name: 'Lead Times' }).click();
     await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 1);
-    await expect(page.locator('.stats-view.open .cohort-summary')).toContainText('Epics Overview');
+    const cohortSummary = page.locator('.stats-view.open .cohort-summary');
+    await expect(cohortSummary).toContainText('Epics Overview');
+    await expect(cohortSummary).toContainText('1 in progress · 0 postponed · 1 awaiting validation');
+    const leadTimesJiraLink = cohortSummary.getByRole('link', { name: 'Open in progress, postponed, and awaiting validation epics in Jira' });
+    await expect(leadTimesJiraLink).toBeVisible();
+    const leadTimesJql = decodeURIComponent(new URL(await leadTimesJiraLink.getAttribute('href')).searchParams.get('jql'));
+    expect(leadTimesJql).toBe('issuetype = "Epic" AND created >= "2026-04-01" AND status in ("In Progress", "Postponed", "Awaiting Validation")');
     await expect(page.locator('.stats-view.open')).toContainText('Cohort Heatmap');
+    await expect(page.locator('.stats-view.open')).toContainText('In Progress');
+    await expect(page.locator('.stats-view.open')).toContainText('Awaiting Validation');
+    await expect(page.locator('.stats-view.open')).toContainText('Created on or after the selected Lead Times start quarter and still non-terminal today.');
+    await expect(page.locator('.stats-view.open')).toContainText('Created on or after the selected Lead Times start quarter and reached a terminal status, with lead time shown.');
     const cohortCall = callsFor(calls, '/api/stats/epic-cohort', 'POST')[0];
     expect(cohortCall.headers['x-requested-with']).toBe('jira-execution-planner');
     expect(cohortCall.body).toMatchObject({
@@ -1032,6 +1087,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
         components: [],
         refresh: false,
     });
+    await captureSmokeScreenshot(page, 'statistics-lead-times');
 
     await statsTabs.getByRole('radio', { name: 'Excluded Capacity' }).click();
     await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
@@ -1040,6 +1096,81 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await statsTabs.getByRole('radio', { name: 'Mono vs Cross' }).click();
     await expect(page.locator('.stats-view.open')).toContainText('Team Cross Share');
     await expect(page.locator('.stats-view.open .excluded-capacity-line-chart')).toBeVisible();
+
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Lead Times caps long epic lists with load more and keeps overflow scrollable', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, {
+        cohortIssues: [
+            ...Array.from({ length: 45 }, (_, index) => makeOpenCohortEpic(index)),
+            ...Array.from({ length: 45 }, (_, index) => makeCompletedCohortEpic(index)),
+        ],
+        useCommittedDist: true,
+    });
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        selectedTeams: ['all'],
+        showPlanning: false,
+        showScenario: false,
+        showStats: true,
+        statsView: 'cohort',
+        cohortStartQuarter: '2026Q1',
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 1);
+
+    const openSection = page.locator('.cohort-section', { hasText: 'Open Epics (All Cohorts)' }).first();
+    const openRows = openSection.locator('.cohort-open-row');
+    await expect(openRows).toHaveCount(30);
+    const loadMoreButton = openSection.getByRole('button', { name: /Load 15 more open epics/ });
+    await expect(loadMoreButton).toBeVisible();
+
+    const layout = await openRows.last().evaluate((lastRow) => {
+        const statsPanel = document.querySelector('.stats-panel.open');
+        const statsView = document.querySelector('.stats-view.open');
+        const statsRect = statsPanel?.getBoundingClientRect();
+        const rowRect = lastRow.getBoundingClientRect();
+        return {
+            statsMaxHeight: statsPanel ? getComputedStyle(statsPanel).maxHeight : '',
+            statsViewMaxHeight: statsView ? getComputedStyle(statsView).maxHeight : '',
+            statsViewOverflow: statsView ? getComputedStyle(statsView).overflow : '',
+            documentHeight: document.documentElement.scrollHeight,
+            viewportHeight: window.innerHeight,
+            statsPanelHeight: statsRect?.height || 0,
+            statsPanelBottom: statsRect ? statsRect.bottom + window.scrollY : 0,
+            lastRowBottom: rowRect.bottom + window.scrollY,
+        };
+    });
+    expect(layout.statsMaxHeight).toBe('none');
+    expect(layout.statsViewMaxHeight).toBe('none');
+    expect(layout.statsViewOverflow).toBe('visible');
+    expect(layout.documentHeight).toBeGreaterThan(layout.viewportHeight);
+    expect(layout.documentHeight).toBeGreaterThanOrEqual(layout.lastRowBottom);
+    expect(layout.statsPanelBottom).toBeGreaterThanOrEqual(layout.lastRowBottom);
+
+    await loadMoreButton.click();
+    await expect(openRows).toHaveCount(45);
+
+    const completedSection = page.locator('.cohort-section', { hasText: 'Completed Epics — Lead Time (All Cohorts)' }).first();
+    const completedRows = completedSection.locator('.cohort-open-row');
+    await expect(completedRows).toHaveCount(30);
+    const completedLoadMoreButton = completedSection.getByRole('button', { name: /Load 15 more completed epics/ });
+    await expect(completedLoadMoreButton).toBeVisible();
+    await completedLoadMoreButton.click();
+    await expect(completedRows).toHaveCount(45);
+
+    await openRows.last().scrollIntoViewIfNeeded();
+    await expect(openRows.last()).toBeVisible();
+    await captureSmokeScreenshot(page, 'statistics-lead-times-open-scroll');
 
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });

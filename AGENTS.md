@@ -344,6 +344,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep ENG header dependency pills in the detail row/right lane so they do not increase the story title/header row height.
 - Subtask-toggle animations must target `.story-subtasks-panel`; task removal animations must target the full `.task-item`, not dependency metadata or the remove button alone.
 - Product renames must include all user-visible product-name surfaces: README, docs, browser title, app header, auth/recovery screens, installer output, package description, matching tests, and generated frontend output when source changes.
+- For Lead Times/stats panel UI changes, verify long lists with more than 30 open and completed epics, active inner-view overflow, load-more behavior, and a screenshot before reporting completion.
 
 ---
 

@@ -1,26 +1,48 @@
 import * as React from 'react';
 
-function OpenEpicsChart({ title, items, jiraBaseUrl, emptyMessage, variant }) {
+const DEFAULT_VISIBLE_ROWS = 30;
+
+function normalizePositiveInteger(value, fallback) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+    return Math.max(1, Math.floor(numeric));
+}
+
+function OpenEpicsChart({ title, description, items, jiraBaseUrl, emptyMessage, variant, initialVisibleCount = DEFAULT_VISIBLE_ROWS, loadMoreCount = DEFAULT_VISIBLE_ROWS }) {
     const rows = Array.isArray(items) ? items : [];
     const fallbackEmpty = emptyMessage || 'No open epics in this scope.';
     const fillClass = `cohort-open-fill${variant ? ` cohort-open-fill--${variant}` : ''}`;
+    const initialCount = normalizePositiveInteger(initialVisibleCount, rows.length || DEFAULT_VISIBLE_ROWS);
+    const incrementCount = normalizePositiveInteger(loadMoreCount, DEFAULT_VISIBLE_ROWS);
+    const [visibleCount, setVisibleCount] = React.useState(() => Math.min(rows.length, initialCount));
+
+    React.useEffect(() => {
+        setVisibleCount(Math.min(rows.length, initialCount));
+    }, [rows.length, initialCount, title]);
 
     if (!rows.length) {
         return (
             <div className="cohort-open-chart">
                 <div className="cohort-open-title">{title}</div>
+                {description && <div className="cohort-open-description">{description}</div>}
                 <div className="cohort-empty">{fallbackEmpty}</div>
             </div>
         );
     }
 
+    const visibleRows = rows.slice(0, visibleCount);
+    const hasMoreRows = visibleCount < rows.length;
+    const remainingCount = Math.max(0, rows.length - visibleCount);
+    const nextCount = Math.min(incrementCount, remainingCount);
+    const itemLabel = variant === 'completed' ? 'completed epics' : 'open epics';
     const maxDays = rows.reduce((acc, item) => Math.max(acc, Number(item?.daysOpen) || 0), 0) || 1;
 
     return (
         <div className="cohort-open-chart">
             <div className="cohort-open-title">{title}</div>
+            {description && <div className="cohort-open-description">{description}</div>}
             <div className="cohort-open-bars">
-                {rows.map((item) => {
+                {visibleRows.map((item) => {
                     const daysOpen = Number(item?.daysOpen || 0);
                     const width = Math.max(3, (daysOpen / maxDays) * 100);
                     const issueKey = String(item?.key || '').trim();
@@ -59,6 +81,15 @@ function OpenEpicsChart({ title, items, jiraBaseUrl, emptyMessage, variant }) {
                     );
                 })}
             </div>
+            {hasMoreRows && (
+                <button
+                    className="cohort-open-more"
+                    type="button"
+                    onClick={() => setVisibleCount(count => Math.min(rows.length, count + incrementCount))}
+                >
+                    Load {nextCount} more {itemLabel}
+                </button>
+            )}
         </div>
     );
 }

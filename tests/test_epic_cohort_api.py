@@ -160,6 +160,32 @@ class TestEpicCohortFetch(unittest.TestCase):
         self.assertEqual(issue.get('status'), 'Postponed')
         self.assertIsNotNone(issue.get('terminalDate'))
 
+    @patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT'])
+    @patch.object(jira_server, 'jira_search_request')
+    def test_open_epics_keep_actual_jira_status(self, mock_search, _mock_scope):
+        mock_search.return_value = DummyResponse({
+            'issues': [
+                self._epic('PRODUCT-5', status='In Progress', resolution=None),
+                self._epic('PRODUCT-6', status='Awaiting Validation', resolution=None),
+                self._epic('PRODUCT-7', status='Done', resolution='2025-04-10'),
+            ],
+            'isLast': True
+        })
+
+        payload, error = jira_server.fetch_epic_cohort_data(
+            start_quarter='2025Q1',
+            headers={'Authorization': 'Basic test'},
+            team_field_id='customfield_30101',
+            team_ids=[]
+        )
+
+        self.assertIsNone(error)
+        issues = {issue.get('key'): issue for issue in (payload.get('issues') or [])}
+        self.assertEqual(issues['PRODUCT-5'].get('status'), 'open')
+        self.assertEqual(issues['PRODUCT-5'].get('jiraStatus'), 'In Progress')
+        self.assertEqual(issues['PRODUCT-6'].get('status'), 'open')
+        self.assertEqual(issues['PRODUCT-6'].get('jiraStatus'), 'Awaiting Validation')
+
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestEpicCohortEndpoint(unittest.TestCase):

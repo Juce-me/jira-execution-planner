@@ -13,6 +13,7 @@ import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
+import TrackedExternalLink from './components/TrackedExternalLink.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
@@ -61,6 +62,7 @@ import {
 import { PRIORITY_AXIS } from './stats/statsConstants.js';
 import { DEFAULT_PRIORITY_WEIGHT_ROWS, buildPriorityWeightMap, clonePriorityWeightRows } from './stats/priorityWeights.js';
 import { buildBurnoutChartModel } from './stats/burnoutChartUtils.js';
+import { buildJiraIssueListLinkAnalytics } from './analytics/externalLinks.js';
 import {
     buildLocalStatsFromTasks,
     buildRadarPoints,
@@ -204,6 +206,7 @@ import {
     collectJiraExportKeysFromEpmRollupBoards,
     collectJiraExportKeysFromScenarioIssues,
     collectJiraExportKeysFromTasks,
+    buildJiraCohortStatusSearchUrl,
     openJiraIssueSearch
 } from './jiraExportUtils.mjs';
 
@@ -392,7 +395,7 @@ import {
             );
             const showEpmNavigation = authMode === 'basic' || hasActiveHomeTokenConnection;
             const [sprintName, setSprintName] = useState('Sprint');
-            const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
+            const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'killed', 'high-priority'
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
             const [epmProjectSort, setEpmProjectSort] = useState(normalizeEpmProjectSort(savedPrefsRef.current.epmProjectSort || DEFAULT_EPM_PROJECT_SORT));
@@ -6096,18 +6099,6 @@ import {
 	                });
 	                return merged;
 	            }, [readyToCloseProductEpicsInScope, readyToCloseTechEpicsInScope]);
-            const killedTasks = React.useMemo(
-                () => tasks.filter(t => t.fields.status?.name === 'Killed'),
-                [tasks]
-            );
-            const doneTasks = React.useMemo(
-                () => tasks.filter(t => t.fields.status?.name === 'Done'),
-                [tasks]
-            );
-            const incompleteTasks = React.useMemo(
-                () => tasks.filter(t => normalizeStatus(t.fields.status?.name) === 'incomplete'),
-                [tasks]
-            );
             const techTasksCount = techTasks.length;
             const productTasksCount = productTasks.length;
 
@@ -6135,6 +6126,61 @@ import {
 
             const selectedTeamSet = React.useMemo(() => new Set(selectedTeams.filter(id => id !== 'all')), [selectedTeams]);
             const isAllTeamsSelected = selectedTeams.includes('all') || selectedTeamSet.size === 0;
+            const scopedTasks = React.useMemo(() => {
+                const query = searchQuery.trim().toLowerCase();
+                return tasks.filter(task => {
+                    if (query !== '') {
+                        const summary = task.fields.summary?.toLowerCase() || '';
+                        const key = String(task.key || '').toLowerCase();
+                        const assignee = task.fields.assignee?.displayName?.toLowerCase() || '';
+                        const epicKey = String(task.fields.epicKey || '').toLowerCase();
+                        const epicSummary = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.summary?.toLowerCase() || '') : '';
+                        const epicAssignee = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.assignee?.displayName?.toLowerCase() || '') : '';
+
+                        if (!summary.includes(query) && !key.includes(query) && !assignee.includes(query) &&
+                            !epicAssignee.includes(query) && !epicKey.includes(query) && !epicSummary.includes(query)) {
+                            return false;
+                        }
+                    }
+
+                    if (!isAllTeamsSelected) {
+                        const teamInfo = getTeamInfo(task);
+                        if (!selectedTeamSet.has(teamInfo.id)) {
+                            return false;
+                        }
+                    }
+
+                    const isTech = techProjectKeys.has(task.fields?.projectKey || task.key.split('-')[0]);
+                    if (isTech && !showTech) {
+                        return false;
+                    }
+                    if (!isTech && !showProduct) {
+                        return false;
+                    }
+                    return true;
+                });
+            }, [
+                tasks,
+                searchQuery,
+                epicDetails,
+                isAllTeamsSelected,
+                selectedTeamSet,
+                showTech,
+                showProduct,
+                techProjectKeys
+            ]);
+            const killedTasks = React.useMemo(
+                () => scopedTasks.filter(t => t.fields.status?.name === 'Killed'),
+                [scopedTasks]
+            );
+            const doneTasks = React.useMemo(
+                () => scopedTasks.filter(t => t.fields.status?.name === 'Done'),
+                [scopedTasks]
+            );
+            const incompleteTasks = React.useMemo(
+                () => scopedTasks.filter(t => normalizeStatus(t.fields.status?.name) === 'incomplete'),
+                [scopedTasks]
+            );
 
             useEffect(() => {
                 if (!teamSelectionScopeKey || !activeGroupId || selectedSprint === null) return;
@@ -6592,6 +6638,16 @@ import {
                 });
             }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
             const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortFilteredIssues), [cohortFilteredIssues]);
+            const cohortWorkflowStatusTotal = (cohortSummary.inProgress || 0) + (cohortSummary.postponed || 0) + (cohortSummary.awaitingValidation || 0);
+            const cohortWorkflowStatusLink = React.useMemo(() => {
+                if (!cohortWorkflowStatusTotal) return '';
+                return buildJiraCohortStatusSearchUrl({
+                    jiraUrl,
+                    startQuarter: cohortStartQuarter,
+                    statuses: ['In Progress', 'Postponed', 'Awaiting Validation'],
+                    issueType: 'Epic',
+                });
+            }, [jiraUrl, cohortStartQuarter, cohortWorkflowStatusTotal]);
             const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortFilteredIssues, {
                 groupBy: cohortGroupBy,
                 maxColumns: cohortGroupBy === 'month' ? 24 : 12,
@@ -9510,61 +9566,24 @@ import {
             }, [isFutureSprintSelected, showStats]);
 
             const baseFilteredTasks = React.useMemo(() => {
-                const query = searchQuery.trim().toLowerCase();
-                return tasks.filter(task => {
-                    // Filter by search query
-                    if (query !== '') {
-	                    const summary = task.fields.summary?.toLowerCase() || '';
-	                    const key = String(task.key || '').toLowerCase();
-	                    const assignee = task.fields.assignee?.displayName?.toLowerCase() || '';
-                        const epicKey = String(task.fields.epicKey || '').toLowerCase();
-                        const epicSummary = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.summary?.toLowerCase() || '') : '';
-                        const epicAssignee = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.assignee?.displayName?.toLowerCase() || '') : '';
-
-                        if (!summary.includes(query) && !key.includes(query) && !assignee.includes(query) &&
-                            !epicAssignee.includes(query) && !epicKey.includes(query) && !epicSummary.includes(query)) {
-                            return false;
-                        }
-                    }
-
-                    // Filter by Team
-                    if (!isAllTeamsSelected) {
-                        const teamInfo = getTeamInfo(task);
-                        if (!selectedTeamSet.has(teamInfo.id)) {
-                            return false;
-                        }
-                    }
-
+                return scopedTasks.filter(task => {
                     // Filter by Killed status
-                    if (!showKilled && task.fields.status?.name === 'Killed') {
+                    if (!showKilled && statusFilter !== 'killed' && task.fields.status?.name === 'Killed') {
                         return false;
                     }
 
                     // Filter by Done/Incomplete status
-                    if (!showDone && (task.fields.status?.name === 'Done' || normalizeStatus(task.fields.status?.name) === 'incomplete')) {
+                    if (!showDone && statusFilter !== 'done' && (task.fields.status?.name === 'Done' || normalizeStatus(task.fields.status?.name) === 'incomplete')) {
                         return false;
                     }
 
-                    // Filter by task type
-                    const isTech = techProjectKeys.has(task.fields?.projectKey || task.key.split('-')[0]);
-                    if (isTech && !showTech) {
-                        return false;
-                    }
-                    if (!isTech && !showProduct) {
-                        return false;
-                    }
                     return true;
                 });
             }, [
-                tasks,
-                searchQuery,
-                epicDetails,
-                isAllTeamsSelected,
-                selectedTeamSet,
+                scopedTasks,
                 showKilled,
                 showDone,
-                showTech,
-                showProduct
+                statusFilter
             ]);
 
             const selectionTasks = baseFilteredTasks;
@@ -9639,6 +9658,9 @@ import {
                     }
                     if (statusFilter === 'done') {
                         return task.fields.status?.name === 'Done';
+                    }
+                    if (statusFilter === 'killed') {
+                        return task.fields.status?.name === 'Killed';
                     }
                     if (statusFilter === 'high-priority') {
                         const priority = task.fields.priority?.name;
@@ -10223,12 +10245,17 @@ import {
             const doneTasksCount = summaryStats.counts.done;
             const inProgressTasksCount = summaryStats.counts.inProgress;
             const todoAcceptedTasksCount = summaryStats.counts.todoAccepted;
+            const killedTasksCount = killedTasks.length;
             const totalStoryPoints = summaryStats.points.total;
             const doneStoryPoints = summaryStats.points.done;
             const highPriorityStoryPoints = summaryStats.points.highPriority;
             const minorPriorityStoryPoints = summaryStats.points.minorPriority;
             const inProgressStoryPoints = summaryStats.points.inProgress;
             const todoAcceptedStoryPoints = summaryStats.points.todoAccepted;
+            const killedStoryPoints = killedTasks.reduce((sum, task) => {
+                const sp = parseFloat(task.fields.customfield_10004 || 0);
+                return sum + (Number.isNaN(sp) ? 0 : sp);
+            }, 0);
             const selectedEpmProjectUpdateLine = [selectedEpmProject?.latestUpdateDate, selectedEpmProject?.latestUpdateSnippet || 'No updates yet']
                 .filter(Boolean)
                 .join(' · ');
@@ -13231,9 +13258,28 @@ import {
                                             </div>
                                         </div>
                                         <div className="stats-card">
-                                            <h4>In Progress / Postponed</h4>
-                                            <div className="stat-value">{cohortSummary.open}</div>
-                                            <div className="stats-note">{cohortSummary.postponed} postponed</div>
+                                            <h4>In Progress / Postponed / Awaiting Validation</h4>
+                                            <div className="stat-value">{cohortWorkflowStatusTotal}</div>
+                                            <div className="stats-note">
+                                                {cohortSummary.inProgress || 0} in progress · {cohortSummary.postponed} postponed · {cohortSummary.awaitingValidation || 0} awaiting validation
+                                            </div>
+                                            {cohortWorkflowStatusLink && (
+                                                <TrackedExternalLink
+                                                    className="stats-card-link"
+                                                    href={cohortWorkflowStatusLink}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    title="View in progress, postponed, and awaiting validation epics in Jira"
+                                                    aria-label="Open in progress, postponed, and awaiting validation epics in Jira"
+                                                    analyticsMeta={buildJiraIssueListLinkAnalytics({
+                                                        issueKind: 'epic',
+                                                        issueCount: cohortWorkflowStatusTotal,
+                                                        sourceSurface: 'lead_times'
+                                                    })}
+                                                >
+                                                    Open in Jira
+                                                </TrackedExternalLink>
+                                            )}
                                         </div>
                                         <div className="stats-card">
                                             <h4>Avg Lead Time</h4>
@@ -13292,6 +13338,9 @@ import {
                                                     title={cohortSelectedRowLabel
                                                         ? `Open Epics (${cohortSelectedRowLabel})`
                                                         : 'Open Epics (All Cohorts)'}
+                                                    description={cohortSelectedRowLabel
+                                                        ? ''
+                                                        : 'Created on or after the selected Lead Times start quarter and still non-terminal today.'}
                                                     items={cohortOpenBars}
                                                     jiraBaseUrl={jiraUrl}
                                                 />
@@ -13301,6 +13350,9 @@ import {
                                                     title={cohortSelectedRowLabel
                                                         ? `Completed Epics — Lead Time (${cohortSelectedRowLabel})`
                                                         : 'Completed Epics — Lead Time (All Cohorts)'}
+                                                    description={cohortSelectedRowLabel
+                                                        ? ''
+                                                        : 'Created on or after the selected Lead Times start quarter and reached a terminal status, with lead time shown.'}
                                                     items={cohortCompletedBars}
                                                     jiraBaseUrl={jiraUrl}
                                                     emptyMessage="No completed epics in this scope."
@@ -14391,6 +14443,8 @@ import {
                                     inProgressStoryPoints={inProgressStoryPoints}
                                     todoAcceptedTasksCount={todoAcceptedTasksCount}
                                     todoAcceptedStoryPoints={todoAcceptedStoryPoints}
+                                    killedTasksCount={killedTasksCount}
+                                    killedStoryPoints={killedStoryPoints}
                                     showTech={showTech}
                                     setShowTech={setShowTech}
                                     techTasksCount={techTasksCount}

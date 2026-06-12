@@ -4518,17 +4518,18 @@ button.toggle.initiative-toggle.active {
 }
 .filters-strip .stat-card {
   min-height: 0;
-  width: auto;
-  min-width: 11.4rem;
-  max-width: 12.6rem;
-  padding: 0.36rem 0.34rem;
+  width: max-content;
+  min-width: 6.9rem;
+  max-width: 11.4rem;
+  padding: 0.34rem 0.5rem;
   border-radius: 8px;
-  grid-template-columns: 1.7rem minmax(0, 1fr);
+  grid-template-columns: max-content max-content;
   grid-template-rows: 1fr auto auto 1fr;
-  column-gap: 0.24rem;
+  column-gap: 0.54rem;
   row-gap: 0.1rem;
   text-align: center;
   align-items: stretch;
+  justify-content: start;
   transition:
     border-color 0.16s ease,
     box-shadow 0.16s ease,
@@ -4573,12 +4574,11 @@ button.toggle.initiative-toggle.active {
     flex-wrap: nowrap;
   }
   .filters-strip .stat-card {
-    flex: 1 1 9.2rem;
-    min-width: 9.2rem;
-    max-width: 12.6rem;
+    flex: 0 1 auto;
+    min-width: 6.9rem;
+    max-width: 11.4rem;
   }
   .filters-strip .stat-card.todo-accepted {
-    flex-grow: 1.45;
     min-width: 11.4rem;
   }
 }

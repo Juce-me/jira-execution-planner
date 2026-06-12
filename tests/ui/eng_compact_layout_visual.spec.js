@@ -263,6 +263,7 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1,
                 valueTopOffset: Math.abs((valueRect.top + valueRect.height / 2) - (cardRect.top + cardRect.height / 2)),
                 labelNoteOffset: Math.abs((labelRect.left + labelRect.width / 2) - (noteRect.left + noteRect.width / 2)),
                 labelLeftOfValue: (labelRect.left + labelRect.width / 2) - (valueRect.left + valueRect.width / 2),
+                valueLabelGap: labelRect.left - valueRect.right,
             };
         });
         const firstStory = document.querySelector('.task-list:not(.epm-issue-board) > .epic-block > .task-item');
@@ -314,7 +315,9 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1,
         expect(alignment.valueLeft).toBeLessThanOrEqual(28);
         expect(alignment.valueTopOffset).toBeLessThanOrEqual(2);
         expect(alignment.labelNoteOffset).toBeLessThanOrEqual(2);
-        expect(alignment.labelLeftOfValue).toBeGreaterThan(42);
+        expect(alignment.labelLeftOfValue).toBeGreaterThan(38);
+        expect(alignment.valueLabelGap).toBeGreaterThanOrEqual(6);
+        expect(alignment.valueLabelGap).toBeLessThanOrEqual(14);
     });
     expect(metrics.storyPaddingTop).toBeGreaterThanOrEqual(11);
     expect(metrics.storyPaddingTop).toBeLessThanOrEqual(12);
@@ -371,16 +374,17 @@ test('ENG compact filters and epic rows stay readable on desktop', async ({ page
 
 test('ENG compact filters and epic rows stay readable on narrow screens', async ({ page }) => {
     await openEngCatchUp(page, { width: 390, height: 760 });
-    await expectCompactLayout(page, 'mobile', { expectedCardRows: 6, expectedStatsFlexWrap: 'wrap' });
+    await expectCompactLayout(page, 'mobile', { expectedCardRows: 3, expectedStatsFlexWrap: 'wrap' });
 });
 
 test('Killed show-only card isolates killed work in closed sprints', async ({ page }) => {
-    await openEngCatchUp(page, { width: 1280, height: 760 }, {
+    await openEngCatchUp(page, { width: 1792, height: 900 }, {
         sprintState: 'closed',
         productTasks: closedSprintProductTasks,
         techTasks: [],
         expectedStatCardCount: 7,
     });
+    await expectCompactLayout(page, 'closed-sprint-filter-stats', { expectedCardRows: 1 });
 
     const taskList = page.locator('.task-list:not(.epm-issue-board)');
     await expect(taskList).toContainText('Closed sprint done story');

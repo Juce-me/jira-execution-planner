@@ -297,8 +297,10 @@ test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
     );
 
     assertRuleIncludes('.filters-strip .stat-card', 'min-height: 0;');
-    assertRuleIncludes('.filters-strip .stat-card', 'padding: 0.36rem 0.34rem;');
-    assertRuleIncludes('.filters-strip .stat-card', 'grid-template-columns: 1.7rem minmax(0, 1fr);');
+    assertRuleIncludes('.filters-strip .stat-card', 'width: max-content;');
+    assertRuleIncludes('.filters-strip .stat-card', 'padding: 0.34rem 0.5rem;');
+    assertRuleIncludes('.filters-strip .stat-card', 'grid-template-columns: max-content max-content;');
+    assertRuleIncludes('.filters-strip .stat-card', 'justify-content: start;');
     assertRuleIncludes('.filters-strip .stat-label', 'font-size: 0.563rem;');
     assertRuleIncludes('.filters-strip .stat-card .stats-note', 'font-size: 0.58rem;');
     assertRuleIncludes('.task-list:not(.epm-issue-board) > .epic-block > .task-item', 'padding: 0.72rem 0.95rem;');
@@ -306,8 +308,9 @@ test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
     assertRuleIncludes('.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-title', 'font-size: 0.98rem;');
 
     assertRuleExcludes('.stat-card', 'min-height: 0;');
-    assertRuleExcludes('.stat-card', 'padding: 0.36rem 0.34rem;');
-    assertRuleExcludes('.stat-card', 'grid-template-columns: 1.7rem minmax(0, 1fr);');
+    assertRuleExcludes('.stat-card', 'width: max-content;');
+    assertRuleExcludes('.stat-card', 'padding: 0.34rem 0.5rem;');
+    assertRuleExcludes('.stat-card', 'grid-template-columns: max-content max-content;');
     assertRuleExcludes('.task-item', 'padding: 0.72rem 0.95rem;');
     assertRuleExcludes('.task-item', 'margin-bottom: 0.55rem;');
     assertRuleExcludes('.task-title', 'font-size: 0.98rem;');

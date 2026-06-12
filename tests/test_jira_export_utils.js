@@ -15,7 +15,10 @@ test('collectJiraExportKeysFromTasks returns unique sorted epic and story keys f
     const {
         collectJiraExportKeysFromTasks,
         buildJiraKeyInJql,
-        buildJiraIssueSearchUrl
+        buildJiraIssueSearchUrl,
+        buildJiraIssueSearchUrlFromJql,
+        buildJiraCohortStatusSearchUrl,
+        buildJiraCohortIssueSearchUrl
     } = await import('../frontend/src/jiraExportUtils.mjs');
     const tasks = [
         story('APP-2', 'APP-10'),
@@ -32,6 +35,39 @@ test('collectJiraExportKeysFromTasks returns unique sorted epic and story keys f
         buildJiraIssueSearchUrl('https://jira.example.com/', ['APP-2', 'APP-1']),
         'https://jira.example.com/issues/?jql=key%20in%20(APP-1%2C%20APP-2)'
     );
+    assert.equal(
+        buildJiraIssueSearchUrlFromJql('https://jira.example.com/', 'status = "In Progress"'),
+        'https://jira.example.com/issues/?jql=status%20%3D%20%22In%20Progress%22'
+    );
+
+    const statusUrl = buildJiraCohortStatusSearchUrl({
+        jiraUrl: 'https://jira.example.com/',
+        startQuarter: '2026Q2',
+        statuses: ['In Progress', 'Postponed', 'Awaiting Validation'],
+        issueType: 'Epic'
+    });
+    const decodedJql = decodeURIComponent(new URL(statusUrl).searchParams.get('jql'));
+    assert.equal(
+        decodedJql,
+        'issuetype = "Epic" AND created >= "2026-04-01" AND status in ("In Progress", "Postponed", "Awaiting Validation")'
+    );
+
+    const cohortUrl = buildJiraCohortIssueSearchUrl({
+        jiraUrl: 'https://jira.example.com/',
+        startQuarter: '2026Q2',
+        statuses: ['In Progress', 'Awaiting Validation', 'In Progress'],
+        issueType: 'Epic',
+        projectKey: 'PROD',
+        components: ['Backend API', 'R&D "Data"'],
+        teamIds: ['team-alpha', 'team-beta'],
+        assigneeKey: 'alpha-lead'
+    });
+    const cohortJql = decodeURIComponent(new URL(cohortUrl).searchParams.get('jql'));
+    assert.equal(
+        cohortJql,
+        'issuetype = "Epic" AND created >= "2026-04-01" AND project = "PROD" AND status in ("In Progress", "Awaiting Validation") AND component in ("Backend API", "R&D \\"Data\\"") AND "Team[Team]" in ("team-alpha", "team-beta") AND assignee in ("alpha-lead")'
+    );
+    assert.equal(cohortJql.includes('key in'), false);
 });
 
 test('collectJiraExportKeysFromEpmRollupBoards walks rendered rollup boards without duplicates', async () => {

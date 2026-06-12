@@ -12,7 +12,7 @@ test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
 });
 
-function makeIssue({ key, project, index, status, priority, points, summary }) {
+function makeIssue({ key, project, index, status, priority, points, summary, sprintState = 'active' }) {
     const epicKey = `${project}-EPIC`;
     const teamId = index % 2 === 0 ? 'team-alpha' : 'team-beta';
     const teamName = teamId === 'team-alpha' ? 'Alpha Team' : 'Beta Team';
@@ -32,7 +32,7 @@ function makeIssue({ key, project, index, status, priority, points, summary }) {
             projectKey: project,
             teamId,
             teamName,
-            sprint: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+            sprint: [{ id: selectedSprintId, name: selectedSprintName, state: sprintState }],
         },
     };
 }
@@ -100,6 +100,38 @@ const techTasks = [
 ];
 const productEpic = makeEpic('PRODUCT');
 const techEpic = makeEpic('TECH');
+const closedSprintProductTasks = [
+    makeIssue({
+        key: 'PRODUCT-10',
+        project: 'PRODUCT',
+        index: 2,
+        status: 'Done',
+        priority: 'High',
+        points: 5,
+        summary: 'Closed sprint done story',
+        sprintState: 'closed',
+    }),
+    makeIssue({
+        key: 'PRODUCT-11',
+        project: 'PRODUCT',
+        index: 4,
+        status: 'Killed',
+        priority: 'Minor',
+        points: 3,
+        summary: 'Closed sprint killed story',
+        sprintState: 'closed',
+    }),
+    makeIssue({
+        key: 'PRODUCT-12',
+        project: 'PRODUCT',
+        index: 6,
+        status: 'In Progress',
+        priority: 'Major',
+        points: 2,
+        summary: 'Closed sprint stale in progress story',
+        sprintState: 'closed',
+    }),
+];
 
 async function waitForVisualSettled(page) {
     await page.evaluate(async () => {
@@ -116,7 +148,10 @@ async function waitForVisualSettled(page) {
     });
 }
 
-async function installEngCompactFixture(page) {
+async function installEngCompactFixture(page, options = {}) {
+    const sprintState = options.sprintState || 'active';
+    const productIssueSource = options.productTasks || productTasks;
+    const techIssueSource = options.techTasks || techTasks;
     await installDashboardShell(page);
     await page.route('**/api/**', route => {
         const request = route.request();
@@ -159,13 +194,13 @@ async function installEngCompactFixture(page) {
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/sprints') {
-            return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+            return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: sprintState }] });
         }
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
-            const tasks = project === 'tech' ? techTasks : productTasks;
+            const tasks = project === 'tech' ? techIssueSource : productIssueSource;
             const epic = project === 'tech' ? techEpic : productEpic;
             return json({
                 issues: purpose === 'ready-to-close' ? [] : tasks,
@@ -182,9 +217,9 @@ async function installEngCompactFixture(page) {
     });
 }
 
-async function openEngCatchUp(page, viewport) {
+async function openEngCatchUp(page, viewport, options = {}) {
     await page.setViewportSize(viewport);
-    await installEngCompactFixture(page);
+    await installEngCompactFixture(page, options);
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -197,7 +232,7 @@ async function openEngCatchUp(page, viewport) {
     });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await expect(page.locator('.filters-strip .stat-card')).toHaveCount(6);
+    await expect(page.locator('.filters-strip .stat-card')).toHaveCount(options.expectedStatCardCount || 6);
     await expect(page.locator('.task-list:not(.epm-issue-board) > .epic-block').first()).toBeVisible();
     await waitForVisualSettled(page);
 }
@@ -337,4 +372,27 @@ test('ENG compact filters and epic rows stay readable on desktop', async ({ page
 test('ENG compact filters and epic rows stay readable on narrow screens', async ({ page }) => {
     await openEngCatchUp(page, { width: 390, height: 760 });
     await expectCompactLayout(page, 'mobile', { expectedCardRows: 6, expectedStatsFlexWrap: 'wrap' });
+});
+
+test('Killed show-only card isolates killed work in closed sprints', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1280, height: 760 }, {
+        sprintState: 'closed',
+        productTasks: closedSprintProductTasks,
+        techTasks: [],
+        expectedStatCardCount: 7,
+    });
+
+    const taskList = page.locator('.task-list:not(.epm-issue-board)');
+    await expect(taskList).toContainText('Closed sprint done story');
+    await expect(taskList).toContainText('Closed sprint stale in progress story');
+    await expect(taskList).not.toContainText('Closed sprint killed story');
+
+    await page.locator('.filters-strip .stat-card.killed').click();
+
+    await expect(page.locator('.filters-strip .stat-card.killed')).toHaveClass(/active/);
+    await expect(page.locator('.filters-strip .stat-card.total')).not.toHaveClass(/active/);
+    await expect(taskList).toContainText('Closed sprint killed story');
+    await expect(taskList).not.toContainText('Closed sprint done story');
+    await expect(taskList).not.toContainText('Closed sprint stale in progress story');
+    await page.screenshot({ path: `${screenshotDir}/closed-sprint-killed-filter.png`, fullPage: true });
 });

@@ -25,6 +25,8 @@ export default function EngView({
     inProgressStoryPoints = 0,
     todoAcceptedTasksCount = 0,
     todoAcceptedStoryPoints = 0,
+    killedTasksCount = 0,
+    killedStoryPoints = 0,
     showTech,
     setShowTech,
     techTasksCount = 0,
@@ -178,6 +180,18 @@ export default function EngView({
                                     <div className="stat-label">To Do / Pending / Accepted</div>
                                     <div className="stats-note">{todoAcceptedStoryPoints.toFixed(1)} SP</div>
                                 </div>
+                                {killedTasksCount > 0 && (
+                                    <div
+                                        className={`stat-card killed ${statusFilter === 'killed' ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setStatusFilter(statusFilter === 'killed' ? null : 'killed');
+                                        }}
+                                    >
+                                        <div className="stat-value">{killedTasksCount}</div>
+                                        <div className="stat-label">Killed Tasks</div>
+                                        <div className="stats-note">{killedStoryPoints.toFixed(1)} SP</div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="filters-group">

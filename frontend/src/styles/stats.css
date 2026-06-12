@@ -66,6 +66,21 @@
             margin-top: 0.4rem;
         }
 
+        .stats-card-link {
+            display: inline-flex;
+            align-items: center;
+            margin-top: 0.45rem;
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: #1d4ed8;
+            text-decoration: none;
+        }
+
+        .stats-card-link:hover {
+            color: #1e40af;
+            text-decoration: underline;
+        }
+
         .stats-bars {
             display: grid;
             grid-template-columns: repeat(var(--stats-bar-columns, 1), minmax(0, 1fr));
@@ -173,7 +188,8 @@
         .stats-view.open {
             opacity: 1;
             transform: translateY(0);
-            max-height: 2400px;
+            max-height: none;
+            overflow: visible;
             pointer-events: auto;
         }
 
@@ -1166,18 +1182,91 @@
             gap: 0.45rem;
         }
 
+        .cohort-open-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+
+        .cohort-open-heading-text {
+            display: flex;
+            align-items: baseline;
+            gap: 0.55rem;
+            min-width: 0;
+            flex: 1;
+            white-space: nowrap;
+        }
+
         .cohort-open-title {
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.64rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+
+        .cohort-open-description {
+            font-size: 0.68rem;
+            color: var(--text-secondary);
+            line-height: 1.35;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .cohort-open-jira-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 1.35rem;
+            border: 1px solid var(--border);
+            border-radius: 0.35rem;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.58rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            line-height: 1;
+            padding: 0.25rem 0.5rem;
+            text-decoration: none;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+
+        .cohort-open-jira-button:hover {
+            border-color: #cbd5e1;
+            background: #f8fafc;
         }
 
         .cohort-open-bars {
             display: flex;
             flex-direction: column;
             gap: 0.3rem;
+        }
+
+        .cohort-open-more {
+            align-self: center;
+            border: 1px solid var(--border);
+            border-radius: 0.4rem;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            padding: 0.34rem 0.7rem;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        .cohort-open-more:hover {
+            border-color: #cbd5e1;
+            background: #f8fafc;
         }
 
         .cohort-open-row {
@@ -1272,6 +1361,21 @@
         }
 
         @media (max-width: 760px) {
+            .cohort-open-heading {
+                align-items: flex-start;
+            }
+
+            .cohort-open-heading-text {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.2rem;
+                white-space: normal;
+            }
+
+            .cohort-open-description {
+                white-space: normal;
+            }
+
             .cohort-open-row-head {
                 grid-template-columns: minmax(0, 1fr);
             }
@@ -1691,4 +1795,3 @@
             opacity: 1;
             color: var(--accent);
         }
-

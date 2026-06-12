@@ -176,6 +176,8 @@ export default function IssueCard({
                             {task.fields.summary}
                         </a>
                     </h3>
+                    {showPlanning && storyPointsNode}
+                    {showPlanning && selectionCheckbox}
                     {canSelect && !showPlanning && selectionCheckbox}
                 </div>
                 {!showPlanning && (
@@ -217,8 +219,6 @@ export default function IssueCard({
                     )}
                     {showPlanning && (
                         <span className="task-inline-meta planning-selection-meta">
-                            {storyPointsNode}
-                            {selectionCheckbox}
                             {taskKeyLink}
                         </span>
                     )}

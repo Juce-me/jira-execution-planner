@@ -3335,8 +3335,10 @@ button.alerts-panel-summary-pill.done:hover {
 }
 .task-title a {
   display: block;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  width: fit-content;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7863,6 +7865,17 @@ button.toggle.initiative-toggle.active {
   gap: 0.45rem;
   align-self: center;
 }
+.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .task-headline > .task-inline-sp {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .task-headline > .task-title + .task-checkbox {
+  margin-left: auto;
+}
 @media (max-width: 760px) {
   .task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .planning-selection-meta {
     margin-left: 0;
@@ -7908,7 +7921,7 @@ button.toggle.initiative-toggle.active {
   font-weight: bold;
   line-height: 1;
 }
-.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .planning-selection-meta .task-checkbox {
+.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .task-headline > .task-checkbox {
   width: 1.15rem;
   height: 1.15rem;
   min-width: 1.15rem;
@@ -7919,20 +7932,20 @@ button.toggle.initiative-toggle.active {
     border-color 0.16s ease,
     box-shadow 0.16s ease;
 }
-.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .planning-selection-meta .task-checkbox:hover {
+.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .task-headline > .task-checkbox:hover {
   border-color: #2f80ed;
   box-shadow: 0 0 0 3px rgba(47, 128, 237, 0.12);
 }
-.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .planning-selection-meta .task-checkbox:focus-visible {
+.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .task-headline > .task-checkbox:focus-visible {
   outline: 2px solid rgba(47, 128, 237, 0.45);
   outline-offset: 2px;
 }
-.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .planning-selection-meta .task-checkbox:checked {
+.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .task-headline > .task-checkbox:checked {
   background: #2f80ed;
   border-color: #2f80ed;
   box-shadow: 0 0 0 3px rgba(47, 128, 237, 0.16);
 }
-.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .planning-selection-meta .task-checkbox:checked::after {
+.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .task-headline > .task-checkbox:checked::after {
   font-size: 0.72rem;
 }
 .task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selected {

@@ -223,8 +223,10 @@
 
         .task-title a {
             display: block;
-            flex: 1 1 auto;
+            flex: 0 1 auto;
             min-width: 0;
+            width: fit-content;
+            max-width: 100%;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;

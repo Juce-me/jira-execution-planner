@@ -257,17 +257,26 @@ async function planningCardLayout(page, key) {
             };
         };
         const planningMeta = card.querySelector('.planning-selection-meta');
-        const checkbox = card.querySelector('.planning-selection-meta .task-checkbox');
-        const storyPoints = card.querySelector('.planning-selection-meta .task-inline-sp');
+        const checkbox = card.querySelector('.task-headline > .task-checkbox');
+        const storyPoints = card.querySelector('.task-headline > .task-inline-sp');
         const keyLink = card.querySelector('.planning-selection-meta .task-key-link');
         const planningMetaStyle = planningMeta ? getComputedStyle(planningMeta) : null;
         const cardStyle = getComputedStyle(card);
+        const titleAnchor = card.querySelector('.task-title a');
+        const titleRange = card.ownerDocument.createRange();
+        titleRange.selectNodeContents(titleAnchor);
+        const titleTextRect = titleRange.getBoundingClientRect();
+        const titleAnchorRect = titleAnchor.getBoundingClientRect();
         return {
             cardClassName: card.className,
-            checkboxInHeadline: Boolean(card.querySelector('.task-headline .task-checkbox')),
+            checkboxInHeadline: Boolean(card.querySelector('.task-headline > .task-checkbox')),
+            storyPointsInHeadline: Boolean(card.querySelector('.task-headline > .task-inline-sp')),
             headerRightInlineMeta: Boolean(card.querySelector('.task-header-right .task-inline-meta')),
             planningMetaInTaskMeta: Boolean(card.querySelector('.task-meta .planning-selection-meta')),
+            planningMetaChildClasses: Array.from(planningMeta?.children || []).map((node) => node.className || node.tagName.toLowerCase()),
             planningMetaText: planningMeta?.textContent || '',
+            taskMetaHasCheckbox: Boolean(card.querySelector('.task-meta .task-checkbox')),
+            taskMetaHasStoryPoints: Boolean(card.querySelector('.task-meta .task-inline-sp')),
             planningMetaMarginLeft: planningMetaStyle?.marginLeft || '',
             planningMetaWidth: planningMeta ? planningMeta.getBoundingClientRect().width : 0,
             checkboxAriaLabel: checkbox?.getAttribute('aria-label') || '',
@@ -281,9 +290,10 @@ async function planningCardLayout(page, key) {
             cardScrollWidth: card.scrollWidth,
             documentClientWidth: card.ownerDocument.documentElement.clientWidth,
             documentScrollWidth: card.ownerDocument.documentElement.scrollWidth,
-            storyPoints: rectFor('.planning-selection-meta .task-inline-sp'),
-            checkbox: rectFor('.planning-selection-meta .task-checkbox'),
+            storyPoints: rectFor('.task-headline > .task-inline-sp'),
+            checkbox: rectFor('.task-headline > .task-checkbox'),
             keyLink: rectFor('.planning-selection-meta .task-key-link'),
+            titleAnchorExtraWidth: titleAnchorRect.width - titleTextRect.width,
         };
     });
 }
@@ -305,19 +315,22 @@ test('planning story selection controls align with story-point metadata', async 
     const layout = await planningCardLayout(page, 'PLAN-1');
     expect(layout.cardClassName).toContain('is-planning-selectable');
     expect(layout.cardClassName).toContain('is-planning-selected');
-    expect(layout.checkboxInHeadline).toBe(false);
+    expect(layout.checkboxInHeadline).toBe(true);
+    expect(layout.storyPointsInHeadline).toBe(true);
     expect(layout.headerRightInlineMeta).toBe(false);
     expect(layout.planningMetaInTaskMeta).toBe(true);
-    expect(layout.planningMetaText).toMatch(/1 SP\s*PLAN-1/);
+    expect(layout.planningMetaChildClasses).toEqual(['task-key-link']);
+    expect(layout.planningMetaText.trim()).toBe('PLAN-1');
+    expect(layout.taskMetaHasCheckbox).toBe(false);
+    expect(layout.taskMetaHasStoryPoints).toBe(false);
     expect(layout.checkboxAriaLabel).toBe('Select PLAN-1 for sprint planning');
     expect(layout.checkboxChecked).toBe(true);
     expect(layout.storyPoints).toBeTruthy();
     expect(layout.checkbox).toBeTruthy();
     expect(layout.keyLink).toBeTruthy();
     expect(layout.checkbox.x).toBeGreaterThan(layout.storyPoints.right);
-    expect(layout.keyLink.x).toBeGreaterThan(layout.checkbox.right);
     expect(Math.abs(layout.checkbox.centerY - layout.storyPoints.centerY)).toBeLessThanOrEqual(4);
-    expect(Math.abs(layout.keyLink.centerY - layout.checkbox.centerY)).toBeLessThanOrEqual(4);
+    expect(layout.titleAnchorExtraWidth).toBeLessThanOrEqual(3);
     expect(Number.parseFloat(layout.checkboxBorderRadius)).toBeGreaterThanOrEqual(6);
     expect(layout.selectedBoxShadow).not.toBe('none');
     expect(layout.selectedBoxShadow).toContain('47, 128, 237');
@@ -352,6 +365,8 @@ test('planning selection meta wraps without horizontal overflow on narrow screen
 
     const layout = await planningCardLayout(page, 'PLAN-1');
     expect(layout.planningMetaInTaskMeta).toBe(true);
+    expect(layout.taskMetaHasCheckbox).toBe(false);
+    expect(layout.taskMetaHasStoryPoints).toBe(false);
     expect(layout.checkbox).toBeTruthy();
     expect(layout.storyPoints).toBeTruthy();
     expect(layout.keyLink).toBeTruthy();

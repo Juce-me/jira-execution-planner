@@ -1,0 +1,54 @@
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.7rem;
+            font-family: 'IBM Plex Mono', monospace;
+            border-top: 1px solid var(--border);
+            margin-top: 0.6rem;
+        }
+
+        .stats-table th,
+        .stats-table td {
+            padding: 0.35rem 0.5rem;
+            border-bottom: 1px dashed var(--border);
+        }
+
+        .stats-table th {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }
+
+        .stats-table th.metric,
+        .stats-table td.metric {
+            text-align: right;
+        }
+
+        .stats-table th.dimension,
+        .stats-table td.dimension {
+            text-align: left;
+        }
+
+        .stats-table .stats-group-row th {
+            border-bottom: 1px solid var(--border);
+            font-size: 0.58rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            text-align: center;
+            padding-top: 0.5rem;
+            padding-bottom: 0.4rem;
+        }
+
+        .stats-col.product {
+            background: #fff7e6;
+        }
+
+        .stats-col.tech {
+            background: #e6f7ff;
+        }
+
+        .stats-col.total {
+            background: #f6ffed;
+        }

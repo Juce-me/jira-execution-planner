@@ -66,6 +66,10 @@ function populatedProjectRollup(project) {
 async function expectDefaultIssueCardDensity(page, screenshotPath) {
     const board = page.locator('.epm-issue-board');
     await expect(board).toHaveCount(1);
+    const rollupToggle = page.getByRole('button', { name: /Show Jira rollup for / }).first();
+    if (await rollupToggle.isVisible()) {
+        await rollupToggle.click();
+    }
     await expect(board.locator('.epic-block')).toBeVisible();
     const firstStory = board.locator('.task-item[data-task-key="EPM-101"]');
     await expect(firstStory).toBeVisible();

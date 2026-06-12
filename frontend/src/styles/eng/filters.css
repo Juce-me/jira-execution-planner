@@ -1,0 +1,37 @@
+        .toggle-container {
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            gap: 0.4rem;
+            margin-bottom: 0;
+            flex-wrap: wrap;
+        }
+
+        .filters-strip {
+            margin: 0.45rem 0 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            animation: task-appear 0.18s ease-out both;
+        }
+
+        .filters-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            animation: none;
+        }
+
+        .filters-strip .stats > .stat-card,
+        .filters-strip .stats > .stat-card:nth-child(n) {
+            animation: none;
+            animation-delay: 0s;
+        }
+
+        .filters-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }

@@ -1,0 +1,239 @@
+        .capacity-panel {
+            background: transparent;
+            border: 1px solid transparent;
+            padding: 0;
+            margin: 0;
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: max-height 0.6s ease, opacity 0.6s ease, padding 0.6s ease, margin 0.6s ease, border-color 0.6s ease, background 0.6s ease;
+        }
+
+        .capacity-panel.open {
+            background: var(--bg-secondary);
+            border-color: var(--border);
+            border-radius: 10px;
+            padding: 0.75rem;
+            margin: 1rem 0;
+            max-height: 1600px;
+            opacity: 1;
+            overflow: visible;
+            box-shadow: 0 8px 24px rgba(26, 26, 26, 0.08);
+        }
+
+        .capacity-grid-wrapper {
+            max-height: 520px;
+            overflow-y: auto;
+            overflow-x: auto;
+            padding-right: 0.25rem;
+            padding-bottom: 0.25rem;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .capacity-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .capacity-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }
+
+        .capacity-subtitle {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .capacity-grid {
+            display: grid;
+            gap: 0.2rem;
+            min-width: 860px;
+        }
+
+        .capacity-row {
+            display: grid;
+            grid-template-columns:
+                minmax(160px, 1.4fr)
+                minmax(112px, 0.6fr) minmax(70px, 0.5fr) minmax(70px, 0.5fr)
+                minmax(112px, 0.6fr) minmax(70px, 0.5fr) minmax(70px, 0.5fr)
+                minmax(112px, 0.6fr) minmax(70px, 0.5fr) minmax(70px, 0.5fr);
+            align-items: center;
+            padding: 0.08rem 0;
+        }
+
+        .capacity-group-row {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.25rem;
+            margin-bottom: 0.1rem;
+        }
+
+        .capacity-group-cell {
+            grid-column: span 3;
+            text-align: center;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }
+
+        .capacity-group-cell.product {
+            grid-column: 2 / span 3;
+        }
+
+        .capacity-group-cell.tech {
+            grid-column: 5 / span 3;
+        }
+
+        .capacity-group-cell.total {
+            grid-column: 8 / span 3;
+        }
+
+        .capacity-cell {
+            padding: 0.3rem 0.4rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-primary);
+        }
+
+        .capacity-cell.metric {
+            border-left: 1px solid var(--border);
+            text-align: right;
+        }
+
+        .capacity-cell.product-col {
+            background: #fff7e6;
+        }
+
+        .capacity-cell.tech-col {
+            background: #e6f7ff;
+        }
+
+        .capacity-cell.total-col {
+            background: #f6ffed;
+        }
+
+        .capacity-cell.divider-right {
+            border-right: 2px solid var(--border);
+        }
+
+        .capacity-header-row .capacity-cell {
+            font-size: 0.58rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .capacity-divider {
+            border-top: 1px dashed var(--border);
+        }
+
+        .capacity-team {
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text-primary);
+        }
+
+
+        .capacity-total {
+            font-weight: 500;
+        }
+
+        .capacity-empty {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            padding: 0.25rem 0;
+        }
+
+        .capacity-scroll-hint {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            margin-top: 0.3rem;
+            text-align: right;
+        }
+
+        .metric-value {
+            font-weight: 600;
+        }
+
+        .metric-muted {
+            color: var(--muted);
+        }
+
+        .metric-accepted {
+            color: var(--good);
+        }
+
+        .metric-warn {
+            color: var(--warn);
+        }
+
+        .postponed-cell {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.2rem;
+        }
+
+        .postponed-link {
+            opacity: 0.6;
+            font-size: 0.85em;
+            text-decoration: none;
+            color: inherit;
+            transition: opacity 0.2s ease, color 0.2s ease;
+        }
+
+        .postponed-cell:hover .postponed-link {
+            opacity: 1;
+            color: var(--accent);
+        }
+
+        .todo-link {
+            opacity: 0.6;
+            font-size: 0.85em;
+            text-decoration: none;
+            color: inherit;
+            transition: opacity 0.2s ease, color 0.2s ease;
+        }
+
+        .postponed-cell:hover .todo-link {
+            opacity: 1;
+            color: var(--accent);
+        }
+
+        .accepted-link {
+            opacity: 0.6;
+            font-size: 0.85em;
+            text-decoration: none;
+            color: inherit;
+            transition: opacity 0.2s ease, color 0.2s ease;
+        }
+
+        .postponed-cell:hover .accepted-link {
+            opacity: 1;
+            color: var(--accent);
+        }
+
+        .stats-link {
+            opacity: 0.6;
+            font-size: 0.85em;
+            text-decoration: none;
+            color: inherit;
+            transition: opacity 0.2s ease, color 0.2s ease;
+        }
+
+        .postponed-cell:hover .stats-link {
+            opacity: 1;
+            color: var(--accent);
+        }

@@ -1,4 +1,4 @@
-/* frontend/src/styles/base.css */
+/* frontend/src/styles/shared/shell.css */
 * {
   margin: 0;
   padding: 0;
@@ -54,6 +54,8 @@ body {
     opacity: 1;
   }
 }
+
+/* frontend/src/styles/shared/header.css */
 header {
   margin-bottom: 0.6rem;
   border-bottom: 1px solid var(--border);
@@ -219,6 +221,8 @@ h1 {
   background: rgba(220, 38, 38, 0.1);
   border-color: rgba(220, 38, 38, 0.4);
 }
+
+/* frontend/src/styles/shared/controls.css */
 .search-input {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.8rem;
@@ -579,7 +583,9 @@ h1 {
   border-top: 1px dashed var(--border);
 }
 
-/* frontend/src/styles/settings.css */
+/* frontend/src/styles/base.css */
+
+/* frontend/src/styles/settings/dropdowns.css */
 .epm-project-dropdown {
   --sprint-dropdown-min-width: 10rem;
   --sprint-dropdown-max-width: min(26rem, calc(100vw - 2rem));
@@ -747,6 +753,8 @@ h1 {
   align-items: center;
   gap: 0.4rem;
 }
+
+/* frontend/src/styles/settings/modal-shell.css */
 .group-gear-button {
   width: var(--control-height);
   height: var(--control-height);
@@ -845,6 +853,8 @@ h1 {
   justify-content: flex-end;
   gap: 0.6rem;
 }
+
+/* frontend/src/styles/settings/first-run.css */
 .department-first-run-backdrop {
   position: fixed;
   inset: 0;
@@ -978,6 +988,8 @@ h1 {
   border-top: 1px solid var(--border);
   background: #fbfaf7;
 }
+
+/* frontend/src/styles/settings/team-groups.css */
 .group-modal-header {
   padding: 0.6rem 0.9rem;
   border-bottom: 1px solid var(--border);
@@ -1107,6 +1119,8 @@ h1 {
   gap: 0.45rem;
   margin-top: 0;
 }
+
+/* frontend/src/styles/settings/jira-fields.css */
 .group-field-helper {
   font-size: 0.66rem;
   color: var(--text-muted);
@@ -1181,6 +1195,8 @@ h1 {
 .selected-team-chip.issue-type-chip {
   border-left: 3px solid rgba(114, 46, 209, 0.5);
 }
+
+/* frontend/src/styles/settings/team-selector.css */
 .group-modal-body {
   padding: 0;
   overflow: hidden;
@@ -1338,6 +1354,8 @@ h1 {
 .settings-source-grid .capacity-inline-row {
   margin-top: 0.15rem;
 }
+
+/* frontend/src/styles/settings/user-connections.css */
 .user-connections-settings {
   display: block;
 }
@@ -1394,6 +1412,8 @@ h1 {
   border-radius: 999px;
   background: #fff;
 }
+
+/* frontend/src/styles/settings/epm-settings.css */
 .group-editor {
   display: flex;
   flex-direction: column;
@@ -1587,6 +1607,8 @@ h1 {
 .epm-project-row-warning {
   color: #92400e;
 }
+
+/* frontend/src/styles/settings/mapping-preview.css */
 .mapping-preview-section {
   margin-bottom: 0.1rem;
   order: 99;
@@ -1747,6 +1769,8 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+/* frontend/src/styles/settings/group-editor.css */
 .group-editor-header {
   display: flex;
   align-items: center;
@@ -2256,7 +2280,9 @@ select:disabled {
   cursor: not-allowed;
 }
 
-/* frontend/src/styles/eng.css */
+/* frontend/src/styles/settings.css */
+
+/* frontend/src/styles/eng/controls.css */
 .team-dropdown {
   position: relative;
   display: block;
@@ -2451,6 +2477,8 @@ button.compact {
   font-size: 0.7rem;
   letter-spacing: 0.06em;
 }
+
+/* frontend/src/styles/eng/export.css */
 .jira-export {
   position: relative;
   display: inline-flex;
@@ -2557,6 +2585,8 @@ button.toggle.active {
   color: var(--bg-primary);
   border-color: var(--text-primary);
 }
+
+/* frontend/src/styles/eng/filters.css */
 .toggle-container {
   display: flex;
   justify-content: flex-start;
@@ -2590,6 +2620,8 @@ button.toggle.active {
   letter-spacing: 0.08em;
   color: var(--text-secondary);
 }
+
+/* frontend/src/styles/eng/alerts.css */
 .alert-panels {
   display: grid;
   grid-template-columns: 1fr;
@@ -3084,6 +3116,8 @@ button.alerts-panel-summary-pill.done:hover {
 .alert-story .alert-remove:hover {
   transform: none;
 }
+
+/* frontend/src/styles/eng/issues.css */
 .task-item {
   background: var(--bg-secondary);
   border-left: 3px solid rgba(224, 221, 215, 0.7);
@@ -3325,11 +3359,6 @@ button.alerts-panel-summary-pill.done:hover {
   align-items: center;
   gap: 0.5rem;
   white-space: nowrap;
-}
-.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .planning-selection-meta {
-  margin-left: auto;
-  gap: 0.45rem;
-  align-self: center;
 }
 .task-key-link {
   color: inherit;
@@ -3600,12 +3629,9 @@ button.alerts-panel-summary-pill.done:hover {
     min-width: 0;
     justify-content: flex-start;
   }
-  .task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .planning-selection-meta {
-    margin-left: 0;
-    width: 100%;
-    justify-content: flex-start;
-  }
 }
+
+/* frontend/src/styles/eng/dependencies.css */
 .dependency-strip {
   margin-top: 0.55rem;
   padding-top: 0.45rem;
@@ -3767,6 +3793,8 @@ a.dependency-missing-item:hover {
   color: #15803d;
   font-weight: 600;
 }
+
+/* frontend/src/styles/eng/subtasks.css */
 .story-subtasks-panel {
   margin-top: 0.45rem;
   padding-top: 0.35rem;
@@ -3919,6 +3947,8 @@ a.dependency-missing-item:hover {
     background-position: 0 0;
   }
 }
+
+/* frontend/src/styles/eng/epics.css */
 .epic-header {
   display: flex;
   justify-content: space-between;
@@ -4239,6 +4269,8 @@ button.toggle.initiative-toggle.active {
   padding: 0.18rem 0.48rem;
   white-space: nowrap;
 }
+
+/* frontend/src/styles/eng/loading.css */
 .loading {
   text-align: center;
   padding: 4rem 0;
@@ -4371,7 +4403,9 @@ button.toggle.initiative-toggle.active {
   }
 }
 
-/* frontend/src/styles/stats-summary.css */
+/* frontend/src/styles/eng.css */
+
+/* frontend/src/styles/stats/summary.css */
 .stats {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -4652,7 +4686,9 @@ button.toggle.initiative-toggle.active {
   box-shadow: 0 8px 24px rgba(26, 26, 26, 0.08);
 }
 
-/* frontend/src/styles/scenario.css */
+/* frontend/src/styles/stats-summary.css */
+
+/* frontend/src/styles/scenario/shell.css */
 .scenario-panel {
   background: transparent;
   border: 1px solid transparent;
@@ -4907,6 +4943,8 @@ button.toggle.initiative-toggle.active {
   font-size: 0.9rem;
   font-weight: 600;
 }
+
+/* frontend/src/styles/scenario/timeline.css */
 .scenario-timeline {
   --scenario-label-width: 190px;
   --scenario-label-gap: 0.6rem;
@@ -5396,6 +5434,8 @@ button.toggle.initiative-toggle.active {
   font-size: 0.55rem;
   fill: var(--text-secondary);
 }
+
+/* frontend/src/styles/scenario/warnings.css */
 .scenario-error {
   font-size: 0.75rem;
   color: #cf1322;
@@ -5537,6 +5577,8 @@ button.toggle.initiative-toggle.active {
   font-style: italic;
   margin-top: 0.2rem;
 }
+
+/* frontend/src/styles/scenario/tooltip.css */
 .scenario-tooltip {
   position: fixed;
   padding: 0.35rem 0.5rem;
@@ -5567,7 +5609,9 @@ button.toggle.initiative-toggle.active {
   color: rgba(255, 255, 255, 0.7);
 }
 
-/* frontend/src/styles/stats.css */
+/* frontend/src/styles/scenario.css */
+
+/* frontend/src/styles/stats/shell.css */
 .stats-controls {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -5762,6 +5806,8 @@ button.toggle.initiative-toggle.active {
   overflow: visible;
   pointer-events: auto;
 }
+
+/* frontend/src/styles/stats/burnout.css */
 .burnout-summary {
   margin-top: 0.2rem;
   margin-bottom: 0.7rem;
@@ -5938,6 +5984,8 @@ button.toggle.initiative-toggle.active {
   display: inline-block;
   border: 1px solid rgba(0, 0, 0, 0.12);
 }
+
+/* frontend/src/styles/stats/excluded-capacity.css */
 .cohort-controls {
   margin-bottom: 0.65rem;
 }
@@ -6429,6 +6477,8 @@ button.toggle.initiative-toggle.active {
     gap: 0.35rem;
   }
 }
+
+/* frontend/src/styles/stats/cohort.css */
 .cohort-section {
   border: 1px solid var(--border);
   border-radius: 0.55rem;
@@ -6792,6 +6842,8 @@ button.toggle.initiative-toggle.active {
     justify-self: start;
   }
 }
+
+/* frontend/src/styles/stats/priority.css */
 .priority-radar {
   width: 100%;
   max-width: 500px;
@@ -6899,6 +6951,8 @@ button.toggle.initiative-toggle.active {
     grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
   }
 }
+
+/* frontend/src/styles/stats/tables.css */
 .stats-table {
   width: 100%;
   border-collapse: collapse;
@@ -6945,6 +6999,8 @@ button.toggle.initiative-toggle.active {
 .stats-col.total {
   background: #f6ffed;
 }
+
+/* frontend/src/styles/stats/capacity-grid.css */
 .capacity-panel {
   background: transparent;
   border: 1px solid transparent;
@@ -7149,7 +7205,9 @@ button.toggle.initiative-toggle.active {
   color: var(--accent);
 }
 
-/* frontend/src/styles/planning.css */
+/* frontend/src/styles/stats.css */
+
+/* frontend/src/styles/planning/capacity.css */
 .capacity-bar-graph {
   margin-bottom: 0.3rem;
 }
@@ -7383,6 +7441,8 @@ button.toggle.initiative-toggle.active {
       rgba(0, 0, 0, 0.16) 3px,
       rgba(0, 0, 0, 0.16) 5px);
 }
+
+/* frontend/src/styles/planning/stat-cards.css */
 .planning-stats {
   display: flex;
   gap: 0.7rem;
@@ -7671,6 +7731,8 @@ button.toggle.initiative-toggle.active {
   color: var(--text-secondary);
   border-color: var(--border);
 }
+
+/* frontend/src/styles/planning/actions.css */
 .planning-action-button {
   background: transparent;
   color: var(--text-secondary);
@@ -7740,6 +7802,8 @@ button.toggle.initiative-toggle.active {
     white-space: normal;
   }
 }
+
+/* frontend/src/styles/planning/stats.css */
 .planning-stat {
   display: flex;
   align-items: baseline;
@@ -7791,6 +7855,20 @@ button.toggle.initiative-toggle.active {
 }
 .planning-stat-value.under {
   color: #d4380d;
+}
+
+/* frontend/src/styles/planning/selection.css */
+.task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .planning-selection-meta {
+  margin-left: auto;
+  gap: 0.45rem;
+  align-self: center;
+}
+@media (max-width: 760px) {
+  .task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .planning-selection-meta {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 .task-checkbox-container {
   display: flex;
@@ -7874,7 +7952,9 @@ button.toggle.initiative-toggle.active {
     -6px 0 18px var(--shadow);
 }
 
-/* frontend/src/styles/epm.css */
+/* frontend/src/styles/planning.css */
+
+/* frontend/src/styles/epm/project-board.css */
 :root {
   --epm-project-accent: #0747a6;
   --epm-project-accent-surface: rgba(7, 71, 166, 0.08);
@@ -8505,6 +8585,8 @@ button.toggle.initiative-toggle.active {
     left: 0.72rem;
   }
 }
+
+/* frontend/src/styles/epm/duplicates.css */
 .epm-duplicates-callout {
   border: 1px solid #f4c98a;
   background: #fff8e6;
@@ -8631,5 +8713,7 @@ button.toggle.initiative-toggle.active {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* frontend/src/styles/epm.css */
 
 /* frontend/src/styles/dashboard.css */

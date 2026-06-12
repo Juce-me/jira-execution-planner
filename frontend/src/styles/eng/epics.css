@@ -1,0 +1,361 @@
+        .epic-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            min-width: 0;
+            border-bottom: 1px solid var(--border);
+            padding: 0.5rem 0;
+            margin-bottom: 0.75rem;
+            position: sticky;
+            top: var(--epic-sticky-top, 0px);
+            background: var(--bg-secondary);
+            z-index: var(--sticky-epic-z);
+            box-shadow: 0 1px 0 var(--border);
+        }
+
+        .epic-flash {
+            animation: epicFlash 1.1s ease;
+        }
+
+        @keyframes epicFlash {
+            0% { background: rgba(255, 255, 0, 0.45); }
+            100% { background: transparent; }
+        }
+
+        .epic-excluded {
+            opacity: 0.55;
+            transition: opacity 0.2s ease;
+        }
+
+        .clickable-number {
+            cursor: pointer;
+        }
+
+        .clickable-number:hover {
+            text-decoration: underline;
+        }
+
+        .back-to-top {
+            position: fixed;
+            right: 1.25rem;
+            bottom: 1.25rem;
+            border: 1px solid var(--border);
+            background: #fff;
+            color: var(--text-secondary);
+            padding: 0.45rem 0.7rem;
+            font-size: 0.7rem;
+            cursor: pointer;
+            box-shadow: 0 6px 16px var(--shadow);
+            z-index: 20;
+            transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .back-to-top:hover {
+            background: #2f2f2f;
+            color: #fff;
+            border-color: #2f2f2f;
+        }
+
+        .epic-title {
+            font-size: 1.1rem;
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            gap: 0.15rem;
+            min-width: 0;
+        }
+
+        .epic-title-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-width: 0;
+        }
+
+        .epic-link {
+            display: flex;
+            align-items: baseline;
+            flex: 1 1 auto;
+            gap: 0.45rem;
+            min-width: 0;
+            overflow: hidden;
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .epic-link:hover {
+            text-decoration: underline;
+            text-decoration-thickness: 1px;
+            text-underline-offset: 3px;
+        }
+
+        .epic-name {
+            display: block;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 600;
+        }
+
+        .epic-key {
+            flex: 0 0 auto;
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            letter-spacing: 0.02em;
+        }
+
+        .epic-icon,
+        .story-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+        }
+
+        .epic-icon svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .story-icon svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .epic-title small {
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text-secondary);
+            letter-spacing: 0.05em;
+        }
+
+	        .epic-meta {
+	            flex: 0 0 auto;
+	            font-family: 'IBM Plex Mono', monospace;
+	            color: var(--text-secondary);
+	            text-transform: uppercase;
+	            letter-spacing: 0.05em;
+	            display: flex;
+	            align-items: center;
+	            justify-content: flex-end;
+	            gap: 0.65rem;
+	            max-width: 42%;
+	            min-width: 16rem;
+	            flex-wrap: wrap;
+	        }
+
+	        .epic-assignee {
+	            text-transform: none;
+	            letter-spacing: 0;
+	        }
+
+        :root {
+            --jira-initiative-accent: var(--ds-icon-warning, #ffab00);
+            --jira-initiative-accent-surface: rgba(255, 171, 0, 0.12);
+            --jira-initiative-accent-soft: rgba(255, 171, 0, 0.38);
+            --jira-initiative-accent-fade: rgba(255, 171, 0, 0.1);
+        }
+
+        /* ── Initiative grouping ── */
+
+        .initiative-group {
+            margin-bottom: 1.2rem;
+        }
+
+        .initiative-group.initiative-single {
+            margin-bottom: 1.1rem;
+        }
+
+        .initiative-header {
+            display: grid;
+            grid-template-columns: 18px minmax(0, 1fr);
+            align-items: center;
+            column-gap: 12px;
+            margin-bottom: 10px;
+            min-height: 18px;
+        }
+
+        .initiative-header-icon {
+            justify-self: center;
+            align-self: start;
+            margin-top: 1px;
+        }
+
+        .initiative-label {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            min-width: 0;
+        }
+
+        .initiative-body {
+            position: relative;
+            padding-left: 28px;
+            padding-bottom: 10px;
+        }
+
+        .initiative-body::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            border-radius: 999px;
+            background: linear-gradient(
+                to bottom,
+                var(--jira-initiative-accent) 0%,
+                var(--jira-initiative-accent) 78%,
+                var(--jira-initiative-accent-soft) 92%,
+                var(--jira-initiative-accent-fade) 100%
+            );
+        }
+
+        .initiative-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            color: var(--jira-initiative-accent);
+        }
+
+        .initiative-icon svg {
+            display: block;
+        }
+
+        .initiative-label-name {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--jira-initiative-accent);
+            font-weight: 600;
+        }
+
+        .initiative-label-only .initiative-label-name {
+            color: var(--jira-initiative-accent);
+        }
+
+        .initiative-label-key {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            color: var(--jira-initiative-accent);
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .initiative-label-key:hover {
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .initiative-label-only .initiative-label-key {
+            color: var(--jira-initiative-accent);
+        }
+
+        .initiative-divider {
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(to right, var(--jira-initiative-accent), var(--jira-initiative-accent-fade));
+        }
+
+        .initiative-label-only .initiative-divider {
+            background: linear-gradient(to right, var(--jira-initiative-accent), var(--jira-initiative-accent-fade));
+        }
+
+        /* Toggle button overrides */
+
+        button.toggle.initiative-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        button.toggle.initiative-toggle .initiative-toggle-icon {
+            color: var(--jira-initiative-accent);
+        }
+
+        button.toggle.initiative-toggle.active {
+            background: var(--jira-initiative-accent-surface);
+            color: var(--jira-initiative-accent);
+            border-color: var(--jira-initiative-accent);
+            font-weight: 500;
+        }
+
+        .team-group {
+            margin-bottom: 1rem;
+        }
+
+        .team-heading {
+            font-family: 'IBM Plex Mono', monospace;
+            color: #2f54eb;
+            margin-bottom: 0.5rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .task-meta > span:not(.task-status) {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+
+        .task-updated {
+            color: var(--text-secondary);
+        }
+
+        .task-status {
+            padding: 0.2rem 0.6rem;
+            border-radius: 2px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .task-status.done,
+        .task-status.killed,
+        .task-status.incomplete {
+            background: #52c41a;
+            color: white;
+        }
+
+        .task-status.in-progress,
+        .task-status.accepted {
+            background: #69c0ff;
+            color: white;
+        }
+
+        .task-status.release,
+        .task-status.waiting-for-release {
+            background: #13c2c2;
+            color: white;
+        }
+
+        .task-status.blocked {
+            background: #ff4d4f;
+            color: white;
+        }
+
+        .task-status.waiting,
+        .task-status.to-do,
+        .task-status.awaiting-validation,
+        .task-status.pending {
+            background: #8c8c8c;
+            color: white;
+        }
+
+        .task-status.postponed {
+            background: #fa8c16;
+            color: white;
+        }
+
+        .epic-status-pill.task-status {
+            font-size: 0.58rem;
+            padding: 0.18rem 0.48rem;
+            white-space: nowrap;
+        }

@@ -1,0 +1,75 @@
+        .planning-action-button {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 0.34rem 0.8rem;
+            font-size: 0.66rem;
+            margin: 0;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .planning-action-button:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-color: var(--border);
+            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+            transform: none;
+        }
+
+        .planning-action-button.active {
+            background: #f6ffed;
+            border-color: #b7eb8f;
+            color: #389e0d;
+        }
+
+        .planning-action-button.active:hover {
+            background: #f6ffed;
+            color: #389e0d;
+            border-color: #b7eb8f;
+        }
+
+        .planning-action-button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .planning-action-button:disabled:hover {
+            background: transparent;
+            color: var(--text-secondary);
+            border-color: var(--border);
+        }
+
+        .planning-action-button svg {
+            width: 1rem;
+            height: 1rem;
+        }
+
+        .planning-icon-button {
+            width: auto;
+            height: auto;
+            padding: 0.34rem 0.55rem;
+            border-radius: 999px;
+            justify-content: center;
+            gap: 0;
+        }
+
+        .planning-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+            margin-top: 0.15rem;
+            margin-bottom: 0.35rem;
+        }
+
+        @media (max-width: 760px) {
+            .planning-actions {
+                flex-wrap: wrap;
+                white-space: normal;
+            }
+        }

@@ -10,8 +10,21 @@ const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngVie
 const engSprintDataPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
 const engTaskUtilsPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engTaskUtils.js');
 const engAlertsPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngAlertsPanel.jsx');
-const engCssPath = path.join(__dirname, '..', 'frontend', 'src', 'styles', 'eng.css');
-const epmCssPath = path.join(__dirname, '..', 'frontend', 'src', 'styles', 'epm.css');
+const stylesDir = path.join(__dirname, '..', 'frontend', 'src', 'styles');
+const cssImportPattern = /@import\s+["'](.+?)["'];/;
+
+function readCssWithImports(relativePath, seen = new Set()) {
+    const normalizedPath = relativePath.split(path.sep).join('/');
+    assert.equal(seen.has(normalizedPath), false, `CSS import cycle detected at ${normalizedPath}`);
+    seen.add(normalizedPath);
+    const source = fs.readFileSync(path.join(stylesDir, normalizedPath), 'utf8');
+    return source.split(/(?<=\n)/).map(line => {
+        const match = line.match(cssImportPattern);
+        if (!match) return line;
+        const nestedPath = path.posix.normalize(path.posix.join(path.posix.dirname(normalizedPath), match[1]));
+        return readCssWithImports(nestedPath, new Set(seen));
+    }).join('');
+}
 
 function loadIssueViewUtils() {
     assert.equal(fs.existsSync(issueViewUtilsPath), true, 'Expected shared issueViewUtils helper module');
@@ -173,7 +186,7 @@ test('ENG alerts toolbar summary lists every alert category in panel order', () 
 });
 
 test('ENG alerts toolbar summary CSS is responsive and uses clickable chip styles', () => {
-    const css = fs.readFileSync(engCssPath, 'utf8');
+    const css = readCssWithImports('eng.css');
     [
         '.alerts-panel-summary',
         '.alerts-panel-summary-pill',
@@ -322,8 +335,8 @@ test('issue view helpers preserve status, priority, and team display behavior', 
 });
 
 test('issue status CSS keeps waiting statuses gray, progress statuses blue, and closed subtask statuses green', () => {
-    const engCss = fs.readFileSync(engCssPath, 'utf8');
-    const epmCss = fs.readFileSync(epmCssPath, 'utf8');
+    const engCss = readCssWithImports('eng.css');
+    const epmCss = readCssWithImports('epm.css');
     const taskStatusRules = engCss.slice(
         engCss.indexOf('.task-status.done'),
         engCss.indexOf('.epic-status-pill.task-status')

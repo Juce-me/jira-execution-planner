@@ -4843,8 +4843,7 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
     terminal_candidates = []
     for issue in all_issues:
         fields_data = issue.get('fields') or {}
-        raw_status_name = str((fields_data.get('status') or {}).get('name') or '').strip()
-        status_name = normalize_epic_status(raw_status_name)
+        status_name = normalize_epic_status(raw_status_name := str((fields_data.get('status') or {}).get('name') or '').strip())
         if not is_terminal_epic_status(status_name):
             continue
         if fields_data.get('resolutiondate'):

@@ -5,7 +5,8 @@ import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayloa
 import ScenarioBar from './scenario/ScenarioBar.jsx';
 import { buildLaneIssues } from './scenario/scenarioLaneUtils.js';
 import CohortGrid from './cohort/CohortGrid.jsx';
-import OpenEpicsChart from './cohort/OpenEpicsChart.jsx';
+import LeadTimesEpicCharts from './cohort/LeadTimesEpicCharts.jsx';
+import LeadTimesWorkflowStatusCard from './cohort/LeadTimesWorkflowStatusCard.jsx';
 import SegmentedControl from './ui/SegmentedControl.jsx';
 import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
@@ -13,7 +14,6 @@ import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
-import TrackedExternalLink from './components/TrackedExternalLink.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
@@ -62,7 +62,6 @@ import {
 import { PRIORITY_AXIS } from './stats/statsConstants.js';
 import { DEFAULT_PRIORITY_WEIGHT_ROWS, buildPriorityWeightMap, clonePriorityWeightRows } from './stats/priorityWeights.js';
 import { buildBurnoutChartModel } from './stats/burnoutChartUtils.js';
-import { buildJiraIssueListLinkAnalytics } from './analytics/externalLinks.js';
 import {
     buildLocalStatsFromTasks,
     buildRadarPoints,
@@ -206,7 +205,6 @@ import {
     collectJiraExportKeysFromEpmRollupBoards,
     collectJiraExportKeysFromScenarioIssues,
     collectJiraExportKeysFromTasks,
-    buildJiraCohortStatusSearchUrl,
     openJiraIssueSearch
 } from './jiraExportUtils.mjs';
 
@@ -6639,15 +6637,6 @@ import {
             }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
             const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortFilteredIssues), [cohortFilteredIssues]);
             const cohortWorkflowStatusTotal = (cohortSummary.inProgress || 0) + (cohortSummary.postponed || 0) + (cohortSummary.awaitingValidation || 0);
-            const cohortWorkflowStatusLink = React.useMemo(() => {
-                if (!cohortWorkflowStatusTotal) return '';
-                return buildJiraCohortStatusSearchUrl({
-                    jiraUrl,
-                    startQuarter: cohortStartQuarter,
-                    statuses: ['In Progress', 'Postponed', 'Awaiting Validation'],
-                    issueType: 'Epic',
-                });
-            }, [jiraUrl, cohortStartQuarter, cohortWorkflowStatusTotal]);
             const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortFilteredIssues, {
                 groupBy: cohortGroupBy,
                 maxColumns: cohortGroupBy === 'month' ? 24 : 12,
@@ -13257,30 +13246,12 @@ import {
                                                 {cohortSummary.done} done · {cohortSummary.killed} killed · {cohortSummary.incomplete} incomplete
                                             </div>
                                         </div>
-                                        <div className="stats-card">
-                                            <h4>In Progress / Postponed / Awaiting Validation</h4>
-                                            <div className="stat-value">{cohortWorkflowStatusTotal}</div>
-                                            <div className="stats-note">
-                                                {cohortSummary.inProgress || 0} in progress · {cohortSummary.postponed} postponed · {cohortSummary.awaitingValidation || 0} awaiting validation
-                                            </div>
-                                            {cohortWorkflowStatusLink && (
-                                                <TrackedExternalLink
-                                                    className="stats-card-link"
-                                                    href={cohortWorkflowStatusLink}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    title="View in progress, postponed, and awaiting validation epics in Jira"
-                                                    aria-label="Open in progress, postponed, and awaiting validation epics in Jira"
-                                                    analyticsMeta={buildJiraIssueListLinkAnalytics({
-                                                        issueKind: 'epic',
-                                                        issueCount: cohortWorkflowStatusTotal,
-                                                        sourceSurface: 'lead_times'
-                                                    })}
-                                                >
-                                                    Open in Jira
-                                                </TrackedExternalLink>
-                                            )}
-                                        </div>
+                                        <LeadTimesWorkflowStatusCard
+                                            jiraUrl={jiraUrl}
+                                            cohortStartQuarter={cohortStartQuarter}
+                                            cohortSummary={cohortSummary}
+                                            cohortWorkflowStatusTotal={cohortWorkflowStatusTotal}
+                                        />
                                         <div className="stats-card">
                                             <h4>Avg Lead Time</h4>
                                             <div className="stat-value">
@@ -13333,32 +13304,19 @@ import {
                                                     }}
                                                 />
                                             </div>
-                                            <div className="cohort-section">
-                                                <OpenEpicsChart
-                                                    title={cohortSelectedRowLabel
-                                                        ? `Open Epics (${cohortSelectedRowLabel})`
-                                                        : 'Open Epics (All Cohorts)'}
-                                                    description={cohortSelectedRowLabel
-                                                        ? ''
-                                                        : 'Created on or after the selected Lead Times start quarter and still non-terminal today.'}
-                                                    items={cohortOpenBars}
-                                                    jiraBaseUrl={jiraUrl}
-                                                />
-                                            </div>
-                                            <div className="cohort-section">
-                                                <OpenEpicsChart
-                                                    title={cohortSelectedRowLabel
-                                                        ? `Completed Epics — Lead Time (${cohortSelectedRowLabel})`
-                                                        : 'Completed Epics — Lead Time (All Cohorts)'}
-                                                    description={cohortSelectedRowLabel
-                                                        ? ''
-                                                        : 'Created on or after the selected Lead Times start quarter and reached a terminal status, with lead time shown.'}
-                                                    items={cohortCompletedBars}
-                                                    jiraBaseUrl={jiraUrl}
-                                                    emptyMessage="No completed epics in this scope."
-                                                    variant="completed"
-                                                />
-                                            </div>
+                                            <LeadTimesEpicCharts
+                                                cohortOpenBars={cohortOpenBars}
+                                                cohortCompletedBars={cohortCompletedBars}
+                                                cohortSelectedRowLabel={cohortSelectedRowLabel}
+                                                jiraUrl={jiraUrl}
+                                                cohortStartQuarter={cohortStartQuarter}
+                                                cohortGroupBy={cohortGroupBy}
+                                                cohortSelectedRow={cohortSelectedRow}
+                                                cohortProjectFilter={cohortProjectFilter}
+                                                activeGroupMissingComponents={activeGroupMissingComponents}
+                                                burnoutScopedTeamIds={burnoutScopedTeamIds}
+                                                cohortAssigneeFilter={cohortAssigneeFilter}
+                                            />
                                         </div>
                                     )}
                                 </div>

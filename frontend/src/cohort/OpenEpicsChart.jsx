@@ -1,4 +1,5 @@
 import * as React from 'react';
+import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 
 const DEFAULT_VISIBLE_ROWS = 30;
 
@@ -8,7 +9,19 @@ function normalizePositiveInteger(value, fallback) {
     return Math.max(1, Math.floor(numeric));
 }
 
-function OpenEpicsChart({ title, description, items, jiraBaseUrl, emptyMessage, variant, initialVisibleCount = DEFAULT_VISIBLE_ROWS, loadMoreCount = DEFAULT_VISIBLE_ROWS }) {
+function OpenEpicsChart({
+    title,
+    description,
+    items,
+    jiraBaseUrl,
+    jiraSearchUrl,
+    jiraSearchLabel,
+    jiraSearchAnalyticsMeta,
+    emptyMessage,
+    variant,
+    initialVisibleCount = DEFAULT_VISIBLE_ROWS,
+    loadMoreCount = DEFAULT_VISIBLE_ROWS
+}) {
     const rows = Array.isArray(items) ? items : [];
     const fallbackEmpty = emptyMessage || 'No open epics in this scope.';
     const fillClass = `cohort-open-fill${variant ? ` cohort-open-fill--${variant}` : ''}`;
@@ -20,11 +33,36 @@ function OpenEpicsChart({ title, description, items, jiraBaseUrl, emptyMessage, 
         setVisibleCount(Math.min(rows.length, initialCount));
     }, [rows.length, initialCount, title]);
 
+    const normalizedJiraSearchUrl = String(jiraSearchUrl || '').trim();
+    const normalizedJiraSearchLabel = jiraSearchLabel || (variant === 'completed'
+        ? 'Open all completed epics in Jira'
+        : 'Open all open epics in Jira');
+    const heading = (
+        <div className="cohort-open-heading">
+            <div className="cohort-open-heading-text">
+                <span className="cohort-open-title">{title}</span>
+                {description && <span className="cohort-open-description">{description}</span>}
+            </div>
+            {normalizedJiraSearchUrl && (
+                <TrackedExternalLink
+                    className="cohort-open-jira-button"
+                    href={normalizedJiraSearchUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={normalizedJiraSearchLabel}
+                    aria-label={normalizedJiraSearchLabel}
+                    analyticsMeta={jiraSearchAnalyticsMeta}
+                >
+                    Jira
+                </TrackedExternalLink>
+            )}
+        </div>
+    );
+
     if (!rows.length) {
         return (
             <div className="cohort-open-chart">
-                <div className="cohort-open-title">{title}</div>
-                {description && <div className="cohort-open-description">{description}</div>}
+                {heading}
                 <div className="cohort-empty">{fallbackEmpty}</div>
             </div>
         );
@@ -39,8 +77,7 @@ function OpenEpicsChart({ title, description, items, jiraBaseUrl, emptyMessage, 
 
     return (
         <div className="cohort-open-chart">
-            <div className="cohort-open-title">{title}</div>
-            {description && <div className="cohort-open-description">{description}</div>}
+            {heading}
             <div className="cohort-open-bars">
                 {visibleRows.map((item) => {
                     const daysOpen = Number(item?.daysOpen || 0);
@@ -87,7 +124,7 @@ function OpenEpicsChart({ title, description, items, jiraBaseUrl, emptyMessage, 
                     type="button"
                     onClick={() => setVisibleCount(count => Math.min(rows.length, count + incrementCount))}
                 >
-                    Load {nextCount} more {itemLabel}
+                    Load {nextCount} more from {rows.length} {itemLabel}
                 </button>
             )}
         </div>

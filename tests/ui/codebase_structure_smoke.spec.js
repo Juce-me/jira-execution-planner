@@ -1079,6 +1079,32 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await expect(page.locator('.stats-view.open')).toContainText('Awaiting Validation');
     await expect(page.locator('.stats-view.open')).toContainText('Created on or after the selected Lead Times start quarter and still non-terminal today.');
     await expect(page.locator('.stats-view.open')).toContainText('Created on or after the selected Lead Times start quarter and reached a terminal status, with lead time shown.');
+    const openLeadTimesSection = page.locator('.cohort-section', { hasText: 'Open Epics (All Cohorts)' }).first();
+    const openLeadTimesJiraLink = openLeadTimesSection.getByRole('link', { name: 'Open all open epics in Jira' });
+    await expect(openLeadTimesJiraLink).toBeVisible();
+    const openLeadTimesJql = decodeURIComponent(new URL(await openLeadTimesJiraLink.getAttribute('href')).searchParams.get('jql'));
+    expect(openLeadTimesJql).toContain('issuetype = "Epic"');
+    expect(openLeadTimesJql).toContain('created >= "2026-04-01"');
+    expect(openLeadTimesJql).toContain('status in ("In Progress", "Awaiting Validation")');
+    expect(openLeadTimesJql).toContain('"Team[Team]" in ("team-alpha", "team-beta")');
+    expect(openLeadTimesJql).not.toContain('key in');
+    const completedLeadTimesSection = page.locator('.cohort-section', { hasText: 'Completed Epics — Lead Time (All Cohorts)' }).first();
+    const completedLeadTimesJiraLink = completedLeadTimesSection.getByRole('link', { name: 'Open all completed epics in Jira' });
+    await expect(completedLeadTimesJiraLink).toBeVisible();
+    const completedLeadTimesJql = decodeURIComponent(new URL(await completedLeadTimesJiraLink.getAttribute('href')).searchParams.get('jql'));
+    expect(completedLeadTimesJql).toContain('status in ("Done")');
+    expect(completedLeadTimesJql).not.toContain('key in');
+    const headingLayout = await openLeadTimesSection.locator('.cohort-open-heading').evaluate((heading) => {
+        const title = heading.querySelector('.cohort-open-title')?.getBoundingClientRect();
+        const description = heading.querySelector('.cohort-open-description')?.getBoundingClientRect();
+        const button = heading.querySelector('.cohort-open-jira-button')?.getBoundingClientRect();
+        return {
+            sameLine: Boolean(title && description && Math.abs(title.top - description.top) < 4),
+            buttonAfterText: Boolean(description && button && button.left >= description.left),
+        };
+    });
+    expect(headingLayout.sameLine).toBeTruthy();
+    expect(headingLayout.buttonAfterText).toBeTruthy();
     const cohortCall = callsFor(calls, '/api/stats/epic-cohort', 'POST')[0];
     expect(cohortCall.headers['x-requested-with']).toBe('jira-execution-planner');
     expect(cohortCall.body).toMatchObject({
@@ -1131,7 +1157,7 @@ test('Lead Times caps long epic lists with load more and keeps overflow scrollab
     const openSection = page.locator('.cohort-section', { hasText: 'Open Epics (All Cohorts)' }).first();
     const openRows = openSection.locator('.cohort-open-row');
     await expect(openRows).toHaveCount(30);
-    const loadMoreButton = openSection.getByRole('button', { name: /Load 15 more open epics/ });
+    const loadMoreButton = openSection.getByRole('button', { name: /Load 15 more from 45 open epics/ });
     await expect(loadMoreButton).toBeVisible();
 
     const layout = await openRows.last().evaluate((lastRow) => {
@@ -1163,7 +1189,7 @@ test('Lead Times caps long epic lists with load more and keeps overflow scrollab
     const completedSection = page.locator('.cohort-section', { hasText: 'Completed Epics — Lead Time (All Cohorts)' }).first();
     const completedRows = completedSection.locator('.cohort-open-row');
     await expect(completedRows).toHaveCount(30);
-    const completedLoadMoreButton = completedSection.getByRole('button', { name: /Load 15 more completed epics/ });
+    const completedLoadMoreButton = completedSection.getByRole('button', { name: /Load 15 more from 45 completed epics/ });
     await expect(completedLoadMoreButton).toBeVisible();
     await completedLoadMoreButton.click();
     await expect(completedRows).toHaveCount(45);

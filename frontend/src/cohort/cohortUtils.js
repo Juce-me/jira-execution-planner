@@ -55,6 +55,17 @@ function normalizeCohortJiraStatus(value) {
     return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function getCohortDisplayStatus(issue, fallback = 'Open') {
+    const jiraStatus = String(issue?.jiraStatus || '').trim();
+    if (jiraStatus) return jiraStatus;
+    const status = normalizeCohortStatus(issue?.status);
+    if (status === 'done') return 'Done';
+    if (status === 'killed') return 'Killed';
+    if (status === 'incomplete') return 'Incomplete';
+    if (status === 'postponed') return 'Postponed';
+    return String(issue?.status || fallback).trim() || fallback;
+}
+
 export function isTerminalCohortStatus(statusKey) {
     return TERMINAL_STATUS_KEYS.has(normalizeCohortStatus(statusKey));
 }
@@ -353,7 +364,7 @@ export function buildOpenEpicsBars(issues, options = {}) {
             return {
                 key: issue?.key || '',
                 summary: issue?.summary || '',
-                status: issue?.jiraStatus || issue?.status || 'Open',
+                status: getCohortDisplayStatus(issue, 'Open'),
                 projectKey: issue?.projectKey || '',
                 teamName: issue?.team?.name || 'Unknown Team',
                 assigneeName: issue?.assignee?.name || 'Unassigned',
@@ -386,7 +397,7 @@ export function buildCompletedEpicsBars(issues, options = {}) {
         .map((issue) => ({
             key: issue?.key || '',
             summary: issue?.summary || '',
-            status: issue?.jiraStatus || issue?.status || '',
+            status: getCohortDisplayStatus(issue, ''),
             projectKey: issue?.projectKey || '',
             teamName: issue?.team?.name || 'Unknown Team',
             assigneeName: issue?.assignee?.name || 'Unassigned',

@@ -8,6 +8,8 @@
 
 **Tech Stack:** Plain CSS partials bundled by esbuild, React 19 JSX class names, existing source-guard tests, Playwright UI specs, generated `frontend/dist` output from `npm run build`.
 
+**Cross-Plan Order:** If this plan is executed with `EXEC-planning-selection-card-grid.md`, run the Planning card-grid plan first, commit and verify it, then execute this CSS split. That keeps the Planning plan's current `eng.css`/`planning.css` file map accurate and lets this plan move the new Planning selectors into feature-owned partials.
+
 ---
 
 ## Scope And Design Contract

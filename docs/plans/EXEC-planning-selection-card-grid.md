@@ -8,6 +8,8 @@
 
 **Tech Stack:** React 19 JSX, existing `IssueCard`/ENG styles, CSS partials bundled through `frontend/src/styles/dashboard.css`, Playwright UI specs, esbuild via `npm run build`.
 
+**Cross-Plan Order:** If this plan is executed with `EXEC-css-feature-owned-partials.md`, execute this plan first. This plan intentionally targets the current `frontend/src/styles/eng.css` and `frontend/src/styles/planning.css` files; the CSS ownership split should then move the resulting Planning selectors into feature-owned partials without changing behavior.
+
 ---
 
 ## Scope And Design Contract

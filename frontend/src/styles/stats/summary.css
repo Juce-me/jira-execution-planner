@@ -110,6 +110,8 @@
             display: flex;
             flex-wrap: wrap;
             align-items: stretch;
+            justify-content: flex-start;
+            width: 100%;
             gap: 0.4rem;
         }
 
@@ -171,6 +173,7 @@
         @media (min-width: 1200px) {
             .filters-strip .stats {
                 flex-wrap: nowrap;
+                justify-content: space-between;
             }
 
             .filters-strip .stat-card {

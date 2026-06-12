@@ -296,6 +296,9 @@ test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
         'Do not use descendant :not() for EPM exclusion; scope :not() on the task-list itself'
     );
 
+    assertRuleIncludes('.filters-strip .stats', 'justify-content: flex-start;');
+    assertRuleIncludes('.filters-strip .stats', 'width: 100%;');
+    assertRuleIncludes('.filters-strip .stats', 'justify-content: space-between;');
     assertRuleIncludes('.filters-strip .stat-card', 'min-height: 0;');
     assertRuleIncludes('.filters-strip .stat-card', 'width: max-content;');
     assertRuleIncludes('.filters-strip .stat-card', 'padding: 0.34rem 0.5rem;');

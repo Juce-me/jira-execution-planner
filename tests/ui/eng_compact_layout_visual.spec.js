@@ -276,10 +276,18 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1,
         const activeModeButton = document.querySelector('.eng-mode-control .segmented-control-button.active');
         const activeModeButtonStyle = getComputedStyle(activeModeButton);
         const cardRows = new Set(cards.map(card => Math.round(card.getBoundingClientRect().top))).size;
+        const statsRect = stats.getBoundingClientRect();
+        const cardRects = cards.map(card => card.getBoundingClientRect());
+        const firstCardRect = cardRects[0];
+        const lastCardRect = cardRects[cardRects.length - 1];
         return {
             statsDisplay: getComputedStyle(stats).display,
             statsFlexWrap: getComputedStyle(stats).flexWrap,
             cardRows,
+            statsWidth: statsRect.width,
+            cardSpanWidth: lastCardRect.right - firstCardRect.left,
+            firstCardLeftGap: firstCardRect.left - statsRect.left,
+            lastCardRightGap: statsRect.right - lastCardRect.right,
             cardWidths: cards.map(card => card.getBoundingClientRect().width),
             cardHeights: cards.map(card => card.getBoundingClientRect().height),
             labelFontSize: parsePx(getComputedStyle(longLabel).fontSize),
@@ -304,6 +312,11 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1,
     expect(metrics.statsDisplay).toBe('flex');
     expect(metrics.statsFlexWrap).toBe(expectedStatsFlexWrap);
     expect(metrics.cardRows).toBe(expectedCardRows);
+    if (expectedStatsFlexWrap === 'nowrap') {
+        expect(metrics.cardSpanWidth / metrics.statsWidth).toBeGreaterThanOrEqual(0.98);
+        expect(metrics.firstCardLeftGap).toBeLessThanOrEqual(1);
+        expect(metrics.lastCardRightGap).toBeLessThanOrEqual(1);
+    }
     expect(Math.max(...metrics.cardWidths)).toBeLessThanOrEqual(203);
     expect(Math.max(...metrics.cardHeights)).toBeLessThanOrEqual(58);
     expect(metrics.labelFontSize).toBeGreaterThanOrEqual(9);

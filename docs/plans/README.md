@@ -94,12 +94,16 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Active implementation plan for adding a persistent ENG alerts toolbar summary next to the toggle.
    - Expected output: `EngAlertsPanel` shows total alerts plus every non-zero alert category using existing alert colors/styles, stays visible open and collapsed, preserves existing toggle persistence, and includes source guards plus desktop/mobile Playwright visual proof.
 
-4. `DONE-statistics-module-extraction.md`
+4. `EXEC-eng-catch-up-control-stack.md`
+   - Active implementation plan for unifying the ENG Catch Up alert summary, Show only stat filters, and Display toggles into a coherent, non-redundant control stack.
+   - Expected output: upper ENG control rows share alignment, sizing, and visual hierarchy; stat filters use a compact content-aware treatment instead of distributed tiles; Killed is removed from Show only and owned only by the Display Killed toggle; focused Playwright/source guards prevent regressions and preserve EPM, Planning, Settings preview, and Scenario layouts.
+
+5. `DONE-statistics-module-extraction.md`
    - Completed Statistics module extraction. Use for audit and prerequisite evidence; do not execute as active work.
    - Supersedes the stale root-level `statistics_module_extraction_plan.md` from `origin/plan/statistics-module-extraction`.
    - Output: remaining legacy Statistics Teams, Priority, and Burndown utilities/components extracted from `frontend/src/dashboard.jsx` into the existing `frontend/src/stats/` package, with source guards, focused Node tests, full unit verification, Playwright smoke coverage, regenerated frontend dist output, and shared bounded hover positioning for stats chart readouts.
 
-5. `DONE-epm-project-reading-experience.md`
+6. `DONE-epm-project-reading-experience.md`
    - Completed EPM project reading experience plan in PR #41 (`94b759b`). Use for audit and prerequisite evidence; do not execute as active work.
    - Output: Home update freshness classification, stale/missing/unknown badges, stale date styling, visual fixture coverage, and freshness source guards for the EPM project board.
 

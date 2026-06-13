@@ -373,7 +373,14 @@ import {
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
             const [serverConnectionError, setServerConnectionError] = useState('');
-            const [showKilled, setShowKilled] = useState(savedPrefsRef.current.showKilled ?? false);
+            const initialSavedStatusFilter = savedPrefsRef.current.statusFilter ?? null;
+            const normalizedInitialStatusFilter = initialSavedStatusFilter === 'killed'
+                ? null
+                : initialSavedStatusFilter;
+            const normalizedInitialShowKilled = initialSavedStatusFilter === 'killed'
+                ? true
+                : (savedPrefsRef.current.showKilled ?? false);
+            const [showKilled, setShowKilled] = useState(normalizedInitialShowKilled);
             const [showDone, setShowDone] = useState(savedPrefsRef.current.showDone ?? true);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
             const [showProduct, setShowProduct] = useState(savedPrefsRef.current.showProduct ?? true);
@@ -393,7 +400,7 @@ import {
             );
             const showEpmNavigation = authMode === 'basic' || hasActiveHomeTokenConnection;
             const [sprintName, setSprintName] = useState('Sprint');
-            const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'killed', 'high-priority'
+            const [statusFilter, setStatusFilter] = useState(normalizedInitialStatusFilter); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
             const [epmProjectSort, setEpmProjectSort] = useState(normalizeEpmProjectSort(savedPrefsRef.current.epmProjectSort || DEFAULT_EPM_PROJECT_SORT));
@@ -4376,11 +4383,11 @@ import {
                     readyToCloseTechEpicsInScope: [],
                     techLoaded: false,
                     error: '',
-                    showKilled: savedPrefsRef.current.showKilled ?? false,
+                    showKilled: normalizedInitialShowKilled,
                     showDone: savedPrefsRef.current.showDone ?? true,
                     showTech: savedPrefsRef.current.showTech ?? true,
                     showProduct: savedPrefsRef.current.showProduct ?? true,
-                    statusFilter: savedPrefsRef.current.statusFilter ?? null,
+                    statusFilter: normalizedInitialStatusFilter,
                     searchQuery: savedPrefsRef.current.searchQuery ?? '',
                     selectedTeams: selectedTeamsFromPlanning,
                     selectedTasks: selectedTasksFromPlanning,
@@ -4579,11 +4586,14 @@ import {
                 setReadyToCloseTechEpicsInScope(nextState.readyToCloseTechEpicsInScope || []);
                 setTechLoaded(Boolean(nextState.techLoaded));
                 setError(nextState.error || '');
-                setShowKilled(nextState.showKilled ?? false);
+                const nextStatusFilter = nextState.statusFilter === 'killed'
+                    ? null
+                    : (nextState.statusFilter ?? null);
+                setShowKilled(nextState.statusFilter === 'killed' ? true : (nextState.showKilled ?? false));
                 setShowDone(nextState.showDone ?? true);
                 setShowTech(nextState.showTech ?? true);
                 setShowProduct(nextState.showProduct ?? true);
-                setStatusFilter(nextState.statusFilter ?? null);
+                setStatusFilter(nextStatusFilter);
                 setSearchQuery(nextState.searchQuery ?? '');
                 setSelectedTeams(normalizeSelectedTeams(nextState.selectedTeams));
                 setSelectedTasks(nextState.selectedTasks || {});
@@ -9557,7 +9567,7 @@ import {
             const baseFilteredTasks = React.useMemo(() => {
                 return scopedTasks.filter(task => {
                     // Filter by Killed status
-                    if (!showKilled && statusFilter !== 'killed' && task.fields.status?.name === 'Killed') {
+                    if (!showKilled && task.fields.status?.name === 'Killed') {
                         return false;
                     }
 
@@ -9647,9 +9657,6 @@ import {
                     }
                     if (statusFilter === 'done') {
                         return task.fields.status?.name === 'Done';
-                    }
-                    if (statusFilter === 'killed') {
-                        return task.fields.status?.name === 'Killed';
                     }
                     if (statusFilter === 'high-priority') {
                         const priority = task.fields.priority?.name;
@@ -10234,17 +10241,12 @@ import {
             const doneTasksCount = summaryStats.counts.done;
             const inProgressTasksCount = summaryStats.counts.inProgress;
             const todoAcceptedTasksCount = summaryStats.counts.todoAccepted;
-            const killedTasksCount = killedTasks.length;
             const totalStoryPoints = summaryStats.points.total;
             const doneStoryPoints = summaryStats.points.done;
             const highPriorityStoryPoints = summaryStats.points.highPriority;
             const minorPriorityStoryPoints = summaryStats.points.minorPriority;
             const inProgressStoryPoints = summaryStats.points.inProgress;
             const todoAcceptedStoryPoints = summaryStats.points.todoAccepted;
-            const killedStoryPoints = killedTasks.reduce((sum, task) => {
-                const sp = parseFloat(task.fields.customfield_10004 || 0);
-                return sum + (Number.isNaN(sp) ? 0 : sp);
-            }, 0);
             const selectedEpmProjectUpdateLine = [selectedEpmProject?.latestUpdateDate, selectedEpmProject?.latestUpdateSnippet || 'No updates yet']
                 .filter(Boolean)
                 .join(' · ');
@@ -14401,8 +14403,6 @@ import {
                                     inProgressStoryPoints={inProgressStoryPoints}
                                     todoAcceptedTasksCount={todoAcceptedTasksCount}
                                     todoAcceptedStoryPoints={todoAcceptedStoryPoints}
-                                    killedTasksCount={killedTasksCount}
-                                    killedStoryPoints={killedStoryPoints}
                                     showTech={showTech}
                                     setShowTech={setShowTech}
                                     techTasksCount={techTasksCount}
@@ -14415,6 +14415,7 @@ import {
                                     setShowDone={setShowDone}
                                     killedTasks={killedTasks}
                                     showKilled={showKilled}
+                                    setShowKilled={setShowKilled}
                                     hasInitiativeData={hasInitiativeData}
                                     groupByInitiative={groupByInitiative}
                                     setGroupByInitiative={setGroupByInitiative}

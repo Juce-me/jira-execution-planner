@@ -1,0 +1,146 @@
+        .epm-duplicates-callout {
+            border: 1px solid #f4c98a;
+            background: #fff8e6;
+            border-radius: 10px;
+            padding: 0.75rem 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .epm-duplicates-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .epm-duplicates-heading-text {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #8a5a00;
+            font-weight: 600;
+        }
+
+        .epm-duplicates-fix-button {
+            white-space: nowrap;
+        }
+
+        .epm-duplicates-explanation {
+            margin: 0;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .epm-duplicates-rows {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .epm-duplicates-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding-top: 0.5rem;
+            border-top: 1px dashed rgba(138, 90, 0, 0.25);
+        }
+
+        .epm-duplicates-row:first-child {
+            padding-top: 0;
+            border-top: 0;
+        }
+
+        .epm-duplicates-projects {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .epm-duplicates-project-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.2rem 0.5rem;
+            border: 1px solid var(--border);
+            background: #fff;
+            border-radius: 6px;
+            min-width: 0;
+        }
+
+        .epm-duplicates-project-name {
+            font-size: 0.7rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .epm-duplicates-project-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.58rem;
+            color: var(--text-secondary);
+            background: var(--epm-project-accent-surface);
+            border: 1px solid var(--epm-project-accent-soft);
+            color: var(--epm-project-accent);
+            padding: 0.05rem 0.35rem;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+
+        .epm-duplicates-issues {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .epm-duplicates-issues > summary {
+            cursor: pointer;
+            white-space: nowrap;
+            list-style: none;
+        }
+
+        .epm-duplicates-issues > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .epm-duplicates-issues > summary::before {
+            content: '▸ ';
+            display: inline-block;
+            transition: transform 0.15s ease;
+            transform-origin: 0.25em 50%;
+        }
+
+        .epm-duplicates-issues[open] > summary::before {
+            transform: rotate(90deg);
+        }
+
+        .epm-duplicates-issues ul {
+            margin: 0.4rem 0 0;
+            padding-left: 1rem;
+            list-style: none;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem 0.6rem;
+        }
+
+        .epm-duplicates-issues li {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+        }
+
+        .epm-duplicates-issues a {
+            color: var(--epm-project-accent);
+            text-decoration: none;
+        }
+
+        .epm-duplicates-issues a:hover {
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }

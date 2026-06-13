@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
-const screenshotDir = '/tmp/eng-compact-layout-qa';
+const screenshotDir = 'test-results/eng-compact-layout-qa';
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
@@ -12,7 +12,7 @@ test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
 });
 
-function makeIssue({ key, project, index, status, priority, points, summary, sprintState = 'active' }) {
+function makeIssue({ key, project, index, status, priority, points, summary, sprintState = 'active', fields = {} }) {
     const epicKey = `${project}-EPIC`;
     const teamId = index % 2 === 0 ? 'team-alpha' : 'team-beta';
     const teamName = teamId === 'team-alpha' ? 'Alpha Team' : 'Beta Team';
@@ -33,6 +33,7 @@ function makeIssue({ key, project, index, status, priority, points, summary, spr
             teamId,
             teamName,
             sprint: [{ id: selectedSprintId, name: selectedSprintName, state: sprintState }],
+            ...fields,
         },
     };
 }
@@ -132,6 +133,18 @@ const closedSprintProductTasks = [
         sprintState: 'closed',
     }),
 ];
+const alertMissingInfoTasks = [
+    makeIssue({
+        key: 'PRODUCT-ALERT-1',
+        project: 'PRODUCT',
+        index: 8,
+        status: 'To Do',
+        priority: 'High',
+        points: null,
+        summary: 'Compact layout missing estimate alert story',
+        fields: { missingFields: ['Story Points'] },
+    }),
+];
 
 async function waitForVisualSettled(page) {
     await page.evaluate(async () => {
@@ -209,7 +222,14 @@ async function installEngCompactFixture(page, options = {}) {
                 names: {},
             });
         }
-        if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
+        if (url.pathname === '/api/missing-info') {
+            return json({
+                issues: alertMissingInfoTasks,
+                epics: [],
+                count: alertMissingInfoTasks.length,
+                epicCount: 0,
+            });
+        }
         if (url.pathname === '/api/backlog-epics') return json({ epics: [] });
         if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
@@ -229,15 +249,19 @@ async function openEngCatchUp(page, viewport, options = {}) {
         activeGroupId: 'grp-default',
         showPlanning: false,
         showScenario: false,
+        showAlertsPanel: true,
+        ...(options.prefs || {}),
     });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
     await expect(page.locator('.filters-strip .stat-card')).toHaveCount(options.expectedStatCardCount || 6);
     await expect(page.locator('.task-list:not(.epm-issue-board) > .epic-block').first()).toBeVisible();
     await waitForVisualSettled(page);
 }
 
-async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1, expectedStatsFlexWrap = 'nowrap' } = {}) {
+async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1 } = {}) {
+    await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
     const metrics = await page.evaluate(() => {
         const parsePx = (value) => Number.parseFloat(value) || 0;
         const lineCount = (node) => {
@@ -245,8 +269,22 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1,
             const lineHeight = parsePx(style.lineHeight) || (parsePx(style.fontSize) * 1.2);
             return Math.round(node.getBoundingClientRect().height / lineHeight);
         };
+        const maxAdjacentGap = (rects) => {
+            const rows = new Map();
+            rects.forEach((rect) => {
+                const key = Math.round(rect.top);
+                rows.set(key, [...(rows.get(key) || []), rect]);
+            });
+            return Math.max(0, ...Array.from(rows.values()).flatMap((row) => {
+                const sorted = row.slice().sort((a, b) => a.left - b.left);
+                return sorted.slice(1).map((rect, index) => rect.left - sorted[index].right);
+            }));
+        };
+        const filterStrip = document.querySelector('.filters-strip');
         const stats = document.querySelector('.filters-strip .stats');
         const cards = Array.from(document.querySelectorAll('.filters-strip .stat-card'));
+        const displayControls = document.querySelector('.toggle-container');
+        const alertToolbar = document.querySelector('.alerts-panel-toolbar');
         const longLabel = document.querySelector('.filters-strip .todo-accepted .stat-label');
         const labelLines = cards.map(card => lineCount(card.querySelector('.stat-label')));
         const labelOverflows = cards.map(card => {
@@ -263,6 +301,7 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1,
                 valueTopOffset: Math.abs((valueRect.top + valueRect.height / 2) - (cardRect.top + cardRect.height / 2)),
                 labelNoteOffset: Math.abs((labelRect.left + labelRect.width / 2) - (noteRect.left + noteRect.width / 2)),
                 labelLeftOfValue: (labelRect.left + labelRect.width / 2) - (valueRect.left + valueRect.width / 2),
+                valueLabelGap: labelRect.left - valueRect.right,
             };
         });
         const firstStory = document.querySelector('.task-list:not(.epm-issue-board) > .epic-block > .task-item');
@@ -275,18 +314,27 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1,
         const activeModeButton = document.querySelector('.eng-mode-control .segmented-control-button.active');
         const activeModeButtonStyle = getComputedStyle(activeModeButton);
         const cardRows = new Set(cards.map(card => Math.round(card.getBoundingClientRect().top))).size;
+        const statsRect = stats.getBoundingClientRect();
+        const cardRects = cards.map(card => card.getBoundingClientRect());
+        const firstCardRect = cardRects[0];
         return {
             statsDisplay: getComputedStyle(stats).display,
-            statsFlexWrap: getComputedStyle(stats).flexWrap,
+            statsColumnGap: parsePx(getComputedStyle(stats).columnGap),
+            maxStatGap: maxAdjacentGap(cardRects),
             cardRows,
+            firstCardLeftGap: firstCardRect.left - statsRect.left,
             cardWidths: cards.map(card => card.getBoundingClientRect().width),
             cardHeights: cards.map(card => card.getBoundingClientRect().height),
             labelFontSize: parsePx(getComputedStyle(longLabel).fontSize),
             noteFontSize: parsePx(getComputedStyle(document.querySelector('.filters-strip .todo-accepted .stats-note')).fontSize),
-            longLabelLines: lineCount(longLabel),
             labelLines,
             labelOverflows,
+            maxLabelLines: Math.max(...labelLines),
+            maxLabelOverflow: Math.max(...labelOverflows),
             cardAlignments,
+            filterOverflowX: filterStrip.scrollWidth - filterStrip.clientWidth,
+            displayOverflowX: displayControls.scrollWidth - displayControls.clientWidth,
+            alertOverflowX: alertToolbar.scrollWidth - alertToolbar.clientWidth,
             storyPaddingTop: parsePx(storyStyle.paddingTop),
             storyPaddingLeft: parsePx(storyStyle.paddingLeft),
             storyTitleFontSize: parsePx(titleStyle.fontSize),
@@ -300,21 +348,28 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1,
         };
     });
 
-    expect(metrics.statsDisplay).toBe('flex');
-    expect(metrics.statsFlexWrap).toBe(expectedStatsFlexWrap);
+    expect(metrics.statsDisplay).toBe('grid');
+    expect(metrics.statsColumnGap).toBeLessThanOrEqual(12);
+    expect(metrics.maxStatGap).toBeLessThanOrEqual(12);
     expect(metrics.cardRows).toBe(expectedCardRows);
-    expect(Math.max(...metrics.cardWidths)).toBeLessThanOrEqual(203);
+    expect(metrics.firstCardLeftGap).toBeLessThanOrEqual(1);
+    expect(Math.max(...metrics.cardWidths)).toBeLessThanOrEqual(208);
+    expect(Math.min(...metrics.cardWidths)).toBeGreaterThanOrEqual(110);
     expect(Math.max(...metrics.cardHeights)).toBeLessThanOrEqual(58);
     expect(metrics.labelFontSize).toBeGreaterThanOrEqual(9);
     expect(metrics.noteFontSize).toBeGreaterThanOrEqual(9);
-    expect(metrics.longLabelLines).toBe(1);
-    expect(Math.max(...metrics.labelLines)).toBe(1);
-    expect(Math.max(...metrics.labelOverflows)).toBeLessThanOrEqual(1);
+    expect(metrics.filterOverflowX).toBeLessThanOrEqual(1);
+    expect(metrics.displayOverflowX).toBeLessThanOrEqual(1);
+    expect(metrics.alertOverflowX).toBeLessThanOrEqual(1);
+    expect(metrics.maxLabelLines).toBeLessThanOrEqual(2);
+    expect(metrics.maxLabelOverflow).toBeLessThanOrEqual(1);
     metrics.cardAlignments.forEach(alignment => {
         expect(alignment.valueLeft).toBeLessThanOrEqual(28);
         expect(alignment.valueTopOffset).toBeLessThanOrEqual(2);
         expect(alignment.labelNoteOffset).toBeLessThanOrEqual(2);
-        expect(alignment.labelLeftOfValue).toBeGreaterThan(42);
+        expect(alignment.labelLeftOfValue).toBeGreaterThan(38);
+        expect(alignment.valueLabelGap).toBeGreaterThanOrEqual(6);
+        expect(alignment.valueLabelGap).toBeLessThanOrEqual(14);
     });
     expect(metrics.storyPaddingTop).toBeGreaterThanOrEqual(11);
     expect(metrics.storyPaddingTop).toBeLessThanOrEqual(12);
@@ -331,6 +386,19 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1,
     expect(metrics.overflowX).toBeLessThanOrEqual(1);
 
     await page.screenshot({ path: `${screenshotDir}/${screenshotName}.png`, fullPage: true });
+}
+
+async function expectAlertPanelToggleStates(page) {
+    await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
+    await expect(page.locator('.alert-panels')).toBeVisible();
+
+    await page.locator('.alerts-panel-toggle').click();
+    await waitForVisualSettled(page);
+    await expect(page.locator('.alert-panels')).toBeHidden();
+
+    await page.locator('.alerts-panel-toggle').click();
+    await waitForVisualSettled(page);
+    await expect(page.locator('.alert-panels')).toBeVisible();
 }
 
 async function expectSprintOptionsStaySingleLine(page) {
@@ -365,34 +433,68 @@ async function expectSprintOptionsStaySingleLine(page) {
 
 test('ENG compact filters and epic rows stay readable on desktop', async ({ page }) => {
     await openEngCatchUp(page, { width: 1440, height: 760 });
+    await expectAlertPanelToggleStates(page);
     await expectCompactLayout(page, 'desktop');
     await expectSprintOptionsStaySingleLine(page);
 });
 
 test('ENG compact filters and epic rows stay readable on narrow screens', async ({ page }) => {
     await openEngCatchUp(page, { width: 390, height: 760 });
-    await expectCompactLayout(page, 'mobile', { expectedCardRows: 6, expectedStatsFlexWrap: 'wrap' });
+    await expectCompactLayout(page, 'mobile', { expectedCardRows: 3 });
 });
 
-test('Killed show-only card isolates killed work in closed sprints', async ({ page }) => {
-    await openEngCatchUp(page, { width: 1280, height: 760 }, {
+test('Killed Display toggle includes killed work without a Show only card', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1792, height: 900 }, {
         sprintState: 'closed',
         productTasks: closedSprintProductTasks,
         techTasks: [],
-        expectedStatCardCount: 7,
+        expectedStatCardCount: 6,
     });
+    await expectCompactLayout(page, 'closed-sprint-filter-stats', { expectedCardRows: 1 });
+
+    await expect(page.locator('.filters-strip .stat-card.killed')).toHaveCount(0);
+
+    const killedToggle = page.locator('.toggle-container button.toggle', { hasText: /^Killed \(1\)$/ });
+    await expect(killedToggle).toBeVisible();
+    await expect(killedToggle).not.toHaveClass(/active/);
 
     const taskList = page.locator('.task-list:not(.epm-issue-board)');
     await expect(taskList).toContainText('Closed sprint done story');
     await expect(taskList).toContainText('Closed sprint stale in progress story');
     await expect(taskList).not.toContainText('Closed sprint killed story');
 
-    await page.locator('.filters-strip .stat-card.killed').click();
+    await killedToggle.click();
 
-    await expect(page.locator('.filters-strip .stat-card.killed')).toHaveClass(/active/);
-    await expect(page.locator('.filters-strip .stat-card.total')).not.toHaveClass(/active/);
+    await expect(killedToggle).toHaveClass(/active/);
     await expect(taskList).toContainText('Closed sprint killed story');
-    await expect(taskList).not.toContainText('Closed sprint done story');
-    await expect(taskList).not.toContainText('Closed sprint stale in progress story');
-    await page.screenshot({ path: `${screenshotDir}/closed-sprint-killed-filter.png`, fullPage: true });
+    await expect(taskList).toContainText('Closed sprint done story');
+    await expect(taskList).toContainText('Closed sprint stale in progress story');
+    await page.screenshot({ path: `${screenshotDir}/closed-sprint-display-killed.png`, fullPage: true });
+});
+
+test('legacy Killed status filter migrates to the Display Killed toggle', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1792, height: 900 }, {
+        sprintState: 'closed',
+        productTasks: closedSprintProductTasks,
+        techTasks: [],
+        expectedStatCardCount: 6,
+        prefs: {
+            statusFilter: 'killed',
+            showKilled: false,
+        },
+    });
+
+    await expect(page.locator('.filters-strip .stat-card.killed')).toHaveCount(0);
+
+    const killedToggle = page.locator('.toggle-container button.toggle', { hasText: /^Killed \(1\)$/ });
+    await expect(killedToggle).toHaveClass(/active/);
+
+    const taskList = page.locator('.task-list:not(.epm-issue-board)');
+    await expect(taskList).toContainText('Closed sprint killed story');
+    await expect(taskList).toContainText('Closed sprint done story');
+    await expect(taskList).toContainText('Closed sprint stale in progress story');
+
+    const prefs = await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1')));
+    expect(prefs.statusFilter).toBeNull();
+    expect(prefs.showKilled).toBe(true);
 });

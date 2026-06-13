@@ -154,6 +154,7 @@ async function installDashboard(page, options = {}) {
             calls.unexpected.push(`${method} ${url.pathname}`);
             return json(route, { error: 'legacy overrides route must not be called' }, 500);
         }
+        if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/status') {
             return json(route, {

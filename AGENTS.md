@@ -341,6 +341,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep expanded ENG story subtask lists compact and visually quiet; constrain desktop width instead of stretching rows across the whole card.
 - Map ENG subtask workflow statuses such as Analysis and Release to colored progress chips, and keep story meta rows vertically centered.
 - Keep ENG Show only cards in one desktop row and tighten widths/gaps before allowing filter-card wrapping or floating dependency-pill spacing.
+- In ENG Catch Up controls, align alerts, Show only stats, and Display toggles as one compact control stack; avoid distributed tile spacing.
+- In ENG Catch Up controls, Killed belongs only in the Display inclusion toggles; never duplicate it as a Show only stat filter.
 - Keep ENG header dependency pills in the detail row/right lane so they do not increase the story title/header row height.
 - Subtask-toggle animations must target `.story-subtasks-panel`; task removal animations must target the full `.task-item`, not dependency metadata or the remove button alone.
 - Product renames must include all user-visible product-name surfaces: README, docs, browser title, app header, auth/recovery screens, installer output, package description, matching tests, and generated frontend output when source changes.

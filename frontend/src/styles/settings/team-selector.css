@@ -1,0 +1,183 @@
+        .group-modal-body {
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: row;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .group-modal-split {
+            gap: 0;
+        }
+
+        .group-pane {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .group-pane-left {
+            width: 30%;
+            border-right: 1px solid var(--border);
+            background: #fbfaf7;
+        }
+
+        .group-pane-right {
+            width: 70%;
+            padding: 0.8rem 1rem 1rem;
+            overflow-y: auto;
+            gap: 0.6rem;
+        }
+
+        .group-pane-header {
+            padding: 0.8rem 0.9rem 0.6rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .group-pane-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+
+        .group-pane-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }
+
+        .group-filter-input {
+            width: 100%;
+            padding: 0.4rem 0.6rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            background: #fff;
+        }
+
+        .group-pane-count {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .group-pane-list {
+            overflow-y: auto;
+            padding: 0.6rem 0.6rem 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .group-list-item {
+            border: 1px solid var(--border);
+            background: #fff;
+            padding: 0.4rem 0.6rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+            text-align: left;
+            cursor: pointer;
+            border-radius: 10px;
+        }
+
+        .group-list-item.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(212, 56, 13, 0.12);
+        }
+
+        .group-list-line {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            min-width: 0;
+        }
+
+        .group-list-name {
+            font-size: 0.78rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .group-list-meta {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .group-list-dot {
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+        }
+
+        .group-list-star {
+            font-size: 0.85rem;
+            color: var(--accent);
+        }
+
+        .group-pane-empty {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            font-style: italic;
+            padding: 0.5rem 0.8rem;
+        }
+
+        .group-pane-mobile-header,
+        .group-pane-mobile-close {
+            display: none;
+        }
+
+        .group-pane-tools {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .group-pane-tools-right {
+            margin-bottom: 0.1rem;
+        }
+
+        .group-pane-tools-right .secondary.compact.active {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(212, 56, 13, 0.08);
+        }
+
+        .settings-two-col-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+            align-items: start;
+            align-content: start;
+        }
+
+        .settings-scope-grid > .group-projects-subsection,
+        .settings-source-grid > .group-projects-subsection {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.65rem 0.75rem;
+            background: #fff;
+        }
+
+        .settings-source-grid .capacity-inline-search {
+            width: 100%;
+            min-width: 0;
+        }
+
+        .settings-source-grid .capacity-inline-row {
+            margin-top: 0.15rem;
+        }

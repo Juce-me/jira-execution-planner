@@ -1305,6 +1305,7 @@ test('EPM lifecycle tabs load after config with scoped rollup requests and stick
     expect(apiMocks.state.rollupBeforeConfigRelease).toBe(false);
 
     await expect(page.locator('.epm-project-board-name', { hasText: 'Active Project' })).toBeVisible();
+    await page.getByRole('button', { name: 'Show Jira rollup for Active Project' }).first().click();
     await expect(page.locator('.epm-portfolio-board .epic-header').first()).toBeVisible();
     await expectJiraExportMenu(page);
     await page.screenshot({ path: `${screenshotDir}/epm-active.png`, fullPage: true });
@@ -1313,6 +1314,7 @@ test('EPM lifecycle tabs load after config with scoped rollup requests and stick
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.getByRole('radio', { name: 'Backlog' }).first().click();
     await expect(page.locator('.epm-project-board-name', { hasText: 'Backlog Project' })).toBeVisible();
+    await page.getByRole('button', { name: 'Show Jira rollup for Backlog Project' }).first().click();
     await expect(page.locator('.epm-portfolio-board .epic-header').first()).toBeVisible();
     await page.screenshot({ path: `${screenshotDir}/epm-backlog.png`, fullPage: true });
     await expectWindowSticky(page, '.epm-portfolio-board .epic-header');

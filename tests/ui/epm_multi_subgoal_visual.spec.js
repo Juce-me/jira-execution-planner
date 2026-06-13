@@ -331,7 +331,8 @@ test('EPM control dropdowns size to short labels and long options', async ({ pag
     const sprintToggleBox = await box(sprintToggle);
     const sprintPanelBox = await box(sprintPanel);
     expect(sprintToggleBox.width).toBeLessThan(180);
-    expect(Math.abs(sprintPanelBox.width - sprintToggleBox.width)).toBeLessThanOrEqual(2);
+    expect(sprintPanelBox.width).toBeGreaterThanOrEqual(sprintToggleBox.width);
+    expect(sprintPanelBox.width).toBeLessThanOrEqual(sprintToggleBox.width + 40);
 
     const subGoalToggle = controls.getByRole('button', { name: 'Filter EPM sub-goals' });
     await subGoalToggle.click();

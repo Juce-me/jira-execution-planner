@@ -3,6 +3,22 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const stylesDir = path.join(__dirname, '..', 'frontend', 'src', 'styles');
+const cssImportPattern = /@import\s+["'](.+?)["'];/;
+
+function readCssWithImports(relativePath, seen = new Set()) {
+    const normalizedPath = relativePath.split(path.sep).join('/');
+    assert.equal(seen.has(normalizedPath), false, `CSS import cycle detected at ${normalizedPath}`);
+    seen.add(normalizedPath);
+    const source = fs.readFileSync(path.join(stylesDir, normalizedPath), 'utf8');
+    return source.split(/(?<=\n)/).map(line => {
+        const match = line.match(cssImportPattern);
+        if (!match) return line;
+        const nestedPath = path.posix.normalize(path.posix.join(path.posix.dirname(normalizedPath), match[1]));
+        return readCssWithImports(nestedPath, new Set(seen));
+    }).join('');
+}
+
 test('priority weight helpers normalize rows and fall back to defaults', async () => {
     const {
         DEFAULT_PRIORITY_WEIGHT_ROWS,
@@ -102,10 +118,7 @@ test('completed epic lead-time bars include every terminal epic by default', asy
 });
 
 test('open stats panel height contributes to page scrolling', () => {
-    const css = fs.readFileSync(
-        path.join(__dirname, '..', 'frontend', 'src', 'styles', 'stats-summary.css'),
-        'utf8'
-    );
+    const css = readCssWithImports('stats-summary.css');
     const block = css.match(/\.stats-panel\.open\s*\{[\s\S]*?\n\s*\}/)?.[0] || '';
 
     assert.match(block, /max-height:\s*none;/);
@@ -113,10 +126,7 @@ test('open stats panel height contributes to page scrolling', () => {
 });
 
 test('open stats view height is not capped inside the panel', () => {
-    const css = fs.readFileSync(
-        path.join(__dirname, '..', 'frontend', 'src', 'styles', 'stats.css'),
-        'utf8'
-    );
+    const css = readCssWithImports('stats.css');
     const block = css.match(/\.stats-view\.open\s*\{[\s\S]*?\n\s*\}/)?.[0] || '';
 
     assert.match(block, /max-height:\s*none;/);

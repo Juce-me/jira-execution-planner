@@ -18,6 +18,9 @@ const dashboardCss = fs.readFileSync(
 );
 
 test('dashboard uses compact task filter labels without repeated show/hide verbs', () => {
+    assert.ok(engViewSource.includes('>Total<'), 'Expected compact Total stat label');
+    assert.ok(engViewSource.includes('>Done<'), 'Expected compact Done stat label');
+    assert.ok(engViewSource.includes('>Queued<'), 'Expected compact Queued stat label');
     assert.ok(
         engViewSource.includes('`Tech (${techTasksCount})`'),
         'Expected compact Tech toggle label in EngView.jsx'
@@ -27,12 +30,59 @@ test('dashboard uses compact task filter labels without repeated show/hide verbs
         'Expected compact Product toggle label in EngView.jsx'
     );
     assert.ok(
-        engViewSource.includes('`Done / Incomplete (${doneTasks.length + incompleteTasks.length})`'),
-        'Expected compact Done / Incomplete toggle label in EngView.jsx'
+        engViewSource.includes('`Closed work (${doneTasks.length + incompleteTasks.length})`'),
+        'Expected compact Closed work Display toggle label in EngView.jsx'
     );
     assert.ok(
         engViewSource.includes('`Killed (${killedTasks.length})`'),
-        'Expected compact Killed toggle label in EngView.jsx'
+        'Expected compact Killed Display toggle label in EngView.jsx'
+    );
+    assert.ok(
+        engViewSource.includes('aria-label="Show only To Do, Pending, and Accepted tasks"'),
+        'Expected Queued stat filter to preserve exact status meaning'
+    );
+    assert.ok(
+        engViewSource.includes('aria-label="Include Done and Incomplete tasks"'),
+        'Expected Closed work Display toggle to preserve inclusion semantics'
+    );
+    assert.ok(
+        dashboardSource.includes('setShowKilled={setShowKilled}'),
+        'Expected dashboard to pass setShowKilled into EngView for the Killed Display toggle'
+    );
+    assert.equal(
+        engViewSource.includes('stat-card killed'),
+        false,
+        'Killed must not render as a Show only stat-card'
+    );
+    assert.equal(
+        engViewSource.includes('Killed Tasks'),
+        false,
+        'Killed must not use a redundant Show only stat label'
+    );
+    assert.equal(
+        dashboardSource.includes("statusFilter !== 'killed'"),
+        false,
+        'Killed visibility must be controlled only by showKilled'
+    );
+    assert.equal(
+        dashboardSource.includes("if (statusFilter === 'killed')"),
+        false,
+        'Killed must not be reachable as a Show only statusFilter branch'
+    );
+    assert.equal(
+        engViewSource.includes('<div className="stat-label">Done Tasks</div>'),
+        false,
+        'Done stat filter should use compact visible copy'
+    );
+    assert.equal(
+        engViewSource.includes('<div className="stat-label">To Do / Pending / Accepted</div>'),
+        false,
+        'Queued stat filter should not expose long status list as visible copy'
+    );
+    assert.equal(
+        engViewSource.includes('`Done / Incomplete (${doneTasks.length + incompleteTasks.length})`'),
+        false,
+        'Display toggle should use Closed work visible copy'
     );
     assert.equal(
         `${dashboardSource}\n${engViewSource}`.includes('Hide Tech Tasks'),
@@ -58,7 +108,7 @@ test('dashboard uses compact task filter labels without repeated show/hide verbs
 
 test('dashboard CSS tightens the task filter toolbar spacing', () => {
     assert.ok(
-        dashboardCss.includes('padding: 0.45rem 0.9rem;'),
+        dashboardCss.includes('padding: 0.42rem 0.78rem;'),
         'Expected tighter toggle padding in dashboard.css'
     );
     assert.ok(

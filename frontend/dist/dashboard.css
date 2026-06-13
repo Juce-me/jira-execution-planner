@@ -2571,7 +2571,9 @@ button.toggle {
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid var(--border);
-  padding: 0.45rem 0.9rem;
+  min-height: 2.65rem;
+  border-radius: 8px;
+  padding: 0.42rem 0.78rem;
   font-size: 0.72rem;
   margin: 0;
 }
@@ -2581,9 +2583,10 @@ button.toggle:hover {
   transform: none;
 }
 button.toggle.active {
-  background: var(--text-primary);
-  color: var(--bg-primary);
-  border-color: var(--text-primary);
+  background: #f4f2ec;
+  color: var(--text-primary);
+  border-color: #d8d2c5;
+  box-shadow: inset 0 0 0 1px rgba(22, 22, 22, 0.05);
 }
 
 /* frontend/src/styles/eng/filters.css */
@@ -2597,15 +2600,15 @@ button.toggle.active {
 }
 .filters-strip {
   margin: 0.45rem 0 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  display: grid;
+  gap: 0.55rem;
+  width: 100%;
   animation: task-appear 0.18s ease-out both;
 }
 .filters-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
+  display: grid;
+  gap: 0.28rem;
+  width: 100%;
   animation: none;
 }
 .filters-strip .stats > .stat-card,
@@ -2641,7 +2644,7 @@ button.toggle.active {
   justify-content: flex-start;
   gap: 0.45rem;
   flex-wrap: wrap;
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.4rem;
   min-width: 0;
 }
 .alerts-panel-toggle {
@@ -2736,9 +2739,9 @@ button.alerts-panel-summary-pill:focus-visible,
   outline-offset: 2px;
 }
 .alerts-panel-summary-pill.total {
-  background: #1a1a1a;
-  border-color: #1a1a1a;
-  color: #fff;
+  background: #f4f2ec;
+  border-color: #d8d2c5;
+  color: var(--text-primary);
 }
 .alerts-panel-summary-pill.missing,
 .alerts-panel-summary-pill.empty {
@@ -4485,9 +4488,6 @@ button.toggle.initiative-toggle.active {
 .stat-card.todo-accepted .stat-value {
   color: #9254de;
 }
-.stat-card.killed .stat-value {
-  color: #d46b08;
-}
 .stat-card.high-priority .stat-value {
   color: #d4380d;
 }
@@ -4513,26 +4513,29 @@ button.toggle.initiative-toggle.active {
   align-self: end;
 }
 .filters-strip .stats {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.4rem, max-content));
   align-items: stretch;
-  justify-content: flex-start;
+  justify-content: start;
   width: 100%;
-  gap: 0.4rem;
+  gap: 0.45rem;
 }
 .filters-strip .stat-card {
   min-height: 0;
-  width: max-content;
-  min-width: 6.9rem;
-  max-width: 11.4rem;
-  padding: 0.34rem 0.5rem;
+  width: auto;
+  inline-size: 100%;
+  min-width: 7.4rem;
+  max-width: 13rem;
+  padding: 0.34rem 0.55rem;
   border-radius: 8px;
-  grid-template-columns: max-content max-content;
+  font: inherit;
+  grid-template-columns: max-content minmax(0, 1fr);
   grid-template-rows: 1fr auto auto 1fr;
-  column-gap: 0.54rem;
+  column-gap: 0.5rem;
   row-gap: 0.1rem;
   text-align: center;
   align-items: stretch;
+  justify-self: stretch;
   justify-content: start;
   transition:
     border-color 0.16s ease,
@@ -4558,11 +4561,12 @@ button.toggle.initiative-toggle.active {
   justify-content: center;
   justify-self: stretch;
   text-align: center;
-  font-size: 0.563rem;
+  font-size: 0.62rem;
   letter-spacing: 0;
   line-height: 1.15;
   min-width: 0;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .filters-strip .stat-card .stats-note {
   grid-column: 2;
@@ -4574,17 +4578,8 @@ button.toggle.initiative-toggle.active {
   white-space: nowrap;
 }
 @media (min-width: 1200px) {
-  .filters-strip .stats {
-    flex-wrap: nowrap;
-    justify-content: space-between;
-  }
-  .filters-strip .stat-card {
-    flex: 0 1 auto;
-    min-width: 6.9rem;
-    max-width: 11.4rem;
-  }
   .filters-strip .stat-card.todo-accepted {
-    min-width: 11.4rem;
+    min-width: 8.2rem;
   }
 }
 .empty-state {

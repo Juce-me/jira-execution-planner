@@ -296,16 +296,24 @@ test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
         'Do not use descendant :not() for EPM exclusion; scope :not() on the task-list itself'
     );
 
-    assertRuleIncludes('.filters-strip .stats', 'justify-content: flex-start;');
+    assertRuleIncludes('.filters-strip .stats', 'display: grid;');
+    assertRuleIncludes('.filters-strip .stats', 'justify-content: start;');
     assertRuleIncludes('.filters-strip .stats', 'width: 100%;');
-    assertRuleIncludes('.filters-strip .stats', 'justify-content: space-between;');
+    assertRuleExcludes('.filters-strip .stats', 'justify-content: space-between;');
     assertRuleIncludes('.filters-strip .stat-card', 'min-height: 0;');
-    assertRuleIncludes('.filters-strip .stat-card', 'width: max-content;');
-    assertRuleIncludes('.filters-strip .stat-card', 'padding: 0.34rem 0.5rem;');
-    assertRuleIncludes('.filters-strip .stat-card', 'grid-template-columns: max-content max-content;');
+    assertRuleIncludes('.filters-strip .stat-card', 'width: auto;');
+    assertRuleIncludes('.filters-strip .stat-card', 'inline-size: 100%;');
+    assertRuleIncludes('.filters-strip .stat-card', 'max-width: 13rem;');
+    assertRuleIncludes('.filters-strip .stat-card', 'padding: 0.34rem 0.55rem;');
     assertRuleIncludes('.filters-strip .stat-card', 'justify-content: start;');
-    assertRuleIncludes('.filters-strip .stat-label', 'font-size: 0.563rem;');
+    assertRuleExcludes('.filters-strip .stat-card', 'width: 100%;');
+    assertRuleIncludes('.filters-strip .stat-label', 'font-size: 0.62rem;');
     assertRuleIncludes('.filters-strip .stat-card .stats-note', 'font-size: 0.58rem;');
+    assert.equal(
+        dashboardCssSource.includes('.stat-card.killed'),
+        false,
+        'Killed stat-card CSS should be removed with the Killed Show only card'
+    );
     assertRuleIncludes('.task-list:not(.epm-issue-board) > .epic-block > .task-item', 'padding: 0.72rem 0.95rem;');
     assertRuleIncludes('.task-list:not(.epm-issue-board) > .epic-block > .task-item', 'margin-bottom: 0.55rem;');
     assertRuleIncludes('.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-title', 'font-size: 0.98rem;');

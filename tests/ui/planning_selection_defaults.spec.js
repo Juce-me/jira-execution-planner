@@ -411,7 +411,7 @@ test('planning undo restores loaded selection after a bulk status action', async
     await openFuturePlanning(page);
 
     await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
-    await page.getByRole('button', { name: 'Accepted' }).click();
+    await page.getByRole('button', { name: 'Accepted', exact: true }).click();
     await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
     await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
     await page.getByRole('button', { name: 'Undo' }).click();

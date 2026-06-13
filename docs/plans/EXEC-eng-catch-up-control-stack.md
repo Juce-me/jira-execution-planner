@@ -197,6 +197,7 @@ Do not modify unless a failing assertion proves it is required:
   assertRuleIncludes('.filters-strip .stats', 'width: 100%;');
   assertRuleExcludes('.filters-strip .stats', 'justify-content: space-between;');
   assertRuleIncludes('.filters-strip .stat-card', 'width: auto;');
+  assertRuleIncludes('.filters-strip .stat-card', 'inline-size: 100%;');
   assertRuleIncludes('.filters-strip .stat-card', 'max-width: 13rem;');
   assertRuleExcludes('.filters-strip .stat-card', 'width: 100%;');
   assert.equal(
@@ -623,6 +624,7 @@ Do not modify unless a failing assertion proves it is required:
   .filters-strip .stat-card {
       min-height: 0;
       width: auto;
+      inline-size: 100%;
       min-width: 7.4rem;
       max-width: 13rem;
       padding: 0.34rem 0.55rem;

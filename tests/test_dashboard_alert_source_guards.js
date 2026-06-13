@@ -217,6 +217,10 @@ test('ENG alerts toolbar summary CSS is responsive and uses clickable chip style
     );
     assert.match(
         css,
+        /\.alerts-panel-summary-pill\.total\s*\{[\s\S]*background: #f4f2ec;[\s\S]*border-color: #d8d2c5;[\s\S]*color: var\(--text-primary\);/
+    );
+    assert.match(
+        css,
         /button\.alerts-panel-summary-pill\s*\{[\s\S]*cursor: pointer;/
     );
     assert.match(

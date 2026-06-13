@@ -19,7 +19,7 @@
             justify-content: flex-start;
             gap: 0.45rem;
             flex-wrap: wrap;
-            margin-bottom: 0.45rem;
+            margin-bottom: 0.4rem;
             min-width: 0;
         }
 
@@ -123,9 +123,9 @@
         }
 
         .alerts-panel-summary-pill.total {
-            background: #1a1a1a;
-            border-color: #1a1a1a;
-            color: #fff;
+            background: #f4f2ec;
+            border-color: #d8d2c5;
+            color: var(--text-primary);
         }
 
         .alerts-panel-summary-pill.missing,

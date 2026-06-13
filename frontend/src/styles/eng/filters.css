@@ -9,16 +9,16 @@
 
         .filters-strip {
             margin: 0.45rem 0 0.85rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
+            display: grid;
+            gap: 0.55rem;
+            width: 100%;
             animation: task-appear 0.18s ease-out both;
         }
 
         .filters-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.3rem;
+            display: grid;
+            gap: 0.28rem;
+            width: 100%;
             animation: none;
         }
 

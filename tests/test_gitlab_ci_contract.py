@@ -27,6 +27,14 @@ class GitLabCiContractTests(unittest.TestCase):
     def test_gitlab_ci_runs_existing_project_verification(self):
         ci = self._ci()
 
+        self.assertIn("python_verify:", ci)
+        self.assertIn("image: python:3.11-bookworm", ci)
+        self.assertIn("frontend_verify:", ci)
+        self.assertIn("image: node:20-bookworm", ci)
+        self.assertEqual(ci.count("- shared-amd64"), 2)
+        self.assertNotIn("deb.nodesource.com", ci)
+        self.assertNotIn("setup_20.x", ci)
+
         for command in (
             "python -m pip install -r requirements.txt",
             "python -m pip install -e .",
@@ -53,6 +61,8 @@ class GitLabCiContractTests(unittest.TestCase):
         self.assertIn("Dockerfile", ci)
         self.assertIn("when: manual", ci)
         self.assertIn("allow_failure: true", ci)
+        self.assertIn("- python_verify", ci)
+        self.assertIn("- frontend_verify", ci)
 
     def test_gitlab_ci_has_no_deploy_or_ungated_push_commands(self):
         ci = self._ci()

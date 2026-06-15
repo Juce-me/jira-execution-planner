@@ -76,16 +76,14 @@ test('header update badge compacts while search is active', async ({ page }) => 
     const expandedBox = await badge.boundingBox();
     expect(expandedBox).toBeTruthy();
 
-    await page.getByPlaceholder('Search tickets...').first().focus();
+    const searchInput = page.getByPlaceholder('Search tickets...').first();
+    await searchInput.fill('rfp');
     await expect(badge).toHaveText('Update');
     const compactBox = await badge.boundingBox();
     expect(compactBox).toBeTruthy();
     expect(compactBox.width).toBeLessThan(expandedBox.width - 80);
 
-    await page.getByPlaceholder('Search tickets...').first().evaluate((node) => node.blur());
-    await page.waitForTimeout(40);
-    await expect(badge).toHaveText('Update');
-    await page.screenshot({ path: `${screenshotDir}/search-blur-delayed-update-badge.png`, fullPage: true });
-    await page.waitForTimeout(240);
+    await page.getByRole('button', { name: 'Clear search' }).click();
+    await page.screenshot({ path: `${screenshotDir}/search-cleared-update-badge.png`, fullPage: true });
     await expect(badge).toHaveText('New version available');
 });

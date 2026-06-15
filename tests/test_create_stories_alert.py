@@ -100,6 +100,89 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         self.assertEqual(fields.get('epicKey'), 'EPIC-1')
         self.assertEqual(fields.get('customfield_10101'), jira_payload['issues'][0]['fields']['customfield_sprint'])
 
+    def test_fetch_tasks_preserves_open_stories_outside_selected_distribution(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+
+        jira_payload = {
+            'issues': [],
+            'names': {
+                'customfield_team': 'Team[Team]',
+                'customfield_epic_link': 'Epic Link',
+                'customfield_sprint': 'Sprint',
+            },
+            'total': 0,
+            'isLast': True,
+        }
+        epics_in_scope = [{
+            'key': 'EPIC-1',
+            'summary': 'Epic one',
+            'status': {'name': 'To Do'},
+            'labels': ['2026Q3', 'team_alpha_label'],
+            'teamId': 'team-a',
+            'teamName': 'Team Alpha',
+            'fields': {'customfield_10101': [{'id': 123, 'name': '2026Q3'}]},
+        }]
+
+        with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+             patch.object(jira_server, 'get_selected_projects_typed', return_value=[]), \
+             patch.object(jira_server, 'get_configured_issue_types', return_value=['Story']), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+             patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_story_points'), \
+             patch.object(jira_server, 'fetch_epic_details_bulk', return_value={}), \
+             patch.object(jira_server, 'fetch_epics_for_empty_alert', return_value=epics_in_scope), \
+             patch.object(jira_server, 'fetch_story_counts_for_epics', return_value={'EPIC-1': 2}), \
+             patch.object(jira_server, 'fetch_story_distribution_for_epics', return_value={
+                 'EPIC-1': {
+                     'selectedStories': 0,
+                     'selectedActionableStories': 0,
+                     'futureOpenStories': 0,
+                     'openStoriesOutsideSelected': 2,
+                 }
+             }), \
+             patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, jira_payload)):
+            response = client.get('/api/tasks-with-team-name?sprint=123&team=all')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json() or {}
+        epics = payload.get('epicsInScope') or []
+        self.assertEqual(len(epics), 1)
+        self.assertEqual(epics[0].get('openStoriesOutsideSelected'), 2)
+
+    def test_ready_to_close_fetch_limits_child_scan_to_stories(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+
+        search_mock = Mock(return_value=_mock_response(200, {
+            'issues': [],
+            'names': {
+                'customfield_team': 'Team[Team]',
+                'customfield_epic_link': 'Epic Link',
+                'customfield_sprint': 'Sprint',
+            },
+            'total': 0,
+            'isLast': True,
+        }))
+
+        with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+             patch.object(jira_server, 'get_selected_projects_typed', return_value=[]), \
+             patch.object(jira_server, 'get_configured_issue_types', return_value=['Story', 'Task']), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+             patch.object(jira_server, 'fetch_epics_for_empty_alert', return_value=[]), \
+             patch.object(jira_server, 'jira_search_request', search_mock):
+            response = client.get('/api/tasks-with-team-name?project=product&purpose=ready-to-close&epicKeys=EPIC-1&refresh=true')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        task_jql = search_mock.call_args_list[0].args[0].get('jql', '')
+        self.assertIn('type = "Story"', task_jql)
+        self.assertNotIn('"Task"', task_jql)
+
     def test_fetch_epics_for_empty_alert_returns_labels(self):
         payload = {
             'issues': [{
@@ -152,6 +235,26 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
 
         self.assertEqual(len(epics), 1)
         self.assertEqual(epics[0].get('fields', {}).get('customfield_10101'), sprint_value)
+
+    def test_fetch_epics_for_empty_alert_strips_task_team_filter_for_label_scoped_epics(self):
+        payload = {'issues': []}
+
+        with patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, payload)) as search_mock:
+            jira_server.fetch_epics_for_empty_alert(
+                'project = TEST AND "Team[Team]" in ("team-a", "team-b") AND Sprint = 123 AND type = "Story"',
+                headers={'Authorization': 'Bearer test'},
+                team_field_id='customfield_team',
+                epic_name_field='customfield_epic_name',
+                sprint_field_id='customfield_sprint',
+                scope_team_ids=['team-a', 'team-b'],
+                scope_team_labels=['team_alpha_label', 'team_beta_label']
+            )
+
+        epic_jql = search_mock.call_args.args[0].get('jql', '')
+        self.assertNotIn('AND "Team[Team]" in ("team-a", "team-b") AND', epic_jql)
+        self.assertIn('("Team[Team]" in ("team-a", "team-b") OR labels in ("team_alpha_label", "team_beta_label"))', epic_jql)
+        self.assertIn('type = "Epic"', epic_jql)
+        self.assertIn('Sprint = 123', epic_jql)
 
     def test_fetch_backlog_epics_for_alert_returns_cleanup_story_count(self):
         fetcher = getattr(jira_server, 'fetch_backlog_epics_for_alert', None)

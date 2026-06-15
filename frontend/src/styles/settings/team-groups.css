@@ -1,0 +1,149 @@
+        .group-modal-header {
+            padding: 0.6rem 0.9rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .group-modal-title-wrap {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .group-modal-dirty {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--accent);
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        .group-modal-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-secondary);
+        }
+
+        .group-modal-subtitle {
+            margin-top: 0.22rem;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .group-modal-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+            background: #faf8f4;
+            padding: 0 0.9rem;
+            gap: 0;
+        }
+
+        .group-modal-tab {
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            border-radius: 0;
+            padding: 0.5rem 0.9rem;
+            margin: 0;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s;
+            box-shadow: none;
+        }
+
+        .group-modal-tab:hover {
+            color: var(--text-primary);
+            background: none;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .group-modal-tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .group-modal-tab:focus-visible,
+        .group-list-item:focus-visible,
+        .group-star-button:focus-visible,
+        .selected-team-chip .remove-btn:focus-visible,
+        .component-chip .remove-btn:focus-visible,
+        .epm-scope-chip .remove-btn:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .group-modal > [role="tabpanel"] {
+            display: flex;
+            flex: 1 1 auto;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .group-projects-section {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+        }
+
+        .group-projects-desc {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .group-projects-layout {
+            min-height: 0;
+        }
+
+        .group-projects-pane-left {
+            width: 30%;
+            border-right: 1px solid var(--border);
+            background: #fbfaf7;
+            min-height: 0;
+        }
+
+        .group-projects-pane-right {
+            width: 70%;
+            padding: 0.8rem 1rem 1rem;
+            overflow-y: auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .group-single-pane {
+            width: 100%;
+        }
+
+        .group-projects-pane-header {
+            gap: 0.55rem;
+        }
+
+        .group-projects-pane-list {
+            gap: 0.55rem;
+        }
+
+        .group-projects-divider {
+            border-top: 1px solid var(--border);
+            margin: 0.1rem 0;
+        }
+
+        .group-projects-subsection {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            margin-top: 0;
+        }

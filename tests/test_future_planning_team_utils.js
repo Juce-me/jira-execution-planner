@@ -160,3 +160,28 @@ test('future planning team info uses provided team name map for matched team ids
         );
     });
 });
+
+test('future planning expected label accepts multi-team epics in all teams view', () => {
+    return import('../frontend/src/futurePlanningTeamUtils.mjs').then(({
+        getFuturePlanningExpectedTeamLabel
+    }) => {
+        const epic = {
+            key: 'EPIC-206',
+            teamId: 'product-team',
+            teamName: 'Product Team',
+            labels: ['2026Q3', 'team_alpha_label', 'team_beta_label']
+        };
+        const teamLabels = {
+            'planning-team-alpha': 'team_alpha_label',
+            'planning-team-beta': 'team_beta_label'
+        };
+
+        assert.equal(
+            getFuturePlanningExpectedTeamLabel(epic, {
+                selectedTeamSet: new Set(),
+                teamLabels
+            }),
+            'team_alpha_label'
+        );
+    });
+});

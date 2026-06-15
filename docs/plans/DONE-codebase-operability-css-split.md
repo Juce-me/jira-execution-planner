@@ -1,6 +1,7 @@
 # Codebase Operability: CSS Source Split
 
 > **Status:** Done. Executed in PR #54 (`879ad59`). Kept for audit context only.
+> **Current accuracy:** This completed the first split from one monolithic source file into ordered top-level partials. It does not cover the follow-up nested feature-owned partial split tracked in `EXEC-css-feature-owned-partials.md`.
 
 ## Goal
 

@@ -17,7 +17,7 @@ test('shows a visible server error when bootstrap API requests cannot connect', 
 
     const alert = page.getByRole('alert');
     await expect(alert).toContainText('Server is not responding');
-    await expect(alert).toContainText('http://127.0.0.1:5050');
+    await expect(alert).toContainText(appBaseUrl);
     await expect(page.getByRole('button', { name: 'Retry connection' })).toBeVisible();
     expect(consoleFailures.filter(message => !message.includes('Failed to load resource'))).toEqual([]);
 });

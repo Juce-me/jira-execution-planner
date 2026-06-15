@@ -103,6 +103,7 @@ test('EPM view loads saved config from initial user config without opening Setti
     await page.goto('http://127.0.0.1:5050');
 
     await expect(page.locator('.epm-project-board-name', { hasText: 'AI for RFP creation' })).toBeVisible();
+    await page.getByRole('button', { name: 'Show Jira rollup for AI for RFP creation' }).click();
     await expect(page.getByText('No issues in this scope.')).toBeVisible();
     expect(calls).toContain('GET /api/config');
     expect(calls).toContain('GET /api/epm/projects/rollup/all');

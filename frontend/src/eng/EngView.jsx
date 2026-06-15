@@ -112,78 +112,109 @@ export default function EngView({
                         <div className="filters-group">
                             <div className="filters-label">Show only</div>
                             <div className="stats">
-                                <div
+                                <button
+                                    type="button"
                                     className={`stat-card total ${statusFilter === null ? 'active' : ''} ${baseFilteredTasks.length === 0 ? 'disabled' : ''}`}
+                                    disabled={baseFilteredTasks.length === 0}
+                                    aria-pressed={statusFilter === null}
+                                    aria-label="Show all included tasks"
+                                    title="Show all included tasks"
                                     onClick={() => {
                                         if (baseFilteredTasks.length === 0) return;
                                         setStatusFilter(null);
                                     }}
                                 >
-                                    <div className="stat-value">{baseFilteredTasks.length}</div>
-                                    <div className="stat-label">Total Tasks</div>
-                                    <div className="stats-note">{totalStoryPoints.toFixed(1)} SP</div>
-                                </div>
-                                <div
+                                    <span className="stat-value">{baseFilteredTasks.length}</span>
+                                    <span className="stat-label">Total</span>
+                                    <span className="stats-note">{totalStoryPoints.toFixed(1)} SP</span>
+                                </button>
+                                <button
+                                    type="button"
                                     className={`stat-card done ${statusFilter === 'done' ? 'active' : ''} ${doneTasksCount === 0 ? 'disabled' : ''}`}
+                                    disabled={doneTasksCount === 0}
+                                    aria-pressed={statusFilter === 'done'}
+                                    aria-label="Show only Done tasks"
+                                    title="Done"
                                     onClick={() => {
                                         if (doneTasksCount === 0) return;
                                         setStatusFilter(statusFilter === 'done' ? null : 'done');
                                     }}
                                 >
-                                    <div className="stat-value">{doneTasksCount}</div>
-                                    <div className="stat-label">Done Tasks</div>
-                                    <div className="stats-note">{doneStoryPoints.toFixed(1)} SP</div>
-                                </div>
-                                <div
+                                    <span className="stat-value">{doneTasksCount}</span>
+                                    <span className="stat-label">Done</span>
+                                    <span className="stats-note">{doneStoryPoints.toFixed(1)} SP</span>
+                                </button>
+                                <button
+                                    type="button"
                                     className={`stat-card high-priority ${statusFilter === 'high-priority' ? 'active' : ''} ${highPriorityCount === 0 ? 'disabled' : ''}`}
+                                    disabled={highPriorityCount === 0}
+                                    aria-pressed={statusFilter === 'high-priority'}
+                                    aria-label="Show only high priority tasks"
+                                    title="High priority"
                                     onClick={() => {
                                         if (highPriorityCount === 0) return;
                                         setStatusFilter(statusFilter === 'high-priority' ? null : 'high-priority');
                                     }}
                                 >
-                                    <div className="stat-value">{highPriorityCount}</div>
-                                    <div className="stat-label">High Priority</div>
-                                    <div className="stats-note">{highPriorityStoryPoints.toFixed(1)} SP</div>
-                                </div>
-                                <div
+                                    <span className="stat-value">{highPriorityCount}</span>
+                                    <span className="stat-label">High Priority</span>
+                                    <span className="stats-note">{highPriorityStoryPoints.toFixed(1)} SP</span>
+                                </button>
+                                <button
+                                    type="button"
                                     className={`stat-card minor ${statusFilter === 'minor-priority' ? 'active' : ''} ${minorPriorityCount === 0 ? 'disabled' : ''}`}
+                                    disabled={minorPriorityCount === 0}
+                                    aria-pressed={statusFilter === 'minor-priority'}
+                                    aria-label="Show only minor and lower priority tasks"
+                                    title="Minor and lower priority"
                                     onClick={() => {
                                         if (minorPriorityCount === 0) return;
                                         setStatusFilter(statusFilter === 'minor-priority' ? null : 'minor-priority');
                                     }}
                                 >
-                                    <div className="stat-value">{minorPriorityCount}</div>
-                                    <div className="stat-label">Minor + Lower</div>
-                                    <div className="stats-note">{minorPriorityStoryPoints.toFixed(1)} SP</div>
-                                </div>
-                                <div
+                                    <span className="stat-value">{minorPriorityCount}</span>
+                                    <span className="stat-label">Minor + Lower</span>
+                                    <span className="stats-note">{minorPriorityStoryPoints.toFixed(1)} SP</span>
+                                </button>
+                                <button
+                                    type="button"
                                     className={`stat-card in-progress ${statusFilter === 'in-progress' ? 'active' : ''} ${inProgressTasksCount === 0 ? 'disabled' : ''}`}
+                                    disabled={inProgressTasksCount === 0}
+                                    aria-pressed={statusFilter === 'in-progress'}
+                                    aria-label="Show only In Progress tasks"
+                                    title="In Progress"
                                     onClick={() => {
                                         if (inProgressTasksCount === 0) return;
                                         setStatusFilter(statusFilter === 'in-progress' ? null : 'in-progress');
                                     }}
                                 >
-                                    <div className="stat-value">{inProgressTasksCount}</div>
-                                    <div className="stat-label">In Progress</div>
-                                    <div className="stats-note">{inProgressStoryPoints.toFixed(1)} SP</div>
-                                </div>
-                                <div
+                                    <span className="stat-value">{inProgressTasksCount}</span>
+                                    <span className="stat-label">In Progress</span>
+                                    <span className="stats-note">{inProgressStoryPoints.toFixed(1)} SP</span>
+                                </button>
+                                <button
+                                    type="button"
                                     className={`stat-card todo-accepted ${statusFilter === 'todo-accepted' ? 'active' : ''} ${todoAcceptedTasksCount === 0 ? 'disabled' : ''}`}
+                                    disabled={todoAcceptedTasksCount === 0}
+                                    aria-pressed={statusFilter === 'todo-accepted'}
+                                    aria-label="Show only To Do, Pending, and Accepted tasks"
+                                    title="To Do, Pending, and Accepted"
                                     onClick={() => {
                                         if (todoAcceptedTasksCount === 0) return;
                                         setStatusFilter(statusFilter === 'todo-accepted' ? null : 'todo-accepted');
                                     }}
                                 >
-                                    <div className="stat-value">{todoAcceptedTasksCount}</div>
-                                    <div className="stat-label">To Do / Pending / Accepted</div>
-                                    <div className="stats-note">{todoAcceptedStoryPoints.toFixed(1)} SP</div>
-                                </div>
+                                    <span className="stat-value">{todoAcceptedTasksCount}</span>
+                                    <span className="stat-label">Queued</span>
+                                    <span className="stats-note">{todoAcceptedStoryPoints.toFixed(1)} SP</span>
+                                </button>
                             </div>
                         </div>
                         <div className="filters-group">
                             <div className="filters-label">Display</div>
                             <div className="toggle-container">
                                 <button
+                                    type="button"
                                     className={`toggle ${showTech ? 'active' : ''}`}
                                     onClick={() => {
                                         setShowTech(!showTech);
@@ -192,6 +223,7 @@ export default function EngView({
                                     {`Tech (${techTasksCount})`}
                                 </button>
                                 <button
+                                    type="button"
                                     className={`toggle ${showProduct ? 'active' : ''}`}
                                     onClick={() => setShowProduct(!showProduct)}
                                 >
@@ -199,15 +231,21 @@ export default function EngView({
                                 </button>
                                 {(doneTasks.length > 0 || incompleteTasks.length > 0) && (
                                     <button
+                                        type="button"
                                         className={`toggle ${showDone ? 'active' : ''}`}
+                                        aria-label="Include Done and Incomplete tasks"
+                                        title="Include Done and Incomplete tasks"
                                         onClick={() => setShowDone(!showDone)}
                                     >
-                                        {`Done / Incomplete (${doneTasks.length + incompleteTasks.length})`}
+                                        {`Closed work (${doneTasks.length + incompleteTasks.length})`}
                                     </button>
                                 )}
                                 {killedTasks.length > 0 && (
                                     <button
+                                        type="button"
                                         className={`toggle ${showKilled ? 'active' : ''}`}
+                                        aria-label="Include Killed tasks"
+                                        title="Include Killed tasks"
                                         onClick={() => setShowKilled(!showKilled)}
                                     >
                                         {`Killed (${killedTasks.length})`}

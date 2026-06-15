@@ -1,0 +1,266 @@
+        /* Capacity bar graph (full-width KPI) */
+        .capacity-bar-graph {
+            margin-bottom: 0.3rem;
+        }
+
+        .capacity-bar-track {
+            position: relative;
+            height: 18px;
+            background: #eae8e4;
+            border-radius: 5px;
+            overflow: visible;
+        }
+
+        .capacity-bar-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            background: #AAF8DF;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 0 8px;
+            min-width: 0;
+            transition: width 0.3s ease;
+        }
+
+        .capacity-bar-fill.narrow {
+            justify-content: flex-start;
+        }
+
+        .capacity-bar-fill.over {
+            background: #f5a0a0;
+        }
+
+        .capacity-bar-fill.under {
+            background: #ffe0a0;
+        }
+
+        .capacity-bar-fill-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.66rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            line-height: 1;
+        }
+
+        .capacity-bar-excluded-zone {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            background: repeating-linear-gradient(
+                -45deg,
+                transparent,
+                transparent 3px,
+                rgba(0, 0, 0, 0.06) 3px,
+                rgba(0, 0, 0, 0.06) 5px
+            );
+            pointer-events: none;
+        }
+
+        .capacity-bar-marker {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            transform: translateX(-50%);
+            pointer-events: auto;
+            cursor: help;
+            z-index: 1;
+        }
+
+        .capacity-bar-fill[data-tooltip] {
+            cursor: help;
+            z-index: 1;
+        }
+
+        .capacity-bar-marker:hover,
+        .capacity-bar-fill:hover {
+            z-index: 40;
+        }
+
+        .capacity-bar-marker[data-tooltip]:hover::after,
+        .capacity-bar-fill[data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: calc(100% + 6px);
+            background: #111;
+            color: #fff;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            line-height: 1.3;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.3rem;
+            white-space: normal;
+            width: max-content;
+            max-width: 240px;
+            z-index: 50;
+            text-transform: none;
+            letter-spacing: normal;
+            pointer-events: none;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .capacity-bar-fill[data-tooltip]:hover::after {
+            left: auto;
+            right: 0;
+            transform: none;
+        }
+
+        /* When planning panel is stuck, flip tooltips below so they aren't clipped by browser edge */
+        .planning-panel.stuck .capacity-bar-marker[data-tooltip]:hover::after,
+        .planning-panel.stuck .capacity-bar-fill[data-tooltip]:hover::after {
+            bottom: auto;
+            top: calc(100% + 6px);
+        }
+
+        .planning-panel.stuck .capacity-bar-fill[data-tooltip]:hover::after {
+            left: auto;
+            right: 0;
+            transform: none;
+        }
+
+        .planning-panel.stuck .capacity-bar-variance[data-tooltip]:hover::after,
+        .planning-panel.stuck .capacity-bar-excluded-note[data-tooltip]:hover::after {
+            bottom: auto;
+            top: calc(100% + 6px);
+        }
+
+        .capacity-bar-marker-line {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 2px;
+            height: calc(100% + 3px);
+            background: var(--text-primary);
+            transform: translateX(-50%);
+        }
+
+        .capacity-bar-marker-line.dashed {
+            background: repeating-linear-gradient(
+                to bottom,
+                var(--text-secondary) 0px,
+                var(--text-secondary) 3px,
+                transparent 3px,
+                transparent 5px
+            );
+        }
+
+        .capacity-bar-marker-label {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.54rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            text-align: center;
+            line-height: 1.3;
+        }
+
+        .capacity-bar-variance {
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .capacity-bar-variance.over {
+            color: #d4380d;
+        }
+
+        .capacity-bar-variance.under {
+            color: #d4380d;
+        }
+
+        .capacity-bar-excluded-note {
+            color: var(--text-secondary);
+        }
+
+        .capacity-bar-variance,
+        .capacity-bar-excluded-note {
+            cursor: help;
+            border-bottom: 1px dashed transparent;
+            transition: border-color 0.15s;
+            position: relative;
+        }
+
+        .capacity-bar-variance:hover,
+        .capacity-bar-excluded-note:hover {
+            border-bottom-color: currentColor;
+        }
+
+        .capacity-bar-variance[data-tooltip]:hover::after,
+        .capacity-bar-excluded-note[data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 0;
+            bottom: calc(100% + 6px);
+            background: #111;
+            color: #fff;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            line-height: 1.3;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.3rem;
+            white-space: normal;
+            width: max-content;
+            max-width: 260px;
+            z-index: 25;
+            text-transform: none;
+            letter-spacing: normal;
+            pointer-events: none;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Variance overshoot zone (beyond team cap) — always visible */
+        .capacity-bar-variance-zone {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+            transition: outline 0.2s, box-shadow 0.2s, background 0.2s;
+        }
+
+        .capacity-bar-variance-zone.visible {
+            background: rgba(212, 56, 13, 0.22);
+            border-radius: 0 6px 6px 0;
+        }
+
+        .capacity-bar-variance-zone.under-zone {
+            background: rgba(207, 135, 0, 0.1);
+        }
+
+        .highlight-variance .capacity-bar-variance-zone.visible {
+            background: rgba(212, 56, 13, 0.35);
+            outline: 2px solid rgba(212, 56, 13, 0.6);
+            outline-offset: -1px;
+        }
+
+        .highlight-variance .capacity-bar-variance-zone.under-zone {
+            background: rgba(207, 135, 0, 0.25);
+            outline: 2px solid rgba(207, 135, 0, 0.5);
+            outline-offset: -1px;
+        }
+
+        /* Excluded zone highlight */
+        .capacity-bar-excluded-zone {
+            transition: box-shadow 0.2s, outline 0.2s;
+        }
+
+        .highlight-excluded .capacity-bar-excluded-zone {
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+            outline: 2px solid rgba(0, 0, 0, 0.35);
+            outline-offset: -1px;
+            background: repeating-linear-gradient(
+                -45deg,
+                rgba(0, 0, 0, 0.08),
+                rgba(0, 0, 0, 0.08) 3px,
+                rgba(0, 0, 0, 0.16) 3px,
+                rgba(0, 0, 0, 0.16) 5px
+            );
+        }

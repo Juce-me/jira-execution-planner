@@ -21,6 +21,36 @@ def _css_block(css, selector):
     return css[block_start:block_end]
 
 
+_IMPORT_RE = re.compile(r'@import\s+["\'](.+?)["\'];')
+
+
+def _styles_dir():
+    return Path(__file__).resolve().parents[1] / 'frontend' / 'src' / 'styles'
+
+
+def _dashboard_css_imports():
+    styles_dir = _styles_dir()
+    entrypoint = styles_dir / 'dashboard.css'
+    seen = set()
+    ordered = []
+
+    def visit(path, stack):
+        resolved = path.resolve()
+        relative = resolved.relative_to(styles_dir)
+        if relative in stack:
+            cycle = ' -> '.join(str(item) for item in [*stack, relative])
+            raise AssertionError(f'CSS import cycle detected: {cycle}')
+        if relative in seen:
+            return
+        seen.add(relative)
+        ordered.append(relative)
+        for imported in _IMPORT_RE.findall(path.read_text(encoding='utf-8')):
+            visit((path.parent / imported).resolve(), [*stack, relative])
+
+    visit(entrypoint, [])
+    return ordered
+
+
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestDashboardCssExtraction(unittest.TestCase):
     def setUp(self):
@@ -70,11 +100,11 @@ class TestDashboardCssExtraction(unittest.TestCase):
 
 class TestDashboardCssFileContract(unittest.TestCase):
     def test_dashboard_css_source_exists_under_frontend_src_styles(self):
-        css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'src' / 'styles' / 'dashboard.css'
+        css_path = _styles_dir() / 'dashboard.css'
         self.assertTrue(css_path.is_file())
 
     def test_dashboard_css_source_is_ordered_import_entrypoint(self):
-        styles_dir = Path(__file__).resolve().parents[1] / 'frontend' / 'src' / 'styles'
+        styles_dir = _styles_dir()
         entrypoint = styles_dir / 'dashboard.css'
         expected_imports = [
             'base.css',
@@ -92,6 +122,40 @@ class TestDashboardCssFileContract(unittest.TestCase):
         )
         for filename in expected_imports:
             self.assertTrue((styles_dir / filename).is_file(), filename)
+
+    def test_dashboard_css_source_import_graph_includes_feature_partials(self):
+        imported = {str(path) for path in _dashboard_css_imports()}
+        expected_partials = {
+            'shared/controls.css',
+            'eng/issues.css',
+            'eng/dependencies.css',
+            'eng/subtasks.css',
+            'planning/capacity.css',
+            'planning/selection.css',
+            'settings/team-groups.css',
+            'settings/jira-fields.css',
+            'stats/excluded-capacity.css',
+            'stats/cohort.css',
+            'scenario/timeline.css',
+            'epm/project-board.css',
+        }
+        self.assertTrue(expected_partials.issubset(imported), sorted(expected_partials - imported))
+
+    def test_dashboard_css_top_level_partials_stay_as_import_maps(self):
+        styles_dir = _styles_dir()
+        budgets = {
+            'base.css': 750,
+            'eng.css': 80,
+            'settings.css': 80,
+            'stats.css': 80,
+            'scenario.css': 80,
+            'planning.css': 80,
+            'epm.css': 80,
+        }
+        for filename, max_lines in budgets.items():
+            path = styles_dir / filename
+            line_count = len(path.read_text(encoding='utf-8').splitlines())
+            self.assertLessEqual(line_count, max_lines, f'{filename} has {line_count} lines')
 
     def test_dashboard_css_includes_compact_sticky_header_contract(self):
         css_path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist' / 'dashboard.css'

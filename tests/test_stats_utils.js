@@ -1,5 +1,23 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const stylesDir = path.join(__dirname, '..', 'frontend', 'src', 'styles');
+const cssImportPattern = /@import\s+["'](.+?)["'];/;
+
+function readCssWithImports(relativePath, seen = new Set()) {
+    const normalizedPath = relativePath.split(path.sep).join('/');
+    assert.equal(seen.has(normalizedPath), false, `CSS import cycle detected at ${normalizedPath}`);
+    seen.add(normalizedPath);
+    const source = fs.readFileSync(path.join(stylesDir, normalizedPath), 'utf8');
+    return source.split(/(?<=\n)/).map(line => {
+        const match = line.match(cssImportPattern);
+        if (!match) return line;
+        const nestedPath = path.posix.normalize(path.posix.join(path.posix.dirname(normalizedPath), match[1]));
+        return readCssWithImports(nestedPath, new Set(seen));
+    }).join('');
+}
 
 test('priority weight helpers normalize rows and fall back to defaults', async () => {
     const {
@@ -46,6 +64,74 @@ test('stats utilities normalize priorities, rates, weights, colors, and radar po
         buildRadarPoints({ values: { Blocker: 1 }, radius: 50, center: 60, maxValue: 1, axes: ['Blocker'] }),
         '60.00,10.00'
     );
+});
+
+test('cohort summary counts actual open Jira statuses for workflow card', async () => {
+    const { aggregateCohortSummary } = await import('../frontend/src/cohort/cohortUtils.js');
+    const summary = aggregateCohortSummary([
+        { key: 'EPIC-1', status: 'open', jiraStatus: 'In Progress' },
+        { key: 'EPIC-2', status: 'open', jiraStatus: 'Awaiting Validation' },
+        { key: 'EPIC-3', status: 'Postponed', jiraStatus: 'Postponed', terminalDate: '2026-04-15' },
+        { key: 'EPIC-4', status: 'open', jiraStatus: 'Accepted' },
+    ]);
+
+    assert.equal(summary.open, 3);
+    assert.equal(summary.inProgress, 1);
+    assert.equal(summary.awaitingValidation, 1);
+    assert.equal(summary.postponed, 1);
+});
+
+test('open epic lead-time bars include every open epic by default', async () => {
+    const { buildOpenEpicsBars } = await import('../frontend/src/cohort/cohortUtils.js');
+    const issues = Array.from({ length: 35 }, (_, index) => ({
+        key: `OPEN-${index + 1}`,
+        summary: `Open epic ${index + 1}`,
+        status: 'open',
+        jiraStatus: 'In Progress',
+        createdDate: '2026-01-01',
+    }));
+
+    const bars = buildOpenEpicsBars(issues, { today: new Date('2026-06-01T00:00:00') });
+
+    assert.equal(bars.length, 35);
+    assert.equal(bars[0].key, 'OPEN-1');
+    assert.equal(bars[34].key, 'OPEN-35');
+});
+
+test('completed epic lead-time bars include every terminal epic by default', async () => {
+    const { buildCompletedEpicsBars } = await import('../frontend/src/cohort/cohortUtils.js');
+    const issues = Array.from({ length: 35 }, (_, index) => ({
+        key: `DONE-${index + 1}`,
+        summary: `Completed epic ${index + 1}`,
+        status: 'done',
+        jiraStatus: 'Done',
+        createdDate: '2026-01-01',
+        terminalDate: '2026-04-01',
+        leadTimeDays: 90,
+    }));
+
+    const bars = buildCompletedEpicsBars(issues);
+
+    assert.equal(bars.length, 35);
+    assert.equal(bars[0].key, 'DONE-1');
+    assert.equal(bars[34].key, 'DONE-35');
+});
+
+test('open stats panel height contributes to page scrolling', () => {
+    const css = readCssWithImports('stats-summary.css');
+    const block = css.match(/\.stats-panel\.open\s*\{[\s\S]*?\n\s*\}/)?.[0] || '';
+
+    assert.match(block, /max-height:\s*none;/);
+    assert.equal(block.includes('max-height: 2000px;'), false);
+});
+
+test('open stats view height is not capped inside the panel', () => {
+    const css = readCssWithImports('stats.css');
+    const block = css.match(/\.stats-view\.open\s*\{[\s\S]*?\n\s*\}/)?.[0] || '';
+
+    assert.match(block, /max-height:\s*none;/);
+    assert.match(block, /overflow:\s*visible;/);
+    assert.equal(block.includes('max-height: 2400px;'), false);
 });
 
 test('buildLocalStatsFromTasks preserves sprint team project buckets and edge cases', async () => {

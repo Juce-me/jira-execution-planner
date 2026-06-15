@@ -5,7 +5,8 @@ import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayloa
 import ScenarioBar from './scenario/ScenarioBar.jsx';
 import { buildLaneIssues } from './scenario/scenarioLaneUtils.js';
 import CohortGrid from './cohort/CohortGrid.jsx';
-import OpenEpicsChart from './cohort/OpenEpicsChart.jsx';
+import LeadTimesEpicCharts from './cohort/LeadTimesEpicCharts.jsx';
+import LeadTimesWorkflowStatusCard from './cohort/LeadTimesWorkflowStatusCard.jsx';
 import SegmentedControl from './ui/SegmentedControl.jsx';
 import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
@@ -199,7 +200,7 @@ import {
     resolvePlanningTeamSelection
 } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
-import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
+import { sanitizeSelectedTeamsForScope, selectedTeamSelectionsEqual } from './teamSelectionUtils.mjs';
 import {
     collectJiraExportKeysFromEpmRollupBoards,
     collectJiraExportKeysFromScenarioIssues,
@@ -372,7 +373,14 @@ import {
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
             const [serverConnectionError, setServerConnectionError] = useState('');
-            const [showKilled, setShowKilled] = useState(savedPrefsRef.current.showKilled ?? false);
+            const initialSavedStatusFilter = savedPrefsRef.current.statusFilter ?? null;
+            const normalizedInitialStatusFilter = initialSavedStatusFilter === 'killed'
+                ? null
+                : initialSavedStatusFilter;
+            const normalizedInitialShowKilled = initialSavedStatusFilter === 'killed'
+                ? true
+                : (savedPrefsRef.current.showKilled ?? false);
+            const [showKilled, setShowKilled] = useState(normalizedInitialShowKilled);
             const [showDone, setShowDone] = useState(savedPrefsRef.current.showDone ?? true);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
             const [showProduct, setShowProduct] = useState(savedPrefsRef.current.showProduct ?? true);
@@ -392,7 +400,7 @@ import {
             );
             const showEpmNavigation = authMode === 'basic' || hasActiveHomeTokenConnection;
             const [sprintName, setSprintName] = useState('Sprint');
-            const [statusFilter, setStatusFilter] = useState(savedPrefsRef.current.statusFilter ?? null); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
+            const [statusFilter, setStatusFilter] = useState(normalizedInitialStatusFilter); // null = show all, 'in-progress', 'todo-accepted', 'done', 'high-priority'
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
             const [epmProjectSort, setEpmProjectSort] = useState(normalizeEpmProjectSort(savedPrefsRef.current.epmProjectSort || DEFAULT_EPM_PROJECT_SORT));
@@ -638,6 +646,7 @@ import {
             const planningLoadedSelectionRef = useRef(null);
             const planningBaselineScopeRef = useRef('');
             const teamSelectionHydratedScopeRef = useRef('');
+            const teamSelectionHydratedSelectionRef = useRef(null); const teamSelectionCarryForwardRef = useRef(null);
             const teamSelectionSkipPersistScopeRef = useRef('');
             const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort' || value === 'excludedCapacity' || value === 'monoCrossShare') ? value : 'teams';
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
@@ -4375,11 +4384,11 @@ import {
                     readyToCloseTechEpicsInScope: [],
                     techLoaded: false,
                     error: '',
-                    showKilled: savedPrefsRef.current.showKilled ?? false,
+                    showKilled: normalizedInitialShowKilled,
                     showDone: savedPrefsRef.current.showDone ?? true,
                     showTech: savedPrefsRef.current.showTech ?? true,
                     showProduct: savedPrefsRef.current.showProduct ?? true,
-                    statusFilter: savedPrefsRef.current.statusFilter ?? null,
+                    statusFilter: normalizedInitialStatusFilter,
                     searchQuery: savedPrefsRef.current.searchQuery ?? '',
                     selectedTeams: selectedTeamsFromPlanning,
                     selectedTasks: selectedTasksFromPlanning,
@@ -4578,11 +4587,14 @@ import {
                 setReadyToCloseTechEpicsInScope(nextState.readyToCloseTechEpicsInScope || []);
                 setTechLoaded(Boolean(nextState.techLoaded));
                 setError(nextState.error || '');
-                setShowKilled(nextState.showKilled ?? false);
+                const nextStatusFilter = nextState.statusFilter === 'killed'
+                    ? null
+                    : (nextState.statusFilter ?? null);
+                setShowKilled(nextState.statusFilter === 'killed' ? true : (nextState.showKilled ?? false));
                 setShowDone(nextState.showDone ?? true);
                 setShowTech(nextState.showTech ?? true);
                 setShowProduct(nextState.showProduct ?? true);
-                setStatusFilter(nextState.statusFilter ?? null);
+                setStatusFilter(nextStatusFilter);
                 setSearchQuery(nextState.searchQuery ?? '');
                 setSelectedTeams(normalizeSelectedTeams(nextState.selectedTeams));
                 setSelectedTasks(nextState.selectedTasks || {});
@@ -5359,7 +5371,7 @@ import {
                 selectedSprint,
                 activeGroupId,
                 activeGroupTeamIds,
-                activeGroupTeamSet,
+                activeGroupTeamSet, activeGroupTeamLabels,
                 pageLoadRefreshRef,
                 sprintLoadRef,
                 lastLoadedSprintRef,
@@ -6096,18 +6108,6 @@ import {
 	                });
 	                return merged;
 	            }, [readyToCloseProductEpicsInScope, readyToCloseTechEpicsInScope]);
-            const killedTasks = React.useMemo(
-                () => tasks.filter(t => t.fields.status?.name === 'Killed'),
-                [tasks]
-            );
-            const doneTasks = React.useMemo(
-                () => tasks.filter(t => t.fields.status?.name === 'Done'),
-                [tasks]
-            );
-            const incompleteTasks = React.useMemo(
-                () => tasks.filter(t => normalizeStatus(t.fields.status?.name) === 'incomplete'),
-                [tasks]
-            );
             const techTasksCount = techTasks.length;
             const productTasksCount = productTasks.length;
 
@@ -6135,6 +6135,61 @@ import {
 
             const selectedTeamSet = React.useMemo(() => new Set(selectedTeams.filter(id => id !== 'all')), [selectedTeams]);
             const isAllTeamsSelected = selectedTeams.includes('all') || selectedTeamSet.size === 0;
+            const scopedTasks = React.useMemo(() => {
+                const query = searchQuery.trim().toLowerCase();
+                return tasks.filter(task => {
+                    if (query !== '') {
+                        const summary = task.fields.summary?.toLowerCase() || '';
+                        const key = String(task.key || '').toLowerCase();
+                        const assignee = task.fields.assignee?.displayName?.toLowerCase() || '';
+                        const epicKey = String(task.fields.epicKey || '').toLowerCase();
+                        const epicSummary = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.summary?.toLowerCase() || '') : '';
+                        const epicAssignee = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.assignee?.displayName?.toLowerCase() || '') : '';
+
+                        if (!summary.includes(query) && !key.includes(query) && !assignee.includes(query) &&
+                            !epicAssignee.includes(query) && !epicKey.includes(query) && !epicSummary.includes(query)) {
+                            return false;
+                        }
+                    }
+
+                    if (!isAllTeamsSelected) {
+                        const teamInfo = getTeamInfo(task);
+                        if (!selectedTeamSet.has(teamInfo.id)) {
+                            return false;
+                        }
+                    }
+
+                    const isTech = techProjectKeys.has(task.fields?.projectKey || task.key.split('-')[0]);
+                    if (isTech && !showTech) {
+                        return false;
+                    }
+                    if (!isTech && !showProduct) {
+                        return false;
+                    }
+                    return true;
+                });
+            }, [
+                tasks,
+                searchQuery,
+                epicDetails,
+                isAllTeamsSelected,
+                selectedTeamSet,
+                showTech,
+                showProduct,
+                techProjectKeys
+            ]);
+            const killedTasks = React.useMemo(
+                () => scopedTasks.filter(t => t.fields.status?.name === 'Killed'),
+                [scopedTasks]
+            );
+            const doneTasks = React.useMemo(
+                () => scopedTasks.filter(t => t.fields.status?.name === 'Done'),
+                [scopedTasks]
+            );
+            const incompleteTasks = React.useMemo(
+                () => scopedTasks.filter(t => normalizeStatus(t.fields.status?.name) === 'incomplete'),
+                [scopedTasks]
+            );
 
             useEffect(() => {
                 if (!teamSelectionScopeKey || !activeGroupId || selectedSprint === null) return;
@@ -6145,7 +6200,7 @@ import {
                     .filter(id => id && id !== 'all');
                 const storedState = loadTeamSelectionState(window.localStorage, teamSelectionScopeKey);
                 const baseState = resolveTeamSelectionHydrationState({
-                    storedState,
+                    storedState, liveSelectedTeams: teamSelectionCarryForwardRef.current?.scopeKey === teamSelectionScopeKey ? teamSelectionCarryForwardRef.current.selectedTeams : undefined,
                     savedPrefsSelectedTeams: savedPrefsRef.current.selectedTeams,
                     savedPrefsSelectedTeam: savedPrefsRef.current.selectedTeam
                 });
@@ -6157,17 +6212,15 @@ import {
                     availableTeamIds: validTeamIds
                 });
 
-                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey;
-                teamSelectionSkipPersistScopeRef.current = teamSelectionScopeKey;
+                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey; teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams }; teamSelectionSkipPersistScopeRef.current = teamSelectionScopeKey;
                 setSelectedTeams(prev => {
                     const normalizedPrev = normalizeSelectedTeams(prev);
                     const sameLength = normalizedPrev.length === nextSelectedTeams.length;
                     const sameTeams = sameLength && normalizedPrev.every((id, index) => id === nextSelectedTeams[index]);
                     return sameTeams ? prev : nextSelectedTeams;
                 });
-                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, {
-                    selectedTeams: nextSelectedTeams
-                });
+                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
+                if (teamSelectionCarryForwardRef.current?.scopeKey === teamSelectionScopeKey) teamSelectionCarryForwardRef.current = null;
             }, [
                 teamSelectionScopeKey,
                 activeGroupId,
@@ -6592,6 +6645,7 @@ import {
                 });
             }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
             const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortFilteredIssues), [cohortFilteredIssues]);
+            const cohortWorkflowStatusTotal = (cohortSummary.inProgress || 0) + (cohortSummary.postponed || 0) + (cohortSummary.awaitingValidation || 0);
             const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortFilteredIssues, {
                 groupBy: cohortGroupBy,
                 maxColumns: cohortGroupBy === 'month' ? 24 : 12,
@@ -9510,61 +9564,24 @@ import {
             }, [isFutureSprintSelected, showStats]);
 
             const baseFilteredTasks = React.useMemo(() => {
-                const query = searchQuery.trim().toLowerCase();
-                return tasks.filter(task => {
-                    // Filter by search query
-                    if (query !== '') {
-	                    const summary = task.fields.summary?.toLowerCase() || '';
-	                    const key = String(task.key || '').toLowerCase();
-	                    const assignee = task.fields.assignee?.displayName?.toLowerCase() || '';
-                        const epicKey = String(task.fields.epicKey || '').toLowerCase();
-                        const epicSummary = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.summary?.toLowerCase() || '') : '';
-                        const epicAssignee = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.assignee?.displayName?.toLowerCase() || '') : '';
-
-                        if (!summary.includes(query) && !key.includes(query) && !assignee.includes(query) &&
-                            !epicAssignee.includes(query) && !epicKey.includes(query) && !epicSummary.includes(query)) {
-                            return false;
-                        }
-                    }
-
-                    // Filter by Team
-                    if (!isAllTeamsSelected) {
-                        const teamInfo = getTeamInfo(task);
-                        if (!selectedTeamSet.has(teamInfo.id)) {
-                            return false;
-                        }
-                    }
-
+                return scopedTasks.filter(task => {
                     // Filter by Killed status
                     if (!showKilled && task.fields.status?.name === 'Killed') {
                         return false;
                     }
 
                     // Filter by Done/Incomplete status
-                    if (!showDone && (task.fields.status?.name === 'Done' || normalizeStatus(task.fields.status?.name) === 'incomplete')) {
+                    if (!showDone && statusFilter !== 'done' && (task.fields.status?.name === 'Done' || normalizeStatus(task.fields.status?.name) === 'incomplete')) {
                         return false;
                     }
 
-                    // Filter by task type
-                    const isTech = techProjectKeys.has(task.fields?.projectKey || task.key.split('-')[0]);
-                    if (isTech && !showTech) {
-                        return false;
-                    }
-                    if (!isTech && !showProduct) {
-                        return false;
-                    }
                     return true;
                 });
             }, [
-                tasks,
-                searchQuery,
-                epicDetails,
-                isAllTeamsSelected,
-                selectedTeamSet,
+                scopedTasks,
                 showKilled,
                 showDone,
-                showTech,
-                showProduct
+                statusFilter
             ]);
 
             const selectionTasks = baseFilteredTasks;
@@ -9573,6 +9590,8 @@ import {
                 if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
                 if (!tasksFetched || productTasksLoading || techTasksLoading) return;
                 if (lastLoadedSprintRef.current !== selectedSprint) return;
+                const hydratedTeamSelection = teamSelectionHydratedSelectionRef.current; if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey && !selectedTeamSelectionsEqual(selectedTeams, hydratedTeamSelection.selectedTeams)) return;
+                if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey) teamSelectionHydratedSelectionRef.current = null;
 
                 const { validTaskKeySet, nextSelectedTaskKeys, nextSelectionMode, nextSelectedTeams } = resolvePlanningSelectionForDashboard({
                     selectedTasks,
@@ -9614,7 +9633,7 @@ import {
             }, [
                 planningScopeKey,
                 activeGroupId,
-                selectedSprint,
+                selectedSprint, teamSelectionScopeKey,
                 isFutureSprintSelected,
                 tasksFetched,
                 productTasksLoading,
@@ -11799,6 +11818,7 @@ import {
                                                     data-sprint-id={sprint.id}
                                                     onClick={() => {
                                                         trackFilterChanged('sprint', { sprint_selection_state: analyticsToken(state || 'unknown'), source_surface: currentDashboardView(), scope_type: currentDashboardView() });
+                                                        teamSelectionCarryForwardRef.current = activeGroupId ? { scopeKey: buildTeamSelectionScopeKey({ sprintId: sprint.id, groupId: activeGroupId }), selectedTeams: normalizeSelectedTeams(selectedTeams) } : null;
                                                         setSelectedSprint(sprint.id);
                                                         setSprintName(sprint.name);
                                                         setShowSprintDropdown(false);
@@ -13230,11 +13250,12 @@ import {
                                                 {cohortSummary.done} done · {cohortSummary.killed} killed · {cohortSummary.incomplete} incomplete
                                             </div>
                                         </div>
-                                        <div className="stats-card">
-                                            <h4>In Progress / Postponed</h4>
-                                            <div className="stat-value">{cohortSummary.open}</div>
-                                            <div className="stats-note">{cohortSummary.postponed} postponed</div>
-                                        </div>
+                                        <LeadTimesWorkflowStatusCard
+                                            jiraUrl={jiraUrl}
+                                            cohortStartQuarter={cohortStartQuarter}
+                                            cohortSummary={cohortSummary}
+                                            cohortWorkflowStatusTotal={cohortWorkflowStatusTotal}
+                                        />
                                         <div className="stats-card">
                                             <h4>Avg Lead Time</h4>
                                             <div className="stat-value">
@@ -13287,26 +13308,19 @@ import {
                                                     }}
                                                 />
                                             </div>
-                                            <div className="cohort-section">
-                                                <OpenEpicsChart
-                                                    title={cohortSelectedRowLabel
-                                                        ? `Open Epics (${cohortSelectedRowLabel})`
-                                                        : 'Open Epics (All Cohorts)'}
-                                                    items={cohortOpenBars}
-                                                    jiraBaseUrl={jiraUrl}
-                                                />
-                                            </div>
-                                            <div className="cohort-section">
-                                                <OpenEpicsChart
-                                                    title={cohortSelectedRowLabel
-                                                        ? `Completed Epics — Lead Time (${cohortSelectedRowLabel})`
-                                                        : 'Completed Epics — Lead Time (All Cohorts)'}
-                                                    items={cohortCompletedBars}
-                                                    jiraBaseUrl={jiraUrl}
-                                                    emptyMessage="No completed epics in this scope."
-                                                    variant="completed"
-                                                />
-                                            </div>
+                                            <LeadTimesEpicCharts
+                                                cohortOpenBars={cohortOpenBars}
+                                                cohortCompletedBars={cohortCompletedBars}
+                                                cohortSelectedRowLabel={cohortSelectedRowLabel}
+                                                jiraUrl={jiraUrl}
+                                                cohortStartQuarter={cohortStartQuarter}
+                                                cohortGroupBy={cohortGroupBy}
+                                                cohortSelectedRow={cohortSelectedRow}
+                                                cohortProjectFilter={cohortProjectFilter}
+                                                activeGroupMissingComponents={activeGroupMissingComponents}
+                                                burnoutScopedTeamIds={burnoutScopedTeamIds}
+                                                cohortAssigneeFilter={cohortAssigneeFilter}
+                                            />
                                         </div>
                                     )}
                                 </div>
@@ -14403,6 +14417,7 @@ import {
                                     setShowDone={setShowDone}
                                     killedTasks={killedTasks}
                                     showKilled={showKilled}
+                                    setShowKilled={setShowKilled}
                                     hasInitiativeData={hasInitiativeData}
                                     groupByInitiative={groupByInitiative}
                                     setGroupByInitiative={setGroupByInitiative}

@@ -2538,9 +2538,12 @@ def issue_has_sprint(value):
     return True
 
 
-def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None):
+def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None):
     """Fetch epics matching the current sprint/team filters so UI can flag epics with 0 stories."""
-    epic_jql = derive_epic_jql(jql, EPIC_EMPTY_TEAM_IDS)
+    epic_jql = derive_epic_jql(remove_team_filter_from_jql(jql), EPIC_EMPTY_TEAM_IDS)
+    scope_clause = _group_config_service.build_epic_alert_scope_clause(scope_team_ids, scope_team_labels, normalize_team_ids)
+    if scope_clause:
+        epic_jql = add_clause_to_jql(epic_jql, scope_clause)
     epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
 
     fields_list = ['summary', 'status', 'assignee', 'labels', epic_field]
@@ -2970,8 +2973,8 @@ def fetch_tasks(include_team_name=False):
                 project_name = JIRA_PRODUCT_PROJECT if project_filter == 'product' else JIRA_TECH_PROJECT
                 jql = add_clause_to_jql(jql, f'project = "{project_name}"')
 
-        # Apply issue type filter from config
-        issue_types = get_configured_issue_types()
+        # Ready-to-close evaluates Story children only; other task loads use the configured issue types.
+        issue_types = ['Story'] if lightweight_ready_to_close else get_configured_issue_types()
         if issue_types:
             if len(issue_types) == 1:
                 jql = add_clause_to_jql(jql, f'type = "{issue_types[0]}"')
@@ -3093,6 +3096,7 @@ def fetch_tasks(include_team_name=False):
             team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
         epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map, context=auth_context)
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
+        group_team_label_values = _group_config_service.resolve_group_team_label_values(load_dashboard_config() or {}, group_id, team_ids, normalize_team_ids)
         epic_keys = set()
         normalize_started = time.perf_counter()
         for issue in collected_issues:
@@ -3127,34 +3131,15 @@ def fetch_tasks(include_team_name=False):
         enrich_epics_started = time.perf_counter()
         if lightweight_ready_to_close:
             epic_details = {}
-            epics_in_scope = fetch_epics_for_empty_alert(
-                jql,
-                headers,
-                team_field_id,
-                epic_name_field,
-                sprint_field_id=sprint_field_id
-            )
+            epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values)
         else:
             if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
                 epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
-                epics_in_scope = fetch_epics_for_empty_alert(
-                    jql,
-                    headers,
-                    team_field_id,
-                    epic_name_field,
-                    sprint_field_id
-                )
+                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values)
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                    future_epics_in_scope = pool.submit(
-                        fetch_epics_for_empty_alert,
-                        jql,
-                        headers,
-                        team_field_id,
-                        epic_name_field,
-                        sprint_field_id
-                    )
+                    future_epics_in_scope = pool.submit(fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values)
                     epic_details = future_epic_details.result()
                     epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)
@@ -3190,10 +3175,12 @@ def fetch_tasks(include_team_name=False):
                     epic['selectedStories'] = epic_story_distribution[key].get('selectedStories', 0)
                     epic['selectedActionableStories'] = epic_story_distribution[key].get('selectedActionableStories', 0)
                     epic['futureOpenStories'] = epic_story_distribution[key].get('futureOpenStories', 0)
+                    epic['openStoriesOutsideSelected'] = epic_story_distribution[key].get('openStoriesOutsideSelected', 0)
                 else:
                     epic['selectedStories'] = 0
                     epic['selectedActionableStories'] = 0
                     epic['futureOpenStories'] = 0
+                    epic['openStoriesOutsideSelected'] = 0
         slim_build_started = time.perf_counter()
         slim_issues = []
         for issue in collected_issues:
@@ -4843,8 +4830,7 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
     terminal_candidates = []
     for issue in all_issues:
         fields_data = issue.get('fields') or {}
-        raw_status_name = str((fields_data.get('status') or {}).get('name') or '').strip()
-        status_name = normalize_epic_status(raw_status_name)
+        status_name = normalize_epic_status(raw_status_name := str((fields_data.get('status') or {}).get('name') or '').strip())
         if not is_terminal_epic_status(status_name):
             continue
         if fields_data.get('resolutiondate'):
@@ -4905,7 +4891,8 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
         if not created_date:
             continue
 
-        status_name = normalize_epic_status((fields_data.get('status') or {}).get('name'))
+        raw_status_name = str((fields_data.get('status') or {}).get('name') or '').strip()
+        status_name = normalize_epic_status(raw_status_name)
         resolution_dt = parse_jira_datetime(fields_data.get('resolutiondate'))
         terminal_date = resolution_dt.date() if resolution_dt else None
         if not terminal_date and is_terminal_epic_status(status_name):

@@ -1,0 +1,334 @@
+        .planning-stats {
+            display: flex;
+            gap: 0.7rem;
+            align-items: center;
+            justify-content: flex-start;
+            font-family: 'IBM Plex Mono', monospace;
+            flex-wrap: wrap;
+            overflow: visible;
+        }
+
+        .planning-stats.compact {
+            gap: 0.45rem;
+            font-size: 0.6rem;
+            justify-content: flex-start;
+        }
+
+        .planning-stats.compact .planning-stat-label {
+            font-size: 0.58rem;
+            letter-spacing: 0.04em;
+        }
+
+        .planning-stats.compact .planning-stat-value {
+            font-size: 0.58rem;
+        }
+
+        .planning-stat-separator {
+            margin-left: 0.4rem;
+            color: var(--text-secondary);
+        }
+
+        .team-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 0.55rem;
+            margin-top: 0.35rem;
+        }
+
+        @media (max-width: 768px) {
+            .team-stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            }
+        }
+
+        .projects-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(140px, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.5rem;
+        }
+
+        @media (max-width: 1100px) {
+            .projects-stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            }
+        }
+
+        /* Variance gauge */
+        .variance-gauge {
+            width: 140px;
+            height: 10px;
+            flex-shrink: 0;
+            position: relative;
+            cursor: help;
+        }
+
+        .variance-gauge[data-tooltip] {
+            position: relative;
+        }
+
+        .variance-gauge[data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 0;
+            top: 14px;
+            background: #111;
+            color: #fff;
+            font-size: 0.6rem;
+            line-height: 1.2;
+            padding: 0.35rem 0.45rem;
+            border-radius: 0.3rem;
+            white-space: normal;
+            width: max-content;
+            max-width: 220px;
+            z-index: 20;
+            text-transform: none;
+            letter-spacing: normal;
+            pointer-events: none;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        /* MicroBar tiles */
+        .microbar {
+            width: 100%;
+            height: 14px;
+            display: block;
+            margin: 0.18rem 0 0;
+            position: relative;
+            border-radius: 4px;
+            background: #e0ddd7;
+        }
+
+        .microbar-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            border-radius: 4px;
+        }
+
+        .microbar-marker {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 0;
+            border-left: 1.25px dashed var(--text-primary);
+        }
+
+        .microbar-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 8px;
+            color: #fff;
+            font-weight: 500;
+            pointer-events: none;
+            position: absolute;
+            left: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            line-height: 1;
+        }
+
+        .microbar-meta {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.54rem;
+            color: var(--text-secondary);
+            margin-top: 0.08rem;
+            line-height: 1.05;
+        }
+
+        .microbar-meta.over {
+            color: #d4380d;
+        }
+
+        .microbar-meta.under {
+            color: #d4380d;
+        }
+
+        .team-stat-card[data-tooltip] {
+            position: relative;
+            cursor: default;
+        }
+
+        .team-stat-card[data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 0;
+            bottom: calc(100% + 4px);
+            background: #111;
+            color: #fff;
+            font-size: 0.6rem;
+            line-height: 1.2;
+            padding: 0.35rem 0.45rem;
+            border-radius: 0.3rem;
+            white-space: normal;
+            width: max-content;
+            max-width: 260px;
+            z-index: 20;
+            text-transform: none;
+            letter-spacing: normal;
+            pointer-events: none;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        /* SplitBar (project) */
+        /* Project split bar */
+        .project-bar-graph {
+            margin-top: 0.3rem;
+            margin-bottom: 1.45rem;
+        }
+
+        .project-bar-fill {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            cursor: help;
+            transition: filter 0.15s;
+            z-index: 1;
+        }
+
+        .project-bar-fill:hover {
+            filter: brightness(0.92);
+            z-index: 40;
+        }
+
+        .project-bar-fill.product {
+            left: 0;
+            background: #3d1ef8;
+            border-radius: 6px 0 0 6px;
+        }
+
+        .project-bar-fill.tech {
+            border-radius: 0 6px 6px 0;
+            background: #FE5000;
+            justify-content: flex-end;
+        }
+
+        .project-bar-fill .capacity-bar-fill-label {
+            color: #fff;
+        }
+
+        .project-bar-fill[data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: calc(100% + 6px);
+            background: #111;
+            color: #fff;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            line-height: 1.3;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.3rem;
+            white-space: normal;
+            width: max-content;
+            max-width: 260px;
+            z-index: 50;
+            text-transform: none;
+            letter-spacing: normal;
+            pointer-events: none;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .planning-panel.stuck .project-bar-fill[data-tooltip]:hover::after {
+            bottom: auto;
+            top: calc(100% + 6px);
+        }
+
+        .planning-panel.stuck .team-stat-card[data-tooltip]:hover::after {
+            bottom: auto;
+            top: calc(100% + 4px);
+        }
+
+        .team-stat-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.38rem 0.45rem;
+            text-align: left;
+            box-shadow: 0 4px 12px var(--shadow);
+        }
+
+        .team-stat-value {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .team-stat-label {
+            margin-bottom: 0.15rem;
+            font-size: 0.58rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }
+
+        .team-stat-line {
+            display: flex;
+            align-items: baseline;
+            gap: 0.35rem;
+            flex-wrap: nowrap;
+        }
+
+        .team-stat-line .team-stat-value {
+            font-size: 0.62rem;
+            white-space: nowrap;
+        }
+
+        .project-card .team-stat-value {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .team-stat-line .team-stat-meta {
+            margin-top: 0;
+            white-space: nowrap;
+            line-height: 1;
+        }
+
+        .team-stat-meta {
+            margin-top: 0.2rem;
+            font-size: 0.6rem;
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text-secondary);
+        }
+
+        .team-stat-value.muted {
+            font-size: 0.62rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .uncheck-button {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 0.34rem 0.8rem;
+            font-size: 0.66rem;
+            margin: 0;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .uncheck-button:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-color: var(--border);
+            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+            transform: none;
+        }
+
+        .uncheck-button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .uncheck-button:disabled:hover {
+            background: transparent;
+            color: var(--text-secondary);
+            border-color: var(--border);
+        }

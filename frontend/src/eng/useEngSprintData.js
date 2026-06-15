@@ -91,6 +91,7 @@ export function useEngSprintData({
     activeGroupId,
     activeGroupTeamIds,
     activeGroupTeamSet,
+    activeGroupTeamLabels,
     pageLoadRefreshRef,
     sprintLoadRef,
     lastLoadedSprintRef,
@@ -180,7 +181,8 @@ export function useEngSprintData({
             const filteredEpicsInScope = filterEpicsInScopeForTeamSet(
                 data.epicsInScope || [],
                 activeGroupTeamIds,
-                activeGroupTeamSet
+                activeGroupTeamSet,
+                activeGroupTeamLabels
             );
             const filteredEpics = filterEpicsByTaskEpicKeys(data.epics || {}, filteredTasks);
 

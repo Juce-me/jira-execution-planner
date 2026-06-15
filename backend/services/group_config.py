@@ -135,3 +135,38 @@ def build_default_groups_config(
         'defaultGroupId': 'default',
     }
     return config, warnings
+
+
+def build_epic_alert_scope_clause(scope_team_ids=None, scope_team_labels=None, normalize_team_ids_fn=None):
+    normalize_team_ids_fn = normalize_team_ids_fn or (lambda values: [str(value or '').strip() for value in values or [] if str(value or '').strip()])
+    clauses = []
+    team_ids = normalize_team_ids_fn(scope_team_ids or [])
+    labels = []
+    seen_labels = set()
+    for label in scope_team_labels or []:
+        value = str(label or '').strip()
+        if value and value.lower() not in seen_labels:
+            seen_labels.add(value.lower())
+            labels.append(value)
+    if team_ids:
+        quoted = ', '.join(f'"{team_id}"' for team_id in team_ids)
+        clauses.append(f'"Team[Team]" in ({quoted})' if len(team_ids) > 1 else f'"Team[Team]" = "{team_ids[0]}"')
+    if labels:
+        quoted = ', '.join(f'"{label}"' for label in labels)
+        clauses.append(f'labels in ({quoted})' if len(labels) > 1 else f'labels = "{labels[0]}"')
+    return f'({" OR ".join(clauses)})' if len(clauses) > 1 else (clauses[0] if clauses else '')
+
+
+def resolve_group_team_label_values(config, group_id, team_ids, normalize_team_ids_fn):
+    if not group_id or not team_ids:
+        return []
+    groups = (((config or {}).get('teamGroups') or {}).get('groups') or [])
+    group = next((item for item in groups if str(item.get('id') or '').strip() == group_id), None)
+    if not group:
+        return []
+    team_id_set = set(normalize_team_ids_fn(team_ids))
+    return [
+        str(label or '').strip()
+        for team_id, label in (group.get('teamLabels') or {}).items()
+        if str(team_id or '').strip() in team_id_set and str(label or '').strip()
+    ]

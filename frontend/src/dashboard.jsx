@@ -5371,7 +5371,7 @@ import {
                 selectedSprint,
                 activeGroupId,
                 activeGroupTeamIds,
-                activeGroupTeamSet,
+                activeGroupTeamSet, activeGroupTeamLabels,
                 pageLoadRefreshRef,
                 sprintLoadRef,
                 lastLoadedSprintRef,

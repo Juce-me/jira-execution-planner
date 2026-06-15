@@ -63,6 +63,43 @@ test('team selection hydration prefers scoped storage over stale global all-team
     );
 });
 
+test('team selection hydration uses live selection before stale global prefs for new scope', async () => {
+    const {
+        resolveTeamSelectionHydrationState
+    } = await import('../frontend/src/teamSelectionPersistence.mjs');
+
+    assert.deepEqual(
+        resolveTeamSelectionHydrationState({
+            liveSelectedTeams: ['team-a'],
+            savedPrefsSelectedTeams: ['all']
+        }),
+        {
+            selectedTeams: ['team-a'],
+            selectedTeamId: 'team-a'
+        }
+    );
+});
+
+test('team selection hydration lets carried live selection override stale scoped storage', async () => {
+    const {
+        resolveTeamSelectionHydrationState
+    } = await import('../frontend/src/teamSelectionPersistence.mjs');
+
+    assert.deepEqual(
+        resolveTeamSelectionHydrationState({
+            storedState: {
+                selectedTeams: ['team-a'],
+                selectedTeamId: 'team-a'
+            },
+            liveSelectedTeams: ['all']
+        }),
+        {
+            selectedTeams: ['all'],
+            selectedTeamId: 'all'
+        }
+    );
+});
+
 test('reconcileTeamSelectionState falls back to all when the selected team is invalid', async () => {
     const {
         reconcileTeamSelectionState

@@ -200,7 +200,7 @@ import {
     resolvePlanningTeamSelection
 } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
-import { sanitizeSelectedTeamsForScope } from './teamSelectionUtils.mjs';
+import { sanitizeSelectedTeamsForScope, selectedTeamSelectionsEqual } from './teamSelectionUtils.mjs';
 import {
     collectJiraExportKeysFromEpmRollupBoards,
     collectJiraExportKeysFromScenarioIssues,
@@ -646,6 +646,7 @@ import {
             const planningLoadedSelectionRef = useRef(null);
             const planningBaselineScopeRef = useRef('');
             const teamSelectionHydratedScopeRef = useRef('');
+            const teamSelectionHydratedSelectionRef = useRef(null); const teamSelectionCarryForwardRef = useRef(null);
             const teamSelectionSkipPersistScopeRef = useRef('');
             const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort' || value === 'excludedCapacity' || value === 'monoCrossShare') ? value : 'teams';
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
@@ -6199,7 +6200,7 @@ import {
                     .filter(id => id && id !== 'all');
                 const storedState = loadTeamSelectionState(window.localStorage, teamSelectionScopeKey);
                 const baseState = resolveTeamSelectionHydrationState({
-                    storedState,
+                    storedState, liveSelectedTeams: teamSelectionCarryForwardRef.current?.scopeKey === teamSelectionScopeKey ? teamSelectionCarryForwardRef.current.selectedTeams : undefined,
                     savedPrefsSelectedTeams: savedPrefsRef.current.selectedTeams,
                     savedPrefsSelectedTeam: savedPrefsRef.current.selectedTeam
                 });
@@ -6211,17 +6212,15 @@ import {
                     availableTeamIds: validTeamIds
                 });
 
-                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey;
-                teamSelectionSkipPersistScopeRef.current = teamSelectionScopeKey;
+                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey; teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams }; teamSelectionSkipPersistScopeRef.current = teamSelectionScopeKey;
                 setSelectedTeams(prev => {
                     const normalizedPrev = normalizeSelectedTeams(prev);
                     const sameLength = normalizedPrev.length === nextSelectedTeams.length;
                     const sameTeams = sameLength && normalizedPrev.every((id, index) => id === nextSelectedTeams[index]);
                     return sameTeams ? prev : nextSelectedTeams;
                 });
-                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, {
-                    selectedTeams: nextSelectedTeams
-                });
+                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
+                if (teamSelectionCarryForwardRef.current?.scopeKey === teamSelectionScopeKey) teamSelectionCarryForwardRef.current = null;
             }, [
                 teamSelectionScopeKey,
                 activeGroupId,
@@ -9591,6 +9590,8 @@ import {
                 if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
                 if (!tasksFetched || productTasksLoading || techTasksLoading) return;
                 if (lastLoadedSprintRef.current !== selectedSprint) return;
+                const hydratedTeamSelection = teamSelectionHydratedSelectionRef.current; if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey && !selectedTeamSelectionsEqual(selectedTeams, hydratedTeamSelection.selectedTeams)) return;
+                if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey) teamSelectionHydratedSelectionRef.current = null;
 
                 const { validTaskKeySet, nextSelectedTaskKeys, nextSelectionMode, nextSelectedTeams } = resolvePlanningSelectionForDashboard({
                     selectedTasks,
@@ -9632,7 +9633,7 @@ import {
             }, [
                 planningScopeKey,
                 activeGroupId,
-                selectedSprint,
+                selectedSprint, teamSelectionScopeKey,
                 isFutureSprintSelected,
                 tasksFetched,
                 productTasksLoading,
@@ -11817,6 +11818,7 @@ import {
                                                     data-sprint-id={sprint.id}
                                                     onClick={() => {
                                                         trackFilterChanged('sprint', { sprint_selection_state: analyticsToken(state || 'unknown'), source_surface: currentDashboardView(), scope_type: currentDashboardView() });
+                                                        teamSelectionCarryForwardRef.current = activeGroupId ? { scopeKey: buildTeamSelectionScopeKey({ sprintId: sprint.id, groupId: activeGroupId }), selectedTeams: normalizeSelectedTeams(selectedTeams) } : null;
                                                         setSelectedSprint(sprint.id);
                                                         setSprintName(sprint.name);
                                                         setShowSprintDropdown(false);

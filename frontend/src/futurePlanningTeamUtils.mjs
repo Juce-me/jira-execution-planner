@@ -87,7 +87,7 @@ export function getFuturePlanningExpectedTeamLabel(epic, {
     }
 
     const matchedTeamIds = getMatchedPlanningTeamIds(epic, teamLabels);
-    if (matchedTeamIds.length === 1) {
+    if (matchedTeamIds.length >= 1) {
         return String(teamLabels[matchedTeamIds[0]] || '').trim();
     }
 

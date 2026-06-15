@@ -8,6 +8,13 @@ function normalizeSelectedTeams(value) {
     return ['all'];
 }
 
+export function selectedTeamSelectionsEqual(left, right) {
+    const normalizedLeft = normalizeSelectedTeams(left);
+    const normalizedRight = normalizeSelectedTeams(right);
+    return normalizedLeft.length === normalizedRight.length
+        && normalizedLeft.every((id, index) => id === normalizedRight[index]);
+}
+
 export function sanitizeSelectedTeamsForScope(selectedTeams, {
     activeGroupTeamIds = [],
     availableTeamIds = []

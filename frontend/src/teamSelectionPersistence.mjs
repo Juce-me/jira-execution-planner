@@ -81,14 +81,17 @@ export function saveTeamSelectionState(storage, scopeKey, state) {
 
 export function resolveTeamSelectionHydrationState({
     storedState,
+    liveSelectedTeams,
     savedPrefsSelectedTeams,
     savedPrefsSelectedTeam
 } = {}) {
     const selectedTeams = normalizeStoredTeamSelection(
-        storedState || {
-            selectedTeams: savedPrefsSelectedTeams,
-            selectedTeamId: savedPrefsSelectedTeam
-        }
+        typeof liveSelectedTeams !== 'undefined' && liveSelectedTeams !== null
+            ? { selectedTeams: liveSelectedTeams }
+            : (storedState || {
+                selectedTeams: savedPrefsSelectedTeams,
+                selectedTeamId: savedPrefsSelectedTeam
+            })
     );
     return {
         selectedTeams,

@@ -28,10 +28,11 @@ class GitLabCiContractTests(unittest.TestCase):
         ci = self._ci()
 
         for command in (
+            "python -m pip install --upgrade pip",
             "python -m pip install -r requirements.txt",
             "python -m pip install -e .",
             "python -m unittest discover -s tests",
-            "npm ci",
+            "npm ci --cache .npm --prefer-offline",
             "npm run build",
             "npm run test:frontend:unit",
             "git diff --exit-code frontend/dist",
@@ -44,6 +45,33 @@ class GitLabCiContractTests(unittest.TestCase):
             'APP_ENVIRONMENT_KEY: "local"',
         ):
             self.assertIn(env_setting, ci)
+
+    def test_gitlab_ci_splits_python_and_frontend_verification(self):
+        ci = self._ci()
+
+        self.assertRegex(ci, r"(?m)^python_verify:\n")
+        self.assertRegex(ci, r"(?m)^frontend_verify:\n")
+        self.assertRegex(ci, r"(?ms)^python_verify:.*?image: python:3\.11-bookworm")
+        self.assertRegex(ci, r"(?ms)^frontend_verify:.*?image: node:20-bookworm")
+        self.assertEqual(ci.count("shared-amd64"), 2)
+
+    def test_gitlab_ci_does_not_bootstrap_node_in_python_job(self):
+        ci = self._ci()
+
+        for forbidden in (
+            "deb.nodesource.com",
+            "setup_20.x",
+            "apt-get install -y --no-install-recommends nodejs",
+        ):
+            self.assertNotIn(forbidden, ci)
+
+    def test_container_build_needs_both_verify_jobs(self):
+        ci = self._ci()
+        container_build = ci.split("container_build:", 1)[1]
+
+        self.assertIn("needs:", container_build)
+        self.assertIn("- python_verify", container_build)
+        self.assertIn("- frontend_verify", container_build)
 
     def test_gitlab_ci_builds_sha_tagged_image_from_dockerfile(self):
         ci = self._ci()

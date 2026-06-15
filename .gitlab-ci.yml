@@ -22,20 +22,26 @@ cache:
     - .npm/
     - .cache/pip/
 
-verify:
+python_verify:
   image: python:3.11-bookworm
   stage: verify
+  tags:
+    - shared-amd64
   before_script:
-    - apt-get update
-    - apt-get install -y --no-install-recommends ca-certificates curl git
-    - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    - apt-get install -y --no-install-recommends nodejs
     - python -m pip install --upgrade pip
     - python -m pip install -r requirements.txt
     - python -m pip install -e .
-    - npm ci --cache .npm --prefer-offline
   script:
     - python -m unittest discover -s tests
+
+frontend_verify:
+  image: node:20-bookworm
+  stage: verify
+  tags:
+    - shared-amd64
+  before_script:
+    - npm ci --cache .npm --prefer-offline
+  script:
     - npm run build
     - npm run test:frontend:unit
     - git diff --exit-code frontend/dist
@@ -48,7 +54,8 @@ container_build:
   services:
     - docker:27-dind
   needs:
-    - verify
+    - python_verify
+    - frontend_verify
   variables:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""

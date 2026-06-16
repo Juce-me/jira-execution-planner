@@ -2380,9 +2380,10 @@ def apply_team_ids_to_template(team_ids):
     return JQL_QUERY_TEMPLATE.replace('{TEAM_IDS}', quoted)
 
 
-def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template, purpose='dashboard', epic_keys=None):
+def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_labels, include_team_name, use_template, purpose='dashboard', epic_keys=None):
     epic_signature = ','.join(sorted({str(k).strip() for k in (epic_keys or []) if str(k).strip()}))
-    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{purpose}::{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}::{epic_signature}"
+    label_signature = ','.join(sorted({str(v).strip() for v in (team_labels or []) if str(v).strip()}))
+    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{purpose}::{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{label_signature}::{include_team_name}::{use_template}::{epic_signature}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"tasks:{digest}"
 
@@ -2904,23 +2905,19 @@ def fetch_tasks(include_team_name=False):
         team = request.args.get('team', '').strip()
         group_id = request.args.get('groupId', '').strip() or 'default'
         team_ids_param = request.args.get('teamIds', '').strip()
+        team_labels_param = request.args.get('teamLabels', '').strip()
         epic_keys_param = request.args.get('epicKeys', '').strip()
         project_filter = request.args.get('project', '').strip().lower()
         request_purpose = request.args.get('purpose', 'dashboard').strip().lower() or 'dashboard'
         force_refresh = request.args.get('refresh', '').lower() in ('1', 'true')
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
+        team_label_values = list(dict.fromkeys(t.strip() for t in team_labels_param.split(',') if t.strip()))
         epic_keys_filter = sorted({t.strip() for t in epic_keys_param.split(',') if t.strip()})
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
         lightweight_ready_to_close = request_purpose == 'ready-to-close'
         raw_cache_key = build_tasks_cache_key(
-            sprint,
-            group_id,
-            project_filter,
-            team_ids if use_template else [],
-            include_team_name,
-            use_template,
-            request_purpose,
-            epic_keys_filter
+            sprint, group_id, project_filter, team_ids, team_label_values,
+            include_team_name, use_template, request_purpose, epic_keys_filter
         )
         record_timing('parse_params', parse_started)
         auth_context = current_request_auth_context()
@@ -3109,7 +3106,8 @@ def fetch_tasks(include_team_name=False):
             team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
         epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map, context=auth_context)
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
-        group_team_label_values = _group_config_service.resolve_group_team_label_values(load_dashboard_config() or {}, group_id, team_ids, normalize_team_ids)
+        config_team_labels = _group_config_service.resolve_group_team_label_values(load_dashboard_config() or {}, group_id, team_ids, normalize_team_ids)
+        group_team_label_values = list(dict.fromkeys([*config_team_labels, *team_label_values]))
         epic_keys = set()
         normalize_started = time.perf_counter()
         for issue in collected_issues:

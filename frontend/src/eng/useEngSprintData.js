@@ -136,6 +136,7 @@ export function useEngSprintData({
         try {
             const sprintParam = options.sprintOverride !== undefined ? options.sprintOverride : (selectedSprint || '');
             const groupTeamIds = activeGroupTeamIds;
+            const groupTeamLabels = Array.from(new Set(groupTeamIds.map((teamId) => String(activeGroupTeamLabels?.[teamId] || '').trim()).filter(Boolean)));
             // Bypass server cache on page load or explicit refresh
             let refresh = false;
             if (pageLoadRefreshRef.current || options.forceRefresh) {
@@ -148,6 +149,7 @@ export function useEngSprintData({
                 sprintName: selectedSprintName || '',
                 groupId: activeGroupId,
                 teamIds: groupTeamIds,
+                teamLabels: groupTeamLabels,
                 refresh,
                 purpose: options.purpose,
                 epicKeys: options.epicKeys,

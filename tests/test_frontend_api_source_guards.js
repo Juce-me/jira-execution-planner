@@ -414,6 +414,7 @@ test('ENG API wrappers preserve task, backlog, dependency, and alert request det
             sprintName: '2026Q3',
             groupId: 'group-a',
             teamIds: ['team-1', 'team-2'],
+            teamLabels: ['team_alpha_label', 'team_beta_label'],
             refresh: true,
             purpose: 'alerts',
             epicKeys: ['EPM-1', 'EPM-1', 'EPM-2', ''],
@@ -445,6 +446,7 @@ test('ENG API wrappers preserve task, backlog, dependency, and alert request det
         assert.equal(taskUrl.searchParams.get('groupId'), 'group-a');
         assert.equal(taskUrl.searchParams.get('refresh'), 'true');
         assert.equal(taskUrl.searchParams.get('teamIds'), 'team-1,team-2');
+        assert.equal(taskUrl.searchParams.get('teamLabels'), 'team_alpha_label,team_beta_label');
         assert.equal(taskUrl.searchParams.get('purpose'), 'alerts');
         assert.equal(taskUrl.searchParams.get('epicKeys'), 'EPM-1,EPM-2');
         assert.ok(taskUrl.searchParams.get('t'), 'Expected task cache-busting timestamp');

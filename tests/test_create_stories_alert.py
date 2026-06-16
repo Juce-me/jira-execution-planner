@@ -153,6 +153,36 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         self.assertEqual(epics[0].get('openStoriesOutsideSelected'), 2)
         self.assertEqual(epics_fetch.call_args.args[-1], '2026Q3')
 
+    def test_fetch_tasks_passes_request_team_labels_to_epic_scope(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+
+        jira_payload = {
+            'issues': [],
+            'names': {
+                'customfield_team': 'Team[Team]',
+                'customfield_epic_link': 'Epic Link',
+                'customfield_sprint': 'Sprint',
+            },
+            'total': 0,
+            'isLast': True,
+        }
+
+        with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+             patch.object(jira_server, 'fetch_epic_details_bulk', return_value={}), \
+             patch.object(jira_server, 'fetch_epics_for_empty_alert', return_value=[]) as epics_fetch, \
+             patch.object(jira_server, 'fetch_story_counts_for_epics', return_value={}), \
+             patch.object(jira_server, 'fetch_story_distribution_for_epics', return_value={}), \
+             patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, jira_payload)):
+            response = client.get('/api/tasks-with-team-name?sprint=123&team=all&teamIds=team-a,team-b&teamLabels=team_alpha_label,team_beta_label')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(epics_fetch.call_args.args[-2], ['team_alpha_label', 'team_beta_label'])
+
     def test_ready_to_close_fetch_limits_child_scan_to_stories(self):
         app = jira_server.app
         app.testing = True

@@ -2193,33 +2193,21 @@ import {
                 return JSON.stringify(priorityWeightsDraft) !== priorityWeightsBaselineRef.current;
             }, [priorityWeightsDraft]);
 
-            const isBoardConfigDirty = React.useMemo(() => {
-                return JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }) !== boardConfigBaselineRef.current;
-            }, [boardIdDraft, boardNameDraft]);
+            const isBoardConfigDirty = React.useMemo(() => Boolean(boardConfigBaselineRef.current) && JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }) !== boardConfigBaselineRef.current, [boardIdDraft, boardNameDraft]);
 
-            const isCapacityDraftDirty = React.useMemo(() => {
-                return JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current;
-            }, [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft]);
+            const isCapacityDraftDirty = React.useMemo(() => Boolean(capacityBaselineRef.current) && JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current, [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft]);
 
             const isIssueTypesDraftDirty = React.useMemo(() => {
                 return JSON.stringify(issueTypesDraft) !== issueTypesBaselineRef.current;
             }, [issueTypesDraft]);
 
-            const isSprintFieldDirty = React.useMemo(() => {
-                return JSON.stringify({ fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft }) !== sprintFieldBaselineRef.current;
-            }, [sprintFieldIdDraft, sprintFieldNameDraft]);
+            const isSprintFieldDirty = React.useMemo(() => Boolean(sprintFieldBaselineRef.current) && JSON.stringify({ fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft }) !== sprintFieldBaselineRef.current, [sprintFieldIdDraft, sprintFieldNameDraft]);
 
-            const isParentNameFieldDirty = React.useMemo(() => {
-                return JSON.stringify({ fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft }) !== parentNameFieldBaselineRef.current;
-            }, [parentNameFieldIdDraft, parentNameFieldNameDraft]);
+            const isParentNameFieldDirty = React.useMemo(() => Boolean(parentNameFieldBaselineRef.current) && JSON.stringify({ fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft }) !== parentNameFieldBaselineRef.current, [parentNameFieldIdDraft, parentNameFieldNameDraft]);
 
-            const isStoryPointsFieldDirty = React.useMemo(() => {
-                return JSON.stringify({ fieldId: storyPointsFieldIdDraft, fieldName: storyPointsFieldNameDraft }) !== storyPointsFieldBaselineRef.current;
-            }, [storyPointsFieldIdDraft, storyPointsFieldNameDraft]);
+            const isStoryPointsFieldDirty = React.useMemo(() => Boolean(storyPointsFieldBaselineRef.current) && JSON.stringify({ fieldId: storyPointsFieldIdDraft, fieldName: storyPointsFieldNameDraft }) !== storyPointsFieldBaselineRef.current, [storyPointsFieldIdDraft, storyPointsFieldNameDraft]);
 
-            const isTeamFieldDirty = React.useMemo(() => {
-                return JSON.stringify({ fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft }) !== teamFieldBaselineRef.current;
-            }, [teamFieldIdDraft, teamFieldNameDraft]);
+            const isTeamFieldDirty = React.useMemo(() => Boolean(teamFieldBaselineRef.current) && JSON.stringify({ fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft }) !== teamFieldBaselineRef.current, [teamFieldIdDraft, teamFieldNameDraft]);
 
             const isEpmConfigDirty = React.useMemo(() => {
                 return JSON.stringify(epmConfigDraft) !== epmConfigBaselineRef.current;
@@ -2458,9 +2446,10 @@ import {
                     return acc + numeric;
                 }, 0);
             }, [priorityWeightsDraft]);
+            const shouldValidateAdminSettings = canEditSharedConfiguration && (ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) || isSharedConfigurationDraftDirty);
             const groupConfigValidationErrors = React.useMemo(() => {
                 const errors = [];
-                if (canEditSharedConfiguration && ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)) {
+                if (shouldValidateAdminSettings) {
                     if (!selectedProjectsDraft.length) {
                         errors.push('Add at least one dashboard project before saving.');
                     }
@@ -2487,13 +2476,14 @@ import {
                     }
                 }
                 return errors;
-            }, [canEditSharedConfiguration, groupManageTab, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError]);
+            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError]);
             const saveBlockedReason = React.useMemo(() => {
-                if (groupSaving) return 'Save in progress';
+                if (groupSaving || epmConfigSaving) return 'Save in progress';
+                if (canEditEpmConfiguration && isEpmConfigDirty && epmConfigLoading) return 'EPM settings are loading';
                 if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
                 if (!isGroupDraftDirty) return 'No changes to save';
                 return '';
-            }, [groupSaving, groupConfigValidationErrors, isGroupDraftDirty]);
+            }, [groupSaving, epmConfigSaving, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -2996,19 +2986,21 @@ import {
                 return normalized;
             };
 
-            const saveGroupsConfig = async () => {
-                if (!groupDraft) return;
+            const saveGroupsConfig = async ({ closeOnSuccess = true } = {}) => {
+                if (!groupDraft) return false;
                 if (groupConfigValidationErrors.length > 0) {
                     setGroupDraftError(groupConfigValidationErrors[0]);
                     trackSettingsAction(groupManageTab, 'save_result', { result: 'failure', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
-                    return;
+                    return false;
                 }
                 setGroupSaving(true);
                 setGroupDraftError('');
-                trackSettingsAction(groupManageTab, 'save', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
                 try {
-                    const savingAdminSettings = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab);
-                    const savingDepartmentSettings = DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab);
+                    const savingAdminSettings = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
+                    const sharedGroupsChanged = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current);
+                    const savingDepartmentSettings = sharedGroupsChanged || isGroupVisibilityDraftDirty;
+                    const analyticsSection = savingAdminSettings ? 'admin' : (savingDepartmentSettings ? 'departments' : groupManageTab);
+                    trackSettingsAction(analyticsSection, 'save', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
 
                     let projectsChanged = false;
                     let priorityWeightsChanged = false;
@@ -3017,7 +3009,7 @@ import {
                     let fieldConfigsChanged = false;
                     let issueTypesChanged = false;
 
-                    if (canEditSharedConfiguration && savingAdminSettings) {
+                    if (savingAdminSettings) {
                         // Save project selection if changed
                         projectsChanged = isProjectsDraftDirty;
                         if (projectsChanged) {
@@ -3058,7 +3050,6 @@ import {
                     const currentActiveGroup = activeGroupId ? (groupsConfig.groups || []).find(g => g.id === activeGroupId) : null;
                     const currentTeamSignature = currentActiveGroup ? (currentActiveGroup.teamIds || []).join('|') : null;
 
-                    const sharedGroupsChanged = savingDepartmentSettings && Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current);
                     let normalized = groupsConfig;
                     let payload = null;
                     if (sharedGroupsChanged) {
@@ -3120,15 +3111,38 @@ import {
                         loadSprints(true);
                     }
 
-                    closeGroupManage();
-                    trackSettingsAction(groupManageTab, 'save_result', { result: 'success' });
+                    if (closeOnSuccess) {
+                        closeGroupManage();
+                    }
+                    trackSettingsAction(analyticsSection, 'save_result', { result: 'success' });
+                    return true;
                 } catch (err) {
                     setGroupDraftError(err.message || 'Failed to save groups.');
                     trackSettingsAction(groupManageTab, 'save_result', { result: 'failure' });
+                    return false;
                 } finally {
                     setGroupPreferencesSaving(false);
                     setGroupSaving(false);
                 }
+            };
+
+            const saveAllSettings = async () => {
+                if (groupManageTab === 'connections') return;
+                if (saveBlockedReason) {
+                    if (groupConfigValidationErrors.length > 0) setGroupDraftError(groupConfigValidationErrors[0]);
+                    return;
+                }
+                const hasSharedSettingsChanges = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
+                const hasDepartmentSettingsChanges = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current) || isGroupVisibilityDraftDirty;
+                const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;
+                try {
+                    if (hasSharedSettingsChanges || hasDepartmentSettingsChanges) {
+                        const saved = await saveGroupsConfig({ closeOnSuccess: false });
+                        if (!saved) return;
+                    }
+                    if (hasEpmSettingsChanges) await saveEpmConfig();
+                    if (hasSharedSettingsChanges || hasDepartmentSettingsChanges || hasEpmSettingsChanges) closeGroupManage();
+                } catch (_) {}
             };
 
             useEffect(() => {
@@ -3137,16 +3151,8 @@ import {
                     const key = event.key;
                     if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
                         event.preventDefault();
-                        if (groupManageTab === 'connections') {
-                            return;
-                        }
-                        if (groupManageTab === 'epm') {
-                            if (canEditEpmConfiguration && !epmConfigSaving) {
-                                void saveEpmConfig().catch(() => {});
-                            }
-                        } else if (!groupSaving) {
-                            saveGroupsConfig();
-                        }
+                        if (groupManageTab === 'connections') return;
+                        if (!groupSaving && !epmConfigSaving) void saveAllSettings();
                         return;
                     }
                     if (key === 'Escape') {
@@ -3167,7 +3173,7 @@ import {
                 };
                 window.addEventListener('keydown', handleKey);
                 return () => window.removeEventListener('keydown', handleKey);
-            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, canEditEpmConfiguration, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveEpmConfig, saveGroupsConfig]);
+            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveAllSettings]);
 
             const fetchJiraProjects = async () => {
                 setLoadingProjects(true);
@@ -12154,21 +12160,15 @@ import {
                 if (tab.id === 'admin') return canEditSharedConfiguration;
                 return true;
             });
-            const settingsSaveHandler = groupManageTab === 'epm'
-                ? () => { void saveEpmConfig().catch(() => {}); }
-                : saveGroupsConfig;
+            const settingsSaveHandler = () => { void saveAllSettings(); };
             const setTrackedEpmSettingsProjectSort = (sortKey) => {
                 trackSortChanged('epm_settings_projects', sortKey, { sort_direction: 'asc', source_surface: 'epm_settings' });
                 setEpmSettingsProjectSort(sortKey);
             };
             const settingsShowsSave = groupManageTab !== 'connections';
-            const settingsSaveDisabled = groupManageTab === 'epm'
-                ? (!canEditEpmConfiguration || epmConfigLoading || epmConfigSaving)
-                : Boolean(saveBlockedReason);
-            const settingsSaveTitle = groupManageTab === 'epm' ? '' : (saveBlockedReason || '');
-            const settingsSaveLabel = groupManageTab === 'epm'
-                ? (epmConfigSaving ? 'Saving EPM...' : 'Save EPM settings')
-                : (groupSaving ? 'Saving...' : 'Save');
+            const settingsSaveDisabled = Boolean(saveBlockedReason);
+            const settingsSaveTitle = saveBlockedReason || '';
+            const settingsSaveLabel = groupSaving || epmConfigSaving ? 'Saving...' : 'Save';
 
             return (
                 <div className="container" style={containerStyle}>

@@ -61,7 +61,9 @@ export default function SettingsModal(props) {
                         >{tab.label}</button>
                     ))}
                 </div>
-                {children}
+                <div className="group-modal-content">
+                    {children}
+                </div>
                 {validationMessages.length > 0 && (
                     <div className="group-modal-validation" role="alert" aria-live="polite">
                         {validationMessages.map((message) => (

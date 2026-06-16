@@ -1065,7 +1065,15 @@ h1 {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.group-modal > [role=tabpanel] {
+.group-modal-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.group-modal-content > [role=tabpanel] {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -1533,13 +1541,15 @@ h1 {
 }
 .epm-settings-tab-panel {
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   flex: 1;
 }
 .epm-projects-tab-panel {
   min-height: 0;
+  overflow: hidden;
 }
 .epm-projects-scroll-region {
   min-height: 0;

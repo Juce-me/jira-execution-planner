@@ -135,7 +135,8 @@
 
         .epm-settings-tab-panel {
             min-height: 0;
-            overflow: hidden;
+            overflow-y: auto;
+            overflow-x: hidden;
             display: flex;
             flex-direction: column;
             flex: 1;
@@ -143,6 +144,7 @@
 
         .epm-projects-tab-panel {
             min-height: 0;
+            overflow: hidden;
         }
 
         .epm-projects-scroll-region {

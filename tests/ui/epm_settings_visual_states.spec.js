@@ -157,6 +157,32 @@ for (const viewport of viewports) {
             await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-scope-loaded.png`, fullPage: true });
         });
 
+        test('scope content scrolls above pinned footer on short screens', async ({ page }) => {
+            await page.setViewportSize({ width: viewport.width, height: Math.min(viewport.height, 560) });
+            await mockSettings(page);
+            await openEpmSettings(page);
+            const dialog = page.getByRole('dialog');
+            const scopePanel = page.locator('#epm-settings-scope-panel');
+            await expect(scopePanel).toBeVisible();
+            const scrollState = await scopePanel.evaluate((node) => {
+                const styles = window.getComputedStyle(node);
+                return {
+                    overflowY: styles.overflowY,
+                    clientHeight: node.clientHeight,
+                    scrollHeight: node.scrollHeight,
+                };
+            });
+            expect(['auto', 'scroll']).toContain(scrollState.overflowY);
+            expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight + 8);
+            const beforeScrollTop = await scopePanel.evaluate((node) => node.scrollTop);
+            await scopePanel.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+            await expect.poll(() => scopePanel.evaluate((node) => node.scrollTop)).toBeGreaterThan(beforeScrollTop);
+            const footerBox = await dialog.locator('.group-modal-footer').boundingBox();
+            const dialogBox = await dialog.boundingBox();
+            expect(footerBox.y + footerBox.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height + 1);
+            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-scope-short-screen-scroll.png`, fullPage: true });
+        });
+
         test('projects prerequisites', async ({ page }) => {
             await mockSettings(page, { config: { scope: { rootGoalKey: 'CRITE-223', subGoalKey: '' }, labelPrefix: '' } });
             await openEpmSettings(page);

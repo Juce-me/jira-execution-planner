@@ -83,7 +83,16 @@
             outline-offset: 2px;
         }
 
-        .group-modal > [role="tabpanel"] {
+        .group-modal-content {
+            display: flex;
+            flex: 1 1 auto;
+            flex-direction: column;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .group-modal-content > [role="tabpanel"] {
             display: flex;
             flex: 1 1 auto;
             flex-direction: column;

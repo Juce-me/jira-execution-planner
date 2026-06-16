@@ -62,6 +62,30 @@ test('remote backlog candidates are filtered to explicit empty sprint values onl
     });
 });
 
+test('selected sprint label keeps empty-sprint planning epics out of backlog', () => {
+    return import('../frontend/src/backlogAlertSprintUtils.mjs').then(({
+        epicMatchesSelectedSprint,
+        filterExplicitBacklogEpics
+    }) => {
+        const epic = {
+            key: 'EPIC-3',
+            labels: ['2026Q3', 'team_alpha_label'],
+            fields: {
+                customfield_10101: null
+            }
+        };
+
+        assert.equal(
+            epicMatchesSelectedSprint(epic, { selectedSprint: '123', selectedSprintName: '2026Q3' }),
+            true
+        );
+        assert.deepEqual(
+            filterExplicitBacklogEpics([epic], { selectedSprint: '123', selectedSprintName: '2026Q3' }),
+            []
+        );
+    });
+});
+
 test('selected sprint matching accepts raw Jira sprint strings on child stories', () => {
     return import('../frontend/src/backlogAlertSprintUtils.mjs').then(({
         issueMatchesSelectedSprint

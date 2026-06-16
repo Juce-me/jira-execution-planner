@@ -61,6 +61,23 @@ test('backlog alert header chip links to the backlog epic key list in Jira', () 
     );
 });
 
+test('future planning epic alerts group by all matched team labels', () => {
+    const source = fs.readFileSync(dashboardPath, 'utf8');
+
+    assert.match(
+        source,
+        /import \{ epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel \}/
+    );
+    assert.match(
+        source,
+        /const getFuturePlanningTeamInfos = React\.useCallback/
+    );
+    assert.match(
+        source,
+        /const needsStoriesTeams = groupAlertsByTeam\(needsStoriesEntries, \(entry\) => getFuturePlanningTeamInfos\(entry\.epic\),/
+    );
+});
+
 test('dashboard defines a persisted global alerts panel toggle', () => {
     const source = fs.readFileSync(dashboardPath, 'utf8');
     assert.equal(fs.existsSync(engAlertsPanelPath), true, 'Expected ENG alerts panel module');

@@ -88,6 +88,7 @@ function taskLoadErrorMessage(err, backendUrl) {
 export function useEngSprintData({
     backendUrl,
     selectedSprint,
+    selectedSprintName,
     activeGroupId,
     activeGroupTeamIds,
     activeGroupTeamSet,
@@ -135,6 +136,7 @@ export function useEngSprintData({
         try {
             const sprintParam = options.sprintOverride !== undefined ? options.sprintOverride : (selectedSprint || '');
             const groupTeamIds = activeGroupTeamIds;
+            const groupTeamLabels = Array.from(new Set(groupTeamIds.map((teamId) => String(activeGroupTeamLabels?.[teamId] || '').trim()).filter(Boolean)));
             // Bypass server cache on page load or explicit refresh
             let refresh = false;
             if (pageLoadRefreshRef.current || options.forceRefresh) {
@@ -144,8 +146,10 @@ export function useEngSprintData({
             const requestTasks = () => fetchEngTasks(backendUrl, {
                 project,
                 sprint: sprintParam,
+                sprintName: selectedSprintName || '',
                 groupId: activeGroupId,
                 teamIds: groupTeamIds,
+                teamLabels: groupTeamLabels,
                 refresh,
                 purpose: options.purpose,
                 epicKeys: options.epicKeys,

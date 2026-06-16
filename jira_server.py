@@ -1462,6 +1462,17 @@ def remove_team_filter_from_jql(jql):
     return jql.strip()
 
 
+def add_sprint_label_alternative_to_jql(jql, sprint_label):
+    label = str(sprint_label or '').strip()
+    if not label:
+        return jql
+    label_clause = f'labels = "{_escape_jql_literal(label)}"'
+    sprint_clause = r'(?P<prefix>^|\s+AND\s+)(?P<clause>Sprint\s*=\s*(?:"[^"]+"|\'[^\']+\'|[^\s)]+))'
+    replacement = lambda match: f'{match.group("prefix")}({match.group("clause")} OR {label_clause})'
+    updated, count = re.subn(sprint_clause, replacement, jql, count=1, flags=re.IGNORECASE)
+    return updated if count else add_clause_to_jql(jql, label_clause)
+
+
 def remove_project_filter_from_jql(jql):
     """Remove project IN (...) and project = "..." filters from JQL query."""
     if not jql:
@@ -2369,9 +2380,10 @@ def apply_team_ids_to_template(team_ids):
     return JQL_QUERY_TEMPLATE.replace('{TEAM_IDS}', quoted)
 
 
-def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, include_team_name, use_template, purpose='dashboard', epic_keys=None):
+def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_labels, include_team_name, use_template, purpose='dashboard', epic_keys=None):
     epic_signature = ','.join(sorted({str(k).strip() for k in (epic_keys or []) if str(k).strip()}))
-    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{purpose}::{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{include_team_name}::{use_template}::{epic_signature}"
+    label_signature = ','.join(sorted({str(v).strip() for v in (team_labels or []) if str(v).strip()}))
+    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{purpose}::{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{label_signature}::{include_team_name}::{use_template}::{epic_signature}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"tasks:{digest}"
 
@@ -2538,9 +2550,10 @@ def issue_has_sprint(value):
     return True
 
 
-def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None):
+def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None, scope_sprint_label=None):
     """Fetch epics matching the current sprint/team filters so UI can flag epics with 0 stories."""
     epic_jql = derive_epic_jql(remove_team_filter_from_jql(jql), EPIC_EMPTY_TEAM_IDS)
+    epic_jql = add_sprint_label_alternative_to_jql(epic_jql, scope_sprint_label)
     scope_clause = _group_config_service.build_epic_alert_scope_clause(scope_team_ids, scope_team_labels, normalize_team_ids)
     if scope_clause:
         epic_jql = add_clause_to_jql(epic_jql, scope_clause)
@@ -2888,26 +2901,23 @@ def fetch_tasks(include_team_name=False):
         # Get sprint parameter from query string
         parse_started = time.perf_counter()
         sprint = request.args.get('sprint', '')
+        sprint_name = request.args.get('sprintName', '').strip()
         team = request.args.get('team', '').strip()
         group_id = request.args.get('groupId', '').strip() or 'default'
         team_ids_param = request.args.get('teamIds', '').strip()
+        team_labels_param = request.args.get('teamLabels', '').strip()
         epic_keys_param = request.args.get('epicKeys', '').strip()
         project_filter = request.args.get('project', '').strip().lower()
         request_purpose = request.args.get('purpose', 'dashboard').strip().lower() or 'dashboard'
         force_refresh = request.args.get('refresh', '').lower() in ('1', 'true')
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
+        team_label_values = list(dict.fromkeys(t.strip() for t in team_labels_param.split(',') if t.strip()))
         epic_keys_filter = sorted({t.strip() for t in epic_keys_param.split(',') if t.strip()})
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
         lightweight_ready_to_close = request_purpose == 'ready-to-close'
         raw_cache_key = build_tasks_cache_key(
-            sprint,
-            group_id,
-            project_filter,
-            team_ids if use_template else [],
-            include_team_name,
-            use_template,
-            request_purpose,
-            epic_keys_filter
+            sprint, group_id, project_filter, team_ids, team_label_values,
+            include_team_name, use_template, request_purpose, epic_keys_filter
         )
         record_timing('parse_params', parse_started)
         auth_context = current_request_auth_context()
@@ -3096,7 +3106,8 @@ def fetch_tasks(include_team_name=False):
             team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
         epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map, context=auth_context)
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
-        group_team_label_values = _group_config_service.resolve_group_team_label_values(load_dashboard_config() or {}, group_id, team_ids, normalize_team_ids)
+        config_team_labels = _group_config_service.resolve_group_team_label_values(load_dashboard_config() or {}, group_id, team_ids, normalize_team_ids)
+        group_team_label_values = list(dict.fromkeys([*config_team_labels, *team_label_values]))
         epic_keys = set()
         normalize_started = time.perf_counter()
         for issue in collected_issues:
@@ -3131,15 +3142,15 @@ def fetch_tasks(include_team_name=False):
         enrich_epics_started = time.perf_counter()
         if lightweight_ready_to_close:
             epic_details = {}
-            epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values)
+            epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
         else:
             if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
                 epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
-                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values)
+                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                    future_epics_in_scope = pool.submit(fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values)
+                    future_epics_in_scope = pool.submit(fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
                     epic_details = future_epic_details.result()
                     epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)

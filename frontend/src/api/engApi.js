@@ -47,10 +47,11 @@ export const fetchCapacity = (backendUrl, { sprintName, teams = [] } = {}) => {
     });
 };
 
-export const fetchEngTasks = (backendUrl, { project, sprint, groupId, teamIds = [], refresh = false, purpose = '', epicKeys = [], signal } = {}) => {
+export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal } = {}) => {
     const params = new URLSearchParams({
         t: Date.now().toString(),
         sprint,
+        sprintName,
         team: 'all',
         project: project || 'all',
         groupId: groupId || ''
@@ -60,6 +61,12 @@ export const fetchEngTasks = (backendUrl, { project, sprint, groupId, teamIds = 
     }
     if (teamIds.length > 0) {
         params.set('teamIds', teamIds.join(','));
+    }
+    if (teamLabels.length > 0) {
+        const uniqueTeamLabels = Array.from(new Set(teamLabels.map((label) => String(label || '').trim()).filter(Boolean)));
+        if (uniqueTeamLabels.length) {
+            params.set('teamLabels', uniqueTeamLabels.join(','));
+        }
     }
     if (purpose) {
         params.set('purpose', String(purpose));

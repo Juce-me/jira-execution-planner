@@ -28,6 +28,16 @@ function getMatchedPlanningTeamIds(epic, teamLabels) {
 }
 
 export function getFuturePlanningEpicTeamInfo(epic, { selectedTeamSet, teamLabels = {}, resolveTeamName, fallbackSelectedTeamName = '', teamNameById } = {}) {
+    return getFuturePlanningEpicTeamInfos(epic, {
+        selectedTeamSet,
+        teamLabels,
+        resolveTeamName,
+        fallbackSelectedTeamName,
+        teamNameById
+    })[0] || getRawEpicTeamInfo(epic);
+}
+
+export function getFuturePlanningEpicTeamInfos(epic, { selectedTeamSet, teamLabels = {}, resolveTeamName, fallbackSelectedTeamName = '', teamNameById } = {}) {
     const rawTeam = getRawEpicTeamInfo(epic);
     const matchedTeamIds = getMatchedPlanningTeamIds(epic, teamLabels);
     const selectedTeamId = getSingleSelectedTeamId(selectedTeamSet);
@@ -48,28 +58,28 @@ export function getFuturePlanningEpicTeamInfo(epic, { selectedTeamSet, teamLabel
 
     if (selectedTeamId) {
         const selectedTeamName = lookupTeamName(selectedTeamId);
-        return {
+        return [{
             id: selectedTeamId,
             name: (selectedTeamName && selectedTeamName !== selectedTeamId)
                 ? selectedTeamName
                 : (fallbackSelectedTeamName || selectedTeamId)
-        };
+        }];
     }
 
-    if (rawTeam.id && matchedTeamIds.includes(rawTeam.id)) {
-        return rawTeam;
+    const visibleMatchedTeamIds = selectedTeamSet instanceof Set && selectedTeamSet.size > 1
+        ? matchedTeamIds.filter((teamId) => selectedTeamSet.has(teamId))
+        : matchedTeamIds;
+    if (visibleMatchedTeamIds.length) {
+        return visibleMatchedTeamIds.map((matchedTeamId) => {
+            const matchedTeamName = lookupTeamName(matchedTeamId);
+            return {
+                id: matchedTeamId,
+                name: matchedTeamName || matchedTeamId
+            };
+        });
     }
 
-    if (matchedTeamIds.length === 1) {
-        const matchedTeamId = matchedTeamIds[0];
-        const matchedTeamName = lookupTeamName(matchedTeamId);
-        return {
-            id: matchedTeamId,
-            name: matchedTeamName || matchedTeamId
-        };
-    }
-
-    return rawTeam;
+    return [rawTeam];
 }
 
 export function getFuturePlanningExpectedTeamLabel(epic, {

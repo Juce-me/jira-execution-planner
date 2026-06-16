@@ -411,6 +411,7 @@ test('ENG API wrappers preserve task, backlog, dependency, and alert request det
         await engApi.fetchEngTasks('http://backend', {
             project: 'product',
             sprint: '123',
+            sprintName: '2026Q3',
             groupId: 'group-a',
             teamIds: ['team-1', 'team-2'],
             refresh: true,
@@ -438,6 +439,7 @@ test('ENG API wrappers preserve task, backlog, dependency, and alert request det
         const taskUrl = new URL(calls[0].url);
         assert.equal(taskUrl.pathname, '/api/tasks-with-team-name');
         assert.equal(taskUrl.searchParams.get('sprint'), '123');
+        assert.equal(taskUrl.searchParams.get('sprintName'), '2026Q3');
         assert.equal(taskUrl.searchParams.get('team'), 'all');
         assert.equal(taskUrl.searchParams.get('project'), 'product');
         assert.equal(taskUrl.searchParams.get('groupId'), 'group-a');

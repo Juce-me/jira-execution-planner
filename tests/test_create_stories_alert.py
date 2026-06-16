@@ -133,7 +133,7 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
              patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
              patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_story_points'), \
              patch.object(jira_server, 'fetch_epic_details_bulk', return_value={}), \
-             patch.object(jira_server, 'fetch_epics_for_empty_alert', return_value=epics_in_scope), \
+             patch.object(jira_server, 'fetch_epics_for_empty_alert', return_value=epics_in_scope) as epics_fetch, \
              patch.object(jira_server, 'fetch_story_counts_for_epics', return_value={'EPIC-1': 2}), \
              patch.object(jira_server, 'fetch_story_distribution_for_epics', return_value={
                  'EPIC-1': {
@@ -144,13 +144,14 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
                  }
              }), \
              patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, jira_payload)):
-            response = client.get('/api/tasks-with-team-name?sprint=123&team=all')
+            response = client.get('/api/tasks-with-team-name?sprint=123&sprintName=2026Q3&team=all')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json() or {}
         epics = payload.get('epicsInScope') or []
         self.assertEqual(len(epics), 1)
         self.assertEqual(epics[0].get('openStoriesOutsideSelected'), 2)
+        self.assertEqual(epics_fetch.call_args.args[-1], '2026Q3')
 
     def test_ready_to_close_fetch_limits_child_scan_to_stories(self):
         app = jira_server.app
@@ -255,6 +256,23 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         self.assertIn('("Team[Team]" in ("team-a", "team-b") OR labels in ("team_alpha_label", "team_beta_label"))', epic_jql)
         self.assertIn('type = "Epic"', epic_jql)
         self.assertIn('Sprint = 123', epic_jql)
+
+    def test_fetch_epics_for_empty_alert_includes_selected_sprint_label_scope(self):
+        payload = {'issues': []}
+
+        with patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, payload)) as search_mock:
+            jira_server.fetch_epics_for_empty_alert(
+                'project = TEST AND Sprint = 123 AND type = "Story"',
+                headers={'Authorization': 'Bearer test'},
+                team_field_id='customfield_team',
+                epic_name_field='customfield_epic_name',
+                sprint_field_id='customfield_sprint',
+                scope_sprint_label='2026Q3'
+            )
+
+        epic_jql = search_mock.call_args.args[0].get('jql', '')
+        self.assertIn('(Sprint = 123 OR labels = "2026Q3")', epic_jql)
+        self.assertIn('type = "Epic"', epic_jql)
 
     def test_fetch_backlog_epics_for_alert_returns_cleanup_story_count(self):
         fetcher = getattr(jira_server, 'fetch_backlog_epics_for_alert', None)

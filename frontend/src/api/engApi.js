@@ -47,10 +47,11 @@ export const fetchCapacity = (backendUrl, { sprintName, teams = [] } = {}) => {
     });
 };
 
-export const fetchEngTasks = (backendUrl, { project, sprint, groupId, teamIds = [], refresh = false, purpose = '', epicKeys = [], signal } = {}) => {
+export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], refresh = false, purpose = '', epicKeys = [], signal } = {}) => {
     const params = new URLSearchParams({
         t: Date.now().toString(),
         sprint,
+        sprintName,
         team: 'all',
         project: project || 'all',
         groupId: groupId || ''

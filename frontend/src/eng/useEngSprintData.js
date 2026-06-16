@@ -88,6 +88,7 @@ function taskLoadErrorMessage(err, backendUrl) {
 export function useEngSprintData({
     backendUrl,
     selectedSprint,
+    selectedSprintName,
     activeGroupId,
     activeGroupTeamIds,
     activeGroupTeamSet,
@@ -144,6 +145,7 @@ export function useEngSprintData({
             const requestTasks = () => fetchEngTasks(backendUrl, {
                 project,
                 sprint: sprintParam,
+                sprintName: selectedSprintName || '',
                 groupId: activeGroupId,
                 teamIds: groupTeamIds,
                 refresh,

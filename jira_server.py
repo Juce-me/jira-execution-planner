@@ -1462,6 +1462,17 @@ def remove_team_filter_from_jql(jql):
     return jql.strip()
 
 
+def add_sprint_label_alternative_to_jql(jql, sprint_label):
+    label = str(sprint_label or '').strip()
+    if not label:
+        return jql
+    label_clause = f'labels = "{_escape_jql_literal(label)}"'
+    sprint_clause = r'(?P<prefix>^|\s+AND\s+)(?P<clause>Sprint\s*=\s*(?:"[^"]+"|\'[^\']+\'|[^\s)]+))'
+    replacement = lambda match: f'{match.group("prefix")}({match.group("clause")} OR {label_clause})'
+    updated, count = re.subn(sprint_clause, replacement, jql, count=1, flags=re.IGNORECASE)
+    return updated if count else add_clause_to_jql(jql, label_clause)
+
+
 def remove_project_filter_from_jql(jql):
     """Remove project IN (...) and project = "..." filters from JQL query."""
     if not jql:
@@ -2538,9 +2549,10 @@ def issue_has_sprint(value):
     return True
 
 
-def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None):
+def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None, scope_sprint_label=None):
     """Fetch epics matching the current sprint/team filters so UI can flag epics with 0 stories."""
     epic_jql = derive_epic_jql(remove_team_filter_from_jql(jql), EPIC_EMPTY_TEAM_IDS)
+    epic_jql = add_sprint_label_alternative_to_jql(epic_jql, scope_sprint_label)
     scope_clause = _group_config_service.build_epic_alert_scope_clause(scope_team_ids, scope_team_labels, normalize_team_ids)
     if scope_clause:
         epic_jql = add_clause_to_jql(epic_jql, scope_clause)
@@ -2888,6 +2900,7 @@ def fetch_tasks(include_team_name=False):
         # Get sprint parameter from query string
         parse_started = time.perf_counter()
         sprint = request.args.get('sprint', '')
+        sprint_name = request.args.get('sprintName', '').strip()
         team = request.args.get('team', '').strip()
         group_id = request.args.get('groupId', '').strip() or 'default'
         team_ids_param = request.args.get('teamIds', '').strip()
@@ -3131,15 +3144,15 @@ def fetch_tasks(include_team_name=False):
         enrich_epics_started = time.perf_counter()
         if lightweight_ready_to_close:
             epic_details = {}
-            epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values)
+            epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
         else:
             if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
                 epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
-                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values)
+                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                    future_epics_in_scope = pool.submit(fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values)
+                    future_epics_in_scope = pool.submit(fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
                     epic_details = future_epic_details.result()
                     epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)

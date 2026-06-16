@@ -185,3 +185,39 @@ test('future planning expected label accepts multi-team epics in all teams view'
         );
     });
 });
+
+test('future planning team infos use every matched team label before raw jira team', () => {
+    return import('../frontend/src/futurePlanningTeamUtils.mjs').then(({
+        getFuturePlanningEpicTeamInfos
+    }) => {
+        const epic = {
+            key: 'EPIC-207',
+            teamId: 'raw-product-team',
+            teamName: 'Raw Product Team',
+            labels: ['2026Q3', 'team_alpha_label', 'team_beta_label', 'team_gamma_label']
+        };
+        const teamLabels = {
+            'planning-team-alpha': 'team_alpha_label',
+            'planning-team-beta': 'team_beta_label',
+            'planning-team-gamma': 'team_gamma_label'
+        };
+        const teamNameById = new Map([
+            ['planning-team-alpha', 'Planning Team Alpha'],
+            ['planning-team-beta', 'Planning Team Beta'],
+            ['planning-team-gamma', 'Planning Team Gamma']
+        ]);
+
+        assert.deepEqual(
+            getFuturePlanningEpicTeamInfos(epic, {
+                selectedTeamSet: new Set(),
+                teamLabels,
+                teamNameById
+            }),
+            [
+                { id: 'planning-team-alpha', name: 'Planning Team Alpha' },
+                { id: 'planning-team-beta', name: 'Planning Team Beta' },
+                { id: 'planning-team-gamma', name: 'Planning Team Gamma' }
+            ]
+        );
+    });
+});

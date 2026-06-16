@@ -82,7 +82,7 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
-import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfo, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
+import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
 import {
     fetchMissingPlanningInfo as requestMissingPlanningInfo,
     fetchSprints as requestSprints,
@@ -5375,6 +5375,7 @@ import {
             } = useEngSprintData({
                 backendUrl: BACKEND_URL,
                 selectedSprint,
+                selectedSprintName: selectedSprintInfo?.name || '',
                 activeGroupId,
                 activeGroupTeamIds,
                 activeGroupTeamSet, activeGroupTeamLabels,
@@ -11067,15 +11068,12 @@ import {
                     .filter(([teamId, label]) => teamId && label);
                 return Object.fromEntries(entries);
             }, [activeGroupTeamLabels]);
-            const getFuturePlanningTeamInfo = React.useCallback((epic) => {
-                const fallbackSelectedTeamName = selectedTeamSet.size === 1
-                    ? (teamNameById.get(Array.from(selectedTeamSet)[0]) || '')
-                    : '';
-                return getFuturePlanningEpicTeamInfo(epic, {
+            const getFuturePlanningTeamInfos = React.useCallback((epic) => {
+                return getFuturePlanningEpicTeamInfos(epic, {
                     selectedTeamSet,
                     teamLabels: normalizedActiveGroupTeamLabels,
                     resolveTeamName,
-                    fallbackSelectedTeamName,
+                    fallbackSelectedTeamName: selectedTeamSet.size === 1 ? (teamNameById.get(Array.from(selectedTeamSet)[0]) || '') : '',
                     teamNameById
                 });
             }, [selectedTeamSet, normalizedActiveGroupTeamLabels, resolveTeamName, teamNameById]);
@@ -11125,8 +11123,9 @@ import {
             const backlogEpics = React.useMemo(() => {
                 if (!isFutureSprintSelected) return [];
                 const seen = new Set();
-                const remoteBacklog = filterExplicitBacklogEpics([...backlogProductEpics, ...backlogTechEpics]);
-                const sprintValueBacklog = filterExplicitBacklogEpics(planningCandidateEpics);
+                const selectedSprintScope = { selectedSprint, selectedSprintName: selectedSprintInfo?.name || '' };
+                const remoteBacklog = filterExplicitBacklogEpics([...backlogProductEpics, ...backlogTechEpics], selectedSprintScope);
+                const sprintValueBacklog = filterExplicitBacklogEpics(planningCandidateEpics, selectedSprintScope);
                 return [...remoteBacklog, ...sprintValueBacklog].filter((epic) => {
                     if (!epic?.key || seen.has(epic.key)) return false;
                     seen.add(epic.key);
@@ -11140,7 +11139,7 @@ import {
                     if (!status || status === 'done' || status === 'killed' || status === 'incomplete') return false;
                     return true;
                 });
-            }, [isFutureSprintSelected, backlogProductEpics, backlogTechEpics, planningCandidateEpics, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels]);
+            }, [isFutureSprintSelected, backlogProductEpics, backlogTechEpics, planningCandidateEpics, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels, selectedSprint, selectedSprintInfo?.name]);
             const backlogEpicKeySet = React.useMemo(
                 () => new Set(backlogEpics.map(epic => epic.key).filter(Boolean)),
                 [backlogEpics]
@@ -11275,19 +11274,20 @@ import {
             const groupAlertsByTeam = (items, resolveTeam, sortItems) => {
                 const groups = new Map();
                 (items || []).forEach(item => {
-                    const team = resolveTeam(item) || { id: 'unknown', name: 'Unknown Team' };
-                    const id = team.id || team.name || 'unknown';
-                    const name = team.name || 'Unknown Team';
-                    const entry = groups.get(id) || { id, name, items: [] };
-                    entry.items.push(item);
-                    groups.set(id, entry);
+                    const teams = [].concat(resolveTeam(item) || []).filter(Boolean);
+                    if (!teams.length) teams.push({ id: 'unknown', name: 'Unknown Team' });
+                    const seenTeamIds = new Set();
+                    teams.forEach((team) => {
+                        const id = team.id || team.name || 'unknown';
+                        if (seenTeamIds.has(id)) return;
+                        seenTeamIds.add(id);
+                        const entry = groups.get(id) || { id, name: team.name || 'Unknown Team', items: [] };
+                        entry.items.push(item);
+                        groups.set(id, entry);
+                    });
                 });
                 const list = Array.from(groups.values());
-                list.forEach(group => {
-                    if (sortItems) {
-                        group.items.sort(sortItems);
-                    }
-                });
+                list.forEach(group => sortItems && group.items.sort(sortItems));
                 return list.sort((a, b) => a.name.localeCompare(b.name));
             };
 
@@ -11406,10 +11406,10 @@ import {
             }, [isFutureSprintSelected, analysisWaitingEpics, postponedEmptyEpics]);
 
             const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const backlogEpicTeams = groupAlertsByTeam(backlogEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfo(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const backlogEpicTeams = groupAlertsByTeam(backlogEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const missingTeamEpicTeams = groupAlertsByTeam(missingTeamEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const missingLabelEpicTeams = groupAlertsByTeam(missingLabelEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfo(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const needsStoriesTeams = groupAlertsByTeam(needsStoriesEntries, (entry) => getFuturePlanningTeamInfo(entry.epic), (a, b) => (a.epic.summary || '').localeCompare(b.epic.summary || ''));
+            const missingLabelEpicTeams = groupAlertsByTeam(missingLabelEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const needsStoriesTeams = groupAlertsByTeam(needsStoriesEntries, (entry) => getFuturePlanningTeamInfos(entry.epic), (a, b) => (a.epic.summary || '').localeCompare(b.epic.summary || ''));
 
             const missingAlertKeySet = React.useMemo(
                 () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),

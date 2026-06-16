@@ -59,12 +59,14 @@ This includes:
 
 When a future sprint is selected, the dashboard also uses epic-level planning alerts.
 
+Team grouping for these alerts is driven by configured team-label mappings. If an epic has multiple configured team labels, it can appear under each matching team. The raw Jira Team field is used only when no configured team label matches.
+
 ### Backlog
 
-Shows epics whose epic-level sprint field is explicitly empty.
+Shows epics whose epic-level sprint field is explicitly empty and that are not already marked with the selected sprint label.
 
 Important:
-- this is based on the epic sprint assignment, not on a Jira label
+- selected-sprint labels are treated as future-planning scope, so labeled epics continue to Missing Labels or Needs Stories
 - an epic with a concrete sprint value must not appear here, even if that sprint is not the selected future sprint
 - backlog is reserved for true unsprinted epic backlog, not for “wrong sprint” or “needs story follow-up” cases
 
@@ -82,7 +84,7 @@ This also covers the case where the active group has no label mapping configured
 
 ### Needs Stories
 
-Shows epics that are already configured for the selected future sprint but still are not sprint-ready because they do not yet have an actionable child story in that sprint.
+Shows epics that are already configured for the selected future sprint, either by sprint field or selected sprint label, but still are not sprint-ready because they do not yet have an actionable child story in that sprint.
 
 Each epic row shows the specific reason:
 - `No stories yet for this sprint.` when the epic has no child stories
@@ -99,4 +101,4 @@ An epic is routed to the first matching planning alert:
 4. Missing Labels
 5. Needs Stories
 
-This avoids the same epic showing up in multiple planning panels at once. In practice, an epic with a filled sprint should bypass Backlog and continue into the later planning checks.
+This avoids the same epic showing up in multiple planning panels at once. In practice, an epic with a filled sprint or selected sprint label should bypass Backlog and continue into the later planning checks.

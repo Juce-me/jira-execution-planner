@@ -81,10 +81,20 @@ export function epicHasExplicitlyEmptySprintValue(epic) {
     return getIssueSprintTokens(epic).length === 0;
 }
 
-export function filterExplicitBacklogEpics(epics) {
-    return (epics || []).filter((epic) => epicHasExplicitlyEmptySprintValue(epic));
+function epicHasSelectedSprintLabel(epic, selectedSprintName) {
+    const target = String(selectedSprintName || '').trim().toLowerCase();
+    if (!target) return false;
+    return (epic?.labels || []).some((label) => String(label || '').trim().toLowerCase() === target);
+}
+
+export function filterExplicitBacklogEpics(epics, options = {}) {
+    return (epics || []).filter((epic) => {
+        if (epicMatchesSelectedSprint(epic, options)) return false;
+        return epicHasExplicitlyEmptySprintValue(epic);
+    });
 }
 
 export function epicMatchesSelectedSprint(epic, { selectedSprint, selectedSprintName } = {}) {
-    return issueMatchesSelectedSprint(epic, { selectedSprint, selectedSprintName });
+    return issueMatchesSelectedSprint(epic, { selectedSprint, selectedSprintName }) ||
+        epicHasSelectedSprintLabel(epic, selectedSprintName);
 }

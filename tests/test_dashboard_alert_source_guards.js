@@ -254,6 +254,7 @@ test('dashboard delegates ENG data loading and view rendering to ENG modules', (
     const source = fs.readFileSync(dashboardPath, 'utf8');
     const engViewSource = fs.readFileSync(engViewPath, 'utf8');
     const engAlertsSource = fs.readFileSync(engAlertsPanelPath, 'utf8');
+    const engTaskUtilsSource = fs.readFileSync(engTaskUtilsPath, 'utf8');
 
     assert.equal(fs.existsSync(engViewPath), true, 'Expected ENG view module');
     assert.equal(fs.existsSync(engSprintDataPath), true, 'Expected ENG sprint data hook module');
@@ -262,7 +263,7 @@ test('dashboard delegates ENG data loading and view rendering to ENG modules', (
 
     assert.match(source, /import EngView from '\.\/eng\/EngView\.jsx';/);
     assert.match(source, /import \{ useEngSprintData \} from '\.\/eng\/useEngSprintData\.js';/);
-    assert.match(source, /import \{[\s\S]*getTaskTeamInfo[\s\S]*\} from '\.\/eng\/engTaskUtils\.js';/);
+    assert.match(source, /import \{[\s\S]*getTaskTeamInfo[\s\S]*resetEngFilters[\s\S]*\} from '\.\/eng\/engTaskUtils\.js';/);
     assert.match(source, /<EngView[\s>]/);
     assert.match(source, /<EngAlertsPanel[\s>]/);
     assert.match(source, /useEngSprintData\(/);
@@ -275,8 +276,10 @@ test('dashboard delegates ENG data loading and view rendering to ENG modules', (
     assert.match(engViewSource, /className="filters-strip"/);
     assert.match(engViewSource, /className=\{`task-list /);
     assert.match(engViewSource, /<EmptyState title="No tasks found" className="eng-empty-results">/);
-    assert.match(source, /const clearEngFilters = React\.useCallback/);
-    assert.match(source, /setSearchInput\(''\);[\s\S]*setSearchQuery\(''\);[\s\S]*setSelectedTeams\(\['all'\]\);/);
+    assert.match(source, /const clearEngFilters = React\.useCallback\(\(\) => resetEngFilters\(/);
+    assert.match(engTaskUtilsSource, /export function resetEngFilters\(/);
+    assert.match(engTaskUtilsSource, /setSearchInput\(''\);[\s\S]*setSearchQuery\(''\);[\s\S]*setSelectedTeams\(\['all'\]\);/);
+    assert.match(engTaskUtilsSource, /trackFilterChanged\('clear_all'/);
     assert.match(engViewSource, /Clear all filters/);
     assert.match(engViewSource, /appliedFilterClass\(!showProduct\)/);
     assert.doesNotMatch(source, /fetchEngTasks,\s*$/m);

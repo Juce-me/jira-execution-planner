@@ -26,7 +26,7 @@ import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
-import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam } from './eng/engTaskUtils.js';
+import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
@@ -11645,30 +11645,9 @@ import {
                 '--epic-sticky-top': `${epicStickyTop}px`,
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
-            const showGroupControl = (visibleControlGroups || []).length > 1;
-            const searchActive = Boolean(String(searchInput || searchQuery || '').trim());
-            const clearEngFilters = React.useCallback(() => {
-                setSearchInput('');
-                setSearchQuery('');
-                setSelectedTeams(['all']);
-                setStatusFilter(null);
-                setShowTech(true);
-                setShowProduct(true);
-                setShowDone(true);
-                setShowKilled(false);
-                setGroupByInitiative(hasInitiativeData);
-                setBurnoutTaskFilter(null);
-                setShowTeamDropdown(false);
-                setShowGroupDropdown(false);
-                setShowSprintDropdown(false);
-                trackFilterChanged('clear_all', {
-                    feature_name: 'eng',
-                    source_surface: 'empty_state',
-                    visible_count_bucket: bucketCount(visibleTasksForList.length)
-                });
-            }, [hasInitiativeData, trackFilterChanged, visibleTasksForList.length]);
+            const showGroupControl = (visibleControlGroups || []).length > 1; const searchActive = Boolean(String(searchInput || searchQuery || '').trim());
+            const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setStatusFilter, setShowTech, setShowProduct, setShowDone, setShowKilled, setGroupByInitiative, hasInitiativeData, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [hasInitiativeData, trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
-
             const renderSearchControl = (surface, extraClassName = '') => (
                 <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter applied-filter' : ''} ${extraClassName}`.trim()}>
                     <div className="search-wrap">

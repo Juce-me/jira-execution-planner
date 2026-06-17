@@ -166,7 +166,9 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
             return deps.add_clause_to_jql(jql, f'Sprint = {sprint}')
         return jql
 
-    def filter_leaf_issues_for_tab(issues):
+    def filter_leaf_issues_for_tab(issues, sprint_filtered=False):
+        if sprint_filtered:
+            return issues
         if should_apply_epm_sprint(tab):
             return _filter_active_leaf_issues(issues, issue_type_sets, sprint, deps.normalize_epm_text)
         if tab == 'backlog':
@@ -199,11 +201,13 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
             for issue in q1_issues
         )
         q2_jql = deps.add_clause_to_jql(base_jql, q2_predicate)
+        q2_sprint_filtered = False
         if not q2_has_initiative_seed:
             q2_jql = with_sprint_filter(q2_jql)
+            q2_sprint_filtered = should_apply_epm_sprint(tab)
         q2_raw = deps.fetch_epm_rollup_query(q2_jql, 'q2', headers, fields_list, truncated_queries)
         q2_issues, _ = deps.shape_epm_rollup_issue_payload(q2_raw, epic_link_field_id=epic_link_field_id, team_field_id=team_field_id)
-        q2_issues = filter_leaf_issues_for_tab(q2_issues)
+        q2_issues = filter_leaf_issues_for_tab(q2_issues, sprint_filtered=q2_sprint_filtered)
 
     q3_seed_keys = sorted({
         issue.get('key')
@@ -217,7 +221,7 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
         q3_jql = with_sprint_filter(deps.add_clause_to_jql(base_jql, q3_predicate))
         q3_raw = deps.fetch_epm_rollup_query(q3_jql, 'q3', headers, fields_list, truncated_queries)
         q3_issues, _ = deps.shape_epm_rollup_issue_payload(q3_raw, epic_link_field_id=epic_link_field_id, team_field_id=team_field_id)
-        q3_issues = filter_leaf_issues_for_tab(q3_issues)
+        q3_issues = filter_leaf_issues_for_tab(q3_issues, sprint_filtered=should_apply_epm_sprint(tab))
 
     hierarchy = deps.build_epm_rollup_hierarchy(
         deps.dedupe_issues_by_key(q1_issues + q2_issues + q3_issues),

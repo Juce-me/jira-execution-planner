@@ -129,6 +129,22 @@ class BuildPerProjectRollupTests(unittest.TestCase):
             'STORY-1',
         )
 
+    def test_active_rollup_keeps_story_from_sprint_filtered_child_query_without_sprint_field(self):
+        project = {'id': 'proj-sprint', 'label': 'synthetic_label_alpha', 'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []}}
+        q1 = [self.make_issue('EPIC-1', 'Epic', labels=['synthetic_label_alpha'])]
+        q2 = [self.make_issue('STORY-1', 'Story', parent_key='EPIC-1', sprint='absent')]
+        deps, _, fetch_calls = self.make_deps(project, [q1, q2])
+
+        payload, status, _headers = build_per_project_rollup('proj-sprint', 'active', '42', deps)
+
+        self.assertEqual(status, 200)
+        self.assertEqual([name for name, _ in fetch_calls], ['q1', 'q2'])
+        self.assertIn('Sprint = 42', fetch_calls[1][1])
+        self.assertEqual(
+            [story['key'] for story in payload['rootEpics']['EPIC-1']['stories']],
+            ['STORY-1'],
+        )
+
     def test_backlog_prunes_sprinted_stories_and_done_or_in_progress_epics(self):
         project = {'id': 'proj-e', 'label': 'synthetic_label_alpha', 'resolvedLinkage': {'labels': ['synthetic_label_alpha'], 'epicKeys': []}}
         q1 = [

@@ -81,3 +81,41 @@ export function filterEpicsByTaskEpicKeys(epics, tasks) {
     });
     return filteredEpics;
 }
+
+export function resetEngFilters({
+    setSearchInput,
+    setSearchQuery,
+    setSelectedTeams,
+    setStatusFilter,
+    setShowTech,
+    setShowProduct,
+    setShowDone,
+    setShowKilled,
+    setGroupByInitiative,
+    hasInitiativeData,
+    setBurnoutTaskFilter,
+    setShowTeamDropdown,
+    setShowGroupDropdown,
+    setShowSprintDropdown,
+    trackFilterChanged,
+    visibleCountBucket
+}) {
+    setSearchInput('');
+    setSearchQuery('');
+    setSelectedTeams(['all']);
+    setStatusFilter(null);
+    setShowTech(true);
+    setShowProduct(true);
+    setShowDone(true);
+    setShowKilled(false);
+    setGroupByInitiative(hasInitiativeData);
+    setBurnoutTaskFilter(null);
+    setShowTeamDropdown(false);
+    setShowGroupDropdown(false);
+    setShowSprintDropdown(false);
+    trackFilterChanged('clear_all', {
+        feature_name: 'eng',
+        source_surface: 'empty_state',
+        visible_count_bucket: visibleCountBucket
+    });
+}

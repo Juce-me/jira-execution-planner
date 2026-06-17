@@ -26,7 +26,7 @@ import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
-import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam } from './eng/engTaskUtils.js';
+import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
@@ -11645,12 +11645,11 @@ import {
                 '--epic-sticky-top': `${epicStickyTop}px`,
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
-            const showGroupControl = (visibleControlGroups || []).length > 1;
-            const searchActive = Boolean(String(searchInput || searchQuery || '').trim());
+            const showGroupControl = (visibleControlGroups || []).length > 1; const searchActive = Boolean(String(searchInput || searchQuery || '').trim());
+            const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setStatusFilter, setShowTech, setShowProduct, setShowDone, setShowKilled, setGroupByInitiative, hasInitiativeData, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [hasInitiativeData, trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
-
             const renderSearchControl = (surface, extraClassName = '') => (
-                <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter' : ''} ${extraClassName}`.trim()}>
+                <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter applied-filter' : ''} ${extraClassName}`.trim()}>
                     <div className="search-wrap">
                         <input
                             type="text"
@@ -11912,7 +11911,7 @@ import {
                 <ControlField label="Teams">
                     <div className="team-dropdown" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
                         <div
-                            className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''} ${!isAllTeamsSelected ? 'active-filter' : ''}`}
+                            className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''} ${!isAllTeamsSelected ? 'active-filter applied-filter' : ''}`}
                             role="button"
                             aria-label="Filter teams"
                             tabIndex={tasks.length === 0 && loading ? -1 : 0}
@@ -14429,6 +14428,7 @@ import {
                                     epicGroups={epicGroups}
                                     renderEpicBlock={renderEpicBlock}
                                     jiraUrl={jiraUrl}
+                                    onClearFilters={clearEngFilters}
                                 />
                             )}
 

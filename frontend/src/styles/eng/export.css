@@ -1,3 +1,12 @@
+        :root {
+            --eng-empty-filter-border: rgba(255, 171, 0, 0.58);
+            --eng-empty-filter-surface: rgba(255, 171, 0, 0.12);
+            --eng-empty-filter-shadow: rgba(255, 171, 0, 0.22);
+            --eng-empty-filter-text: #5f3b00;
+            --eng-empty-filter-heading: #3d2a00;
+            --eng-empty-filter-accent: var(--jira-initiative-accent, #ffab00);
+        }
+
         .jira-export {
             position: relative;
             display: inline-flex;
@@ -97,14 +106,15 @@
         }
 
         button.toggle {
-            background: transparent;
-            color: var(--text-secondary);
-            border: 1px solid var(--border);
+            background: #ffffff;
+            color: #66615a;
+            border: 1px solid #d8d2c5;
             min-height: 2.65rem;
             border-radius: 8px;
             padding: 0.42rem 0.78rem;
             font-size: 0.72rem;
             margin: 0;
+            box-shadow: none;
         }
 
         button.toggle:hover {
@@ -116,6 +126,36 @@
         button.toggle.active {
             background: #f4f2ec;
             color: var(--text-primary);
-            border-color: #d8d2c5;
-            box-shadow: inset 0 0 0 1px rgba(22, 22, 22, 0.05);
+            border-color: #c9c2b6;
+            box-shadow: inset 0 0 0 1px rgba(126, 99, 48, 0.12);
+            font-weight: 600;
+        }
+
+        .control-search.active-filter.applied-filter .search-input,
+        .control-search.active-filter.applied-filter .search-input:focus,
+        .team-dropdown-toggle.active-filter.applied-filter,
+        .team-dropdown-toggle.active-filter.applied-filter:hover,
+        .team-dropdown-toggle.active-filter.applied-filter.open,
+        button.toggle.applied-filter,
+        button.toggle.applied-filter.active {
+            border-color: var(--eng-empty-filter-border);
+            background: var(--eng-empty-filter-surface);
+            color: var(--eng-empty-filter-text);
+            box-shadow: 0 0 0 2px var(--eng-empty-filter-shadow);
+        }
+
+        button.toggle.applied-filter,
+        button.toggle.applied-filter.active {
+            font-weight: 600;
+        }
+
+        .empty-state.eng-empty-results {
+            border: 1px solid var(--eng-empty-filter-border);
+            background: var(--eng-empty-filter-surface);
+            color: var(--eng-empty-filter-text);
+            box-shadow: inset 4px 0 0 var(--eng-empty-filter-accent);
+        }
+
+        .empty-state.eng-empty-results h2 {
+            color: var(--eng-empty-filter-heading);
         }

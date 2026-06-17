@@ -22,20 +22,28 @@ test('dashboard uses compact task filter labels without repeated show/hide verbs
     assert.ok(engViewSource.includes('>Done<'), 'Expected compact Done stat label');
     assert.ok(engViewSource.includes('>Queued<'), 'Expected compact Queued stat label');
     assert.ok(
-        engViewSource.includes('`Tech (${techTasksCount})`'),
-        'Expected compact Tech toggle label in EngView.jsx'
+        engViewSource.includes('className="stats status-filter-grid"'),
+        'Expected Show only cards to use the status filter card grid'
     );
     assert.ok(
-        engViewSource.includes('`Product (${productTasksCount})`'),
-        'Expected compact Product toggle label in EngView.jsx'
+        engViewSource.includes('className="stats display-filter-grid"'),
+        'Expected Display controls to use the same compact card grid pattern'
     );
     assert.ok(
-        engViewSource.includes('`Closed work (${doneTasks.length + incompleteTasks.length})`'),
-        'Expected compact Closed work Display toggle label in EngView.jsx'
+        engViewSource.includes('<span className="stat-label">Tech</span>'),
+        'Expected compact Tech display card label in EngView.jsx'
     );
     assert.ok(
-        engViewSource.includes('`Killed (${killedTasks.length})`'),
-        'Expected compact Killed Display toggle label in EngView.jsx'
+        engViewSource.includes('<span className="stat-label">Product</span>'),
+        'Expected compact Product display card label in EngView.jsx'
+    );
+    assert.ok(
+        engViewSource.includes('<span className="stat-label">Closed Work</span>'),
+        'Expected compact Closed work Display card label in EngView.jsx'
+    );
+    assert.ok(
+        engViewSource.includes('<span className="stat-label">Killed</span>'),
+        'Expected compact Killed Display card label in EngView.jsx'
     );
     assert.ok(
         engViewSource.includes('aria-label="Show only To Do, Pending, and Accepted tasks"'),
@@ -108,15 +116,15 @@ test('dashboard uses compact task filter labels without repeated show/hide verbs
 
 test('dashboard CSS tightens the task filter toolbar spacing', () => {
     assert.ok(
-        dashboardCss.includes('padding: 0.42rem 0.78rem;'),
-        'Expected tighter toggle padding in dashboard.css'
+        dashboardCss.includes('.filters-strip .display-filter-card'),
+        'Expected Display controls to share compact stat-card styling in dashboard.css'
     );
     assert.ok(
-        dashboardCss.includes('margin: 0;'),
-        'Expected toggle buttons to drop the extra horizontal margin in dashboard.css'
+        dashboardCss.includes('.filters-strip .display-filter-card.is-hidden:not(.applied-filter)'),
+        'Expected hidden default Display cards to remain visually distinct without amber filter treatment'
     );
     assert.ok(
-        dashboardCss.includes('gap: 0.4rem;'),
-        'Expected tighter gap in the toggle container in dashboard.css'
+        dashboardCss.includes('.filters-strip .display-filter-icon'),
+        'Expected the Initiative display card icon to use the shared card layout'
     );
 });

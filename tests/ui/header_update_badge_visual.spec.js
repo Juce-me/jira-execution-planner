@@ -77,6 +77,13 @@ test('header update badge compacts while search is active', async ({ page }) => 
     expect(expandedBox).toBeTruthy();
 
     const searchInput = page.getByPlaceholder('Search tickets...').first();
+    await searchInput.focus();
+    await expect(badge).toHaveText('Update');
+    const focusedBox = await badge.boundingBox();
+    expect(focusedBox).toBeTruthy();
+    expect(focusedBox.width).toBeLessThan(expandedBox.width - 80);
+    await page.screenshot({ path: `${screenshotDir}/search-focused-update-badge.png`, fullPage: true });
+
     await searchInput.fill('rfp');
     await expect(badge).toHaveText('Update');
     const compactBox = await badge.boundingBox();

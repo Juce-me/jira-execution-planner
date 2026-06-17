@@ -620,7 +620,7 @@ import {
             const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
             const [showDependencies, setShowDependencies] = useState(true);
             const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
-            const [searchInput, setSearchInput] = useState(savedPrefsRef.current.searchQuery ?? '');
+            const [searchInput, setSearchInput] = useState(savedPrefsRef.current.searchQuery ?? ''); const [searchFocused, setSearchFocused] = useState(false);
             const normalizeSelectedTeams = (value) => {
                 if (Array.isArray(value)) {
                     return value.length ? value : ['all'];
@@ -11645,7 +11645,7 @@ import {
                 '--epic-sticky-top': `${epicStickyTop}px`,
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
-            const showGroupControl = (visibleControlGroups || []).length > 1; const searchActive = Boolean(String(searchInput || searchQuery || '').trim());
+            const showGroupControl = (visibleControlGroups || []).length > 1; const searchActive = Boolean(String(searchInput || searchQuery || '').trim()); const searchPanelActive = searchActive || searchFocused;
             const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setStatusFilter, setShowTech, setShowProduct, setShowDone, setShowKilled, setGroupByInitiative, hasInitiativeData, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [hasInitiativeData, trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
             const renderSearchControl = (surface, extraClassName = '') => (
@@ -11656,7 +11656,7 @@ import {
                             className="search-input"
                             placeholder="Search tickets..."
                             value={searchInput}
-                            onChange={(e) => setSearchInput(e.target.value)}
+                            onChange={(e) => setSearchInput(e.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
                             ref={searchInputRef}
                         />
                         {searchInput && (
@@ -12180,12 +12180,12 @@ import {
                                 {updateNoticeVisible && (
                                     <button
                                         type="button"
-                                        className={`update-badge ${searchActive ? 'compact' : ''}`}
+                                        className={`update-badge ${searchPanelActive ? 'compact' : ''}`}
                                         onClick={() => setShowUpdateModal(true)}
                                         aria-label="New version available"
                                         title="A new version is available"
                                     >
-                                        {searchActive ? 'Update' : 'New version available'}
+                                        {searchPanelActive ? 'Update' : 'New version available'}
                                     </button>
                                 )}
                             </span>

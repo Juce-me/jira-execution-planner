@@ -42,6 +42,24 @@
             pointer-events: none;
         }
 
+        .stat-card.applied-filter,
+        .filters-strip .stat-card.applied-filter {
+            border-color: var(--eng-empty-filter-border);
+            background: var(--eng-empty-filter-surface);
+            color: var(--eng-empty-filter-text);
+            box-shadow: 0 0 0 2px var(--eng-empty-filter-shadow);
+            opacity: 1;
+        }
+
+        .stat-card.applied-filter .stat-value,
+        .stat-card.applied-filter .stat-label,
+        .stat-card.applied-filter .stats-note,
+        .filters-strip .stat-card.applied-filter .stat-value,
+        .filters-strip .stat-card.applied-filter .stat-label,
+        .filters-strip .stat-card.applied-filter .stats-note {
+            color: var(--eng-empty-filter-text);
+        }
+
         .stat-card:nth-child(1) { animation-delay: 0.5s; }
         .stat-card:nth-child(2) { animation-delay: 0.6s; }
         .stat-card:nth-child(3) { animation-delay: 0.7s; }
@@ -168,6 +186,46 @@
             justify-self: center;
             text-align: center;
             white-space: nowrap;
+        }
+
+        .filters-strip .display-filter-card {
+            min-width: 7.4rem;
+        }
+
+        .filters-strip .display-filter-card .stat-value {
+            color: var(--text-primary);
+        }
+
+        .filters-strip .display-filter-card .stat-label,
+        .filters-strip .display-filter-card .stats-note {
+            color: var(--text-secondary);
+        }
+
+        .filters-strip .display-closed-work,
+        .filters-strip .display-initiative {
+            min-width: 8.4rem;
+        }
+
+        .filters-strip .display-filter-card.is-hidden:not(.applied-filter) {
+            background: #fbfaf8;
+            border-color: #e5e0d8;
+        }
+
+        .filters-strip .display-filter-card.is-hidden:not(.applied-filter) .stat-value,
+        .filters-strip .display-filter-card.is-hidden:not(.applied-filter) .stat-label,
+        .filters-strip .display-filter-card.is-hidden:not(.applied-filter) .stats-note {
+            color: #7a756c;
+        }
+
+        .filters-strip .display-filter-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: currentColor;
+        }
+
+        .filters-strip .display-filter-icon .initiative-toggle-icon {
+            color: currentColor;
         }
 
         @media (min-width: 1200px) {

@@ -274,7 +274,11 @@ test('dashboard delegates ENG data loading and view rendering to ENG modules', (
     assert.match(engAlertsSource, /className=\{`alert-card done-epic/);
     assert.match(engViewSource, /className="filters-strip"/);
     assert.match(engViewSource, /className=\{`task-list /);
-    assert.match(engViewSource, /<EmptyState title="No tasks found">/);
+    assert.match(engViewSource, /<EmptyState title="No tasks found" className="eng-empty-results">/);
+    assert.match(source, /const clearEngFilters = React\.useCallback/);
+    assert.match(source, /setSearchInput\(''\);[\s\S]*setSearchQuery\(''\);[\s\S]*setSelectedTeams\(\['all'\]\);/);
+    assert.match(engViewSource, /Clear all filters/);
+    assert.match(engViewSource, /appliedFilterClass\(!showProduct\)/);
     assert.doesNotMatch(source, /fetchEngTasks,\s*$/m);
     assert.doesNotMatch(source, /fetchBacklogEpics as requestBacklogEpics/);
 });

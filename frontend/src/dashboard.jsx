@@ -11647,10 +11647,30 @@ import {
             };
             const showGroupControl = (visibleControlGroups || []).length > 1;
             const searchActive = Boolean(String(searchInput || searchQuery || '').trim());
+            const clearEngFilters = React.useCallback(() => {
+                setSearchInput('');
+                setSearchQuery('');
+                setSelectedTeams(['all']);
+                setStatusFilter(null);
+                setShowTech(true);
+                setShowProduct(true);
+                setShowDone(true);
+                setShowKilled(false);
+                setGroupByInitiative(hasInitiativeData);
+                setBurnoutTaskFilter(null);
+                setShowTeamDropdown(false);
+                setShowGroupDropdown(false);
+                setShowSprintDropdown(false);
+                trackFilterChanged('clear_all', {
+                    feature_name: 'eng',
+                    source_surface: 'empty_state',
+                    visible_count_bucket: bucketCount(visibleTasksForList.length)
+                });
+            }, [hasInitiativeData, trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
 
             const renderSearchControl = (surface, extraClassName = '') => (
-                <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter' : ''} ${extraClassName}`.trim()}>
+                <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter applied-filter' : ''} ${extraClassName}`.trim()}>
                     <div className="search-wrap">
                         <input
                             type="text"
@@ -11912,7 +11932,7 @@ import {
                 <ControlField label="Teams">
                     <div className="team-dropdown" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
                         <div
-                            className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''} ${!isAllTeamsSelected ? 'active-filter' : ''}`}
+                            className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''} ${!isAllTeamsSelected ? 'active-filter applied-filter' : ''}`}
                             role="button"
                             aria-label="Filter teams"
                             tabIndex={tasks.length === 0 && loading ? -1 : 0}
@@ -14429,6 +14449,7 @@ import {
                                     epicGroups={epicGroups}
                                     renderEpicBlock={renderEpicBlock}
                                     jiraUrl={jiraUrl}
+                                    onClearFilters={clearEngFilters}
                                 />
                             )}
 

@@ -49,10 +49,13 @@ export default function EngView({
     epicGroups = [],
     renderEpicBlock,
     jiraUrl,
+    onClearFilters,
 }) {
     if (selectedView !== 'eng') {
         return null;
     }
+    const hasNoVisibleTasks = visibleTasksForList.length === 0;
+    const appliedFilterClass = (active) => (active ? ' applied-filter' : '');
 
     return (
         <>
@@ -111,7 +114,7 @@ export default function EngView({
                     <div className="filters-strip">
                         <div className="filters-group">
                             <div className="filters-label">Show only</div>
-                            <div className="stats">
+                            <div className="stats status-filter-grid">
                                 <button
                                     type="button"
                                     className={`stat-card total ${statusFilter === null ? 'active' : ''} ${baseFilteredTasks.length === 0 ? 'disabled' : ''}`}
@@ -130,7 +133,7 @@ export default function EngView({
                                 </button>
                                 <button
                                     type="button"
-                                    className={`stat-card done ${statusFilter === 'done' ? 'active' : ''} ${doneTasksCount === 0 ? 'disabled' : ''}`}
+                                    className={`stat-card done ${statusFilter === 'done' ? 'active' : ''}${appliedFilterClass(statusFilter === 'done')} ${doneTasksCount === 0 ? 'disabled' : ''}`}
                                     disabled={doneTasksCount === 0}
                                     aria-pressed={statusFilter === 'done'}
                                     aria-label="Show only Done tasks"
@@ -146,7 +149,7 @@ export default function EngView({
                                 </button>
                                 <button
                                     type="button"
-                                    className={`stat-card high-priority ${statusFilter === 'high-priority' ? 'active' : ''} ${highPriorityCount === 0 ? 'disabled' : ''}`}
+                                    className={`stat-card high-priority ${statusFilter === 'high-priority' ? 'active' : ''}${appliedFilterClass(statusFilter === 'high-priority')} ${highPriorityCount === 0 ? 'disabled' : ''}`}
                                     disabled={highPriorityCount === 0}
                                     aria-pressed={statusFilter === 'high-priority'}
                                     aria-label="Show only high priority tasks"
@@ -162,7 +165,7 @@ export default function EngView({
                                 </button>
                                 <button
                                     type="button"
-                                    className={`stat-card minor ${statusFilter === 'minor-priority' ? 'active' : ''} ${minorPriorityCount === 0 ? 'disabled' : ''}`}
+                                    className={`stat-card minor ${statusFilter === 'minor-priority' ? 'active' : ''}${appliedFilterClass(statusFilter === 'minor-priority')} ${minorPriorityCount === 0 ? 'disabled' : ''}`}
                                     disabled={minorPriorityCount === 0}
                                     aria-pressed={statusFilter === 'minor-priority'}
                                     aria-label="Show only minor and lower priority tasks"
@@ -178,7 +181,7 @@ export default function EngView({
                                 </button>
                                 <button
                                     type="button"
-                                    className={`stat-card in-progress ${statusFilter === 'in-progress' ? 'active' : ''} ${inProgressTasksCount === 0 ? 'disabled' : ''}`}
+                                    className={`stat-card in-progress ${statusFilter === 'in-progress' ? 'active' : ''}${appliedFilterClass(statusFilter === 'in-progress')} ${inProgressTasksCount === 0 ? 'disabled' : ''}`}
                                     disabled={inProgressTasksCount === 0}
                                     aria-pressed={statusFilter === 'in-progress'}
                                     aria-label="Show only In Progress tasks"
@@ -194,7 +197,7 @@ export default function EngView({
                                 </button>
                                 <button
                                     type="button"
-                                    className={`stat-card todo-accepted ${statusFilter === 'todo-accepted' ? 'active' : ''} ${todoAcceptedTasksCount === 0 ? 'disabled' : ''}`}
+                                    className={`stat-card todo-accepted ${statusFilter === 'todo-accepted' ? 'active' : ''}${appliedFilterClass(statusFilter === 'todo-accepted')} ${todoAcceptedTasksCount === 0 ? 'disabled' : ''}`}
                                     disabled={todoAcceptedTasksCount === 0}
                                     aria-pressed={statusFilter === 'todo-accepted'}
                                     aria-label="Show only To Do, Pending, and Accepted tasks"
@@ -212,62 +215,80 @@ export default function EngView({
                         </div>
                         <div className="filters-group">
                             <div className="filters-label">Display</div>
-                            <div className="toggle-container">
+                            <div className="stats display-filter-grid">
                                 <button
                                     type="button"
-                                    className={`toggle ${showTech ? 'active' : ''}`}
+                                    className={`stat-card display-filter-card display-tech ${showTech ? 'is-visible' : 'is-hidden'}${appliedFilterClass(!showTech)}`}
+                                    aria-pressed={showTech}
+                                    aria-label={showTech ? 'Hide Tech tasks' : 'Show Tech tasks'}
                                     onClick={() => {
                                         setShowTech(!showTech);
                                     }}
                                 >
-                                    {`Tech (${techTasksCount})`}
+                                    <span className="stat-value">{techTasksCount}</span>
+                                    <span className="stat-label">Tech</span>
+                                    <span className="stats-note">{showTech ? 'Shown' : 'Hidden'}</span>
                                 </button>
                                 <button
                                     type="button"
-                                    className={`toggle ${showProduct ? 'active' : ''}`}
+                                    className={`stat-card display-filter-card display-product ${showProduct ? 'is-visible' : 'is-hidden'}${appliedFilterClass(!showProduct)}`}
+                                    aria-pressed={showProduct}
+                                    aria-label={showProduct ? 'Hide Product tasks' : 'Show Product tasks'}
                                     onClick={() => setShowProduct(!showProduct)}
                                 >
-                                    {`Product (${productTasksCount})`}
+                                    <span className="stat-value">{productTasksCount}</span>
+                                    <span className="stat-label">Product</span>
+                                    <span className="stats-note">{showProduct ? 'Shown' : 'Hidden'}</span>
                                 </button>
                                 {(doneTasks.length > 0 || incompleteTasks.length > 0) && (
                                     <button
                                         type="button"
-                                        className={`toggle ${showDone ? 'active' : ''}`}
+                                        className={`stat-card display-filter-card display-closed-work ${showDone ? 'is-visible' : 'is-hidden'}${appliedFilterClass(!showDone)}`}
+                                        aria-pressed={showDone}
                                         aria-label="Include Done and Incomplete tasks"
                                         title="Include Done and Incomplete tasks"
                                         onClick={() => setShowDone(!showDone)}
                                     >
-                                        {`Closed work (${doneTasks.length + incompleteTasks.length})`}
+                                        <span className="stat-value">{doneTasks.length + incompleteTasks.length}</span>
+                                        <span className="stat-label">Closed Work</span>
+                                        <span className="stats-note">{showDone ? 'Shown' : 'Hidden'}</span>
                                     </button>
                                 )}
                                 {killedTasks.length > 0 && (
                                     <button
                                         type="button"
-                                        className={`toggle ${showKilled ? 'active' : ''}`}
+                                        className={`stat-card display-filter-card display-killed ${showKilled ? 'is-visible' : 'is-hidden'}${appliedFilterClass(showKilled)}`}
+                                        aria-pressed={showKilled}
                                         aria-label="Include Killed tasks"
                                         title="Include Killed tasks"
                                         onClick={() => setShowKilled(!showKilled)}
                                     >
-                                        {`Killed (${killedTasks.length})`}
+                                        <span className="stat-value">{killedTasks.length}</span>
+                                        <span className="stat-label">Killed</span>
+                                        <span className="stats-note">{showKilled ? 'Shown' : 'Hidden'}</span>
                                     </button>
                                 )}
                                 {hasInitiativeData && (
                                     <button
-                                        className={`toggle initiative-toggle ${groupByInitiative ? 'active' : ''}`}
+                                        className={`stat-card display-filter-card display-initiative ${groupByInitiative ? 'active' : ''}`}
+                                        aria-pressed={groupByInitiative}
                                         onClick={() => setGroupByInitiative(prev => !prev)}
                                         title={groupByInitiative ? 'Switch to flat epic view' : 'Group epics by initiative'}
                                         type="button"
                                     >
-                                        <InitiativeIcon className="initiative-toggle-icon" size={12} />
-                                        Initiatives
+                                        <span className="stat-value display-filter-icon">
+                                            <InitiativeIcon className="initiative-toggle-icon" size={14} />
+                                        </span>
+                                        <span className="stat-label">Initiatives</span>
+                                        <span className="stats-note">{groupByInitiative ? 'Grouped' : 'Flat'}</span>
                                     </button>
                                 )}
                             </div>
                         </div>
                     </div>
 
-                    {visibleTasksForList.length === 0 ? (
-                        <EmptyState title="No tasks found">
+                    {hasNoVisibleTasks ? (
+                        <EmptyState title="No tasks found" className="eng-empty-results">
                             <p>There are no tasks matching the current criteria</p>
                         </EmptyState>
                     ) : (
@@ -317,8 +338,8 @@ export default function EngView({
                     )}
 
                     <div style={{marginTop: '3rem', textAlign: 'center'}}>
-                        <button onClick={onRetry}>
-                            Refresh
+                        <button onClick={hasNoVisibleTasks && onClearFilters ? onClearFilters : onRetry}>
+                            {hasNoVisibleTasks && onClearFilters ? 'Clear all filters' : 'Refresh'}
                         </button>
                     </div>
                 </>

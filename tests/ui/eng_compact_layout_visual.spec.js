@@ -255,7 +255,7 @@ async function openEngCatchUp(page, viewport, options = {}) {
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
-    await expect(page.locator('.filters-strip .stat-card')).toHaveCount(options.expectedStatCardCount || 6);
+    await expect(page.locator('.filters-strip .status-filter-grid .stat-card')).toHaveCount(options.expectedStatCardCount || 6);
     await expect(page.locator('.task-list:not(.epm-issue-board) > .epic-block').first()).toBeVisible();
     await waitForVisualSettled(page);
 }
@@ -281,9 +281,9 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1 
             }));
         };
         const filterStrip = document.querySelector('.filters-strip');
-        const stats = document.querySelector('.filters-strip .stats');
-        const cards = Array.from(document.querySelectorAll('.filters-strip .stat-card'));
-        const displayControls = document.querySelector('.toggle-container');
+        const stats = document.querySelector('.filters-strip .status-filter-grid');
+        const cards = Array.from(document.querySelectorAll('.filters-strip .status-filter-grid .stat-card'));
+        const displayControls = document.querySelector('.display-filter-grid');
         const alertToolbar = document.querySelector('.alerts-panel-toolbar');
         const longLabel = document.querySelector('.filters-strip .todo-accepted .stat-label');
         const labelLines = cards.map(card => lineCount(card.querySelector('.stat-label')));
@@ -452,11 +452,11 @@ test('Killed Display toggle includes killed work without a Show only card', asyn
     });
     await expectCompactLayout(page, 'closed-sprint-filter-stats', { expectedCardRows: 1 });
 
-    await expect(page.locator('.filters-strip .stat-card.killed')).toHaveCount(0);
+    await expect(page.locator('.filters-strip .status-filter-grid .stat-card.killed')).toHaveCount(0);
 
-    const killedToggle = page.locator('.toggle-container button.toggle', { hasText: /^Killed \(1\)$/ });
+    const killedToggle = page.locator('.display-filter-grid .display-killed');
     await expect(killedToggle).toBeVisible();
-    await expect(killedToggle).not.toHaveClass(/active/);
+    await expect(killedToggle).not.toHaveClass(/applied-filter/);
 
     const taskList = page.locator('.task-list:not(.epm-issue-board)');
     await expect(taskList).toContainText('Closed sprint done story');
@@ -465,7 +465,8 @@ test('Killed Display toggle includes killed work without a Show only card', asyn
 
     await killedToggle.click();
 
-    await expect(killedToggle).toHaveClass(/active/);
+    await expect(killedToggle).toHaveClass(/applied-filter/);
+    await expect(killedToggle).toHaveClass(/is-visible/);
     await expect(taskList).toContainText('Closed sprint killed story');
     await expect(taskList).toContainText('Closed sprint done story');
     await expect(taskList).toContainText('Closed sprint stale in progress story');
@@ -484,10 +485,11 @@ test('legacy Killed status filter migrates to the Display Killed toggle', async 
         },
     });
 
-    await expect(page.locator('.filters-strip .stat-card.killed')).toHaveCount(0);
+    await expect(page.locator('.filters-strip .status-filter-grid .stat-card.killed')).toHaveCount(0);
 
-    const killedToggle = page.locator('.toggle-container button.toggle', { hasText: /^Killed \(1\)$/ });
-    await expect(killedToggle).toHaveClass(/active/);
+    const killedToggle = page.locator('.display-filter-grid .display-killed');
+    await expect(killedToggle).toHaveClass(/applied-filter/);
+    await expect(killedToggle).toHaveClass(/is-visible/);
 
     const taskList = page.locator('.task-list:not(.epm-issue-board)');
     await expect(taskList).toContainText('Closed sprint killed story');

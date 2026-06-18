@@ -348,6 +348,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Product renames must include all user-visible product-name surfaces: README, docs, browser title, app header, auth/recovery screens, installer output, package description, matching tests, and generated frontend output when source changes.
 - For Lead Times/stats panel UI changes, verify long lists with more than 30 open and completed epics, active inner-view overflow, load-more behavior, and a screenshot before reporting completion.
 - For ENG filter/display visual changes, keep Display controls in the same compact card grammar as Show only, and verify selected/unselected states side by side against the user's screenshot before reporting completion.
+- Treat Ad Hoc capacity, including business-as-usual work, as included Product capacity; configure it separately from `excludedCapacityEpics`.
 
 ---
 

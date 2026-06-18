@@ -45,6 +45,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 8. `EXEC-shared-department-groups.md`
    - Active implementation plan for moving department/team-group definitions to workspace-shared configuration while keeping per-user visible-group preferences.
    - Expected output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, shared saves are revision-conflict protected, and the existing default-group star remains shared.
+   - Status note: the plan file currently says it was implemented on 2026-06-04. Treat it as prerequisite evidence for capacity-reporting plans and reconcile the filename/status before editing the shared group contract.
 
 ## Completed Scenario Planner Workflow
 
@@ -72,6 +73,12 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Active implementation plan for aligning Planning story selection controls with story-point metadata while keeping non-Planning and EPM card layouts unchanged.
    - Expected output: ENG Planning cards render story points, the rounded checkbox, and Jira key as the final meta-row cluster; selected Planning stories get a subtle selected tint/ring; Playwright geometry and selected-state assertions guard against layout creep.
    - Sequencing: when paired with `EXEC-css-feature-owned-partials.md`, execute this plan first, then move the resulting CSS into feature-owned partials.
+
+## Capacity Reporting Workflow
+
+1. `EXEC-ad-hoc-capacity-epics.md`
+   - Active implementation plan for adding department/team-group Ad Hoc capacity epic configuration as included Product capacity, separate from excluded capacity.
+   - Expected output: `teamGroups.groups[].adHocCapacityEpics` round-trips through shared group config, Settings exposes a separate epic selector, Ad Hoc stories remain included in Product Planning and reporting, excluded capacity behavior remains driven only by `excludedCapacityEpics`, and affected Planning, Stats, Burndown, Lead Times, Mono vs Cross, and Scenario paths have focused verification.
 
 ## Project Grade Security Hardening
 

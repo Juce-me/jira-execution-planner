@@ -88,6 +88,10 @@ from backend import runtime_state as _runtime_state
 from backend.services import capacity as _capacity_service
 from backend.services import sprints as _sprints_service
 from backend.services import stats_cache as _stats_cache_service
+from backend.services.alert_epics import (
+    build_alert_epic_payloads as build_alert_epic_payloads_service,
+    fetch_epics_by_keys_for_alert as fetch_epics_by_keys_for_alert_service,
+)
 from backend.services import update_check as _update_check_service
 from backend.services import priority_weights as _priority_weights_service
 from backend.services import team_catalog as _team_catalog_service
@@ -2577,33 +2581,13 @@ def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sp
 
     data = resp.json() or {}
     issues = data.get('issues', []) or []
-    epics = []
-    for issue in issues:
-        fields = issue.get('fields', {}) or {}
-
-        raw_team = None
-        if team_field_id and fields.get(team_field_id) is not None:
-            raw_team = fields.get(team_field_id)
-
-        team_value = build_team_value(raw_team) if raw_team is not None else None
-        team_name = extract_team_name(raw_team) if raw_team is not None else None
-
-        assignee = fields.get('assignee') or {}
-        status = fields.get('status') or {}
-        epics.append({
-            'key': issue.get('key'),
-            'summary': fields.get('summary'),
-            'status': {'name': status.get('name')} if status else None,
-            'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
-            'labels': fields.get('labels') or [],
-            'team': team_value,
-            'teamName': team_name,
-            'teamId': team_value.get('id') if isinstance(team_value, dict) else None,
-            'fields': {
-                'customfield_10101': fields.get(sprint_field_id) if sprint_field_id else None
-            },
-        })
-    return epics
+    return build_alert_epic_payloads_service(
+        issues,
+        team_field_id,
+        sprint_field_id,
+        build_team_value=build_team_value,
+        extract_team_name=extract_team_name,
+    )
 
 
 def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, epic_link_field):
@@ -2983,8 +2967,7 @@ def fetch_tasks(include_team_name=False):
                 project_name = JIRA_PRODUCT_PROJECT if project_filter == 'product' else JIRA_TECH_PROJECT
                 jql = add_clause_to_jql(jql, f'project = "{project_name}"')
 
-        # Ready-to-close evaluates Story children only; other task loads use the configured issue types.
-        issue_types = ['Story'] if lightweight_ready_to_close else get_configured_issue_types()
+        issue_types = [] if lightweight_ready_to_close else get_configured_issue_types()
         if issue_types:
             if len(issue_types) == 1:
                 jql = add_clause_to_jql(jql, f'type = "{issue_types[0]}"')
@@ -2992,7 +2975,9 @@ def fetch_tasks(include_team_name=False):
                 quoted_types = ', '.join(f'"{t}"' for t in issue_types)
                 jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
 
-        tasks_jql = jql
+        tasks_jql = '' if (lightweight_ready_to_close and epic_keys_filter) else jql
+        if lightweight_ready_to_close:
+            tasks_jql = add_clause_to_jql(tasks_jql, 'issuetype != Epic')
         if epic_keys_filter:
             quoted_epics = ', '.join(f'"{key}"' for key in epic_keys_filter)
             tasks_jql = add_clause_to_jql(tasks_jql, f'("Epic Link" in ({quoted_epics}) OR parent in ({quoted_epics}))')
@@ -3142,7 +3127,24 @@ def fetch_tasks(include_team_name=False):
         enrich_epics_started = time.perf_counter()
         if lightweight_ready_to_close:
             epic_details = {}
-            epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
+            if epic_keys_filter:
+                epics_in_scope = fetch_epics_by_keys_for_alert_service(
+                    epic_keys_filter,
+                    jql,
+                    team_field_id,
+                    epic_name_field,
+                    sprint_field_id,
+                    search_request=jira_search_request,
+                    derive_epic_jql=derive_epic_jql,
+                    remove_team_filter_from_jql=remove_team_filter_from_jql,
+                    add_clause_to_jql=add_clause_to_jql,
+                    parent_name_field_default=PARENT_NAME_FIELD_DEFAULT,
+                    build_team_value=build_team_value,
+                    extract_team_name=extract_team_name,
+                    log_warning_fn=log_warning,
+                )
+            else:
+                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
         else:
             if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
                 epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)

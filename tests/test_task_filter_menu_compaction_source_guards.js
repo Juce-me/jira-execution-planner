@@ -38,8 +38,13 @@ test('dashboard uses compact task filter labels without repeated show/hide verbs
         'Expected compact Product display card label in EngView.jsx'
     );
     assert.ok(
+        engViewSource.includes('<span className="stat-label">Done</span>'),
+        'Expected compact Done Display card label in EngView.jsx'
+    );
+    assert.equal(
         engViewSource.includes('<span className="stat-label">Closed Work</span>'),
-        'Expected compact Closed work Display card label in EngView.jsx'
+        false,
+        'Closed work Display card label should be shortened to Done'
     );
     assert.ok(
         engViewSource.includes('<span className="stat-label">Killed</span>'),
@@ -51,7 +56,7 @@ test('dashboard uses compact task filter labels without repeated show/hide verbs
     );
     assert.ok(
         engViewSource.includes('aria-label="Include Done and Incomplete tasks"'),
-        'Expected Closed work Display toggle to preserve inclusion semantics'
+        'Expected Done Display toggle to preserve inclusion semantics'
     );
     assert.ok(
         dashboardSource.includes('setShowKilled={setShowKilled}'),

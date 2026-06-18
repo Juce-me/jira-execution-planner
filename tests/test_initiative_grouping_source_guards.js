@@ -33,6 +33,29 @@ test('dashboard renders initiative-toggle button', () => {
     );
 });
 
+test('initiative toggle belongs to the View controls, not Display filters', () => {
+    assert.ok(
+        engViewSource.includes('display-view-row'),
+        'Expected Display and View controls to share an inline row'
+    );
+    assert.ok(
+        engViewSource.includes('view-control-grid'),
+        'Expected a dedicated View controls grid in EngView.jsx'
+    );
+    assert.ok(
+        engViewSource.includes('view-toggle-card initiative-toggle'),
+        'Expected the initiative toggle to use the View toggle card styling'
+    );
+    assert.ok(
+        !engViewSource.includes('display-view-divider'),
+        'Expected Display and View labels without a divider glyph'
+    );
+    assert.ok(
+        !engViewSource.includes('display-filter-card display-initiative'),
+        'Expected initiative grouping not to be styled as a Display filter'
+    );
+});
+
 test('dashboard renders initiative-group wrapper', () => {
     assert.ok(
         engViewSource.includes('initiative-group'),

@@ -35,3 +35,24 @@
             letter-spacing: 0.08em;
             color: var(--text-secondary);
         }
+
+        .display-view-row {
+            display: flex;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 0.35rem 0.5rem;
+        }
+
+        .display-view-section {
+            display: grid;
+            gap: 0.28rem;
+            min-width: 0;
+        }
+
+        .display-controls-section {
+            flex: 0 1 auto;
+        }
+
+        .view-controls-section {
+            flex: 0 0 auto;
+        }

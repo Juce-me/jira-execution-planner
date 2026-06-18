@@ -38,7 +38,7 @@ function makeIssue({ key, project, index, status, priority, points, summary, spr
     };
 }
 
-function makeEpic(project) {
+function makeEpic(project, overrides = {}) {
     return {
         key: `${project}-EPIC`,
         summary: `${project} compact layout epic`,
@@ -47,6 +47,7 @@ function makeEpic(project) {
         teamId: project === 'PRODUCT' ? 'team-alpha' : 'team-beta',
         teamName: project === 'PRODUCT' ? 'Alpha Team' : 'Beta Team',
         sprint: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+        ...overrides,
     };
 }
 
@@ -165,6 +166,11 @@ async function installEngCompactFixture(page, options = {}) {
     const sprintState = options.sprintState || 'active';
     const productIssueSource = options.productTasks || productTasks;
     const techIssueSource = options.techTasks || techTasks;
+    const initiative = options.withInitiativeData
+        ? { key: 'INIT-COMPACT', summary: 'Compact layout initiative' }
+        : null;
+    const productEpicForResponse = initiative ? makeEpic('PRODUCT', { initiative }) : productEpic;
+    const techEpicForResponse = initiative ? makeEpic('TECH', { initiative }) : techEpic;
     await installDashboardShell(page);
     await page.route('**/api/**', route => {
         const request = route.request();
@@ -214,7 +220,7 @@ async function installEngCompactFixture(page, options = {}) {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
             const tasks = project === 'tech' ? techIssueSource : productIssueSource;
-            const epic = project === 'tech' ? techEpic : productEpic;
+            const epic = project === 'tech' ? techEpicForResponse : productEpicForResponse;
             return json({
                 issues: purpose === 'ready-to-close' ? [] : tasks,
                 epics: { [epic.key]: epic },
@@ -256,7 +262,7 @@ async function openEngCatchUp(page, viewport, options = {}) {
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
     await expect(page.locator('.filters-strip .status-filter-grid .stat-card')).toHaveCount(options.expectedStatCardCount || 6);
-    await expect(page.locator('.task-list:not(.epm-issue-board) > .epic-block').first()).toBeVisible();
+    await expect(page.locator('.task-list:not(.epm-issue-board) .epic-block').first()).toBeVisible();
     await waitForVisualSettled(page);
 }
 
@@ -298,6 +304,7 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1 
             const noteRect = card.querySelector('.stats-note').getBoundingClientRect();
             return {
                 valueLeft: valueRect.left - cardRect.left,
+                valueWidth: valueRect.width,
                 valueTopOffset: Math.abs((valueRect.top + valueRect.height / 2) - (cardRect.top + cardRect.height / 2)),
                 labelNoteOffset: Math.abs((labelRect.left + labelRect.width / 2) - (noteRect.left + noteRect.width / 2)),
                 labelLeftOfValue: (labelRect.left + labelRect.width / 2) - (valueRect.left + valueRect.width / 2),
@@ -361,10 +368,12 @@ async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1 
     expect(metrics.filterOverflowX).toBeLessThanOrEqual(1);
     expect(metrics.displayOverflowX).toBeLessThanOrEqual(1);
     expect(metrics.alertOverflowX).toBeLessThanOrEqual(1);
-    expect(metrics.maxLabelLines).toBeLessThanOrEqual(2);
+    expect(metrics.maxLabelLines).toBe(1);
     expect(metrics.maxLabelOverflow).toBeLessThanOrEqual(1);
     metrics.cardAlignments.forEach(alignment => {
+        expect(alignment.valueLeft).toBeGreaterThanOrEqual(8);
         expect(alignment.valueLeft).toBeLessThanOrEqual(28);
+        expect(alignment.valueWidth).toBeLessThanOrEqual(30);
         expect(alignment.valueTopOffset).toBeLessThanOrEqual(2);
         expect(alignment.labelNoteOffset).toBeLessThanOrEqual(2);
         expect(alignment.labelLeftOfValue).toBeGreaterThan(38);
@@ -441,6 +450,146 @@ test('ENG compact filters and epic rows stay readable on desktop', async ({ page
 test('ENG compact filters and epic rows stay readable on narrow screens', async ({ page }) => {
     await openEngCatchUp(page, { width: 390, height: 760 });
     await expectCompactLayout(page, 'mobile', { expectedCardRows: 3 });
+});
+
+test('Initiative grouping is a View control beside Display controls', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 760 }, { withInitiativeData: true });
+
+    const displayViewRow = page.locator('.filters-strip .display-view-row');
+    await expect(displayViewRow.locator('.display-controls-section .filters-label')).toHaveText('Display');
+    await expect(displayViewRow.locator('.display-view-divider')).toHaveCount(0);
+    await expect(displayViewRow.locator('.view-controls-section .filters-label')).toHaveText('View');
+
+    const initiativeToggle = displayViewRow.locator('.view-control-grid .initiative-toggle');
+    await expect(initiativeToggle).toBeVisible();
+    await expect(initiativeToggle).toHaveClass(/view-toggle-card/);
+    await expect(initiativeToggle).not.toHaveClass(/display-filter-card/);
+    await expect(page.locator('.display-filter-grid .initiative-toggle')).toHaveCount(0);
+    const initiativeIconColor = await initiativeToggle.locator('.initiative-toggle-icon').evaluate((icon) => {
+        return getComputedStyle(icon).color;
+    });
+    expect(initiativeIconColor).toBe('rgb(255, 171, 0)');
+    const displayCardRows = await page.locator('.display-view-row .display-filter-grid .display-filter-card').evaluateAll((cards) => {
+        return new Set(cards.map(card => Math.round(card.getBoundingClientRect().top))).size;
+    });
+    expect(displayCardRows).toBe(1);
+    const controlGaps = await page.evaluate(() => {
+        const rowGaps = (selector) => {
+            const rects = Array.from(document.querySelectorAll(selector))
+                .map(card => card.getBoundingClientRect())
+                .filter(rect => rect.width > 0 && rect.height > 0);
+            const firstRowTop = Math.round(rects[0].top);
+            const row = rects
+                .filter(rect => Math.abs(Math.round(rect.top) - firstRowTop) <= 1)
+                .sort((a, b) => a.left - b.left);
+            return row.slice(1).map((rect, index) => rect.left - row[index].right);
+        };
+        return {
+            status: rowGaps('.status-filter-grid .stat-card'),
+            display: rowGaps('.display-filter-grid .display-filter-card'),
+        };
+    });
+    const statusGap = controlGaps.status[0];
+    expect(controlGaps.display.length).toBeGreaterThan(0);
+    controlGaps.display.forEach(gap => {
+        expect(Math.abs(gap - statusGap)).toBeLessThanOrEqual(1);
+    });
+    await expect(displayViewRow.locator('.display-closed-work .stat-label')).toHaveText('Done');
+    const cardGeometry = await page.locator('.filters-strip .stat-card').evaluateAll((cards) => {
+        return cards.map(card => {
+            const cardRect = card.getBoundingClientRect();
+            const valueRect = card.querySelector('.stat-value').getBoundingClientRect();
+            const labelRect = card.querySelector('.stat-label').getBoundingClientRect();
+            const noteRect = card.querySelector('.stats-note').getBoundingClientRect();
+            return {
+                width: cardRect.width,
+                height: cardRect.height,
+                valueLeft: valueRect.left - cardRect.left,
+                valueWidth: valueRect.width,
+                labelLeft: labelRect.left - cardRect.left,
+                noteLeft: noteRect.left - cardRect.left,
+                labelWidth: labelRect.width,
+                noteWidth: noteRect.width,
+            };
+        });
+    });
+    const maxDelta = (values) => Math.max(...values) - Math.min(...values);
+    expect(maxDelta(cardGeometry.map(card => card.width))).toBeLessThanOrEqual(1);
+    expect(maxDelta(cardGeometry.map(card => card.height))).toBeLessThanOrEqual(1);
+    expect(maxDelta(cardGeometry.map(card => card.valueLeft))).toBeLessThanOrEqual(1);
+    expect(maxDelta(cardGeometry.map(card => card.valueWidth))).toBeLessThanOrEqual(1);
+    expect(maxDelta(cardGeometry.map(card => card.labelLeft))).toBeLessThanOrEqual(1);
+    expect(maxDelta(cardGeometry.map(card => card.noteLeft))).toBeLessThanOrEqual(1);
+    expect(maxDelta(cardGeometry.map(card => card.labelWidth))).toBeLessThanOrEqual(1);
+    expect(maxDelta(cardGeometry.map(card => card.noteWidth))).toBeLessThanOrEqual(1);
+
+    const layoutBeforeToggle = await page.locator('.filters-strip .stat-card').evaluateAll((cards) => {
+        return cards.map(card => {
+            const cardRect = card.getBoundingClientRect();
+            const valueRect = card.querySelector('.stat-value').getBoundingClientRect();
+            const labelRect = card.querySelector('.stat-label').getBoundingClientRect();
+            const noteRect = card.querySelector('.stats-note').getBoundingClientRect();
+            return {
+                left: cardRect.left,
+                width: cardRect.width,
+                height: cardRect.height,
+                valueLeft: valueRect.left - cardRect.left,
+                labelLeft: labelRect.left - cardRect.left,
+                noteLeft: noteRect.left - cardRect.left,
+            };
+        });
+    });
+    const techToggle = displayViewRow.locator('.display-tech');
+    await techToggle.click();
+    await waitForVisualSettled(page);
+    const layoutAfterToggle = await page.locator('.filters-strip .stat-card').evaluateAll((cards) => {
+        return cards.map(card => {
+            const cardRect = card.getBoundingClientRect();
+            const valueRect = card.querySelector('.stat-value').getBoundingClientRect();
+            const labelRect = card.querySelector('.stat-label').getBoundingClientRect();
+            const noteRect = card.querySelector('.stats-note').getBoundingClientRect();
+            return {
+                left: cardRect.left,
+                width: cardRect.width,
+                height: cardRect.height,
+                valueLeft: valueRect.left - cardRect.left,
+                labelLeft: labelRect.left - cardRect.left,
+                noteLeft: noteRect.left - cardRect.left,
+            };
+        });
+    });
+    expect(layoutAfterToggle).toHaveLength(layoutBeforeToggle.length);
+    layoutBeforeToggle.forEach((before, index) => {
+        const after = layoutAfterToggle[index];
+        expect(Math.abs(after.left - before.left)).toBeLessThanOrEqual(1);
+        expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(1);
+        expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
+        expect(Math.abs(after.valueLeft - before.valueLeft)).toBeLessThanOrEqual(1);
+        expect(Math.abs(after.labelLeft - before.labelLeft)).toBeLessThanOrEqual(1);
+        expect(Math.abs(after.noteLeft - before.noteLeft)).toBeLessThanOrEqual(1);
+    });
+    const displayToggleStyles = await page.evaluate(() => {
+        const hiddenTech = document.querySelector('.display-tech');
+        const shownProduct = document.querySelector('.display-product');
+        const hiddenTechStyle = getComputedStyle(hiddenTech);
+        const shownProductStyle = getComputedStyle(shownProduct);
+        return {
+            hiddenTechBackground: hiddenTechStyle.backgroundColor,
+            hiddenTechBoxShadow: hiddenTechStyle.boxShadow,
+            shownProductBackground: shownProductStyle.backgroundColor,
+        };
+    });
+    expect(displayToggleStyles.hiddenTechBackground).toBe(displayToggleStyles.shownProductBackground);
+    expect(displayToggleStyles.hiddenTechBoxShadow).toBe('none');
+    await techToggle.click();
+    await waitForVisualSettled(page);
+    await expect(initiativeToggle).toContainText('Grouped');
+    await expect(page.locator('.initiative-header')).toBeVisible();
+
+    await initiativeToggle.click();
+    await expect(initiativeToggle).toContainText('Flat');
+    await expect(page.locator('.initiative-header')).toHaveCount(0);
+    await page.screenshot({ path: `${screenshotDir}/desktop-display-view-controls.png`, fullPage: true });
 });
 
 test('Killed Display toggle includes killed work without a Show only card', async ({ page }) => {

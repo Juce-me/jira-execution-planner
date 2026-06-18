@@ -300,10 +300,12 @@ test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
     assertRuleIncludes('.filters-strip .stats', 'justify-content: start;');
     assertRuleIncludes('.filters-strip .stats', 'width: 100%;');
     assertRuleExcludes('.filters-strip .stats', 'justify-content: space-between;');
-    assertRuleIncludes('.filters-strip .stat-card', 'min-height: 0;');
-    assertRuleIncludes('.filters-strip .stat-card', 'width: auto;');
-    assertRuleIncludes('.filters-strip .stat-card', 'inline-size: 100%;');
-    assertRuleIncludes('.filters-strip .stat-card', 'max-width: 13rem;');
+    assertRuleIncludes('.filters-strip .stat-card', 'min-height: var(--filter-card-height);');
+    assertRuleIncludes('.filters-strip .stat-card', 'block-size: var(--filter-card-height);');
+    assertRuleIncludes('.filters-strip .stat-card', 'width: var(--filter-card-width);');
+    assertRuleIncludes('.filters-strip .stat-card', 'inline-size: var(--filter-card-width);');
+    assertRuleIncludes('.filters-strip .stat-card', 'max-width: var(--filter-card-width);');
+    assertRuleIncludes('.filters-strip .stat-card', 'grid-template-columns: var(--filter-card-value-width) minmax(0, 1fr);');
     assertRuleIncludes('.filters-strip .stat-card', 'padding: 0.34rem 0.55rem;');
     assertRuleIncludes('.filters-strip .stat-card', 'justify-content: start;');
     assertRuleExcludes('.filters-strip .stat-card', 'width: 100%;');

@@ -213,77 +213,84 @@ export default function EngView({
                                 </button>
                             </div>
                         </div>
-                        <div className="filters-group">
-                            <div className="filters-label">Display</div>
-                            <div className="stats display-filter-grid">
-                                <button
-                                    type="button"
-                                    className={`stat-card display-filter-card display-tech ${showTech ? 'is-visible' : 'is-hidden'}${appliedFilterClass(!showTech)}`}
-                                    aria-pressed={showTech}
-                                    aria-label={showTech ? 'Hide Tech tasks' : 'Show Tech tasks'}
-                                    onClick={() => {
-                                        setShowTech(!showTech);
-                                    }}
-                                >
-                                    <span className="stat-value">{techTasksCount}</span>
-                                    <span className="stat-label">Tech</span>
-                                    <span className="stats-note">{showTech ? 'Shown' : 'Hidden'}</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    className={`stat-card display-filter-card display-product ${showProduct ? 'is-visible' : 'is-hidden'}${appliedFilterClass(!showProduct)}`}
-                                    aria-pressed={showProduct}
-                                    aria-label={showProduct ? 'Hide Product tasks' : 'Show Product tasks'}
-                                    onClick={() => setShowProduct(!showProduct)}
-                                >
-                                    <span className="stat-value">{productTasksCount}</span>
-                                    <span className="stat-label">Product</span>
-                                    <span className="stats-note">{showProduct ? 'Shown' : 'Hidden'}</span>
-                                </button>
-                                {(doneTasks.length > 0 || incompleteTasks.length > 0) && (
+                        <div className="filters-group display-view-row">
+                            <div className="display-view-section display-controls-section">
+                                <div className="filters-label">Display</div>
+                                <div className="stats display-filter-grid">
                                     <button
                                         type="button"
-                                        className={`stat-card display-filter-card display-closed-work ${showDone ? 'is-visible' : 'is-hidden'}${appliedFilterClass(!showDone)}`}
-                                        aria-pressed={showDone}
-                                        aria-label="Include Done and Incomplete tasks"
-                                        title="Include Done and Incomplete tasks"
-                                        onClick={() => setShowDone(!showDone)}
+                                        className={`stat-card display-filter-card display-tech ${showTech ? 'is-visible' : 'is-hidden'}${appliedFilterClass(!showTech)}`}
+                                        aria-pressed={showTech}
+                                        aria-label={showTech ? 'Hide Tech tasks' : 'Show Tech tasks'}
+                                        onClick={() => {
+                                            setShowTech(!showTech);
+                                        }}
                                     >
-                                        <span className="stat-value">{doneTasks.length + incompleteTasks.length}</span>
-                                        <span className="stat-label">Closed Work</span>
-                                        <span className="stats-note">{showDone ? 'Shown' : 'Hidden'}</span>
+                                        <span className="stat-value">{techTasksCount}</span>
+                                        <span className="stat-label">Tech</span>
+                                        <span className="stats-note">{showTech ? 'Shown' : 'Hidden'}</span>
                                     </button>
-                                )}
-                                {killedTasks.length > 0 && (
                                     <button
                                         type="button"
-                                        className={`stat-card display-filter-card display-killed ${showKilled ? 'is-visible' : 'is-hidden'}${appliedFilterClass(showKilled)}`}
-                                        aria-pressed={showKilled}
-                                        aria-label="Include Killed tasks"
-                                        title="Include Killed tasks"
-                                        onClick={() => setShowKilled(!showKilled)}
+                                        className={`stat-card display-filter-card display-product ${showProduct ? 'is-visible' : 'is-hidden'}${appliedFilterClass(!showProduct)}`}
+                                        aria-pressed={showProduct}
+                                        aria-label={showProduct ? 'Hide Product tasks' : 'Show Product tasks'}
+                                        onClick={() => setShowProduct(!showProduct)}
                                     >
-                                        <span className="stat-value">{killedTasks.length}</span>
-                                        <span className="stat-label">Killed</span>
-                                        <span className="stats-note">{showKilled ? 'Shown' : 'Hidden'}</span>
+                                        <span className="stat-value">{productTasksCount}</span>
+                                        <span className="stat-label">Product</span>
+                                        <span className="stats-note">{showProduct ? 'Shown' : 'Hidden'}</span>
                                     </button>
-                                )}
-                                {hasInitiativeData && (
-                                    <button
-                                        className={`stat-card display-filter-card display-initiative ${groupByInitiative ? 'active' : ''}`}
-                                        aria-pressed={groupByInitiative}
-                                        onClick={() => setGroupByInitiative(prev => !prev)}
-                                        title={groupByInitiative ? 'Switch to flat epic view' : 'Group epics by initiative'}
-                                        type="button"
-                                    >
-                                        <span className="stat-value display-filter-icon">
-                                            <InitiativeIcon className="initiative-toggle-icon" size={14} />
-                                        </span>
-                                        <span className="stat-label">Initiatives</span>
-                                        <span className="stats-note">{groupByInitiative ? 'Grouped' : 'Flat'}</span>
-                                    </button>
-                                )}
+                                    {(doneTasks.length > 0 || incompleteTasks.length > 0) && (
+                                        <button
+                                            type="button"
+                                            className={`stat-card display-filter-card display-closed-work ${showDone ? 'is-visible' : 'is-hidden'}${appliedFilterClass(!showDone)}`}
+                                            aria-pressed={showDone}
+                                            aria-label="Include Done and Incomplete tasks"
+                                            title="Include Done and Incomplete tasks"
+                                            onClick={() => setShowDone(!showDone)}
+                                        >
+                                            <span className="stat-value">{doneTasks.length + incompleteTasks.length}</span>
+                                            <span className="stat-label">Done</span>
+                                            <span className="stats-note">{showDone ? 'Shown' : 'Hidden'}</span>
+                                        </button>
+                                    )}
+                                    {killedTasks.length > 0 && (
+                                        <button
+                                            type="button"
+                                            className={`stat-card display-filter-card display-killed ${showKilled ? 'is-visible' : 'is-hidden'}${appliedFilterClass(showKilled)}`}
+                                            aria-pressed={showKilled}
+                                            aria-label="Include Killed tasks"
+                                            title="Include Killed tasks"
+                                            onClick={() => setShowKilled(!showKilled)}
+                                        >
+                                            <span className="stat-value">{killedTasks.length}</span>
+                                            <span className="stat-label">Killed</span>
+                                            <span className="stats-note">{showKilled ? 'Shown' : 'Hidden'}</span>
+                                        </button>
+                                    )}
+                                </div>
                             </div>
+                            {hasInitiativeData && (
+                                <div className="display-view-section view-controls-section">
+                                    <div className="filters-label">View</div>
+                                    <div className="stats view-control-grid">
+                                        <button
+                                            className={`stat-card view-toggle-card initiative-toggle ${groupByInitiative ? 'active' : ''}`}
+                                            aria-pressed={groupByInitiative}
+                                            onClick={() => setGroupByInitiative(prev => !prev)}
+                                            title={groupByInitiative ? 'Switch to flat epic view' : 'Group epics by initiative'}
+                                            type="button"
+                                        >
+                                            <span className="stat-value display-filter-icon">
+                                                <InitiativeIcon className="initiative-toggle-icon" size={14} />
+                                            </span>
+                                            <span className="stat-label">Initiatives</span>
+                                            <span className="stats-note">{groupByInitiative ? 'Grouped' : 'Flat'}</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 

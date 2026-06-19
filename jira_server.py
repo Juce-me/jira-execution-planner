@@ -173,6 +173,7 @@ EPIC_COHORT_CACHE_TTL_SECONDS = int(os.getenv('EPIC_COHORT_CACHE_TTL_SECONDS', '
 EPIC_COHORT_ENRICH_MAX_ISSUES = int(os.getenv('EPIC_COHORT_ENRICH_MAX_ISSUES', '200'))
 EPIC_COHORT_ENRICH_WORKERS = int(os.getenv('EPIC_COHORT_ENRICH_WORKERS', '4'))
 EPIC_COHORT_ENRICH_TIMEOUT_SECONDS = float(os.getenv('EPIC_COHORT_ENRICH_TIMEOUT_SECONDS', '10'))
+EPIC_COHORT_ADHOC_MAX_EPICS = int(os.getenv('EPIC_COHORT_ADHOC_MAX_EPICS', '200'))
 EXCLUDED_CAPACITY_STATS_MAX_SPRINTS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_SPRINTS', '24'))
 EXCLUDED_CAPACITY_STATS_MAX_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_ISSUES', '2000'))
 EXCLUDED_CAPACITY_STATS_MAX_EPICS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_EPICS', '200'))
@@ -1083,7 +1084,7 @@ def resolve_terminal_date_from_history(histories, terminal_status):
     return None
 
 
-def _build_epic_cohort_cache_key(start_quarter, team_ids, projects, components=None):
+def _build_epic_cohort_cache_key(start_quarter, team_ids, projects, components=None, ad_hoc_epics=None):
     normalized_teams = ','.join(normalize_team_ids(team_ids or []))
     normalized_projects = ','.join(sorted(str(project or '').strip() for project in (projects or []) if str(project or '').strip()))
     normalized_components = ','.join(
@@ -1093,11 +1094,13 @@ def _build_epic_cohort_cache_key(start_quarter, team_ids, projects, components=N
             if str(component or '').strip()
         )
     )
+    normalized_ad_hoc = ','.join(sorted(normalize_epic_keys(ad_hoc_epics or [])))
     return (
         f'{str(start_quarter or "").strip().upper()}'
         f'::{normalized_teams or "all"}'
         f'::{normalized_projects or "none"}'
         f'::{normalized_components or "no-components"}'
+        f'::{normalized_ad_hoc or "no-adhoc"}'
     )
 
 
@@ -4768,7 +4771,7 @@ def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers
     return issue_key, resolved, None
 
 
-def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None, component_names=None, context=None):
+def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None, component_names=None, context=None, ad_hoc_capacity_epics=None):
     start_date, _ = quarter_dates_from_label(start_quarter)
     if not start_date:
         return {
@@ -4794,7 +4797,14 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
         }, None
 
     escaped_projects = ', '.join(f'"{_escape_jql_literal(project)}"' for project in scoped_projects)
-    jql = f'issuetype = Epic AND project in ({escaped_projects}) AND created >= "{start_date.isoformat()}"'
+    ad_hoc_keys = normalize_epic_keys(ad_hoc_capacity_epics or [])[:EPIC_COHORT_ADHOC_MAX_EPICS]
+    ad_hoc_key_set = set(ad_hoc_keys)
+    if ad_hoc_keys:
+        escaped_ad_hoc = ', '.join(f'"{_escape_jql_literal(key)}"' for key in ad_hoc_keys)
+        match_clause = f'(project in ({escaped_projects}) OR key in ({escaped_ad_hoc}))'
+    else:
+        match_clause = f'project in ({escaped_projects})'
+    jql = f'issuetype = Epic AND {match_clause} AND created >= "{start_date.isoformat()}"'
 
     scoped_team_ids = normalize_team_ids(team_ids or [])
     scoped_components = [str(name or '').strip() for name in (component_names or []) if str(name or '').strip()]
@@ -4924,7 +4934,7 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
         team_payload = normalize_team_value_for_burnout(raw_team)
         assignee_payload = normalize_assignee_value(fields_data.get('assignee'))
 
-        normalized_issues.append({
+        normalized_issue = {
             'key': issue_key,
             'summary': fields_data.get('summary') or '',
             'projectKey': project.get('key') or '',
@@ -4938,7 +4948,10 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
             'createdQuarter': assign_to_period(created_date, 'quarter'),
             'createdMonth': assign_to_period(created_date, 'month'),
             'terminalDateSource': 'resolutiondate' if resolution_dt else ('changelog' if terminal_date else None)
-        })
+        }
+        if issue_key in ad_hoc_key_set:
+            normalized_issue['capacityType'] = 'ad_hoc'
+        normalized_issues.append(normalized_issue)
 
     if latest_terminal_date and latest_terminal_date > range_end:
         range_end = latest_terminal_date
@@ -5495,9 +5508,11 @@ def get_epic_cohort_stats():
     team_ids = normalize_team_ids(raw_team_ids if isinstance(raw_team_ids, list) else [])
     raw_components = payload.get('components')
     component_names = [str(item or '').strip() for item in (raw_components if isinstance(raw_components, list) else []) if str(item or '').strip()]
+    raw_ad_hoc_epics = payload.get('adHocCapacityEpics')
+    ad_hoc_epics = normalize_epic_keys(raw_ad_hoc_epics if isinstance(raw_ad_hoc_epics, list) else [])[:EPIC_COHORT_ADHOC_MAX_EPICS]
     refresh = _cohort_parse_bool(payload.get('refresh'))
     scoped_projects = _cohort_project_scope()
-    cache_key = _build_epic_cohort_cache_key(start_quarter, team_ids, scoped_projects, component_names)
+    cache_key = _build_epic_cohort_cache_key(start_quarter, team_ids, scoped_projects, component_names, ad_hoc_epics=ad_hoc_epics)
     auth_context = current_request_auth_context()
     cache_enabled = jira_home_process_cache_enabled(auth_context)
 
@@ -5522,6 +5537,7 @@ def get_epic_cohort_stats():
             team_ids=team_ids,
             component_names=component_names,
             context=auth_context,
+            ad_hoc_capacity_epics=ad_hoc_epics,
         )
         if error_response is not None:
             return jsonify({

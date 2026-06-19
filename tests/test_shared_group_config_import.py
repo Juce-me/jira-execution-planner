@@ -92,6 +92,75 @@ class SharedGroupConfigImportTests(unittest.TestCase):
 
         self.assertNotIn('teamGroups', resolved['view'])
         self.assertEqual(shared['groups'][0]['id'], 'platform')
+        self.assertEqual(shared['groups'][0]['adHocCapacityEpics'], [])
+
+    def test_import_preserves_normalized_ad_hoc_capacity_epics(self):
+        with open(self.dashboard_path, 'w', encoding='utf-8') as handle:
+            json.dump({
+                'version': 1,
+                'projects': {'selected': [{'key': 'PROD', 'type': 'product'}]},
+                'teamGroups': {
+                    'version': 1,
+                    'groups': [{
+                        'id': 'platform',
+                        'name': 'Platform',
+                        'teamIds': ['team-a'],
+                        'adHocCapacityEpics': [' product-adhoc ', 'PRODUCT-ADHOC', 'PRODUCT-OTHER'],
+                    }],
+                    'defaultGroupId': 'platform',
+                },
+            }, handle)
+
+        imported = import_dashboard_config(
+            database_url=self.database_url,
+            context=self.context,
+            source_path=self.dashboard_path,
+            actor_user_id=self.user_id,
+        )
+        shared = shared_group_config.load_shared_groups(
+            self.context,
+            fallback_loader=lambda: {},
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+        export_path = os.path.join(self._tmpdir.name, 'ad-hoc-rollback-export.json')
+        export_view_config_json(
+            database_url=self.database_url,
+            context=self.context,
+            view_config_id=imported.view_config_id,
+            output_path=export_path,
+        )
+
+        with open(export_path, encoding='utf-8') as handle:
+            exported = json.load(handle)
+        self.assertEqual(shared['groups'][0]['adHocCapacityEpics'], ['PRODUCT-ADHOC', 'PRODUCT-OTHER'])
+        self.assertEqual(exported['teamGroups']['groups'][0]['adHocCapacityEpics'], ['PRODUCT-ADHOC', 'PRODUCT-OTHER'])
+
+    def test_import_rejects_excluded_and_ad_hoc_capacity_overlap(self):
+        with open(self.dashboard_path, 'w', encoding='utf-8') as handle:
+            json.dump({
+                'version': 1,
+                'projects': {'selected': [{'key': 'PROD', 'type': 'product'}]},
+                'teamGroups': {
+                    'version': 1,
+                    'groups': [{
+                        'id': 'platform',
+                        'name': 'Platform',
+                        'teamIds': ['team-a'],
+                        'excludedCapacityEpics': ['PRODUCT-ADHOC'],
+                        'adHocCapacityEpics': [' product-adhoc '],
+                    }],
+                    'defaultGroupId': 'platform',
+                },
+            }, handle)
+
+        with self.assertRaises(shared_group_config.InvalidSharedGroupConfig):
+            import_dashboard_config(
+                database_url=self.database_url,
+                context=self.context,
+                source_path=self.dashboard_path,
+                actor_user_id=self.user_id,
+            )
 
     def test_export_merges_current_shared_groups_into_rollback_json(self):
         imported = import_dashboard_config(
@@ -123,6 +192,7 @@ class SharedGroupConfigImportTests(unittest.TestCase):
         with open(export_path, encoding='utf-8') as handle:
             exported = json.load(handle)
         self.assertEqual(exported['teamGroups']['groups'][0]['id'], 'updated')
+        self.assertEqual(exported['teamGroups']['groups'][0]['adHocCapacityEpics'], [])
         self.assertEqual(exported['projects']['selected'][0]['key'], 'PROD')
 
 

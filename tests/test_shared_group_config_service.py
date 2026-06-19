@@ -97,6 +97,39 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         self.assertEqual(result['source'], 'workspace_db')
         self.assertEqual(second['groups'][0]['id'], 'platform')
 
+    def test_existing_legacy_row_without_ad_hoc_field_normalizes_to_empty(self):
+        with self.factory() as session:
+            session.add(models.WorkspaceGroupConfig(
+                workspace_id=self.workspace_id,
+                payload_version=1,
+                payload={
+                    'version': 1,
+                    'groups': [{
+                        'id': 'platform',
+                        'name': 'Platform',
+                        'teamIds': ['team-a'],
+                        'excludedCapacityEpics': ['ENG-1'],
+                    }],
+                    'defaultGroupId': 'platform',
+                    'configRevision': 1,
+                },
+                config_revision=1,
+                created_by=self.user_id,
+                updated_by=self.user_id,
+            ))
+            session.commit()
+
+        loaded = service.load_shared_groups(
+            self.context,
+            fallback_loader=lambda: None,
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+
+        self.assertEqual(loaded['groups'][0]['id'], 'platform')
+        self.assertEqual(loaded['groups'][0]['adHocCapacityEpics'], [])
+        self.assertEqual(loaded['groups'][0]['excludedCapacityEpics'], ['ENG-1'])
+
     def test_save_rejects_stale_base_revision(self):
         loaded = service.load_shared_groups(
             self.context,

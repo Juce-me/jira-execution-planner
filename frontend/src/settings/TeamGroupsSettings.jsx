@@ -1,4 +1,5 @@
 import * as React from 'react';
+import GroupEpicSelector from './GroupEpicSelector.jsx';
 
 export default function TeamGroupsSettings(props) {
     const {
@@ -63,6 +64,19 @@ export default function TeamGroupsSettings(props) {
         addGroupExcludedCapacityEpic,
         removeGroupExcludedCapacityEpic,
         excludedEpicChipLastRef,
+        adHocEpicSearchQuery,
+        handleAdHocEpicSearchChange,
+        handleAdHocEpicSearchFocus,
+        handleAdHocEpicSearchBlur,
+        handleAdHocEpicSearchKeyDown,
+        adHocEpicSearchInputRef,
+        adHocEpicSearchOpen,
+        adHocEpicSearchLoading,
+        filteredAdHocEpicSearchResults,
+        adHocEpicSearchIndex,
+        addGroupAdHocCapacityEpic,
+        removeGroupAdHocCapacityEpic,
+        adHocEpicChipLastRef,
         showGroupAdvanced,
         setShowGroupAdvanced,
         showGroupImport,
@@ -351,59 +365,40 @@ export default function TeamGroupsSettings(props) {
                                                         )}
                                                     </div>
                                                 </div>
-                                                <div className="component-selector">
-                                                    <label className="component-selector-label">Epics for excluded capacity</label>
-                                                    {(activeGroupDraft?.excludedCapacityEpics || []).length > 0 && (
-                                                        <div className="selected-components-list">
-                                                            {(activeGroupDraft.excludedCapacityEpics || []).map((epicKey, index) => (
-                                                                <div key={epicKey} className="component-chip">
-                                                                    <span className="component-name">{epicKey}</span>
-                                                                    <button
-                                                                        className="remove-btn"
-                                                                        onClick={() => removeGroupExcludedCapacityEpic(activeGroupDraft.id, epicKey)}
-                                                                        title={`Remove ${epicKey}`}
-                                                                        type="button"
-                                                                        ref={index === (activeGroupDraft.excludedCapacityEpics || []).length - 1 ? excludedEpicChipLastRef : null}
-                                                                    >×</button>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    <div className="component-search-wrapper">
-                                                        <input
-                                                            type="text"
-                                                            className="component-search-input"
-                                                            placeholder="Search epics by key or summary..."
-                                                            value={excludedEpicSearchQuery}
-                                                            onChange={(e) => handleExcludedEpicSearchChange(e.target.value)}
-                                                            onFocus={handleExcludedEpicSearchFocus}
-                                                            onBlur={handleExcludedEpicSearchBlur}
-                                                            onKeyDown={handleExcludedEpicSearchKeyDown}
-                                                            ref={excludedEpicSearchInputRef}
-                                                        />
-                                                        {excludedEpicSearchOpen && excludedEpicSearchQuery.trim() && (
-                                                            <div className="component-search-results">
-                                                                {excludedEpicSearchLoading ? (
-                                                                    <div className="component-search-result-item is-empty">Searching...</div>
-                                                                ) : filteredExcludedEpicSearchResults.length === 0 ? (
-                                                                    <div className="component-search-result-item is-empty">No epics found</div>
-                                                                ) : filteredExcludedEpicSearchResults.map((epic, index) => (
-                                                                    <div
-                                                                        key={epic.key}
-                                                                        className={`component-search-result-item ${index === excludedEpicSearchIndex ? 'active' : ''}`}
-                                                                        onMouseDown={(e) => {
-                                                                            e.preventDefault();
-                                                                            addGroupExcludedCapacityEpic(activeGroupDraft.id, epic.key);
-                                                                        }}
-                                                                    >
-                                                                        <span>{epic.key}</span>
-                                                                        {epic.summary ? <span className="component-result-meta"> · {epic.summary}</span> : null}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
+                                                <GroupEpicSelector
+                                                    label="Epics for excluded capacity"
+                                                    selectedEpics={activeGroupDraft?.excludedCapacityEpics || []}
+                                                    searchQuery={excludedEpicSearchQuery}
+                                                    onSearchChange={handleExcludedEpicSearchChange}
+                                                    onSearchFocus={handleExcludedEpicSearchFocus}
+                                                    onSearchBlur={handleExcludedEpicSearchBlur}
+                                                    onSearchKeyDown={handleExcludedEpicSearchKeyDown}
+                                                    searchInputRef={excludedEpicSearchInputRef}
+                                                    searchOpen={excludedEpicSearchOpen}
+                                                    searchLoading={excludedEpicSearchLoading}
+                                                    searchResults={filteredExcludedEpicSearchResults}
+                                                    searchIndex={excludedEpicSearchIndex}
+                                                    onAddEpic={(epicKey) => addGroupExcludedCapacityEpic(activeGroupDraft.id, epicKey)}
+                                                    onRemoveEpic={(epicKey) => removeGroupExcludedCapacityEpic(activeGroupDraft.id, epicKey)}
+                                                    chipLastRef={excludedEpicChipLastRef}
+                                                />
+                                                <GroupEpicSelector
+                                                    label="Epics for Ad Hoc capacity"
+                                                    selectedEpics={activeGroupDraft?.adHocCapacityEpics || []}
+                                                    searchQuery={adHocEpicSearchQuery}
+                                                    onSearchChange={handleAdHocEpicSearchChange}
+                                                    onSearchFocus={handleAdHocEpicSearchFocus}
+                                                    onSearchBlur={handleAdHocEpicSearchBlur}
+                                                    onSearchKeyDown={handleAdHocEpicSearchKeyDown}
+                                                    searchInputRef={adHocEpicSearchInputRef}
+                                                    searchOpen={adHocEpicSearchOpen}
+                                                    searchLoading={adHocEpicSearchLoading}
+                                                    searchResults={filteredAdHocEpicSearchResults}
+                                                    searchIndex={adHocEpicSearchIndex}
+                                                    onAddEpic={(epicKey) => addGroupAdHocCapacityEpic(activeGroupDraft.id, epicKey)}
+                                                    onRemoveEpic={(epicKey) => removeGroupAdHocCapacityEpic(activeGroupDraft.id, epicKey)}
+                                                    chipLastRef={adHocEpicChipLastRef}
+                                                />
                                                 <details className="group-advanced" open={showGroupAdvanced}>
                                                     <summary onClick={(event) => {
                                                         event.preventDefault();

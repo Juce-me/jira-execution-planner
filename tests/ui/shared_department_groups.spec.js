@@ -77,6 +77,16 @@ async function mockFirstRunDashboard(page, options = {}) {
             });
         }
         if (url.pathname === '/api/groups-config') {
+            if (request.method() === 'POST') {
+                const body = requestBody(request) || {};
+                return json({
+                    ...groupsConfig,
+                    groups: body.groups || groupsConfig.groups,
+                    defaultGroupId: body.defaultGroupId || groupsConfig.defaultGroupId,
+                    configRevision: (groupsConfig.configRevision || 0) + 1,
+                    preferences,
+                });
+            }
             return json({
                 ...groupsConfig,
                 preferences,
@@ -103,6 +113,9 @@ async function mockFirstRunDashboard(page, options = {}) {
         }
         if (url.pathname === '/api/missing-info') {
             return json({ issues: [], epics: [] });
+        }
+        if (url.pathname === '/api/epics/search') {
+            return json({ epics: options.epicSearchResults || [{ key: 'PROD-ADHOC', summary: 'Synthetic ad hoc' }] });
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/board-config') return json({ boardId: '42', boardName: 'Synthetic Board' });
@@ -196,4 +209,105 @@ test('department group editor keeps save visible when selected group content ove
     expect(saveBox.y).toBeGreaterThanOrEqual(modalBox.y);
 
     await page.screenshot({ path: `${screenshotDir}/settings-save-footer-visible.png`, fullPage: true });
+});
+
+function adHocGroupConfig() {
+    return {
+        version: 1,
+        groups: [{
+            id: 'platform',
+            name: 'Platform',
+            teamIds: ['team-platform'],
+            excludedCapacityEpics: ['PROD-EXCLUDED'],
+            adHocCapacityEpics: [],
+        }],
+        defaultGroupId: 'platform',
+        configRevision: 2,
+        source: 'workspace_db',
+    };
+}
+
+function adHocGroupPreferences() {
+    return defaultGroupPreferences({
+        customized: true,
+        preferenceExists: true,
+        onboardingRequired: false,
+        visibleGroupIds: ['platform'],
+        activeGroupId: 'platform',
+        effectiveVisibleGroupIds: ['platform'],
+    });
+}
+
+test('department group editor saves an added Ad Hoc capacity epic while preserving excluded capacity epics', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig: adHocGroupConfig(),
+        preferences: adHocGroupPreferences(),
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+
+    const dialog = page.locator('.group-modal');
+    await expect(dialog.getByRole('tab', { name: 'Team groups' })).toHaveAttribute('aria-selected', 'true');
+
+    const adHocSelector = dialog.locator('.component-selector', {
+        has: page.getByText('Epics for Ad Hoc capacity', { exact: true }),
+    });
+    await adHocSelector.locator('.component-search-input').fill('adhoc');
+    const adHocResult = adHocSelector.locator('.component-search-result-item', { hasText: 'PROD-ADHOC' });
+    await expect(adHocResult).toBeVisible();
+    await adHocResult.click();
+
+    await expect(adHocSelector.locator('.component-name', { hasText: 'PROD-ADHOC' })).toBeVisible();
+
+    const saveButton = dialog.getByRole('button', { name: 'Save' });
+    await expect(saveButton).toBeEnabled();
+    await page.screenshot({ path: `${screenshotDir}/ad-hoc-epic-added.png`, fullPage: true });
+    await saveButton.click();
+
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length)
+        .toBeGreaterThanOrEqual(1);
+    const saveCall = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    expect(saveCall).toBeTruthy();
+    const savedGroup = (saveCall.body.groups || []).find(group => group.id === 'platform');
+    expect(savedGroup).toBeTruthy();
+    expect(savedGroup.adHocCapacityEpics).toContain('PROD-ADHOC');
+    expect(savedGroup.excludedCapacityEpics).toContain('PROD-EXCLUDED');
+});
+
+test('department group editor blocks save when an epic is both excluded and Ad Hoc capacity', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig: adHocGroupConfig(),
+        preferences: adHocGroupPreferences(),
+        epicSearchResults: [{ key: 'PROD-EXCLUDED', summary: 'Synthetic excluded' }],
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+
+    const dialog = page.locator('.group-modal');
+    await expect(dialog.getByRole('tab', { name: 'Team groups' })).toHaveAttribute('aria-selected', 'true');
+
+    const adHocSelector = dialog.locator('.component-selector', {
+        has: page.getByText('Epics for Ad Hoc capacity', { exact: true }),
+    });
+    await adHocSelector.locator('.component-search-input').fill('prod-excluded');
+    const adHocResult = adHocSelector.locator('.component-search-result-item', { hasText: 'PROD-EXCLUDED' });
+    await expect(adHocResult).toBeVisible();
+    await adHocResult.click();
+
+    await expect(adHocSelector.locator('.component-name', { hasText: 'PROD-EXCLUDED' })).toBeVisible();
+
+    const validation = dialog.locator('.group-modal-validation');
+    await expect(validation).toContainText('cannot be both excluded capacity and Ad Hoc');
+
+    const saveButton = dialog.getByRole('button', { name: 'Save' });
+    await expect(saveButton).toBeDisabled();
+    await page.screenshot({ path: `${screenshotDir}/ad-hoc-excluded-overlap-blocked.png`, fullPage: true });
+
+    await saveButton.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(300);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
 });

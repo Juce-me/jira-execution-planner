@@ -6508,6 +6508,20 @@ button.toggle.initiative-toggle.active {
   --effort-color: #c45b85;
   background: var(--effort-color);
 }
+.effort-type-split-legend-item.adHoc {
+  --effort-color: #d98bb0;
+  --effort-label-color: #7a3455;
+}
+.effort-type-split-segment.adHoc {
+  --effort-color: #d98bb0;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      #d98bb0,
+      #d98bb0 5px,
+      #e7afca 5px,
+      #e7afca 10px);
+}
 .effort-type-split-segment span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7781,6 +7795,17 @@ button.toggle.initiative-toggle.active {
   left: 0;
   background: #3d1ef8;
   border-radius: 6px 0 0 6px;
+}
+.project-bar-fill.product-adhoc {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      #6b54fb,
+      #6b54fb 5px,
+      #8b78ff 5px,
+      #8b78ff 10px);
+  z-index: 2;
+  pointer-events: auto;
 }
 .project-bar-fill.tech {
   border-radius: 0 6px 6px 0;

@@ -30,6 +30,7 @@ import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, res
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
+import { classifyCapacityIssue } from './capacityClassification.mjs';
 import {
     aggregateCohortSummary,
     buildCohortGridModel,
@@ -56,7 +57,6 @@ import {
     getSprintQuarterLabel,
     loadExcludedCapacityStatsSourceChunks,
     mergeExcludedCapacityStatsSourceChunks,
-    pickAutoSelectedExcludedEpics,
     summarizeEffortTypeSplitTotals
 } from './stats/excludedCapacityStats.js';
 import { PRIORITY_AXIS } from './stats/statsConstants.js';
@@ -532,13 +532,20 @@ import {
             const [excludedEpicSearchLoading, setExcludedEpicSearchLoading] = useState(false);
             const excludedEpicSearchInputRef = useRef(null);
             const excludedEpicChipLastRef = useRef(null);
+            const [adHocEpicSearchQuery, setAdHocEpicSearchQuery] = useState('');
+            const [adHocEpicSearchResults, setAdHocEpicSearchResults] = useState([]);
+            const [adHocEpicSearchOpen, setAdHocEpicSearchOpen] = useState(false);
+            const [adHocEpicSearchIndex, setAdHocEpicSearchIndex] = useState(0);
+            const [adHocEpicSearchLoading, setAdHocEpicSearchLoading] = useState(false);
+            const adHocEpicSearchInputRef = useRef(null);
+            const adHocEpicChipLastRef = useRef(null);
             const [missingInfoEpics, setMissingInfoEpics] = useState([]);
             const [backlogProductEpics, setBacklogProductEpics] = useState([]);
             const [backlogTechEpics, setBacklogTechEpics] = useState([]);
             const techProjectKeys = React.useMemo(() => {
                 const keys = new Set();
                 for (const p of savedSelectedProjects) {
-                    if (p.type === 'tech') keys.add(p.key);
+                    if (p.type === 'tech') keys.add(String(p.key).trim().toUpperCase());
                 }
                 // Fallback: if no config, use TECH prefix heuristic
                 if (keys.size === 0) keys.add('TECH');
@@ -652,6 +659,7 @@ import {
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
             const resolveCohortGroupBy = (value) => (value === 'month' || value === 'quarter') ? value : 'quarter';
+            const resolveCohortCapacityFilter = (value) => (value === 'ad_hoc') ? value : 'all';
             const [statsView, setStatsView] = useState(resolveStatsView(savedPrefsRef.current.statsView));
             const [statsGraphMode, setStatsGraphMode] = useState(resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode));
             const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
@@ -667,6 +675,7 @@ import {
             const [cohortGroupBy, setCohortGroupBy] = useState(resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy));
             const [cohortProjectFilter, setCohortProjectFilter] = useState(savedPrefsRef.current.cohortProjectFilter || 'all');
             const [cohortAssigneeFilter, setCohortAssigneeFilter] = useState(savedPrefsRef.current.cohortAssigneeFilter || 'all');
+            const [cohortCapacityFilter, setCohortCapacityFilter] = useState(resolveCohortCapacityFilter(savedPrefsRef.current.cohortCapacityFilter));
             const [cohortExcludeCapacity, setCohortExcludeCapacity] = useState(savedPrefsRef.current.cohortExcludeCapacity ?? true);
             const [cohortStatusToggles, setCohortStatusToggles] = useState(() => ({
                 done: true,
@@ -697,8 +706,9 @@ import {
             );
             const [effortSplitVisibleBuckets, setEffortSplitVisibleBuckets] = useState({
                 excludedCapacity: true,
-                tech: true,
-                product: true
+                adHoc: true,
+                product: true,
+                tech: true
             });
             const [excludedCapacityIsolatedTeam, setExcludedCapacityIsolatedTeam] = useState(null);
             const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
@@ -2475,8 +2485,20 @@ import {
                         errors.push(priorityWeightsValidationError);
                     }
                 }
+                (groupDraft?.groups || []).forEach(group => {
+                    const excluded = new Set((group?.excludedCapacityEpics || [])
+                        .map(key => String(key || '').trim().toUpperCase())
+                        .filter(Boolean));
+                    const overlap = (group?.adHocCapacityEpics || [])
+                        .map(key => String(key || '').trim().toUpperCase())
+                        .filter(key => key && excluded.has(key));
+                    if (overlap.length) {
+                        const groupName = String(group?.name || group?.id || 'Group').trim();
+                        errors.push(`${groupName}: ${overlap[0]} cannot be both excluded capacity and Ad Hoc capacity.`);
+                    }
+                });
                 return errors;
-            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError]);
+            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving || epmConfigSaving) return 'Save in progress';
                 if (canEditEpmConfiguration && isEpmConfigDirty && epmConfigLoading) return 'EPM settings are loading';
@@ -3341,6 +3363,40 @@ import {
                 };
             }, [showGroupManage, groupManageTab, excludedEpicSearchQuery]);
 
+            useEffect(() => {
+                const query = adHocEpicSearchQuery.trim();
+                if (!showGroupManage || groupManageTab !== 'teams' || !query) {
+                    setAdHocEpicSearchResults([]);
+                    setAdHocEpicSearchLoading(false);
+                    return undefined;
+                }
+
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(async () => {
+                    setAdHocEpicSearchLoading(true);
+                    try {
+                        const response = await requestEpicSearch(BACKEND_URL, { query, signal: controller.signal });
+                        if (!response.ok) throw new Error(`Ad Hoc epics search error ${response.status}`);
+                        const data = await response.json();
+                        setAdHocEpicSearchResults(data.epics || []);
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            console.error('Failed to search Ad Hoc epics:', err);
+                            setAdHocEpicSearchResults([]);
+                        }
+                    } finally {
+                        if (!controller.signal.aborted) {
+                            setAdHocEpicSearchLoading(false);
+                        }
+                    }
+                }, 220);
+
+                return () => {
+                    window.clearTimeout(timeoutId);
+                    controller.abort();
+                };
+            }, [showGroupManage, groupManageTab, adHocEpicSearchQuery]);
+
             const filteredComponentSearchResults = React.useMemo(() => {
                 const group = activeGroupDraftId
                     ? (groupDraft?.groups || []).find(g => g.id === activeGroupDraftId)
@@ -3360,6 +3416,17 @@ import {
                 });
             }, [excludedEpicSearchResults, groupDraft, activeGroupDraftId]);
 
+            const filteredAdHocEpicSearchResults = React.useMemo(() => {
+                const group = activeGroupDraftId
+                    ? (groupDraft?.groups || []).find(g => g.id === activeGroupDraftId)
+                    : null;
+                const selected = new Set((group?.adHocCapacityEpics || []).map(key => String(key || '').trim().toUpperCase()));
+                return adHocEpicSearchResults.filter((epic) => {
+                    const key = String(epic?.key || '').trim().toUpperCase();
+                    return key && !selected.has(key);
+                });
+            }, [adHocEpicSearchResults, groupDraft, activeGroupDraftId]);
+
             React.useEffect(() => {
                 const maxIndex = filteredComponentSearchResults.length - 1;
                 if (componentSearchIndex > maxIndex) setComponentSearchIndex(0);
@@ -3369,6 +3436,11 @@ import {
                 const maxIndex = filteredExcludedEpicSearchResults.length - 1;
                 if (excludedEpicSearchIndex > maxIndex) setExcludedEpicSearchIndex(0);
             }, [filteredExcludedEpicSearchResults.length]);
+
+            React.useEffect(() => {
+                const maxIndex = filteredAdHocEpicSearchResults.length - 1;
+                if (adHocEpicSearchIndex > maxIndex) setAdHocEpicSearchIndex(0);
+            }, [filteredAdHocEpicSearchResults.length]);
 
             const handleComponentSearchKeyDown = (event) => {
                 if (event.key === 'ArrowDown') {
@@ -3457,6 +3529,44 @@ import {
                 });
             };
 
+            const addGroupAdHocCapacityEpic = (groupId, epicKey) => {
+                const normalizedKey = String(epicKey || '').trim().toUpperCase();
+                if (!normalizedKey) return;
+                let added = false;
+                setGroupDraft(prev => {
+                    if (!prev) return prev;
+                    const groups = (prev.groups || []).map(g => {
+                        if (g.id !== groupId) return g;
+                        const existing = (g.adHocCapacityEpics || []).map(key => String(key || '').trim().toUpperCase()).filter(Boolean);
+                        if (existing.includes(normalizedKey)) return g;
+                        added = true;
+                        return { ...g, adHocCapacityEpics: [...existing, normalizedKey] };
+                    });
+                    return { ...prev, groups };
+                });
+                if (added) {
+                    setAdHocEpicSearchOpen(true);
+                    focusAdHocEpicSearchInput();
+                }
+            };
+
+            const removeGroupAdHocCapacityEpic = (groupId, epicKey) => {
+                const normalizedKey = String(epicKey || '').trim().toUpperCase();
+                setGroupDraft(prev => {
+                    if (!prev) return prev;
+                    const groups = (prev.groups || []).map(g => {
+                        if (g.id !== groupId) return g;
+                        return {
+                            ...g,
+                            adHocCapacityEpics: (g.adHocCapacityEpics || [])
+                                .map(key => String(key || '').trim().toUpperCase())
+                                .filter(key => key !== normalizedKey)
+                        };
+                    });
+                    return { ...prev, groups };
+                });
+            };
+
             const handleExcludedEpicSearchKeyDown = (event) => {
                 const value = excludedEpicSearchQuery || '';
                 if (event.key === 'ArrowDown') {
@@ -3493,6 +3603,42 @@ import {
                 }
             };
 
+            const handleAdHocEpicSearchKeyDown = (event) => {
+                const value = adHocEpicSearchQuery || '';
+                if (event.key === 'ArrowDown') {
+                    if (!filteredAdHocEpicSearchResults.length) return;
+                    event.preventDefault();
+                    setAdHocEpicSearchIndex(prev => Math.min(prev + 1, filteredAdHocEpicSearchResults.length - 1));
+                } else if (event.key === 'ArrowUp') {
+                    if (!filteredAdHocEpicSearchResults.length) return;
+                    event.preventDefault();
+                    setAdHocEpicSearchIndex(prev => Math.max(prev - 1, 0));
+                } else if (event.key === 'Enter') {
+                    if (!filteredAdHocEpicSearchResults.length) return;
+                    event.preventDefault();
+                    const epic = filteredAdHocEpicSearchResults[adHocEpicSearchIndex] || filteredAdHocEpicSearchResults[0];
+                    if (epic && activeGroupDraft) addGroupAdHocCapacityEpic(activeGroupDraft.id, epic.key);
+                } else if (event.key === 'Escape') {
+                    if (adHocEpicSearchOpen) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setAdHocEpicSearchOpen(false);
+                    }
+                } else if (event.key === 'Backspace' && !value) {
+                    const node = adHocEpicChipLastRef.current;
+                    if (node && typeof node.focus === 'function') {
+                        node.focus();
+                    }
+                }
+            };
+
+            const focusAdHocEpicSearchInput = () => {
+                const node = adHocEpicSearchInputRef.current;
+                if (node && typeof node.focus === 'function') {
+                    node.focus();
+                }
+            };
+
             const handleExcludedEpicSearchChange = (value) => {
                 setExcludedEpicSearchQuery(value);
                 setExcludedEpicSearchOpen(true);
@@ -3506,6 +3652,22 @@ import {
             const handleExcludedEpicSearchBlur = () => {
                 window.setTimeout(() => {
                     setExcludedEpicSearchOpen(false);
+                }, 120);
+            };
+
+            const handleAdHocEpicSearchChange = (value) => {
+                setAdHocEpicSearchQuery(value);
+                setAdHocEpicSearchOpen(true);
+                setAdHocEpicSearchIndex(0);
+            };
+
+            const handleAdHocEpicSearchFocus = () => {
+                setAdHocEpicSearchOpen(true);
+            };
+
+            const handleAdHocEpicSearchBlur = () => {
+                window.setTimeout(() => {
+                    setAdHocEpicSearchOpen(false);
                 }, 120);
             };
 
@@ -4332,6 +4494,17 @@ import {
                 });
                 return keys;
             }, [activeGroup]);
+            const activeGroupAdHocCapacityEpics = React.useMemo(() => {
+                const seen = new Set();
+                const keys = [];
+                (activeGroup?.adHocCapacityEpics || []).forEach((epicKey) => {
+                    const value = String(epicKey || '').trim().toUpperCase();
+                    if (!value || seen.has(value)) return;
+                    seen.add(value);
+                    keys.push(value);
+                });
+                return keys;
+            }, [activeGroup]);
 
             const activeGroupTeamSet = React.useMemo(() => new Set(activeGroupTeamIds), [activeGroupTeamIds]);
             const planningScopeKey = React.useMemo(() => {
@@ -4418,6 +4591,7 @@ import {
                     cohortGroupBy: resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy),
                     cohortProjectFilter: savedPrefsRef.current.cohortProjectFilter || 'all',
                     cohortAssigneeFilter: savedPrefsRef.current.cohortAssigneeFilter || 'all',
+                    cohortCapacityFilter: resolveCohortCapacityFilter(savedPrefsRef.current.cohortCapacityFilter),
                     cohortExcludeCapacity: savedPrefsRef.current.cohortExcludeCapacity ?? true,
                     cohortStatusToggles: {
                         done: true,
@@ -4519,6 +4693,7 @@ import {
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
+                cohortCapacityFilter,
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 cohortSelectedRow,
@@ -4625,6 +4800,7 @@ import {
                 setCohortGroupBy(resolveCohortGroupBy(nextState.cohortGroupBy));
                 setCohortProjectFilter(nextState.cohortProjectFilter || 'all');
                 setCohortAssigneeFilter(nextState.cohortAssigneeFilter || 'all');
+                setCohortCapacityFilter(resolveCohortCapacityFilter(nextState.cohortCapacityFilter));
                 setCohortExcludeCapacity(nextState.cohortExcludeCapacity ?? true);
                 setCohortStatusToggles({
                     done: true,
@@ -4730,6 +4906,7 @@ import {
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
+                cohortCapacityFilter,
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 cohortSelectedRow,
@@ -5094,6 +5271,7 @@ import {
                     cohortGroupBy,
                     cohortProjectFilter,
                     cohortAssigneeFilter,
+                    cohortCapacityFilter,
                     cohortExcludeCapacity,
                     cohortStatusToggles,
                     excludedCapacityStartSprintId,
@@ -5143,6 +5321,7 @@ import {
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
+                cohortCapacityFilter,
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 excludedCapacityStartSprintId,
@@ -6166,7 +6345,7 @@ import {
                         }
                     }
 
-                    const isTech = techProjectKeys.has(task.fields?.projectKey || task.key.split('-')[0]);
+                    const isTech = techProjectKeys.has(String(task.fields?.projectKey || task.key.split('-')[0]).toUpperCase());
                     if (isTech && !showTech) {
                         return false;
                     }
@@ -6296,6 +6475,23 @@ import {
                 });
                 return set;
             }, [activeGroupExcludedCapacityEpics]);
+            // Ad Hoc capacity is INCLUDED Product capacity reported separately. It is
+            // kept distinct from excludedEpicSet (which subtracts capacity / hides
+            // stories) and is passed only to classification/reporting helpers.
+            const adHocEpicSet = React.useMemo(() => {
+                const set = new Set();
+                (activeGroupAdHocCapacityEpics || []).forEach((key) => {
+                    const normalized = String(key || '').trim().toUpperCase();
+                    if (normalized) set.add(normalized);
+                });
+                return set;
+            }, [activeGroupAdHocCapacityEpics]);
+            // Stable signature for memo/cache dependency arrays so Ad Hoc config
+            // changes invalidate downstream reporting memos.
+            const adHocEpicSignature = React.useMemo(
+                () => Array.from(adHocEpicSet).sort().join('|'),
+                [adHocEpicSet]
+            );
             const statsTaskList = React.useMemo(() => {
                 if (!capacityTasks.length) return [];
                 return capacityTasks.filter(task => {
@@ -6315,6 +6511,7 @@ import {
                     normalizeStatus,
                     getTeamInfo,
                     techProjectKeys,
+                    adHocEpicSet,
                     sprintName: selectedSprintInfo?.name || ''
                 });
                 if (perfEnabled) {
@@ -6325,7 +6522,7 @@ import {
                     performance.clearMeasures('localStatsBuild');
                 }
                 return result;
-            }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled, techProjectKeys]);
+            }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
 
             const effectiveStatsData = localStatsData;
             const burnoutTaskTeamByIssueKey = React.useMemo(() => {
@@ -6416,8 +6613,8 @@ import {
             const cohortQueryKey = React.useMemo(() => {
                 const startQuarter = String(cohortStartQuarter || '').trim();
                 if (!startQuarter) return '';
-                return `${startQuarter}::${cohortScopedTeamSignature}`;
-            }, [cohortStartQuarter, cohortScopedTeamSignature]);
+                return `${startQuarter}::${cohortScopedTeamSignature}::${adHocEpicSignature || 'no-adhoc'}`;
+            }, [cohortStartQuarter, cohortScopedTeamSignature, adHocEpicSignature]);
 
             useEffect(() => {
                 if (!showStats || statsView !== 'burnout') return;
@@ -6590,6 +6787,7 @@ import {
                                 startQuarter: startQuarter,
                                 teamIds: burnoutScopedTeamIds,
                                 components: activeGroupMissingComponents,
+                                adHocCapacityEpics: activeGroupAdHocCapacityEpics,
                                 refresh: false
                             },
                             { signal: controller.signal }
@@ -6629,7 +6827,7 @@ import {
                         // ignore abort errors
                     }
                 };
-            }, [showStats, statsView, cohortStartQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, groupPreferences.onboardingRequired]);
+            }, [showStats, statsView, cohortStartQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired]);
 
             const cohortQuarterOptions = React.useMemo(() => {
                 return buildQuarterOptions(getCurrentQuarterLabel(), 16);
@@ -6647,10 +6845,11 @@ import {
                 return filterCohortIssues(cohortIssues, {
                     projectKey: cohortProjectFilter,
                     assigneeKey: cohortAssigneeFilter,
+                    capacityType: cohortCapacityFilter,
                     excludeEpicKeys: cohortExcludeCapacity ? excludedEpicSet : EMPTY_ARRAY,
                     statusToggles: cohortStatusToggles
                 });
-            }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
+            }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortCapacityFilter, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
             const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortFilteredIssues), [cohortFilteredIssues]);
             const cohortWorkflowStatusTotal = (cohortSummary.inProgress || 0) + (cohortSummary.postponed || 0) + (cohortSummary.awaitingValidation || 0);
             const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortFilteredIssues, {
@@ -6811,9 +7010,11 @@ import {
             useEffect(() => {
                 if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare')) return;
                 if (groupPreferences.onboardingRequired) { setExcludedCapacityData(null); setExcludedCapacityError(''); setExcludedCapacityLoading(false); return; }
-                if (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length) {
+                // The capacity-mix source loads when EITHER excluded capacity OR Ad Hoc
+                // epics are configured: Ad Hoc-only groups still get the effort split.
+                if (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length && adHocEpicSet.size === 0) {
                     setExcludedCapacityData(null);
-                    setExcludedCapacityError('No excluded capacity epics are configured for this team group.');
+                    setExcludedCapacityError('No excluded capacity or Ad Hoc epics are configured for this team group.');
                     setExcludedCapacityLoading(false);
                     return;
                 }
@@ -6949,6 +7150,7 @@ import {
                 excludedCapacitySprintIdsSignature,
                 excludedCapacityScopedTeamSignature,
                 excludedCapacityEpicOptions,
+                adHocEpicSignature,
                 activeGroupId,
                 activeGroupTeamIds.length,
                 excludedCapacityRefreshNonce,
@@ -6962,16 +7164,15 @@ import {
                     excludedEpicKeys: excludedCapacityEpicOptions
                 });
             }, [excludedCapacityIssues, excludedCapacityEpicOptions]);
-            const excludedCapacityAutoEpicKeys = React.useMemo(
-                () => pickAutoSelectedExcludedEpics(excludedCapacityEpicCatalog),
-                [excludedCapacityEpicCatalog]
-            );
+            // Preference migration: a null saved value (no prior selection, or the
+            // removed BAU/ad-hoc preset) defaults to ALL configured excluded epics.
             useEffect(() => {
-                if (excludedCapacitySelectedEpicKeys === null && excludedCapacityEpicCatalog.length) {
-                    setExcludedCapacitySelectedEpicKeys(excludedCapacityAutoEpicKeys);
+                if (excludedCapacitySelectedEpicKeys === null && excludedCapacityEpicOptions.length) {
+                    setExcludedCapacitySelectedEpicKeys(excludedCapacityEpicOptions.slice());
                 }
-            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicCatalog, excludedCapacityAutoEpicKeys]);
+            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]);
             useEffect(() => {
+                // Drop only excluded keys no longer in the catalog; keep valid ones.
                 if (!Array.isArray(excludedCapacitySelectedEpicKeys)) return;
                 const valid = new Set(excludedCapacityEpicOptions);
                 const filtered = excludedCapacitySelectedEpicKeys.filter(key => valid.has(key));
@@ -6987,14 +7188,8 @@ import {
                 if (excludedCapacityEffectiveFilters.length === 0) {
                     return `Filter: All configured (${excludedCapacityEpicOptions.length})`;
                 }
-                const autoSet = new Set(excludedCapacityAutoEpicKeys);
-                const isAutoSelection = autoSet.size === excludedCapacityEffectiveFilters.length &&
-                    excludedCapacityEffectiveFilters.every(key => autoSet.has(key));
-                if (isAutoSelection) {
-                    return `Filter: BAU / ad hoc (${excludedCapacityEffectiveFilters.length})`;
-                }
                 return `Filter: ${excludedCapacityEffectiveFilters.length} of ${excludedCapacityEpicOptions.length} selected`;
-            }, [excludedCapacityEffectiveFilters, excludedCapacityEpicOptions, excludedCapacityAutoEpicKeys]);
+            }, [excludedCapacityEffectiveFilters, excludedCapacityEpicOptions]);
             const excludedCapacityActiveFilters = excludedCapacityEffectiveFilters.length
                 ? excludedCapacityEffectiveFilters
                 : excludedCapacityEpicOptions;
@@ -7002,6 +7197,7 @@ import {
                 return buildEffortTypeSplitRows(excludedCapacityIssues, excludedCapacitySprintRange, {
                     excludedEpicKeys: excludedCapacityEpicOptions,
                     excludedEpicKeyFilters: excludedCapacityActiveFilters,
+                    adHocEpicKeys: Array.from(adHocEpicSet),
                     teams: excludedCapacityTeams,
                     techProjectKeys: Array.from(techProjectKeys)
                 });
@@ -7010,6 +7206,8 @@ import {
                 excludedCapacitySprintRange,
                 excludedCapacityEpicOptions,
                 excludedCapacityActiveFilters,
+                adHocEpicSet,
+                adHocEpicSignature,
                 excludedCapacityTeams,
                 techProjectKeys
             ]);
@@ -7116,9 +7314,6 @@ import {
                     ...prev,
                     [bucketKey]: prev[bucketKey] === false
                 }));
-            };
-            const selectAutoExcludedCapacityEpics = () => {
-                setExcludedCapacitySelectedEpicKeys(excludedCapacityAutoEpicKeys.slice());
             };
             useEffect(() => {
                 if (!excludedCapacityEpicDropdownOpen) return;
@@ -10547,13 +10742,26 @@ import {
 
             const selectedProjectStats = React.useMemo(() => {
                 if (!showPlanning) return {};
-                return buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys);
-            }, [showPlanning, selectedPlanningTasksList, techProjectKeys]);
+                return buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet);
+            }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
 
             const selectedTeamProjectStats = React.useMemo(() => {
                 if (!showPlanning) return {};
-                return buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys);
-            }, [showPlanning, selectedPlanningTasksList, techProjectKeys]);
+                return buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet);
+            }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
+
+            // Ad Hoc story points already counted inside the PRODUCT bucket, surfaced
+            // separately so the split bar can report the Product Ad Hoc portion.
+            const selectedAdHocProductSP = React.useMemo(() => {
+                if (!showPlanning || adHocEpicSet.size === 0) return 0;
+                return selectedPlanningTasksList.reduce((sum, task) => {
+                    if (classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).capacityType !== 'ad_hoc') {
+                        return sum;
+                    }
+                    const sp = parseFloat(task.fields?.customfield_10004 || 0);
+                    return Number.isNaN(sp) ? sum : sum + sp;
+                }, 0);
+            }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
 
             const excludedProjectStats = React.useMemo(() => {
                 if (!showPlanning) return {};
@@ -10576,9 +10784,10 @@ import {
                     capacityTasks,
                     normalizeStatus,
                     getTeamInfo,
-                    techProjectKeys
+                    techProjectKeys,
+                    adHocEpicSet
                 });
-            }, [showPlanning, capacityEnabled, capacityTasks, techProjectKeys]);
+            }, [showPlanning, capacityEnabled, capacityTasks, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
 
             const teamCapacityEntries = React.useMemo(() => {
                 return buildTeamCapacityEntries(teamCapacityStats);
@@ -10672,8 +10881,8 @@ import {
                 const firstExcluded = epicGroups.find((epic) => {
                     if (!excludedEpicSet.has(normalizeEpicKey(epic.key))) return false;
                     if (projectType === 'any') return true;
-                    const hasTech = (epic.tasks || []).some(task => techProjectKeys.has(task.fields?.projectKey || String(task.key || '').split('-')[0]));
-                    const hasProduct = (epic.tasks || []).some(task => !techProjectKeys.has(task.fields?.projectKey || String(task.key || '').split('-')[0]));
+                    const hasTech = (epic.tasks || []).some(task => techProjectKeys.has(String(task.fields?.projectKey || String(task.key || '').split('-')[0]).toUpperCase()));
+                    const hasProduct = (epic.tasks || []).some(task => !techProjectKeys.has(String(task.fields?.projectKey || String(task.key || '').split('-')[0]).toUpperCase()));
                     return projectType === 'tech' ? hasTech : hasProduct;
                 });
                 if (!firstExcluded) return;
@@ -10856,16 +11065,39 @@ import {
                 return 'metric-value';
             };
 
-            const buildTeamStatusLink = ({ teamId, teamIds, projectName, projectNames, statuses, excludeStatuses, priorityName, issueType }) => {
+            // Stories under configured Ad Hoc epics count as Product even when they
+            // live under a Tech project. Reuse the established epic-children pattern
+            // ("Epic Link" OR parent) so Product links INCLUDE Ad Hoc stories and Tech
+            // links EXCLUDE them. Ad Hoc handling only activates when capacityType is
+            // passed and Ad Hoc epics are configured; all other callers are unchanged.
+            const adHocEpicChildrenClause = () => {
+                const keys = Array.from(adHocEpicSet);
+                if (!keys.length) return '';
+                const quoted = keys.map(k => `"${k}"`).join(', ');
+                return `("Epic Link" in (${quoted}) OR parent in (${quoted}))`;
+            };
+            const buildTeamStatusLink = ({ teamId, teamIds, projectName, projectNames, statuses, excludeStatuses, priorityName, issueType, capacityType }) => {
                 const ids = teamIds || (teamId ? [teamId] : []);
                 if (!jiraUrl || !ids.length) return '';
                 const clauses = [];
                 const projects = projectNames || (projectName ? [projectName] : []);
+                const adHocClause = capacityType ? adHocEpicChildrenClause() : '';
+                let projectClause = '';
                 if (projects.length === 1) {
-                    clauses.push(`project = "${projects[0]}"`);
+                    projectClause = `project = "${projects[0]}"`;
                 } else if (projects.length > 1) {
                     const quoted = projects.map(p => `"${p}"`).join(', ');
-                    clauses.push(`project in (${quoted})`);
+                    projectClause = `project in (${quoted})`;
+                }
+                if (capacityType === 'product' && projectClause && adHocClause) {
+                    // Product link: include Ad Hoc stories even when under a Tech project.
+                    clauses.push(`(${projectClause} OR ${adHocClause})`);
+                } else if (capacityType === 'tech' && adHocClause) {
+                    // Tech link: exclude Ad Hoc stories that would otherwise match Tech.
+                    if (projectClause) clauses.push(projectClause);
+                    clauses.push(`NOT ${adHocClause}`);
+                } else if (projectClause) {
+                    clauses.push(projectClause);
                 }
                 if (ids.length === 1) {
                     clauses.push(`"Team[Team]" = "${ids[0]}"`);
@@ -10919,16 +11151,28 @@ import {
                 return buildPriorityStatusLink(options);
             };
 
-            const buildPostponedLink = ({ teamId, teamIds, projectName, projectNames }) => {
-                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['Postponed'], issueType: 'Story' });
+            // Planning capacity table rows are Product or Tech by their single roadmap
+            // project; infer capacityType so Product links INCLUDE Ad Hoc stories and
+            // Tech links EXCLUDE them. Total rows pass both projects -> no Ad Hoc shift.
+            const inferRoadmapCapacityType = ({ projectName, projectNames, capacityType }) => {
+                if (capacityType) return capacityType;
+                if (projectNames && projectNames.length !== 1) return undefined;
+                const single = projectName || (projectNames && projectNames[0]);
+                if (single === 'PRODUCT ROADMAPS') return 'product';
+                if (single === 'TECHNICAL ROADMAP') return 'tech';
+                return undefined;
             };
 
-            const buildTodoPendingLink = ({ teamId, teamIds, projectName, projectNames }) => {
-                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['To Do', 'Pending'], issueType: 'Story' });
+            const buildPostponedLink = ({ teamId, teamIds, projectName, projectNames, capacityType }) => {
+                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['Postponed'], issueType: 'Story', capacityType: inferRoadmapCapacityType({ projectName, projectNames, capacityType }) });
             };
 
-            const buildAcceptedLink = ({ teamId, teamIds, projectName, projectNames }) => {
-                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['Accepted'], issueType: 'Story' });
+            const buildTodoPendingLink = ({ teamId, teamIds, projectName, projectNames, capacityType }) => {
+                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['To Do', 'Pending'], issueType: 'Story', capacityType: inferRoadmapCapacityType({ projectName, projectNames, capacityType }) });
+            };
+
+            const buildAcceptedLink = ({ teamId, teamIds, projectName, projectNames, capacityType }) => {
+                return buildTeamStatusLink({ teamId, teamIds, projectName, projectNames, statuses: ['Accepted'], issueType: 'Story', capacityType: inferRoadmapCapacityType({ projectName, projectNames, capacityType }) });
             };
 
             const buildKeyListLink = (keys, { addSprint } = {}) => {
@@ -12830,19 +13074,6 @@ import {
                                                                 className="sprint-dropdown-option"
                                                                 role="button"
                                                                 tabIndex={0}
-                                                                onClick={() => {
-                                                                    if (excludedCapacityAutoEpicKeys.length > 0) {
-                                                                        selectAutoExcludedCapacityEpics();
-                                                                    }
-                                                                }}
-                                                                aria-disabled={excludedCapacityAutoEpicKeys.length === 0}
-                                                            >
-                                                                BAU / ad hoc
-                                                            </div>
-                                                            <div
-                                                                className="sprint-dropdown-option"
-                                                                role="button"
-                                                                tabIndex={0}
                                                                 onClick={selectAllExcludedCapacityEpics}
                                                             >
                                                                 All configured
@@ -12963,9 +13194,14 @@ import {
                                             <div className="stats-note">Approximate, story-point based</div>
                                         </div>
                                         <div className="stats-card">
-                                            <h4>Product Share</h4>
-                                            <div className="stat-value">{formatPercent(effortSplitTotals.productPercent)}</div>
-                                            <div className="stats-note">Approximate, story-point based</div>
+                                            <h4>Ad Hoc Share</h4>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.adHocPercent)}</div>
+                                            <div className="stats-note">Included in Product capacity</div>
+                                        </div>
+                                        <div className="stats-card">
+                                            <h4>Product total</h4>
+                                            <div className="stat-value">{formatPercent(effortSplitTotals.productTotalPercent)}</div>
+                                            <div className="stats-note">Product including Ad Hoc</div>
                                         </div>
                                         <div className="stats-card">
                                             <h4>Tech Share</h4>
@@ -12979,7 +13215,7 @@ import {
                                             Loading excluded capacity analytics{excludedCapacityData?.meta?.totalSprintCount ? ` (${excludedCapacityData?.meta?.loadedSprintCount || 0}/${excludedCapacityData.meta.totalSprintCount} sprints)` : '...'}
                                         </div>
                                     )}
-                                    {excludedCapacityError && excludedCapacityRows.length === 0 && (
+                                    {excludedCapacityError && effortSplitTotals.totalPoints === 0 && (
                                         <div className="stats-note cohort-error">{excludedCapacityError}</div>
                                     )}
                                     {!excludedCapacityError && excludedCapacityWarnings.length > 0 && (
@@ -12989,15 +13225,15 @@ import {
                                             ))}
                                         </div>
                                     )}
-                                    {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityRows.length === 0 && (
-                                        <div className="cohort-empty">No excluded capacity stories found in the selected sprint range.</div>
+                                    {!excludedCapacityLoading && !excludedCapacityError && effortSplitTotals.totalPoints === 0 && (
+                                        <div className="cohort-empty">No capacity-mix stories found in the selected sprint range.</div>
                                     )}
-                                    {!excludedCapacityError && excludedCapacityRows.length > 0 && (
+                                    {!excludedCapacityError && effortSplitTotals.totalPoints > 0 && (
                                         <div className="excluded-capacity-panel">
                                             <div className="cohort-section cohort-section-fullbleed">
                                                 <div className="cohort-section-title">Effort Split</div>
                                                 <div className="cohort-section-subtitle">
-                                                    Selected sprint-range story points by Excluded Capacity, Tech, and Product.
+                                                    Selected sprint-range story points by Excluded Capacity, Ad Hoc, Product, and Tech.
                                                 </div>
                                                 <div className="cohort-section-subtitle">
                                                     Sprint range: {effortSplitSprintLabel}
@@ -13014,18 +13250,28 @@ import {
                                             </div>
                                             <div className="cohort-section cohort-section-fullbleed">
                                                 <div className="cohort-section-title">Excluded Capacity by Team and Sprint</div>
-                                                <ExcludedCapacityLineChart
-                                                    series={excludedCapacityLineSeries.series}
-                                                    sprints={excludedCapacityLineSeries.sprints}
-                                                    metric={excludedCapacityMetric}
-                                                    mode={excludedCapacityLineSeries.mode}
-                                                    isolatedSeriesId={excludedCapacityIsolatedTeam}
-                                                    onSelectSeries={setExcludedCapacityIsolatedTeam}
-                                                    onAnalyticsAction={trackStatsAnalyticsAction}
-                                                    resolveTeamColor={resolveTeamColor}
-                                                    formatExcludedPoints={formatExcludedPoints}
-                                                    formatPercent={formatPercent}
-                                                />
+                                                {excludedCapacityEpicOptions.length === 0 ? (
+                                                    <div className="cohort-empty excluded-capacity-line-empty">
+                                                        No excluded capacity epics are configured for this team group. This chart tracks excluded capacity only; Ad Hoc is reported in the Effort Split above.
+                                                    </div>
+                                                ) : excludedCapacityRows.length === 0 ? (
+                                                    <div className="cohort-empty excluded-capacity-line-empty">
+                                                        No excluded capacity stories found in the selected sprint range.
+                                                    </div>
+                                                ) : (
+                                                    <ExcludedCapacityLineChart
+                                                        series={excludedCapacityLineSeries.series}
+                                                        sprints={excludedCapacityLineSeries.sprints}
+                                                        metric={excludedCapacityMetric}
+                                                        mode={excludedCapacityLineSeries.mode}
+                                                        isolatedSeriesId={excludedCapacityIsolatedTeam}
+                                                        onSelectSeries={setExcludedCapacityIsolatedTeam}
+                                                        onAnalyticsAction={trackStatsAnalyticsAction}
+                                                        resolveTeamColor={resolveTeamColor}
+                                                        formatExcludedPoints={formatExcludedPoints}
+                                                        formatPercent={formatPercent}
+                                                    />
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -13208,6 +13454,20 @@ import {
                                                         {item.label}{item.value !== 'all' ? ` (${item.count})` : ''}
                                                     </option>
                                                 ))}
+                                            </select>
+                                        </div>
+                                        <div className="stats-control-group">
+                                            <label>Capacity</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={cohortCapacityFilter}
+                                                onChange={(event) => {
+                                                    setCohortCapacityFilter(resolveCohortCapacityFilter(event.target.value));
+                                                    setCohortSelectedRow(null);
+                                                }}
+                                            >
+                                                <option value="all">All Capacity</option>
+                                                <option value="ad_hoc">Ad Hoc</option>
                                             </select>
                                         </div>
                                     </div>
@@ -14307,6 +14567,7 @@ import {
                         <PlanningProjectSplitBar
                             selectedProjectEntries={selectedProjectEntries}
                             excludedProjectStats={excludedProjectStats}
+                            adHocProductSP={selectedAdHocProductSP}
                         />
                     </div>
                     )}
@@ -14873,6 +15134,19 @@ import {
                                         addGroupExcludedCapacityEpic,
                                         removeGroupExcludedCapacityEpic,
                                         excludedEpicChipLastRef,
+                                        adHocEpicSearchQuery,
+                                        handleAdHocEpicSearchChange,
+                                        handleAdHocEpicSearchFocus,
+                                        handleAdHocEpicSearchBlur,
+                                        handleAdHocEpicSearchKeyDown,
+                                        adHocEpicSearchInputRef,
+                                        adHocEpicSearchOpen,
+                                        adHocEpicSearchLoading,
+                                        filteredAdHocEpicSearchResults,
+                                        adHocEpicSearchIndex,
+                                        addGroupAdHocCapacityEpic,
+                                        removeGroupAdHocCapacityEpic,
+                                        adHocEpicChipLastRef,
                                         showGroupAdvanced,
                                         setShowGroupAdvanced,
                                         showGroupImport,

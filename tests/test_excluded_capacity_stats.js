@@ -124,6 +124,72 @@ test('buildEffortTypeSplitRows splits selected-sprint effort by excluded capacit
     );
 });
 
+test('buildEffortTypeSplitRows reports Ad Hoc as an included Product bucket and never subtracts it', async () => {
+    const { buildEffortTypeSplitRows, summarizeEffortTypeSplitTotals } = await loadModule();
+    const selectedSprint = { id: 101, name: 'S1', startDate: '2026-04-01' };
+    const tasks = [
+        // Excluded wins over Ad Hoc / Tech / Product.
+        story({ key: 'PROD-1', epicKey: 'BAU-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 2, projectKey: 'PROD' }),
+        // Ad Hoc under a Tech project still counts as Ad Hoc (Product), never Tech.
+        story({ key: 'TECH-2', epicKey: 'ADHOC-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 4, projectKey: 'TECH' }),
+        // Ordinary Tech.
+        story({ key: 'TECH-3', epicKey: 'TECH-EPIC', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 1, projectKey: 'TECH' }),
+        // Ordinary Product.
+        story({ key: 'PROD-4', epicKey: 'PROD-EPIC', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3, projectKey: 'PROD' })
+    ];
+
+    const rows = buildEffortTypeSplitRows(tasks, selectedSprint, {
+        excludedEpicKeys: ['BAU-1'],
+        adHocEpicKeys: ['ADHOC-1'],
+        techProjectKeys: ['TECH'],
+        teams: [{ id: 'team-alpha', name: 'Alpha' }]
+    });
+
+    assert.deepEqual(
+        rows.map(row => ({
+            teamId: row.teamId,
+            total: row.totalPoints,
+            excluded: row.excludedCapacityPoints,
+            adHoc: row.adHocPoints,
+            tech: row.techPoints,
+            product: row.productPoints
+        })),
+        [
+            // product is Product-other (excluding Ad Hoc): only PROD-4 (3).
+            { teamId: 'team-alpha', total: 10, excluded: 2, adHoc: 4, tech: 1, product: 3 }
+        ]
+    );
+
+    const totals = summarizeEffortTypeSplitTotals(rows);
+    assert.equal(totals.adHocPoints, 4);
+    assert.equal(totals.productPoints, 3);
+    // Ad Hoc is included Product capacity: Product total = Product other + Ad Hoc.
+    assert.equal(totals.productTotalPoints, 7);
+    assert.equal(totals.totalPoints, 10);
+    assert.equal(totals.adHocPercent, 0.4);
+    assert.equal(totals.productPercent, 0.3);
+    assert.equal(totals.productTotalPercent, 0.7);
+});
+
+test('buildEffortTypeSplitRows treats an empty Ad Hoc set as all Product/Tech', async () => {
+    const { buildEffortTypeSplitRows } = await loadModule();
+    const selectedSprint = { id: 101, name: 'S1', startDate: '2026-04-01' };
+    const tasks = [
+        story({ key: 'TECH-2', epicKey: 'TECH-EPIC', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 4, projectKey: 'TECH' }),
+        story({ key: 'PROD-4', epicKey: 'PROD-EPIC', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3, projectKey: 'PROD' })
+    ];
+
+    const rows = buildEffortTypeSplitRows(tasks, selectedSprint, {
+        techProjectKeys: ['TECH'],
+        teams: [{ id: 'team-alpha', name: 'Alpha' }]
+    });
+
+    assert.deepEqual(
+        rows.map(row => ({ adHoc: row.adHocPoints, tech: row.techPoints, product: row.productPoints })),
+        [{ adHoc: 0, tech: 4, product: 3 }]
+    );
+});
+
 test('buildEffortTypeSplitRows aggregates the selected sprint range', async () => {
     const { buildEffortTypeSplitRows } = await loadModule();
     const sprintRange = [
@@ -191,23 +257,27 @@ test('buildEffortTypeSplitRows falls back to key prefix and keeps scoped empty t
 test('summarizeEffortTypeSplitTotals aggregates type shares for summary cards', async () => {
     const { summarizeEffortTypeSplitTotals } = await loadModule();
     const totals = summarizeEffortTypeSplitTotals([
-        { totalPoints: 10, excludedCapacityPoints: 3, techPoints: 5, productPoints: 2 },
-        { totalPoints: 30, excludedCapacityPoints: 5, techPoints: 10, productPoints: 15 }
+        { totalPoints: 10, excludedCapacityPoints: 3, adHocPoints: 1, techPoints: 5, productPoints: 1 },
+        { totalPoints: 30, excludedCapacityPoints: 5, adHocPoints: 4, techPoints: 10, productPoints: 11 }
     ]);
 
     assert.deepEqual(totals, {
         totalPoints: 40,
         excludedCapacityPoints: 8,
+        adHocPoints: 5,
         techPoints: 15,
-        productPoints: 17,
+        productPoints: 12,
+        productTotalPoints: 17,
         excludedCapacityPercent: 0.2,
+        adHocPercent: 0.125,
         techPercent: 0.375,
-        productPercent: 0.425
+        productPercent: 0.3,
+        productTotalPercent: 0.425
     });
 });
 
 test('buildExcludedEpicCatalog returns configured epics with summaries when known and key fallback otherwise', async () => {
-    const { buildExcludedEpicCatalog, pickAutoSelectedExcludedEpics } = await loadModule();
+    const { buildExcludedEpicCatalog } = await loadModule();
     const tasks = [
         story({ key: 'SYN-1', epicKey: 'BAU-1', epicSummary: 'BAU Workstream', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: '2025Q4 Sprint 1', points: 3 }),
         story({ key: 'SYN-2', epicKey: 'OPS-1', epicSummary: 'Ad Hoc Requests', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: '2025Q4 Sprint 1', points: 1 }),
@@ -221,9 +291,6 @@ test('buildExcludedEpicCatalog returns configured epics with summaries when know
     assert.equal(byKey['OPS-1'], 'Ad Hoc Requests');
     assert.equal(byKey['INT-1'], '');
     assert.equal(byKey['GHOST-1'], '');
-
-    const autoSelected = pickAutoSelectedExcludedEpics(catalog);
-    assert.deepEqual(autoSelected.sort(), ['BAU-1', 'OPS-1'].sort());
 });
 
 test('buildExcludedCapacityLineSeries returns one series per team in teams mode', async () => {
@@ -526,6 +593,54 @@ test('buildEpicTeamCrossShareLineSeries uses total sprint team story points as d
         [
             { teamId: 'team-alpha', points: [{ sprintId: '101', cross: 2, total: 9, percent: roundMetric(2 / 9) }] },
             { teamId: 'team-beta', points: [{ sprintId: '101', cross: 5, total: 5, percent: 1 }] }
+        ]
+    );
+});
+
+test('Mono vs Cross denominators include Ad Hoc stories and apply no excluded-capacity filter', async () => {
+    const { buildEpicTeamModeOverall, buildEpicTeamModeSprintRows, buildEpicTeamModeShare } = await loadModule();
+    const sprints = [{ id: 101, name: 'S1', startDate: '2025-10-01' }];
+    // ADHOC-MONO is single-team (mono); ADHOC-CROSS is multi-team (cross).
+    const tasks = [
+        story({ key: 'SYN-1', epicKey: 'ADHOC-MONO', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 3 }),
+        story({ key: 'SYN-2', epicKey: 'ADHOC-CROSS', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 2 }),
+        story({ key: 'SYN-3', epicKey: 'ADHOC-CROSS', teamId: 'team-beta', teamName: 'Beta', sprintId: 101, sprintName: 'S1', points: 4 }),
+        story({ key: 'SYN-4', epicKey: 'PLAN-1', teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', points: 1 })
+    ];
+
+    // includeAllEpics is how Mono vs Cross is invoked; it must not subset by excluded keys.
+    const options = {
+        includeAllEpics: true,
+        excludedEpicKeys: ['BAU-1'],
+        excludedEpicKeyFilters: ['BAU-1'],
+        sprints,
+        teams: [
+            { id: 'team-alpha', name: 'Alpha' },
+            { id: 'team-beta', name: 'Beta' }
+        ]
+    };
+
+    const overall = buildEpicTeamModeOverall(tasks, options);
+    // Total SP must include Ad Hoc (and the ordinary PLAN epic): 3 + 6 + 1 = 10.
+    assert.equal(overall.sharedPoints, 10);
+    assert.equal(overall.totalPoints, 10);
+    // Cross = ADHOC-CROSS multi-team bucket = 6.
+    assert.equal(overall.crossPoints, 6);
+    assert.equal(overall.crossPercent, 0.6);
+
+    const sprintRows = buildEpicTeamModeSprintRows(tasks, options);
+    assert.deepEqual(
+        sprintRows.map(row => ({ sprintId: row.sprintId, cross: row.crossPoints, shared: row.sharedPoints })),
+        [{ sprintId: '101', cross: 6, shared: 10 }]
+    );
+
+    const share = buildEpicTeamModeShare(tasks, options);
+    // Cross Share = cross SP / total team SP across all scoped epics including Ad Hoc.
+    assert.deepEqual(
+        share.map(row => ({ teamId: row.teamId, cross: row.crossPoints, shared: row.sharedPoints })),
+        [
+            { teamId: 'team-alpha', cross: 2, shared: 6 },
+            { teamId: 'team-beta', cross: 4, shared: 4 }
         ]
     );
 });

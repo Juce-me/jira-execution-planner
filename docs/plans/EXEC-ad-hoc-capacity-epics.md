@@ -12,7 +12,12 @@
 
 ## Status
 
-Not implemented. This plan is ready for execution only after confirming the shared department-group implementation is the current baseline. `EXEC-shared-department-groups.md` is marked implemented in its Status section but still has an `EXEC-*` filename; reconcile that status before editing the shared group contract.
+Implemented (all 8 tasks complete and verified), pending review/merge — kept as `EXEC-*` until accepted/merged, then rename to `DONE-*` per `docs/plans/AGENTS.md`. All work is uncommitted on branch `feature/ad-hoc-capacity-epics`. Verification gate green: full Python suite (903 tests, 1 skipped), full Node unit suite (386 tests), `npm run build`, and the Playwright UI suite (115 passed, 2 skipped). Each task was executed with a spec-compliance + code-quality review pass; a final cross-branch adversarial review confirmed acceptance criteria 1–8 met.
+
+Implementation notes / intentional nuances:
+- Plan-vs-reality divergence (Task 7): the legacy bare `GET /api/stats` route lives in `backend/routes/stats_routes.py`, not `jira_server.py`; it has no frontend caller, so it was left unchanged behind a source guard (7.1 path; 7.2 N/A).
+- Cohort Ad Hoc epics remain subject to the shared team/component scope clause (Step 6.2), and the cohort `created >=` filter applies to the whole grouped JQL — an Ad Hoc epic created before the cohort start window is not surfaced. This matches the Step 6.2 contract.
+- Analytics reuse existing events; the only new value is the `series_type` token `ad_hoc` (an existing registered param), so no GTM/GA4 config change was required.
 
 ## Product Decisions
 
@@ -107,18 +112,18 @@ Expected group config shape:
 - Modify: `tests/test_shared_group_config_import.py`
 - Modify: `tests/test_config_jsonfile_fallback.py`
 
-- [ ] **Step 1.1: Add failing tests for `adHocCapacityEpics` normalization.**
+- [x] **Step 1.1: Add failing tests for `adHocCapacityEpics` normalization.**
   - Accept arrays and single strings.
   - Trim, uppercase, de-duplicate, and drop blanks.
   - Preserve `excludedCapacityEpics` independently.
   - Existing configs without the field normalize to `[]`.
 
-- [ ] **Step 1.2: Add failing tests for excluded/Ad Hoc overlap validation.**
+- [x] **Step 1.2: Add failing tests for excluded/Ad Hoc overlap validation.**
   - Detect overlaps after trim, uppercase, and de-duplication.
   - Reject overlap in pure service validation, DB/OAuth `POST /api/groups-config`, JSON/basic `POST /api/groups-config`, and imported JSON configs.
   - Assert rejected payloads are not persisted.
 
-- [ ] **Step 1.3: Add shared route persistence and compatibility tests.**
+- [x] **Step 1.3: Add shared route persistence and compatibility tests.**
   - Save a group with both `excludedCapacityEpics` and `adHocCapacityEpics`.
   - Load as another user in the same workspace and assert both fields survive.
   - Save `/api/groups-preferences` and assert neither shared epic list changes.
@@ -126,12 +131,12 @@ Expected group config shape:
   - Create a stale DB save and verify the `409 group_config_conflict.current` payload also includes normalized `adHocCapacityEpics: []`.
   - Create two workspaces and verify Ad Hoc epics saved in workspace A are not visible in workspace B.
 
-- [ ] **Step 1.4: Add import/export coverage.**
+- [x] **Step 1.4: Add import/export coverage.**
   - Import legacy JSON without `adHocCapacityEpics` and assert DB rows normalize the field to `[]`.
   - Import JSON with `adHocCapacityEpics` and assert normalized values survive DB import and rollback export.
   - Export a legacy DB row and assert the exported `teamGroups` contains normalized `adHocCapacityEpics`.
 
-- [ ] **Step 1.5: Implement backend normalization and validation.**
+- [x] **Step 1.5: Implement backend normalization and validation.**
   - Use the existing `normalize_epic_keys_fn` path for both fields.
   - Include `adHocCapacityEpics: []` in `build_default_groups_config()`.
   - Normalize existing DB payloads in `shared_group_config` read/save/conflict/export paths.
@@ -154,13 +159,13 @@ Expected group config shape:
 - Modify: `tests/test_excluded_capacity_stats_source_guards.js`
 - Modify: `tests/ui/shared_department_groups.spec.js`
 
-- [ ] **Step 2.1: Add frontend normalization/helper tests.**
+- [x] **Step 2.1: Add frontend normalization/helper tests.**
   - `normalizeGroupsConfig()` preserves `adHocCapacityEpics`.
   - Existing helper tests prove excluded toggles do not mutate Ad Hoc keys.
   - Existing shared excluded-capacity toggle tests prove the toggle carries the current group payload without dropping `adHocCapacityEpics`.
   - Add a pure helper only if inline add/remove logic would otherwise duplicate the excluded selector.
 
-- [ ] **Step 2.2: Add the Settings selector.**
+- [x] **Step 2.2: Add the Settings selector.**
   - Place it beside "Epics for excluded capacity" in `Settings -> Departments -> Team groups`.
   - Label: `Epics for Ad Hoc capacity`.
   - Add a short code comment only where needed to explain that Ad Hoc includes business-as-usual work; do not add BAU as a UI label or config value.
@@ -168,17 +173,17 @@ Expected group config shape:
   - Preserve selected-chip remove behavior and keyboard add/remove behavior.
   - Prevent the same key from appearing twice in the Ad Hoc list.
 
-- [ ] **Step 2.3: Add conflict validation.**
+- [x] **Step 2.3: Add conflict validation.**
   - Block save if the same normalized epic key is present in both `excludedCapacityEpics` and `adHocCapacityEpics` for one group.
   - Show the validation in the existing Settings save error path without silently removing the key from either list.
   - Treat backend validation from Task 1 as the source of truth so imported JSON and stale clients cannot create contradictory config.
 
-- [ ] **Step 2.4: Guard the shared excluded-capacity toggle path.**
+- [x] **Step 2.4: Guard the shared excluded-capacity toggle path.**
   - When Planning/Reporting toggles an epic into excluded capacity, block with a clear message if that key is configured as Ad Hoc for the active group.
   - Do not silently remove it from `adHocCapacityEpics`.
   - Add a source guard that `saveSharedExcludedCapacityToggle()` preserves `adHocCapacityEpics` and surfaces backend overlap errors.
 
-- [ ] **Step 2.5: Add Playwright Settings coverage.**
+- [x] **Step 2.5: Add Playwright Settings coverage.**
   - Open Settings -> Departments -> Team groups.
   - Add a synthetic Ad Hoc epic.
   - Save all dirty Settings sections through the existing footer Save.
@@ -203,7 +208,7 @@ npx playwright test tests/ui/shared_department_groups.spec.js
 - Modify: `frontend/src/cohort/cohortUtils.js`
 - Modify: related Node tests
 
-- [ ] **Step 3.1: Introduce a small classification helper.**
+- [x] **Step 3.1: Introduce a small classification helper.**
   - Add `frontend/src/capacityClassification.mjs`.
   - Export `classifyCapacityIssue(issue, { techProjectKeys, adHocEpicSet })`.
   - Return shape: `{ projectType: 'product' | 'tech', capacityType: 'ad_hoc' | 'product' | 'tech', productSubtype: 'ad_hoc' | 'standard' | null }`.
@@ -211,17 +216,17 @@ npx playwright test tests/ui/shared_department_groups.spec.js
   - Rule: `adHocEpicSet` wins over `techProjectKeys`; excluded filtering happens before classification and is not part of this helper.
   - Add dedicated tests for Tech-project Ad Hoc stories, ordinary Product stories, ordinary Tech stories, blank keys, and Epic-level cohort records.
 
-- [ ] **Step 3.2: Update Planning helpers.**
+- [x] **Step 3.2: Update Planning helpers.**
   - `buildSelectedPlanningTasksList()` continues to remove only excluded epics.
   - `buildSelectedProjectStats()` and `buildSelectedTeamProjectStats()` count Ad Hoc as Product.
   - `buildExcludedProjectStats()` remains excluded-only and does not accept Ad Hoc keys.
 
-- [ ] **Step 3.3: Update local Stats helpers.**
+- [x] **Step 3.3: Update local Stats helpers.**
   - `buildLocalStatsFromTasks()` receives `adHocEpicSet`.
   - Product done/incomplete/priority counts include Ad Hoc even when project key is otherwise Tech.
   - Existing total counts remain unchanged except for issues previously misclassified as Tech.
 
-- [ ] **Step 3.4: Update Lead Times filtering helpers.**
+- [x] **Step 3.4: Update Lead Times filtering helpers.**
   - The existing exclude-capacity toggle removes only excluded keys.
   - `filterCohortIssues()` continues to compare excluded Epic keys to cohort issue `key`, because cohort records are Epics.
   - Raw project filtering remains raw Jira `projectKey`; no Product/Tech virtual filter is introduced in this slice.
@@ -241,7 +246,7 @@ node --test tests/test_capacity_classification.js tests/test_planning_selection_
 - Modify: `frontend/src/eng/PlanningProjectSplitBar.jsx`
 - Modify: Planning/Stats UI tests and source guards
 
-- [ ] **Step 4.1: Derive the active Ad Hoc set.**
+- [x] **Step 4.1: Derive the active Ad Hoc set.**
   - Add `activeGroupAdHocCapacityEpics` and `adHocEpicSet`.
   - Do not merge it into `excludedEpicSet`.
   - Include Ad Hoc signatures in affected memo/cache dependencies:
@@ -252,26 +257,26 @@ node --test tests/test_capacity_classification.js tests/test_planning_selection_
     - Effort split rows and chart state.
     - Cohort request/cache key.
 
-- [ ] **Step 4.2: Pass Ad Hoc only to classification helpers.**
+- [x] **Step 4.2: Pass Ad Hoc only to classification helpers.**
   - Planning selected project stats.
   - Selected team project stats.
   - Team capacity stats and capacity table totals.
   - Local stats build.
   - Cohort filter/classification, if needed.
 
-- [ ] **Step 4.3: Update Planning project split display.**
+- [x] **Step 4.3: Update Planning project split display.**
   - Show Ad Hoc as part of Product capacity, either as a Product tooltip line or a small Product subsegment.
   - Do not use excluded-zone styling.
   - Keep text within the existing project split bar at desktop and mobile widths.
 
-- [ ] **Step 4.4: Keep Product/Tech Jira links consistent with reclassification.**
+- [x] **Step 4.4: Keep Product/Tech Jira links consistent with reclassification.**
   - Stats Teams Product links must include configured Ad Hoc issue keys when those issues are counted as Product.
   - Tech links must exclude configured Ad Hoc issue keys when those issues would otherwise match Tech project JQL.
   - Planning capacity table/status links must follow the same rule.
   - Prefer issue-key-list links when the loaded scoped issue set is available; otherwise add explicit `issuekey in (...)` / `issuekey not in (...)` clauses.
   - Add tests or source guards for `StatsTeamsView.jsx`, `buildTeamStatusLink()`, and Planning capacity table link construction.
 
-- [ ] **Step 4.5: Guard Scenario payload.**
+- [x] **Step 4.5: Guard Scenario payload.**
   - Add a source guard or unit test proving `buildScenarioPayload()` sends only `excluded_capacity_epics: Array.from(excludedEpicSet)`.
   - Add a Scenario test fixture where an Ad Hoc epic is scheduled as normal work, not a placeholder.
 
@@ -292,29 +297,29 @@ npx playwright test tests/ui/planning_selection_defaults.spec.js
 - Modify: `tests/test_excluded_capacity_stats.js`
 - Modify: `tests/ui/codebase_structure_smoke.spec.js`
 
-- [ ] **Step 5.1: Allow Ad Hoc-only capacity mix reporting to load.**
+- [x] **Step 5.1: Allow Ad Hoc-only capacity mix reporting to load.**
   - Change the dashboard stats-source load gate so the source fetch runs when either `excludedCapacityEpics` or `adHocCapacityEpics` is configured.
   - Pass Ad Hoc keys into effort split classification.
   - If a group has Ad Hoc keys but no excluded keys, render the Ad Hoc effort split bucket and keep the excluded-capacity line chart empty/disabled with a clear excluded-only empty state.
   - Cache keys and loading dependencies must include both excluded and Ad Hoc signatures.
 
-- [ ] **Step 5.2: Replace summary-regex auto-selection with explicit Ad Hoc config.**
+- [x] **Step 5.2: Replace summary-regex auto-selection with explicit Ad Hoc config.**
   - Remove `pickAutoSelectedExcludedEpics()` or make it non-authoritative.
   - Remove the `BAU / ad hoc` option from the excluded-epic filter dropdown.
   - Keep excluded filtering about configured excluded epics only.
   - Migrate existing browser preference state for `excludedCapacitySelectedEpicKeys`: if it is `null`, default to all configured excluded epics; if it contains keys no longer in the excluded catalog, drop only invalid excluded keys.
   - Update source guards that currently require the old preset label, auto-select helper, or `Filter: BAU / ad hoc`.
 
-- [ ] **Step 5.3: Add Ad Hoc effort split bucket.**
+- [x] **Step 5.3: Add Ad Hoc effort split bucket.**
   - Extend effort split rows/totals with `adHocPoints`.
   - Bucket order: `Excluded Capacity`, `Ad Hoc`, `Product`, `Tech`.
   - Product summary should make clear whether it means Product total including Ad Hoc or Product excluding Ad Hoc. Prefer `Product total` in summary cards and `Product other` in stacked segments if both are shown.
 
-- [ ] **Step 5.4: Keep excluded capacity line chart semantics strict.**
+- [x] **Step 5.4: Keep excluded capacity line chart semantics strict.**
   - The excluded line chart numerator remains excluded epics only.
   - If Ad Hoc trend is added in this slice, use a separate label and series identity such as `ad_hoc`, not the excluded series.
 
-- [ ] **Step 5.5: Verify Mono vs Cross denominators.**
+- [x] **Step 5.5: Verify Mono vs Cross denominators.**
   - Add a fixture with Ad Hoc stories in mono and cross epics.
   - Assert Total SP includes Ad Hoc and Cross Share uses cross SP / total team SP.
   - Assert no Excluded Capacity filter is applied to Mono vs Cross.
@@ -339,20 +344,20 @@ npx playwright test tests/ui/codebase_structure_smoke.spec.js
 - Modify: `tests/test_frontend_api_source_guards.js`
 - Modify: `tests/ui/codebase_structure_smoke.spec.js`
 
-- [ ] **Step 6.1: Extend the cohort request contract.**
+- [x] **Step 6.1: Extend the cohort request contract.**
   - Send normalized `adHocCapacityEpics` from the active group when loading `/api/stats/epic-cohort`.
   - Add the normalized Ad Hoc signature to `cohortQueryKey` and `cohortCacheRef` keys.
   - Add Lead Times UI state for the capacity selector using code values such as `all` and `ad_hoc`; do not use BAU as a code value.
   - Keep request analytics at `featureName: 'stats'`; do not include raw epic keys in analytics payloads.
 
-- [ ] **Step 6.2: Extend backend cohort JQL and response tags.**
+- [x] **Step 6.2: Extend backend cohort JQL and response tags.**
   - Normalize and cap `adHocCapacityEpics` server-side using the same epic-key normalizer.
   - Query `issuetype = Epic AND (project in (...) OR key in (...adHoc keys...)) AND created >= ...`.
   - Preserve the existing team/component scope clause for both raw-project and Ad Hoc-key matches.
   - Add `capacityType: 'ad_hoc'` for configured Ad Hoc records and normal Product/Tech classification metadata only if needed by the UI.
   - Include the Ad Hoc signature in any backend cache key if the route adds caching in this slice.
 
-- [ ] **Step 6.3: Keep cohort filters explicit.**
+- [x] **Step 6.3: Keep cohort filters explicit.**
   - Raw project dropdowns remain raw Jira project keys.
   - The Ad Hoc capacity selector filters to configured `capacityType: 'ad_hoc'` cohort records. If the current UI label remains `BAU / ad hoc`, it is display copy only; code and analytics values use `ad_hoc`.
   - The "exclude capacity" toggle removes only configured excluded Epic keys.
@@ -369,14 +374,16 @@ npx playwright test tests/ui/codebase_structure_smoke.spec.js
 ## Task 7: Backend Legacy Stats Audit
 
 **Files:**
-- Inspect/modify: `jira_server.py`
+- Inspect/modify: `jira_server.py` _(divergence: the legacy bare `GET /api/stats` route was refactored into `backend/routes/stats_routes.py:16` after this plan was written; it no longer exists in `jira_server.py`)._
 - Modify: backend route/source guard tests only if needed
 
-- [ ] **Step 7.1: Prove whether current frontend calls `GET /api/stats`.**
+- [x] **Step 7.1: Prove whether current frontend calls `GET /api/stats`.**
   - Use `rg` source guard coverage, not manual inspection alone.
   - If no frontend caller remains, document it in a source guard and leave route behavior unchanged.
+  - _Result: no frontend caller. The live frontend only calls the sub-routes (`/api/stats/burnout`, `/api/stats/epic-cohort`, `/api/stats/excluded-capacity-source`, `/api/stats/priority-weights-config`). Guarded by `tests/test_backend_route_source_guards.py::test_frontend_does_not_call_legacy_bare_api_stats_endpoint`; route behavior left unchanged._
 
-- [ ] **Step 7.2: If a caller remains, apply Ad Hoc as Product classification there too.**
+- [x] **Step 7.2: If a caller remains, apply Ad Hoc as Product classification there too.**
+  - _N/A: no frontend caller remains (per 7.1), so the bare `GET /api/stats` route is intentionally left unchanged with no Ad Hoc reclassification._
   - Route must get group config for the requested `groupId`.
   - Cache key must include the Ad Hoc epic signature if route output changes.
   - Tests must cover an Ad Hoc epic otherwise classified as Tech being returned under Product.
@@ -398,24 +405,24 @@ npx playwright test tests/ui/codebase_structure_smoke.spec.js
 - Modify: `README.md`
 - Modify: generated `frontend/dist/*` through `npm run build`
 
-- [ ] **Step 8.1: Update analytics documentation and tests.**
+- [x] **Step 8.1: Update analytics documentation and tests.**
   - Settings selector add/remove/save uses `event=userevent`, canonical `event_name='settings_action'`, `feature_name='settings'`, and bucketed counts only.
   - Capacity mix/chart toggles use existing chart/filter events where possible; if `series_type: ad_hoc` is added, update `frontend/src/analytics/events.js`, `tests/test_analytics_events.js`, and `docs/README_ANALYTICS.md`.
   - Document trigger, event type, canonical `event_name`, `feature_name`/`page_name`, typed params, and privacy reason for each changed event.
   - Do not add raw epic keys, summaries, team names, group names, issue keys, or config payloads to events.
   - Update `docs/plans/SUPPORT-ga4-user-configuration.md` and `SUPPORT-ga4-gtm-mcp-execution.yaml` only if the implementation adds a new dataLayer field, custom definition, or runbook requirement; otherwise document why no GTM/GA4 config change is needed.
 
-- [ ] **Step 8.2: Update user setup docs.**
+- [x] **Step 8.2: Update user setup docs.**
   - Explain that excluded capacity epics are not included in planning capacity.
   - Explain that Ad Hoc capacity epics, including business-as-usual work, are included Product capacity and reported separately.
   - Clarify that Admin Capacity is only the Jira capacity project/field.
 
-- [ ] **Step 8.3: Build and run focused verification.**
+- [x] **Step 8.3: Build and run focused verification.**
   - `npm run build`
   - Focused Node and Python tests from prior tasks.
   - Playwright screenshots for Settings selector, Planning capacity/project split, Stats effort split, and Mono vs Cross.
 
-- [ ] **Step 8.4: Run full verification before push.**
+- [x] **Step 8.4: Run full verification before push.**
   - `.venv/bin/python -m unittest discover -s tests`
   - `npm run build`
   - Relevant Playwright suite or documented subset if full UI run is too slow.

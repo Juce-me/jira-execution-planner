@@ -58,6 +58,18 @@ class TestEpicCohortHelpers(unittest.TestCase):
         self.assertEqual(jira_server.normalize_epic_status('Postponed'), 'Postponed')
         self.assertTrue(jira_server.is_terminal_epic_status('Postponed'))
 
+    def test_cache_key_includes_normalized_ad_hoc_signature(self):
+        base = jira_server._build_epic_cohort_cache_key('2025Q1', ['T1'], ['PRODUCT'])
+        with_ad_hoc = jira_server._build_epic_cohort_cache_key(
+            '2025Q1', ['T1'], ['PRODUCT'], ad_hoc_epics=['tech-9', 'TECH-9']
+        )
+        self.assertNotEqual(base, with_ad_hoc)
+        # Normalization is order- and case-insensitive after dedupe.
+        reordered = jira_server._build_epic_cohort_cache_key(
+            '2025Q1', ['T1'], ['PRODUCT'], ad_hoc_epics=['TECH-9', 'tech-9']
+        )
+        self.assertEqual(with_ad_hoc, reordered)
+
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestEpicCohortFetch(unittest.TestCase):
@@ -162,6 +174,99 @@ class TestEpicCohortFetch(unittest.TestCase):
 
     @patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT'])
     @patch.object(jira_server, 'jira_search_request')
+    def test_empty_ad_hoc_list_keeps_jql_identical(self, mock_search, _mock_scope):
+        mock_search.return_value = DummyResponse({
+            'issues': [self._epic('PRODUCT-1')],
+            'isLast': True
+        })
+
+        jira_server.fetch_epic_cohort_data(
+            start_quarter='2025Q1',
+            headers={'Authorization': 'Basic test'},
+            team_field_id='customfield_30101',
+            team_ids=[],
+            ad_hoc_capacity_epics=[]
+        )
+
+        jql = mock_search.call_args_list[0].args[0]['jql']
+        self.assertEqual(
+            jql,
+            'issuetype = Epic AND project in ("PRODUCT") AND created >= "2025-01-01"'
+        )
+        self.assertNotIn('OR key in', jql)
+
+    @patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT'])
+    @patch.object(jira_server, 'jira_search_request')
+    def test_ad_hoc_keys_add_key_clause_and_share_scope(self, mock_search, _mock_scope):
+        mock_search.return_value = DummyResponse({
+            'issues': [self._epic('PRODUCT-1')],
+            'isLast': True
+        })
+
+        jira_server.fetch_epic_cohort_data(
+            start_quarter='2025Q1',
+            headers={'Authorization': 'Basic test'},
+            team_field_id='customfield_30101',
+            team_ids=['T1'],
+            ad_hoc_capacity_epics=['tech-9', 'TECH-9', 'tech-10']
+        )
+
+        jql = mock_search.call_args_list[0].args[0]['jql']
+        # Project and Ad Hoc key matches are grouped so the team scope clause
+        # (added afterward) applies to both branches.
+        self.assertIn('(project in ("PRODUCT") OR key in ("TECH-9", "TECH-10"))', jql)
+        self.assertIn('"Team[Team]" = "T1"', jql)
+        self.assertTrue(jql.startswith('issuetype = Epic AND'))
+
+    @patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT'])
+    @patch.object(jira_server, 'jira_search_request')
+    def test_ad_hoc_epic_outside_project_scope_is_tagged_ad_hoc(self, mock_search, _mock_scope):
+        tech_epic = self._epic('TECH-9', resolution='2025-03-01')
+        tech_epic['fields']['project'] = {'key': 'TECH'}
+        mock_search.return_value = DummyResponse({
+            'issues': [self._epic('PRODUCT-1'), tech_epic],
+            'isLast': True
+        })
+
+        payload, error = jira_server.fetch_epic_cohort_data(
+            start_quarter='2025Q1',
+            headers={'Authorization': 'Basic test'},
+            team_field_id='customfield_30101',
+            team_ids=[],
+            ad_hoc_capacity_epics=['TECH-9']
+        )
+
+        self.assertIsNone(error)
+        issues = {issue.get('key'): issue for issue in (payload.get('issues') or [])}
+        # The Tech-project Ad Hoc Epic returned by key remains in the dataset
+        # and carries the ad_hoc capacity tag while its raw project stays TECH.
+        self.assertIn('TECH-9', issues)
+        self.assertEqual(issues['TECH-9'].get('projectKey'), 'TECH')
+        self.assertEqual(issues['TECH-9'].get('capacityType'), 'ad_hoc')
+        # Project-scope epics are not tagged.
+        self.assertNotIn('capacityType', issues['PRODUCT-1'])
+
+    @patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT'])
+    @patch.object(jira_server, 'jira_search_request')
+    def test_ad_hoc_keys_capped(self, mock_search, _mock_scope):
+        mock_search.return_value = DummyResponse({'issues': [], 'isLast': True})
+        overflow = [f'TECH-{index}' for index in range(jira_server.EPIC_COHORT_ADHOC_MAX_EPICS + 25)]
+
+        jira_server.fetch_epic_cohort_data(
+            start_quarter='2025Q1',
+            headers={'Authorization': 'Basic test'},
+            team_field_id='customfield_30101',
+            team_ids=[],
+            ad_hoc_capacity_epics=overflow
+        )
+
+        jql = mock_search.call_args_list[0].args[0]['jql']
+        key_clause = jql.split('OR key in (', 1)[1].split(')', 1)[0]
+        emitted_keys = [token.strip().strip('"') for token in key_clause.split(',')]
+        self.assertEqual(len(emitted_keys), jira_server.EPIC_COHORT_ADHOC_MAX_EPICS)
+
+    @patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT'])
+    @patch.object(jira_server, 'jira_search_request')
     def test_open_epics_keep_actual_jira_status(self, mock_search, _mock_scope):
         mock_search.return_value = DummyResponse({
             'issues': [
@@ -213,6 +318,23 @@ class TestEpicCohortEndpoint(unittest.TestCase):
         payload = response.get_json() or {}
         self.assertIn('data', payload)
         self.assertIn('issues', payload.get('data') or {})
+
+    @patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101')
+    @patch.object(jira_server, 'fetch_epic_cohort_data')
+    def test_post_forwards_normalized_ad_hoc_epics(self, mock_fetch, _mock_team):
+        mock_fetch.return_value = ({
+            'range': {'startDate': '2025-01-01', 'endDate': '2025-03-31'},
+            'issues': [],
+            'meta': {'warnings': [], 'truncated': False, 'paginationMode': 'nextPageToken/isLast'}
+        }, None)
+
+        response = self.client.post('/api/stats/epic-cohort', json={
+            'startQuarter': '2025Q1',
+            'adHocCapacityEpics': ['tech-9', 'TECH-9', '', 'tech-10']
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        forwarded = mock_fetch.call_args.kwargs.get('ad_hoc_capacity_epics')
+        self.assertEqual(forwarded, ['TECH-9', 'TECH-10'])
 
 
 if __name__ == '__main__':

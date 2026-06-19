@@ -81,6 +81,51 @@ test('cohort summary counts actual open Jira statuses for workflow card', async 
     assert.equal(summary.postponed, 1);
 });
 
+test('filterCohortIssues narrows to tagged ad_hoc records and drops untagged ones', async () => {
+    const { filterCohortIssues } = await import('../frontend/src/cohort/cohortUtils.js');
+    const issues = [
+        { key: 'EPIC-1', status: 'open', capacityType: 'ad_hoc' },
+        { key: 'EPIC-2', status: 'open', capacityType: 'product' },
+        { key: 'EPIC-3', status: 'open' },
+    ];
+
+    // No capacity filter: every issue passes, including untagged ones.
+    assert.equal(filterCohortIssues(issues).length, 3);
+    assert.equal(filterCohortIssues(issues, { capacityType: 'all' }).length, 3);
+
+    // ad_hoc filter keeps only tagged ad_hoc records; untagged and other-typed records are dropped.
+    const adHocOnly = filterCohortIssues(issues, { capacityType: 'ad_hoc' });
+    assert.deepEqual(adHocOnly.map((issue) => issue.key), ['EPIC-1']);
+});
+
+test('Tech-project ad_hoc epic stays visible by key and only leaves on a different project', async () => {
+    const { filterCohortIssues, deriveProjectOptions } = await import('../frontend/src/cohort/cohortUtils.js');
+    // TECH-9 has a raw project (TECH) outside the cohort project scope; it was
+    // returned by the `key in (...)` branch and tagged ad_hoc by the backend.
+    const issues = [
+        { key: 'PRODUCT-1', status: 'open', projectKey: 'PRODUCT' },
+        { key: 'TECH-9', status: 'open', projectKey: 'TECH', capacityType: 'ad_hoc' },
+    ];
+
+    // Visible in the unfiltered dataset; its raw project key is preserved.
+    assert.equal(filterCohortIssues(issues).length, 2);
+    const projectValues = deriveProjectOptions(issues).map((option) => option.value);
+    assert.deepEqual(projectValues, ['all', 'PRODUCT', 'TECH']);
+
+    // Selectable via the Ad Hoc capacity filter: the tagged Tech-project epic
+    // stays in view, and the untagged ordinary Product epic is hidden.
+    const adHocSelected = filterCohortIssues(issues, { capacityType: 'ad_hoc' });
+    assert.deepEqual(adHocSelected.map((issue) => issue.key), ['TECH-9']);
+
+    // Only removed by raw-project selection when the user picks a different project.
+    const productOnly = filterCohortIssues(issues, { projectKey: 'PRODUCT' });
+    assert.deepEqual(productOnly.map((issue) => issue.key), ['PRODUCT-1']);
+
+    // Picking the epic's own raw project keeps it.
+    const techOnly = filterCohortIssues(issues, { projectKey: 'TECH' });
+    assert.deepEqual(techOnly.map((issue) => issue.key), ['TECH-9']);
+});
+
 test('open epic lead-time bars include every open epic by default', async () => {
     const { buildOpenEpicsBars } = await import('../frontend/src/cohort/cohortUtils.js');
     const issues = Array.from({ length: 35 }, (_, index) => ({
@@ -209,4 +254,59 @@ test('buildLocalStatsFromTasks preserves sprint team project buckets and edge ca
     assert.equal(result.teams[1].projects.tech.killed, 1);
     assert.equal(result.teams[0].priorityPoints.High, 3);
     assert.equal(result.teams[0].priorityPoints.Low, 5);
+});
+
+test('buildLocalStatsFromTasks counts Tech-project Ad Hoc stories as Product', async () => {
+    const { buildLocalStatsFromTasks } = await import('../frontend/src/stats/statsUtils.js');
+    const tasks = [
+        {
+            key: 'TECH-1',
+            fields: {
+                status: { name: 'Done' },
+                priority: { name: 'High' },
+                customfield_10004: 8,
+                epicKey: 'adhoc-1',
+                projectKey: 'TECH',
+                teamId: 'team-alpha',
+                teamName: 'Alpha',
+            },
+        },
+        {
+            key: 'TECH-2',
+            fields: {
+                status: { name: 'In Progress' },
+                priority: { name: 'Low' },
+                customfield_10004: 2,
+                epicKey: 'EPIC-9',
+                projectKey: 'TECH',
+                teamId: 'team-alpha',
+                teamName: 'Alpha',
+            },
+        },
+    ];
+    const baseOptions = {
+        normalizeStatus: (status) => {
+            const key = String(status || '').toLowerCase();
+            if (key === 'done') return 'done';
+            if (key === 'killed') return 'killed';
+            return 'incomplete';
+        },
+        getTeamInfo: (task) => ({ id: task.fields.teamId, name: task.fields.teamName }),
+        techProjectKeys: new Set(['TECH']),
+    };
+
+    const adHoc = buildLocalStatsFromTasks(tasks, { ...baseOptions, adHocEpicSet: new Set(['ADHOC-1']) });
+    assert.equal(adHoc.projects.product.done, 1);
+    assert.equal(adHoc.projects.tech.done, 0);
+    assert.equal(adHoc.projects.tech.incomplete, 1);
+    assert.equal(adHoc.teams[0].projects.product.done, 1);
+    // Totals are unchanged: 1 done + 1 incomplete, 10 SP.
+    assert.equal(adHoc.totals.done, 1);
+    assert.equal(adHoc.totals.incomplete, 1);
+    assert.equal(adHoc.storyPoints.total, 10);
+
+    // Without the Ad Hoc set, the same story stays Tech.
+    const plain = buildLocalStatsFromTasks(tasks, baseOptions);
+    assert.equal(plain.projects.product.done, 0);
+    assert.equal(plain.projects.tech.done, 1);
 });

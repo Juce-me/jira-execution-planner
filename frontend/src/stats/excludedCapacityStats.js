@@ -1,3 +1,5 @@
+import { classifyCapacityIssue } from '../capacityClassification.mjs';
+
 function normalizeKey(value) {
     return String(value || '').trim().toUpperCase();
 }
@@ -29,13 +31,6 @@ function epicSummaryFor(task) {
     const fields = task?.fields || {};
     const summary = fields.epicSummary ?? task?.epicSummary ?? fields.parentSummary ?? task?.parentSummary ?? '';
     return String(summary || '').trim();
-}
-
-function projectKeyFor(task) {
-    const fields = task?.fields || {};
-    const direct = fields.projectKey || task?.projectKey || fields.project?.key || task?.project?.key || '';
-    const fallback = String(task?.key || '').split('-')[0] || '';
-    return normalizeKey(direct || fallback);
 }
 
 function collectSprintTokens(value, tokens) {
@@ -88,28 +83,34 @@ function roundMetric(value) {
     return Math.round((Number(value) || 0) * 1000) / 1000;
 }
 
-const EFFORT_TYPE_BUCKETS = ['excludedCapacity', 'tech', 'product'];
+// Stacked-segment order. `product` here is Product EXCLUDING Ad Hoc
+// ("Product other"); Ad Hoc is a separate included-Product bucket. Summary cards
+// add Ad Hoc back into a "Product total" figure (see summarizeEffortTypeSplitTotals).
+const EFFORT_TYPE_BUCKETS = ['excludedCapacity', 'adHoc', 'product', 'tech'];
 
 function emptyEffortSegments() {
     return {
         excludedCapacity: { key: 'excludedCapacity', label: 'Excluded Capacity', points: 0, percent: 0 },
-        tech: { key: 'tech', label: 'Tech', points: 0, percent: 0 },
-        product: { key: 'product', label: 'Product', points: 0, percent: 0 }
+        adHoc: { key: 'adHoc', label: 'Ad Hoc', points: 0, percent: 0 },
+        product: { key: 'product', label: 'Product', points: 0, percent: 0 },
+        tech: { key: 'tech', label: 'Tech', points: 0, percent: 0 }
     };
 }
 
 function summarizeEffortSplitRow(row) {
-    const totalPoints = row.excludedCapacityPoints + row.techPoints + row.productPoints;
+    const totalPoints = row.excludedCapacityPoints + row.adHocPoints + row.techPoints + row.productPoints;
     const segments = emptyEffortSegments();
     segments.excludedCapacity.points = roundMetric(row.excludedCapacityPoints);
-    segments.tech.points = roundMetric(row.techPoints);
+    segments.adHoc.points = roundMetric(row.adHocPoints);
     segments.product.points = roundMetric(row.productPoints);
+    segments.tech.points = roundMetric(row.techPoints);
     EFFORT_TYPE_BUCKETS.forEach((bucket) => {
         segments[bucket].percent = totalPoints > 0 ? roundMetric(segments[bucket].points / totalPoints) : 0;
     });
     return {
         ...row,
         excludedCapacityPoints: segments.excludedCapacity.points,
+        adHocPoints: segments.adHoc.points,
         techPoints: segments.tech.points,
         productPoints: segments.product.points,
         totalPoints: roundMetric(totalPoints),
@@ -120,32 +121,44 @@ function summarizeEffortSplitRow(row) {
 export function summarizeEffortTypeSplitTotals(rows) {
     const totals = (rows || []).reduce((acc, row) => {
         const excludedCapacityPoints = Number(row?.excludedCapacityPoints || 0);
+        const adHocPoints = Number(row?.adHocPoints || 0);
         const techPoints = Number(row?.techPoints || 0);
         const productPoints = Number(row?.productPoints || 0);
-        const rowTotal = Number(row?.totalPoints || 0) || excludedCapacityPoints + techPoints + productPoints;
+        const rowTotal = Number(row?.totalPoints || 0)
+            || excludedCapacityPoints + adHocPoints + techPoints + productPoints;
         acc.totalPoints += rowTotal;
         acc.excludedCapacityPoints += excludedCapacityPoints;
+        acc.adHocPoints += adHocPoints;
         acc.techPoints += techPoints;
         acc.productPoints += productPoints;
         return acc;
     }, {
         totalPoints: 0,
         excludedCapacityPoints: 0,
+        adHocPoints: 0,
         techPoints: 0,
         productPoints: 0
     });
     const totalPoints = roundMetric(totals.totalPoints);
     const excludedCapacityPoints = roundMetric(totals.excludedCapacityPoints);
+    const adHocPoints = roundMetric(totals.adHocPoints);
     const techPoints = roundMetric(totals.techPoints);
+    // `productPoints` is Product other (excluding Ad Hoc); `productTotalPoints`
+    // is included Product capacity (Product other + Ad Hoc) for summary cards.
     const productPoints = roundMetric(totals.productPoints);
+    const productTotalPoints = roundMetric(totals.productPoints + totals.adHocPoints);
     return {
         totalPoints,
         excludedCapacityPoints,
+        adHocPoints,
         techPoints,
         productPoints,
+        productTotalPoints,
         excludedCapacityPercent: totalPoints > 0 ? roundMetric(excludedCapacityPoints / totalPoints) : 0,
+        adHocPercent: totalPoints > 0 ? roundMetric(adHocPoints / totalPoints) : 0,
         techPercent: totalPoints > 0 ? roundMetric(techPoints / totalPoints) : 0,
-        productPercent: totalPoints > 0 ? roundMetric(productPoints / totalPoints) : 0
+        productPercent: totalPoints > 0 ? roundMetric(productPoints / totalPoints) : 0,
+        productTotalPercent: totalPoints > 0 ? roundMetric(productTotalPoints / totalPoints) : 0
     };
 }
 
@@ -345,14 +358,6 @@ export function buildExcludedEpicCatalog(tasks, options = {}) {
     });
 }
 
-const AUTOSELECT_SUMMARY_PATTERN = /\b(bau|ad[\s_-]?hoc)\b/i;
-
-export function pickAutoSelectedExcludedEpics(catalog) {
-    return (catalog || [])
-        .filter(entry => entry && entry.summary && AUTOSELECT_SUMMARY_PATTERN.test(entry.summary))
-        .map(entry => entry.key);
-}
-
 export function buildExcludedCapacityTimeSeries(tasks, sprints, options = {}) {
     const excludedKeys = new Set((options.excludedEpicKeys || []).map(normalizeKey).filter(Boolean));
     const filterSet = normalizeFilterKeys(options);
@@ -419,30 +424,30 @@ export function buildEffortTypeSplitRows(tasks, selectedSprints, options = {}) {
     const filterSet = normalizeFilterKeys(options);
     const excludedScope = filterSet ? filterSet : excludedKeys;
     const techProjectKeys = new Set((options.techProjectKeys || []).map(normalizeKey).filter(Boolean));
+    // Ad Hoc epics are INCLUDED Product capacity reported separately; they never
+    // subtract. Excluded scope still wins first so excluded stories never leak
+    // into Ad Hoc, then classification routes Ad Hoc/Tech/Product.
+    const adHocEpicSet = new Set((options.adHocEpicKeys || []).map(normalizeKey).filter(Boolean));
     const explicitTeams = (options.teams || [])
         .map(team => ({
             id: normalizeId(team?.id || team?.name || 'unknown') || 'unknown',
             name: String(team?.name || team?.id || 'Unknown Team').trim() || 'Unknown Team'
         }))
         .filter(team => team.id);
-    const rowsByTeam = new Map(explicitTeams.map(team => [team.id, {
+    const emptyRow = (team) => ({
         teamId: team.id,
         teamName: team.name,
         excludedCapacityPoints: 0,
+        adHocPoints: 0,
         techPoints: 0,
         productPoints: 0
-    }]));
+    });
+    const rowsByTeam = new Map(explicitTeams.map(team => [team.id, emptyRow(team)]));
 
     (tasks || []).forEach(task => {
         if (!sprintList.some(sprint => taskMatchesSprint(task, sprint))) return;
         const team = teamFor(task);
-        const row = rowsByTeam.get(team.id) || {
-            teamId: team.id,
-            teamName: team.name,
-            excludedCapacityPoints: 0,
-            techPoints: 0,
-            productPoints: 0
-        };
+        const row = rowsByTeam.get(team.id) || emptyRow(team);
         if (row.teamName === row.teamId && team.name && team.name !== team.id) {
             row.teamName = team.name;
         }
@@ -450,10 +455,15 @@ export function buildEffortTypeSplitRows(tasks, selectedSprints, options = {}) {
         const epicKey = epicKeyFor(task);
         if (excludedScope.has(epicKey)) {
             row.excludedCapacityPoints += points;
-        } else if (techProjectKeys.has(projectKeyFor(task))) {
-            row.techPoints += points;
         } else {
-            row.productPoints += points;
+            const { capacityType } = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet });
+            if (capacityType === 'ad_hoc') {
+                row.adHocPoints += points;
+            } else if (capacityType === 'tech') {
+                row.techPoints += points;
+            } else {
+                row.productPoints += points;
+            }
         }
         rowsByTeam.set(team.id, row);
     });

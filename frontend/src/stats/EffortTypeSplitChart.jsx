@@ -2,10 +2,14 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { resolveFloatingHoverPosition } from '../ui/hoverBubblePosition.js';
 
+// Stacked-segment buckets. `product` is Product EXCLUDING Ad Hoc ("Product other");
+// Ad Hoc is shown as its own included-Product segment. Bucket order:
+// Excluded Capacity, Ad Hoc, Product, Tech.
 const BUCKETS = [
     { key: 'excludedCapacity', label: 'Excluded Capacity' },
-    { key: 'tech', label: 'Tech' },
-    { key: 'product', label: 'Product' }
+    { key: 'adHoc', label: 'Ad Hoc' },
+    { key: 'product', label: 'Product' },
+    { key: 'tech', label: 'Tech' }
 ];
 const READOUT_EDGE_GUTTER = 12;
 const READOUT_POINTER_GAP = 12;
@@ -13,6 +17,12 @@ const READOUT_MAX_WIDTH = 220;
 const READOUT_HEIGHT = 72;
 const READOUT_VERTICAL_INSET = 56;
 const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;
+
+const SERIES_ANALYTICS_TOKENS = { excludedCapacity: 'excluded_capacity', adHoc: 'ad_hoc' };
+
+function seriesAnalyticsToken(bucketKey) {
+    return SERIES_ANALYTICS_TOKENS[bucketKey] || bucketKey;
+}
 
 function clampReadoutPoint(x, y) {
     return resolveFloatingHoverPosition({
@@ -95,7 +105,7 @@ export default function EffortTypeSplitChart({
                                 onAnalyticsAction?.('chart_action', {
                                     workflow_action: 'toggle_series',
                                     chart_id: 'effort_split',
-                                    series_type: bucket.key === 'excludedCapacity' ? 'excluded_capacity' : bucket.key,
+                                    series_type: seriesAnalyticsToken(bucket.key),
                                     value_state: isActive ? 'off' : 'on'
                                 });
                                 onToggleBucket?.(bucket.key);
@@ -157,7 +167,7 @@ export default function EffortTypeSplitChart({
                                                     onAnalyticsAction?.('chart_action', {
                                                         workflow_action: 'readout_open',
                                                         chart_id: 'effort_split',
-                                                        series_type: bucket.key === 'excludedCapacity' ? 'excluded_capacity' : bucket.key
+                                                        series_type: seriesAnalyticsToken(bucket.key)
                                                     });
                                                     setHovered(readoutFromElement(event, readout));
                                                 }}

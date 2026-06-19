@@ -351,6 +351,9 @@ Capacity planning uses the loaded sprint tasks plus a separate Jira project for 
 
 - **Team capacity**: pulled from the configured Capacity project/field (Dashboard Settings → Capacity).
 - **Planning capacity**: team capacity minus excluded epic story points (same epic include/exclude toggle).
+- **Excluded capacity epics**: work that is **not** included in planning capacity. Their story points are subtracted from team capacity so planning capacity reflects only the work you intend to deliver.
+- **Ad Hoc capacity epics** (including business-as-usual work): work that **is** included as Product planning capacity but reported separately, so you can see how much delivered Product capacity went to ad hoc work. Configure Ad Hoc epics separately from excluded epics; the same epic cannot be both.
+- **Admin Capacity** is only the Jira capacity project/field (Dashboard Settings → Capacity). It does not store the excluded or Ad Hoc epic lists — those are saved per Department/team group in Department settings.
 - **Split**: estimated capacity split is 70% Product / 30% Tech.
 
 Priority weights used for weighted delivery:

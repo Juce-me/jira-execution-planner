@@ -1,3 +1,5 @@
+import { classifyCapacityIssue } from '../capacityClassification.mjs';
+
 function planningStoryPoints(task) {
     const sp = parseFloat(task.fields.customfield_10004 || 0);
     return Number.isNaN(sp) ? 0 : sp;
@@ -25,10 +27,10 @@ export function buildSelectedTeamStats(tasks, getTeamInfo) {
     }, {});
 }
 
-export function buildSelectedProjectStats(tasks, techProjectKeys) {
+export function buildSelectedProjectStats(tasks, techProjectKeys, adHocEpicSet = new Set()) {
     return tasks.reduce((acc, task) => {
-        const pk = task.fields?.projectKey || task.key.split('-')[0];
-        const bucket = techProjectKeys.has(pk) ? 'TECH' : 'PRODUCT';
+        const { projectType } = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet });
+        const bucket = projectType === 'tech' ? 'TECH' : 'PRODUCT';
         if (!acc[bucket]) {
             acc[bucket] = 0;
         }
@@ -37,11 +39,11 @@ export function buildSelectedProjectStats(tasks, techProjectKeys) {
     }, {});
 }
 
-export function buildSelectedTeamProjectStats(tasks, getTeamInfo, techProjectKeys) {
+export function buildSelectedTeamProjectStats(tasks, getTeamInfo, techProjectKeys, adHocEpicSet = new Set()) {
     return tasks.reduce((acc, task) => {
         const teamInfo = getTeamInfo(task);
-        const pk = task.fields?.projectKey || task.key.split('-')[0];
-        const bucket = techProjectKeys.has(pk) ? 'tech' : 'product';
+        const { projectType } = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet });
+        const bucket = projectType === 'tech' ? 'tech' : 'product';
         if (!acc[teamInfo.id]) {
             acc[teamInfo.id] = { product: 0, tech: 0 };
         }
@@ -54,7 +56,7 @@ export function buildExcludedProjectStats(tasks, excludedEpicSet, techProjectKey
     return tasks.reduce((acc, task) => {
         const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
         if (!excludedEpicSet.has(epicKey)) return acc;
-        const pk = task.fields?.projectKey || task.key.split('-')[0];
+        const pk = String(task.fields?.projectKey || task.key.split('-')[0]).toUpperCase();
         const projectKey = techProjectKeys.has(pk) ? 'TECH' : 'PRODUCT';
         if (!acc[projectKey]) {
             acc[projectKey] = 0;

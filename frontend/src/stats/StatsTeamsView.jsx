@@ -91,25 +91,29 @@ function StatsTeamsView({
                             teamId: team.id,
                             projectName: 'PRODUCT ROADMAPS',
                             statuses: ['Done'],
-                            issueType: 'Story'
+                            issueType: 'Story',
+                            capacityType: 'product'
                         });
                         const productIncompleteLink = buildStatLink(team.product.incomplete, {
                             teamId: team.id,
                             projectName: 'PRODUCT ROADMAPS',
                             excludeStatuses: ['Done', 'Killed'],
-                            issueType: 'Story'
+                            issueType: 'Story',
+                            capacityType: 'product'
                         });
                         const techDoneLink = buildStatLink(team.tech.done, {
                             teamId: team.id,
                             projectName: 'TECHNICAL ROADMAP',
                             statuses: ['Done'],
-                            issueType: 'Story'
+                            issueType: 'Story',
+                            capacityType: 'tech'
                         });
                         const techIncompleteLink = buildStatLink(team.tech.incomplete, {
                             teamId: team.id,
                             projectName: 'TECHNICAL ROADMAP',
                             excludeStatuses: ['Done', 'Killed'],
-                            issueType: 'Story'
+                            issueType: 'Story',
+                            capacityType: 'tech'
                         });
 
                         return (

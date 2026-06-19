@@ -1,4 +1,5 @@
 import { PRIORITY_ALIASES, PRIORITY_LABEL_BY_KEY, RADAR_PALETTE } from './statsConstants.js';
+import { classifyCapacityIssue } from '../capacityClassification.mjs';
 
 export function formatPercent(value) {
     return `${(value * 100).toFixed(2)}%`;
@@ -73,6 +74,7 @@ export function buildLocalStatsFromTasks(taskList, {
     normalizeStatus = (status) => String(status || '').toLowerCase().trim(),
     getTeamInfo = () => ({}),
     techProjectKeys = new Set(),
+    adHocEpicSet = new Set(),
     sprintName = ''
 } = {}) {
     const teams = {};
@@ -114,7 +116,7 @@ export function buildLocalStatsFromTasks(taskList, {
         storyPointsTotals.total += storyPoints;
         const teamInfo = getTeamInfo(task);
         const teamKey = teamInfo.id || teamInfo.name || 'unknown';
-        const projectBucket = techProjectKeys.has(task.fields?.projectKey || String(task.key || '').split('-')[0]) ? 'tech' : 'product';
+        const projectBucket = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).projectType === 'tech' ? 'tech' : 'product';
 
         if (!teams[teamKey]) {
             teams[teamKey] = {

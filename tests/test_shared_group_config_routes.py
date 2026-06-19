@@ -124,6 +124,7 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         second_json = second.get_json()
         self.assertEqual(first_json['source'], 'workspace_db')
         self.assertEqual(second_json['groups'], first_json['groups'])
+        self.assertEqual(first_json['groups'][0]['adHocCapacityEpics'], [])
         self.assertTrue(first_json['preferences']['onboardingRequired'])
         self.assertEqual(first_json['preferences']['effectiveVisibleGroupIds'], [])
 
@@ -144,6 +145,7 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         self.assertEqual(stale.status_code, 409, stale.get_data(as_text=True))
         self.assertEqual(stale.get_json()['error'], 'group_config_conflict')
         self.assertIn('current', stale.get_json())
+        self.assertEqual(stale.get_json()['current']['groups'][0]['adHocCapacityEpics'], [])
 
     def test_post_groups_config_persists_excluded_capacity_epics_as_shared_catalog(self):
         loaded = self._get_groups_config().get_json()
@@ -155,6 +157,7 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
                 'name': 'Platform',
                 'teamIds': ['team-a'],
                 'excludedCapacityEpics': ['PLAN-EPIC'],
+                'adHocCapacityEpics': [' product-adhoc ', 'PRODUCT-ADHOC'],
             }],
             'defaultGroupId': 'platform',
         }
@@ -173,9 +176,70 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
 
         self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
         self.assertEqual(saved.get_json()['groups'][0]['excludedCapacityEpics'], ['PLAN-EPIC'])
+        self.assertEqual(saved.get_json()['groups'][0]['adHocCapacityEpics'], ['PRODUCT-ADHOC'])
         self.assertEqual(loaded_for_other_user['groups'][0]['excludedCapacityEpics'], ['PLAN-EPIC'])
+        self.assertEqual(loaded_for_other_user['groups'][0]['adHocCapacityEpics'], ['PRODUCT-ADHOC'])
         self.assertEqual(preferences.status_code, 200, preferences.get_data(as_text=True))
         self.assertEqual(after_preferences['groups'][0]['excludedCapacityEpics'], ['PLAN-EPIC'])
+        self.assertEqual(after_preferences['groups'][0]['adHocCapacityEpics'], ['PRODUCT-ADHOC'])
+
+    def test_post_groups_config_rejects_excluded_and_ad_hoc_overlap_without_persisting(self):
+        loaded = self._get_groups_config().get_json()
+        payload = {
+            'version': 1,
+            'baseRevision': loaded['configRevision'],
+            'groups': [{
+                'id': 'platform',
+                'name': 'Platform',
+                'teamIds': ['team-a'],
+                'excludedCapacityEpics': ['PLAN-EPIC'],
+                'adHocCapacityEpics': [' plan-epic '],
+            }],
+            'defaultGroupId': 'platform',
+        }
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.post('/api/groups-config', json=payload, headers=self._csrf_headers())
+        after = self._get_groups_config(fallback={'version': 1}).get_json()
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'invalid_groups_config')
+        self.assertTrue(any('both excludedCapacityEpics and adHocCapacityEpics' in error for error in response.get_json().get('errors', [])))
+        self.assertEqual(after['groups'][0]['excludedCapacityEpics'], [])
+        self.assertEqual(after['groups'][0]['adHocCapacityEpics'], [])
+
+    def test_shared_ad_hoc_epics_are_workspace_scoped(self):
+        loaded = self._get_groups_config().get_json()
+        payload = {
+            'version': 1,
+            'baseRevision': loaded['configRevision'],
+            'groups': [{
+                'id': 'platform',
+                'name': 'Platform',
+                'teamIds': ['team-a'],
+                'adHocCapacityEpics': ['PRODUCT-ADHOC'],
+            }],
+            'defaultGroupId': 'platform',
+        }
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.post('/api/groups-config', json=payload, headers=self._csrf_headers())
+        _, other_workspace_user_id, other_workspace_connection_id = self._seed_user(
+            'account-3',
+            site_url='https://other.example.atlassian.net',
+            cloud_id='cloud-2',
+        )
+        del other_workspace_user_id
+        self._install_session(
+            'session-3',
+            'account-3',
+            other_workspace_connection_id,
+            site_url='https://other.example.atlassian.net',
+            cloud_id='cloud-2',
+        )
+        other_workspace = self._get_groups_config(fallback=self._legacy_config()).get_json()
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['groups'][0]['adHocCapacityEpics'], ['PRODUCT-ADHOC'])
+        self.assertEqual(other_workspace['groups'][0]['adHocCapacityEpics'], [])
 
     def test_post_groups_config_rejects_identity_spoofing_fields(self):
         loaded = self._get_groups_config().get_json()

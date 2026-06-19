@@ -108,3 +108,47 @@ test('ENG story subtask expand does not add a separate app-owned event', () => {
     assert.ok(analyticsDoc.includes('api_surface=eng_subtasks'));
     assert.ok(!analyticsDoc.includes('eng_action'));
 });
+
+test('effort split chart_action sends only the safe series_type enum token, never raw epic keys', () => {
+    const source = read('frontend/src/stats/EffortTypeSplitChart.jsx');
+    // The bucket keys are camelCase identifiers; analytics must travel through the snake_case token map.
+    assert.match(
+        source,
+        /SERIES_ANALYTICS_TOKENS = \{ excludedCapacity: 'excluded_capacity', adHoc: 'ad_hoc' \}/,
+        'Expected the Ad Hoc / Excluded Capacity buckets to map to safe snake_case analytics tokens'
+    );
+    assert.ok(
+        source.includes('series_type: seriesAnalyticsToken(bucket.key)'),
+        'Expected chart_action to send the mapped analytics token, not the raw bucket key'
+    );
+    // No epic key, summary, team name, or BAU display copy may reach the analytics call.
+    assert.ok(
+        !/series_type:\s*(?:row\.|segment\.|bucket\.label)/.test(source),
+        'Effort split analytics must not send row/segment data or bucket display labels as series_type'
+    );
+    assert.equal(/['"]BAU['"]/.test(source), false, 'BAU must not appear as an analytics or code value');
+});
+
+test('Lead Times capacity cohort filter changes local state without an app-owned event', () => {
+    const source = read('frontend/src/dashboard.jsx');
+    const capacityControl = source.match(/<label>Capacity<\/label>[\s\S]*?<\/select>/)?.[0] || '';
+    assert.ok(capacityControl, 'Expected to locate the Lead Times Capacity cohort selector');
+    assert.ok(
+        capacityControl.includes('setCohortCapacityFilter(resolveCohortCapacityFilter(event.target.value))'),
+        'Expected the Capacity selector to update cohort filter state'
+    );
+    assert.equal(
+        /onChange=\{[\s\S]*?(?:trackFilterChanged|trackStatsAnalyticsAction|trackEvent|onAnalyticsAction)[\s\S]*?<\/select>/.test(capacityControl),
+        false,
+        'Lead Times Capacity selector must not emit an app-owned analytics event'
+    );
+    assert.ok(
+        capacityControl.includes('value="ad_hoc"') && capacityControl.includes('value="all"'),
+        'Expected the Capacity selector to use the all / ad_hoc code values'
+    );
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    assert.ok(
+        analyticsDoc.includes('Lead Times capacity cohort filter'),
+        'Expected the Lead Times capacity filter to be documented in the No-Event Allowlist'
+    );
+});

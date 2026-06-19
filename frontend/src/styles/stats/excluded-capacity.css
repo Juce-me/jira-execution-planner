@@ -416,6 +416,25 @@
             background: var(--effort-color);
         }
 
+        /* Ad Hoc is included Product capacity: a Product-toned bucket with a
+           repeating pattern so it reads as Product but stays distinct from
+           Product other. Never excluded-zone styling. */
+        .effort-type-split-legend-item.adHoc {
+            --effort-color: #d98bb0;
+            --effort-label-color: #7a3455;
+        }
+
+        .effort-type-split-segment.adHoc {
+            --effort-color: #d98bb0;
+            background: repeating-linear-gradient(
+                135deg,
+                #d98bb0,
+                #d98bb0 5px,
+                #e7afca 5px,
+                #e7afca 10px
+            );
+        }
+
         .effort-type-split-segment span {
             overflow: hidden;
             text-overflow: ellipsis;

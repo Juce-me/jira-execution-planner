@@ -1,5 +1,18 @@
 import { effectiveVisibleGroupIds, normalizeGroupPreferences, resolveVisibleActiveGroupId } from './groupVisibilityUtils.js';
 
+const normalizeEpicKeys = (values) => {
+    const source = Array.isArray(values) ? values : (typeof values === 'string' && values.trim() ? [values] : []);
+    const seen = new Set();
+    const normalized = [];
+    source.forEach((value) => {
+        const key = String(value || '').trim().toUpperCase();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        normalized.push(key);
+    });
+    return normalized;
+};
+
 export function normalizeGroupsConfig(config) {
     const rawGroups = Array.isArray(config?.groups) ? config.groups : [];
     const groups = rawGroups
@@ -12,9 +25,8 @@ export function normalizeGroupsConfig(config) {
             missingInfoComponents: Array.isArray(group?.missingInfoComponents)
                 ? group.missingInfoComponents.map(c => String(c || '').trim()).filter(Boolean)
                 : (group?.missingInfoComponent ? [String(group.missingInfoComponent).trim()] : []),
-            excludedCapacityEpics: Array.isArray(group?.excludedCapacityEpics)
-                ? group.excludedCapacityEpics.map(key => String(key || '').trim().toUpperCase()).filter(Boolean)
-                : [],
+            excludedCapacityEpics: normalizeEpicKeys(group?.excludedCapacityEpics),
+            adHocCapacityEpics: normalizeEpicKeys(group?.adHocCapacityEpics),
             teamLabels: Object.fromEntries(
                 Object.entries(group?.teamLabels || {})
                     .map(([teamId, label]) => [String(teamId || '').trim(), String(label || '').trim()])
@@ -72,13 +84,26 @@ export function buildGroupsConfigWithExcludedCapacityToggle(config, groupId, epi
         return { config, changed: false, nextExcluded: false };
     }
 
+    const blockedGroup = (config?.groups || []).find(group => {
+        if (String(group?.id || '').trim() !== targetGroupId) return false;
+        const excluded = new Set(normalizeEpicKeys(group.excludedCapacityEpics));
+        const adHoc = new Set(normalizeEpicKeys(group.adHocCapacityEpics));
+        return !excluded.has(normalizedEpicKey) && adHoc.has(normalizedEpicKey);
+    });
+    if (blockedGroup) {
+        return {
+            config,
+            changed: false,
+            nextExcluded: false,
+            error: `${normalizedEpicKey} is configured as Ad Hoc capacity for this group. Remove it from Ad Hoc capacity before excluding it.`
+        };
+    }
+
     let changed = false;
     let nextExcluded = false;
     const groups = (config?.groups || []).map(group => {
         if (String(group?.id || '').trim() !== targetGroupId) return group;
-        const existing = Array.isArray(group.excludedCapacityEpics)
-            ? group.excludedCapacityEpics.map(key => String(key || '').trim().toUpperCase()).filter(Boolean)
-            : [];
+        const existing = normalizeEpicKeys(group.excludedCapacityEpics);
         const seen = new Set();
         const normalizedExisting = [];
         existing.forEach(key => {

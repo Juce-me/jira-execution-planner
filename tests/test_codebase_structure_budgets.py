@@ -5,9 +5,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 LEGACY_ENTRYPOINT_LINE_BUDGETS = {
-    # EXEC-eng-story-subtasks adds minimal route/payload and hook wiring while feature logic lives in focused helper modules.
-    "jira_server.py": 5905,
-    "frontend/src/dashboard.jsx": 15061,
+    # EXEC-ad-hoc-capacity-epics adds the Lead Times cohort Ad Hoc request/JQL/tag
+    # wiring on top of the prior story-subtask routes; pure logic stays in helpers.
+    "jira_server.py": 5921,
+    # EXEC-ad-hoc-capacity-epics adds the Ad Hoc settings selector, classification
+    # wiring, and the Lead Times capacity-mix selector; pure logic stays in focused helpers.
+    "frontend/src/dashboard.jsx": 15335,
 }
 
 

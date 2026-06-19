@@ -92,3 +92,39 @@ test('buildSelectedTeamProjectStats buckets product and tech by team', async () 
         }
     );
 });
+
+test('Ad Hoc epics count Tech-project stories as Product in selected stats', async () => {
+    const { buildSelectedProjectStats, buildSelectedTeamProjectStats } = await loadUtils();
+    const adHocEpicSet = new Set(['ADHOC-1']);
+    const tasks = [
+        task('TECH-1', { customfield_10004: '8', epicKey: 'adhoc-1', teamId: 'team-a', teamName: 'Team A' }),
+        task('TECH-2', { customfield_10004: '5', epicKey: 'ep-9', teamId: 'team-a', teamName: 'Team A' }),
+        task('PROD-1', { projectKey: 'PROD', customfield_10004: '3', epicKey: 'ep-2', teamId: 'team-a', teamName: 'Team A' })
+    ];
+
+    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys, adHocEpicSet), {
+        TECH: 5,
+        PRODUCT: 11
+    });
+    assert.deepEqual(buildSelectedTeamProjectStats(tasks, getTeamInfo, techProjectKeys, adHocEpicSet), {
+        'team-a': { product: 11, tech: 5 }
+    });
+});
+
+test('empty Ad Hoc set leaves selected stats classification unchanged', async () => {
+    const { buildSelectedProjectStats, buildExcludedProjectStats } = await loadUtils();
+    const tasks = [
+        task('TECH-1', { customfield_10004: '8', epicKey: 'adhoc-1' }),
+        task('PROD-1', { projectKey: 'PROD', customfield_10004: '3', epicKey: 'ep-2' })
+    ];
+
+    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys), {
+        TECH: 8,
+        PRODUCT: 3
+    });
+    // buildExcludedProjectStats stays excluded-only and never accepts Ad Hoc keys.
+    assert.deepEqual(
+        buildExcludedProjectStats(tasks, new Set(['ADHOC-1']), techProjectKeys, normalizeEpicKey),
+        { TECH: 8 }
+    );
+});

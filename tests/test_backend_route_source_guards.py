@@ -21,6 +21,14 @@ BACKEND_ROUTE_GROUPS = {
     "diagnostic": (REPO_ROOT / "backend" / "routes" / "diagnostic_routes.py", ("/api/test",)),
     "dev": (REPO_ROOT / "backend" / "routes" / "dev_routes.py", ("/api/debug-fields", "/api/tasks-fields")),
 }
+FRONTEND_SRC_PATH = REPO_ROOT / "frontend" / "src"
+# Matches the bare `/api/stats` endpoint when it appears as a complete quoted
+# string literal: preceded by a quote/backtick or the end of a `${...}`
+# template interpolation, and immediately closed by a quote/backtick. This
+# deliberately does NOT match sub-routes such as `/api/stats/burnout` (a path
+# char follows `stats`) nor the import-path string `./api/statsApi.js` (no
+# leading slash before `api`).
+BARE_STATS_ENDPOINT_PATTERN = re.compile(r"(?<=['\"`}])/api/stats['\"`]")
 BACKEND_SECURITY_GUARDS_PATH = REPO_ROOT / "backend" / "security" / "guards.py"
 BACKEND_EPM_PATH = REPO_ROOT / "backend" / "epm"
 BACKEND_EPM_HOME_PATH = BACKEND_EPM_PATH / "home.py"
@@ -153,6 +161,53 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
                 failures[group_name] = matches
 
         self.assertEqual(failures, {})
+
+    def test_frontend_does_not_call_legacy_bare_api_stats_endpoint(self):
+        """Task 7.1: the legacy bare ``GET /api/stats`` route in
+        ``backend/routes/stats_routes.py`` has no current frontend caller. The
+        live frontend only requests the sub-routes (``/api/stats/burnout``,
+        ``/api/stats/epic-cohort``, ``/api/stats/excluded-capacity-source``,
+        ``/api/stats/priority-weights-config``). Because nothing calls the bare
+        endpoint, its behavior is intentionally left unchanged (no Ad Hoc
+        capacity reclassification applied to ``/api/stats``). This guard fails
+        if the frontend is ever wired to call the bare endpoint, which would
+        flip the audit to the 7.2 path."""
+        # Sanity-check the guard regex: it must catch a bare caller while
+        # ignoring the sub-routes and the statsApi.js import path. Without this
+        # the test could pass trivially even if the pattern were broken.
+        self.assertTrue(
+            BARE_STATS_ENDPOINT_PATTERN.search("fetch(`${backendUrl}/api/stats`, opts)"),
+            "guard must detect a bare /api/stats template-literal caller",
+        )
+        self.assertTrue(
+            BARE_STATS_ENDPOINT_PATTERN.search("fetch('/api/stats')"),
+            "guard must detect a bare '/api/stats' string caller",
+        )
+        for allowed in (
+            "fetch(`${backendUrl}/api/stats/burnout`)",
+            "fetch(`${backendUrl}/api/stats/excluded-capacity-source`)",
+            "} from './api/statsApi.js';",
+        ):
+            self.assertIsNone(
+                BARE_STATS_ENDPOINT_PATTERN.search(allowed),
+                f"guard must not flag allowed reference: {allowed!r}",
+            )
+
+        offenders = []
+        for source_file in sorted(FRONTEND_SRC_PATH.rglob("*.js")) + sorted(
+            FRONTEND_SRC_PATH.rglob("*.jsx")
+        ):
+            source = source_file.read_text(encoding="utf8")
+            if BARE_STATS_ENDPOINT_PATTERN.search(source):
+                offenders.append(str(source_file.relative_to(REPO_ROOT)))
+
+        self.assertEqual(
+            offenders,
+            [],
+            "Frontend must not call the legacy bare /api/stats endpoint; only "
+            "/api/stats/<subpath> sub-routes are allowed. Found bare callers in: "
+            + ", ".join(offenders),
+        )
 
     def test_central_security_guard_owns_oauth_and_csrf_policy(self):
         if not BACKEND_SECURITY_GUARDS_PATH.exists():

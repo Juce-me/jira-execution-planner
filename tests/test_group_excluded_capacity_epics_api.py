@@ -1,3 +1,6 @@
+import json
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -31,7 +34,8 @@ class TestGroupExcludedCapacityEpics(unittest.TestCase):
                 'name': 'Default',
                 'teamIds': ['team-1'],
                 'missingInfoComponents': ['A'],
-                'excludedCapacityEpics': ['tech-1', ' TECH-1 ', 'product-5', '', None]
+                'excludedCapacityEpics': ['tech-1', ' TECH-1 ', 'product-5', '', None],
+                'adHocCapacityEpics': ' product-adhoc ',
             }],
             'defaultGroupId': 'default'
         }
@@ -42,6 +46,67 @@ class TestGroupExcludedCapacityEpics(unittest.TestCase):
             normalized['groups'][0].get('excludedCapacityEpics'),
             ['TECH-1', 'PRODUCT-5']
         )
+        self.assertEqual(
+            normalized['groups'][0].get('adHocCapacityEpics'),
+            ['PRODUCT-ADHOC']
+        )
+
+    def test_validate_groups_config_rejects_excluded_and_ad_hoc_overlap(self):
+        payload = {
+            'version': 1,
+            'groups': [{
+                'id': 'default',
+                'name': 'Default',
+                'teamIds': ['team-1'],
+                'excludedCapacityEpics': ['tech-1'],
+                'adHocCapacityEpics': [' TECH-1 '],
+            }],
+            'defaultGroupId': 'default'
+        }
+
+        _normalized, errors, _warnings = jira_server.validate_groups_config(payload, allow_empty=False)
+
+        self.assertTrue(any('both excludedCapacityEpics and adHocCapacityEpics' in error for error in errors))
+
+    def test_json_groups_config_rejects_excluded_and_ad_hoc_overlap_without_persisting(self):
+        force_basic_auth_mode(self, jira_server)
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
+            with open(dashboard_path, 'w', encoding='utf-8') as handle:
+                json.dump({
+                    'version': 1,
+                    'teamGroups': {
+                        'version': 1,
+                        'groups': [{
+                            'id': 'default',
+                            'name': 'Default',
+                            'teamIds': ['team-1'],
+                            'excludedCapacityEpics': ['EX-1'],
+                        }],
+                        'defaultGroupId': 'default',
+                    },
+                }, handle)
+            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
+                before = client.get('/api/groups-config').get_json()
+                response = client.post('/api/groups-config', json={
+                    'version': 1,
+                    'groups': [{
+                        'id': 'default',
+                        'name': 'Default',
+                        'teamIds': ['team-1'],
+                        'excludedCapacityEpics': ['EX-1'],
+                        'adHocCapacityEpics': ['ex-1'],
+                    }],
+                    'defaultGroupId': 'default',
+                })
+                after = client.get('/api/groups-config').get_json()
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertTrue(any('both excludedCapacityEpics and adHocCapacityEpics' in error for error in response.get_json().get('errors', [])))
+        self.assertEqual(after['groups'], before['groups'])
 
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')

@@ -50,11 +50,13 @@ def _empty_groups_config(*, revision=1, source=GROUPS_SOURCE_DB):
     }
 
 
-def _row_to_groups_config(row):
+def _row_to_groups_config(row, validate_groups_config_fn=None):
     payload = dict(row.payload or {})
     payload.setdefault('version', int(row.payload_version or GROUPS_PAYLOAD_VERSION))
     payload.setdefault('groups', [])
     payload.setdefault('defaultGroupId', '')
+    if validate_groups_config_fn is not None:
+        payload, _warnings = _normalize_shared_payload(payload, validate_groups_config_fn)
     payload['configRevision'] = int(row.config_revision or 1)
     payload['source'] = GROUPS_SOURCE_DB
     return payload
@@ -108,7 +110,7 @@ def ensure_workspace_group_config(session, context, payload, validate_groups_con
     return row
 
 
-def current_shared_groups_config(session, context):
+def current_shared_groups_config(session, context, validate_groups_config_fn=None):
     row = session.execute(
         select(models.WorkspaceGroupConfig).where(
             models.WorkspaceGroupConfig.workspace_id == context.workspace_id,
@@ -116,7 +118,7 @@ def current_shared_groups_config(session, context):
     ).scalars().first()
     if row is None:
         return _empty_groups_config()
-    return _row_to_groups_config(row)
+    return _row_to_groups_config(row, validate_groups_config_fn)
 
 
 def load_shared_groups(context, fallback_loader, validate_groups_config_fn, database_url=None):
@@ -127,7 +129,7 @@ def load_shared_groups(context, fallback_loader, validate_groups_config_fn, data
             )
         ).scalars().first()
         if row is not None:
-            return _row_to_groups_config(row)
+            return _row_to_groups_config(row, validate_groups_config_fn)
 
         fallback_payload = fallback_loader() if fallback_loader is not None else None
         legacy_config = _legacy_team_groups(fallback_payload)
@@ -139,8 +141,8 @@ def load_shared_groups(context, fallback_loader, validate_groups_config_fn, data
                 validate_groups_config_fn,
             )
         except IntegrityError as exc:
-            raise GroupConfigConflict(current_shared_groups_config(session, context)) from exc
-        return _row_to_groups_config(row)
+            raise GroupConfigConflict(current_shared_groups_config(session, context, validate_groups_config_fn)) from exc
+        return _row_to_groups_config(row, validate_groups_config_fn)
 
 
 def save_shared_groups(context, payload, base_revision, validate_groups_config_fn, database_url=None):
@@ -169,7 +171,7 @@ def save_shared_groups(context, payload, base_revision, validate_groups_config_f
         )
         result = session.execute(statement)
         if result.rowcount != 1:
-            current = current_shared_groups_config(session, context)
+            current = current_shared_groups_config(session, context, validate_groups_config_fn)
             raise GroupConfigConflict(current)
         saved = dict(normalized)
         saved['configRevision'] = revision + 1

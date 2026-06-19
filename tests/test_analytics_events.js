@@ -261,6 +261,33 @@ test('schema rejects unsafe values and keeps safe numeric, enum, and bucket valu
     );
 });
 
+test('effort split series_type accepts the ad_hoc and excluded_capacity enum values', async () => {
+    const { sanitizeAnalyticsParams } = await loadEvents();
+    for (const seriesType of ['ad_hoc', 'excluded_capacity', 'product', 'tech']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'statistics',
+                chart_id: 'effort_split',
+                workflow_action: 'toggle_series',
+                series_type: seriesType,
+                value_state: 'on'
+            }, 'chart_action'),
+            {
+                feature_name: 'statistics',
+                chart_id: 'effort_split',
+                workflow_action: 'toggle_series',
+                series_type: seriesType,
+                value_state: 'on'
+            }
+        );
+    }
+    // The Ad Hoc series must travel as the snake_case enum token, never a raw epic key or BAU display copy.
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'statistics', chart_id: 'effort_split', series_type: 'TECH-9' }, 'chart_action'),
+        /unsafe analytics value/
+    );
+});
+
 test('external link helper emits bucketed Jira link events without raw URLs', async () => {
     const { initAnalytics, trackExternalLinkOpened } = await loadAnalytics();
     resetDom();

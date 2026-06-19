@@ -203,6 +203,7 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         self.assertEqual(rollback, before)
         self.assertEqual(after_import['/api/groups-config']['groups'], before['/api/groups-config']['groups'])
         self.assertEqual(after_import['/api/groups-config']['defaultGroupId'], before['/api/groups-config']['defaultGroupId'])
+        self.assertEqual(after_import['/api/groups-config']['groups'][0]['adHocCapacityEpics'], [])
         self.assertEqual(after_import['/api/groups-config']['source'], 'workspace_db')
         self.assertEqual(after_import['/api/groups-config']['configRevision'], 1)
         self.assertTrue(after_import['/api/groups-config']['preferences']['onboardingRequired'])
@@ -224,6 +225,7 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         self.assertEqual(exported['epm'], expected['epm'])
         self.assertEqual(exported['teamGroups']['groups'][0]['id'], 'platform')
         self.assertEqual(exported['teamGroups']['groups'][0]['teamIds'], ['team-a'])
+        self.assertEqual(exported['teamGroups']['groups'][0]['adHocCapacityEpics'], [])
         self.assertEqual(exported['teamGroups']['defaultGroupId'], 'platform')
         self.assertNotIn('api_token', json.dumps(exported).lower())
 

@@ -9,8 +9,10 @@ const dashboardSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', '
 const cssSource = readDashboardCssSource(repoRoot);
 const lineChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'ExcludedCapacityLineChart.jsx'), 'utf8');
 const effortSplitChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'EffortTypeSplitChart.jsx'), 'utf8');
+const statsSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'excludedCapacityStats.js'), 'utf8');
 const hoverBubblePositionSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'ui', 'hoverBubblePosition.js'), 'utf8');
 const sharedExcludedToggleSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'settings', 'sharedExcludedCapacityToggle.js'), 'utf8');
+const statsTeamsViewSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'StatsTeamsView.jsx'), 'utf8');
 
 test('dashboard wires excluded-capacity analytics into the existing Statistics view', () => {
     assert.ok(
@@ -95,8 +97,12 @@ test('excluded-capacity summary shows effort share cards instead of source copy'
         'Expected dashboard to use shared effort split totals for summary cards'
     );
     assert.ok(
-        excludedSummaryBlock.includes('<h4>Product Share</h4>'),
-        'Expected visible Product Share card'
+        excludedSummaryBlock.includes('<h4>Product total</h4>'),
+        'Expected visible Product total card (Product including Ad Hoc)'
+    );
+    assert.ok(
+        excludedSummaryBlock.includes('<h4>Ad Hoc Share</h4>'),
+        'Expected visible Ad Hoc Share card'
     );
     assert.ok(
         excludedSummaryBlock.includes('<h4>Tech Share</h4>'),
@@ -395,17 +401,67 @@ test('excluded-capacity epic filter stays compact without selected chips', () =>
         !dashboardSource.includes('excluded-capacity-epic-chips'),
         'Excluded epic selections should live in the dropdown, not in removable chips above it'
     );
+});
+
+test('excluded-capacity filter has no BAU/ad hoc summary auto-select preset', () => {
     assert.ok(
-        dashboardSource.includes('excludedCapacityAutoEpicKeys'),
-        'Expected dashboard to preserve the BAU/ad hoc auto-selection preset'
+        !dashboardSource.includes('excludedCapacityAutoEpicKeys'),
+        'The summary-regex BAU/ad hoc auto-selection preset must be removed'
     );
     assert.ok(
-        dashboardSource.includes('Filter: BAU / ad hoc'),
-        'Expected compact dropdown label for the default BAU/ad hoc filter'
+        !dashboardSource.includes('selectAutoExcludedCapacityEpics'),
+        'The BAU/ad hoc preset restore action must be removed'
     );
     assert.ok(
-        dashboardSource.includes('selectAutoExcludedCapacityEpics'),
-        'Expected dropdown action to restore the BAU/ad hoc preset'
+        !dashboardSource.includes('Filter: BAU / ad hoc'),
+        'The BAU/ad hoc dropdown label must be removed'
+    );
+    assert.ok(
+        !dashboardSource.includes('pickAutoSelectedExcludedEpics'),
+        'The dashboard must not import or call the removed summary auto-select helper'
+    );
+    assert.ok(
+        !statsSource.includes('pickAutoSelectedExcludedEpics'),
+        'The excluded-capacity stats helper must no longer export the summary auto-select function'
+    );
+    assert.ok(
+        !statsSource.includes('AUTOSELECT_SUMMARY_PATTERN'),
+        'The bau|ad hoc summary regex must be removed'
+    );
+});
+
+test('excluded-capacity capacity mix loads when excluded OR Ad Hoc epics are configured', () => {
+    assert.ok(
+        dashboardSource.includes('!excludedCapacityEpicOptions.length && adHocEpicSet.size === 0'),
+        'Expected the source-load gate to require excluded OR Ad Hoc epics, not excluded only'
+    );
+    assert.match(
+        dashboardSource,
+        /buildEffortTypeSplitRows\(excludedCapacityIssues, excludedCapacitySprintRange, \{[\s\S]*adHocEpicKeys: Array\.from\(adHocEpicSet\)/,
+        'Expected Effort Split rows to receive the Ad Hoc set'
+    );
+    const effortSplitMemoBlock = dashboardSource.match(/const effortSplitRows = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\]\);/)?.[0] || '';
+    assert.ok(
+        effortSplitMemoBlock.includes('adHocEpicSignature'),
+        'Expected effortSplitRows dependency array to include adHocEpicSignature'
+    );
+});
+
+test('excluded line chart stays excluded-only and shows an excluded-only empty state', () => {
+    assert.ok(
+        dashboardSource.includes('This chart tracks excluded capacity only; Ad Hoc is reported in the Effort Split above.'),
+        'Expected an excluded-only empty state when no excluded epics are configured'
+    );
+    const effortSplitRowsMemo = dashboardSource.match(/const effortSplitRows = React\.useMemo[\s\S]*?\]\);/)?.[0] || '';
+    // The excluded line chart numerator must never receive the Ad Hoc set.
+    const lineSeriesMemo = dashboardSource.match(/const excludedCapacityLineSeries = React\.useMemo[\s\S]*?\]\);/)?.[0] || '';
+    assert.ok(
+        !lineSeriesMemo.includes('adHoc'),
+        'Excluded line chart series must not include Ad Hoc keys'
+    );
+    assert.ok(
+        effortSplitRowsMemo.includes('adHocEpicKeys'),
+        'Effort Split rows (not the line chart) carry Ad Hoc'
     );
 });
 
@@ -599,6 +655,14 @@ test('planning and reporting excluded capacity are backed by shared group config
         'Expected excluded-capacity toggle to save through /api/groups-config'
     );
     assert.ok(
+        sharedExcludedToggleSource.includes('const { config: nextGroupsConfig, changed, nextExcluded, error } = buildGroupsConfigWithExcludedCapacityToggle'),
+        'Expected excluded-capacity toggle to surface Ad Hoc overlap errors from the shared payload helper'
+    );
+    assert.ok(
+        sharedExcludedToggleSource.includes('setGroupDraftError(error)'),
+        'Expected excluded-capacity toggle to display Ad Hoc overlap errors instead of silently changing config'
+    );
+    assert.ok(
         sharedExcludedToggleSource.includes('showGroupManage && isGroupDraftDirty'),
         'Expected inline excluded-capacity toggles to guard against open dirty Department settings drafts'
     );
@@ -618,5 +682,151 @@ test('planning and reporting excluded capacity are backed by shared group config
         dashboardSource,
         /excludedStatsEpics/,
         'Local excludedStatsEpics must not drive Planning or Reporting excluded capacity'
+    );
+});
+
+test('Ad Hoc capacity is derived from the saved active group, separate from excluded', () => {
+    assert.match(
+        dashboardSource,
+        /const activeGroupAdHocCapacityEpics = React\.useMemo\(\(\) => \{[\s\S]*activeGroup\?\.adHocCapacityEpics/,
+        'Expected activeGroupAdHocCapacityEpics to be derived from the saved active group'
+    );
+    assert.match(
+        dashboardSource,
+        /const adHocEpicSet = React\.useMemo\(\(\) => \{[\s\S]*activeGroupAdHocCapacityEpics/,
+        'Expected adHocEpicSet to be derived from activeGroupAdHocCapacityEpics'
+    );
+    assert.ok(
+        dashboardSource.includes('const adHocEpicSignature = React.useMemo('),
+        'Expected a stable Ad Hoc signature for memo/cache dependency arrays'
+    );
+    // Ad Hoc must stay separate from the excluded set, which is the only capacity-subtracting list.
+    assert.doesNotMatch(
+        dashboardSource,
+        /excludedEpicSet[^;]*adHocCapacityEpics/,
+        'Ad Hoc epics must not be merged into excludedEpicSet'
+    );
+});
+
+test('Ad Hoc set threads only into classification/reporting helpers, never excluded math', () => {
+    assert.ok(
+        dashboardSource.includes('buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet)'),
+        'Expected Planning selected project stats to receive the Ad Hoc set'
+    );
+    assert.ok(
+        dashboardSource.includes('buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet)'),
+        'Expected Planning selected team project stats to receive the Ad Hoc set'
+    );
+    assert.match(
+        dashboardSource,
+        /buildLocalStatsFromTasks\(statsTaskList, \{[\s\S]*adHocEpicSet,/,
+        'Expected the local stats build to receive the Ad Hoc set'
+    );
+    assert.match(
+        dashboardSource,
+        /buildTeamCapacityStats\(\{[\s\S]*adHocEpicSet[\s\S]*\}\);/,
+        'Expected team capacity stats to receive the Ad Hoc set'
+    );
+    // Excluded-capacity math must never receive the Ad Hoc set.
+    assert.doesNotMatch(
+        dashboardSource,
+        /buildExcludedProjectStats\([^)]*adHocEpicSet/,
+        'buildExcludedProjectStats must not receive the Ad Hoc set'
+    );
+    assert.doesNotMatch(
+        dashboardSource,
+        /buildExcludedCapacityByTeamId\(\{[^}]*adHocEpicSet/,
+        'buildExcludedCapacityByTeamId must not receive the Ad Hoc set'
+    );
+});
+
+test('Planning split bar reports Ad Hoc as included Product capacity', () => {
+    const splitBarSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'eng', 'PlanningProjectSplitBar.jsx'), 'utf8');
+    assert.ok(
+        dashboardSource.includes('adHocProductSP={selectedAdHocProductSP}'),
+        'Expected dashboard to pass Ad Hoc Product SP into the split bar'
+    );
+    assert.ok(
+        splitBarSource.includes('Incl. Ad Hoc'),
+        'Expected the Product tooltip to surface the included Ad Hoc portion'
+    );
+    assert.ok(
+        splitBarSource.includes('project-bar-fill product-adhoc'),
+        'Expected an Ad Hoc Product subsegment that reuses Product bar styling'
+    );
+    assert.ok(
+        !/className="[^"]*product-adhoc[^"]*excluded/.test(splitBarSource),
+        'Ad Hoc subsegment must not use excluded-zone styling classes'
+    );
+    assert.match(
+        cssSource,
+        /\.project-bar-fill\.product-adhoc\s*\{[\s\S]*repeating-linear-gradient/,
+        'Expected dedicated Product-toned Ad Hoc subsegment styling in the Planning split CSS'
+    );
+});
+
+test('Stats Teams and capacity-table links keep Ad Hoc consistent with reclassification', () => {
+    // Product links INCLUDE Ad Hoc stories; Tech links EXCLUDE them.
+    assert.ok(
+        dashboardSource.includes('const adHocEpicChildrenClause = () => {'),
+        'Expected a reusable Ad Hoc epic-children JQL clause helper'
+    );
+    assert.match(
+        dashboardSource,
+        /adHocEpicChildrenClause[\s\S]*"Epic Link" in \(\$\{quoted\}\) OR parent in \(\$\{quoted\}\)/,
+        'Expected the Ad Hoc clause to reuse the established epic-children JQL pattern'
+    );
+    assert.match(
+        dashboardSource,
+        /capacityType === 'product'[\s\S]*OR \$\{adHocClause\}/,
+        'Expected Product links to OR in Ad Hoc stories from any project'
+    );
+    assert.match(
+        dashboardSource,
+        /capacityType === 'tech'[\s\S]*NOT \$\{adHocClause\}/,
+        'Expected Tech links to exclude Ad Hoc stories'
+    );
+    // Stats Teams Product/Tech link options carry the capacity type.
+    assert.match(
+        statsTeamsViewSource,
+        /projectName: 'PRODUCT ROADMAPS'[\s\S]*capacityType: 'product'/,
+        'Expected Stats Teams Product links to declare product capacity type'
+    );
+    assert.match(
+        statsTeamsViewSource,
+        /projectName: 'TECHNICAL ROADMAP'[\s\S]*capacityType: 'tech'/,
+        'Expected Stats Teams Tech links to declare tech capacity type'
+    );
+    // Planning capacity table infers capacity type from the single roadmap project.
+    assert.ok(
+        dashboardSource.includes('const inferRoadmapCapacityType = ({ projectName, projectNames, capacityType }) => {'),
+        'Expected Planning capacity-table links to infer Product/Tech capacity type'
+    );
+    assert.match(
+        dashboardSource,
+        /inferRoadmapCapacityType[\s\S]*single === 'PRODUCT ROADMAPS'[\s\S]*return 'product'/,
+        'Expected Product roadmap rows to infer product capacity type'
+    );
+    assert.match(
+        dashboardSource,
+        /inferRoadmapCapacityType[\s\S]*single === 'TECHNICAL ROADMAP'[\s\S]*return 'tech'/,
+        'Expected Tech roadmap rows to infer tech capacity type'
+    );
+});
+
+test('Scenario payload sends only excluded capacity, never Ad Hoc keys', () => {
+    const payloadBlock = dashboardSource.match(/const buildScenarioPayload = \(\) => \{[\s\S]*?\n {12}\};/)?.[0] || '';
+    assert.ok(payloadBlock, 'Expected to locate buildScenarioPayload');
+    assert.ok(
+        payloadBlock.includes('excluded_capacity_epics: Array.from(excludedEpicSet)'),
+        'Scenario payload must send excluded_capacity_epics from excludedEpicSet only'
+    );
+    assert.ok(
+        !/adHoc/i.test(payloadBlock),
+        'Scenario payload must never include Ad Hoc keys'
+    );
+    assert.ok(
+        !payloadBlock.includes('adHocEpicSet'),
+        'Scenario payload must not reference the Ad Hoc set'
     );
 });

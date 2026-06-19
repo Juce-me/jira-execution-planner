@@ -1,3 +1,5 @@
+import { classifyCapacityIssue } from '../capacityClassification.mjs';
+
 export function getCapacityStatus(selected, capacity) {
     if (!capacity) {
         return { label: '', text: '', status: '', title: '' };
@@ -120,7 +122,8 @@ export function buildTeamCapacityStats({
     capacityTasks,
     normalizeStatus,
     getTeamInfo,
-    techProjectKeys
+    techProjectKeys,
+    adHocEpicSet = new Set()
 }) {
     if (!showPlanning || !capacityEnabled) return {};
     return capacityTasks.reduce((acc, task) => {
@@ -139,8 +142,7 @@ export function buildTeamCapacityStats({
             };
         }
 
-        const pk = task.fields?.projectKey || task.key.split('-')[0];
-        const bucket = techProjectKeys.has(pk) ? 'tech' : 'product';
+        const bucket = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).projectType === 'tech' ? 'tech' : 'product';
         if (status === 'to do' || status === 'pending') {
             acc[teamInfo.id][bucket].todoPending += sp;
         }

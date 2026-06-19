@@ -83,6 +83,19 @@ def validate_groups_config(
             excluded_capacity_epics = normalize_epic_keys_fn([raw_excluded_epics.strip()])
         else:
             excluded_capacity_epics = []
+        raw_ad_hoc_epics = group.get('adHocCapacityEpics')
+        if isinstance(raw_ad_hoc_epics, list):
+            ad_hoc_capacity_epics = normalize_epic_keys_fn(raw_ad_hoc_epics)
+        elif isinstance(raw_ad_hoc_epics, str) and raw_ad_hoc_epics.strip():
+            ad_hoc_capacity_epics = normalize_epic_keys_fn([raw_ad_hoc_epics.strip()])
+        else:
+            ad_hoc_capacity_epics = []
+        overlapping_epics = sorted(set(excluded_capacity_epics).intersection(ad_hoc_capacity_epics))
+        if overlapping_epics:
+            errors.append(
+                f'Group "{name}" has epic keys in both excludedCapacityEpics and adHocCapacityEpics: '
+                f'{", ".join(overlapping_epics)}.'
+            )
         team_labels = normalize_group_team_labels_fn(group.get('teamLabels') or {}, team_ids)
         normalized_groups.append({
             'id': group_id,
@@ -90,6 +103,7 @@ def validate_groups_config(
             'teamIds': team_ids,
             'missingInfoComponents': missing_info_components,
             'excludedCapacityEpics': excluded_capacity_epics,
+            'adHocCapacityEpics': ad_hoc_capacity_epics,
             'teamLabels': team_labels
         })
 
@@ -130,7 +144,8 @@ def build_default_groups_config(
             'name': 'Default',
             'teamIds': team_ids,
             'missingInfoComponents': [missing_info_component] if missing_info_component else [],
-            'excludedCapacityEpics': []
+            'excludedCapacityEpics': [],
+            'adHocCapacityEpics': []
         }],
         'defaultGroupId': 'default',
     }

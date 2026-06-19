@@ -157,6 +157,57 @@ test('buildTeamCapacityStats groups status buckets by team and product type', as
     ]);
 });
 
+test('buildTeamCapacityStats counts Ad Hoc Tech-project stories as Product capacity', async () => {
+    const { buildTeamCapacityStats, buildTeamCapacityEntries } = await loadUtils();
+    const normalizeStatus = value => String(value || '').trim().toLowerCase();
+    const getTeamInfo = task => ({ id: task.fields.teamId, name: task.fields.teamName });
+    const tasks = [
+        // Tech-project story under an Ad Hoc epic -> reported as Product capacity.
+        { key: 'TECH-1', fields: { status: { name: 'To Do' }, customfield_10004: '8', teamId: 'team-a', teamName: 'Team A', epicKey: 'adhoc-1' } },
+        // Ordinary Tech story stays Tech.
+        { key: 'TECH-2', fields: { status: { name: 'Accepted' }, customfield_10004: '5', teamId: 'team-a', teamName: 'Team A', epicKey: 'ep-9' } }
+    ];
+
+    const stats = buildTeamCapacityStats({
+        showPlanning: true,
+        capacityEnabled: true,
+        capacityTasks: tasks,
+        normalizeStatus,
+        getTeamInfo,
+        techProjectKeys: new Set(['TECH']),
+        adHocEpicSet: new Set(['ADHOC-1'])
+    });
+
+    assert.deepEqual(buildTeamCapacityEntries(stats), [
+        {
+            id: 'team-a',
+            name: 'Team A',
+            product: { todoPending: 8, accepted: 0, postponed: 0 },
+            tech: { todoPending: 0, accepted: 5, postponed: 0 },
+            total: { todoPending: 8, accepted: 5, postponed: 0 }
+        }
+    ]);
+
+    // Empty Ad Hoc set preserves the original Tech bucketing.
+    const baseline = buildTeamCapacityStats({
+        showPlanning: true,
+        capacityEnabled: true,
+        capacityTasks: tasks,
+        normalizeStatus,
+        getTeamInfo,
+        techProjectKeys: new Set(['TECH'])
+    });
+    assert.deepEqual(buildTeamCapacityEntries(baseline), [
+        {
+            id: 'team-a',
+            name: 'Team A',
+            product: { todoPending: 0, accepted: 0, postponed: 0 },
+            tech: { todoPending: 8, accepted: 5, postponed: 0 },
+            total: { todoPending: 8, accepted: 5, postponed: 0 }
+        }
+    ]);
+});
+
 test('buildDisplayedTeamOptions filters by selected teams with story points', async () => {
     const { buildDisplayedTeamOptions, buildTeamSpTotals } = await loadUtils();
     const getTeamInfo = task => ({ id: task.fields.teamId, name: task.fields.teamName });
@@ -202,6 +253,57 @@ test('buildExcludedCapacityByTeamId sums normalized excluded epics', async () =>
         }),
         { 'team-a': 3 }
     );
+});
+
+test('buildExcludedCapacityByTeamId ignores Ad Hoc epics (excluded-only path unchanged)', async () => {
+    const { buildExcludedCapacityByTeamId } = await loadUtils();
+    const getTeamInfo = task => ({ id: task.fields.teamId, name: task.fields.teamName });
+    const normalizeEpicKey = value => String(value || '').trim().toUpperCase();
+
+    // ADHOC-1 is NOT in the excluded set, so its SP must not be subtracted as excluded capacity.
+    assert.deepEqual(
+        buildExcludedCapacityByTeamId({
+            capacityEnabled: true,
+            showPlanning: true,
+            capacityTasks: [
+                { key: 'TECH-1', fields: { epicKey: 'adhoc-1', customfield_10004: '8', teamId: 'team-a', teamName: 'Team A' } },
+                { key: 'PROD-1', fields: { epicKey: 'ep-1', customfield_10004: '5', teamId: 'team-a', teamName: 'Team A' } }
+            ],
+            excludedEpicSet: new Set(['EP-1']),
+            normalizeEpicKey,
+            getTeamInfo
+        }),
+        { 'team-a': 5 }
+    );
+});
+
+test('Ad Hoc-reclassified team project stats drive product/tech capacity split', async () => {
+    const { buildProjectCapacity } = await loadUtils();
+    const { buildSelectedTeamProjectStats } = await import('../frontend/src/eng/planningSelectionStats.js');
+    const getTeamInfo = task => ({ id: task.fields.teamId, name: task.fields.teamName });
+    const techProjectKeys = new Set(['TECH']);
+    const adHocEpicSet = new Set(['ADHOC-1']);
+
+    // Tech-project Ad Hoc story (8 SP) becomes Product, flipping the team from tech-heavy to product.
+    const selectedTeamProjectStats = buildSelectedTeamProjectStats([
+        { key: 'TECH-1', fields: { epicKey: 'adhoc-1', customfield_10004: '8', teamId: 'team-a', teamName: 'Team A' } },
+        { key: 'TECH-2', fields: { customfield_10004: '2', teamId: 'team-a', teamName: 'Team A' } }
+    ], getTeamInfo, techProjectKeys, adHocEpicSet);
+
+    assert.deepEqual(selectedTeamProjectStats, { 'team-a': { product: 8, tech: 2 } });
+
+    const capacity = buildProjectCapacity({
+        showPlanning: true,
+        capacityEnabled: true,
+        displayedTeamOptions: [{ id: 'team-a', name: 'Team A' }],
+        selectedTeamProjectStats,
+        getTeamNetCapacity: () => 10,
+        capacitySplit: { product: 0.7, tech: 0.3 },
+        showProduct: true,
+        showTech: true
+    });
+
+    assert.deepEqual(capacity, { PRODUCT: 7, TECH: 3 });
 });
 
 test('buildSelected entries and capacity totals preserve display ordering and zero states', async () => {

@@ -37,11 +37,19 @@ export async function saveSharedExcludedCapacityToggle({
         return;
     }
 
-    const { config: nextGroupsConfig, changed, nextExcluded } = buildGroupsConfigWithExcludedCapacityToggle(
+    const { config: nextGroupsConfig, changed, nextExcluded, error } = buildGroupsConfigWithExcludedCapacityToggle(
         groupsConfig,
         activeGroupId,
         normalizedEpicKey
     );
+    if (error) {
+        setGroupDraftError(error);
+        trackSettingsAction('departments', 'toggle_excluded_capacity', {
+            source_surface: sourceSurface,
+            result: 'failure'
+        });
+        return;
+    }
     if (!changed) return;
 
     setGroupDraftError('');

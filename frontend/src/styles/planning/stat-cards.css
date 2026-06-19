@@ -200,6 +200,20 @@
             border-radius: 6px 0 0 6px;
         }
 
+        /* Ad Hoc is included Product capacity: a lighter Product-toned subsegment,
+           never excluded-zone styling. Sits inside the Product fill. */
+        .project-bar-fill.product-adhoc {
+            background: repeating-linear-gradient(
+                135deg,
+                #6b54fb,
+                #6b54fb 5px,
+                #8b78ff 5px,
+                #8b78ff 10px
+            );
+            z-index: 2;
+            pointer-events: auto;
+        }
+
         .project-bar-fill.tech {
             border-radius: 0 6px 6px 0;
             background: #FE5000;

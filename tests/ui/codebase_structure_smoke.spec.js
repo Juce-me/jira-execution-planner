@@ -1225,7 +1225,8 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     const summary = page.locator('.stats-view.open .excluded-capacity-summary');
     await expect(summary).toBeVisible();
     await expect(summary.locator('.stats-card', { hasText: 'Excluded Share' })).toContainText('15.00%');
-    await expect(summary.locator('.stats-card', { hasText: 'Product Share' })).toContainText('65.00%');
+    await expect(summary.locator('.stats-card', { hasText: 'Ad Hoc Share' })).toContainText('0.00%');
+    await expect(summary.locator('.stats-card', { hasText: 'Product total' })).toContainText('65.00%');
     await expect(summary.locator('.stats-card', { hasText: 'Tech Share' })).toContainText('20.00%');
     await expect(summary.getByText('Source')).toHaveCount(0);
     await expect(summary.getByText('Planning config')).toHaveCount(0);

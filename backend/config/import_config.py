@@ -155,7 +155,11 @@ def export_view_config_json(*, database_url=None, context, view_config_id, outpu
         if view is None:
             raise ValueError('view config not found')
         payload = strip_private_team_groups(view.payload)
-        shared_groups = shared_group_config.current_shared_groups_config(session, context)
+        shared_groups = shared_group_config.current_shared_groups_config(
+            session,
+            context,
+            validate_groups_config_fn=_validate_groups_config,
+        )
         payload['teamGroups'] = {
             'version': shared_groups.get('version') or 1,
             'groups': shared_groups.get('groups') or [],

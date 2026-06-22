@@ -35,6 +35,7 @@ Postmortems serve to:
 | [MRT016](./MRT016-exec-02-plan-file-map-drift.md) | EXEC-02 Plan File Map Drift | 2026-05-11 | Medium | Resolved | EXEC-02 frontend task referenced future files as existing files and crossed task boundaries |
 | [MRT017](./MRT017-chart-hover-readout-placement.md) | Chart Hover Readout Placement Regression | 2026-05-20 | Medium | Resolved | Chart hover readouts were offset by transformed containers and clipped by center-only edge clamping |
 | [MRT018](./MRT018-lead-times-stats-panel-overflow.md) | Lead Times Stats Panel Overflow | 2026-06-12 | High | Resolved | Lead Times long lists clipped inside nested stats view caps and lacked load-more validation |
+| [MRT019](./MRT019-ready-to-close-truncated-child-scan.md) | Ready-to-Close Truncated Child Scan | 2026-06-21 | Medium | Resolved | Silent 250-cap truncation let Ready-to-Close fire on epics with open future-sprint children; fixed with an authoritative open-child count |
 
 ## Postmortem Template
 
@@ -88,8 +89,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 18
-- **Metadata complete (Date/Severity/Status)**: 18 (MRT001-MRT018)
+- **Total postmortems**: 19
+- **Metadata complete (Date/Severity/Status)**: 19 (MRT001-MRT019)
 
 ## Common Themes
 

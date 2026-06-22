@@ -238,6 +238,9 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
              patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
              patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
              patch.object(jira_server, 'EPIC_EMPTY_TEAM_IDS', ['other-team']), \
+             patch.object(jira_server, 'fetch_story_distribution_for_epics', return_value={
+                 'EPIC-1': {'openStoriesOutsideSelected': 0}
+             }), \
              patch.object(jira_server, 'jira_search_request', search_mock):
             response = client.get('/api/tasks-with-team-name?project=product&purpose=ready-to-close&epicKeys=EPIC-1&refresh=true')
 
@@ -255,6 +258,8 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         epics = payload.get('epicsInScope') or []
         self.assertEqual(len(epics), 1)
         self.assertEqual(epics[0].get('key'), 'EPIC-1')
+        # No open children -> safe to surface as ready to close.
+        self.assertEqual(epics[0].get('openChildCount'), 0)
 
     def test_ready_to_close_without_explicit_epic_keys_uses_empty_alert_scope(self):
         app = jira_server.app
@@ -285,6 +290,66 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         task_jql = search_mock.call_args_list[0].args[0].get('jql', '')
         self.assertIn('issuetype != Epic', task_jql)
+
+    def test_ready_to_close_attaches_open_child_count_from_distribution(self):
+        """Ready-to-close epics carry an authoritative open-child count so the
+        client never flags an epic that still has open work in a future sprint,
+        regardless of how the truncatable child task list was paginated."""
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+
+        search_mock = Mock(side_effect=[
+            _mock_response(200, {
+                'issues': [{
+                    'key': 'CHILD-DONE',
+                    'fields': {
+                        'status': {'name': 'Done'},
+                        'parent': {'key': 'EPIC-1', 'fields': {'issuetype': {'name': 'Epic'}}},
+                    }
+                }],
+                'names': {'customfield_epic_link': 'Epic Link'},
+                'total': 1,
+                'isLast': True,
+            }),
+            _mock_response(200, {
+                'issues': [{
+                    'key': 'EPIC-1',
+                    'fields': {'summary': 'Epic one', 'status': {'name': 'In Progress'}}
+                }],
+                'names': {},
+                'total': 1,
+                'isLast': True,
+            }),
+        ])
+
+        with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+             patch.object(jira_server, 'get_selected_projects_typed', return_value=[]), \
+             patch.object(jira_server, 'get_configured_issue_types', return_value=['Story']), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+             patch.object(jira_server, 'fetch_story_distribution_for_epics', return_value={
+                 'EPIC-1': {
+                     'selectedStories': 0,
+                     'selectedActionableStories': 0,
+                     'futureOpenStories': 1,
+                     'openStoriesOutsideSelected': 1,
+                 }
+             }) as distribution_mock, \
+             patch.object(jira_server, 'jira_search_request', search_mock):
+            response = client.get('/api/tasks-with-team-name?project=product&purpose=ready-to-close&epicKeys=EPIC-1&refresh=true')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        epics = (response.get_json() or {}).get('epicsInScope') or []
+        self.assertEqual(len(epics), 1)
+        self.assertEqual(epics[0].get('key'), 'EPIC-1')
+        # Authoritative open-child count surfaces the open future-sprint child,
+        # so the client keeps the epic out of "Ready to Close".
+        self.assertEqual(epics[0].get('openChildCount'), 1)
+        # Counted against all sprints (selected_sprint passed as empty string).
+        self.assertEqual(distribution_mock.call_args.args[0], ['EPIC-1'])
+        self.assertEqual(distribution_mock.call_args.args[-1], '')
 
     def test_fetch_epics_for_empty_alert_returns_labels(self):
         payload = {

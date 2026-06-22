@@ -44,7 +44,7 @@ This is a hygiene alert, not a future-planning alert. In future-planning mode, o
 
 Shows epics that are still open even though all child work items are terminal.
 
-In practice, this means the epic looks administratively open but the work underneath it is already done, killed, or incomplete. Child work items in future quarters are included in this check — an epic with open work planned for a future sprint will not appear here.
+In practice, this means the epic looks administratively open but the work underneath it is already done, killed, or incomplete. The check uses an authoritative, fully paginated count of every non-terminal child across all sprints, so an epic with any open work — including work planned for a future sprint or quarter — will not appear here.
 
 ### Postponed Work
 

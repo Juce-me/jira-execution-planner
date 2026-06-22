@@ -3146,6 +3146,18 @@ def fetch_tasks(include_team_name=False):
                     extract_team_name=extract_team_name,
                     log_warning_fn=log_warning,
                 )
+                # Authoritative open-child signal for the ready-to-close rule.
+                # fetch_story_distribution_for_epics paginates to completion, so it
+                # cannot silently drop children the way the 250-capped task list can.
+                # With selected_sprint left empty, openStoriesOutsideSelected counts
+                # every non-terminal child across all sprints — a still-open
+                # future-sprint story therefore keeps the epic out of "Ready to Close".
+                open_child_distribution = fetch_story_distribution_for_epics(
+                    epic_keys_filter, headers, epic_link_field, ''
+                )
+                for epic in epics_in_scope:
+                    counts = open_child_distribution.get(epic.get('key')) or {}
+                    epic['openChildCount'] = int(counts.get('openStoriesOutsideSelected', 0) or 0)
             else:
                 epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
         else:

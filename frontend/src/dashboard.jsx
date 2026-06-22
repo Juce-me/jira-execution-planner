@@ -11486,14 +11486,11 @@ import {
                     });
                     if (epicStories.length === 0) return false;
                     if (!epicOrStoriesMatchSelectedSprint(epic, epicStories)) return false;
-                    const allEpicStories = readyToCloseTasks.filter(task => {
-                        if (!task.fields?.epicKey) return false;
-                        if (task.fields.epicKey !== epic.key) return false;
-                        if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
-                        return true;
-                    });
-                    const storiesToCheck = allEpicStories.length > 0 ? allEpicStories : epicStories;
-                    return storiesToCheck.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
+                    // Authoritative, truncation-free signal from the backend: ready to
+                    // close only when the epic has zero open (non-terminal) children
+                    // across all sprints. Fail closed when the count is missing/unloaded
+                    // so a still-open future-sprint story is never read as "all done".
+                    return epic.openChildCount === 0;
                 })
                 .filter(epic => !dismissedAlertSet.has(epic.key));
 

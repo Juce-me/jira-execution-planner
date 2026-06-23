@@ -629,6 +629,19 @@ class TestEpmConfigApi(unittest.TestCase):
         self.assertEqual(response.get_json()['labels'][0], 'rnd_project_000')
         self.assertEqual(response.get_json()['labels'][-1], 'rnd_project_199')
 
+    def test_jira_labels_prefix_strips_trailing_star(self):
+        labels = [
+            'rnd_project_app',
+            'rnd_project_web',
+            'other_label',
+        ]
+
+        with patch.object(jira_server, 'LABELS_CACHE', {'data': labels, 'timestamp': 9999999999}):
+            response = self.client.get('/api/jira/labels?prefix=rnd_project_*')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['labels'], ['rnd_project_app', 'rnd_project_web'])
+
 
 if __name__ == '__main__':
     unittest.main()

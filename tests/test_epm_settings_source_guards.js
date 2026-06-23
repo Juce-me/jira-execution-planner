@@ -262,7 +262,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(!epmSettingsUiSource.includes('Jira epic'), 'Did not expect Jira Epic copy in EPM settings');
     assert.ok(dashboardSource.includes("const EPM_LABEL_SEARCH_GROUP_ID = 'epm-project';"), 'Expected dedicated EPM label search namespace constant');
     assert.ok(dashboardSource.includes('const getEpmLabelRowKey = (projectId) => getLabelRowKey(EPM_LABEL_SEARCH_GROUP_ID, projectId);'), 'Expected EPM label picker reads to use the dedicated shared key helper');
-    assert.ok(epmSettingsUiSource.includes('void loadEpmProjectLabels(project.id, showAllLabels);'), 'Expected EPM label picker focus to load prefix-scoped labels');
+    assert.ok(epmSettingsUiSource.includes('openEpmLabelMenu(project.id, event.currentTarget, showAllLabels)'), 'Expected EPM label picker focus to open the label menu with prefix-scoped labels');
     assert.ok(!dashboardSource.includes("scheduleJiraLabelSearch('epm', homeProjectId, rawQuery);"), 'Did not expect the legacy EPM label search namespace');
     assert.ok(epmSettingsUiSource.includes('Search Jira labels...'), 'Expected EPM Jira label search placeholder copy');
     assert.ok(dashboardSource.includes('requestJiraLabels(BACKEND_URL, showAll || !prefix'), 'Expected EPM label autocomplete to use the Jira label request wrapper');
@@ -401,7 +401,7 @@ test('EPM project rows expose table header sorting and view controls', () => {
     assert.ok(dashboardSource.includes('filterEpmSettingsProjectsForView'), 'Expected dashboard to import the settings project view filter');
     assert.ok(dashboardSource.includes("const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('status');"), 'Expected settings project sort to default to status');
     assert.ok(dashboardSource.includes("const [epmSettingsProjectView, setEpmSettingsProjectView] = useState('current');"), 'Expected settings project view to default to current');
-    assert.ok(dashboardSource.includes('filterEpmSettingsProjectsForView(rows, epmSettingsProjectView)'), 'Expected settings project rows to filter by selected view before sorting');
+    assert.ok(dashboardSource.includes('filterEpmSettingsProjectsForView(') && dashboardSource.includes('epmSettingsProjectView)'), 'Expected settings project rows to filter by selected view before sorting');
     assert.ok(projectsPanelSource.includes('className="epm-project-view-control"'), 'Expected Current/Archived/All view control in Projects tools');
     assert.ok(projectsPanelSource.includes("['current', 'archived', 'all']"), 'Expected Current, Archived, and All view choices');
     assert.ok(projectsPanelSource.includes('className="epm-project-table-sort"'), 'Expected sorting to live in table headers');
@@ -428,10 +428,10 @@ test('EPM settings drops empty custom project rows and gives them an explicit de
     assert.notStrictEqual(projectsPanelEnd, -1, 'Expected EPM projects row list before empty state');
     const projectsPanelSource = epmSettingsUiSource.slice(projectsPanelStart, projectsPanelEnd);
 
-    assert.ok(projectsPanelSource.includes('const isEmptyCustomProject = isEmptyCustomEpmProjectRow(project);'), 'Expected empty custom row detection in the row renderer');
-    assert.ok(projectsPanelSource.includes('{!isChangingLabel && !isEmptyCustomProject && ('), 'Expected empty custom rows to prioritize Delete over Choose label');
-    assert.ok(projectsPanelSource.includes('Delete empty project'), 'Expected blank custom rows to expose a clear delete action');
-    assert.ok(projectsPanelSource.includes('{canRemoveProject && !isEmptyCustomProject && ('), 'Expected empty custom rows to avoid a second generic remove action');
+    assert.ok(projectsPanelSource.includes('deleteEpmProjectRow(project)'), 'Expected every row to expose a unified delete action');
+    assert.ok(projectsPanelSource.includes('{!isChangingLabel && ('), 'Expected all rows (including empty custom rows) to show Choose label');
+    assert.ok(!projectsPanelSource.includes('Delete empty project'), 'Did not expect a separate Delete-empty-project button; unified delete covers all rows');
+    assert.ok(!projectsPanelSource.includes('{canRemoveProject &&'), 'Did not expect canRemoveProject gating; unified delete covers all rows');
 });
 
 test('EPM selected Jira label has one explicit change action', () => {

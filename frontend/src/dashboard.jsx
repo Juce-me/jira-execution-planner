@@ -186,6 +186,7 @@ import {
     hydrateEpmProjectDraft,
     isEmptyCustomEpmProjectRow,
     isEpmProjectsConfigReady,
+    normalizeEpmLabelPrefixMask,
     normalizeEpmProjectSort,
     normalizeEpmScopeSubGoalKeys,
     shouldUseEpmSprint,
@@ -427,6 +428,7 @@ import {
                 possiblyTruncated: false,
             });
             const [epmSettingsProjectsRefreshing, setEpmSettingsProjectsRefreshing] = useState(false);
+            const [removedEpmProjectIds, setRemovedEpmProjectIds] = React.useState(() => new Set());
             const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('status');
             const [epmSettingsProjectView, setEpmSettingsProjectView] = useState('current');
             const [epmSettingsTab, setEpmSettingsTab] = useState('scope');
@@ -436,6 +438,7 @@ import {
             const [epmLabelChanging, setEpmLabelChanging] = useState({});
             const [epmLabelMenuAnchor, setEpmLabelMenuAnchor] = useState(null);
             const epmLabelMenuInputRef = useRef(null);
+            const pendingLabelFocusRef = React.useRef(null);
             const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));
             const [epmScopeMeta, setEpmScopeMeta] = useState({ cloudId: '', error: '' });
             const [epmRootGoals, setEpmRootGoals] = useState([]);
@@ -1061,6 +1064,7 @@ import {
                     const loadedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     epmSettingsProjectsCacheRef.current.set(cacheKey, { projects: nextProjects, meta: nextMeta, loadedAt });
                     setEpmSettingsProjects(nextProjects);
+                    if (forceRefresh) { setRemovedEpmProjectIds(new Set()); }
                     setEpmSettingsProjectsFetchMeta(nextMeta);
                     setEpmSettingsProjectsLoaded(true);
                     setEpmSettingsProjectsLoadedAt(loadedAt);
@@ -1198,13 +1202,25 @@ import {
                     };
                 });
             };
+            const deleteEpmProjectRow = (project) => {
+                if (!project.homeProjectId) {
+                    removeEpmProjectDraft(project.id);
+                } else {
+                    setRemovedEpmProjectIds(prev => {
+                        const next = new Set(prev);
+                        if (project.id) next.add(String(project.id));
+                        if (project.homeProjectId) next.add(String(project.homeProjectId));
+                        return next;
+                    });
+                }
+            };
             const loadEpmProjectLabels = async (projectId, showAll = false) => {
                 const key = getEpmLabelRowKey(projectId);
                 const requestId = (labelSearchRequestIdRef.current[key] || 0) + 1;
                 labelSearchRequestIdRef.current[key] = requestId;
                 setLabelSearchLoading(prev => ({ ...prev, [key]: true }));
                 try {
-                    const prefix = String(epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX).trim();
+                    const prefix = normalizeEpmLabelPrefixMask(epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX);
                     const payload = await requestJiraLabels(BACKEND_URL, showAll || !prefix
                         ? { limit: 200 }
                         : { prefix, limit: 200 });
@@ -1222,6 +1238,18 @@ import {
                     if (labelSearchRequestIdRef.current[key] === requestId) {
                         setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
                     }
+                }
+            };
+            const requestEpmLabelFocus = (projectId) => {
+                const rowKey = getEpmLabelRowKey(projectId);
+                setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
+                pendingLabelFocusRef.current = rowKey;
+            };
+            const registerEpmLabelInput = (projectId, node) => {
+                const rowKey = getEpmLabelRowKey(projectId);
+                if (node && pendingLabelFocusRef.current === rowKey) {
+                    node.focus();
+                    pendingLabelFocusRef.current = null;
                 }
             };
             const selectEpmProjectLabel = React.useCallback((projectId, label) => {
@@ -1279,6 +1307,9 @@ import {
                 setEpmLabelMenuAnchor(null);
                 epmLabelMenuInputRef.current = null;
             }, [showGroupManage, groupManageTab, epmSettingsTab]);
+            useEffect(() => {
+                if (!showGroupManage) setRemovedEpmProjectIds(new Set());
+            }, [showGroupManage]);
             const handleEpmLabelSearchKeyDown = React.useCallback((projectId, event, results) => {
                 const key = getEpmLabelRowKey(projectId);
                 if (event.key === 'ArrowDown') {
@@ -2398,8 +2429,14 @@ import {
                         label: String(row?.label ?? ''),
                     }, null));
                 });
-                return sortEpmSettingsProjects(filterEpmSettingsProjectsForView(rows, epmSettingsProjectView), epmSettingsProjectSort);
-            }, [epmConfigDraft, epmSettingsProjectSort, epmSettingsProjectView, epmSettingsProjects]);
+                const filteredRows = rows.filter(row => {
+                    const id = String(row.id || '').trim();
+                    if (id && removedEpmProjectIds.has(id)) return false;
+                    if (row.homeProjectId && removedEpmProjectIds.has(String(row.homeProjectId))) return false;
+                    return true;
+                });
+                return sortEpmSettingsProjects(filterEpmSettingsProjectsForView(filteredRows, epmSettingsProjectView), epmSettingsProjectSort);
+            }, [epmConfigDraft, epmSettingsProjectSort, epmSettingsProjectView, epmSettingsProjects, removedEpmProjectIds]);
 
             const isSharedConfigurationDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
@@ -15030,6 +15067,11 @@ import {
                                         epmLabelMenuAnchor,
                                         labelSearchOpen,
                                         selectEpmProjectLabel,
+                                        requestEpmLabelFocus,
+                                        registerEpmLabelInput,
+                                        epmLabelPrefixMask: normalizeEpmLabelPrefixMask(epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX),
+                                        deleteEpmProjectRow,
+                                        hasSessionRemovedEpmProjects: removedEpmProjectIds.size > 0,
                                     }}
                                 />
                                 )}

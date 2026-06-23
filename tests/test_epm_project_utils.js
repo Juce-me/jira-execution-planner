@@ -677,6 +677,19 @@ test('buildEpmProjectUpdateLine exposes specific Home update url when available'
     );
 });
 
+test('normalizeEpmLabelPrefixMask strips trailing stars and surrounding whitespace', async () => {
+    const { normalizeEpmLabelPrefixMask } = await import(helperUrl);
+
+    assert.strictEqual(normalizeEpmLabelPrefixMask('rnd_project_*'), 'rnd_project_');
+    assert.strictEqual(normalizeEpmLabelPrefixMask('rnd_project_ * *'), 'rnd_project_');
+    assert.strictEqual(normalizeEpmLabelPrefixMask('  rnd_project_  '), 'rnd_project_');
+    assert.strictEqual(normalizeEpmLabelPrefixMask('rnd_project_alpha'), 'rnd_project_alpha');
+    assert.strictEqual(normalizeEpmLabelPrefixMask('*'), '');
+    assert.strictEqual(normalizeEpmLabelPrefixMask(''), '');
+    assert.strictEqual(normalizeEpmLabelPrefixMask(null), '');
+    assert.strictEqual(normalizeEpmLabelPrefixMask(undefined), '');
+});
+
 test('empty custom EPM project rows are disposable before save', async () => {
     const { isEmptyCustomEpmProjectRow } = await import(helperUrl);
 

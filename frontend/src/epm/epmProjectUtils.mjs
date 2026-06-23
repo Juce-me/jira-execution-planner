@@ -6,6 +6,14 @@ export function getEpmProjectIdentity(project) {
     return String(project?.id || '').trim();
 }
 
+export function normalizeEpmLabelPrefixMask(value) {
+    let prefix = String(value || '').trim();
+    while (prefix.endsWith('*')) {
+        prefix = prefix.slice(0, -1).trim();
+    }
+    return prefix;
+}
+
 export function isEmptyCustomEpmProjectRow(row) {
     if (!row) return false;
     if (row.homeProjectId !== null && String(row?.homeProjectId ?? '').trim()) return false;

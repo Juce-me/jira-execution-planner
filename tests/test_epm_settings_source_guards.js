@@ -401,7 +401,7 @@ test('EPM project rows expose table header sorting and view controls', () => {
     assert.ok(dashboardSource.includes('filterEpmSettingsProjectsForView'), 'Expected dashboard to import the settings project view filter');
     assert.ok(dashboardSource.includes("const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('status');"), 'Expected settings project sort to default to status');
     assert.ok(dashboardSource.includes("const [epmSettingsProjectView, setEpmSettingsProjectView] = useState('current');"), 'Expected settings project view to default to current');
-    assert.ok(dashboardSource.includes('filterEpmSettingsProjectsForView(') && dashboardSource.includes('epmSettingsProjectView)'), 'Expected settings project rows to filter by selected view before sorting');
+    assert.ok(dashboardSource.includes('filterEpmSettingsProjectsForView(filteredRows, epmSettingsProjectView)'), 'Expected settings project rows to filter by selected view before sorting');
     assert.ok(projectsPanelSource.includes('className="epm-project-view-control"'), 'Expected Current/Archived/All view control in Projects tools');
     assert.ok(projectsPanelSource.includes("['current', 'archived', 'all']"), 'Expected Current, Archived, and All view choices');
     assert.ok(projectsPanelSource.includes('className="epm-project-table-sort"'), 'Expected sorting to live in table headers');

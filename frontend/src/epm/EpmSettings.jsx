@@ -69,7 +69,6 @@ export default function EpmSettings(props) {
         epmLabelShowAll,
         epmLabelChanging,
         labelSearchIndex,
-        isEmptyCustomEpmProjectRow,
         setEpmLabelChanging,
         openEpmLabelMenu,
         loadEpmProjectLabels,
@@ -82,10 +81,14 @@ export default function EpmSettings(props) {
         epmLabelMenuInputRef,
         handleEpmLabelSearchKeyDown,
         setEpmLabelShowAll,
-        removeEpmProjectDraft,
         epmLabelMenuAnchor,
         labelSearchOpen,
         selectEpmProjectLabel,
+        requestEpmLabelFocus,
+        registerEpmLabelInput,
+        epmLabelPrefixMask,
+        deleteEpmProjectRow,
+        hasSessionRemovedEpmProjects,
     } = props;
     const rootGoalDisplay = selectedEpmRootGoal
         ? getEpmSubGoalDisplayParts(selectedEpmRootGoal)
@@ -402,6 +405,10 @@ export default function EpmSettings(props) {
                                                         </div>
                                                     </div>
                                                 ) : epmSettingsProjectRows.length > 0 ? (
+                                                    <>
+                                                    <div className="group-field-helper" style={{ marginBottom: '0.5rem' }}>
+                                                        Removing a Home-discovered project only hides it until the next refresh. To remove it permanently, close, pause, or archive it in Jira Home.
+                                                    </div>
                                                     <div className="epm-project-settings-table" role="table" aria-label="EPM project labels" style={{ display: 'grid', rowGap: 0 }}>
                                                         {epmSettingsProjectsError && (
                                                             <div className="group-field-helper epm-project-load-error">
@@ -452,21 +459,8 @@ export default function EpmSettings(props) {
                                                             const isChangingLabel = Boolean(epmLabelChanging[rowKey]);
                                                             const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
                                                             const projectStatus = String(project.stateLabel || project.stateValue || '').trim();
-                                                            const canRemoveProject = project.homeProjectId === null || project.missingFromHomeFetch;
-                                                            const isEmptyCustomProject = isEmptyCustomEpmProjectRow(project);
-                                                            const openEpmLabelSearchFromButton = (event) => {
-                                                                setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
-                                                                window.setTimeout(() => {
-                                                                    const wrapper = event.target.closest('.epm-project-settings-row');
-                                                                    const input = wrapper ? wrapper.querySelector('.team-search-input[placeholder*="Search Jira labels"]') : null;
-                                                                    if (input) {
-                                                                        input.focus();
-                                                                        openEpmLabelMenu(project.id, input, showAllLabels);
-                                                                    } else {
-                                                                        setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                        void loadEpmProjectLabels(project.id, showAllLabels);
-                                                                    }
-                                                                }, 0);
+                                                            const openEpmLabelSearchFromButton = () => {
+                                                                requestEpmLabelFocus(project.id);
                                                             };
                                                             return (
                                                                 <div key={project.id} className="epm-project-settings-row" role="row" style={{ display: 'grid', gridTemplateColumns: 'minmax(18rem, 1.35fr) 7rem minmax(18rem, 1fr) auto', alignItems: 'center', columnGap: '0.65rem', rowGap: '0.35rem', padding: '0.55rem 0', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
@@ -524,7 +518,7 @@ export default function EpmSettings(props) {
                                                                         ) : (
                                                                             <div className="epm-label-choice-actions" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flexWrap: 'wrap' }}>
                                                                                 <div className="group-field-helper" style={{ margin: 0, whiteSpace: 'nowrap' }}>No Jira label selected.</div>
-                                                                                {!isChangingLabel && !isEmptyCustomProject && (
+                                                                                {!isChangingLabel && (
                                                                                     <button
                                                                                         className="secondary compact"
                                                                                         onClick={openEpmLabelSearchFromButton}
@@ -534,26 +528,20 @@ export default function EpmSettings(props) {
                                                                                         Choose label
                                                                                     </button>
                                                                                 )}
-                                                                                {isEmptyCustomProject && (
-                                                                                    <button
-                                                                                        className="secondary compact"
-                                                                                        onClick={() => removeEpmProjectDraft(project.id)}
-                                                                                        type="button"
-                                                                                        title="Delete empty project"
-                                                                                        aria-label="Delete empty project"
-                                                                                        style={{ padding: '0.22rem 0.55rem', fontSize: '0.62rem', whiteSpace: 'nowrap' }}
-                                                                                    >
-                                                                                        Delete
-                                                                                    </button>
-                                                                                )}
                                                                             </div>
                                                                         )}
                                                                         {isChangingLabel && (
                                                                         <div className="team-search-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: '1 1 260px', minWidth: 0 }}>
+                                                                            {!showAllLabels && epmLabelPrefixMask && (
+                                                                                <div className="epm-label-prefix-pill" title="Active label prefix" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, border: '1px solid var(--border)', borderRadius: '999px', background: '#f8f9fa', padding: '0.18rem 0.55rem', flex: '0 0 auto' }}>
+                                                                                    <span className="team-name" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.72rem' }}>{epmLabelPrefixMask}</span>
+                                                                                </div>
+                                                                            )}
                                                                             <input
                                                                                 type="text"
                                                                                 className="team-search-input"
-                                                                                placeholder={isSearching ? 'Searching labels...' : 'Search Jira labels...'}
+                                                                                ref={(node) => registerEpmLabelInput(project.id, node)}
+                                                                                placeholder={isSearching ? 'Searching labels...' : (showAllLabels ? 'Search all Jira labels…' : (epmLabelPrefixMask ? `Labels starting with ${epmLabelPrefixMask}…` : 'Search Jira labels...'))}
                                                                                 value={labelSearchQuery[rowKey] || ''}
                                                                                 onChange={(event) => {
                                                                                     const value = event.target.value;
@@ -596,18 +584,15 @@ export default function EpmSettings(props) {
                                                                         </div>
                                                                         )}
                                                                     </div>
-                                                                    {canRemoveProject && !isEmptyCustomProject && (
-                                                                        <button
-                                                                            className="secondary compact"
-                                                                            onClick={() => removeEpmProjectDraft(project.id)}
-                                                                            type="button"
-                                                                            title="Remove Project"
-                                                                            aria-label={`Remove ${project.displayName || project.homeName || project.id}`}
-                                                                            style={{ padding: '0.28rem 0.55rem', flex: '0 0 auto' }}
-                                                                        >
-                                                                            Remove
-                                                                        </button>
-                                                                    )}
+                                                                    <IconButton
+                                                                        onClick={() => deleteEpmProjectRow(project)}
+                                                                        type="button"
+                                                                        title={project.homeProjectId ? 'Hide until next refresh — close, pause, or archive it in Jira Home to remove it permanently.' : 'Delete project.'}
+                                                                        aria-label={`Delete ${project.displayName || project.homeName || project.name || project.id}`}
+                                                                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '1.75rem', height: '1.75rem', flex: '0 0 auto', border: '1px solid var(--border)', borderRadius: '999px', background: '#fff', color: 'var(--text-muted)', fontSize: '1rem', lineHeight: 1, padding: 0, cursor: 'pointer' }}
+                                                                    >
+                                                                        &times;
+                                                                    </IconButton>
                                                                     {project.missingFromHomeFetch && (
                                                                         <div className="group-field-helper epm-project-row-warning" style={{ gridColumn: '1 / -1', margin: 0 }}>
                                                                             Not returned by latest Jira Home refresh.
@@ -616,6 +601,23 @@ export default function EpmSettings(props) {
                                                                 </div>
                                                             );
                                                         })}
+                                                    </div>
+                                                    </>
+                                                ) : epmSettingsProjectRows.length === 0 && hasSessionRemovedEpmProjects ? (
+                                                    <div className="epm-project-empty-state">
+                                                        <div className="group-pane-subtitle">All projects are hidden for this session. Refresh to restore Home projects, or add a custom Project.</div>
+                                                        <div className="epm-project-state-actions">
+                                                            <button
+                                                                className="secondary compact"
+                                                                onClick={() => { void ensureEpmSettingsProjectsLoaded({ forceRefresh: true }).catch(() => {}); }}
+                                                                type="button"
+                                                            >Refresh</button>
+                                                            <button
+                                                                className="secondary compact"
+                                                                onClick={addCustomEpmProjectDraft}
+                                                                type="button"
+                                                            >Add custom Project</button>
+                                                        </div>
                                                     </div>
                                                 ) : (epmSettingsProjects.length > 0 && epmSettingsProjectsLoaded && !epmSettingsProjectsLoading && !epmSettingsProjectsError) ? (
                                                     <div className="epm-project-empty-state">

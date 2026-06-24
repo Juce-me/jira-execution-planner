@@ -10,9 +10,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # so silent 250-cap truncation can no longer fire the alert on epics with open
     # future-sprint work; counting logic stays in the existing helper.
     "jira_server.py": 5933,
-    # EXEC-ad-hoc-capacity-epics adds the Ad Hoc settings selector, classification
-    # wiring, and the Lead Times capacity-mix selector; pure logic stays in focused helpers.
-    "frontend/src/dashboard.jsx": 15335,
+    # EXEC-epm-label-config-bugfixes adds removedEpmProjectIds state, deleteEpmProjectRow,
+    # pendingLabelFocusRef, requestEpmLabelFocus/registerEpmLabelInput helpers, and reset effects.
+    "frontend/src/dashboard.jsx": 15374,
 }
 
 

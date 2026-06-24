@@ -847,6 +847,8 @@ def get_jira_labels():
         if query:
             labels = [label for label in labels if query in label.lower()]
         if prefix:
+            prefix = normalize_epm_label_prefix_mask(prefix)
+        if prefix:
             labels = [label for label in labels if label.lower().startswith(prefix)]
 
         return jsonify({'labels': labels[:limit]})

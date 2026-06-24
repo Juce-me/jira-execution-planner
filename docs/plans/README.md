@@ -253,6 +253,20 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: team-group env parsing, validation, and default construction moved to `backend/services/group_config.py` while `jira_server.py` compatibility wrappers remain patchable.
 
+## EPM Settings Bugfixes
+
+1. `EXEC-epm-label-config-bugfixes.md`
+   - Bugfix plan for the EPM Settings → Projects label configuration. Implemented and
+     verified on branch `bugfix/epm-label-config` (commits `2138ab1`, `b24a091`,
+     `b39e1f7`/`ac3dcaf`, `78a6b06`/`12af7da`); pending merge. Rename to `DONE-*` after merge.
+   - Expected output: the label-prefix mask `*` is stripped before the Jira
+     `startswith` filter so prefix autocomplete returns results, the label dropdown
+     opens reliably from "Choose label" (no anchor race), every project row has one
+     consistent compact delete with session-only removal plus a clear notice that
+     Home-discovered projects reappear until closed/paused/archived in Jira Home, and
+     the active label prefix is shown as a hint pill with a descriptive placeholder.
+   - No new routes, no auth-mode change, no Home/Jira writes; `GATE-05` unaffected.
+
 ## Legacy Unclassified Date-Only Plans
 
 These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat them as unclassified historical context, not executable current plans, until a reviewer classifies and renames them or moves them to `docs/agents/`:

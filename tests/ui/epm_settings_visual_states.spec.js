@@ -232,18 +232,18 @@ for (const viewport of viewports) {
             await mockSettings(page);
             await openEpmSettings(page);
             await page.getByRole('tab', { name: 'Projects' }).click();
-            const rowsBefore = page.locator('.epm-project-settings-row');
-            const countBefore = await rowsBefore.count();
+            const allRows = page.locator('.epm-project-settings-row');
+            const countBefore = await allRows.count();
             await page.getByRole('button', { name: 'Add custom Project' }).click();
-            await expect(rowsBefore).toHaveCount(countBefore + 1);
-            // The new custom row is the last one; its delete button has aria-label starting with "Delete "
-            const lastRow = rowsBefore.last();
-            const deleteBtn = lastRow.getByRole('button', { name: /^Delete / });
+            await expect(allRows).toHaveCount(countBefore + 1);
+            // Identify the custom draft row by its "Project name" placeholder — unique to blank custom rows
+            const customRow = page.locator('.epm-project-settings-row', { has: page.getByPlaceholder('Project name') });
+            const deleteBtn = customRow.getByRole('button', { name: /^Delete / });
             await expect(deleteBtn).toBeVisible();
             await deleteBtn.scrollIntoViewIfNeeded();
             await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-empty-custom-delete.png`, fullPage: true });
             await deleteBtn.click();
-            await expect(rowsBefore).toHaveCount(countBefore);
+            await expect(customRow).toHaveCount(0);
         });
 
         test('projects scrolled label menu stays aligned', async ({ page }) => {
@@ -283,12 +283,9 @@ for (const viewport of viewports) {
         });
 
         test('projects prefix strips trailing star before label request (2a guard)', async ({ page }) => {
-            let capturedPrefixParam = null;
-            // Override the labels route to capture the outgoing prefix param
+            // Override the labels route to fulfill requests
             await mockSettings(page, { config: { labelPrefix: 'rnd_project_*' } });
             await page.route('**/api/jira/labels**', route => {
-                const url = new URL(route.request().url());
-                capturedPrefixParam = url.searchParams.get('prefix');
                 return route.fulfill({
                     status: 200,
                     contentType: 'application/json',
@@ -299,10 +296,15 @@ for (const viewport of viewports) {
             await page.getByRole('tab', { name: 'Projects' }).click();
             const rows = page.locator('.epm-project-settings-row');
             await expect(rows.nth(1)).toBeVisible();
+            // Set up request waiter before triggering the action that fires the async fetch
+            const labelReqPromise = page.waitForRequest(r => r.url().includes('/api/jira/labels'));
             await rows.nth(1).getByRole('button', { name: 'Choose label' }).click();
             await expect(page.locator('.epm-label-menu-layer')).toBeVisible();
+            // Wait for the actual outgoing request and inspect its prefix param
+            const labelReq = await labelReqPromise;
+            const prefix = new URL(labelReq.url()).searchParams.get('prefix');
             // The prefix sent to the backend must have no trailing *
-            expect(capturedPrefixParam).toBe('rnd_project_');
+            expect(prefix).toBe('rnd_project_');
             // Prefix pill must also show the stripped prefix
             await expect(rows.nth(1).locator('.epm-label-prefix-pill')).toContainText('rnd_project_');
         });

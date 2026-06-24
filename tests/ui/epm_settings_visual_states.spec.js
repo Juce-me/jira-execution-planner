@@ -232,13 +232,18 @@ for (const viewport of viewports) {
             await mockSettings(page);
             await openEpmSettings(page);
             await page.getByRole('tab', { name: 'Projects' }).click();
+            const rowsBefore = page.locator('.epm-project-settings-row');
+            const countBefore = await rowsBefore.count();
             await page.getByRole('button', { name: 'Add custom Project' }).click();
-            const deleteEmptyProjectButton = page.getByRole('button', { name: 'Delete empty project' });
-            await expect(deleteEmptyProjectButton).toBeVisible();
-            await deleteEmptyProjectButton.scrollIntoViewIfNeeded();
+            await expect(rowsBefore).toHaveCount(countBefore + 1);
+            // The new custom row is the last one; its delete button has aria-label starting with "Delete "
+            const lastRow = rowsBefore.last();
+            const deleteBtn = lastRow.getByRole('button', { name: /^Delete / });
+            await expect(deleteBtn).toBeVisible();
+            await deleteBtn.scrollIntoViewIfNeeded();
             await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-empty-custom-delete.png`, fullPage: true });
-            await deleteEmptyProjectButton.click();
-            await expect(page.getByRole('button', { name: 'Delete empty project' })).toHaveCount(0);
+            await deleteBtn.click();
+            await expect(rowsBefore).toHaveCount(countBefore);
         });
 
         test('projects scrolled label menu stays aligned', async ({ page }) => {
@@ -248,10 +253,84 @@ for (const viewport of viewports) {
             const scrollRegion = page.locator('.epm-projects-scroll-region');
             await expect(scrollRegion).toBeVisible();
             await scrollRegion.evaluate(node => { node.scrollTop = node.scrollHeight; });
+            // 2b regression guard: opening from "Choose label" button alone (no input click) must show the menu
             await page.getByRole('button', { name: 'Choose label' }).last().click();
-            await page.getByPlaceholder('Search Jira labels...').last().click();
             await expect(page.locator('.epm-label-menu-layer')).toBeVisible();
             await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-scrolled-label-menu.png`, fullPage: true });
+        });
+
+        test('projects label prefix pill and placeholder toggle (Change C)', async ({ page }) => {
+            await mockSettings(page);
+            await openEpmSettings(page);
+            await page.getByRole('tab', { name: 'Projects' }).click();
+            // Open label search on an unlabeled row (any row without a label; rows 1-17 have no label)
+            const rows = page.locator('.epm-project-settings-row');
+            await expect(rows.nth(1)).toBeVisible();
+            await rows.nth(1).getByRole('button', { name: 'Choose label' }).click();
+            // Prefix pill must be visible with the normalized prefix
+            await expect(rows.nth(1).locator('.epm-label-prefix-pill')).toBeVisible();
+            await expect(rows.nth(1).locator('.epm-label-prefix-pill')).toContainText('rnd_project_');
+            // The label search input is inside .team-search-wrapper (not the project name input)
+            // Wait for it to settle out of the 'Searching labels...' transient state
+            const labelInput = rows.nth(1).locator('.team-search-wrapper input.team-search-input');
+            await expect(labelInput).toHaveAttribute('placeholder', 'Labels starting with rnd_project_…');
+            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-label-prefix-pill.png`, fullPage: true });
+            // Click "Show all labels" — pill must disappear and placeholder must switch
+            await rows.nth(1).getByRole('button', { name: 'Show all labels' }).click();
+            await expect(rows.nth(1).locator('.epm-label-prefix-pill')).toHaveCount(0);
+            await expect(labelInput).toHaveAttribute('placeholder', 'Search all Jira labels…');
+            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-label-show-all.png`, fullPage: true });
+        });
+
+        test('projects prefix strips trailing star before label request (2a guard)', async ({ page }) => {
+            let capturedPrefixParam = null;
+            // Override the labels route to capture the outgoing prefix param
+            await mockSettings(page, { config: { labelPrefix: 'rnd_project_*' } });
+            await page.route('**/api/jira/labels**', route => {
+                const url = new URL(route.request().url());
+                capturedPrefixParam = url.searchParams.get('prefix');
+                return route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ labels: ['rnd_project_bidswitch', 'rnd_project_long_label_for_visual_qa'] }),
+                });
+            });
+            await openEpmSettings(page);
+            await page.getByRole('tab', { name: 'Projects' }).click();
+            const rows = page.locator('.epm-project-settings-row');
+            await expect(rows.nth(1)).toBeVisible();
+            await rows.nth(1).getByRole('button', { name: 'Choose label' }).click();
+            await expect(page.locator('.epm-label-menu-layer')).toBeVisible();
+            // The prefix sent to the backend must have no trailing *
+            expect(capturedPrefixParam).toBe('rnd_project_');
+            // Prefix pill must also show the stripped prefix
+            await expect(rows.nth(1).locator('.epm-label-prefix-pill')).toContainText('rnd_project_');
+        });
+
+        test('projects per-row delete and Home reappear on refresh (Change D)', async ({ page }) => {
+            await mockSettings(page);
+            await openEpmSettings(page);
+            await page.getByRole('tab', { name: 'Projects' }).click();
+            const rows = page.locator('.epm-project-settings-row');
+            const rowCount = await rows.count();
+            expect(rowCount).toBeGreaterThan(0);
+            // (a) Every row must have exactly one delete button with aria-label starting "Delete "
+            for (let i = 0; i < Math.min(rowCount, 5); i++) {
+                await expect(rows.nth(i).getByRole('button', { name: /^Delete / })).toHaveCount(1);
+            }
+            // (b) Delete an unlabeled Home row (row index 1, Home-discovered) — count drops by 1
+            const initialCount = rowCount;
+            const rowToDelete = rows.nth(1);
+            const deleteBtn = rowToDelete.getByRole('button', { name: /^Delete / });
+            await deleteBtn.click();
+            await expect(rows).toHaveCount(initialCount - 1);
+            // Section helper note about Jira Home must be visible
+            await expect(page.getByText(/Removing a Home-discovered project only hides it until the next refresh/)).toBeVisible();
+            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-home-row-deleted.png`, fullPage: true });
+            // (c) Forced refresh via "Refresh from Jira Home" should restore the deleted Home row
+            await page.getByRole('button', { name: 'Refresh from Jira Home' }).click();
+            await expect(rows).toHaveCount(initialCount, { timeout: 5000 });
+            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-home-row-restored.png`, fullPage: true });
         });
 
         test('projects error state', async ({ page }) => {

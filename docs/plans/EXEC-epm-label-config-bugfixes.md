@@ -2,12 +2,17 @@
 
 | Field | Value |
 | --- | --- |
-| Status | planned |
+| Status | executed (pending merge) |
 | Type | bugfix |
 | Created | 2026-06-23 |
-| Revised | 2026-06-23 (after 3-subagent review; see §11) |
+| Revised | 2026-06-23 (after 3-subagent review; see §12) |
+| Executed | 2026-06-24 (see §10 Outcome for per-task commits) |
 | Surface | EPM Settings → Projects (label config) |
 | Branch | `bugfix/epm-label-config` |
+
+> **Status:** Implemented and verified on branch `bugfix/epm-label-config`; not yet
+> merged. Per-task commits and verification are recorded in §10. Rename to
+> `DONE-*` only after the PR is merged/accepted.
 
 Fixes three defects in the EPM Settings **Projects** label-configuration UI. No new
 routes, no auth-mode changes, no Home/Townsquare or Jira writes. `GATE-05`
@@ -357,10 +362,37 @@ instrumented flow.
 ---
 
 ## 10. Outcome
-_(fill on execution)_
+
+**Implemented as planned** (subagent-driven execution; each task TDD'd, reviewed,
+fixed, and re-verified before the next). Per-task commits on `bugfix/epm-label-config`:
+
+| Task | Change | Commit(s) | Verification |
+| --- | --- | --- | --- |
+| 1 | Change A backend — strip `*` in `get_jira_labels` + test | `2138ab1` | `tests/test_epm_config_api.py` 25/25; new test fails pre-fix, passes post-fix |
+| 2 | `normalizeEpmLabelPrefixMask` helper + unit test | `b24a091` | frontend unit 387/387 (1 fail pre-impl) |
+| 3 | Changes A-frontend / B / C / D wiring (`dashboard.jsx`, `EpmSettings.jsx`) + dist | `b39e1f7`, fix `ac3dcaf` | `npm run build` clean; unit 387/387; source guards 23/23 |
+| 4 | Playwright spec updates + determinism fix | `78a6b06`, fix `12af7da` | EPM settings spec 22/22 both viewports |
+
+Plan commits: `4d43911` (initial), `a0cb4a8` (post-review revision).
+
+**Final whole-branch verification (2026-06-24):** full backend suite **905 passed**
+(1 skip), frontend unit **387 passed**, EPM Playwright **22 passed** (desktop +
+mobile), `npm run build` produces a clean `frontend/dist` diff. Final adversarial
+whole-branch review: **READY TO MERGE** — no Blockers/P1; confirmed the backend test
+is non-tautological (revert→fail), reset transitions are exactly modal-close +
+forced-refetch, Home-row delete never mutates `epmConfigDraft`, and the unrelated
+`tests/ui/eng_alerts_panel_summary.spec.js` failure is not caused by this branch.
+
+Open follow-up (non-blocking, recorded for the PR): the source-guard at
+`tests/test_epm_settings_source_guards.js:265` is a weak guard for Change B (the
+asserted string also appears in `onChange`/`onFocus`); the real Change-B regression
+guard is the Playwright 2b test. Also confirm in the failing environment whether the
+stored `labelPrefix` was the `rnd_project_*` mask form (the §2a execution gate).
 
 ## 11. Current Accuracy
-_(fill on execution)_
+
+Accurate as of `12af7da`. The shipped code matches this plan; once merged, rename to
+`DONE-*` and add the merge commit/PR to the top status note.
 
 ---
 

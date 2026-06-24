@@ -256,7 +256,9 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 ## EPM Settings Bugfixes
 
 1. `EXEC-epm-label-config-bugfixes.md`
-   - Active bugfix plan for the EPM Settings → Projects label configuration.
+   - Bugfix plan for the EPM Settings → Projects label configuration. Implemented and
+     verified on branch `bugfix/epm-label-config` (commits `2138ab1`, `b24a091`,
+     `b39e1f7`/`ac3dcaf`, `78a6b06`/`12af7da`); pending merge. Rename to `DONE-*` after merge.
    - Expected output: the label-prefix mask `*` is stripped before the Jira
      `startswith` filter so prefix autocomplete returns results, the label dropdown
      opens reliably from "Choose label" (no anchor race), every project row has one

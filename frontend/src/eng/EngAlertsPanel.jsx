@@ -29,6 +29,7 @@ export default function EngAlertsPanel({
         blockedAlertTeams,
         blockedTasks,
         buildKeyListLink,
+        buildNeedsStoriesTeamLink,
         buildTeamStatusLink,
         consolidatedMissingStories,
         dismissAlertItem,
@@ -49,6 +50,7 @@ export default function EngAlertsPanel({
         missingTeamEpicTeams,
         missingTeamEpics,
         needsStoriesEntries,
+        needsStoriesEpics,
         needsStoriesTeams,
         postponedAlertTeams,
         postponedEpicTeams,
@@ -735,12 +737,11 @@ export default function EngAlertsPanel({
                                                     </button>
                                                     <div className="alert-title">📝 Needs Stories</div>
                                                     <div className="alert-subtitle">These epics are labeled correctly but still are not sprint-ready for the selected future sprint.</div>
-                                                    <div className="alert-chip">{needsStoriesEntries.length} {needsStoriesEntries.length === 1 ? 'epic' : 'epics'}</div>
+                                                    <div className="alert-chip">{needsStoriesEpics.length} {needsStoriesEpics.length === 1 ? 'epic' : 'epics'}</div>
                                                 </div>
                                                 <div className={`alert-card-body ${showNeedsStoriesAlert ? '' : 'collapsed'}`}>
                                                     {needsStoriesTeams.map(group => {
-                                                        const keys = group.items.map(item => item.epic.key);
-                                                        const teamLink = buildKeyListLink(keys);
+                                                        const teamLink = buildNeedsStoriesTeamLink({ id: group.id, name: group.name });
                                                         return (
                                                             <div key={`needs-stories-${group.id}`} className="alert-team-group">
                                                                 <div className="alert-team-header">

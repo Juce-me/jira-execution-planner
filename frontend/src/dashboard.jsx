@@ -81,8 +81,8 @@ import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
-import { classifyFuturePlanningNeedsStories, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
-import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
+import { buildNeedsStoriesTeamEntries, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
+import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel, buildNeedsStoriesTeamJql } from './futurePlanningTeamUtils.mjs';
 import {
     fetchMissingPlanningInfo as requestMissingPlanningInfo,
     fetchSprints as requestSprints,
@@ -11224,6 +11224,17 @@ import {
                 return `${jiraUrl}/issues/?jql=${jql}`;
             };
 
+            const buildNeedsStoriesTeamLink = (team) => {
+                if (!jiraUrl || !team) return '';
+                const jql = buildNeedsStoriesTeamJql({
+                    teamLabel: activeGroupTeamLabels?.[team.id] || '',
+                    selectedSprint,
+                    selectedSprintName: selectedSprintInfo?.name || ''
+                });
+                if (!jql) return '';
+                return `${jiraUrl}/issues/?jql=${encodeURIComponent(jql)}`;
+            };
+
             const hasStoryPoints = (task) => {
                 const sp = task.fields.customfield_10004;
                 if (sp === null || sp === undefined || sp === '') {
@@ -11461,22 +11472,30 @@ import {
                     if (!teamLabel || !epicMatchesPlanningSprintValue(epic) || !epicHasLabel(epic, teamLabel)) {
                         return entries;
                     }
-                    const entry = classifyFuturePlanningNeedsStories({
+                    // One entry per labeled team that still owes a sprint story; a team
+                    // with its own sprint story is dropped even if peers on the same epic
+                    // are still missing one.
+                    entries.push(...buildNeedsStoriesTeamEntries({
                         epic,
+                        teamInfos: getFuturePlanningTeamInfos(epic),
                         epicStories: storiesByEpicKey.get(epic.key) || [],
                         normalizeStatus: (value) => normalizeStatus(value),
                         isTaskInSelectedSprint
-                    });
-                    if (entry) {
-                        entries.push(entry);
-                    }
+                    }));
                     return entries;
                 }, []);
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasLabel, storiesByEpicKey, isTaskInSelectedSprint]);
-            const needsStoriesEpics = React.useMemo(
-                () => needsStoriesEntries.map((entry) => entry.epic),
-                [needsStoriesEntries]
-            );
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasLabel, storiesByEpicKey, isTaskInSelectedSprint, getFuturePlanningTeamInfos]);
+            const needsStoriesEpics = React.useMemo(() => {
+                const seen = new Set();
+                const epics = [];
+                needsStoriesEntries.forEach((entry) => {
+                    const key = entry.epic?.key;
+                    if (!key || seen.has(key)) return;
+                    seen.add(key);
+                    epics.push(entry.epic);
+                });
+                return epics;
+            }, [needsStoriesEntries]);
 
             const emptyEpics = epicsInScope
                 .filter(epic => {
@@ -11687,7 +11706,7 @@ import {
             const backlogEpicTeams = groupAlertsByTeam(backlogEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const missingTeamEpicTeams = groupAlertsByTeam(missingTeamEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const missingLabelEpicTeams = groupAlertsByTeam(missingLabelEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const needsStoriesTeams = groupAlertsByTeam(needsStoriesEntries, (entry) => getFuturePlanningTeamInfos(entry.epic), (a, b) => (a.epic.summary || '').localeCompare(b.epic.summary || ''));
+            const needsStoriesTeams = groupAlertsByTeam(needsStoriesEntries, (entry) => entry.team, (a, b) => (a.epic.summary || '').localeCompare(b.epic.summary || ''));
 
             const missingAlertKeySet = React.useMemo(
                 () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),
@@ -14637,6 +14656,7 @@ import {
                                                 blockedAlertTeams,
                                                 blockedTasks,
                                                 buildKeyListLink,
+                                                buildNeedsStoriesTeamLink,
                                                 buildTeamStatusLink,
                                                 consolidatedMissingStories,
                                                 dismissAlertItem,
@@ -14657,6 +14677,7 @@ import {
                                                 missingTeamEpicTeams,
                                                 missingTeamEpics,
                                                 needsStoriesEntries,
+                                                needsStoriesEpics,
                                                 needsStoriesTeams,
                                                 postponedAlertTeams,
                                                 postponedEpicTeams,

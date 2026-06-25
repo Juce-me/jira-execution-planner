@@ -13,7 +13,6 @@ test('epic alert team headers link their epic counts to Jira', () => {
         /backlogEpicTeams\.map\(group => \{\s+const keys = group\.items\.map\(item => item\.key\);\s+const teamLink = buildKeyListLink\(keys\);[\s\S]*?className="alert-team-link"/,
         /missingTeamEpicTeams\.map\(group => \{\s+const keys = group\.items\.map\(item => item\.key\);\s+const teamLink = buildKeyListLink\(keys\);[\s\S]*?className="alert-team-link"/,
         /missingLabelEpicTeams\.map\(group => \{\s+const keys = group\.items\.map\(item => item\.key\);\s+const teamLink = buildKeyListLink\(keys\);[\s\S]*?className="alert-team-link"/,
-        /needsStoriesTeams\.map\(group => \{\s+const keys = group\.items\.map\(item => item\.epic\.key\);\s+const teamLink = buildKeyListLink\(keys\);[\s\S]*?className="alert-team-link"/
     ];
 
     expectedBlocks.forEach((pattern) => {
@@ -22,4 +21,16 @@ test('epic alert team headers link their epic counts to Jira', () => {
             pattern
         );
     });
+});
+
+test('needs stories team header links to a semantic JQL filter, not a key list', () => {
+    const source = fs.readFileSync(
+        path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngAlertsPanel.jsx'),
+        'utf8'
+    );
+
+    assert.match(
+        source,
+        /needsStoriesTeams\.map\(group => \{\s+const teamLink = buildNeedsStoriesTeamLink\(\{ id: group\.id, name: group\.name \}\);[\s\S]*?className="alert-team-link"/
+    );
 });

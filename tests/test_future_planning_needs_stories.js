@@ -95,3 +95,85 @@ test('classifies epics with no selected-sprint stories but open stories elsewher
         reason: 'stories_in_other_sprint'
     });
 });
+
+const normalizeStatus = (value) => String(value || '').trim().toLowerCase();
+const noSelectedSprint = () => false;
+
+async function loadTeamModule() {
+    return import('../frontend/src/futurePlanningNeedsStories.mjs');
+}
+
+test('team needs stories: returns null when the team already has an open selected-sprint story', async () => {
+    const { classifyFuturePlanningTeamNeedsStories } = await loadTeamModule();
+    const result = classifyFuturePlanningTeamNeedsStories({
+        epic: { key: 'EPIC-1', selectedActionableStories: 2, selectedActionableByTeam: { 'team-a': 1, 'team-b': 1 } },
+        teamId: 'team-a',
+        epicStories: [],
+        normalizeStatus,
+        isTaskInSelectedSprint: noSelectedSprint
+    });
+    assert.equal(result, null);
+});
+
+test('team needs stories: flags a labeled team with no selected-sprint story when another team has one', async () => {
+    const { classifyFuturePlanningTeamNeedsStories } = await loadTeamModule();
+    const epic = { key: 'EPIC-1', selectedActionableStories: 2, selectedActionableByTeam: { 'team-a': 2 } };
+    const result = classifyFuturePlanningTeamNeedsStories({
+        epic,
+        teamId: 'team-b',
+        epicStories: [],
+        normalizeStatus,
+        isTaskInSelectedSprint: noSelectedSprint
+    });
+    assert.deepEqual(result, { epic, reason: 'team_missing_selected' });
+});
+
+test('team needs stories: falls back to the epic-wide reason when no team has a selected-sprint story', async () => {
+    const { classifyFuturePlanningTeamNeedsStories } = await loadTeamModule();
+    const epic = { key: 'EPIC-1', selectedActionableStories: 0, selectedActionableByTeam: {}, totalStories: 0 };
+    const result = classifyFuturePlanningTeamNeedsStories({
+        epic,
+        teamId: 'team-a',
+        epicStories: [],
+        normalizeStatus,
+        isTaskInSelectedSprint: noSelectedSprint
+    });
+    assert.deepEqual(result, { epic, reason: 'no_stories' });
+});
+
+test('team needs stories: falls back to epic-wide classification when per-team data is absent', async () => {
+    const { classifyFuturePlanningTeamNeedsStories } = await loadTeamModule();
+    const epic = { key: 'EPIC-1', selectedActionableStories: 3 };
+    const result = classifyFuturePlanningTeamNeedsStories({
+        epic,
+        teamId: 'team-a',
+        epicStories: [],
+        normalizeStatus,
+        isTaskInSelectedSprint: noSelectedSprint
+    });
+    assert.equal(result, null);
+});
+
+test('buildNeedsStoriesTeamEntries: one entry per uncovered team, covered teams skipped', async () => {
+    const { buildNeedsStoriesTeamEntries } = await loadTeamModule();
+    const epic = { key: 'EPIC-1', selectedActionableStories: 2, selectedActionableByTeam: { 'team-a': 2 } };
+    const entries = buildNeedsStoriesTeamEntries({
+        epic,
+        teamInfos: [{ id: 'team-a', name: 'A' }, { id: 'team-b', name: 'B' }, { id: 'team-c', name: 'C' }],
+        epicStories: [],
+        normalizeStatus,
+        isTaskInSelectedSprint: noSelectedSprint
+    });
+    assert.equal(entries.length, 2);
+    assert.deepEqual(entries.map((entry) => entry.team.id), ['team-b', 'team-c']);
+    assert.equal(entries[0].reason, 'team_missing_selected');
+    assert.deepEqual(entries[0].epic, epic);
+});
+
+test('returns visible copy for the team-missing-selected reason', async () => {
+    const { getFuturePlanningNeedsStoriesReasonText } = await loadTeamModule();
+    assert.equal(
+        getFuturePlanningNeedsStoriesReasonText('team_missing_selected'),
+        'This team has no story for the selected sprint.'
+    );
+});

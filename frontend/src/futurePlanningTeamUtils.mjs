@@ -119,3 +119,24 @@ export function epicMatchesFuturePlanningTeamSelection(epic, {
 
     return getMatchedPlanningTeamIds(epic, teamLabels).some((teamId) => selectedTeamSet.has(teamId));
 }
+
+// Semantic JQL for a Needs Stories team group: the team's open epics for the
+// selected sprint (matched by sprint id or sprint-value label), rather than a
+// frozen `key in (...)` list. Returns the bare JQL; callers wrap it in a Jira URL.
+export function buildNeedsStoriesTeamJql({ teamLabel, selectedSprint, selectedSprintName } = {}) {
+    const label = String(teamLabel || '').trim();
+    if (!label) return '';
+    const clauses = ['issuetype = Epic', `labels = "${label}"`];
+    const sprintClauses = [];
+    const sprintId = String(selectedSprint || '').trim();
+    const sprintName = String(selectedSprintName || '').trim();
+    if (sprintId) sprintClauses.push(`Sprint = ${sprintId}`);
+    if (sprintName) sprintClauses.push(`labels = "${sprintName}"`);
+    if (sprintClauses.length === 1) {
+        clauses.push(sprintClauses[0]);
+    } else if (sprintClauses.length > 1) {
+        clauses.push(`(${sprintClauses.join(' OR ')})`);
+    }
+    clauses.push('status not in ("Done","Killed","Incomplete")');
+    return clauses.join(' AND ');
+}

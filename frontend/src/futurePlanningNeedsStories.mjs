@@ -7,6 +7,7 @@ export function getFuturePlanningNeedsStoriesReasonText(reason) {
     if (reason === 'no_stories') return 'No stories yet for this sprint.';
     if (reason === 'only_closed_stories') return 'Only closed stories exist for this epic.';
     if (reason === 'stories_in_other_sprint') return 'Open stories exist, but not in the selected sprint.';
+    if (reason === 'team_missing_selected') return 'This team has no story for the selected sprint.';
     return 'Needs sprint-ready stories.';
 }
 
@@ -49,4 +50,56 @@ export function classifyFuturePlanningNeedsStories({
     }
 
     return { epic, reason: 'stories_in_other_sprint' };
+}
+
+// Per-team variant of the Needs Stories check. A labeled team is "sprint-ready"
+// only when it has its OWN open story in the selected sprint, so an epic can be
+// covered for one team yet still owe stories for another. selectedActionableByTeam
+// is the authoritative per-team count from the backend distribution; without it we
+// degrade to the epic-wide classification rather than over-reporting.
+export function classifyFuturePlanningTeamNeedsStories({
+    epic,
+    teamId,
+    epicStories = [],
+    normalizeStatus,
+    isTaskInSelectedSprint
+} = {}) {
+    const byTeam = epic?.selectedActionableByTeam;
+    if (!byTeam || typeof byTeam !== 'object') {
+        return classifyFuturePlanningNeedsStories({ epic, epicStories, normalizeStatus, isTaskInSelectedSprint });
+    }
+    if (Number(byTeam[teamId] || 0) > 0) {
+        return null;
+    }
+    if (Number(epic?.selectedActionableStories || 0) > 0) {
+        return { epic, reason: 'team_missing_selected' };
+    }
+    return classifyFuturePlanningNeedsStories({ epic, epicStories, normalizeStatus, isTaskInSelectedSprint });
+}
+
+// Fan an epic out to one Needs Stories entry per labeled team that still owes a
+// sprint story, dropping teams already covered. Each entry carries its team so the
+// alert can group without re-deriving team membership from the epic.
+export function buildNeedsStoriesTeamEntries({
+    epic,
+    teamInfos = [],
+    epicStories = [],
+    normalizeStatus,
+    isTaskInSelectedSprint
+} = {}) {
+    const entries = [];
+    (teamInfos || []).forEach((team) => {
+        if (!team) return;
+        const result = classifyFuturePlanningTeamNeedsStories({
+            epic,
+            teamId: team.id,
+            epicStories,
+            normalizeStatus,
+            isTaskInSelectedSprint
+        });
+        if (result) {
+            entries.push({ ...result, team });
+        }
+    });
+    return entries;
 }

@@ -153,6 +153,95 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         self.assertEqual(epics[0].get('openStoriesOutsideSelected'), 2)
         self.assertEqual(epics_fetch.call_args.args[-1], '2026Q3')
 
+    def test_story_distribution_breaks_selected_actionable_down_by_team(self):
+        jira_payload = {
+            'issues': [
+                {'key': 'S1', 'fields': {'customfield_epic_link': 'EPIC-1', 'status': {'name': 'To Do'}, 'customfield_team': {'id': 'team-a'}}},
+                {'key': 'S2', 'fields': {'customfield_epic_link': 'EPIC-1', 'status': {'name': 'Done'}, 'customfield_team': {'id': 'team-a'}}},
+                {'key': 'S3', 'fields': {'customfield_epic_link': 'EPIC-1', 'status': {'name': 'In Progress'}, 'customfield_team': {'id': 'team-b'}}},
+            ],
+            'isLast': True,
+        }
+
+        with patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, jira_payload)):
+            distribution = jira_server.fetch_story_distribution_for_epics(
+                ['EPIC-1'], {}, 'customfield_epic_link', '42', team_field_id='customfield_team'
+            )
+
+        self.assertEqual(distribution['EPIC-1']['selectedActionableStories'], 2)
+        self.assertEqual(
+            distribution['EPIC-1']['selectedActionableByTeam'],
+            {'team-a': 1, 'team-b': 1}
+        )
+
+    def test_story_distribution_without_selected_sprint_has_empty_team_breakdown(self):
+        jira_payload = {
+            'issues': [
+                {'key': 'S1', 'fields': {'customfield_epic_link': 'EPIC-1', 'status': {'name': 'To Do'}, 'customfield_team': {'id': 'team-a'}}},
+            ],
+            'isLast': True,
+        }
+
+        with patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, jira_payload)):
+            distribution = jira_server.fetch_story_distribution_for_epics(
+                ['EPIC-1'], {}, 'customfield_epic_link', '', team_field_id='customfield_team'
+            )
+
+        self.assertEqual(distribution['EPIC-1']['selectedActionableByTeam'], {})
+
+    def test_fetch_tasks_attaches_selected_actionable_by_team_and_threads_team_field(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+
+        jira_payload = {
+            'issues': [],
+            'names': {
+                'customfield_team': 'Team[Team]',
+                'customfield_epic_link': 'Epic Link',
+                'customfield_sprint': 'Sprint',
+            },
+            'isLast': True,
+        }
+        epics_in_scope = [{
+            'key': 'EPIC-1',
+            'summary': 'Epic one',
+            'status': {'name': 'To Do'},
+            'labels': ['2026Q3', 'team_alpha_label'],
+            'teamId': 'team-a',
+            'teamName': 'Team Alpha',
+            'fields': {'customfield_10101': [{'id': 123, 'name': '2026Q3'}]},
+        }]
+        distribution_mock = Mock(return_value={
+            'EPIC-1': {
+                'selectedStories': 1,
+                'selectedActionableStories': 1,
+                'futureOpenStories': 0,
+                'openStoriesOutsideSelected': 0,
+                'selectedActionableByTeam': {'team-a': 1},
+            }
+        })
+
+        with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+             patch.object(jira_server, 'get_selected_projects_typed', return_value=[]), \
+             patch.object(jira_server, 'get_configured_issue_types', return_value=['Story']), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+             patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_story_points'), \
+             patch.object(jira_server, 'fetch_epic_details_bulk', return_value={}), \
+             patch.object(jira_server, 'fetch_epics_for_empty_alert', return_value=epics_in_scope), \
+             patch.object(jira_server, 'fetch_story_counts_for_epics', return_value={'EPIC-1': 2}), \
+             patch.object(jira_server, 'fetch_story_distribution_for_epics', distribution_mock), \
+             patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, jira_payload)):
+            response = client.get('/api/tasks-with-team-name?sprint=789&sprintName=2026Q4&team=all')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        epics = (response.get_json() or {}).get('epicsInScope') or []
+        self.assertEqual(len(epics), 1)
+        self.assertEqual(epics[0].get('selectedActionableByTeam'), {'team-a': 1})
+        self.assertEqual(distribution_mock.call_args.kwargs.get('team_field_id'), 'customfield_team')
+
     def test_fetch_tasks_passes_request_team_labels_to_epic_scope(self):
         app = jira_server.app
         app.testing = True

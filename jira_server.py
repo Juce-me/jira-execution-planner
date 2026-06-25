@@ -2745,8 +2745,13 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
     return counts
 
 
-def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, selected_sprint):
-    """Return selected/future not-completed story counts for each epic key."""
+def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, selected_sprint, team_field_id=None):
+    """Return selected/future not-completed story counts for each epic key.
+
+    selectedActionableByTeam breaks the selected-sprint open count down by the
+    story's Team[Team] id so the Needs Stories alert can tell which labeled teams
+    are still missing a sprint story even when other teams already created one.
+    """
     epic_keys = [k for k in (epic_keys or []) if k]
     if not epic_keys:
         return {}
@@ -2756,7 +2761,8 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
             'selectedStories': 0,
             'selectedActionableStories': 0,
             'futureOpenStories': 0,
-            'openStoriesOutsideSelected': 0
+            'openStoriesOutsideSelected': 0,
+            'selectedActionableByTeam': {}
         } for key in epic_keys
     }
     batch_size = 40
@@ -2843,18 +2849,25 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                     status_name = ((fields_obj.get('status') or {}).get('name') if isinstance(fields_obj.get('status'), dict) else None)
                     if is_actionable_selected_status(status_name):
                         distribution[epic_key]['selectedActionableStories'] += 1
+                        if team_field_id:
+                            by_team = distribution[epic_key]['selectedActionableByTeam']
+                            for team_id in extract_team_ids(fields_obj.get(team_field_id)):
+                                by_team[team_id] = by_team.get(team_id, 0) + 1
                 next_page_token = data.get('nextPageToken')
                 if data.get('isLast', not next_page_token) or not next_page_token:
                     break
 
+        selected_fields = [epic_link_field, 'parent', 'status'] if epic_link_field else ['parent', 'status']
+        if team_field_id:
+            selected_fields.append(team_field_id)
         if epic_link_field:
             combined_jql = (
                 f'{where_clause} AND (("Epic Link" in ({quoted_keys})) OR (parent in ({quoted_keys})))'
             )
-            run_query(combined_jql, [epic_link_field, 'parent', 'status'])
+            run_query(combined_jql, selected_fields)
         else:
             jql_parent = f'{where_clause} AND parent in ({quoted_keys})'
-            run_query(jql_parent, ['parent', 'status'])
+            run_query(jql_parent, selected_fields)
 
     selected_clause = ''
     if selected_sprint:
@@ -3183,7 +3196,7 @@ def fetch_tasks(include_team_name=False):
                     fetch_story_counts_for_epics(epic_scope_keys, headers, epic_link_field)
                     if epic_link_field else None
                 )
-                epic_story_distribution = fetch_story_distribution_for_epics(epic_scope_keys, headers, epic_link_field, sprint)
+                epic_story_distribution = fetch_story_distribution_for_epics(epic_scope_keys, headers, epic_link_field, sprint, team_field_id=team_field_id)
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     future_epic_story_counts = (
@@ -3191,7 +3204,7 @@ def fetch_tasks(include_team_name=False):
                         if epic_link_field else None
                     )
                     future_epic_story_distribution = pool.submit(
-                        fetch_story_distribution_for_epics, epic_scope_keys, headers, epic_link_field, sprint
+                        fetch_story_distribution_for_epics, epic_scope_keys, headers, epic_link_field, sprint, team_field_id=team_field_id
                     )
                     epic_story_counts = future_epic_story_counts.result() if future_epic_story_counts else None
                     epic_story_distribution = future_epic_story_distribution.result()
@@ -3204,11 +3217,13 @@ def fetch_tasks(include_team_name=False):
                     epic['selectedActionableStories'] = epic_story_distribution[key].get('selectedActionableStories', 0)
                     epic['futureOpenStories'] = epic_story_distribution[key].get('futureOpenStories', 0)
                     epic['openStoriesOutsideSelected'] = epic_story_distribution[key].get('openStoriesOutsideSelected', 0)
+                    epic['selectedActionableByTeam'] = epic_story_distribution[key].get('selectedActionableByTeam', {})
                 else:
                     epic['selectedStories'] = 0
                     epic['selectedActionableStories'] = 0
                     epic['futureOpenStories'] = 0
                     epic['openStoriesOutsideSelected'] = 0
+                    epic['selectedActionableByTeam'] = {}
         slim_build_started = time.perf_counter()
         slim_issues = []
         for issue in collected_issues:

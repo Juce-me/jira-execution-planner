@@ -66,15 +66,22 @@ test('future planning epic alerts group by all matched team labels', () => {
 
     assert.match(
         source,
-        /import \{ epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel \}/
+        /import \{ epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel, buildNeedsStoriesTeamJql \}/
     );
     assert.match(
         source,
         /const getFuturePlanningTeamInfos = React\.useCallback/
     );
+    // Each epic fans out to every matched team label (so a team missing its own
+    // sprint story is not hidden by a peer team that has one), then groups by the
+    // team carried on each entry.
     assert.match(
         source,
-        /const needsStoriesTeams = groupAlertsByTeam\(needsStoriesEntries, \(entry\) => getFuturePlanningTeamInfos\(entry\.epic\),/
+        /teamInfos: getFuturePlanningTeamInfos\(epic\)/
+    );
+    assert.match(
+        source,
+        /const needsStoriesTeams = groupAlertsByTeam\(needsStoriesEntries, \(entry\) => entry\.team,/
     );
 });
 

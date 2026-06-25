@@ -5,14 +5,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 LEGACY_ENTRYPOINT_LINE_BUDGETS = {
-    # bugfix/ready-to-close-future-sprint-children attaches the authoritative
-    # openChildCount to ready-to-close epics (reusing fetch_story_distribution_for_epics)
-    # so silent 250-cap truncation can no longer fire the alert on epics with open
-    # future-sprint work; counting logic stays in the existing helper.
-    "jira_server.py": 5933,
-    # EXEC-epm-label-config-bugfixes adds removedEpmProjectIds state, deleteEpmProjectRow,
-    # pendingLabelFocusRef, requestEpmLabelFocus/registerEpmLabelInput helpers, and reset effects.
-    "frontend/src/dashboard.jsx": 15374,
+    # bugfix/needs-stories-per-team breaks the selected-sprint actionable count down by
+    # team (selectedActionableByTeam) in fetch_story_distribution_for_epics, threading the
+    # team field through and attaching the breakdown to each scoped epic.
+    "jira_server.py": 5948,
+    # bugfix/needs-stories-per-team fans Needs Stories entries out per matched team via
+    # buildNeedsStoriesTeamEntries, dedupes the epic chip count, and links each team header
+    # to a semantic JQL filter (buildNeedsStoriesTeamLink) instead of a frozen key list.
+    "frontend/src/dashboard.jsx": 15395,
 }
 
 

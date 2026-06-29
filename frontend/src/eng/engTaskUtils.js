@@ -151,11 +151,11 @@ export const PROJECT_TRACK_EMOJI = Object.freeze({
 export const DEFAULT_ENG_EPIC_SORT = 'default';
 
 export const ENG_EPIC_SORT_OPTIONS = Object.freeze([
-    { value: 'default', label: 'Default (Jira order)' },
+    { value: 'default', label: 'Jira order' },
     { value: 'priority', label: 'Priority' },
     { value: 'status', label: 'Status' },
-    { value: 'track-committed', label: 'Track: Committed first' },
-    { value: 'track-flexible', label: 'Track: Flexible first' },
+    { value: 'track-committed', label: 'Committed ⬇' },
+    { value: 'track-flexible', label: 'Flexible ⬇' },
 ]);
 
 export function normalizeEngEpicSort(value) {

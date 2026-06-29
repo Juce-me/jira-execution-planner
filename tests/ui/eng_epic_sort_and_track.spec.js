@@ -165,11 +165,12 @@ test('epic header shows effective priority pill and Product Track emoji', async 
     await openEng(page, { width: 1280, height: 900 });
 
     const committedHeader = page.locator('.epic-block', { hasText: 'COMMIT-1' }).locator('.epic-header');
-    await expect(committedHeader.locator('.epic-priority-pill')).toHaveText(/High/i);
+    await expect(committedHeader.locator('.task-priority-icon[data-priority="High"]')).toBeVisible();
     await expect(committedHeader.locator('.epic-track-indicator')).toHaveText('🔒');
 
     const flexHeader = page.locator('.epic-block', { hasText: 'FLEX-1' }).locator('.epic-header');
     await expect(flexHeader.locator('.epic-track-indicator')).toHaveText('🤷');
+    await expect(flexHeader.locator('.task-priority-icon[data-priority="Low"]')).toBeVisible();
 
     await page.screenshot({ path: `${screenshotDir}/epic-priority-track.png`, fullPage: false });
 });

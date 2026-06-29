@@ -12341,6 +12341,16 @@ import {
                                                     />
                                                 </svg>
                                             </span>
+                                            {effectivePriority.name && renderPriorityIcon(effectivePriority.name, epicGroup.key)}
+                                            {projectTrackEmoji && (
+                                                <span
+                                                    className="epic-track-indicator"
+                                                    title={`Product Track: ${projectTrackValue}`}
+                                                    aria-label={`Product Track: ${projectTrackValue}`}
+                                                >
+                                                    {projectTrackEmoji}
+                                                </span>
+                                            )}
                                             {epicGroup.key !== 'NO_EPIC' ? (
                                                 <a
                                                     className="epic-link"
@@ -12378,23 +12388,6 @@ import {
                                         </div>
 	                                    </div>
 	                                    <div className="epic-meta">
-                                            {effectivePriority.name && (
-                                                <span
-                                                    className="epic-priority-pill"
-                                                    title={'Priority: ' + effectivePriority.name}
-                                                >
-                                                    {effectivePriority.name}
-                                                </span>
-                                            )}
-                                            {projectTrackEmoji && (
-                                                <span
-                                                    className="epic-track-indicator"
-                                                    title={'Product Track: ' + projectTrackValue}
-                                                    aria-label={'Product Track: ' + projectTrackValue}
-                                                >
-                                                    {projectTrackEmoji}
-                                                </span>
-                                            )}
                                             {epicStatus && (
                                                 <StatusPill
                                                     className={epicStatusClassName}

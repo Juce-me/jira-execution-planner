@@ -2202,6 +2202,7 @@ SPRINT_FIELD_DEFAULT = 'customfield_10101'
 STORY_POINTS_FIELD_DEFAULT = 'customfield_10004'
 PARENT_NAME_FIELD_DEFAULT = 'customfield_10011'
 TEAM_FIELD_DEFAULT = 'customfield_30101'
+PROJECT_TRACK_FIELD_DEFAULT = 'customfield_35024'
 
 
 def get_sprint_field_config():
@@ -2251,6 +2252,21 @@ def get_team_field_config():
 
 def get_team_field_id():
     return get_team_field_config()['fieldId'] or TEAM_FIELD_DEFAULT
+
+
+def get_project_track_field_config():
+    try:
+        config = load_dashboard_config()
+    except ConfigStorageError:
+        config = None
+    if config and 'projectTrackField' in config:
+        pt = config['projectTrackField']
+        return {'fieldId': pt.get('fieldId', ''), 'fieldName': pt.get('fieldName', '')}
+    return {'fieldId': PROJECT_TRACK_FIELD_DEFAULT, 'fieldName': ''}
+
+
+def get_project_track_field_id():
+    return get_project_track_field_config()['fieldId'] or PROJECT_TRACK_FIELD_DEFAULT
 
 
 def get_configured_issue_types():
@@ -2459,6 +2475,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
         return epic_details
 
     epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
+    project_track_field = get_project_track_field_id()
     keys_list = list(epic_keys)
     batch_size = 40  # keep JQL length reasonable for GET
 
@@ -2468,7 +2485,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
         payload = {
             'jql': jql,
             'maxResults': len(batch_keys),
-            'fields': ['summary', 'status', 'reporter', 'assignee', 'parent', epic_field]
+            'fields': ['summary', 'status', 'reporter', 'assignee', 'parent', epic_field, project_track_field]
         }
 
         try:
@@ -2487,6 +2504,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
                     'status': (fields.get('status') or {}).get('name') or '',
                     'reporter': (fields.get('reporter') or {}).get('displayName'),
                     'assignee': {'displayName': (fields.get('assignee') or {}).get('displayName')} if fields.get('assignee') else None,
+                    'projectTrack': (fields.get(project_track_field) or {}).get('value') if fields.get(project_track_field) else None,
                 }
                 # Extract initiative from parent if present
                 parent = fields.get('parent')

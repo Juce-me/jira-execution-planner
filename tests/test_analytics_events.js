@@ -416,3 +416,54 @@ test('tracked fetch does not let analytics validation failures affect API fetch'
     assert.equal(response.status, 200);
     delete global.fetch;
 });
+
+async function loadDashboardAnalytics() {
+    return import('../frontend/src/analytics/dashboardAnalytics.js');
+}
+
+test('buildSortChangedParams produces correct ENG sort payload with source_surface=eng', async () => {
+    const { buildSortChangedParams } = await loadDashboardAnalytics();
+    const { sanitizeAnalyticsParams } = await loadEvents();
+
+    // ENG call site: trackSortChanged('eng_epics', value, { feature_name: 'eng', source_surface: 'eng' })
+    const payload = buildSortChangedParams('eng_epics', 'track-committed', { feature_name: 'eng', source_surface: 'eng' });
+    assert.deepEqual(payload, {
+        feature_name: 'eng',
+        sort_scope: 'eng_epics',
+        sort_key: 'track_committed',
+        source_surface: 'eng',
+    });
+
+    // sanitize must keep all ENG values and strip no required fields
+    assert.deepEqual(
+        sanitizeAnalyticsParams(payload, 'sort_changed'),
+        {
+            feature_name: 'eng',
+            sort_scope: 'eng_epics',
+            sort_key: 'track_committed',
+            source_surface: 'eng',
+        }
+    );
+});
+
+test('buildSortChangedParams defaults to epm surface for EPM callers', async () => {
+    const { buildSortChangedParams } = await loadDashboardAnalytics();
+
+    const payload = buildSortChangedParams('projects', 'updated-desc');
+    assert.deepEqual(payload, {
+        feature_name: 'epm',
+        sort_scope: 'projects',
+        sort_key: 'updated_desc',
+        source_surface: 'epm',
+    });
+});
+
+test('sort_changed rejects raw hyphenated sort keys that bypass analyticsToken', async () => {
+    const { sanitizeAnalyticsParams } = await loadEvents();
+
+    // Raw hyphenated sort values (pre-analyticsToken) are rejected as unsafe
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'eng', sort_scope: 'eng_epics', sort_key: 'track-committed', source_surface: 'eng' }, 'sort_changed'),
+        /unsafe analytics value/
+    );
+});

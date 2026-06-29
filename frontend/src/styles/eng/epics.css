@@ -359,3 +359,11 @@
             padding: 0.18rem 0.48rem;
             white-space: nowrap;
         }
+
+        .epic-track-indicator {
+            font-size: 0.85rem;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            cursor: default;
+        }

@@ -350,6 +350,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 - For Lead Times/stats panel UI changes, verify long lists with more than 30 open and completed epics, active inner-view overflow, load-more behavior, and a screenshot before reporting completion.
 - For ENG filter/display visual changes, keep Display controls in the same compact card grammar as Show only, and verify selected/unselected states side by side against the user's screenshot before reporting completion.
 - Treat Ad Hoc capacity, including business-as-usual work, as included Product capacity; configure it separately from `excludedCapacityEpics`.
+- When the user names a Jira field like `X[Dropdown]` (e.g. "Project Track[Dropdown]"), treat it as an existing Jira custom field to fetch by id and render (map values to emoji/icons), not a label convention to invent; discover the real field id and beware duplicate-named fields — pick the one actually populated on the target issues.
+- Config-reading field-id getters (`get_*_field_config`) invoked from no-request-context helpers like `fetch_epic_details_bulk` must catch `ConfigStorageError` and fall back to the default field id in DB mode. Run the FULL Python suite (incl. `test_initiative_extraction`, `test_codebase_structure_budgets`) as the baseline and before claiming done — focused per-task runs miss no-request-context regressions and structure-budget breaches; ratchet the budgets when these legacy entrypoints legitimately grow.
+- New ENG dropdowns placed inside the animated `.filters-strip` need a `:has(.<hook> .sprint-dropdown-panel)` z-index lift mirroring `.view-selector:has(.sprint-dropdown-panel)`, or the panel renders under `.task-list`; a Playwright `click({ force: true })` masks this real layering bug, so prove dropdown options are clickable with a normal click.
 
 ---
 

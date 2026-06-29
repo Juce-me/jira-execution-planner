@@ -25,6 +25,27 @@ class ProjectTrackFieldConfigTests(unittest.TestCase):
 
 
 class FetchEpicDetailsProjectTrackTests(unittest.TestCase):
+    def test_config_override_field_requested_and_value_parsed(self):
+        captured = {}
+
+        def fake_search(payload):
+            captured['payload'] = payload
+            return _FakeResp(200, {'issues': [
+                {'key': 'PRODUCT-1', 'fields': {
+                    'summary': 'Epic one',
+                    'status': {'name': 'In Progress'},
+                    'customfield_99999': {'value': 'Committed'},
+                }},
+            ]})
+
+        cfg = {'projectTrackField': {'fieldId': 'customfield_99999', 'fieldName': 'Project Track'}}
+        with patch.object(jira_server, 'load_dashboard_config', return_value=cfg), \
+             patch.object(jira_server, 'jira_search_request', side_effect=fake_search):
+            details = jira_server.fetch_epic_details_bulk(['PRODUCT-1'], {}, None)
+
+        self.assertIn('customfield_99999', captured['payload']['fields'])
+        self.assertEqual(details['PRODUCT-1']['projectTrack'], 'Committed')
+
     def test_field_requested_and_value_parsed(self):
         captured = {}
 

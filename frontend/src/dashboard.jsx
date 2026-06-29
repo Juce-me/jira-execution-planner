@@ -870,8 +870,6 @@ import {
             const [updateDismissedHash, setUpdateDismissedHash] = useState(savedPrefsRef.current.updateDismissedHash || '');
             const [showBackToTop, setShowBackToTop] = useState(false);
             const [stickyEpicFocusKey, setStickyEpicFocusKey] = useState(null);
-            const epicOrderRef = useRef({});
-            const epicOrderCounterRef = useRef(0);
             const epicRefMap = useRef(new Map());
             const stickyEpicFrameRef = useRef(null);
             const groupStateRef = useRef(new Map());
@@ -5496,11 +5494,6 @@ import {
 
             useEffect(() => {
                 setTechLoaded(false);
-            }, [selectedSprint]);
-
-            useEffect(() => {
-                epicOrderRef.current = {};
-                epicOrderCounterRef.current = 0;
             }, [selectedSprint]);
 
             useEffect(() => {
@@ -10250,9 +10243,6 @@ import {
                 taskList.forEach(task => {
                     const epicKey = task.fields.epicKey || 'NO_EPIC';
                     if (!grouped[epicKey]) {
-                        if (epicOrderRef.current[epicKey] === undefined) {
-                            epicOrderRef.current[epicKey] = epicOrderCounterRef.current++;
-                        }
                         grouped[epicKey] = {
                             epic: epicDetails[epicKey] || null,
                             key: epicKey,
@@ -10302,7 +10292,7 @@ import {
 
             const epicGroups = React.useMemo(() => {
                 const groups = Object.values(groupTasksByEpic(visibleTasksForList));
-                return sortEpicGroups(groups, engEpicSort, { order: epicOrderRef.current });
+                return sortEpicGroups(groups, engEpicSort);
             }, [visibleTasksForList, epicDetails, engEpicSort]);
 
             const hasInitiativeData = React.useMemo(() => {

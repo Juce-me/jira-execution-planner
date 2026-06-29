@@ -49,7 +49,8 @@ test('getProjectTrackEmoji maps values', async () => {
 
 test('normalizeEngEpicSort + label', async () => {
   const { normalizeEngEpicSort, getEngEpicSortLabel } = await import(modUrl);
-  assert.equal(normalizeEngEpicSort('bogus'), 'default');
+  assert.equal(normalizeEngEpicSort('bogus'), 'priority');
+  assert.equal(normalizeEngEpicSort('default'), 'priority');
   assert.equal(normalizeEngEpicSort('track-flexible'), 'track-flexible');
   assert.equal(getEngEpicSortLabel('priority'), 'Priority');
 });
@@ -115,9 +116,18 @@ test('sortEpicGroups: status sorts unmapped last and tiebreaks same phase by pri
   assert.deepEqual(sortEpicGroups(groups, 'status', { order }).map(g => g.key), ['C', 'B', 'A']);
 });
 
-test('sortEpicGroups: default keeps insertion order', async () => {
+test('sortEpicGroups: removed default mode falls back to priority', async () => {
   const { sortEpicGroups } = await import(modUrl);
   const groups = [epic('A', 'Done', null, ['Low']), epic('B', 'To Do', null, ['Blocker'])];
-  const order = { A: 0, B: 1 };
-  assert.deepEqual(sortEpicGroups(groups, 'default', { order }).map(g => g.key), ['A', 'B']);
+  assert.deepEqual(sortEpicGroups(groups, 'default').map(g => g.key), ['B', 'A']);
+});
+
+test('sortEpicGroups: priority keeps input order for equal-rank epics', async () => {
+  const { sortEpicGroups } = await import(modUrl);
+  const groups = [
+    epic('A', 'Done', null, ['Major']),
+    epic('B', 'To Do', null, ['Major']),
+    epic('C', 'In Progress', null, ['Major']),
+  ];
+  assert.deepEqual(sortEpicGroups(groups, 'priority').map(g => g.key), ['A', 'B', 'C']);
 });

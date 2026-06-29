@@ -148,10 +148,9 @@ export const PROJECT_TRACK_EMOJI = Object.freeze({
     flexible: '🤷',
 });
 
-export const DEFAULT_ENG_EPIC_SORT = 'default';
+export const DEFAULT_ENG_EPIC_SORT = 'priority';
 
 export const ENG_EPIC_SORT_OPTIONS = Object.freeze([
-    { value: 'default', label: 'Jira order' },
     { value: 'priority', label: 'Priority' },
     { value: 'status', label: 'Status' },
     { value: 'track-committed', label: 'Committed ⬇' },
@@ -212,39 +211,33 @@ export function getProjectTrackEmoji(track) {
     return PROJECT_TRACK_EMOJI[t] || '';
 }
 
-function epicInsertionRank(epicGroup, order) {
-    const rank = order && order[epicGroup.key];
-    return (rank === undefined || rank === null) ? 999999 : rank;
-}
-
 export function compareEpicGroups(a, b, sortMode, opts = {}) {
     const {
         priorityOrder = PRIORITY_ORDER,
         phaseRanks = DEFAULT_STATUS_PHASE_RANKS,
-        order = {},
     } = opts;
     const mode = normalizeEngEpicSort(sortMode);
-    const insertionTie = epicInsertionRank(a, order) - epicInsertionRank(b, order);
-    if (mode === 'default') return insertionTie;
 
+    // Effective priority is the primary key for every mode; equal-rank ties fall
+    // through to 0 so the stable sort keeps the input (Jira-returned) order.
     const pa = getEpicEffectivePriority(a, priorityOrder).rank;
     const pb = getEpicEffectivePriority(b, priorityOrder).rank;
 
-    if (mode === 'priority') {
-        return pa !== pb ? pa - pb : insertionTie;
-    }
     if (mode === 'status') {
         const sa = getStatusPhaseRank(epicStatusName(a.epic), phaseRanks);
         const sb = getStatusPhaseRank(epicStatusName(b.epic), phaseRanks);
         if (sa !== sb) return sa - sb;
-        return pa !== pb ? pa - pb : insertionTie;
+        return pa - pb;
     }
-    // track-committed | track-flexible
-    const committedFirst = mode === 'track-committed';
-    const ta = getProjectTrackRank(a.epic && a.epic.projectTrack, committedFirst);
-    const tb = getProjectTrackRank(b.epic && b.epic.projectTrack, committedFirst);
-    if (ta !== tb) return ta - tb;
-    return pa !== pb ? pa - pb : insertionTie;
+    if (mode === 'track-committed' || mode === 'track-flexible') {
+        const committedFirst = mode === 'track-committed';
+        const ta = getProjectTrackRank(a.epic && a.epic.projectTrack, committedFirst);
+        const tb = getProjectTrackRank(b.epic && b.epic.projectTrack, committedFirst);
+        if (ta !== tb) return ta - tb;
+        return pa - pb;
+    }
+    // priority
+    return pa - pb;
 }
 
 export function sortEpicGroups(groups, sortMode, opts = {}) {

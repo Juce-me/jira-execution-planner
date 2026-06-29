@@ -119,3 +119,134 @@ export function resetEngFilters({
         visible_count_bucket: visibleCountBucket
     });
 }
+
+// --- Epic ordering: effective priority, status phase, Product Track ---
+
+// Built-in status→phase rank fallback: the BSWRND prod/tech board column order
+// (To Do → Analysis → Ready → Blocked → In Progress → Done) extended with the app's known
+// status synonyms (mirrors the buckets in getTaskCategory()/statusColors.js). Unmapped → 999
+// (sorted last). A future per-group board-import foundation can pass a board-derived map via
+// sortEpicGroups(..., { phaseRanks }); this constant is the fallback.
+export const DEFAULT_STATUS_PHASE_RANKS = Object.freeze({
+    // 0 — To Do
+    'to do': 0, 'todo': 0, 'open': 0, 'reopened': 0, 'backlog': 0, 'selected for development': 0,
+    // 1 — Analysis
+    'analysis': 1,
+    // 2 — Ready to start
+    'accepted': 2, 'awaiting validation': 2, 'postponed': 2, 'pending': 2,
+    // 3 — Blocked / external
+    'blocked': 3, 'external block': 3, 'on hold': 3, 'impediment': 3, 'waiting': 3, 'waiting for release': 3,
+    // 4 — In progress
+    'in progress': 4, 'in development': 4, 'in review': 4, 'in testing': 4, 'incomplete': 4, 'release': 4,
+    // 5 — Done / terminal
+    'done': 5, 'closed': 5, 'resolved': 5, 'released': 5, 'complete': 5, 'completed': 5,
+    'killed': 5, 'cancelled': 5, 'canceled': 5, 'rejected': 5, "won't do": 5,
+});
+
+export const PROJECT_TRACK_EMOJI = Object.freeze({
+    committed: '🔒',
+    flexible: '🤷',
+});
+
+export const DEFAULT_ENG_EPIC_SORT = 'default';
+
+export const ENG_EPIC_SORT_OPTIONS = Object.freeze([
+    { value: 'default', label: 'Default (Jira order)' },
+    { value: 'priority', label: 'Priority' },
+    { value: 'status', label: 'Status' },
+    { value: 'track-committed', label: 'Track: Committed first' },
+    { value: 'track-flexible', label: 'Track: Flexible first' },
+]);
+
+export function normalizeEngEpicSort(value) {
+    return ENG_EPIC_SORT_OPTIONS.some(o => o.value === value) ? value : DEFAULT_ENG_EPIC_SORT;
+}
+
+export function getEngEpicSortLabel(value) {
+    const match = ENG_EPIC_SORT_OPTIONS.find(o => o.value === normalizeEngEpicSort(value));
+    return match ? match.label : '';
+}
+
+// Most-urgent (lowest PRIORITY_ORDER rank) child-task priority. Returns { name, rank }.
+// A present-but-unrecognized priority name resolves to rank 998 (still outranks a no-priority
+// epic, which is { name:null, rank:999 } and sorts last).
+export function getEpicEffectivePriority(epicGroup, priorityOrder = PRIORITY_ORDER) {
+    let bestName = null;
+    let bestRank = 999;
+    const tasks = (epicGroup && epicGroup.tasks) || [];
+    for (const task of tasks) {
+        const name = task && task.fields && task.fields.priority && task.fields.priority.name;
+        if (!name) continue;
+        const rank = priorityOrder[name];
+        const resolved = (rank === undefined || rank === null) ? 998 : rank;
+        if (resolved < bestRank) {
+            bestRank = resolved;
+            bestName = name;
+        }
+    }
+    return { name: bestName, rank: bestName === null ? 999 : bestRank };
+}
+
+function epicStatusName(epic) {
+    const status = epic && epic.status;
+    if (!status) return '';
+    return typeof status === 'string' ? status : (status.name || '');
+}
+
+export function getStatusPhaseRank(statusName, phaseRanks = DEFAULT_STATUS_PHASE_RANKS) {
+    if (!statusName) return 999;
+    const key = String(statusName).trim().toLowerCase();
+    const rank = phaseRanks[key];
+    return (rank === undefined || rank === null) ? 999 : rank;
+}
+
+export function getProjectTrackRank(track, committedFirst = true) {
+    const t = String(track || '').trim().toLowerCase();
+    if (t === 'committed') return committedFirst ? 0 : 1;
+    if (t === 'flexible') return committedFirst ? 1 : 0;
+    return 2;
+}
+
+export function getProjectTrackEmoji(track) {
+    const t = String(track || '').trim().toLowerCase();
+    return PROJECT_TRACK_EMOJI[t] || '';
+}
+
+function epicInsertionRank(epicGroup, order) {
+    const rank = order && order[epicGroup.key];
+    return (rank === undefined || rank === null) ? 999999 : rank;
+}
+
+export function compareEpicGroups(a, b, sortMode, opts = {}) {
+    const {
+        priorityOrder = PRIORITY_ORDER,
+        phaseRanks = DEFAULT_STATUS_PHASE_RANKS,
+        order = {},
+    } = opts;
+    const mode = normalizeEngEpicSort(sortMode);
+    const insertionTie = epicInsertionRank(a, order) - epicInsertionRank(b, order);
+    if (mode === 'default') return insertionTie;
+
+    const pa = getEpicEffectivePriority(a, priorityOrder).rank;
+    const pb = getEpicEffectivePriority(b, priorityOrder).rank;
+
+    if (mode === 'priority') {
+        return pa !== pb ? pa - pb : insertionTie;
+    }
+    if (mode === 'status') {
+        const sa = getStatusPhaseRank(epicStatusName(a.epic), phaseRanks);
+        const sb = getStatusPhaseRank(epicStatusName(b.epic), phaseRanks);
+        if (sa !== sb) return sa - sb;
+        return pa !== pb ? pa - pb : insertionTie;
+    }
+    // track-committed | track-flexible
+    const committedFirst = mode === 'track-committed';
+    const ta = getProjectTrackRank(a.epic && a.epic.projectTrack, committedFirst);
+    const tb = getProjectTrackRank(b.epic && b.epic.projectTrack, committedFirst);
+    if (ta !== tb) return ta - tb;
+    return pa !== pb ? pa - pb : insertionTie;
+}
+
+export function sortEpicGroups(groups, sortMode, opts = {}) {
+    return [...(groups || [])].sort((a, b) => compareEpicGroups(a, b, sortMode, opts));
+}

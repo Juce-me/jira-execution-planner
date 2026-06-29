@@ -183,7 +183,7 @@ test('Sort dropdown reorders epics by Product Track (committed first)', async ({
     // The dropdown panel is inside .filters-strip which has animation-fill-mode:both; the
     // resulting transform stacking context puts the panel behind the task list in z-order.
     // Force the click so the option registers regardless of pointer-event interception.
-    await page.locator('.eng-epic-sort-dropdown .sprint-dropdown-option', { hasText: 'Track: Committed first' }).click({ force: true });
+    await page.locator('.eng-epic-sort-dropdown .sprint-dropdown-option', { hasText: 'Track: Committed first' }).click();
 
     const keys = await page.locator('.task-list .epic-block .epic-key').allInnerTexts();
     const iCommit = keys.findIndex(k => k.includes('COMMIT-1'));

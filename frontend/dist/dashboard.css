@@ -2650,6 +2650,10 @@ button.toggle.applied-filter.active {
   width: 100%;
   animation: task-appear 0.18s ease-out both;
 }
+.filters-strip:has(.eng-epic-sort-dropdown .sprint-dropdown-panel) {
+  position: relative;
+  z-index: calc(var(--sticky-control-overlay-z) + 2);
+}
 .filters-group {
   display: grid;
   gap: 0.28rem;

@@ -87,6 +87,17 @@ test('sortEpicGroups: track-committed groups committed first then priority', asy
   assert.deepEqual(sortEpicGroups(groups, 'track-committed', { order }).map(g => g.key), ['C', 'B', 'A']);
 });
 
+test('sortEpicGroups: track-flexible groups flexible first then committed by priority', async () => {
+  const { sortEpicGroups } = await import(modUrl);
+  const groups = [
+    epic('A', 'To Do', 'Flexible', ['Blocker']),
+    epic('B', 'To Do', 'Committed', ['Low']),
+    epic('C', 'To Do', 'Committed', ['High']),
+  ];
+  const order = { A: 0, B: 1, C: 2 };
+  assert.deepEqual(sortEpicGroups(groups, 'track-flexible', { order }).map(g => g.key), ['A', 'C', 'B']);
+});
+
 test('getEpicEffectivePriority: unknown priority name outranks no-priority', async () => {
   const { getEpicEffectivePriority } = await import(modUrl);
   assert.equal(getEpicEffectivePriority(epic('U', 'To Do', null, ['Wacky'])).rank, 998);

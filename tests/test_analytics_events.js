@@ -416,3 +416,31 @@ test('tracked fetch does not let analytics validation failures affect API fetch'
     assert.equal(response.status, 200);
     delete global.fetch;
 });
+
+test('sort_changed eng_epics scope passes schema validation and sanitizes hyphenated sort keys', async () => {
+    const { sanitizeAnalyticsParams } = await loadEvents();
+
+    // ENG epic sort keys are safe enum tokens after analyticsToken converts them
+    for (const sortKey of ['default', 'priority', 'status', 'track_committed', 'track_flexible']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'eng',
+                sort_scope: 'eng_epics',
+                sort_key: sortKey,
+                source_surface: 'epm',
+            }, 'sort_changed'),
+            {
+                feature_name: 'eng',
+                sort_scope: 'eng_epics',
+                sort_key: sortKey,
+                source_surface: 'epm',
+            }
+        );
+    }
+
+    // Raw hyphenated sort values (pre-analyticsToken) are rejected as unsafe
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'eng', sort_scope: 'eng_epics', sort_key: 'track-committed', source_surface: 'epm' }, 'sort_changed'),
+        /unsafe analytics value/
+    );
+});

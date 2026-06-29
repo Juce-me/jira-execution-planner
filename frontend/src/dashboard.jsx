@@ -26,7 +26,7 @@ import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
-import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji } from './eng/engTaskUtils.js';
+import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
@@ -405,6 +405,13 @@ import {
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
             const [epmProjectSort, setEpmProjectSort] = useState(normalizeEpmProjectSort(savedPrefsRef.current.epmProjectSort || DEFAULT_EPM_PROJECT_SORT));
+            const [engEpicSort, setEngEpicSort] = useState(
+                normalizeEngEpicSort(savedPrefsRef.current.engEpicSort || DEFAULT_ENG_EPIC_SORT)
+            );
+            const handleEngEpicSortChange = (value) => {
+                setEngEpicSort(value);
+                trackSortChanged('eng_epics', value, { feature_name: 'eng' });
+            };
             const [showEpmProjectDropdown, setShowEpmProjectDropdown] = useState(false);
             const epmProjectDropdownRefs = useRef({ main: null, compact: null });
             const [showEpmSubGoalFilterDropdown, setShowEpmSubGoalFilterDropdown] = useState(false);
@@ -5287,6 +5294,7 @@ import {
                     epmTab,
                     epmSelectedProjectId,
                     epmProjectSort,
+                    engEpicSort,
                     selectedSprint,
                     selectedTeams,
                     activeGroupId,
@@ -5337,6 +5345,7 @@ import {
                 epmTab,
                 epmSelectedProjectId,
                 epmProjectSort,
+                engEpicSort,
                 selectedSprint,
                 selectedTeams,
                 activeGroupId,
@@ -10292,9 +10301,9 @@ import {
             };
 
             const epicGroups = React.useMemo(() => {
-                return Object.values(groupTasksByEpic(visibleTasksForList))
-                    .sort((a, b) => (epicOrderRef.current[a.key] ?? 999999) - (epicOrderRef.current[b.key] ?? 999999));
-            }, [visibleTasksForList, epicDetails]);
+                const groups = Object.values(groupTasksByEpic(visibleTasksForList));
+                return sortEpicGroups(groups, engEpicSort, { order: epicOrderRef.current });
+            }, [visibleTasksForList, epicDetails, engEpicSort]);
 
             const hasInitiativeData = React.useMemo(() => {
                 return epicGroups.some(eg => epicDetails[eg.key]?.initiative);
@@ -14765,6 +14774,8 @@ import {
                                     renderEpicBlock={renderEpicBlock}
                                     jiraUrl={jiraUrl}
                                     onClearFilters={clearEngFilters}
+                                    engEpicSort={engEpicSort}
+                                    setEngEpicSort={handleEngEpicSortChange}
                                 />
                             )}
 

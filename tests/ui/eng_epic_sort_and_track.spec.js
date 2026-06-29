@@ -173,3 +173,23 @@ test('epic header shows effective priority pill and Product Track emoji', async 
 
     await page.screenshot({ path: `${screenshotDir}/epic-priority-track.png`, fullPage: false });
 });
+
+test('Sort dropdown reorders epics by Product Track (committed first)', async ({ page }) => {
+    // FLEX-1 appears after COMMIT-1 in default fixture order; pick "Track: Committed first"
+    // and assert COMMIT-1's .epic-block precedes FLEX-1's .epic-block in the DOM.
+    await openEng(page, { width: 1280, height: 900 });
+
+    await page.locator('.eng-epic-sort-dropdown .sprint-dropdown-toggle').click();
+    // The dropdown panel is inside .filters-strip which has animation-fill-mode:both; the
+    // resulting transform stacking context puts the panel behind the task list in z-order.
+    // Force the click so the option registers regardless of pointer-event interception.
+    await page.locator('.eng-epic-sort-dropdown .sprint-dropdown-option', { hasText: 'Track: Committed first' }).click({ force: true });
+
+    const keys = await page.locator('.task-list .epic-block .epic-key').allInnerTexts();
+    const iCommit = keys.findIndex(k => k.includes('COMMIT-1'));
+    const iFlex = keys.findIndex(k => k.includes('FLEX-1'));
+    expect(iCommit).toBeGreaterThanOrEqual(0);
+    expect(iCommit).toBeLessThan(iFlex);
+
+    await page.screenshot({ path: `${screenshotDir}/sort-track-committed-first.png`, fullPage: false });
+});

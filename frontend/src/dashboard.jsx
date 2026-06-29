@@ -26,7 +26,7 @@ import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
-import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters } from './eng/engTaskUtils.js';
+import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
@@ -12304,6 +12304,9 @@ import {
                         const epicStatusClassName = epicStatus
                             ? getIssueStatusClassName(epicStatus, 'epic-status-pill')
                             : '';
+                        const effectivePriority = getEpicEffectivePriority(epicGroup);
+                        const projectTrackValue = epicInfo?.projectTrack || '';
+                        const projectTrackEmoji = getProjectTrackEmoji(projectTrackValue);
                         return (
                             <div
                                 key={epicGroup.key}
@@ -12366,6 +12369,23 @@ import {
                                         </div>
 	                                    </div>
 	                                    <div className="epic-meta">
+                                            {effectivePriority.name && (
+                                                <span
+                                                    className="epic-priority-pill"
+                                                    title={'Priority: ' + effectivePriority.name}
+                                                >
+                                                    {effectivePriority.name}
+                                                </span>
+                                            )}
+                                            {projectTrackEmoji && (
+                                                <span
+                                                    className="epic-track-indicator"
+                                                    title={'Product Track: ' + projectTrackValue}
+                                                    aria-label={'Product Track: ' + projectTrackValue}
+                                                >
+                                                    {projectTrackEmoji}
+                                                </span>
+                                            )}
                                             {epicStatus && (
                                                 <StatusPill
                                                     className={epicStatusClassName}

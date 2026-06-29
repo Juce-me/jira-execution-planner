@@ -4336,6 +4336,25 @@ button.toggle.initiative-toggle.active {
   padding: 0.18rem 0.48rem;
   white-space: nowrap;
 }
+.epic-priority-pill {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.18rem 0.48rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: #fff;
+  white-space: nowrap;
+}
+.epic-track-indicator {
+  font-size: 0.85rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
 
 /* frontend/src/styles/eng/loading.css */
 .loading {

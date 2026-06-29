@@ -28,6 +28,16 @@ function safeTrackApiResult(apiSurface, params = {}) {
     }
 }
 
+export function buildSortChangedParams(sortScope, sortKey, params = {}) {
+    return {
+        feature_name: params.feature_name || 'epm',
+        sort_scope: sortScope,
+        sort_key: analyticsToken(sortKey),
+        source_surface: params.source_surface || 'epm',
+        ...params,
+    };
+}
+
 export function planningAnalyticsPayload(nextSelectedTasks, selectionTasks) {
     const selectedKeySet = new Set(Object.keys(nextSelectedTasks || {}).filter(key => nextSelectedTasks[key]));
     let storyPoints = 0;
@@ -188,13 +198,7 @@ export function useDashboardAnalytics(React, {
     }, [currentDashboardView, trackProductEvent]);
 
     const trackSortChanged = useCallback((sortScope, sortKey, params = {}) => {
-        trackProductEvent('sort_changed', {
-            feature_name: params.feature_name || 'epm',
-            sort_scope: sortScope,
-            sort_key: analyticsToken(sortKey),
-            source_surface: params.source_surface || 'epm',
-            ...params
-        });
+        trackProductEvent('sort_changed', buildSortChangedParams(sortScope, sortKey, params));
     }, [trackProductEvent]);
 
     const trackPlanningSelection = useCallback((workflowAction, nextSelectedTasks, selectionTasks) => {

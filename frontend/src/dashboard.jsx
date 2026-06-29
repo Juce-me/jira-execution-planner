@@ -410,7 +410,7 @@ import {
             );
             const handleEngEpicSortChange = (value) => {
                 setEngEpicSort(value);
-                trackSortChanged('eng_epics', value, { feature_name: 'eng' });
+                trackSortChanged('eng_epics', value, { feature_name: 'eng', source_surface: 'eng' });
             };
             const [showEpmProjectDropdown, setShowEpmProjectDropdown] = useState(false);
             const epmProjectDropdownRefs = useRef({ main: null, compact: null });

@@ -1,8 +1,9 @@
 const fs = require('node:fs');
+const path = require('path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
-const screenshotDir = '/tmp/eng-epic-sort-and-track-qa';
+const screenshotDir = path.join(__dirname, '..', '..', 'test-results', 'eng-epic-sort-and-track-qa');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';

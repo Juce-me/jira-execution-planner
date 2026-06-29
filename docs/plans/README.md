@@ -267,6 +267,13 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      the active label prefix is shown as a hint pill with a descriptive placeholder.
    - No new routes, no auth-mode change, no Home/Jira writes; `GATE-05` unaffected.
 
+## ENG Epic Sort And Track
+
+1. `EXEC-eng-epic-sort-and-track.md`
+   - Active implementation plan for read-only epic header enrichment plus epic ordering in the ENG view.
+   - Expected output: each ENG epic header shows an effective-priority pill (highest-urgency child) and a Product Track emoji (🔒 Committed / 🤷 Flexible) read from the configurable `projectTrackField` Jira custom field (default `customfield_35024`); a single `sprint-dropdown`-styled Sort control orders epics by Priority, Status (built-in workflow-phase fallback), or Track (committed-first / flexible-first), each tie-broken by priority, with the choice persisted in localStorage UI prefs.
+   - No new routes, no Jira writes, no auth-mode change; `GATE-05` unaffected. The board-imported per-group workflow source and group-by-kanban-column grouping are deferred to a separate future plan; the sort comparator already accepts an injected phase-rank map.
+
 ## Legacy Unclassified Date-Only Plans
 
 These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat them as unclassified historical context, not executable current plans, until a reviewer classifies and renames them or moves them to `docs/agents/`:

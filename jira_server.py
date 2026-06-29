@@ -166,6 +166,7 @@ JIRA_RETRY_MAX_ATTEMPTS = int(os.getenv('JIRA_RETRY_MAX_ATTEMPTS', '4'))
 JIRA_RETRY_MAX_ELAPSED_SECONDS = float(os.getenv('JIRA_RETRY_MAX_ELAPSED_SECONDS', '10'))
 JIRA_RETRY_BASE_DELAY_SECONDS = float(os.getenv('JIRA_RETRY_BASE_DELAY_SECONDS', '0.5'))
 JIRA_RETRY_MAX_DELAY_SECONDS = float(os.getenv('JIRA_RETRY_MAX_DELAY_SECONDS', '3'))
+JIRA_HTTP_CONNECT_TIMEOUT_SECONDS = float(os.getenv('JIRA_HTTP_CONNECT_TIMEOUT_SECONDS', '5'))
 JIRA_CIRCUIT_FAILURE_THRESHOLD = int(os.getenv('JIRA_CIRCUIT_FAILURE_THRESHOLD', '5'))
 JIRA_CIRCUIT_OPEN_SECONDS = float(os.getenv('JIRA_CIRCUIT_OPEN_SECONDS', '30'))
 STATS_BURNOUT_TIMEZONE = 'Europe/Berlin'
@@ -885,7 +886,8 @@ def _build_jira_unavailable_response(message, attempts=0, elapsed_seconds=0.0, u
     )
 
 
-def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=None, breaker=None,
+def resilient_jira_get(url, *, params=None, headers=None, timeout=30, connect_timeout=None,
+                       session=None, breaker=None,
                        now_fn=None, sleep_fn=None, rand_fn=None,
                        max_attempts=None, max_elapsed_seconds=None,
                        base_delay_seconds=None, max_delay_seconds=None):
@@ -895,6 +897,7 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=No
         params=params,
         headers=headers,
         timeout=timeout,
+        connect_timeout=JIRA_HTTP_CONNECT_TIMEOUT_SECONDS if connect_timeout is None else connect_timeout,
         session=session or HTTP_SESSION,
         breaker=breaker or JIRA_SEARCH_CIRCUIT_BREAKER,
         now_fn=now_fn,

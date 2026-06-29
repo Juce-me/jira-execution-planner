@@ -8,7 +8,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # feature/eng-epic-sort-and-track adds the read-only Project Track custom-field getters
     # (get_project_track_field_config/get_project_track_field_id) and threads the field id
     # into fetch_epic_details_bulk's fields list + parse.
-    "jira_server.py": 5966,
+    # bugfix/jira-connect-timeout-retry-budget adds JIRA_HTTP_CONNECT_TIMEOUT_SECONDS and
+    # threads a bounded connect_timeout through the resilient_jira_get wrapper.
+    "jira_server.py": 5969,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.

@@ -10,6 +10,11 @@ import requests
 
 RETRYABLE_JIRA_STATUS_CODES = {429, 500, 502, 503, 504}
 
+# Bound how long a single attempt may spend establishing the TCP/TLS connection.
+# Connection-level stalls (the dominant transient Jira failure) must fail fast so
+# the retry budget is spent on actual retries instead of one long hang.
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 5.0
+
 
 def _noop_log(*_parts):
     return None
@@ -98,7 +103,8 @@ def _build_jira_unavailable_response(message, attempts=0, elapsed_seconds=0.0, u
     return response_cls(503, payload)
 
 
-def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=None, breaker=None,
+def resilient_jira_get(url, *, params=None, headers=None, timeout=30, connect_timeout=None,
+                       session=None, breaker=None,
                        now_fn=None, sleep_fn=None, rand_fn=None,
                        max_attempts=None, max_elapsed_seconds=None,
                        base_delay_seconds=None, max_delay_seconds=None,
@@ -122,6 +128,10 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=No
     max_elapsed_seconds = float(max_elapsed_seconds if max_elapsed_seconds is not None else 10)
     base_delay_seconds = float(base_delay_seconds if base_delay_seconds is not None else 0.5)
     max_delay_seconds = float(max_delay_seconds if max_delay_seconds is not None else 3)
+    connect_timeout = float(connect_timeout if connect_timeout is not None else DEFAULT_CONNECT_TIMEOUT_SECONDS)
+    # Short connect timeout, full read timeout: connection stalls fail fast and retry;
+    # legitimately slow queries keep the caller's read budget.
+    request_timeout = (min(connect_timeout, timeout), timeout)
 
     started_at = now_fn()
     allowed, breaker_state = breaker.before_request(started_at)
@@ -143,7 +153,7 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, session=No
         attempts += 1
         attempt_started = now_fn()
         try:
-            response = session.get(url, params=params, headers=headers, timeout=timeout)
+            response = session.get(url, params=params, headers=headers, timeout=request_timeout)
             latency_ms = round((now_fn() - attempt_started) * 1000, 1)
             last_status = getattr(response, 'status_code', None)
             if last_status not in retryable_status_codes:

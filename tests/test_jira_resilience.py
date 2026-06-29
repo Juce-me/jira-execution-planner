@@ -91,6 +91,32 @@ class TestJiraResilience(unittest.TestCase):
         self.assertEqual(session.get.call_count, 2)
         self.assertEqual(clock.sleeps, [0.25])
 
+    def test_connect_timeout_is_bounded_so_stalls_fail_fast(self):
+        # A hung connection must not be able to consume the whole retry budget.
+        # The per-attempt timeout is sent as a (connect, read) tuple with a short
+        # connect timeout so connection-level stalls fail fast and leave room to retry.
+        clock = _FakeClock()
+        session = Mock()
+        session.get.return_value = _mock_response(200, {'ok': True})
+        breaker = jira_server.JiraCircuitBreaker(failure_threshold=3, open_seconds=30)
+
+        jira_server.resilient_jira_get(
+            'http://jira.example/search',
+            session=session,
+            breaker=breaker,
+            now_fn=clock.now,
+            sleep_fn=clock.sleep,
+            rand_fn=lambda: 0.0,
+            max_attempts=3,
+            max_elapsed_seconds=10,
+            timeout=30,
+        )
+
+        _, kwargs = session.get.call_args
+        connect_timeout, read_timeout = kwargs['timeout']
+        self.assertLessEqual(connect_timeout, 10)
+        self.assertEqual(read_timeout, 30)
+
     def test_non_retryable_400_does_not_retry(self):
         clock = _FakeClock()
         session = Mock()

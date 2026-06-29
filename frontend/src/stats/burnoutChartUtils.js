@@ -1,3 +1,5 @@
+import { RADAR_PALETTE } from './statsConstants.js';
+
 function defaultIsClosedStatus(status) {
     const normalized = String(status || '').toLowerCase().replace(/\s+/g, ' ').trim();
     return normalized === 'done' || normalized === 'killed' || normalized === 'incomplete';
@@ -202,6 +204,13 @@ export function buildBurnoutChartModel({
 
     const orderedTeams = Array.from(teamByKey.values())
         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    // Assign colors by sorted-team index rather than hashing the team key, so no
+    // two teams collide on the same palette entry while teams fit in the palette.
+    if (RADAR_PALETTE.length) {
+        orderedTeams.forEach((team, index) => {
+            team.color = RADAR_PALETTE[index % RADAR_PALETTE.length];
+        });
+    }
 
     let runningByTeam = {};
     orderedTeams.forEach((team) => {

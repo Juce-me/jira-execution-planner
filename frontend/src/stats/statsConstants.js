@@ -16,17 +16,19 @@ export const PRIORITY_ALIASES = {
     lowest: 'trivial'
 };
 
+// 12 categorical, maximally-distinguishable colors. Ordered so consecutive
+// indices contrast strongly, which keeps adjacent series/legend entries distinct.
 export const RADAR_PALETTE = [
-    '#2563eb',
-    '#0ea5e9',
-    '#14b8a6',
-    '#10b981',
-    '#22c55e',
-    '#84cc16',
-    '#eab308',
-    '#f59e0b',
-    '#f97316',
-    '#a855f7',
-    '#6366f1',
-    '#64748b'
+    '#0ea5e9', // sky blue
+    '#eab308', // lemon
+    '#84cc16', // lime
+    '#db2777', // magenta
+    '#d97706', // amber
+    '#9333ea', // purple
+    '#1e3a8a', // deep blue
+    '#4d7c0f', // olive
+    '#0891b2', // cyan
+    '#78716c', // stone gray
+    '#0d9488', // teal
+    '#4f46e5'  // indigo
 ];

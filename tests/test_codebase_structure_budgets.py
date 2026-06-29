@@ -5,14 +5,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 LEGACY_ENTRYPOINT_LINE_BUDGETS = {
-    # bugfix/needs-stories-per-team breaks the selected-sprint actionable count down by
-    # team (selectedActionableByTeam) in fetch_story_distribution_for_epics, threading the
-    # team field through and attaching the breakdown to each scoped epic.
-    "jira_server.py": 5948,
-    # bugfix/needs-stories-per-team fans Needs Stories entries out per matched team via
-    # buildNeedsStoriesTeamEntries, dedupes the epic chip count, and links each team header
-    # to a semantic JQL filter (buildNeedsStoriesTeamLink) instead of a frozen key list.
-    "frontend/src/dashboard.jsx": 15395,
+    # feature/eng-epic-sort-and-track adds the read-only Project Track custom-field getters
+    # (get_project_track_field_config/get_project_track_field_id) and threads the field id
+    # into fetch_epic_details_bulk's fields list + parse.
+    "jira_server.py": 5966,
+    # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
+    # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
+    # plus Product Track indicator in renderEpicBlock.
+    "frontend/src/dashboard.jsx": 15419,
 }
 
 

@@ -2255,7 +2255,10 @@ def get_team_field_id():
 
 
 def get_project_track_field_config():
-    config = load_dashboard_config()
+    try:
+        config = load_dashboard_config()
+    except ConfigStorageError:
+        config = None
     if config and 'projectTrackField' in config:
         pt = config['projectTrackField']
         return {'fieldId': pt.get('fieldId', ''), 'fieldName': pt.get('fieldName', '')}

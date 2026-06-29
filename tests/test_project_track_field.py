@@ -23,6 +23,11 @@ class ProjectTrackFieldConfigTests(unittest.TestCase):
         with patch.object(jira_server, 'load_dashboard_config', return_value=cfg):
             self.assertEqual(jira_server.get_project_track_field_id(), 'customfield_99999')
 
+    def test_field_id_falls_back_when_config_unavailable(self):
+        from backend.config.repository import ConfigStorageError
+        with patch.object(jira_server, 'load_dashboard_config', side_effect=ConfigStorageError('no context')):
+            self.assertEqual(jira_server.get_project_track_field_id(), 'customfield_35024')
+
 
 class FetchEpicDetailsProjectTrackTests(unittest.TestCase):
     def test_config_override_field_requested_and_value_parsed(self):

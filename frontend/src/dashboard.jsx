@@ -82,7 +82,9 @@ import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
 import ProjectTrackTotalsBar from './stats/ProjectTrackTotalsBar.jsx';
 import ProjectTrackSprintChart from './stats/ProjectTrackSprintChart.jsx';
 import ProjectTrackBreakdownChart from './stats/ProjectTrackBreakdownChart.jsx';
-import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows } from './stats/projectTrackStats.js';
+import ProjectTrackPhaseChart from './stats/ProjectTrackPhaseChart.jsx';
+import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, inScope as projectTrackInScope } from './stats/projectTrackStats.js';
+import { summarizeTrackPhaseDurations } from './stats/projectTrackPhaseStats.js';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
@@ -94,6 +96,7 @@ import {
     fetchCapacity as requestCapacity,
     fetchDependencies as requestDependencies,
     fetchExcludedCapacityStatsSource as requestExcludedCapacityStatsSource,
+    fetchProjectTrackPhaseDurations as requestProjectTrackPhaseDurations,
 } from './api/engApi.js';
 import { resolveBackendUrl } from './api/backendUrl.js';
 import {
@@ -738,6 +741,11 @@ import {
             );
             const [projectTrackExcludeAdHoc, setProjectTrackExcludeAdHoc] = useState(Boolean(savedPrefsRef.current.projectTrackExcludeAdHoc));
             const [projectTrackExcludeExcludedCapacity, setProjectTrackExcludeExcludedCapacity] = useState(Boolean(savedPrefsRef.current.projectTrackExcludeExcludedCapacity));
+            const [projectTrackPhaseData, setProjectTrackPhaseData] = useState(null);
+            const [projectTrackPhaseLoading, setProjectTrackPhaseLoading] = useState(false);
+            const [projectTrackPhaseError, setProjectTrackPhaseError] = useState('');
+            const projectTrackPhaseCacheRef = useRef({});
+            const projectTrackPhaseAbortRef = useRef(null);
             const [burnoutHoverPoint, setBurnoutHoverPoint] = useState(null);
             const [burnoutHoverTeamKey, setBurnoutHoverTeamKey] = useState(null);
             const [burnoutTaskFilter, setBurnoutTaskFilter] = useState(null);
@@ -7261,6 +7269,89 @@ import {
                 const lastName = last.name || String(last.id);
                 return range.length === 1 ? firstName : `${firstName} – ${lastName}`;
             }, [excludedCapacitySprintRange]);
+            // Epic key set for the time-in-phase section (Epic mode only).
+            // Reuses projectTrackInScope predicate with the same opts as the SP sections so
+            // it respects the sprint range, capacity-side filter, and exclusion toggles.
+            const projectTrackPhaseEpicKeys = React.useMemo(() => {
+                if (projectTrackMode !== 'epic') return [];
+                const scopedKeys = new Set(
+                    excludedCapacityIssues
+                        .filter(t => projectTrackInScope(t, projectTrackOpts))
+                        .map(t => String(t.fields?.epicKey || '').trim().toUpperCase())
+                        .filter(Boolean)
+                );
+                return Array.from(scopedKeys).sort();
+            }, [projectTrackMode, excludedCapacityIssues, projectTrackOpts]);
+            const projectTrackPhaseSignature = projectTrackPhaseEpicKeys.join(',');
+            useEffect(() => {
+                if (!showStats || statsView !== 'projectTrack' || projectTrackMode !== 'epic') {
+                    return;
+                }
+                if (!projectTrackPhaseEpicKeys.length) {
+                    setProjectTrackPhaseData(null);
+                    setProjectTrackPhaseError('');
+                    setProjectTrackPhaseLoading(false);
+                    return;
+                }
+                const cached = projectTrackPhaseCacheRef.current[projectTrackPhaseSignature];
+                if (cached) {
+                    setProjectTrackPhaseData(cached);
+                    setProjectTrackPhaseError('');
+                    setProjectTrackPhaseLoading(false);
+                    return;
+                }
+                if (projectTrackPhaseAbortRef.current) {
+                    try { projectTrackPhaseAbortRef.current.abort(); } catch (_) { /* ignore */ }
+                }
+                const controller = new AbortController();
+                projectTrackPhaseAbortRef.current = controller;
+                let cancelled = false;
+                const load = async () => {
+                    setProjectTrackPhaseLoading(true);
+                    setProjectTrackPhaseError('');
+                    try {
+                        const response = await requestProjectTrackPhaseDurations(BACKEND_URL, {
+                            epicKeys: projectTrackPhaseEpicKeys,
+                            signal: controller.signal,
+                        });
+                        if (cancelled) return;
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({}));
+                            throw new Error(err.error || err.message || `Phase durations fetch failed (${response.status})`);
+                        }
+                        const payload = await response.json();
+                        if (cancelled) return;
+                        projectTrackPhaseCacheRef.current[projectTrackPhaseSignature] = payload;
+                        setProjectTrackPhaseData(payload);
+                        setProjectTrackPhaseError('');
+                    } catch (err) {
+                        if (cancelled || err?.name === 'AbortError') return;
+                        setProjectTrackPhaseError(String(err?.message || err || 'Failed to load phase duration data.'));
+                        setProjectTrackPhaseData(null);
+                    } finally {
+                        if (!cancelled) setProjectTrackPhaseLoading(false);
+                    }
+                };
+                const debounceId = window.setTimeout(load, 120);
+                return () => {
+                    cancelled = true;
+                    window.clearTimeout(debounceId);
+                    try { controller.abort(); } catch (_) { /* ignore */ }
+                };
+            }, [
+                showStats,
+                statsView,
+                projectTrackMode,
+                projectTrackPhaseSignature,
+            ]);
+            const projectTrackPhaseEpics = React.useMemo(
+                () => Array.isArray(projectTrackPhaseData?.epics) ? projectTrackPhaseData.epics : [],
+                [projectTrackPhaseData]
+            );
+            const projectTrackPhaseSummary = React.useMemo(
+                () => summarizeTrackPhaseDurations(projectTrackPhaseEpics),
+                [projectTrackPhaseEpics]
+            );
             const excludedCapacityEpicCatalog = React.useMemo(() => {
                 return buildExcludedEpicCatalog(excludedCapacityIssues, {
                     excludedEpicKeys: excludedCapacityEpicOptions
@@ -13625,6 +13716,39 @@ import {
                                             resolveColor={resolveProjectTrackColor}
                                         />
                                     </div>
+
+                                    {projectTrackMode === 'epic' && (
+                                        <div className="stats-card project-track-card project-track-phase-section">
+                                            <h4>Time in Project Track phase</h4>
+                                            {projectTrackPhaseLoading && (
+                                                <div className="project-track-phase-loading">Loading phase data…</div>
+                                            )}
+                                            {!projectTrackPhaseLoading && projectTrackPhaseError && (
+                                                <div className="project-track-phase-error">{projectTrackPhaseError}</div>
+                                            )}
+                                            {!projectTrackPhaseLoading && !projectTrackPhaseError && (
+                                                <>
+                                                    {projectTrackPhaseData?.meta?.truncated && (
+                                                        <div className="project-track-phase-truncated">
+                                                            Showing first {projectTrackPhaseData.meta.processedEpicCount} epics (truncated).
+                                                        </div>
+                                                    )}
+                                                    <div className="project-track-phase-summary">
+                                                        {projectTrackPhaseSummary.avgDaysToFirstTrack > 0 && (
+                                                            <span>Avg days to first track: <strong>{projectTrackPhaseSummary.avgDaysToFirstTrack}d</strong></span>
+                                                        )}
+                                                        {projectTrackPhaseSummary.avgDaysToCommitted != null && (
+                                                            <span>Avg days to Committed: <strong>{projectTrackPhaseSummary.avgDaysToCommitted}d</strong></span>
+                                                        )}
+                                                    </div>
+                                                    <ProjectTrackPhaseChart
+                                                        rows={projectTrackPhaseEpics}
+                                                        resolveColor={resolveProjectTrackColor}
+                                                    />
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className={`stats-view ${statsView === 'cohort' ? 'open' : ''}`}>

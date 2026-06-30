@@ -868,6 +868,23 @@ async function installApiMocks(page, calls, options = {}) {
                 },
             });
         }
+        if (url.pathname === '/api/stats/project-track-phase-durations') {
+            const body = request.postDataJSON() || {};
+            const epicKeys = Array.isArray(body.epicKeys) ? body.epicKeys : [];
+            return json({
+                epics: epicKeys.map((key) => ({
+                    key,
+                    summary: `${key} summary`,
+                    currentValue: 'Committed',
+                    durations: { 'null (no value)': 5, 'Committed': 20 },
+                    created: '2026-01-01T00:00:00.000+0000',
+                    transitions: [
+                        { date: '2026-01-06T00:00:00.000+0000', from: null, to: 'Committed' },
+                    ],
+                })),
+                meta: { truncated: false, processedEpicCount: epicKeys.length, warnings: [] },
+            });
+        }
         if (url.pathname === '/api/scenario/drafts') {
             return json({
                 activeDraft: null,
@@ -1221,6 +1238,16 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     await expect(statsView.locator('.project-track-card', { hasText: 'By assignee' })).toContainText('Pat Product');
     await expect(statsView.locator('.project-track-card', { hasText: 'By assignee' })).toContainText('Sam BAU');
 
+    // Time-in-phase section: present in Epic mode, has heading and stacked-bar rows.
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/project-track-phase-durations', 1);
+    const phaseSection = statsView.locator('.project-track-phase-section');
+    await expect(phaseSection).toBeVisible();
+    await expect(phaseSection.getByRole('heading', { name: 'Time in Project Track phase' })).toBeVisible();
+    // The stacked-bar container must exist and have rows (mock returns one row per epic key).
+    await expect(phaseSection.locator('.stacked-bar')).toBeVisible();
+    // Summary stats (avg days) are shown.
+    await expect(phaseSection.locator('.project-track-phase-summary')).toBeVisible();
+
     await captureSmokeScreenshot(page, 'statistics-project-track-epic');
 
     // Toggle Capacity side -> Tech (only TECH-EPIC, Committed 4 SP, no Flexible).
@@ -1243,6 +1270,9 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     // Team rows are labelled by the configured team label (teamLabels), not the raw team name.
     await expect(statsView.locator('.project-track-card', { hasText: 'By team' })).toContainText('alpha_label');
     await expect(statsView.locator('.project-track-card', { hasText: 'By team' })).toContainText('beta_label');
+
+    // Time-in-phase section: ABSENT in Team mode.
+    await expect(statsView.locator('.project-track-phase-section')).toHaveCount(0);
 
     await captureSmokeScreenshot(page, 'statistics-project-track-team');
     expect(apiMocks.unexpectedCalls).toEqual([]);

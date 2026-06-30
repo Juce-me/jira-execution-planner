@@ -27,7 +27,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # feat/stats-project-track-tab adds the Project Track stats sub-tab: filter bar (shared
     # sprint range, capacity-side/mode SegmentedControls, exclusion toggles), mode title, and
     # thin wiring for the totals/per-sprint/breakdown charts memoized off excludedCapacityIssues.
-    "frontend/src/dashboard.jsx": 15578,
+    # feat/stats-project-track-phase adds the Epic-mode-only time-in-phase section:
+    # imports ProjectTrackPhaseChart + projectTrackPhaseStats helpers, adds fetch state +
+    # cache ref, useEffect with abort/cache, memoized epic key set + summary, and
+    # renders the section with loading/error/truncated states (Epic mode only).
+    "frontend/src/dashboard.jsx": 15702,
 }
 
 

@@ -7703,6 +7703,33 @@ button.toggle.initiative-toggle.active {
   color: var(--text-secondary);
   font-size: 0.78rem;
 }
+.project-track-phase-section {
+  margin-top: 0.4rem;
+}
+.project-track-phase-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.2rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+.project-track-phase-summary strong {
+  color: var(--text-primary);
+}
+.project-track-phase-loading,
+.project-track-phase-error {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+.project-track-phase-error {
+  color: var(--color-danger, #c0392b);
+}
+.project-track-phase-truncated {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
 @media (max-width: 760px) {
   .stacked-bar-row {
     grid-template-columns: 1fr;

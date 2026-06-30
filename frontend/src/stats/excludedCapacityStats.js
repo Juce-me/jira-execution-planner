@@ -8,7 +8,7 @@ function normalizeId(value) {
     return String(value ?? '').trim();
 }
 
-function storyPointsFor(task) {
+export function storyPointsFor(task) {
     const fields = task?.fields || {};
     const raw = fields.customfield_10004 ?? fields.storyPoints ?? task?.storyPoints ?? 0;
     const value = Number(raw);

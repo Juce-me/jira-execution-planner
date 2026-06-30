@@ -175,6 +175,9 @@ EPIC_COHORT_ENRICH_MAX_ISSUES = int(os.getenv('EPIC_COHORT_ENRICH_MAX_ISSUES', '
 EPIC_COHORT_ENRICH_WORKERS = int(os.getenv('EPIC_COHORT_ENRICH_WORKERS', '4'))
 EPIC_COHORT_ENRICH_TIMEOUT_SECONDS = float(os.getenv('EPIC_COHORT_ENRICH_TIMEOUT_SECONDS', '10'))
 EPIC_COHORT_ADHOC_MAX_EPICS = int(os.getenv('EPIC_COHORT_ADHOC_MAX_EPICS', '200'))
+PROJECT_TRACK_PHASE_MAX_EPICS = int(os.getenv('PROJECT_TRACK_PHASE_MAX_EPICS', '200'))
+PROJECT_TRACK_PHASE_WORKERS = int(os.getenv('PROJECT_TRACK_PHASE_WORKERS', '4'))
+PROJECT_TRACK_PHASE_TIMEOUT_SECONDS = float(os.getenv('PROJECT_TRACK_PHASE_TIMEOUT_SECONDS', '10'))
 EXCLUDED_CAPACITY_STATS_MAX_SPRINTS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_SPRINTS', '24'))
 EXCLUDED_CAPACITY_STATS_MAX_ISSUES = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_ISSUES', '2000'))
 EXCLUDED_CAPACITY_STATS_MAX_EPICS = int(os.getenv('EXCLUDED_CAPACITY_STATS_MAX_EPICS', '200'))
@@ -1085,6 +1088,79 @@ def resolve_terminal_date_from_history(histories, terminal_status):
             if to_status == target:
                 return event_dt.date()
     return None
+
+
+PROJECT_TRACK_NULL_LABEL = 'null (no value)'
+
+
+def _track_state_label(value):
+    label = str(value or '').strip()
+    return label if label else PROJECT_TRACK_NULL_LABEL
+
+
+def parse_track_transitions(histories, track_field_id):
+    """Extract Project Track value changes from a Jira changelog, ascending by time.
+
+    Matches changelog items by ``fieldId == track_field_id`` OR by display name
+    ``field == 'project track'`` (the ``is_team_history_item`` dual-check pattern), so a
+    status change that happens to land on a track-like value is ignored. Blank
+    from/to strings are normalized to ``None``. Returns a list of
+    ``{'date', 'from', 'to'}`` dicts.
+    """
+    target_field_id = str(track_field_id or '').strip()
+    transitions = []
+    for history in sorted(histories or [], key=lambda item: item.get('created') or ''):
+        event_dt = parse_jira_datetime(history.get('created'))
+        if not event_dt:
+            continue
+        for item in history.get('items') or []:
+            field_id = str((item or {}).get('fieldId') or '').strip()
+            field_name = str((item or {}).get('field') or '').strip().lower()
+            if not (target_field_id and field_id == target_field_id) and field_name != 'project track':
+                continue
+            transitions.append({
+                'date': history.get('created'),
+                'from': str(item.get('fromString') or '').strip() or None,
+                'to': str(item.get('toString') or '').strip() or None,
+            })
+    return transitions
+
+
+def compute_track_phase_durations(created_iso, current_value, transitions, now):
+    """Return days spent in each Project Track state for one epic.
+
+    The epic starts at ``created`` with the value the first transition moved away
+    from (or ``current_value`` when there are no transitions). Each transition's
+    ``to`` becomes the new state; the final state runs until ``now``. Negative or
+    out-of-order spans are clamped to zero. Null/blank values bucket under
+    ``null (no value)``.
+    """
+    durations = {}
+    start_dt = parse_jira_datetime(created_iso)
+    if not start_dt or not now:
+        return durations
+
+    ordered = [t for t in (transitions or []) if parse_jira_datetime(t.get('date'))]
+    ordered.sort(key=lambda t: parse_jira_datetime(t.get('date')))
+
+    if ordered:
+        current_state = ordered[0].get('from')
+    else:
+        current_state = current_value
+
+    segment_start = start_dt
+    for transition in ordered:
+        transition_dt = parse_jira_datetime(transition.get('date'))
+        days = max(0.0, (transition_dt - segment_start).total_seconds() / 86400.0)
+        label = _track_state_label(current_state)
+        durations[label] = durations.get(label, 0.0) + days
+        current_state = transition.get('to')
+        segment_start = transition_dt
+
+    final_days = max(0.0, (now - segment_start).total_seconds() / 86400.0)
+    final_label = _track_state_label(current_state)
+    durations[final_label] = durations.get(final_label, 0.0) + final_days
+    return durations
 
 
 def _build_epic_cohort_cache_key(start_quarter, team_ids, projects, components=None, ad_hoc_epics=None):
@@ -5624,6 +5700,122 @@ def get_epic_cohort_stats():
         'cached': False,
         'generatedAt': generated_at,
         'data': cohort_payload
+    })
+
+
+def _fetch_full_issue_changelog(issue_key, partial_histories, context=None):
+    """Collect the complete changelog for an issue when the embedded one is partial.
+
+    The expanded ``/issue/{key}`` response only carries a window of histories. When
+    ``changelog.total`` exceeds what was returned, page the dedicated
+    ``/rest/api/3/issue/{key}/changelog`` endpoint (``values``/``isLast``) to gather
+    the rest before parsing.
+    """
+    histories = list(partial_histories or [])
+    start_at = len(histories)
+    max_pages = 20
+    for _ in range(max_pages):
+        response = current_jira_get(
+            f'/rest/api/3/issue/{issue_key}/changelog',
+            params={'startAt': start_at, 'maxResults': 100},
+            timeout=max(1.0, float(PROJECT_TRACK_PHASE_TIMEOUT_SECONDS)),
+            context=context,
+        )
+        if response.status_code != 200:
+            break
+        data = response.json() or {}
+        values = data.get('values') or []
+        histories.extend(values)
+        start_at += len(values)
+        if bool(data.get('isLast', True)) or not values:
+            break
+    return histories
+
+
+def _fetch_epic_track_phase(issue_key, track_field, context=None):
+    response = current_jira_get(
+        f'/rest/api/3/issue/{issue_key}',
+        params={'expand': 'changelog', 'fields': f'created,summary,{track_field}'},
+        timeout=max(1.0, float(PROJECT_TRACK_PHASE_TIMEOUT_SECONDS)),
+        context=context,
+    )
+    if response.status_code != 200:
+        return issue_key, None, f'issue fetch failed ({response.status_code})'
+    data = response.json() or {}
+    fields = data.get('fields') or {}
+    changelog = data.get('changelog') or {}
+    histories = changelog.get('histories') or []
+    total = changelog.get('total')
+    if isinstance(total, int) and total > len(histories):
+        histories = _fetch_full_issue_changelog(issue_key, histories, context=context)
+
+    track_value_raw = fields.get(track_field)
+    current_value = (track_value_raw or {}).get('value') if isinstance(track_value_raw, dict) else None
+    transitions = parse_track_transitions(histories, track_field)
+    durations = compute_track_phase_durations(
+        fields.get('created'), current_value, transitions, datetime.now(timezone.utc)
+    )
+    return issue_key, {
+        'key': issue_key,
+        'summary': str(fields.get('summary') or '').strip(),
+        'currentValue': current_value,
+        'durations': durations,
+    }, None
+
+
+def get_project_track_phase_durations():
+    payload = request.get_json(silent=True) or {}
+    raw_epic_keys = payload.get('epicKeys')
+    epic_keys = normalize_epic_keys(raw_epic_keys if isinstance(raw_epic_keys, list) else [])
+    if not epic_keys:
+        return jsonify({'error': 'epicKeys is required'}), 400
+
+    cap = max(1, int(PROJECT_TRACK_PHASE_MAX_EPICS))
+    workers = max(1, int(PROJECT_TRACK_PHASE_WORKERS))
+    timeout_budget = max(1.0, float(PROJECT_TRACK_PHASE_TIMEOUT_SECONDS) * 2)
+
+    truncated = False
+    if len(epic_keys) > cap:
+        dropped = len(epic_keys) - cap
+        log_warning(f'Project Track phase request capped epics, dropped {dropped}')
+        epic_keys = epic_keys[:cap]
+        truncated = True
+
+    try:
+        track_field = get_project_track_field_id()
+        auth_context = current_request_auth_context()
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
+
+    epics = []
+    warnings = []
+    future_map = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for epic_key in epic_keys:
+            future = pool.submit(_fetch_epic_track_phase, epic_key, track_field, auth_context)
+            future_map[future] = epic_key
+        try:
+            for future in as_completed(future_map, timeout=timeout_budget):
+                epic_key, record, warning = future.result()
+                if record:
+                    epics.append(record)
+                if warning:
+                    warnings.append(warning)
+        except FuturesTimeoutError:
+            warnings.append('phase duration fetch timeout budget exceeded')
+            truncated = True
+        for future, epic_key in future_map.items():
+            if not future.done():
+                future.cancel()
+
+    return jsonify({
+        'epics': epics,
+        'meta': {
+            'truncated': truncated,
+            'processedEpicCount': len(epic_keys),
+            'warnings': warnings,
+        }
     })
 
 

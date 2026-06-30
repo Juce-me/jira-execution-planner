@@ -26,3 +26,8 @@ def get_burnout_stats():
 @bp.route('/api/stats/epic-cohort', methods=['POST'])
 def get_epic_cohort_stats():
     return get_jira_server().get_epic_cohort_stats()
+
+
+@bp.route('/api/stats/project-track-phase-durations', methods=['POST'])
+def get_project_track_phase_durations():
+    return get_jira_server().get_project_track_phase_durations()

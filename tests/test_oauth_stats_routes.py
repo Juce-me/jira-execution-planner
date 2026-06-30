@@ -153,6 +153,39 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["data"], {"quarters": []})
         mock_fetch.assert_called_once()
 
+    def test_project_track_phase_post_is_oauth_ready_with_requested_with_header(self):
+        issue = FakeResponse(200, {
+            "key": "TECH-1",
+            "fields": {
+                "created": "2026-03-26T00:00:00.000+0000",
+                "summary": "Synthetic TECH-1",
+                "customfield_35024": {"value": "Flexible"},
+            },
+            "changelog": {"histories": []},
+        })
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_project_track_field_id", return_value="customfield_35024"), \
+             patch.object(jira_server, "current_jira_get", return_value=issue):
+            response = self.client.post(
+                "/api/stats/project-track-phase-durations",
+                headers={"X-Requested-With": "jira-execution-planner"},
+                json={"epicKeys": ["TECH-1"]},
+            )
+
+        self.assertNotEqual(response.status_code, 501, response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["meta"]["processedEpicCount"], 1)
+
+    def test_project_track_phase_post_requires_oauth_requested_with_header(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.post(
+                "/api/stats/project-track-phase-durations",
+                json={"epicKeys": ["TECH-1"]},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["error"], "csrf_required")
+
     def test_scenario_overrides_get_is_oauth_ready_and_post_is_legacy_basic_local(self):
         overrides_payload = {"scenarios": {"2026Q2": {"overrides": {"PROD-1": {"start": "2026-04-01"}}}}}
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \

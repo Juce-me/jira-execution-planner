@@ -12,7 +12,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # threads a bounded connect_timeout through the resilient_jira_get wrapper.
     # feat/stats-epic-project-track-assignee enriches fetch_cached_excluded_capacity_epic_summaries
     # and build_excluded_capacity_issue_payload with epicProjectTrack and epicAssignee.
-    "jira_server.py": 5984,
+    # feature/stats-project-track-quarters adds the bounded epic Project Track phase-duration
+    # endpoint: parse_track_transitions + compute_track_phase_durations pure helpers, the
+    # ThreadPoolExecutor worker fetch with /changelog pagination, and the
+    # get_project_track_phase_durations handler.
+    "jira_server.py": 6176,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.

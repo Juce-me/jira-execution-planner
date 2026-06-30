@@ -304,10 +304,11 @@ import { getProjectTrackRank } from '../eng/engTaskUtils.js';
 
 export const NO_TRACK_LABEL = 'No track';
 
-function sprintNames(task) {
+function sprintOf(task) {
+  // A story belongs to exactly one sprint; the field is normalized to a list — take the first entry.
   const raw = task?.fields?.customfield_10101;
-  const list = Array.isArray(raw) ? raw : (raw ? [raw] : []);
-  return list.map((s) => (s && (s.name || s)) || '').filter(Boolean);
+  const first = Array.isArray(raw) ? raw[0] : raw;
+  return (first && (first.name || first)) || '';
 }
 function trackOf(task) {
   const raw = task?.fields?.epicProjectTrack;
@@ -356,12 +357,11 @@ export function buildProjectTrackSprintSeries(tasks, opts) {
       if (!inScope(task, opts)) continue;
       const sp = storyPointsFor(task); if (!sp) continue;
       const epicKey = String(task?.fields?.epicKey || task?.key || '').trim().toUpperCase();
-      for (const sprint of sprintNames(task)) {
-        if (allowed && !allowed.has(sprint)) continue;
-        if (!byEpic.has(epicKey)) byEpic.set(epicKey, { track: trackOf(task), bySprint: new Map() });
-        const rec = byEpic.get(epicKey);
-        rec.bySprint.set(sprint, (rec.bySprint.get(sprint) || 0) + sp);
-      }
+      const sprint = sprintOf(task);
+      if (!sprint || (allowed && !allowed.has(sprint))) continue;
+      if (!byEpic.has(epicKey)) byEpic.set(epicKey, { track: trackOf(task), bySprint: new Map() });
+      const rec = byEpic.get(epicKey);
+      rec.bySprint.set(sprint, (rec.bySprint.get(sprint) || 0) + sp);
     }
     for (const { track, bySprint } of byEpic.values()) {
       let dom = null; let best = -1;
@@ -375,11 +375,9 @@ export function buildProjectTrackSprintSeries(tasks, opts) {
     for (const task of tasks || []) {
       if (!inScope(task, opts)) continue;
       const sp = storyPointsFor(task); if (!sp) continue;
-      const track = trackOf(task);
-      for (const sprint of sprintNames(task)) {
-        if (allowed && !allowed.has(sprint)) continue;
-        add(sprint, track, sp);
-      }
+      const sprint = sprintOf(task);
+      if (!sprint || (allowed && !allowed.has(sprint))) continue;
+      add(sprint, trackOf(task), sp);
     }
   }
   return { sprints: orderSprints(sprintSet, opts.sprintOrder), tracks: orderTracks(trackSet), cells };

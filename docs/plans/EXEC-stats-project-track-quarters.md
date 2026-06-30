@@ -2,11 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL when available: use Superpowers `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Do not hand-edit `frontend/dist/*`; run `npm run build` after frontend source changes.
 
-**Goal:** Add a new ENG stats sub-tab that shows total story points split by Project Track across quarters as stacked bars, with a Product/Tech capacity toggle (Product default), Ad Hoc / Excluded-Capacity exclusion toggles, and a story-points-vs-epics metric toggle. Summary panels show the per-track total for the selected sprint range.
+**Goal:** Add a new ENG stats sub-tab that shows story points by Project Track. It has three sections: (1) a quarters stacked-bar chart of total SP split by Project Track; (2) a per-team (Story points mode) / per-assignee (Epics mode) stacked-bar breakdown split by Project Track; and (3) a time-in-phase section showing how long each in-scope epic spent in each Project Track state (null → Flexible → Committed), from Jira changelog. A Product/Tech capacity toggle (Product default), Ad Hoc / Excluded-Capacity exclusion toggles, a story-points-vs-epics metric toggle, and the existing Start/End sprint range selectors drive the SP sections.
 
-**Architecture:** Reuse the existing progressive, per-sprint-cached `/api/stats/excluded-capacity-source` endpoint as the single scoped issue source. Extend its cached epic enrichment to also carry each story's parent-epic `projectTrack` and epic assignee (additive fields only). Add one pure frontend aggregation module and one bar-chart component, wire a new `statsView === 'projectTrack'` sub-tab in `dashboard.jsx` modeled on the Excluded Capacity tab. No new endpoint, no per-issue frontend fan-out.
+**Architecture:** Reuse the existing progressive, per-sprint-cached `/api/stats/excluded-capacity-source` endpoint as the single scoped issue source for the SP sections. Extend its cached epic enrichment to also carry each story's parent-epic `projectTrack` and epic assignee (additive fields only). Project Track is inherited from each epic down to its stories. The time-in-phase section adds one new read-only endpoint that does a **bounded** per-epic `expand=changelog` fetch over the in-scope epic keys and reconstructs Project Track state intervals, reusing the cohort path's staged fan-out + changelog-parsing helpers. Add pure frontend aggregation modules and SVG chart components, wired into a new `statsView === 'projectTrack'` sub-tab in `dashboard.jsx` modeled on the Excluded Capacity tab. No per-issue frontend fan-out.
 
-**Tech Stack:** Python 3.10+ Flask (`jira_server.py`), existing stats-source path and epic-meta cache, React 19, existing stats helper/chart modules, shared capacity classifier (`frontend/src/capacityClassification.mjs`), Python `unittest`, Node `--test`, Playwright UI tests, esbuild (`npm run build`).
+**Tech Stack:** Python 3.10+ Flask (`jira_server.py`, `backend/routes/stats_routes.py`), existing stats-source path and epic-meta cache, existing changelog helpers (`resolve_terminal_date_from_history`-style parsing, cohort staged changelog fetch), React 19, existing stats helper/chart modules, shared capacity classifier (`frontend/src/capacityClassification.mjs`), Python `unittest`, Node `--test`, Playwright UI tests, esbuild (`npm run build`).
+
+**Feasibility note (verified live):** A Basic-auth probe of epic `TECH-27221` returned `created 2026-03-26`, current track `Flexible`, changelog `total=7` (not truncated), with one Project Track transition `2026-06-25 null → Flexible` → 91.1 days in null, 4.8 days in Flexible. Confirms `customfield_35024` transitions carry `fromString`/`toString` + `created`, and that typical epics fit one `expand=changelog` response (truncation still handled defensively).
 
 ## Global Constraints
 
@@ -31,15 +33,15 @@ Planned. Not started. All work belongs on branch `feature/stats-project-track-qu
 2. **Capacity-side toggle (Product default).** A two-option toggle, `Product` (default) and `Tech`, filters the scoped stories to one capacity side using `classifyCapacityIssue`. `Product` includes Ad Hoc stories (Ad Hoc is Product capacity); `Tech` is Tech-project stories. The chart then splits the selected side by Project Track.
 3. **Project Track split + null.** Bars are split by the parent epic's `projectTrack` string value. Stories whose epic has no track (null/blank) go to a single `No track` segment. Existing track values are not hardcoded; the track set is derived from the data, ordered by `getProjectTrackRank` then alphabetically, with `No track` always last.
 4. **Exclusion toggles.** Two independent include/exclude toggles: `Exclude Ad Hoc` and `Exclude excluded-capacity epics`, both default OFF (included). They use the active group's `adHocCapacityEpics` and `excludedCapacityEpics` sets already wired in `dashboard.jsx`. Excluding a set drops those stories from both the chart and the summary panels.
-5. **Metric toggle (story points vs epics).** `Story points` (default): sum story-level story points; each story contributes its SP to its sprint's quarter and its epic's track. `Epics`: dedupe to epic granularity — each in-scope epic contributes the sum of its in-scope stories' SP, placed in the epic's **dominant quarter** (the quarter holding the largest share of that epic's in-scope story SP; ties resolve to the latest quarter), under the epic's track. Both modes produce the same chart/panel shape (quarters × track total SP); only the aggregation unit differs.
-6. **Team is scope only.** The selected group's team ids scope which stories are counted (identical to the Excluded Capacity tab). There is no per-team or per-assignee breakdown rendered in this slice. (Assignee is enriched on the backend so a later slice can surface it without another fetch; see Open Question.)
-7. **Quarter range via existing selectors.** The selected range uses the same Start/End sprint selectors the Excluded Capacity tab already uses; quarters are derived from the sprints in range. Summary panels aggregate the per-track total SP across the whole selected range. No separate quarter dropdown and no click-to-select-quarter in this slice.
-8. **Backend change is additive.** Extend the existing stats-source epic enrichment to attach `epicProjectTrack` (string | null) and `epicAssignee` (`{ displayName } | null`) to each story's `fields`. No new route, no payload removals; existing `epicKey`/`epicSummary` stay intact.
-9. **Analytics reuse.** Tab open and control toggles reuse existing `stats_action` / `chart_action` / `filter_changed` events with bucketed params (e.g. `series_type`, `metric`, `capacity_side`). No new GA4 custom dimension unless review finds one strictly required.
-
-## Open Question (resolve at spec review, does not block planning)
-
-The metric toggle was described as "story points by team" vs "epics by assignee," but the agreed panels show **track totals only**. With track-totals-only panels the team/assignee dimension never renders, so the visible effect of the toggle is story-granularity vs epic-granularity SP totals (Decision 5). The backend enriches `epicAssignee` so a future slice can add an assignee breakdown panel without another fetch. If an assignee breakdown should be visible now, raise it before Task 2 and it becomes an added panel in Task 3.
+5. **Project Track inherited to stories.** Project Track is an epic-level field; each story inherits its parent epic's `projectTrack` (via the enriched `epicProjectTrack`). All SP grouping by track uses this inherited value.
+6. **Metric toggle drives granularity AND breakdown dimension.** `Story points` (default): aggregate at story granularity; the breakdown rows are **teams** (from the active department/group config). Each story contributes its SP to its team and its epic's track, and (for the quarters chart) to its sprint's quarter. `Epics`: aggregate at epic granularity — each in-scope epic contributes the sum of its in-scope stories' SP, grouped by the epic's track and attributed to the **epic assignee** (`epicAssignee`); the breakdown rows are assignees. For the quarters chart in Epics mode, each epic's total SP is placed in its **dominant quarter** (the quarter holding the largest share of that epic's in-scope story SP; ties → latest quarter).
+7. **Three sections in the tab.** (a) Quarters chart: x = quarters, vertical bars stacked by Project Track (total SP). (b) Breakdown chart: one horizontal stacked bar per team (SP mode) or per assignee (Epics mode), segments = Project Track, aggregated over the selected range. (c) Time-in-phase section (see Decision 10). The `No track` segment is always present for null/blank tracks and rendered last.
+8. **Team is the scope and the SP-mode breakdown dimension.** The selected group's team ids scope which stories are counted (identical to the Excluded Capacity tab). Team names come from `activeGroup.teamLabels` / story `teamName`/`teamId`.
+9. **Quarter range via existing selectors.** The selected range uses the same Start/End sprint selectors the Excluded Capacity tab already uses; quarters are derived from the sprints in range. The breakdown and time-in-phase sections aggregate over the whole selected range. No separate quarter dropdown.
+10. **Time-in-phase (changelog) section.** For the in-scope epics (distinct `epicKey`s from the loaded stats-source stories, after exclusion toggles), fetch each epic's Project Track change history and compute days spent in each state (`null (no value)`, `Flexible`, `Committed`, plus any other observed value). Render one horizontal stacked bar per epic (segments = state, width = days), ordered by total age, with an aggregate summary (e.g. average days-to-first-track and average days-to-Committed). Date granularity only (no minutes), matching the verified probe.
+11. **Bounded fan-out for changelog.** The new changelog endpoint caps the number of epics per request and bounds concurrency, reusing the cohort path's staged-fetch pattern. It logs (via `log`/response meta) when the epic set is truncated; it never silently drops epics. Truncated single-issue changelogs (`total > len(histories)`) fall back to the paginated changelog endpoint for that epic.
+12. **Backend change is additive for stories; one new read-only endpoint for phases.** Story enrichment attaches `epicProjectTrack` (string | null) and `epicAssignee` (`{ displayName } | null`) additively. The time-in-phase data comes from a new `POST /api/stats/project-track-phase-durations` read-only route (no Jira writes).
+13. **Analytics reuse.** Tab open and control toggles reuse existing `stats_action` / `chart_action` / `filter_changed` events with bucketed params (`series_type`, `metric`, `capacity_side`, exclusion booleans). No raw epic keys, assignee names, or durations in analytics payloads. No new GA4 custom dimension unless review finds one strictly required.
 
 ## Affected Surfaces
 
@@ -49,6 +51,7 @@ The metric toggle was described as "story points by team" vs "epics by assignee,
 | Stats-source load gate (`dashboard.jsx:727`, ~7050-7054) | `isStatsSourceOnlyStatsView` true for `excludedCapacity`/`monoCrossShare`; load effect runs for those. | Include `projectTrack` so the cached progressive source fetch runs and ENG alerts/filters/task list stay unloaded. |
 | Stats panel render gate (`dashboard.jsx:10238`) | `canRenderStatsPanel` includes the stats-source views. | Include `projectTrack`. |
 | Stats-source story payload (`jira_server.py:5082-5141`, `5151-5199`, `5343-5348`) | Story carries `epicKey`/`epicSummary`; epic enrichment fetches only `summary`. | Additionally carry `epicProjectTrack` and `epicAssignee`; epic enrichment fetches `summary` + project-track field + `assignee`. |
+| Stats routes (`backend/routes/stats_routes.py`) | Registers `/api/stats/*` POSTs (excluded-capacity-source, epic-cohort, burnout, …). | Register new `POST /api/stats/project-track-phase-durations` delegating to a `jira_server.py` handler, same auth/`X-Requested-With` policy as siblings. |
 | Excluded Capacity / Mono vs Cross tabs | Unchanged. | Unchanged — no regression. Reused helpers (`storyPointsFor`, `getSprintQuarterLabel`, classifier) keep current behavior. |
 
 ## Endpoint Contract
@@ -56,6 +59,7 @@ The metric toggle was described as "story points by team" vs "epics by assignee,
 | Route | Auth | CSRF | Request | Success | Errors / notes |
 | --- | --- | --- | --- | --- | --- |
 | `POST /api/stats/excluded-capacity-source` | Existing authenticated read (OAuth Jira REST / basic per mode) | Existing `X-Requested-With: jira-execution-planner` behavior | Existing `{ sprintIds, teamIds, refresh? }` (one sprint per request) | Existing `{ cached, generatedAt, data, meta }`; each story in `data` now additionally includes `fields.epicProjectTrack` (string | null) and `fields.epicAssignee` ({ displayName } | null). | No request/response shape removals. Existing consumers ignore the new fields. Server-Timing token `epic-summaries` continues to cover the (now richer) epic fetch. Epic enrichment stays a single cached bulk fetch keyed by epic key + auth context; no per-issue fan-out. |
+| `POST /api/stats/project-track-phase-durations` (new) | Same authenticated read as other `/api/stats/*` routes (OAuth Jira REST / basic per mode) | Same `X-Requested-With: jira-execution-planner` requirement as sibling stats POSTs | `{ epicKeys: string[], refresh?: boolean }` — caller passes the in-scope epic keys (capped server-side) | `{ cached, generatedAt, data: [{ epicKey, summary, created, currentTrack, transitions: [{ date, from, to }], durationsDays: { "<state>": number } }], meta: { requestedEpicCount, processedEpicCount, truncated } }` | Read-only; never mutates Jira. Caps `epicKeys` (e.g. ≤ a documented MAX) and bounds changelog concurrency, reusing the cohort staged-fetch pattern. On per-epic single-changelog truncation (`total > len(histories)`), falls back to the paginated changelog endpoint for that epic. `meta.truncated=true` when the cap drops epics. Cache key includes the normalized epic-key set + auth context. No token material, raw assignee, or PII in logs. |
 
 New story `fields` shape (additive keys shown):
 
@@ -75,13 +79,20 @@ New story `fields` shape (additive keys shown):
 
 - Modify: `jira_server.py` — extend `fetch_cached_excluded_capacity_epic_summaries` to fetch + cache `projectTrack` and `assignee`, return a per-key meta dict; extend `build_excluded_capacity_issue_payload` to attach `epicProjectTrack` and `epicAssignee`. Resolve the field id via `get_project_track_field_id()` wrapped in a `ConfigStorageError` fallback for no-request-context.
 - Modify: `tests/test_excluded_capacity_stats_api.py` — assert the enriched story payload includes `epicProjectTrack` and `epicAssignee`, including null-track and missing-assignee cases, and that the epic fetch requests the project-track field.
-- Create: `frontend/src/stats/projectTrackStats.js` — pure aggregation: `buildProjectTrackQuarterSeries(...)` and `summarizeProjectTrackTotals(...)`.
-- Create: `tests/test_project_track_stats.js` — Node `--test` coverage for capacity-side filtering, exclusion toggles, null-track bucketing, story vs epic metric, dominant-quarter placement, and range totals.
+- Create: `frontend/src/stats/projectTrackStats.js` — pure aggregation: `buildProjectTrackQuarterSeries(...)`, `summarizeProjectTrackTotals(...)`, and `buildProjectTrackBreakdownRows(...)` (per-team in SP mode, per-assignee in Epics mode).
+- Create: `tests/test_project_track_stats.js` — Node `--test` coverage for capacity-side filtering, exclusion toggles, null-track bucketing, story vs epic metric, dominant-quarter placement, range totals, and per-team / per-assignee breakdown rows.
 - Create: `frontend/src/stats/ProjectTrackQuarterChart.jsx` — SVG vertical stacked-bar chart (quarters × track), reusing shared color resolver, legend button pattern, and `resolveFloatingHoverPosition` hover readout.
-- Modify: `frontend/src/dashboard.jsx` — add `projectTrack` to `resolveStatsView`, the stats-source gates, `canRenderStatsPanel`, the stats-view dropdown options; add the new `stats-view` block with capacity toggle, metric toggle, exclusion toggles, reused Start/End sprint selectors, summary panels, and the chart; memoize the series/totals from the already-loaded stats-source data.
+- Create: `frontend/src/stats/ProjectTrackBreakdownChart.jsx` — horizontal per-row (team/assignee) stacked-bar chart split by track; model on `EffortTypeSplitChart.jsx` grammar (rows, segments, legend, clamped readout).
+- Create: `frontend/src/stats/projectTrackPhaseStats.js` — pure helper `summarizeTrackPhaseDurations(rows)` (totals/averages) and ordering for the time-in-phase bars; keep all changelog fetching server-side.
+- Create: `frontend/src/stats/ProjectTrackPhaseChart.jsx` — horizontal per-epic stacked-bar chart (segments = track state, width = days), reusing shared chart helpers.
+- Create: `tests/test_project_track_phase_stats.js` — Node `--test` coverage for duration math (initial null phase from `created` to first transition, mid phases, open final phase to now) and aggregate summary, mirroring the verified TECH-27221 shape.
+- Modify: `frontend/src/api/engApi.js` (or the stats API module the tab uses) — add `fetchProjectTrackPhaseDurations(backendUrl, { epicKeys, refresh, signal })` POSTing with the `X-Requested-With` header, mirroring `fetchExcludedCapacityStatsSource`.
+- Create: `backend/routes/stats_routes.py` route `POST /api/stats/project-track-phase-durations` delegating to a `jira_server.py` handler; add the changelog-parsing + bounded-fetch implementation in `jira_server.py` reusing cohort staged-fetch + history helpers.
+- Modify: `tests/test_oauth_stats_routes.py` and a new/existing `tests/test_project_track_phase_api.py` — route auth/CSRF, request/response shape, epic cap + `meta.truncated`, no-request-context path, and changelog transition parsing against a synthetic changelog fixture (no real Jira data).
+- Modify: `frontend/src/dashboard.jsx` — add `projectTrack` to `resolveStatsView`, the stats-source gates, `canRenderStatsPanel`, the stats-view dropdown options; add the new `stats-view` block with capacity toggle, metric toggle, exclusion toggles, reused Start/End sprint selectors, the quarters chart, the team/assignee breakdown chart, and the time-in-phase section; memoize SP series/breakdown from the already-loaded stats-source data, and lazily fetch phase durations for the in-scope epic keys when the section is shown.
 - Create: `frontend/src/styles/stats/project-track.css` (only if the existing stats CSS partials do not already cover the needed classes) — follow the existing `frontend/src/styles/stats/` import pattern; reuse Excluded Capacity card/legend classes where possible.
 - Modify: `tests/test_codebase_structure_budgets.py` — ratchet budgets only if the new files / `dashboard.jsx` growth legitimately exceed current limits.
-- Modify: `tests/ui/codebase_structure_smoke.spec.js` (or the existing stats UI spec) — add a Playwright smoke test that opens the Project Track tab, asserts the chart and summary panels render, and captures a screenshot (animations settled) for product/tech and SP/epics toggles.
+- Modify: `tests/ui/codebase_structure_smoke.spec.js` (or the existing stats UI spec) — add a Playwright smoke test that opens the Project Track tab, asserts the quarters chart, breakdown chart, and time-in-phase section render, and captures a screenshot (animations settled) for product/tech and SP/epics toggles.
 - Modify: `docs/README_ANALYTICS.md` — document the reused events and any new bucketed param values (`metric`, `capacity_side`, `series_type` track tokens).
 - Modify: `README.md` — add a one-line mention of the Project Track stats tab under the stats/feature list.
 - Modify: `docs/plans/README.md` — add the plan entry; move to `DONE-*` only after acceptance.
@@ -251,8 +262,9 @@ git commit -m "feat(stats): enrich stats-source stories with epic project track 
 **Interfaces:**
 - Consumes: stats-source stories (`{ fields: { customfield_10004, epicKey, epicProjectTrack, teamId, projectKey, customfield_10101 } }`), `classifyCapacityIssue` from `frontend/src/capacityClassification.mjs`, `getSprintQuarterLabel`/`storyPointsFor` from `frontend/src/stats/excludedCapacityStats.js`.
 - Produces:
-  - `buildProjectTrackQuarterSeries(tasks, { capacitySide, metric, excludeAdHoc, excludeExcludedCapacity, techProjectKeys, adHocEpicSet, excludedEpicSet }) -> { quarters: string[], tracks: string[], cells: { [quarter]: { [track]: number } } }`
+  - `buildProjectTrackQuarterSeries(tasks, opts) -> { quarters: string[], tracks: string[], cells: { [quarter]: { [track]: number } } }` where `opts = { capacitySide, metric, excludeAdHoc, excludeExcludedCapacity, techProjectKeys, adHocEpicSet, excludedEpicSet }`
   - `summarizeProjectTrackTotals(series) -> { byTrack: { [track]: number }, total: number }`
+  - `buildProjectTrackBreakdownRows(tasks, opts, { teamLabels }) -> { rows: [{ id, label, byTrack: { [track]: number }, total }], tracks: string[] }` — rows are **teams** when `opts.metric === 'storyPoints'` (label from `teamLabels[teamId]`/`teamName`/`teamId`, SP summed at story level) and **assignees** when `opts.metric === 'epics'` (label from `epicAssignee.displayName` or `Unassigned`, each in-scope epic's total SP attributed once to its assignee). Same in-scope filtering as the quarter series; rows sorted by `total` desc, `tracks` ordered as in the quarter series.
   - `NO_TRACK_LABEL = 'No track'`
 
 - [ ] **Step 2.1: Write the failing tests.**
@@ -423,33 +435,69 @@ export function summarizeProjectTrackTotals(series) {
 
 Note: confirm `getProjectTrackRank` is exported from `excludedCapacityStats.js` or `frontend/src/eng/engTaskUtils.js` (it lives in `engTaskUtils.js:202`); import from wherever it is actually exported, and add a named re-export only if needed to avoid a deep ENG import from a stats module.
 
-- [ ] **Step 2.4: Run the tests to confirm they pass.**
+- [ ] **Step 2.4: Add failing tests for the team/assignee breakdown.**
+
+Append to `tests/test_project_track_stats.js`:
+
+```js
+import { buildProjectTrackBreakdownRows } from '../frontend/src/stats/projectTrackStats.js';
+
+test('SP mode breakdown rows are teams split by track', () => {
+  const tasks = [story('PROD-1', 5, 'Committed', '2026Q1', { teamId: 'team-a' }),
+                 story('PROD-2', 3, 'Flexible', '2026Q1', { teamId: 'team-b' })];
+  const out = buildProjectTrackBreakdownRows(tasks, base, { teamLabels: { 'team-a': 'Alpha', 'team-b': 'Bravo' } });
+  const alpha = out.rows.find(r => r.label === 'Alpha');
+  assert.equal(alpha.byTrack['Committed'], 5);
+  assert.equal(alpha.total, 5);
+});
+
+test('Epics mode breakdown rows are assignees, epic SP counted once', () => {
+  const tasks = [
+    { key: 'S1', fields: { customfield_10004: 2, epicKey: 'E1', epicProjectTrack: 'Committed',
+      epicAssignee: { displayName: 'Dana' }, teamId: 'team-a', projectKey: 'PROD', customfield_10101: [{ name: '2026Q1' }] } },
+    { key: 'S2', fields: { customfield_10004: 6, epicKey: 'E1', epicProjectTrack: 'Committed',
+      epicAssignee: { displayName: 'Dana' }, teamId: 'team-b', projectKey: 'PROD', customfield_10101: [{ name: '2026Q2' }] } },
+  ];
+  const out = buildProjectTrackBreakdownRows(tasks, { ...base, metric: 'epics' }, { teamLabels: {} });
+  const dana = out.rows.find(r => r.label === 'Dana');
+  assert.equal(dana.byTrack['Committed'], 8); // 2 + 6 once, attributed to epic assignee
+});
+```
+
+- [ ] **Step 2.5: Implement `buildProjectTrackBreakdownRows` and run the tests.**
+
+Reuse the same `inScope`/`trackOf` helpers. SP mode: group by `teamId`, label via `teamLabels`, sum story SP per track. Epics mode: dedupe stories to epics, attribute each epic's total in-scope SP to `epicAssignee.displayName || 'Unassigned'`, per track. Sort rows by `total` desc; reuse the quarter-series track ordering.
 
 Run: `node --test tests/test_project_track_stats.js`
-Expected: PASS (all 4 tests).
+Expected: PASS (all tests, incl. the two new breakdown tests).
 
-- [ ] **Step 2.5: Commit.**
+- [ ] **Step 2.6: Commit.**
 
 ```bash
 git add frontend/src/stats/projectTrackStats.js tests/test_project_track_stats.js
-git commit -m "feat(stats): add project-track-by-quarter aggregation helpers"
+git commit -m "feat(stats): add project-track quarter + team/assignee breakdown helpers"
 ```
 
-## Task 3: Chart component + dashboard tab wiring
+## Task 3: Chart components + dashboard tab wiring (SP sections)
 
 **Files:**
 - Create: `frontend/src/stats/ProjectTrackQuarterChart.jsx`
+- Create: `frontend/src/stats/ProjectTrackBreakdownChart.jsx`
 - Modify: `frontend/src/dashboard.jsx`
 - Create (if needed): `frontend/src/styles/stats/project-track.css`
 - Test: `tests/ui/codebase_structure_smoke.spec.js` (or the existing stats UI spec)
 
 **Interfaces:**
-- Consumes: `buildProjectTrackQuarterSeries`, `summarizeProjectTrackTotals`, `NO_TRACK_LABEL` (Task 2); `resolveTeamColor`-style color resolver and `resolveFloatingHoverPosition` already used by `ExcludedCapacityLineChart`.
-- Produces: `<ProjectTrackQuarterChart series={series} resolveColor={fn} metric={'storyPoints'|'epics'} />` rendering vertical stacked bars per quarter, a clickable legend (native `<button>`), and a pointer-positioned hover readout.
+- Consumes: `buildProjectTrackQuarterSeries`, `summarizeProjectTrackTotals`, `buildProjectTrackBreakdownRows`, `NO_TRACK_LABEL` (Task 2); `resolveTeamColor`-style color resolver and `resolveFloatingHoverPosition` already used by `ExcludedCapacityLineChart`; the per-row stacked-bar grammar of `EffortTypeSplitChart.jsx`.
+- Produces:
+  - `<ProjectTrackQuarterChart series={series} resolveColor={fn} metric={'storyPoints'|'epics'} />` — vertical stacked bars per quarter, clickable native-`<button>` legend, pointer-positioned hover readout.
+  - `<ProjectTrackBreakdownChart data={breakdown} resolveColor={fn} metric={...} />` — one horizontal stacked bar per team/assignee row, segments = track, shared legend + clamped readout.
 
-- [ ] **Step 3.1: Implement the chart component.**
+- [ ] **Step 3.1: Implement the chart components.**
 
-Model the SVG structure, axis scaling, legend buttons, and hover readout on `frontend/src/stats/ExcludedCapacityLineChart.jsx` (reuse its sizing constants, `resolveFloatingHoverPosition`, and legend pattern). Render one vertical bar per `series.quarters`, each stacked by `series.tracks` (bottom-to-top in `tracks` order), height scaled to the max quarter total with nice Y ticks. Legend toggles a track's visibility. Hover shows `{quarter} — {track}: {value} SP`. Colors come from a track-keyed resolver passed by the dashboard; `NO_TRACK_LABEL` uses a neutral grey. Use native button controls for the legend (no `span role=button`). Keep the readout sized to content with a narrow max width.
+`ProjectTrackQuarterChart.jsx`: model the SVG structure, axis scaling, legend buttons, and hover readout on `frontend/src/stats/ExcludedCapacityLineChart.jsx` (reuse its sizing constants, `resolveFloatingHoverPosition`, and legend pattern). Render one vertical bar per `series.quarters`, each stacked by `series.tracks` (bottom-to-top in `tracks` order), height scaled to the max quarter total with nice Y ticks. Legend toggles a track's visibility. Hover shows `{quarter} — {track}: {value} SP`. Colors come from a track-keyed resolver passed by the dashboard; `NO_TRACK_LABEL` uses a neutral grey. Use native button controls for the legend (no `span role=button`). Keep the readout sized to content with a narrow max width.
+
+`ProjectTrackBreakdownChart.jsx`: model on `EffortTypeSplitChart.jsx` — one horizontal stacked bar per `data.rows` row (team in SP mode, assignee in Epics mode), segment widths = `byTrack[track] / row.total`, segments ordered by `data.tracks`. Share the same track color resolver and legend so colors match the quarters chart. Use the existing clamped readout (`clampReadoutPoint`-style) and compact-label rule.
 
 - [ ] **Step 3.2: Wire the new sub-tab in `dashboard.jsx`.**
 
@@ -458,8 +506,8 @@ Model the SVG structure, axis scaling, legend buttons, and hover readout on `fro
 3. Add `{ value: 'projectTrack', label: 'Project Track' }` to the stats-view dropdown options (~13056).
 4. Add a `stats-view` block `className={`stats-view ${statsView === 'projectTrack' ? 'open' : ''}`}` after the Mono vs Cross block (~13345-13459), reusing the Excluded Capacity tab's Start/End sprint selectors and summary-card layout.
 5. Add view-local state: `projectTrackCapacitySide` (default `'product'`), `projectTrackMetric` (default `'storyPoints'`), `projectTrackExcludeAdHoc` (default `false`), `projectTrackExcludeExcludedCapacity` (default `false`). Persist via the existing saved-prefs mechanism if sibling stats toggles are persisted; otherwise keep local.
-6. Memoize `const projectTrackSeries = useMemo(() => buildProjectTrackQuarterSeries(excludedCapacitySourceTasks, { capacitySide: projectTrackCapacitySide, metric: projectTrackMetric, excludeAdHoc: projectTrackExcludeAdHoc, excludeExcludedCapacity: projectTrackExcludeExcludedCapacity, techProjectKeys, adHocEpicSet, excludedEpicSet }), [<those deps>])` using the same already-loaded stats-source task array the Excluded Capacity / Mono vs Cross tabs consume (do not trigger a new fetch). Derive `summarizeProjectTrackTotals(projectTrackSeries)` for the panels.
-7. Render summary cards (Range, total SP, and one card per track total via `summarizeProjectTrackTotals().byTrack`) and the `<ProjectTrackQuarterChart>`.
+6. Memoize the series from the same already-loaded stats-source task array the Excluded Capacity / Mono vs Cross tabs consume (locate the exact variable; do not trigger a new fetch): `buildProjectTrackQuarterSeries(tasks, opts)` with `opts = { capacitySide: projectTrackCapacitySide, metric: projectTrackMetric, excludeAdHoc: projectTrackExcludeAdHoc, excludeExcludedCapacity: projectTrackExcludeExcludedCapacity, techProjectKeys, adHocEpicSet, excludedEpicSet }`. Also memoize `buildProjectTrackBreakdownRows(tasks, opts, { teamLabels: activeGroup?.teamLabels || {} })` and `summarizeProjectTrackTotals(series)`.
+7. Render, in order: summary cards (Range, total SP, one card per track total via `summarizeProjectTrackTotals().byTrack`); `<ProjectTrackQuarterChart>`; then `<ProjectTrackBreakdownChart>` (label the section "By team" in SP mode, "By assignee" in Epics mode). The time-in-phase section (Task 5) renders below these.
 
 - [ ] **Step 3.3: Add CSS only if needed.**
 
@@ -472,7 +520,7 @@ Expected: clean build; `frontend/dist/dashboard.js` regenerated. Commit the gene
 
 - [ ] **Step 3.5: Add a Playwright smoke + screenshot.**
 
-Add to the chosen UI spec: open ENG → Stats, select `Project Track`, assert the chart SVG and at least one summary card render, toggle `Tech` and `Epics` and assert the chart updates, and capture a screenshot after disabling/settling animations. Assert legend buttons are real `<button>` elements and that the new dropdown panel (if any) is clickable with a normal (non-forced) click.
+Add to the chosen UI spec: open ENG → Stats, select `Project Track`, assert the quarters chart SVG, the breakdown chart, and at least one summary card render, toggle `Tech` and `Epics` and assert both charts update (and the breakdown section label switches "By team" ↔ "By assignee"), and capture a screenshot after disabling/settling animations. Assert legend buttons are real `<button>` elements and that the new dropdown panel (if any) is clickable with a normal (non-forced) click.
 
 Run: `npx playwright test tests/ui/codebase_structure_smoke.spec.js`
 Expected: PASS; screenshots saved under the test results path.
@@ -480,12 +528,111 @@ Expected: PASS; screenshots saved under the test results path.
 - [ ] **Step 3.6: Commit.**
 
 ```bash
-git add frontend/src/stats/ProjectTrackQuarterChart.jsx frontend/src/dashboard.jsx \
-  frontend/src/styles/stats/project-track.css frontend/dist tests/ui/codebase_structure_smoke.spec.js
-git commit -m "feat(stats): add Project Track by quarter sub-tab and bar chart"
+git add frontend/src/stats/ProjectTrackQuarterChart.jsx frontend/src/stats/ProjectTrackBreakdownChart.jsx \
+  frontend/src/dashboard.jsx frontend/src/styles/stats/project-track.css frontend/dist \
+  tests/ui/codebase_structure_smoke.spec.js
+git commit -m "feat(stats): add Project Track tab with quarter and team/assignee charts"
 ```
 
-## Task 4: Analytics, docs, structure budgets, full verification
+## Task 4: Backend — epic Project Track phase-duration endpoint
+
+**Files:**
+- Modify: `backend/routes/stats_routes.py` — register `POST /api/stats/project-track-phase-durations`.
+- Modify: `jira_server.py` — add the handler + bounded changelog fetch + transition parsing (reuse cohort staged-fetch helpers near `fetch_epic_cohort_data` / `_cohort_fetch_terminal_date_from_changelog` ~4805 and the history parsing style of `resolve_terminal_date_from_history` ~1072).
+- Create: `tests/test_project_track_phase_api.py`
+- Modify: `tests/test_oauth_stats_routes.py` — auth/CSRF + no-request-context coverage.
+
+**Interfaces:**
+- Produces: `POST /api/stats/project-track-phase-durations` returning `{ cached, generatedAt, data: [{ epicKey, summary, created, currentTrack, transitions: [{ date, from, to }], durationsDays: { "<state>": number } }], meta: { requestedEpicCount, processedEpicCount, truncated } }`. State label for null/blank is `null (no value)`.
+- Pure helper `compute_track_phase_durations(created_iso, current_value, transitions, now)` so the math is unit-testable without Jira.
+
+- [ ] **Step 4.1: Write failing tests with a synthetic changelog fixture.**
+
+In `tests/test_project_track_phase_api.py`, unit-test the pure parser against a fixture mirroring the verified `TECH-27221` shape (synthetic keys only — no real Jira data):
+
+```python
+def test_durations_initial_null_then_single_transition(self):
+    created = '2026-03-26T13:29:50.324+0000'
+    transitions = [{'date': '2026-06-25T00:00:00.000+0000', 'from': None, 'to': 'Flexible'}]
+    now = parse('2026-06-30T00:00:00.000+0000')
+    out = compute_track_phase_durations(created, 'Flexible', transitions, now)
+    self.assertAlmostEqual(out['null (no value)'], 91.0, delta=1.0)
+    self.assertAlmostEqual(out['Flexible'], 5.0, delta=1.0)
+
+def test_route_caps_epics_and_flags_truncation(self):
+    # POST with more than MAX epicKeys -> meta.truncated True, processedEpicCount == cap
+    ...
+```
+
+- [ ] **Step 4.2: Run to confirm failure.**
+
+Run: `.venv/bin/python -m unittest tests.test_project_track_phase_api -v`
+Expected: FAIL (handler/helper undefined).
+
+- [ ] **Step 4.3: Implement the pure parser.**
+
+Build interval boundaries from `created` (initial value = first transition's `from`, else `current_value`), then each transition's `to`; final phase runs to `now`. Sum days per state label; null/blank → `null (no value)`. Date-only granularity (the probe confirmed transitions carry only date precision that matters).
+
+- [ ] **Step 4.4: Implement the bounded fetch + route.**
+
+For each requested epic key (capped at a module constant `PROJECT_TRACK_PHASE_MAX_EPICS`, with bounded concurrency reusing the cohort staged-fetch pattern): `GET /rest/api/3/issue/{key}?expand=changelog&fields=created,summary,{track_field}` via `current_jira_get`; collect `customfield_<track>` transitions (`fieldId` match) with `created` timestamps; if `changelog.total > len(histories)`, page the `/rest/api/3/issue/{key}/changelog` endpoint for the remainder. Resolve the field id via `get_project_track_field_id()` with `ConfigStorageError` fallback. Set `meta.truncated` when the cap drops epics; never silently drop — log the dropped count without epic keys. Register the route in `backend/routes/stats_routes.py` mirroring the other `/api/stats/*` POSTs (auth + `X-Requested-With`).
+
+- [ ] **Step 4.5: Run tests + full Python suite.**
+
+Run: `.venv/bin/python -m unittest tests.test_project_track_phase_api tests.test_oauth_stats_routes && .venv/bin/python -m unittest discover -s tests`
+Expected: PASS, no regressions.
+
+- [ ] **Step 4.6: Commit.**
+
+```bash
+git add jira_server.py backend/routes/stats_routes.py tests/test_project_track_phase_api.py tests/test_oauth_stats_routes.py
+git commit -m "feat(stats): add bounded epic Project Track phase-duration endpoint"
+```
+
+## Task 5: Frontend — time-in-phase section in the Project Track tab
+
+**Files:**
+- Create: `frontend/src/stats/projectTrackPhaseStats.js`
+- Create: `frontend/src/stats/ProjectTrackPhaseChart.jsx`
+- Create: `tests/test_project_track_phase_stats.js`
+- Modify: `frontend/src/api/engApi.js` (add `fetchProjectTrackPhaseDurations`)
+- Modify: `frontend/src/dashboard.jsx` (render + lazy fetch)
+- Modify: `tests/ui/codebase_structure_smoke.spec.js`
+
+**Interfaces:**
+- Consumes: `POST /api/stats/project-track-phase-durations` (Task 4); the in-scope epic keys derived from the loaded stats-source stories after exclusion toggles; the shared track color resolver.
+- Produces: `fetchProjectTrackPhaseDurations(backendUrl, { epicKeys, refresh, signal })`; `summarizeTrackPhaseDurations(rows) -> { byState: {..days..}, avgDaysToFirstTrack, avgDaysToCommitted }`; `<ProjectTrackPhaseChart rows={rows} resolveColor={fn} />`.
+
+- [ ] **Step 5.1: Write failing tests for the summary helper.**
+
+`tests/test_project_track_phase_stats.js` — given two epic rows with `durationsDays`, assert `byState` sums and that `avgDaysToCommitted` ignores epics that never reached Committed.
+
+- [ ] **Step 5.2: Implement `projectTrackPhaseStats.js` and run the test.**
+
+Run: `node --test tests/test_project_track_phase_stats.js`
+Expected: PASS.
+
+- [ ] **Step 5.3: Add the API helper.**
+
+Add `fetchProjectTrackPhaseDurations` to `frontend/src/api/engApi.js`, mirroring `fetchExcludedCapacityStatsSource` (POST, `X-Requested-With` header, abort signal).
+
+- [ ] **Step 5.4: Implement the chart + wire the section.**
+
+`ProjectTrackPhaseChart.jsx`: one horizontal stacked bar per epic row (segments = state, width = days), ordered by total age desc, sharing the track color resolver; hover shows `{epicKey} — {state}: {days}d`. In `dashboard.jsx`, when the Project Track tab is shown and the in-scope epic key set is non-empty, lazily call `fetchProjectTrackPhaseDurations` once per epic-key-set signature (cache by signature; abort on change), render `<ProjectTrackPhaseChart>` plus a small summary (avg days-to-first-track, avg days-to-Committed) from `summarizeTrackPhaseDurations`. Show a `meta.truncated` notice when the backend capped the epic set. Do not block the SP sections on this fetch.
+
+- [ ] **Step 5.5: Build, smoke, commit.**
+
+Run: `npm run build && npx playwright test tests/ui/codebase_structure_smoke.spec.js`
+Expected: clean build; UI smoke asserts the time-in-phase section renders for a scoped group; screenshot captured.
+
+```bash
+git add frontend/src/stats/projectTrackPhaseStats.js frontend/src/stats/ProjectTrackPhaseChart.jsx \
+  frontend/src/api/engApi.js frontend/src/dashboard.jsx frontend/dist \
+  tests/test_project_track_phase_stats.js tests/ui/codebase_structure_smoke.spec.js
+git commit -m "feat(stats): add epic time-in-Project-Track-phase section"
+```
+
+## Task 6: Analytics, docs, structure budgets, full verification
 
 **Files:**
 - Modify: `docs/README_ANALYTICS.md`
@@ -493,32 +640,32 @@ git commit -m "feat(stats): add Project Track by quarter sub-tab and bar chart"
 - Modify: `tests/test_codebase_structure_budgets.py` (only if budgets legitimately exceeded)
 - Modify: `docs/plans/README.md`
 
-- [ ] **Step 4.1: Wire and document analytics.**
+- [ ] **Step 6.1: Wire and document analytics.**
 
-Emit tab-open and toggle events through the existing `stats_action` / `chart_action` / `filter_changed` contracts with bucketed typed params only (`capacity_side: 'product'|'tech'`, `metric: 'story_points'|'epics'`, exclusion toggle booleans as discrete params, track `series_type` tokens). No raw epic keys, summaries, team/group names, issue keys, or assignee names. Update `frontend/src/analytics/events.js` and `tests/test_analytics_events.js` only if a new registered param value is introduced; document trigger, event type, canonical `event_name`, `feature_name`, typed params, and the privacy reason in `docs/README_ANALYTICS.md`. If no new event/param is needed, document the allowlist reason instead.
+Emit tab-open and toggle events through the existing `stats_action` / `chart_action` / `filter_changed` contracts with bucketed typed params only (`capacity_side: 'product'|'tech'`, `metric: 'story_points'|'epics'`, exclusion toggle booleans as discrete params, track `series_type` tokens, a `section` token for quarters/breakdown/phase). No raw epic keys, summaries, team/group names, issue keys, assignee names, or durations. Update `frontend/src/analytics/events.js` and `tests/test_analytics_events.js` only if a new registered param value is introduced; document trigger, event type, canonical `event_name`, `feature_name`, typed params, and the privacy reason in `docs/README_ANALYTICS.md`. If no new event/param is needed, document the allowlist reason instead.
 
-- [ ] **Step 4.2: Update user-facing docs.**
+- [ ] **Step 6.2: Update user-facing docs.**
 
-Add a one-line description of the Project Track stats tab to `README.md` (stats/feature list) and note the Product-default capacity toggle, exclusion toggles, and SP-vs-epics metric.
+Add a description of the Project Track stats tab to `README.md` (stats/feature list): the quarters chart, the team/assignee breakdown, the time-in-phase section, the Product-default capacity toggle, exclusion toggles, and SP-vs-epics metric.
 
-- [ ] **Step 4.3: Run focused analytics/structure tests.**
+- [ ] **Step 6.3: Run focused analytics/structure tests.**
 
 Run: `node --test tests/test_analytics_events.js tests/test_analytics_source_guards.js && .venv/bin/python -m unittest tests.test_codebase_structure_budgets`
 Expected: PASS. Ratchet budgets in `tests/test_codebase_structure_budgets.py` only if the new files / `dashboard.jsx` growth legitimately exceed limits; record the new numbers.
 
-- [ ] **Step 4.4: Full pre-push verification.**
+- [ ] **Step 6.4: Full pre-push verification.**
 
 Run:
 ```bash
 .venv/bin/python -m unittest discover -s tests
-node --test tests/test_project_track_stats.js tests/test_excluded_capacity_stats.js
+node --test tests/test_project_track_stats.js tests/test_project_track_phase_stats.js tests/test_excluded_capacity_stats.js
 npm run build
 npx playwright test tests/ui/codebase_structure_smoke.spec.js
 .venv/bin/python jira_server.py   # then curl http://localhost:5050/api/test, confirm clean startup banner, stop
 ```
-Expected: full Python suite PASS, Node tests PASS, clean build, UI smoke PASS, server starts with no pre-banner dependency/runtime warnings and `/api/test` returns OK.
+Expected: full Python suite PASS (incl. `tests.test_project_track_phase_api`, `tests.test_excluded_capacity_stats_api`, `tests.test_initiative_extraction`, `tests.test_codebase_structure_budgets`), Node tests PASS, clean build, UI smoke PASS, server starts with no pre-banner dependency/runtime warnings and `/api/test` returns OK.
 
-- [ ] **Step 4.5: Update plan index and commit.**
+- [ ] **Step 6.5: Update plan index and commit.**
 
 Add the plan to `docs/plans/README.md`. Commit docs/test updates:
 
@@ -529,11 +676,12 @@ git commit -m "docs(stats): document Project Track by quarter tab and analytics"
 
 ## Acceptance Criteria
 
-- A `Project Track` stats sub-tab appears after `Mono vs Cross`, loads from the cached progressive stats-source (no ENG alerts/filters/task list), and renders without a second scoped fetch.
-- The main chart shows vertical stacked bars per quarter, split by Project Track value with a `No track` segment for null/blank, derived from the active sprint range.
-- A capacity toggle switches Product (default) vs Tech using `classifyCapacityIssue`; the chart and panels reflect only the selected side.
-- `Exclude Ad Hoc` and `Exclude excluded-capacity epics` toggles (default included) drop those epics' stories from chart and panels using the active group's configured sets.
-- The metric toggle switches story-granularity SP totals vs epic-granularity SP totals (epic placed in its dominant quarter); both keep the quarters × track shape.
-- Summary panels show total SP and per-track totals aggregated across the selected range.
-- Backend stats-source stories carry `epicProjectTrack` and `epicAssignee` additively, with the project-track field resolved via `get_project_track_field_id()` and a `ConfigStorageError` fallback; Excluded Capacity and Mono vs Cross tabs are unchanged.
-- Full Python suite, Node tests, `npm run build`, server `/api/test` startup check, and the UI smoke test pass; analytics use bucketed params with no raw Jira identifiers; structure budgets pass (ratcheted only if legitimately grown).
+- A `Project Track` stats sub-tab appears after `Mono vs Cross`, loads its SP sections from the cached progressive stats-source (no ENG alerts/filters/task list), and renders without a second scoped fetch for the SP sections.
+- The quarters chart shows vertical stacked bars per quarter, split by Project Track value with a `No track` segment for null/blank, derived from the active sprint range.
+- A capacity toggle switches Product (default) vs Tech using `classifyCapacityIssue`; all sections reflect only the selected side.
+- `Exclude Ad Hoc` and `Exclude excluded-capacity epics` toggles (default included) drop those epics' stories/epics from every section using the active group's configured sets.
+- The metric toggle switches the unit AND the breakdown dimension: `Story points` → story-granularity SP with a per-**team** breakdown; `Epics` → epic-granularity SP (epic placed in its dominant quarter) with a per-**assignee** breakdown. Project Track is inherited from epic to story throughout.
+- The breakdown chart shows one horizontal stacked bar per team (SP mode) / assignee (Epics mode), split by Project Track, aggregated over the selected range; the section label switches "By team" ↔ "By assignee".
+- The time-in-phase section shows, per in-scope epic, days spent in each Project Track state (`null (no value)` → `Flexible` → `Committed`) reconstructed from Jira changelog, plus an aggregate summary; the backend fetch is bounded (capped epic count, bounded concurrency) and flags `meta.truncated` without silently dropping epics.
+- Backend stats-source stories carry `epicProjectTrack` and `epicAssignee` additively (field id via `get_project_track_field_id()` + `ConfigStorageError` fallback); the new `POST /api/stats/project-track-phase-durations` route is read-only and never writes Jira; Excluded Capacity and Mono vs Cross tabs are unchanged.
+- Full Python suite (incl. `test_project_track_phase_api`, `test_excluded_capacity_stats_api`), Node tests, `npm run build`, server `/api/test` startup check, and the UI smoke test pass; analytics use bucketed params with no raw Jira identifiers or durations; structure budgets pass (ratcheted only if legitimately grown).

@@ -5710,8 +5710,13 @@ def _fetch_full_issue_changelog(issue_key, partial_histories, context=None):
     ``changelog.total`` exceeds what was returned, page the dedicated
     ``/rest/api/3/issue/{key}/changelog`` endpoint (``values``/``isLast``) to gather
     the rest before parsing.
+
+    Some Jira deployments re-include the boundary history record in the first paged
+    result. De-duplicate by ``id`` (keep the first occurrence, i.e. the embedded copy)
+    to prevent double-counting transitions.
     """
     histories = list(partial_histories or [])
+    seen_ids = {h['id'] for h in histories if h.get('id') is not None}
     start_at = len(histories)
     max_pages = 20
     for _ in range(max_pages):
@@ -5725,7 +5730,12 @@ def _fetch_full_issue_changelog(issue_key, partial_histories, context=None):
             break
         data = response.json() or {}
         values = data.get('values') or []
-        histories.extend(values)
+        for v in values:
+            vid = v.get('id')
+            if vid is None or vid not in seen_ids:
+                histories.append(v)
+                if vid is not None:
+                    seen_ids.add(vid)
         start_at += len(values)
         if bool(data.get('isLast', True)) or not values:
             break

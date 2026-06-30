@@ -200,8 +200,8 @@ class TrackPhaseDurationRouteTests(unittest.TestCase):
         self.assertEqual(body["meta"]["processedEpicCount"], cap)
 
     def test_route_pages_changelog_when_total_exceeds_returned_histories(self):
-        # First /issue response returns a partial changelog with a higher total,
-        # forcing the /changelog pagination branch to collect the rest.
+        # The embedded /issue response carries id='1' only (total=2), so the
+        # /changelog pagination branch must fire and collect id='2'.
         issue = self._issue_response(
             'TECH-2',
             created='2026-01-01T00:00:00.000+0000',
@@ -210,11 +210,10 @@ class TrackPhaseDurationRouteTests(unittest.TestCase):
                 {'fieldId': 'customfield_35024', 'fromString': None, 'toString': 'Flexible'}]}],
             total=2,
         )
+        # Faithful paged response: only the non-embedded record (id='2').
         changelog_page = FakeResponse(200, {
             'isLast': True,
             'values': [
-                {'id': '1', 'created': '2026-01-11T00:00:00.000+0000', 'items': [
-                    {'fieldId': 'customfield_35024', 'fromString': None, 'toString': 'Flexible'}]},
                 {'id': '2', 'created': '2026-01-21T00:00:00.000+0000', 'items': [
                     {'fieldId': 'customfield_35024', 'fromString': 'Flexible', 'toString': 'Committed'}]},
             ],
@@ -244,6 +243,57 @@ class TrackPhaseDurationRouteTests(unittest.TestCase):
         self.assertIn("Flexible", durations)
         paged = [c for c in mock_get.call_args_list if c.args[0].endswith('/changelog')]
         self.assertTrue(paged, "expected the /changelog pagination branch to be exercised")
+
+    def test_route_deduplicates_boundary_history_id_from_paged_changelog(self):
+        # Adversarial: the paged /changelog page re-includes id='1' (the embedded
+        # boundary record) but with a DIFFERENT toString ('Committed' instead of
+        # 'Flexible').  Without dedup, this would add a spurious second transition and
+        # skew durations.  With dedup, the original embedded record wins (first
+        # occurrence kept) and no extra state appears.
+        issue = self._issue_response(
+            'TECH-3',
+            created='2026-01-01T00:00:00.000+0000',
+            track_value='Flexible',
+            histories=[{'id': '1', 'created': '2026-01-11T00:00:00.000+0000', 'items': [
+                {'fieldId': 'customfield_35024', 'fromString': None, 'toString': 'Flexible'}]}],
+            total=2,
+        )
+        # Paged page re-sends id='1' with a conflicting toString, plus a genuine id='2'.
+        changelog_page_adversarial = FakeResponse(200, {
+            'isLast': True,
+            'values': [
+                # Boundary duplicate: same id, different toString — must be dropped.
+                {'id': '1', 'created': '2026-01-11T00:00:00.000+0000', 'items': [
+                    {'fieldId': 'customfield_35024', 'fromString': None, 'toString': 'Committed'}]},
+                {'id': '2', 'created': '2026-01-21T00:00:00.000+0000', 'items': [
+                    {'fieldId': 'customfield_35024', 'fromString': 'Flexible', 'toString': 'Flexible'}]},
+            ],
+        })
+
+        def fake_get(path, **kwargs):
+            if path.endswith('/changelog'):
+                return changelog_page_adversarial
+            return issue
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_project_track_field_id", return_value="customfield_35024"), \
+             patch.object(jira_server, "current_jira_get", side_effect=fake_get):
+            response = self.client.post(
+                "/api/stats/project-track-phase-durations",
+                headers={"X-Requested-With": "jira-execution-planner"},
+                json={"epicKeys": ["TECH-3"]},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = response.get_json()
+        epics = {e["key"]: e for e in body["epics"]}
+        durations = epics["TECH-3"]["durations"]
+        # The embedded id='1' records None -> Flexible, so Flexible must appear.
+        self.assertIn("Flexible", durations)
+        # If dedup is absent, the paged duplicate id='1' with toString='Committed' would
+        # inject an extra null->Committed transition and 'Committed' would appear.
+        # Dedup keeps the first (embedded) occurrence, so 'Committed' must NOT appear.
+        self.assertNotIn("Committed", durations)
 
     def test_route_requires_epic_keys(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):

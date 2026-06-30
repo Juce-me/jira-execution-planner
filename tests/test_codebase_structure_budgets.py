@@ -16,7 +16,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # endpoint: parse_track_transitions + compute_track_phase_durations pure helpers, the
     # ThreadPoolExecutor worker fetch with /changelog pagination, and the
     # get_project_track_phase_durations handler.
-    "jira_server.py": 6176,
+    # fix/stats-changelog-dedup adds id-based dedup in _fetch_full_issue_changelog to guard
+    # against boundary-record re-inclusion from the paged /changelog endpoint (+10 lines).
+    "jira_server.py": 6186,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.

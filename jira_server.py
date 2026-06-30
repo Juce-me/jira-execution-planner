@@ -5103,11 +5103,18 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
             (parent_field.get('fields') or {}).get('issuetype', {}).get('name', '').lower() == 'epic':
         epic_key = parent_field.get('key')
 
-    epic_summary = ''
+    epic_meta = {}
     if epic_summary_by_key and epic_key:
-        epic_summary = str(epic_summary_by_key.get(epic_key) or '').strip()
+        raw_meta = epic_summary_by_key.get(epic_key)
+        if isinstance(raw_meta, dict):
+            epic_meta = raw_meta
+        elif raw_meta:
+            epic_meta = {'summary': raw_meta}
+    epic_summary = str(epic_meta.get('summary') or '').strip()
     if not epic_summary and epic_key and parent_field.get('key') == epic_key and parent_summary:
         epic_summary = str(parent_summary or '').strip()
+    epic_project_track = epic_meta.get('projectTrack') or None
+    epic_assignee_meta = epic_meta.get('assignee') if isinstance(epic_meta.get('assignee'), dict) else None
 
     status = fields.get('status') or {}
     priority = fields.get('priority') or {}
@@ -5133,6 +5140,8 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
             'teamId': team_id,
             'epicKey': epic_key,
             'epicSummary': epic_summary,
+            'epicProjectTrack': epic_project_track,
+            'epicAssignee': {'displayName': epic_assignee_meta.get('displayName')} if epic_assignee_meta else None,
             'customfield_10101': normalized_sprints,
             'parentSummary': parent_summary,
             'projectKey': project_field.get('key', ''),
@@ -5162,6 +5171,8 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
     if not normalized_keys:
         return {}
 
+    project_track_field = get_project_track_field_id()
+
     now = time.time()
     summaries_by_normalized = {}
     missing_keys = []
@@ -5169,8 +5180,11 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
         for normalized in normalized_keys:
             cache_key = excluded_capacity_epic_summary_cache_key(normalized, context=context)
             entry = EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE.get(cache_key)
-            if entry and now - entry.get('timestamp', 0) < EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS:
-                summaries_by_normalized[normalized] = entry.get('summary', '')
+            if entry and now - entry.get('timestamp', 0) < EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS \
+                    and 'projectTrack' in entry:
+                summaries_by_normalized[normalized] = {
+                    'summary': entry.get('summary', ''), 'projectTrack': entry.get('projectTrack'),
+                    'assignee': entry.get('assignee')}
             else:
                 missing_keys.append(normalized)
 
@@ -5178,25 +5192,26 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
     for index in range(0, len(missing_keys), batch_size):
         batch = missing_keys[index:index + batch_size]
         fetched = {}
-        epic_records = fetch_issues_by_keys(batch, ['summary'], context=context)
+        epic_records = fetch_issues_by_keys(batch, ['summary', project_track_field, 'assignee'], context=context)
         for epic in epic_records:
+            ef = epic.get('fields') or {}
             key = str(epic.get('key') or '').strip().upper()
-            summary = str((epic.get('fields') or {}).get('summary') or '').strip()
-            if key:
-                fetched[key] = summary
+            if not key:
+                continue
+            tv = ef.get(project_track_field)
+            track = (tv or {}).get('value') if isinstance(tv, dict) else None
+            assignee = ef.get('assignee') or None
+            fetched[key] = {'summary': str(ef.get('summary') or '').strip(), 'projectTrack': track,
+                            'assignee': {'displayName': assignee.get('displayName')} if assignee else None}
         with _cache_lock:
             for normalized in batch:
-                summary = fetched.get(normalized, '')
-                EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context)] = {
-                    'summary': summary,
-                    'timestamp': time.time()
-                }
-                summaries_by_normalized[normalized] = summary
+                meta = fetched.get(normalized, {'summary': '', 'projectTrack': None, 'assignee': None})
+                EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context)] = {**meta, 'timestamp': time.time()}
+                summaries_by_normalized[normalized] = meta
 
-    return {
-        original_by_normalized[normalized]: summaries_by_normalized.get(normalized, '')
-        for normalized in normalized_keys
-    }
+    return {original_by_normalized[normalized]: summaries_by_normalized.get(
+        normalized, {'summary': '', 'projectTrack': None, 'assignee': None})
+        for normalized in normalized_keys}
 
 
 def _record_excluded_capacity_timing(timings_ms, key, started):

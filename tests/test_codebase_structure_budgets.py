@@ -10,7 +10,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # into fetch_epic_details_bulk's fields list + parse.
     # bugfix/jira-connect-timeout-retry-budget adds JIRA_HTTP_CONNECT_TIMEOUT_SECONDS and
     # threads a bounded connect_timeout through the resilient_jira_get wrapper.
-    "jira_server.py": 5969,
+    # feat/stats-epic-project-track-assignee enriches fetch_cached_excluded_capacity_epic_summaries
+    # and build_excluded_capacity_issue_payload with epicProjectTrack and epicAssignee.
+    "jira_server.py": 5984,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.

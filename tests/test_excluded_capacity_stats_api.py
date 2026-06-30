@@ -279,6 +279,31 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("sprintIds", response.get_json()["error"])
 
+    def test_issue_payload_carries_epic_project_track_and_assignee(self):
+        issue = {'id': '1', 'key': 'PROD-100', 'fields': {
+            'summary': 'Story A',
+            'parent': {'key': 'PROD-12', 'fields': {'issuetype': {'name': 'Epic'}, 'summary': 'Epic A'}},
+            'customfield_10004': 5}}
+        epic_meta = {'PROD-12': {'summary': 'Epic A', 'projectTrack': 'Committed',
+                                 'assignee': {'displayName': 'Synthetic Owner'}}}
+        with patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_10004'):
+            payload = jira_server.build_excluded_capacity_issue_payload(
+                issue, team_field_id=None, epic_link_field_id=None, sprint_field_id=None,
+                epic_summary_by_key=epic_meta)
+        self.assertEqual(payload['fields']['epicProjectTrack'], 'Committed')
+        self.assertEqual(payload['fields']['epicAssignee'], {'displayName': 'Synthetic Owner'})
+
+    def test_issue_payload_handles_missing_track_and_assignee(self):
+        issue = {'id': '2', 'key': 'PROD-101', 'fields': {
+            'summary': 'Story B', 'parent': {'key': 'PROD-13', 'fields': {'issuetype': {'name': 'Epic'}}}}}
+        epic_meta = {'PROD-13': {'summary': '', 'projectTrack': None, 'assignee': None}}
+        with patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_10004'):
+            payload = jira_server.build_excluded_capacity_issue_payload(
+                issue, team_field_id=None, epic_link_field_id=None, sprint_field_id=None,
+                epic_summary_by_key=epic_meta)
+        self.assertIsNone(payload['fields']['epicProjectTrack'])
+        self.assertIsNone(payload['fields']['epicAssignee'])
+
 
 if __name__ == "__main__":
     unittest.main()

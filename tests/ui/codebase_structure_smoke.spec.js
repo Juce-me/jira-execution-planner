@@ -128,7 +128,7 @@ function makeCompletedCohortEpic(index) {
     };
 }
 
-function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey }) {
+function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey, epicProjectTrack, epicAssignee }) {
     return {
         id: key,
         key,
@@ -141,6 +141,8 @@ function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName
             customfield_10004: points,
             epicKey,
             epicSummary,
+            epicProjectTrack: epicProjectTrack || null,
+            epicAssignee: epicAssignee ? { displayName: epicAssignee } : null,
             parentSummary: epicSummary,
             projectKey,
             teamId,
@@ -164,6 +166,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Alpha Team',
         points: 2,
         projectKey: 'PROD',
+        epicProjectTrack: 'Flexible',
+        epicAssignee: 'Sam BAU',
     }),
     makeExcludedCapacityIssue({
         key: 'TECH-SHARE-1',
@@ -173,6 +177,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Alpha Team',
         points: 3,
         projectKey: 'TECH',
+        epicProjectTrack: 'Committed',
+        epicAssignee: 'Tom Tech',
     }),
     makeExcludedCapacityIssue({
         key: 'PROD-SHARE-1',
@@ -182,6 +188,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Alpha Team',
         points: 5,
         projectKey: 'PROD',
+        epicProjectTrack: 'Committed',
+        epicAssignee: 'Pat Product',
     }),
     makeExcludedCapacityIssue({
         key: 'BAU-2',
@@ -191,6 +199,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Beta Team',
         points: 1,
         projectKey: 'PROD',
+        epicProjectTrack: 'Flexible',
+        epicAssignee: 'Sam BAU',
     }),
     makeExcludedCapacityIssue({
         key: 'TECH-SHARE-2',
@@ -200,6 +210,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Beta Team',
         points: 1,
         projectKey: 'TECH',
+        epicProjectTrack: 'Committed',
+        epicAssignee: 'Tom Tech',
     }),
     makeExcludedCapacityIssue({
         key: 'PROD-SHARE-2',
@@ -209,6 +221,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Beta Team',
         points: 8,
         projectKey: 'PROD',
+        epicProjectTrack: 'Committed',
+        epicAssignee: 'Pat Product',
     }),
 ];
 const scenarioTeams = Array.from({ length: 14 }, (_, index) => (
@@ -1123,6 +1137,114 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await expect(page.locator('.stats-view.open')).toContainText('Team Cross Share');
     await expect(page.locator('.stats-view.open .excluded-capacity-line-chart')).toBeVisible();
 
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Project Track tab renders filter bar, mode title, totals, per-sprint and breakdown charts', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, {
+        excludedCapacityEpics: ['BAU-EPIC'],
+    });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        selectedTeams: ['all'],
+        showStats: true,
+        statsView: 'projectTrack',
+        excludedCapacityStartSprintId: String(selectedSprintId),
+        excludedCapacityEndSprintId: String(selectedSprintId),
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+
+    const statsView = page.locator('.stats-view.open');
+    await expect(statsView).toBeVisible();
+
+    // Filter bar: shared sprint range selects + capacity-side / mode segmented controls + exclusion toggles.
+    const controls = statsView.locator('.project-track-controls');
+    await expect(controls).toBeVisible();
+    await expect(controls.locator('select')).toHaveCount(2);
+    // Filter-bar groups never overlap: each control group's box stays clear of its neighbours.
+    const controlBoxes = await controls.evaluate((node) => {
+        return Array.from(node.querySelectorAll(':scope > .stats-control-group')).map((group) => {
+            const rect = group.getBoundingClientRect();
+            return { top: Math.round(rect.top), left: Math.round(rect.left), right: Math.round(rect.right) };
+        });
+    });
+    controlBoxes.forEach((box, index) => {
+        const sameRowNeighbour = controlBoxes[index + 1];
+        if (sameRowNeighbour && sameRowNeighbour.top === box.top) {
+            expect(sameRowNeighbour.left).toBeGreaterThanOrEqual(box.right);
+        }
+    });
+    const capacityControl = controls.getByRole('radiogroup', { name: 'Capacity side' });
+    await expect(capacityControl.getByRole('radio', { name: 'Product', exact: true })).toHaveAttribute('aria-checked', 'true');
+    const modeControl = controls.getByRole('radiogroup', { name: 'Mode' });
+    await expect(modeControl.getByRole('radio', { name: 'Epic' })).toHaveAttribute('aria-checked', 'true');
+    await expect(controls.getByText('Exclude Ad Hoc')).toBeVisible();
+    await expect(controls.getByText('Exclude Excluded Capacity')).toBeVisible();
+    // Mode label is "Mode", never "Metric".
+    await expect(statsView).not.toContainText('Metric');
+
+    // Mode title defaults to EPIC MODE.
+    await expect(statsView.locator('.project-track-mode-title')).toHaveText('EPIC MODE');
+
+    // Totals bar: product side, Epic mode => Committed 13 SP, Flexible 3 SP, total 16 SP.
+    const totalsBar = statsView.locator('.project-track-totals .stacked-bar');
+    await expect(totalsBar).toBeVisible();
+    const totalsSegments = totalsBar.locator('.stacked-bar-segment span');
+    await expect(totalsSegments.filter({ hasText: 'Committed 13 SP' })).toBeVisible();
+    await expect(totalsSegments.filter({ hasText: 'Flexible 3 SP' })).toBeVisible();
+    await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('16 SP');
+    await expect(statsView.locator('.project-track-legend')).toContainText('Committed');
+    await expect(statsView.locator('.project-track-legend')).toContainText('Flexible');
+
+    // Per-sprint chart renders, and its legend uses real <button> elements.
+    const sprintChart = statsView.locator('.project-track-sprint-chart');
+    await expect(sprintChart).toBeVisible();
+    await expect(sprintChart.locator('.project-track-sprint-segment').first()).toBeVisible();
+    const sprintLegendButtons = sprintChart.locator('.project-track-sprint-legend button.project-track-sprint-legend-item');
+    await expect(sprintLegendButtons.first()).toBeVisible();
+    const sprintLegendTags = await sprintLegendButtons.evaluateAll(nodes => nodes.map(node => node.tagName));
+    expect(sprintLegendTags.every(tag => tag === 'BUTTON')).toBe(true);
+
+    // Breakdown chart under "By assignee" heading (Epic mode), rows by assignee.
+    await expect(statsView.getByText('By assignee')).toBeVisible();
+    const breakdownRows = statsView.locator('.project-track-card', { hasText: 'By assignee' }).locator('.stacked-bar-row');
+    await expect(breakdownRows).toHaveCount(2);
+    await expect(statsView.locator('.project-track-card', { hasText: 'By assignee' })).toContainText('Pat Product');
+    await expect(statsView.locator('.project-track-card', { hasText: 'By assignee' })).toContainText('Sam BAU');
+
+    await captureSmokeScreenshot(page, 'statistics-project-track-epic');
+
+    // Toggle Capacity side -> Tech (only TECH-EPIC, Committed 4 SP, no Flexible).
+    await capacityControl.getByRole('radio', { name: 'Tech', exact: true }).click();
+    await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('4 SP');
+    await expect(totalsSegments.filter({ hasText: 'Flexible' })).toHaveCount(0);
+
+    // Toggle Capacity side -> Tech + Product (Committed 17, Flexible 3, total 20).
+    await capacityControl.getByRole('radio', { name: 'Tech + Product' }).click();
+    await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('20 SP');
+    await expect(totalsSegments.filter({ hasText: 'Committed 17 SP' })).toBeVisible();
+
+    // Switch Mode -> Team: title flips, heading switches to By team, rows now per team.
+    await modeControl.getByRole('radio', { name: 'Team' }).click();
+    await expect(statsView.locator('.project-track-mode-title')).toHaveText('TEAM MODE');
+    await expect(statsView.getByText('By team')).toBeVisible();
+    await expect(statsView.getByText('By assignee')).toHaveCount(0);
+    const teamRows = statsView.locator('.project-track-card', { hasText: 'By team' }).locator('.stacked-bar-row');
+    await expect(teamRows).toHaveCount(2);
+    // Team rows are labelled by the configured team label (teamLabels), not the raw team name.
+    await expect(statsView.locator('.project-track-card', { hasText: 'By team' })).toContainText('alpha_label');
+    await expect(statsView.locator('.project-track-card', { hasText: 'By team' })).toContainText('beta_label');
+
+    await captureSmokeScreenshot(page, 'statistics-project-track-team');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

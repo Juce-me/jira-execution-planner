@@ -16,7 +16,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
-    "frontend/src/dashboard.jsx": 15419,
+    # feat/stats-project-track-tab adds the Project Track stats sub-tab: filter bar (shared
+    # sprint range, capacity-side/mode SegmentedControls, exclusion toggles), mode title, and
+    # thin wiring for the totals/per-sprint/breakdown charts memoized off excludedCapacityIssues.
+    "frontend/src/dashboard.jsx": 15578,
 }
 
 

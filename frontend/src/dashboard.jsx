@@ -71,6 +71,7 @@ import {
     getPriorityLabel,
     getRateClass,
     resolveTeamColor,
+    resolveProjectTrackColor,
 } from './stats/statsUtils.js';
 import StatsDeliverySummary from './stats/StatsDeliverySummary.jsx';
 import StatsPriorityView from './stats/StatsPriorityView.jsx';
@@ -78,6 +79,10 @@ import StatsTeamsView from './stats/StatsTeamsView.jsx';
 import BurnoutChart from './stats/BurnoutChart.jsx';
 import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
 import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
+import ProjectTrackTotalsBar from './stats/ProjectTrackTotalsBar.jsx';
+import ProjectTrackSprintChart from './stats/ProjectTrackSprintChart.jsx';
+import ProjectTrackBreakdownChart from './stats/ProjectTrackBreakdownChart.jsx';
+import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows } from './stats/projectTrackStats.js';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
@@ -665,7 +670,7 @@ import {
             const teamSelectionHydratedScopeRef = useRef('');
             const teamSelectionHydratedSelectionRef = useRef(null); const teamSelectionCarryForwardRef = useRef(null);
             const teamSelectionSkipPersistScopeRef = useRef('');
-            const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort' || value === 'excludedCapacity' || value === 'monoCrossShare') ? value : 'teams';
+            const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort' || value === 'excludedCapacity' || value === 'monoCrossShare' || value === 'projectTrack') ? value : 'teams';
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
             const resolveCohortGroupBy = (value) => (value === 'month' || value === 'quarter') ? value : 'quarter';
@@ -724,7 +729,15 @@ import {
             const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
             const [excludedCapacityRefreshNonce, setExcludedCapacityRefreshNonce] = useState(0);
             const excludedCapacityEpicDropdownRef = useRef(null);
-            const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare');
+            const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
+            const [projectTrackCapacitySide, setProjectTrackCapacitySide] = useState(
+                ['product', 'tech', 'both'].includes(savedPrefsRef.current.projectTrackCapacitySide) ? savedPrefsRef.current.projectTrackCapacitySide : 'product'
+            );
+            const [projectTrackMode, setProjectTrackMode] = useState(
+                savedPrefsRef.current.projectTrackMode === 'team' ? 'team' : 'epic'
+            );
+            const [projectTrackExcludeAdHoc, setProjectTrackExcludeAdHoc] = useState(Boolean(savedPrefsRef.current.projectTrackExcludeAdHoc));
+            const [projectTrackExcludeExcludedCapacity, setProjectTrackExcludeExcludedCapacity] = useState(Boolean(savedPrefsRef.current.projectTrackExcludeExcludedCapacity));
             const [burnoutHoverPoint, setBurnoutHoverPoint] = useState(null);
             const [burnoutHoverTeamKey, setBurnoutHoverTeamKey] = useState(null);
             const [burnoutTaskFilter, setBurnoutTaskFilter] = useState(null);
@@ -5322,6 +5335,10 @@ import {
                     excludedCapacitySelectedEpicKeys,
                     excludedCapacityChartMode,
                     excludedCapacityMetric,
+                    projectTrackCapacitySide,
+                    projectTrackMode,
+                    projectTrackExcludeAdHoc,
+                    projectTrackExcludeExcludedCapacity,
                     scenarioLaneMode,
                     hideExcludedStats,
                     showMissingAlert,
@@ -7047,7 +7064,7 @@ import {
                 return `${excludedCapacitySprintIdsSignature}::${excludedCapacityScopedTeamSignature || 'all'}`;
             }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature]);
             useEffect(() => {
-                if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare')) return;
+                if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && statsView !== 'projectTrack')) return;
                 if (groupPreferences.onboardingRequired) { setExcludedCapacityData(null); setExcludedCapacityError(''); setExcludedCapacityLoading(false); return; }
                 // The capacity-mix source loads when EITHER excluded capacity OR Ad Hoc
                 // epics are configured: Ad Hoc-only groups still get the effort split.
@@ -7198,6 +7215,52 @@ import {
             const excludedCapacityIssues = React.useMemo(() => {
                 return Array.isArray(excludedCapacityData?.issues) ? excludedCapacityData.issues : [];
             }, [excludedCapacityData]);
+            // Project Track reuses the already-loaded stats-source stories and the shared
+            // Excluded Capacity sprint range; no new fetch. Logic lives in projectTrackStats.js.
+            const projectTrackSprintOrder = React.useMemo(
+                () => excludedCapacitySprintRange.map((sprint) => String(sprint.id)),
+                [excludedCapacitySprintRange]
+            );
+            const projectTrackOpts = React.useMemo(() => ({
+                capacitySide: projectTrackCapacitySide,
+                mode: projectTrackMode,
+                excludeAdHoc: projectTrackExcludeAdHoc,
+                excludeExcludedCapacity: projectTrackExcludeExcludedCapacity,
+                techProjectKeys,
+                adHocEpicSet,
+                excludedEpicSet,
+                sprintOrder: projectTrackSprintOrder
+            }), [
+                projectTrackCapacitySide,
+                projectTrackMode,
+                projectTrackExcludeAdHoc,
+                projectTrackExcludeExcludedCapacity,
+                techProjectKeys,
+                adHocEpicSet,
+                excludedEpicSet,
+                projectTrackSprintOrder
+            ]);
+            const projectTrackSeries = React.useMemo(
+                () => buildProjectTrackSprintSeries(excludedCapacityIssues, projectTrackOpts),
+                [excludedCapacityIssues, projectTrackOpts]
+            );
+            const projectTrackTotals = React.useMemo(
+                () => summarizeProjectTrackTotals(projectTrackSeries),
+                [projectTrackSeries]
+            );
+            const projectTrackBreakdown = React.useMemo(
+                () => buildProjectTrackBreakdownRows(excludedCapacityIssues, projectTrackOpts, { teamLabels: activeGroupTeamLabels }),
+                [excludedCapacityIssues, projectTrackOpts, activeGroupTeamLabels]
+            );
+            const projectTrackRangeLabel = React.useMemo(() => {
+                const range = excludedCapacitySprintRange;
+                if (!range.length) return '';
+                const first = range[0];
+                const last = range[range.length - 1];
+                const firstName = first.name || String(first.id);
+                const lastName = last.name || String(last.id);
+                return range.length === 1 ? firstName : `${firstName} – ${lastName}`;
+            }, [excludedCapacitySprintRange]);
             const excludedCapacityEpicCatalog = React.useMemo(() => {
                 return buildExcludedEpicCatalog(excludedCapacityIssues, {
                     excludedEpicKeys: excludedCapacityEpicOptions
@@ -10235,7 +10298,7 @@ import {
                 const target = Math.max(0, todayX - (chart.clientWidth * 0.6));
                 chart.scrollLeft = target;
             }, [burnoutChartModel, statsView]);
-            const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout' || statsView === 'cohort' || statsView === 'excludedCapacity' || statsView === 'monoCrossShare';
+            const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout' || statsView === 'cohort' || statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack';
             const isLeadTimesFocusMode = showStats && statsView === 'cohort';
             const shouldRenderEngTaskList = selectedView === 'eng' && !isStatsSourceOnlyStatsView;
             const groupTasksByEpic = (taskList) => {
@@ -13053,11 +13116,12 @@ import {
                                         { value: 'burnout', label: 'Burndown' },
                                         { value: 'cohort', label: 'Lead Times' },
                                         { value: 'excludedCapacity', label: 'Excluded Capacity' },
-                                        { value: 'monoCrossShare', label: 'Mono vs Cross' }
+                                        { value: 'monoCrossShare', label: 'Mono vs Cross' },
+                                        { value: 'projectTrack', label: 'Project Track' }
                                     ]}
                                 />
 
-                                {statsView !== 'cohort' && statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && (
+                                {statsView !== 'cohort' && statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && statsView !== 'projectTrack' && (
                                     <StatsDeliverySummary
                                         statsGraphMode={statsGraphMode}
                                         setStatsGraphMode={setStatsGraphMode}
@@ -13456,6 +13520,111 @@ import {
                                             </div>
                                         </div>
                                     )}
+                                </div>
+
+                                <div className={`stats-view ${statsView === 'projectTrack' ? 'open' : ''}`}>
+                                    <div className="stats-controls project-track-controls">
+                                        <div className="stats-control-group">
+                                            <label>Start Sprint</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={excludedCapacityStartSprintId}
+                                                onChange={(event) => setExcludedCapacityStartSprintId(event.target.value)}
+                                            >
+                                                {excludedCapacitySprintOptions.map((sprint) => (
+                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="stats-control-group">
+                                            <label>End Sprint</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={excludedCapacityEndSprintId}
+                                                onChange={(event) => setExcludedCapacityEndSprintId(event.target.value)}
+                                            >
+                                                {excludedCapacitySprintOptions.map((sprint) => (
+                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="stats-control-group">
+                                            <label>Capacity side</label>
+                                            <SegmentedControl
+                                                ariaLabel="Capacity side"
+                                                value={projectTrackCapacitySide}
+                                                onChange={setProjectTrackCapacitySide}
+                                                options={[
+                                                    { value: 'product', label: 'Product' },
+                                                    { value: 'tech', label: 'Tech' },
+                                                    { value: 'both', label: 'Tech + Product' }
+                                                ]}
+                                            />
+                                        </div>
+                                        <div className="stats-control-group project-track-exclusions">
+                                            <label>Exclusions</label>
+                                            <label className="project-track-checkbox">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={projectTrackExcludeAdHoc}
+                                                    onChange={(event) => setProjectTrackExcludeAdHoc(event.target.checked)}
+                                                />
+                                                <span>Exclude Ad Hoc</span>
+                                            </label>
+                                            <label className="project-track-checkbox">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={projectTrackExcludeExcludedCapacity}
+                                                    onChange={(event) => setProjectTrackExcludeExcludedCapacity(event.target.checked)}
+                                                />
+                                                <span>Exclude Excluded Capacity</span>
+                                            </label>
+                                        </div>
+                                        <div className="stats-control-group">
+                                            <label>Mode</label>
+                                            <SegmentedControl
+                                                ariaLabel="Mode"
+                                                value={projectTrackMode}
+                                                onChange={setProjectTrackMode}
+                                                options={[
+                                                    { value: 'epic', label: 'Epic' },
+                                                    { value: 'team', label: 'Team' }
+                                                ]}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="project-track-mode-title">
+                                        {projectTrackMode === 'team' ? 'TEAM MODE' : 'EPIC MODE'}
+                                    </div>
+
+                                    <div className="stats-card project-track-card">
+                                        <ProjectTrackTotalsBar
+                                            byTrack={projectTrackTotals.byTrack}
+                                            tracks={projectTrackSeries.tracks}
+                                            resolveColor={resolveProjectTrackColor}
+                                            rangeLabel={projectTrackRangeLabel}
+                                        />
+                                    </div>
+
+                                    <div className="stats-card project-track-card">
+                                        <h4>Story points per sprint</h4>
+                                        <ProjectTrackSprintChart
+                                            series={projectTrackSeries}
+                                            resolveColor={resolveProjectTrackColor}
+                                            caption={projectTrackMode === 'epic'
+                                                ? 'Each epic is attributed to its dominant sprint; all of its story points land in that sprint.'
+                                                : ''}
+                                        />
+                                    </div>
+
+                                    <div className="stats-card project-track-card">
+                                        <h4>{projectTrackMode === 'team' ? 'By team' : 'By assignee'}</h4>
+                                        <ProjectTrackBreakdownChart
+                                            data={projectTrackBreakdown}
+                                            resolveColor={resolveProjectTrackColor}
+                                        />
+                                    </div>
                                 </div>
 
                                 <div className={`stats-view ${statsView === 'cohort' ? 'open' : ''}`}>

@@ -18,7 +18,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # get_project_track_phase_durations handler.
     # fix/stats-changelog-dedup adds id-based dedup in _fetch_full_issue_changelog to guard
     # against boundary-record re-inclusion from the paged /changelog endpoint (+10 lines).
-    "jira_server.py": 6186,
+    # feat/stats-expose-created-transitions adds created + transitions to _fetch_epic_track_phase
+    # return dict so the frontend can compute avg days-to-Committed (+2 lines).
+    "jira_server.py": 6188,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.

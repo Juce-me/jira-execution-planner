@@ -175,6 +175,14 @@ class TrackPhaseDurationRouteTests(unittest.TestCase):
         self.assertEqual(call.args[0], "/rest/api/3/issue/TECH-1")
         self.assertEqual(call.kwargs["params"]["expand"], "changelog")
         self.assertIn("customfield_35024", call.kwargs["params"]["fields"])
+        # created and transitions must be present on each epic record.
+        epic = epics["TECH-1"]
+        self.assertEqual(epic["created"], "2026-03-26T00:00:00.000+0000")
+        self.assertIsInstance(epic["transitions"], list)
+        self.assertEqual(len(epic["transitions"]), 1)
+        tx = epic["transitions"][0]
+        self.assertIsNone(tx["from"])
+        self.assertEqual(tx["to"], "Flexible")
 
     def test_route_caps_epic_keys_and_marks_truncated(self):
         issue = self._issue_response(

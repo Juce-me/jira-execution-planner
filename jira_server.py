@@ -5770,6 +5770,8 @@ def _fetch_epic_track_phase(issue_key, track_field, context=None):
         'summary': str(fields.get('summary') or '').strip(),
         'currentValue': current_value,
         'durations': durations,
+        'created': fields.get('created'),
+        'transitions': transitions,
     }, None
 
 

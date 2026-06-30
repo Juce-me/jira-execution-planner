@@ -21,6 +21,11 @@ function trackOf(task) {
   const v = typeof raw === 'string' ? raw.trim() : '';
   return v || NO_TRACK_LABEL;
 }
+// inScope is MEMBERSHIP-ONLY — it returns true when a task passes the sprint-range,
+// capacity-side, and exclusion filters; it deliberately does NOT consider story points.
+// The SP sections (buildProjectTrackSprintSeries, buildProjectTrackBreakdownRows)
+// additionally require storyPointsFor(task) > 0; callers that want the SP-bearing
+// subset must apply that check themselves (e.g. Task 5's time-in-phase epic set).
 export function inScope(task, opts) {
   const sprint = firstSprint(task);
   if (!sprint) return false;

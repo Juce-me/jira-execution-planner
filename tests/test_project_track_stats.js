@@ -57,6 +57,16 @@ test('epic mode places whole epic SP in its dominant sprint (tie-break by range 
   assert.equal(s.cells['10'], undefined);
 });
 
+test('epic mode tie-break: equal SP in two sprints -> later sprintOrder index wins', () => {
+  // E1 has 4 SP in sprint 10 and 4 SP in sprint 20 (equal). sprintOrder: ['10','20']
+  // -> sprint 20 has the higher index so it wins; all 8 SP land in sprint 20.
+  const tasks = [story('PROD-1', 4, 'Committed', 10, { epicKey: 'E1' }),
+                 story('PROD-2', 4, 'Committed', 20, { epicKey: 'E1' })];
+  const s = buildProjectTrackSprintSeries(tasks, { ...base, mode: 'epic' });
+  assert.equal(s.cells['20']['Committed'], 8);
+  assert.equal(s.cells['10'], undefined);
+});
+
 test('totals aggregate the whole range', () => {
   const s = buildProjectTrackSprintSeries(
     [story('PROD-1', 5, 'Committed', 10), story('PROD-2', 4, 'Committed', 20)], base);

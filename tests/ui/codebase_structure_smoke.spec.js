@@ -1200,28 +1200,30 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
             expect(sameRowNeighbour.left).toBeGreaterThanOrEqual(box.right);
         }
     });
-    // Real-rendering assertions: heading not clipped; exclusion labels within their group and
-    // not overlapping the MODE control — these catch overflowing nowrap text that getBoundingClientRect misses.
+    // Real-rendering assertions: exclusion labels within their group and not overlapping the
+    // MODE control — these catch overflowing nowrap text that getBoundingClientRect misses.
+    // NOTE: a heading.scrollWidth > heading.clientWidth check was removed: a display:block
+    // label with no overflow:hidden ancestor always has scrollWidth === clientWidth regardless
+    // of the group width, so the check is tautologically false and cannot catch the
+    // min-width:210px regression (with that regression groupClientWidth=210 > headingScrollWidth=71).
+    // The two label assertions below are sufficient: they do fail on the broken layout.
     const renderChecks = await controls.evaluate((node) => {
         const exclusionGroup = node.querySelector('.project-track-exclusions');
         const modeGroup = Array.from(node.querySelectorAll(':scope > .stats-control-group')).find(
             (g) => g.querySelector('[aria-label="Mode"]')
         );
-        const heading = exclusionGroup ? exclusionGroup.querySelector(':scope > label:first-child') : null;
         const checkboxLabels = exclusionGroup
             ? Array.from(exclusionGroup.querySelectorAll('label.project-track-checkbox'))
             : [];
         const groupRight = exclusionGroup ? exclusionGroup.getBoundingClientRect().right : 0;
         const modeLeft = modeGroup ? modeGroup.getBoundingClientRect().left : Infinity;
         return {
-            headingClipped: heading ? heading.scrollWidth > heading.clientWidth + 1 : false,
             labelOverflows: checkboxLabels.map((lbl) => {
                 const r = lbl.getBoundingClientRect().right;
                 return { right: Math.round(r), groupRight: Math.round(groupRight), modeLeft: Math.round(modeLeft) };
             }),
         };
     });
-    expect(renderChecks.headingClipped, 'EXCLUSIONS heading must not be clipped').toBe(false);
     for (const lbl of renderChecks.labelOverflows) {
         expect(lbl.right, 'checkbox label must not overflow its group').toBeLessThanOrEqual(lbl.groupRight + 1);
         expect(lbl.right, 'checkbox label must not overlap MODE control').toBeLessThan(lbl.modeLeft);

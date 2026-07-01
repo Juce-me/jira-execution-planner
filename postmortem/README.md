@@ -36,7 +36,7 @@ Postmortems serve to:
 | [MRT017](./MRT017-chart-hover-readout-placement.md) | Chart Hover Readout Placement Regression | 2026-05-20 | Medium | Resolved | Chart hover readouts were offset by transformed containers and clipped by center-only edge clamping |
 | [MRT018](./MRT018-lead-times-stats-panel-overflow.md) | Lead Times Stats Panel Overflow | 2026-06-12 | High | Resolved | Lead Times long lists clipped inside nested stats view caps and lacked load-more validation |
 | [MRT019](./MRT019-ready-to-close-truncated-child-scan.md) | Ready-to-Close Truncated Child Scan | 2026-06-21 | Medium | Resolved | Silent 250-cap truncation let Ready-to-Close fire on epics with open future-sprint children; fixed with an authoritative open-child count |
-| [MRT020](./MRT020-project-track-filter-bar-bespoke-controls.md) | Project Track Filter Bar Reinvented Existing Controls | 2026-07-01 | Medium | In Progress | New tab's Exclusions group used bespoke CSS/markup instead of existing control patterns; clipped heading + label overflow overlapped MODE; a bounding-box-only Playwright check passed while the render was broken |
+| [MRT020](./MRT020-project-track-filter-bar-bespoke-controls.md) | Project Track Filter Bar Reinvented Existing Controls | 2026-07-01 | Medium | Resolved | New tab's Exclusions group used bespoke CSS/markup instead of existing control patterns; clipped heading + label overflow overlapped MODE; a bounding-box-only Playwright check passed while the render was broken. Fixed by reusing shell.css control typography + element-level render assertions |
 
 ## Postmortem Template
 

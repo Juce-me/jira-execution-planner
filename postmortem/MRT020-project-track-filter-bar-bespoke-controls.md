@@ -2,8 +2,10 @@
 
 **Date**: 2026-07-01
 **Severity**: Medium
-**Status**: In Progress
+**Status**: Resolved
 **Author**: Execution session (subagent-driven development)
+
+> **Resolution note:** Fixed in commits `ea08194` (reuse `.stats-control-group label` typography; delete bespoke `min-width`/`nowrap`/font overrides) and `93541f4` (drop the inert heading-clip assertion — empirically shown a `display:block` label without an `overflow:hidden` ancestor cannot self-clip, so both the original and the reviewer-suggested `scrollWidth` checks were false-green; the two label right-edge assertions are the real guard). Verified: Playwright 9/9, `npm run build` clean, and a controller-inspected screenshot (`tests/ui/mrt020-filter-bar-fixed.png`) confirms the full "EXCLUSIONS" heading, labelled checkboxes, and no overlap with MODE.
 
 ## Summary
 
@@ -59,11 +61,11 @@ Fix is validated by:
 
 ## Action Items
 
-- [ ] Rebuild the Exclusions group by reusing the existing checkbox/toggle + `.stats-control-group label` patterns; delete the bespoke classes and `min-width`/`nowrap` overrides.
-- [ ] Replace the bounding-box-only Playwright check with a real-rendering assertion (heading not clipped; label right-edge within group; no overlap with MODE) and capture a screenshot.
-- [ ] Rebuild `frontend/dist` and confirm the Project Track smoke test passes with the new assertion.
-- [ ] Add a root `AGENTS.md` learning: reuse existing control components/classes for new filter bars, and verify filter-bar layout with a screenshot + element-level (not container-only) geometry assertions.
-- [ ] Flip this postmortem to Resolved once the fix lands and is screenshot-verified.
+- [x] Rebuild the Exclusions group by reusing the `.stats-control-group label` typography; delete the bespoke `min-width`/`nowrap`/font overrides (`ea08194`).
+- [x] Replace the bounding-box-only Playwright check with real-rendering label right-edge assertions (within group; clear of MODE), fail-first proven; drop the inert heading `scrollWidth` check rather than ship another false-green (`93541f4`).
+- [x] Rebuild `frontend/dist`; Project Track smoke test 9/9 green.
+- [x] Add root `AGENTS.md` §11 learnings: reuse existing control components/classes; element-level (not container-only) geometry + screenshot verification; single categorical color resolver.
+- [x] Flip this postmortem to Resolved once the fix lands and is screenshot-verified.
 
 ## Prevention
 

@@ -29,33 +29,22 @@
         .project-track-controls .stats-control-group.project-track-exclusions {
             display: flex;
             flex-direction: column;
-            gap: 0.3rem;
+            gap: 0.25rem;
             align-items: flex-start;
-            /* Reserve enough width for the longest checkbox label so the nowrap text
-               does not overflow the group box and spill under the next control. */
-            flex: 0 0 auto;
-            min-width: 210px;
         }
 
-        .project-track-exclusions > label:first-child {
-            margin-bottom: 0.3rem;
-        }
-
-        .project-track-controls .stats-control-group label.project-track-checkbox {
+        .project-track-exclusions .project-track-checkbox {
             display: flex;
             align-items: center;
             gap: 0.4rem;
-            margin: 0;
-            font-size: 0.72rem;
-            color: var(--text-primary);
+            font-size: 0.65rem;
             text-transform: none;
-            letter-spacing: 0;
-            font-family: inherit;
-            white-space: nowrap;
+            letter-spacing: normal;
+            color: var(--text-primary);
             cursor: pointer;
         }
 
-        .project-track-checkbox input {
+        .project-track-exclusions .project-track-checkbox input {
             margin: 0;
             flex: 0 0 auto;
         }

@@ -1187,7 +1187,7 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     const controls = statsView.locator('.project-track-controls');
     await expect(controls).toBeVisible();
     await expect(controls.locator('select')).toHaveCount(2);
-    // Filter-bar groups never overlap: each control group's box stays clear of its neighbours.
+    // Filter-bar groups never overlap: each control group's layout box stays clear of neighbours.
     const controlBoxes = await controls.evaluate((node) => {
         return Array.from(node.querySelectorAll(':scope > .stats-control-group')).map((group) => {
             const rect = group.getBoundingClientRect();
@@ -1200,6 +1200,32 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
             expect(sameRowNeighbour.left).toBeGreaterThanOrEqual(box.right);
         }
     });
+    // Real-rendering assertions: heading not clipped; exclusion labels within their group and
+    // not overlapping the MODE control — these catch overflowing nowrap text that getBoundingClientRect misses.
+    const renderChecks = await controls.evaluate((node) => {
+        const exclusionGroup = node.querySelector('.project-track-exclusions');
+        const modeGroup = Array.from(node.querySelectorAll(':scope > .stats-control-group')).find(
+            (g) => g.querySelector('[aria-label="Mode"]')
+        );
+        const heading = exclusionGroup ? exclusionGroup.querySelector(':scope > label:first-child') : null;
+        const checkboxLabels = exclusionGroup
+            ? Array.from(exclusionGroup.querySelectorAll('label.project-track-checkbox'))
+            : [];
+        const groupRight = exclusionGroup ? exclusionGroup.getBoundingClientRect().right : 0;
+        const modeLeft = modeGroup ? modeGroup.getBoundingClientRect().left : Infinity;
+        return {
+            headingClipped: heading ? heading.scrollWidth > heading.clientWidth + 1 : false,
+            labelOverflows: checkboxLabels.map((lbl) => {
+                const r = lbl.getBoundingClientRect().right;
+                return { right: Math.round(r), groupRight: Math.round(groupRight), modeLeft: Math.round(modeLeft) };
+            }),
+        };
+    });
+    expect(renderChecks.headingClipped, 'EXCLUSIONS heading must not be clipped').toBe(false);
+    for (const lbl of renderChecks.labelOverflows) {
+        expect(lbl.right, 'checkbox label must not overflow its group').toBeLessThanOrEqual(lbl.groupRight + 1);
+        expect(lbl.right, 'checkbox label must not overlap MODE control').toBeLessThan(lbl.modeLeft);
+    }
     const capacityControl = controls.getByRole('radiogroup', { name: 'Capacity side' });
     await expect(capacityControl.getByRole('radio', { name: 'Product', exact: true })).toHaveAttribute('aria-checked', 'true');
     const modeControl = controls.getByRole('radiogroup', { name: 'Mode' });

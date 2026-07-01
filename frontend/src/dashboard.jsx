@@ -13638,7 +13638,14 @@ import {
                                             <SegmentedControl
                                                 ariaLabel="Capacity side"
                                                 value={projectTrackCapacitySide}
-                                                onChange={setProjectTrackCapacitySide}
+                                                onChange={(nextSide) => {
+                                                    trackStatsAnalyticsAction('chart_action', {
+                                                        workflow_action: 'capacity_side_change',
+                                                        chart_id: 'project_track',
+                                                        capacity_side: analyticsToken(nextSide)
+                                                    });
+                                                    setProjectTrackCapacitySide(nextSide);
+                                                }}
                                                 options={[
                                                     { value: 'product', label: 'Product' },
                                                     { value: 'tech', label: 'Tech' },
@@ -13652,7 +13659,15 @@ import {
                                                 <input
                                                     type="checkbox"
                                                     checked={projectTrackExcludeAdHoc}
-                                                    onChange={(event) => setProjectTrackExcludeAdHoc(event.target.checked)}
+                                                    onChange={(event) => {
+                                                        const checked = event.target.checked;
+                                                        trackStatsAnalyticsAction('filter_changed', {
+                                                            filter_type: 'exclude_ad_hoc',
+                                                            chart_id: 'project_track',
+                                                            value_state: checked ? 'on' : 'off'
+                                                        });
+                                                        setProjectTrackExcludeAdHoc(checked);
+                                                    }}
                                                 />
                                                 <span>Exclude Ad Hoc</span>
                                             </label>
@@ -13660,7 +13675,15 @@ import {
                                                 <input
                                                     type="checkbox"
                                                     checked={projectTrackExcludeExcludedCapacity}
-                                                    onChange={(event) => setProjectTrackExcludeExcludedCapacity(event.target.checked)}
+                                                    onChange={(event) => {
+                                                        const checked = event.target.checked;
+                                                        trackStatsAnalyticsAction('filter_changed', {
+                                                            filter_type: 'exclude_excluded_capacity',
+                                                            chart_id: 'project_track',
+                                                            value_state: checked ? 'on' : 'off'
+                                                        });
+                                                        setProjectTrackExcludeExcludedCapacity(checked);
+                                                    }}
                                                 />
                                                 <span>Exclude Excluded Capacity</span>
                                             </label>
@@ -13670,7 +13693,14 @@ import {
                                             <SegmentedControl
                                                 ariaLabel="Mode"
                                                 value={projectTrackMode}
-                                                onChange={setProjectTrackMode}
+                                                onChange={(nextMode) => {
+                                                    trackStatsAnalyticsAction('stats_action', {
+                                                        workflow_action: 'mode_change',
+                                                        chart_id: 'project_track',
+                                                        mode: analyticsToken(nextMode)
+                                                    });
+                                                    setProjectTrackMode(nextMode);
+                                                }}
                                                 options={[
                                                     { value: 'epic', label: 'Epic' },
                                                     { value: 'team', label: 'Team' }

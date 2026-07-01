@@ -562,7 +562,7 @@ def test_parser_matches_fieldid_not_status_lookalike(self):
 - [x] **Step 6.1: Register params + wire analytics.** `mode` and `capacity_side` are NOT yet in `EVENT_PARAMS` (`frontend/src/analytics/events.js`) — add both (values `epic`/`team`, `product`/`tech`/`both` all pass `SAFE_STRING`). `section` and `series_type` already exist. Emit tab-open and filter/section toggles via `stats_action` / `chart_action` / `filter_changed` with bucketed params (`capacity_side`, `mode`, exclusion booleans, `section`, track `series_type` tokens). No raw epic keys, summaries, team/group names, issue keys, assignee names, or durations. Update `tests/test_analytics_events.js` for the two new params; document trigger/type/`event_name`/`feature_name`/typed params/privacy reason in `docs/README_ANALYTICS.md`.
 - [x] **Step 6.2: User docs.** Add a `README.md` entry: filter bar (start/end sprint, Product/Tech/Tech+Product, exclude ad hoc, exclude excluded-capacity, Mode: Epic/Team), the EPIC/TEAM mode title, range totals bar, per-sprint chart, assignee/team breakdown, and the Epic-mode-only time-in-phase section.
 - [x] **Step 6.3: Ratchet structure budgets + run guards.** `tests/test_codebase_structure_budgets.py` `LEGACY_ENTRYPOINT_LINE_BUDGETS` has near-zero headroom (`jira_server.py` budget == current 5969; `frontend/src/dashboard.jsx` 15419 vs ~15409). After implementation, set each budget to the new actual line count (keep `dashboard.jsx` growth minimal — logic lives in the new modules, not the tab block). Run `node --test tests/test_analytics_events.js tests/test_analytics_source_guards.js && .venv/bin/python -m unittest tests.test_codebase_structure_budgets` → PASS; record the new budget numbers in the commit.
-- [ ] **Step 6.4: Full pre-push verification.**
+- [x] **Step 6.4: Full pre-push verification.**
 
 ```bash
 .venv/bin/python -m unittest discover -s tests
@@ -574,7 +574,7 @@ npx playwright test tests/ui/codebase_structure_smoke.spec.js
 
 Expected: full Python suite PASS (incl. `tests.test_project_track_phase_api`, `tests.test_excluded_capacity_stats_api`, `tests.test_initiative_extraction`, `tests.test_codebase_structure_budgets`), Node PASS, clean build, UI smoke PASS, server starts with no pre-banner warnings and `/api/test` OK.
 
-- [ ] **Step 6.5: Update plan index + commit.** Add to `docs/plans/README.md`. `git commit -m "docs(stats): document Project Track by sprint tab and analytics"`
+- [x] **Step 6.5: Update plan index + commit.** Add to `docs/plans/README.md`. `git commit -m "docs(stats): document Project Track by sprint tab and analytics"`
 
 ## Acceptance Criteria
 

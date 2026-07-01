@@ -31,7 +31,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # imports ProjectTrackPhaseChart + projectTrackPhaseStats helpers, adds fetch state +
     # cache ref, useEffect with abort/cache, memoized epic key set + summary, and
     # renders the section with loading/error/truncated states (Epic mode only).
-    "frontend/src/dashboard.jsx": 15702,
+    # feat/stats-project-track-analytics wires stats_action/chart_action/filter_changed
+    # calls into the Capacity side, Mode, and exclusion-toggle handlers (+27 lines).
+    "frontend/src/dashboard.jsx": 15729,
 }
 
 

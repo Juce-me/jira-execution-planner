@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals,
-  buildProjectTrackBreakdownRows, NO_TRACK_LABEL } from '../frontend/src/stats/projectTrackStats.js';
+  buildProjectTrackBreakdownRows, inScopeEpicKeys, NO_TRACK_LABEL } from '../frontend/src/stats/projectTrackStats.js';
 
 // id !== name on purpose, to prove the join keys on id, not name.
 const story = (key, sp, track, sprintId, opts = {}) => ({ key, fields: {
@@ -71,6 +71,18 @@ test('totals aggregate the whole range', () => {
   const s = buildProjectTrackSprintSeries(
     [story('PROD-1', 5, 'Committed', 10), story('PROD-2', 4, 'Committed', 20)], base);
   assert.equal(summarizeProjectTrackTotals(s).total, 9);
+});
+
+test('inScopeEpicKeys includes in-range epics and excludes out-of-range epics', () => {
+  // sprint '10' is in sprintOrder ['10','20']; sprint '99' is out of range
+  const tasks = [
+    story('PROD-1', 3, 'Committed', 10, { epicKey: 'E-IN' }),
+    story('PROD-2', 5, 'Committed', 99, { epicKey: 'E-OUT' }),
+  ];
+  const keys = inScopeEpicKeys(tasks, base);
+  assert.ok(keys.includes('E-IN'), 'in-range epic should be included');
+  assert.ok(!keys.includes('E-OUT'), 'out-of-range epic should be excluded');
+  assert.equal(keys.length, 1);
 });
 
 test('Team-mode breakdown rows are teams; Epic-mode rows are assignees counted once', () => {

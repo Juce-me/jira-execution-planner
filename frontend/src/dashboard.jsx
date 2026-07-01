@@ -83,7 +83,7 @@ import ProjectTrackTotalsBar from './stats/ProjectTrackTotalsBar.jsx';
 import ProjectTrackSprintChart from './stats/ProjectTrackSprintChart.jsx';
 import ProjectTrackBreakdownChart from './stats/ProjectTrackBreakdownChart.jsx';
 import ProjectTrackPhaseChart from './stats/ProjectTrackPhaseChart.jsx';
-import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, inScope as projectTrackInScope } from './stats/projectTrackStats.js';
+import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, inScopeEpicKeys as projectTrackInScopeEpicKeys } from './stats/projectTrackStats.js';
 import { summarizeTrackPhaseDurations } from './stats/projectTrackPhaseStats.js';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
@@ -7270,17 +7270,11 @@ import {
                 return range.length === 1 ? firstName : `${firstName} – ${lastName}`;
             }, [excludedCapacitySprintRange]);
             // Epic key set for the time-in-phase section (Epic mode only).
-            // Reuses projectTrackInScope predicate with the same opts as the SP sections so
-            // it respects the sprint range, capacity-side filter, and exclusion toggles.
+            // Uses inScopeEpicKeys which calls withAllowed(opts) internally so the
+            // sprint-range guard is applied (allowedSprintIds derived from sprintOrder).
             const projectTrackPhaseEpicKeys = React.useMemo(() => {
                 if (projectTrackMode !== 'epic') return [];
-                const scopedKeys = new Set(
-                    excludedCapacityIssues
-                        .filter(t => projectTrackInScope(t, projectTrackOpts))
-                        .map(t => String(t.fields?.epicKey || '').trim().toUpperCase())
-                        .filter(Boolean)
-                );
-                return Array.from(scopedKeys).sort();
+                return projectTrackInScopeEpicKeys(excludedCapacityIssues, projectTrackOpts).sort();
             }, [projectTrackMode, excludedCapacityIssues, projectTrackOpts]);
             const projectTrackPhaseSignature = projectTrackPhaseEpicKeys.join(',');
             useEffect(() => {

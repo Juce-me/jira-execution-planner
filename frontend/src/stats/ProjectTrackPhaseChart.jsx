@@ -46,8 +46,6 @@ export default function ProjectTrackPhaseChart({ rows, resolveColor }) {
         return `${num}d`;
     };
 
-    const hoverLabel = (rowLabel, segmentLabel) => `${rowLabel} — ${segmentLabel}`;
-
     return (
         <div className="project-track-phase-chart">
             <StackedBar
@@ -55,10 +53,10 @@ export default function ProjectTrackPhaseChart({ rows, resolveColor }) {
                 segmentOrder={stateOrder}
                 resolveColor={resolveColor}
                 formatValue={formatDays}
+                formatReadout={({ rowLabel, segmentKey, value }) => `${rowLabel} — ${segmentKey}: ${formatDays(value)}`}
                 ariaLabel="Time in Project Track phase per epic"
                 emptyText="No epic phase data available."
                 resolveLabel={(state) => state}
-                buildHoverRowLabel={hoverLabel}
             />
         </div>
     );

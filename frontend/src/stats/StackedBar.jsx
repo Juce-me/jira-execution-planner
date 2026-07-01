@@ -53,6 +53,7 @@ export default function StackedBar({
     resolveColor,
     resolveLabel,
     formatValue = defaultFormatValue,
+    formatReadout,          // optional: ({ rowLabel, segmentKey, value }) => string
     ariaLabel,
     emptyText = 'No data in range.'
 }) {
@@ -66,8 +67,13 @@ export default function StackedBar({
             className={`stacked-bar-readout is-${hovered.side || 'right'}`}
             style={{ left: `${hovered.x}px`, top: `${hovered.y}px` }}
         >
-            <strong>{hovered.rowLabel}</strong>
-            <span>{hovered.segmentLabel}: {hovered.valueText}</span>
+            {formatReadout
+                ? <span>{formatReadout({ rowLabel: hovered.rowLabel, segmentKey: hovered.segmentKey, value: hovered.value })}</span>
+                : <>
+                    <strong>{hovered.rowLabel}</strong>
+                    <span>{hovered.segmentLabel}: {hovered.valueText}</span>
+                  </>
+            }
         </div>
     ) : null;
 
@@ -94,7 +100,7 @@ export default function StackedBar({
                                         const valueText = formatValue(value);
                                         const segmentLabel = labelFor(key);
                                         const showFull = width >= FULL_SEGMENT_LABEL_MIN_WIDTH;
-                                        const readoutData = { rowLabel: row.label, segmentLabel, valueText };
+                                        const readoutData = { rowLabel: row.label, segmentKey: key, segmentLabel, valueText, value };
                                         return (
                                             <button
                                                 key={key}

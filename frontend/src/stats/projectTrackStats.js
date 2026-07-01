@@ -50,6 +50,12 @@ function orderTracks(set) {
   });
 }
 
+export function inScopeEpicKeys(tasks, opts) {
+  const resolved = withAllowed(opts);
+  const filtered = (tasks || []).filter((t) => inScope(t, resolved));
+  return [...new Set(filtered.map((t) => String(t.fields?.epicKey || '').trim().toUpperCase()).filter(Boolean))];
+}
+
 export function buildProjectTrackSprintSeries(tasks, rawOpts) {
   const opts = withAllowed(rawOpts);
   const orderIndex = new Map((opts.sprintOrder || []).map((id, i) => [id, i]));

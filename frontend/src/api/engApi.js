@@ -145,7 +145,7 @@ export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
         signal
     });
 
-export const fetchProjectTrackPhaseDurations = (backendUrl, { epicKeys = [], signal } = {}) =>
+export const fetchProjectTrackPhaseDurations = (backendUrl, { epicKeys = [], refresh = false, signal } = {}) =>
     fetch(`${backendUrl}/api/stats/project-track-phase-durations`, {
         method: 'POST',
         headers: {
@@ -154,5 +154,5 @@ export const fetchProjectTrackPhaseDurations = (backendUrl, { epicKeys = [], sig
         },
         cache: 'no-cache',
         signal,
-        body: JSON.stringify({ epicKeys }),
+        body: JSON.stringify({ epicKeys, ...(refresh ? { refresh: true } : {}) }),
     });

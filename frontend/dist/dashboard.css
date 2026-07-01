@@ -7517,6 +7517,17 @@ button.toggle.initiative-toggle.active {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+a.project-track-phase-epic-link {
+  display: block;
+  max-width: 100%;
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+a.project-track-phase-epic-link:hover,
+a.project-track-phase-epic-link:focus-visible {
+  text-decoration: underline;
+}
 .stacked-bar-row-total {
   color: var(--text-secondary);
   font-size: 0.76rem;

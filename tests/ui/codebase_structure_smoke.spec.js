@@ -11,6 +11,27 @@ const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
 const groupTeamIds = ['team-alpha', 'team-beta'];
 let dashboardJs;
+let statsUtils;
+
+// Reuse the app's single Project Track color source in assertions. statsUtils.js is ESM
+// (and pulls in ESM deps), so bundle it to a self-contained CJS module with the same
+// esbuild the shell bundle uses, then eval it — this proves the phase chart uses
+// resolveProjectTrackColor's output rather than a hardcoded hex duplicated in the test.
+function loadStatsUtils() {
+    const result = esbuild.buildSync({
+        entryPoints: [path.join(repoRoot, 'frontend', 'src', 'stats', 'statsUtils.js')],
+        bundle: true,
+        write: false,
+        format: 'cjs',
+    });
+    const moduleShim = { exports: {} };
+    new Function('module', 'exports', result.outputFiles[0].text)(moduleShim, moduleShim.exports);
+    return moduleShim.exports;
+}
+
+function resolveProjectTrackColorFromSource(track) {
+    return statsUtils.resolveProjectTrackColor(track);
+}
 
 const epmConfig = {
     version: 2,
@@ -35,6 +56,7 @@ test.beforeAll(() => {
         define: { 'process.env.NODE_ENV': '"test"' },
     });
     dashboardJs = result.outputFiles[0].text;
+    statsUtils = loadStatsUtils();
 });
 
 function epmProject(tab, index = 1) {
@@ -876,7 +898,7 @@ async function installApiMocks(page, calls, options = {}) {
                     key,
                     summary: `${key} summary`,
                     currentValue: 'Committed',
-                    durations: { 'null (no value)': 5, 'Committed': 20 },
+                    durations: { 'No track': 5, 'Committed': 20 },
                     created: '2026-01-01T00:00:00.000+0000',
                     transitions: [
                         { date: '2026-01-06T00:00:00.000+0000', from: null, to: 'Committed' },
@@ -1250,14 +1272,10 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     await expect(statsView.locator('.project-track-legend')).toContainText('Committed');
     await expect(statsView.locator('.project-track-legend')).toContainText('Flexible');
 
-    // Per-sprint chart renders, and its legend uses real <button> elements.
-    const sprintChart = statsView.locator('.project-track-sprint-chart');
-    await expect(sprintChart).toBeVisible();
-    await expect(sprintChart.locator('.project-track-sprint-segment').first()).toBeVisible();
-    const sprintLegendButtons = sprintChart.locator('.project-track-sprint-legend button.project-track-sprint-legend-item');
-    await expect(sprintLegendButtons.first()).toBeVisible();
-    const sprintLegendTags = await sprintLegendButtons.evaluateAll(nodes => nodes.map(node => node.tagName));
-    expect(sprintLegendTags.every(tag => tag === 'BUTTON')).toBe(true);
+    // Per-sprint chart is HIDDEN when only one sprint is selected (single-sprint fixture):
+    // it would be redundant with the range totals bar above.
+    await expect(statsView.locator('.project-track-sprint-chart')).toHaveCount(0);
+    await expect(statsView.getByText('Story points per sprint')).toHaveCount(0);
 
     // Breakdown chart under "By assignee" heading (Epic mode), rows by assignee.
     await expect(statsView.getByText('By assignee')).toBeVisible();
@@ -1275,6 +1293,43 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     await expect(phaseSection.locator('.stacked-bar')).toBeVisible();
     // Summary stats (avg days) are shown.
     await expect(phaseSection.locator('.project-track-phase-summary')).toBeVisible();
+
+    // Item 3: each epic row label is a clickable Jira link (anchor, new tab, /browse/).
+    const phaseEpicLink = phaseSection.locator('.stacked-bar-row .stacked-bar-row-label').first();
+    await expect(phaseEpicLink).toBeVisible();
+    const phaseEpicTag = await phaseEpicLink.evaluate(node => node.tagName);
+    expect(phaseEpicTag).toBe('A');
+    const phaseEpicHref = await phaseEpicLink.getAttribute('href');
+    expect(phaseEpicHref).toContain('/browse/');
+    expect(await phaseEpicLink.getAttribute('target')).toBe('_blank');
+    expect(await phaseEpicLink.getAttribute('rel')).toContain('noopener');
+
+    // Item 2: the phase "No track" segment reads "No track" (not "NULL (NO VALUE)") and is
+    // painted with the SAME color resolveProjectTrackColor returns for the SP "No track"
+    // segment. The single color source is asserted, not a magenta hash color. The util is
+    // ESM; transpile it to CJS with the same esbuild the shell bundle uses, then require it
+    // so the test reuses the real color source instead of a hardcoded hex.
+    const noTrackColor = resolveProjectTrackColorFromSource('No track');
+    const noTrackSegment = phaseSection
+        .locator('.stacked-bar-segment', { hasText: 'No track' })
+        .first();
+    await expect(noTrackSegment).toBeVisible();
+    await expect(phaseSection).not.toContainText('NULL (NO VALUE)');
+    const segmentColor = await noTrackSegment.evaluate((node, expectedHex) => {
+        const toRgb = (hex) => {
+            const value = hex.replace('#', '');
+            const int = parseInt(value, 16);
+            return `rgb(${(int >> 16) & 255}, ${(int >> 8) & 255}, ${int & 255})`;
+        };
+        const declared = getComputedStyle(node).getPropertyValue('--stacked-bar-color').trim();
+        return {
+            declaredColor: declared,
+            expectedRgb: toRgb(expectedHex),
+            backgroundColor: getComputedStyle(node).backgroundColor,
+        };
+    }, noTrackColor);
+    expect(segmentColor.declaredColor).toBe(noTrackColor);
+    expect(segmentColor.backgroundColor).toBe(segmentColor.expectedRgb);
 
     await captureSmokeScreenshot(page, 'statistics-project-track-epic');
 
@@ -1295,9 +1350,12 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     await expect(statsView.getByText('By assignee')).toHaveCount(0);
     const teamRows = statsView.locator('.project-track-card', { hasText: 'By team' }).locator('.stacked-bar-row');
     await expect(teamRows).toHaveCount(2);
-    // Team rows are labelled by the configured team label (teamLabels), not the raw team name.
-    await expect(statsView.locator('.project-track-card', { hasText: 'By team' })).toContainText('alpha_label');
-    await expect(statsView.locator('.project-track-card', { hasText: 'By team' })).toContainText('beta_label');
+    // Item 4: team rows are labelled by the story's real team NAME, not the group teamLabels id.
+    const byTeamCard = statsView.locator('.project-track-card', { hasText: 'By team' });
+    await expect(byTeamCard).toContainText('Alpha Team');
+    await expect(byTeamCard).toContainText('Beta Team');
+    await expect(byTeamCard).not.toContainText('alpha_label');
+    await expect(byTeamCard).not.toContainText('beta_label');
 
     // Time-in-phase section: ABSENT in Team mode.
     await expect(statsView.locator('.project-track-phase-section')).toHaveCount(0);

@@ -7257,8 +7257,8 @@ import {
                 [projectTrackSeries]
             );
             const projectTrackBreakdown = React.useMemo(
-                () => buildProjectTrackBreakdownRows(excludedCapacityIssues, projectTrackOpts, { teamLabels: activeGroupTeamLabels }),
-                [excludedCapacityIssues, projectTrackOpts, activeGroupTeamLabels]
+                () => buildProjectTrackBreakdownRows(excludedCapacityIssues, projectTrackOpts),
+                [excludedCapacityIssues, projectTrackOpts]
             );
             const projectTrackRangeLabel = React.useMemo(() => {
                 const range = excludedCapacitySprintRange;
@@ -13692,16 +13692,18 @@ import {
                                         />
                                     </div>
 
-                                    <div className="stats-card project-track-card">
-                                        <h4>Story points per sprint</h4>
-                                        <ProjectTrackSprintChart
-                                            series={projectTrackSeries}
-                                            resolveColor={resolveProjectTrackColor}
-                                            caption={projectTrackMode === 'epic'
-                                                ? 'Each epic is attributed to its dominant sprint; all of its story points land in that sprint.'
-                                                : ''}
-                                        />
-                                    </div>
+                                    {projectTrackSeries.sprints.length > 1 && (
+                                        <div className="stats-card project-track-card">
+                                            <h4>Story points per sprint</h4>
+                                            <ProjectTrackSprintChart
+                                                series={projectTrackSeries}
+                                                resolveColor={resolveProjectTrackColor}
+                                                caption={projectTrackMode === 'epic'
+                                                    ? 'Each epic is attributed to its dominant sprint; all of its story points land in that sprint.'
+                                                    : ''}
+                                            />
+                                        </div>
+                                    )}
 
                                     <div className="stats-card project-track-card">
                                         <h4>{projectTrackMode === 'team' ? 'By team' : 'By assignee'}</h4>
@@ -13738,6 +13740,7 @@ import {
                                                     <ProjectTrackPhaseChart
                                                         rows={projectTrackPhaseEpics}
                                                         resolveColor={resolveProjectTrackColor}
+                                                        jiraUrl={jiraUrl}
                                                     />
                                                 </>
                                             )}

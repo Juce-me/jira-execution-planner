@@ -29,7 +29,7 @@ class TrackPhaseDurationMathTests(unittest.TestCase):
             '2026-03-26T13:29:50.324+0000', 'Flexible',
             [{'date': '2026-06-25T00:00:00.000+0000', 'from': None, 'to': 'Flexible'}],
             parse_jira_datetime('2026-06-30T00:00:00.000+0000'))
-        self.assertAlmostEqual(out['null (no value)'], 91.0, delta=1.0)
+        self.assertAlmostEqual(out['No track'], 91.0, delta=1.0)
         self.assertAlmostEqual(out['Flexible'], 5.0, delta=1.0)
 
     def test_durations_no_transitions_attributes_all_time_to_current_value(self):
@@ -45,8 +45,8 @@ class TrackPhaseDurationMathTests(unittest.TestCase):
             '2026-03-26T00:00:00.000+0000', '',
             [],
             parse_jira_datetime('2026-03-31T00:00:00.000+0000'))
-        self.assertEqual(set(out.keys()), {'null (no value)'})
-        self.assertAlmostEqual(out['null (no value)'], 5.0, delta=0.01)
+        self.assertEqual(set(out.keys()), {'No track'})
+        self.assertAlmostEqual(out['No track'], 5.0, delta=0.01)
 
     def test_durations_two_transitions_sums_per_state(self):
         out = compute_track_phase_durations(
@@ -56,7 +56,7 @@ class TrackPhaseDurationMathTests(unittest.TestCase):
                 {'date': '2026-01-21T00:00:00.000+0000', 'from': 'Flexible', 'to': 'Committed'},
             ],
             parse_jira_datetime('2026-01-31T00:00:00.000+0000'))
-        self.assertAlmostEqual(out['null (no value)'], 10.0, delta=0.01)
+        self.assertAlmostEqual(out['No track'], 10.0, delta=0.01)
         self.assertAlmostEqual(out['Flexible'], 10.0, delta=0.01)
         self.assertAlmostEqual(out['Committed'], 10.0, delta=0.01)
 
@@ -167,7 +167,7 @@ class TrackPhaseDurationRouteTests(unittest.TestCase):
         epics = {e["key"]: e for e in body["epics"]}
         self.assertIn("TECH-1", epics)
         durations = epics["TECH-1"]["durations"]
-        self.assertIn("null (no value)", durations)
+        self.assertIn("No track", durations)
         self.assertIn("Flexible", durations)
         mock_get.assert_called()
         # params dict, never a query string baked into the path.

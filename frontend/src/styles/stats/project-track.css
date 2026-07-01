@@ -142,6 +142,22 @@
             white-space: nowrap;
         }
 
+        /* Clickable epic key in the time-in-phase chart: reads as a link and keeps the
+           shared row-label ellipsis (an anchor is inline by default, which breaks
+           overflow:hidden, so make it block-level with a bounded width). */
+        a.project-track-phase-epic-link {
+            display: block;
+            max-width: 100%;
+            color: var(--accent);
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        a.project-track-phase-epic-link:hover,
+        a.project-track-phase-epic-link:focus-visible {
+            text-decoration: underline;
+        }
+
         .stacked-bar-row-total {
             color: var(--text-secondary);
             font-size: 0.76rem;

@@ -18,12 +18,12 @@ const epic = (key, durations, transitions = [], opts = {}) => ({
 test('byState sums days across all epics per state', () => {
     const epics = [
         epic('E1', { 'Committed': 10, 'Flexible': 5 }),
-        epic('E2', { 'Committed': 7, 'null (no value)': 3 }),
+        epic('E2', { 'Committed': 7, 'No track': 3 }),
     ];
     const { byState } = summarizeTrackPhaseDurations(epics);
     assert.equal(byState['Committed'], 17);
     assert.equal(byState['Flexible'], 5);
-    assert.equal(byState['null (no value)'], 3);
+    assert.equal(byState['No track'], 3);
 });
 
 test('byState handles empty epics array', () => {
@@ -41,28 +41,28 @@ test('byState missing state key counts as zero for that epic (not accumulated)',
     const { byState } = summarizeTrackPhaseDurations(epics);
     assert.equal(byState['Committed'], 10);
     assert.equal(byState['Flexible'], 4);
-    assert.equal(byState['null (no value)'], undefined);
+    assert.equal(byState['No track'], undefined);
 });
 
 // ---- avgDaysToFirstTrack ------------------------------------------------
 
-test('avgDaysToFirstTrack averages "null (no value)" days across epics that have any transition', () => {
+test('avgDaysToFirstTrack averages "No track" days across epics that have any transition', () => {
     // Both epics have transitions (so they were ever tracked).
     // E1 spent 5d untracked; E2 spent 3d untracked.
     const epics = [
-        epic('E1', { 'null (no value)': 5, 'Committed': 10 }, [{ date: '2026-02-01', from: null, to: 'Committed' }]),
-        epic('E2', { 'null (no value)': 3, 'Flexible': 7 }, [{ date: '2026-02-10', from: null, to: 'Flexible' }]),
+        epic('E1', { 'No track': 5, 'Committed': 10 }, [{ date: '2026-02-01', from: null, to: 'Committed' }]),
+        epic('E2', { 'No track': 3, 'Flexible': 7 }, [{ date: '2026-02-10', from: null, to: 'Flexible' }]),
     ];
     const { avgDaysToFirstTrack } = summarizeTrackPhaseDurations(epics);
     assert.equal(avgDaysToFirstTrack, 4); // (5 + 3) / 2
 });
 
-test('avgDaysToFirstTrack treats missing "null (no value)" key as 0 for epics with transitions', () => {
+test('avgDaysToFirstTrack treats missing "No track" key as 0 for epics with transitions', () => {
     // E1 has transitions but no untracked time recorded.
     // E2 has 6d untracked time.
     const epics = [
         epic('E1', { 'Committed': 10 }, [{ date: '2026-02-01', from: null, to: 'Committed' }]),
-        epic('E2', { 'null (no value)': 6, 'Committed': 4 }, [{ date: '2026-02-10', from: null, to: 'Committed' }]),
+        epic('E2', { 'No track': 6, 'Committed': 4 }, [{ date: '2026-02-10', from: null, to: 'Committed' }]),
     ];
     const { avgDaysToFirstTrack } = summarizeTrackPhaseDurations(epics);
     assert.equal(avgDaysToFirstTrack, 3); // (0 + 6) / 2
@@ -70,7 +70,7 @@ test('avgDaysToFirstTrack treats missing "null (no value)" key as 0 for epics wi
 
 test('avgDaysToFirstTrack is 0 when no epics have any transitions', () => {
     const epics = [
-        epic('E1', { 'null (no value)': 5 }), // no transitions
+        epic('E1', { 'No track': 5 }), // no transitions
     ];
     const { avgDaysToFirstTrack } = summarizeTrackPhaseDurations(epics);
     assert.equal(avgDaysToFirstTrack, 0);
@@ -81,7 +81,7 @@ test('avgDaysToFirstTrack is 0 when no epics have any transitions', () => {
 test('avgDaysToCommitted is null when no epic reached Committed', () => {
     const epics = [
         epic('E1', { 'Flexible': 10 }, [{ date: '2026-02-01', from: null, to: 'Flexible' }]),
-        epic('E2', { 'null (no value)': 5 }), // never transitioned
+        epic('E2', { 'No track': 5 }), // never transitioned
     ];
     const { avgDaysToCommitted } = summarizeTrackPhaseDurations(epics);
     assert.equal(avgDaysToCommitted, null);
@@ -122,7 +122,7 @@ test('avgDaysToCommitted uses first Committed transition when there are multiple
     //   transition 1: 2026-01-20 null -> Flexible (20 days)
     //   transition 2: 2026-02-01 Flexible -> Committed (first Committed => 31 days from created)
     const epics = [
-        epic('E1', { 'null (no value)': 5, 'Flexible': 12, 'Committed': 14 },
+        epic('E1', { 'No track': 5, 'Flexible': 12, 'Committed': 14 },
             [
                 { date: '2026-01-20T00:00:00.000+0000', from: null, to: 'Flexible' },
                 { date: '2026-02-01T00:00:00.000+0000', from: 'Flexible', to: 'Committed' },
@@ -139,7 +139,7 @@ test('sortEpicsByTotalAge orders descending by sum of all durations', () => {
     const epics = [
         epic('E1', { 'Committed': 10, 'Flexible': 5 }), // total 15
         epic('E2', { 'Committed': 30 }),                 // total 30
-        epic('E3', { 'null (no value)': 7 }),             // total 7
+        epic('E3', { 'No track': 7 }),             // total 7
     ];
     const sorted = sortEpicsByTotalAge(epics);
     assert.deepEqual(sorted.map(e => e.key), ['E2', 'E1', 'E3']);

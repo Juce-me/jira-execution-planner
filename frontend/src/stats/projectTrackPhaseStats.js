@@ -1,5 +1,6 @@
 // Helpers for the time-in-Project-Track-phase section (Epic mode only).
 // Consumes the response shape of POST /api/stats/project-track-phase-durations.
+import { NO_TRACK_LABEL } from './projectTrackStats.js';
 
 // totalAge: sum of all days across all states for one epic.
 function totalAge(epicRow) {
@@ -14,15 +15,15 @@ export function sortEpicsByTotalAge(epics) {
 // summarizeTrackPhaseDurations: aggregates the epics array from the endpoint response.
 //
 // byState: sum of days per state across all epics. State labels come verbatim from
-//   the endpoint (e.g. "null (no value)", "Flexible", "Committed").
+//   the endpoint (e.g. "No track", "Flexible", "Committed").
 //
-// avgDaysToFirstTrack: average of durations["null (no value)"] across epics that have
+// avgDaysToFirstTrack: average of durations[NO_TRACK_LABEL] across epics that have
 //   at least one transition entry. Rationale: a non-empty transitions array means the
-//   epic was ever assigned a Project Track value; for those epics the "null (no value)"
+//   epic was ever assigned a Project Track value; for those epics the "No track"
 //   bucket represents time spent untracked before the first track assignment.
 //   Epics with zero transitions are still completely untracked, so they are excluded —
 //   including them would conflate "never touched" epics with the time-to-first-track
-//   signal. Missing "null (no value)" key is treated as 0 for epics that do have
+//   signal. Missing "No track" key is treated as 0 for epics that do have
 //   transitions (they went directly to a non-null track from creation).
 //   Returns 0 when no epics have any transitions.
 //
@@ -45,7 +46,7 @@ export function summarizeTrackPhaseDurations(epics) {
     const trackedRows = rows.filter(r => Array.isArray(r.transitions) && r.transitions.length > 0);
     let avgDaysToFirstTrack = 0;
     if (trackedRows.length > 0) {
-        const totalUntracked = trackedRows.reduce((sum, r) => sum + (r.durations?.['null (no value)'] || 0), 0);
+        const totalUntracked = trackedRows.reduce((sum, r) => sum + (r.durations?.[NO_TRACK_LABEL] || 0), 0);
         avgDaysToFirstTrack = Math.round(totalUntracked / trackedRows.length);
     }
 

@@ -54,6 +54,7 @@ export default function StackedBar({
     resolveLabel,
     formatValue = defaultFormatValue,
     formatReadout,          // optional: ({ rowLabel, segmentKey, value }) => string
+    renderRowLabel,         // optional: (row) => ReactNode; default = plain-text row.label
     ariaLabel,
     emptyText = 'No data in range.'
 }) {
@@ -89,7 +90,9 @@ export default function StackedBar({
                         return (
                             <div className="stacked-bar-row" key={row.id}>
                                 <div className="stacked-bar-meta">
-                                    <span className="stacked-bar-row-label">{row.label}</span>
+                                    {renderRowLabel
+                                        ? renderRowLabel(row)
+                                        : <span className="stacked-bar-row-label">{row.label}</span>}
                                     <strong className="stacked-bar-row-total">{formatValue(row.total)}</strong>
                                 </div>
                                 <div className="stacked-bar-track">

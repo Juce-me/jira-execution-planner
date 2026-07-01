@@ -1090,7 +1090,7 @@ def resolve_terminal_date_from_history(histories, terminal_status):
     return None
 
 
-PROJECT_TRACK_NULL_LABEL = 'null (no value)'
+PROJECT_TRACK_NULL_LABEL = 'No track'
 
 
 def _track_state_label(value):
@@ -1133,7 +1133,7 @@ def compute_track_phase_durations(created_iso, current_value, transitions, now):
     from (or ``current_value`` when there are no transitions). Each transition's
     ``to`` becomes the new state; the final state runs until ``now``. Negative or
     out-of-order spans are clamped to zero. Null/blank values bucket under
-    ``null (no value)``.
+    ``No track``.
     """
     durations = {}
     start_dt = parse_jira_datetime(created_iso)

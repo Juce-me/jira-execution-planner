@@ -85,12 +85,20 @@ test('inScopeEpicKeys includes in-range epics and excludes out-of-range epics', 
   assert.equal(keys.length, 1);
 });
 
-test('Team-mode breakdown rows are teams; Epic-mode rows are assignees counted once', () => {
+test('Team-mode rows use the real team name (not a group label); Epic-mode rows are assignees counted once', () => {
+  // Story carries teamId 'team-a' and the real team NAME 'Alpha Team'. The row label
+  // must be the real name, and must NOT be a group teamLabels id/value.
   const teamRows = buildProjectTrackBreakdownRows(
-    [story('PROD-1', 5, 'Committed', 10, { teamId: 'team-a' })], base, { teamLabels: { 'team-a': 'Alpha' } });
-  assert.equal(teamRows.rows.find(r => r.label === 'Alpha').byTrack['Committed'], 5);
+    [story('PROD-1', 5, 'Committed', 10, { teamId: 'team-a', teamName: 'Alpha Team' })], base);
+  assert.equal(teamRows.rows.find(r => r.label === 'Alpha Team').byTrack['Committed'], 5);
+  assert.equal(teamRows.rows.length, 1);
+  assert.ok(!teamRows.rows.some(r => r.label === 'team-a'), 'row label must be the team name, not the team id');
+  // Falls back to teamId only when the story has no team name.
+  const noNameRows = buildProjectTrackBreakdownRows(
+    [story('PROD-2', 4, 'Committed', 10, { teamId: 'team-b' })], base);
+  assert.equal(noNameRows.rows.find(r => r.label === 'team-b').byTrack['Committed'], 4);
   const epicTasks = [story('S1', 2, 'Committed', 10, { epicKey: 'E1', assignee: 'Dana' }),
                      story('S2', 6, 'Committed', 20, { epicKey: 'E1', assignee: 'Dana' })];
-  const epRows = buildProjectTrackBreakdownRows(epicTasks, { ...base, mode: 'epic' }, { teamLabels: {} });
+  const epRows = buildProjectTrackBreakdownRows(epicTasks, { ...base, mode: 'epic' });
   assert.equal(epRows.rows.find(r => r.label === 'Dana').byTrack['Committed'], 8);
 });

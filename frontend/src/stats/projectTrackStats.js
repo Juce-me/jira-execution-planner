@@ -106,7 +106,7 @@ export function summarizeProjectTrackTotals(series) {
   return { byTrack, total };
 }
 
-export function buildProjectTrackBreakdownRows(tasks, rawOpts, { teamLabels = {} } = {}) {
+export function buildProjectTrackBreakdownRows(tasks, rawOpts) {
   const opts = withAllowed(rawOpts);
   const trackSet = new Set(); const rowMap = new Map();
   const ensure = (id, label) => {
@@ -127,7 +127,9 @@ export function buildProjectTrackBreakdownRows(tasks, rawOpts, { teamLabels = {}
   } else {
     for (const task of scoped) {
       const teamId = task?.fields?.teamId || task?.fields?.teamName || 'unknown';
-      const label = teamLabels[teamId] || task?.fields?.teamName || teamId;
+      // Row label is the story's real team NAME; fall back to the id only when the
+      // name is absent. Group teamLabels ids are deliberately not used here.
+      const label = task?.fields?.teamName || teamId;
       addRow(ensure(teamId, label), trackOf(task), storyPointsFor(task));
     }
   }

@@ -274,6 +274,13 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Expected output: each ENG epic header shows an effective-priority pill (highest-urgency child) and a Product Track emoji (🔒 Committed / 🤷 Flexible) read from the configurable `projectTrackField` Jira custom field (default `customfield_35024`); a single `sprint-dropdown`-styled Sort control orders epics by Priority, Status (built-in workflow-phase fallback), or Track (committed-first / flexible-first), each tie-broken by priority, with the choice persisted in localStorage UI prefs.
    - No new routes, no Jira writes, no auth-mode change; `GATE-05` unaffected. The board-imported per-group workflow source and group-by-kanban-column grouping are deferred to a separate future plan; the sort comparator already accepts an injected phase-rank map.
 
+## Stats Project Track By Sprint
+
+1. `EXEC-stats-project-track-by-sprint.md`
+   - Implemented on branch `feature/stats-project-track-quarters`; pending merge. Rename to `DONE-*` after merge.
+   - Expected output: a `Project Track` ENG stats sub-tab (after `Mono vs Cross`) with a filter bar (shared Start/End sprint range, Capacity side Product/Tech/Tech+Product, Exclude Ad Hoc, Exclude Excluded Capacity, Mode Epic/Team), a mode title, a range totals bar, a per-sprint chart (hidden for a single-sprint range), a By assignee/By team breakdown, and an Epic-mode-only time-in-phase section built from a new bounded, read-only `POST /api/stats/project-track-phase-durations` endpoint.
+   - No Jira/Home writes, no auth-mode change; `GATE-05` unaffected. See the plan's `## Outcome` and `## Current Accuracy` sections for as-built divergences from the original endpoint-contract text (response field names, absence of `cached`/`generatedAt`, client-side signature caching).
+
 ## Legacy Unclassified Date-Only Plans
 
 These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat them as unclassified historical context, not executable current plans, until a reviewer classifies and renames them or moves them to `docs/agents/`:

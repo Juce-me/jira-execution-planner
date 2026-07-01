@@ -340,7 +340,7 @@ The dashboard supports dynamic sprint selection:
 
 ## 📊 Sprint Statistics
 
-The Statistics panel covers sprint execution and lead-time views for active or completed sprints.
+The Statistics panel covers sprint execution and lead-time views for active or completed sprints, including a **Project Track** tab: a filter bar (Start/End sprint, Capacity side Product/Tech/Tech+Product, Exclude Ad Hoc, Exclude Excluded Capacity, Mode Epic/Team), a range totals bar and per-sprint chart of story points by Project Track, a By assignee/By team breakdown, and an Epic-mode-only time-in-phase section built from the Jira changelog.
 
 See the full guide:
 - [docs/features/statistics.md](docs/features/statistics.md)

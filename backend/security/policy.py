@@ -142,6 +142,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("stats-read", "/api/stats", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("stats-burnout", "/api/stats/burnout", frozenset({"GET", "POST"}), "authenticated_read"),
     EndpointPolicy("stats-epic-cohort", "/api/stats/epic-cohort", frozenset({"POST"}), "authenticated_read"),
+    EndpointPolicy("stats-project-track-phase", "/api/stats/project-track-phase-durations", frozenset({"POST"}), "authenticated_read"),
     EndpointPolicy("stats-excluded-source", "/api/stats/excluded-capacity-source", frozenset({"POST"}), "authenticated_read"),
     EndpointPolicy("capacity-read", "/api/capacity", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("planned-capacity-read", "/api/planned-capacity", PUBLIC_METHODS, "authenticated_read"),

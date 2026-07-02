@@ -76,3 +76,6 @@ node_modules/
 .worktrees/
 .superpowers/
 tests/debug_scenario_aleksandr.py
+
+# Throwaway agent probe/scratch workspace
+tmp/

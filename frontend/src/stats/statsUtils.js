@@ -56,6 +56,23 @@ export function resolveTeamColor(teamId) {
     return RADAR_PALETTE[index];
 }
 
+// Categorical color for a Project Track value. Fixed colors for the known tracks
+// (Committed/Flexible) chosen to harmonize with the stats palette, the neutral grey
+// fallback for "No track" (matching resolveTeamColor's fallback), and a hash fallback
+// for any other track value so the same track is always the same color everywhere.
+const PROJECT_TRACK_COLORS = {
+    committed: '#5b6fd8',
+    flexible: '#e0a93b',
+    'no track': '#94a3b8'
+};
+
+export function resolveProjectTrackColor(track) {
+    const key = String(track || '').trim().toLowerCase();
+    if (PROJECT_TRACK_COLORS[key]) return PROJECT_TRACK_COLORS[key];
+    if (!RADAR_PALETTE.length) return '#94a3b8';
+    return RADAR_PALETTE[hashTeamId(key) % RADAR_PALETTE.length];
+}
+
 export function buildRadarPoints({ values, radius, center, maxValue, axes }) {
     const count = axes.length;
     return axes.map((axis, index) => {

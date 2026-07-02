@@ -513,7 +513,7 @@ test('excluded-capacity stats source loads progressively and source-only tabs sk
         'Excluded-capacity stats source should not request the whole sprint range in one blocking call'
     );
     assert.ok(
-        dashboardSource.includes("const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare');"),
+        dashboardSource.includes("const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');"),
         'Expected source-only stats tabs to be identified explicitly'
     );
     assert.ok(

@@ -11,6 +11,27 @@ const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
 const groupTeamIds = ['team-alpha', 'team-beta'];
 let dashboardJs;
+let statsUtils;
+
+// Reuse the app's single Project Track color source in assertions. statsUtils.js is ESM
+// (and pulls in ESM deps), so bundle it to a self-contained CJS module with the same
+// esbuild the shell bundle uses, then eval it — this proves the phase chart uses
+// resolveProjectTrackColor's output rather than a hardcoded hex duplicated in the test.
+function loadStatsUtils() {
+    const result = esbuild.buildSync({
+        entryPoints: [path.join(repoRoot, 'frontend', 'src', 'stats', 'statsUtils.js')],
+        bundle: true,
+        write: false,
+        format: 'cjs',
+    });
+    const moduleShim = { exports: {} };
+    new Function('module', 'exports', result.outputFiles[0].text)(moduleShim, moduleShim.exports);
+    return moduleShim.exports;
+}
+
+function resolveProjectTrackColorFromSource(track) {
+    return statsUtils.resolveProjectTrackColor(track);
+}
 
 const epmConfig = {
     version: 2,
@@ -35,6 +56,7 @@ test.beforeAll(() => {
         define: { 'process.env.NODE_ENV': '"test"' },
     });
     dashboardJs = result.outputFiles[0].text;
+    statsUtils = loadStatsUtils();
 });
 
 function epmProject(tab, index = 1) {
@@ -128,7 +150,7 @@ function makeCompletedCohortEpic(index) {
     };
 }
 
-function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey }) {
+function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey, epicProjectTrack, epicAssignee }) {
     return {
         id: key,
         key,
@@ -141,6 +163,8 @@ function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName
             customfield_10004: points,
             epicKey,
             epicSummary,
+            epicProjectTrack: epicProjectTrack || null,
+            epicAssignee: epicAssignee ? { displayName: epicAssignee } : null,
             parentSummary: epicSummary,
             projectKey,
             teamId,
@@ -164,6 +188,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Alpha Team',
         points: 2,
         projectKey: 'PROD',
+        epicProjectTrack: 'Flexible',
+        epicAssignee: 'Sam BAU',
     }),
     makeExcludedCapacityIssue({
         key: 'TECH-SHARE-1',
@@ -173,6 +199,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Alpha Team',
         points: 3,
         projectKey: 'TECH',
+        epicProjectTrack: 'Committed',
+        epicAssignee: 'Tom Tech',
     }),
     makeExcludedCapacityIssue({
         key: 'PROD-SHARE-1',
@@ -182,6 +210,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Alpha Team',
         points: 5,
         projectKey: 'PROD',
+        epicProjectTrack: 'Committed',
+        epicAssignee: 'Pat Product',
     }),
     makeExcludedCapacityIssue({
         key: 'BAU-2',
@@ -191,6 +221,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Beta Team',
         points: 1,
         projectKey: 'PROD',
+        epicProjectTrack: 'Flexible',
+        epicAssignee: 'Sam BAU',
     }),
     makeExcludedCapacityIssue({
         key: 'TECH-SHARE-2',
@@ -200,6 +232,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Beta Team',
         points: 1,
         projectKey: 'TECH',
+        epicProjectTrack: 'Committed',
+        epicAssignee: 'Tom Tech',
     }),
     makeExcludedCapacityIssue({
         key: 'PROD-SHARE-2',
@@ -209,6 +243,8 @@ const excludedCapacitySourceIssues = [
         teamName: 'Beta Team',
         points: 8,
         projectKey: 'PROD',
+        epicProjectTrack: 'Committed',
+        epicAssignee: 'Pat Product',
     }),
 ];
 const scenarioTeams = Array.from({ length: 14 }, (_, index) => (
@@ -854,6 +890,23 @@ async function installApiMocks(page, calls, options = {}) {
                 },
             });
         }
+        if (url.pathname === '/api/stats/project-track-phase-durations') {
+            const body = request.postDataJSON() || {};
+            const epicKeys = Array.isArray(body.epicKeys) ? body.epicKeys : [];
+            return json({
+                epics: epicKeys.map((key) => ({
+                    key,
+                    summary: `${key} summary`,
+                    currentValue: 'Committed',
+                    durations: { 'No track': 5, 'Committed': 20 },
+                    created: '2026-01-01T00:00:00.000+0000',
+                    transitions: [
+                        { date: '2026-01-06T00:00:00.000+0000', from: null, to: 'Committed' },
+                    ],
+                })),
+                meta: { truncated: false, processedEpicCount: epicKeys.length, warnings: [] },
+            });
+        }
         if (url.pathname === '/api/scenario/drafts') {
             return json({
                 activeDraft: null,
@@ -1123,6 +1176,213 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await expect(page.locator('.stats-view.open')).toContainText('Team Cross Share');
     await expect(page.locator('.stats-view.open .excluded-capacity-line-chart')).toBeVisible();
 
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Project Track tab renders filter bar, mode title, totals, per-sprint and breakdown charts', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, {
+        excludedCapacityEpics: ['BAU-EPIC'],
+    });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        selectedTeams: ['all'],
+        showStats: true,
+        statsView: 'projectTrack',
+        excludedCapacityStartSprintId: String(selectedSprintId),
+        excludedCapacityEndSprintId: String(selectedSprintId),
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+
+    const statsView = page.locator('.stats-view.open');
+    await expect(statsView).toBeVisible();
+
+    // Filter bar: shared sprint range selects + capacity-side / mode segmented controls + exclusion toggles.
+    const controls = statsView.locator('.project-track-controls');
+    await expect(controls).toBeVisible();
+    await expect(controls.locator('select')).toHaveCount(2);
+    // Filter-bar groups never overlap: each control group's layout box stays clear of neighbours.
+    const controlBoxes = await controls.evaluate((node) => {
+        return Array.from(node.querySelectorAll(':scope > .stats-control-group')).map((group) => {
+            const rect = group.getBoundingClientRect();
+            return { top: Math.round(rect.top), left: Math.round(rect.left), right: Math.round(rect.right) };
+        });
+    });
+    controlBoxes.forEach((box, index) => {
+        const sameRowNeighbour = controlBoxes[index + 1];
+        if (sameRowNeighbour && sameRowNeighbour.top === box.top) {
+            expect(sameRowNeighbour.left).toBeGreaterThanOrEqual(box.right);
+        }
+    });
+    // Real-rendering assertions: exclusion labels within their group and not overlapping the
+    // MODE control — these catch overflowing nowrap text that getBoundingClientRect misses.
+    // NOTE: a heading.scrollWidth > heading.clientWidth check was removed: a display:block
+    // label with no overflow:hidden ancestor always has scrollWidth === clientWidth regardless
+    // of the group width, so the check is tautologically false and cannot catch the
+    // min-width:210px regression (with that regression groupClientWidth=210 > headingScrollWidth=71).
+    // The two label assertions below are sufficient: they do fail on the broken layout.
+    const renderChecks = await controls.evaluate((node) => {
+        const exclusionGroup = node.querySelector('.project-track-exclusions');
+        const modeGroup = Array.from(node.querySelectorAll(':scope > .stats-control-group')).find(
+            (g) => g.querySelector('[aria-label="Mode"]')
+        );
+        const checkboxLabels = exclusionGroup
+            ? Array.from(exclusionGroup.querySelectorAll('label.project-track-checkbox'))
+            : [];
+        const groupRight = exclusionGroup ? exclusionGroup.getBoundingClientRect().right : 0;
+        const modeLeft = modeGroup ? modeGroup.getBoundingClientRect().left : Infinity;
+        return {
+            labelOverflows: checkboxLabels.map((lbl) => {
+                const r = lbl.getBoundingClientRect().right;
+                return { right: Math.round(r), groupRight: Math.round(groupRight), modeLeft: Math.round(modeLeft) };
+            }),
+        };
+    });
+    for (const lbl of renderChecks.labelOverflows) {
+        expect(lbl.right, 'checkbox label must not overflow its group').toBeLessThanOrEqual(lbl.groupRight + 1);
+        expect(lbl.right, 'checkbox label must not overlap MODE control').toBeLessThan(lbl.modeLeft);
+    }
+    const capacityControl = controls.getByRole('radiogroup', { name: 'Capacity side' });
+    await expect(capacityControl).toHaveClass(/eng-mode-control/);
+    await expect(capacityControl).not.toHaveClass(/stats-view-toggle/);
+    await expect(capacityControl.getByRole('radio', { name: 'Product', exact: true })).toHaveAttribute('aria-checked', 'true');
+    const modeControl = controls.getByRole('radiogroup', { name: 'Mode' });
+    await expect(modeControl).toHaveClass(/eng-mode-control/);
+    await expect(modeControl).not.toHaveClass(/stats-view-toggle/);
+    await expect(modeControl.getByRole('radio', { name: 'Epic' })).toHaveAttribute('aria-checked', 'true');
+    const segmentedChecks = await controls.evaluate((node) => {
+        return Array.from(node.querySelectorAll('[role="radiogroup"]')).map((group) => {
+            const groupRect = group.getBoundingClientRect();
+            const buttonRects = Array.from(group.querySelectorAll('.segmented-control-button')).map((button) => button.getBoundingClientRect());
+            const styles = window.getComputedStyle(group);
+            return {
+                ariaLabel: group.getAttribute('aria-label'),
+                flexWrap: styles.flexWrap,
+                height: Math.round(groupRect.height),
+                buttonTops: buttonRects.map((rect) => Math.round(rect.top)),
+            };
+        });
+    });
+    for (const check of segmentedChecks.filter(item => item.ariaLabel === 'Capacity side' || item.ariaLabel === 'Mode')) {
+        expect(check.flexWrap, `${check.ariaLabel} must use the shared single-row segmented control`).toBe('nowrap');
+        expect(check.height, `${check.ariaLabel} must keep the shared segmented control height`).toBeLessThanOrEqual(42);
+        expect(new Set(check.buttonTops).size, `${check.ariaLabel} buttons must stay on one row`).toBe(1);
+    }
+    await expect(controls.getByText('Exclude Ad Hoc')).toBeVisible();
+    await expect(controls.getByText('Exclude Excluded Capacity')).toBeVisible();
+    // Mode label is "Mode", never "Metric".
+    await expect(statsView).not.toContainText('Metric');
+
+    // Mode title defaults to EPIC MODE.
+    await expect(statsView.locator('.project-track-mode-title')).toHaveText('EPIC MODE');
+
+    // Totals bar: product side, Epic mode => Committed 13 SP, Flexible 3 SP, total 16 SP.
+    const totalsBar = statsView.locator('.project-track-totals .stacked-bar');
+    await expect(totalsBar).toBeVisible();
+    const totalsSegments = totalsBar.locator('.stacked-bar-segment span');
+    await expect(totalsSegments.filter({ hasText: 'Committed 13 SP' })).toBeVisible();
+    await expect(totalsSegments.filter({ hasText: 'Flexible 3 SP' })).toBeVisible();
+    await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('16 SP');
+    await expect(statsView.locator('.project-track-legend')).toContainText('Committed');
+    await expect(statsView.locator('.project-track-legend')).toContainText('Flexible');
+
+    // Per-sprint chart is HIDDEN when only one sprint is selected (single-sprint fixture):
+    // it would be redundant with the range totals bar above.
+    await expect(statsView.locator('.project-track-sprint-chart')).toHaveCount(0);
+    await expect(statsView.getByText('Story points per sprint')).toHaveCount(0);
+
+    // Breakdown chart under "By assignee" heading (Epic mode), rows by assignee.
+    await expect(statsView.getByText('By assignee')).toBeVisible();
+    const breakdownRows = statsView.locator('.project-track-card', { hasText: 'By assignee' }).locator('.stacked-bar-row');
+    await expect(breakdownRows).toHaveCount(2);
+    await expect(statsView.locator('.project-track-card', { hasText: 'By assignee' })).toContainText('Pat Product');
+    await expect(statsView.locator('.project-track-card', { hasText: 'By assignee' })).toContainText('Sam BAU');
+
+    // Time-in-phase section: present in Epic mode, has heading and stacked-bar rows.
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/project-track-phase-durations', 1);
+    const phaseSection = statsView.locator('.project-track-phase-section');
+    await expect(phaseSection).toBeVisible();
+    await expect(phaseSection.getByRole('heading', { name: 'Time in Project Track phase' })).toBeVisible();
+    // The stacked-bar container must exist and have rows (mock returns one row per epic key).
+    await expect(phaseSection.locator('.stacked-bar')).toBeVisible();
+    // Summary stats (avg days) are shown.
+    await expect(phaseSection.locator('.project-track-phase-summary')).toBeVisible();
+
+    // Item 3: each epic row label is a clickable Jira link (anchor, new tab, /browse/).
+    const phaseEpicLink = phaseSection.locator('.stacked-bar-row .stacked-bar-row-label').first();
+    await expect(phaseEpicLink).toBeVisible();
+    const phaseEpicTag = await phaseEpicLink.evaluate(node => node.tagName);
+    expect(phaseEpicTag).toBe('A');
+    const phaseEpicHref = await phaseEpicLink.getAttribute('href');
+    expect(phaseEpicHref).toContain('/browse/');
+    expect(await phaseEpicLink.getAttribute('target')).toBe('_blank');
+    expect(await phaseEpicLink.getAttribute('rel')).toContain('noopener');
+
+    // Item 2: the phase "No track" segment reads "No track" (not "NULL (NO VALUE)") and is
+    // painted with the SAME color resolveProjectTrackColor returns for the SP "No track"
+    // segment. The single color source is asserted, not a magenta hash color. The util is
+    // ESM; transpile it to CJS with the same esbuild the shell bundle uses, then require it
+    // so the test reuses the real color source instead of a hardcoded hex.
+    const noTrackColor = resolveProjectTrackColorFromSource('No track');
+    const noTrackSegment = phaseSection
+        .locator('.stacked-bar-segment', { hasText: 'No track' })
+        .first();
+    await expect(noTrackSegment).toBeVisible();
+    await expect(phaseSection).not.toContainText('NULL (NO VALUE)');
+    const segmentColor = await noTrackSegment.evaluate((node, expectedHex) => {
+        const toRgb = (hex) => {
+            const value = hex.replace('#', '');
+            const int = parseInt(value, 16);
+            return `rgb(${(int >> 16) & 255}, ${(int >> 8) & 255}, ${int & 255})`;
+        };
+        const declared = getComputedStyle(node).getPropertyValue('--stacked-bar-color').trim();
+        return {
+            declaredColor: declared,
+            expectedRgb: toRgb(expectedHex),
+            backgroundColor: getComputedStyle(node).backgroundColor,
+        };
+    }, noTrackColor);
+    expect(segmentColor.declaredColor).toBe(noTrackColor);
+    expect(segmentColor.backgroundColor).toBe(segmentColor.expectedRgb);
+
+    await captureSmokeScreenshot(page, 'statistics-project-track-epic');
+
+    // Toggle Capacity side -> Tech (only TECH-EPIC, Committed 4 SP, no Flexible).
+    await capacityControl.getByRole('radio', { name: 'Tech', exact: true }).click();
+    await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('4 SP');
+    await expect(totalsSegments.filter({ hasText: 'Flexible' })).toHaveCount(0);
+
+    // Toggle Capacity side -> Tech + Product (Committed 17, Flexible 3, total 20).
+    await capacityControl.getByRole('radio', { name: 'Tech + Product' }).click();
+    await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('20 SP');
+    await expect(totalsSegments.filter({ hasText: 'Committed 17 SP' })).toBeVisible();
+
+    // Switch Mode -> Team: title flips, heading switches to By team, rows now per team.
+    await modeControl.getByRole('radio', { name: 'Team' }).click();
+    await expect(statsView.locator('.project-track-mode-title')).toHaveText('TEAM MODE');
+    await expect(statsView.getByText('By team')).toBeVisible();
+    await expect(statsView.getByText('By assignee')).toHaveCount(0);
+    const teamRows = statsView.locator('.project-track-card', { hasText: 'By team' }).locator('.stacked-bar-row');
+    await expect(teamRows).toHaveCount(2);
+    // Item 4: team rows are labelled by the story's real team NAME, not the group teamLabels id.
+    const byTeamCard = statsView.locator('.project-track-card', { hasText: 'By team' });
+    await expect(byTeamCard).toContainText('Alpha Team');
+    await expect(byTeamCard).toContainText('Beta Team');
+    await expect(byTeamCard).not.toContainText('alpha_label');
+    await expect(byTeamCard).not.toContainText('beta_label');
+
+    // Time-in-phase section: ABSENT in Team mode.
+    await expect(statsView.locator('.project-track-phase-section')).toHaveCount(0);
+
+    await captureSmokeScreenshot(page, 'statistics-project-track-team');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

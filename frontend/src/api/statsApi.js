@@ -16,3 +16,11 @@ export const fetchBurnoutStats = (backendUrl, payload, { signal } = {}) =>
 
 export const fetchEpicCohortStats = (backendUrl, payload, { signal } = {}) =>
     trackedFetch('stats_source', `${backendUrl}/api/stats/epic-cohort`, statsPostOptions(payload, signal), { featureName: 'stats' });
+
+export const fetchProjectTrackPhaseDurations = (backendUrl, { epicKeys = [], refresh = false, signal } = {}) =>
+    trackedFetch(
+        'stats_source',
+        `${backendUrl}/api/stats/project-track-phase-durations`,
+        statsPostOptions({ epicKeys, ...(refresh ? { refresh: true } : {}) }, signal),
+        { featureName: 'stats' }
+    );

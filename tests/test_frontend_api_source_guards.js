@@ -870,6 +870,7 @@ test('Stats and issues API modules own dashboard stats and lookup endpoints', ()
 
     assert.ok(statsApiSource.includes('/api/stats/burnout'), 'Expected burnout URL construction in statsApi.js');
     assert.ok(statsApiSource.includes('/api/stats/epic-cohort'), 'Expected epic cohort URL construction in statsApi.js');
+    assert.ok(statsApiSource.includes('/api/stats/project-track-phase-durations'), 'Expected Project Track phase URL construction in statsApi.js');
     assert.ok(issuesApiSource.includes('/api/issues/lookup?keys='), 'Expected issue lookup URL construction in issuesApi.js');
     assert.ok(dashboardSource.includes("from './api/statsApi.js'"), 'Expected dashboard to import stats API wrappers');
     assert.ok(dashboardSource.includes("from './api/issuesApi.js'"), 'Expected dashboard to import issue lookup API wrapper');
@@ -881,6 +882,7 @@ test('Stats and issues API wrappers preserve request details', async () => {
     const statsApi = loadApiModule('statsApi.js', [
         'fetchBurnoutStats',
         'fetchEpicCohortStats',
+        'fetchProjectTrackPhaseDurations',
     ]);
     const issuesApi = loadApiModule('issuesApi.js', [
         'fetchIssuesLookup',
@@ -900,6 +902,11 @@ test('Stats and issues API wrappers preserve request details', async () => {
             components: ['Comp A'],
             refresh: false,
         }, { signal });
+        await statsApi.fetchProjectTrackPhaseDurations('http://backend', {
+            epicKeys: ['EPIC-1'],
+            refresh: true,
+            signal,
+        });
         await issuesApi.fetchIssuesLookup('http://backend', ['ABC-1', 'XYZ-2'], { signal });
 
         assert.equal(calls[0].url, 'http://backend/api/stats/burnout');
@@ -927,9 +934,19 @@ test('Stats and issues API wrappers preserve request details', async () => {
         });
         assertJsonHeader(calls[1].options);
 
-        const lookupUrl = new URL(calls[2].url);
+        assert.equal(calls[2].url, 'http://backend/api/stats/project-track-phase-durations');
+        assert.equal(calls[2].options.method, 'POST');
+        assert.equal(calls[2].options.cache, 'no-cache');
+        assert.equal(calls[2].options.signal, signal);
+        assert.deepEqual(JSON.parse(calls[2].options.body), {
+            epicKeys: ['EPIC-1'],
+            refresh: true,
+        });
+        assertJsonHeader(calls[2].options);
+
+        const lookupUrl = new URL(calls[3].url);
         assert.equal(lookupUrl.pathname, '/api/issues/lookup');
         assert.equal(lookupUrl.searchParams.get('keys'), 'ABC-1,XYZ-2');
-        assert.equal(calls[2].options.signal, signal);
+        assert.equal(calls[3].options.signal, signal);
     });
 });

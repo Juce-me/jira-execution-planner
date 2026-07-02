@@ -288,6 +288,51 @@ test('effort split series_type accepts the ad_hoc and excluded_capacity enum val
     );
 });
 
+test('project track mode and capacity_side accept only their enum values', async () => {
+    const { sanitizeAnalyticsParams } = await loadEvents();
+    for (const mode of ['epic', 'team']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'stats',
+                chart_id: 'project_track',
+                workflow_action: 'mode_change',
+                mode
+            }, 'stats_action'),
+            {
+                feature_name: 'stats',
+                chart_id: 'project_track',
+                workflow_action: 'mode_change',
+                mode
+            }
+        );
+    }
+    for (const capacitySide of ['product', 'tech', 'both']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'stats',
+                chart_id: 'project_track',
+                workflow_action: 'capacity_side_change',
+                capacity_side: capacitySide
+            }, 'chart_action'),
+            {
+                feature_name: 'stats',
+                chart_id: 'project_track',
+                workflow_action: 'capacity_side_change',
+                capacity_side: capacitySide
+            }
+        );
+    }
+    // Neither param may carry a raw team/assignee name or other free text.
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'stats', chart_id: 'project_track', mode: 'Team Platform' }, 'stats_action'),
+        /unsafe analytics value/
+    );
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'stats', chart_id: 'project_track', capacity_side: 'ABC-123' }, 'chart_action'),
+        /unsafe analytics value/
+    );
+});
+
 test('external link helper emits bucketed Jira link events without raw URLs', async () => {
     const { initAnalytics, trackExternalLinkOpened } = await loadAnalytics();
     resetDom();

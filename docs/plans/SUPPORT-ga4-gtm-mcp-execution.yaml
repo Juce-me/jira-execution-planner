@@ -114,6 +114,7 @@ gtm_web:
     - { name: "DLV - auth_mode", data_layer_variable_name: "auth_mode", version: 2, purpose: "approved event/user parameter" }
     - { name: "DLV - blocking_reason", data_layer_variable_name: "blocking_reason", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - cache_state", data_layer_variable_name: "cache_state", version: 2, purpose: "approved event parameter" }
+    - { name: "DLV - capacity_side", data_layer_variable_name: "capacity_side", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - chart_id", data_layer_variable_name: "chart_id", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - connection_type", data_layer_variable_name: "connection_type", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - content_id", data_layer_variable_name: "content_id", version: 2, purpose: "approved event parameter" }
@@ -142,6 +143,7 @@ gtm_web:
     - { name: "DLV - link_type", data_layer_variable_name: "link_type", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - method", data_layer_variable_name: "method", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - metric", data_layer_variable_name: "metric", version: 2, purpose: "approved event parameter" }
+    - { name: "DLV - mode", data_layer_variable_name: "mode", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - override_count", data_layer_variable_name: "override_count", version: 2, purpose: "approved event metric" }
     - { name: "DLV - override_count_bucket", data_layer_variable_name: "override_count_bucket", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - page_name", data_layer_variable_name: "page_name", version: 2, purpose: "approved page parameter" }

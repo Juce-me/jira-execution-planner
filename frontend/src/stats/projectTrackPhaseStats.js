@@ -1,5 +1,5 @@
 // Helpers for the time-in-Project-Track-phase section (Epic mode only).
-// Consumes the response shape of POST /api/stats/project-track-phase-durations.
+// Consumes the Project Track phase-duration response shape.
 import { NO_TRACK_LABEL } from './projectTrackStats.js';
 
 // totalAge: sum of all days across all states for one epic.

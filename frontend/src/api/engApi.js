@@ -144,15 +144,3 @@ export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
         body: JSON.stringify({ keys }),
         signal
     });
-
-export const fetchProjectTrackPhaseDurations = (backendUrl, { epicKeys = [], refresh = false, signal } = {}) =>
-    fetch(`${backendUrl}/api/stats/project-track-phase-durations`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'jira-execution-planner',
-        },
-        cache: 'no-cache',
-        signal,
-        body: JSON.stringify({ epicKeys, ...(refresh ? { refresh: true } : {}) }),
-    });

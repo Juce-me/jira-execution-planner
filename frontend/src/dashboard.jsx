@@ -96,7 +96,6 @@ import {
     fetchCapacity as requestCapacity,
     fetchDependencies as requestDependencies,
     fetchExcludedCapacityStatsSource as requestExcludedCapacityStatsSource,
-    fetchProjectTrackPhaseDurations as requestProjectTrackPhaseDurations,
 } from './api/engApi.js';
 import { resolveBackendUrl } from './api/backendUrl.js';
 import {
@@ -154,10 +153,7 @@ import {
     rollbackScenarioDraft as requestRollbackScenarioDraft,
     saveScenarioDraftVersion as requestSaveScenarioDraftVersion,
 } from './api/scenarioApi.js';
-import {
-    fetchBurnoutStats as requestBurnoutStats,
-    fetchEpicCohortStats as requestEpicCohortStats,
-} from './api/statsApi.js';
+import { fetchBurnoutStats as requestBurnoutStats, fetchEpicCohortStats as requestEpicCohortStats, fetchProjectTrackPhaseDurations as requestProjectTrackPhaseDurations } from './api/statsApi.js';
 import { fetchIssuesLookup as requestIssuesLookup } from './api/issuesApi.js';
 import {
     fetchJiraLabels as requestJiraLabels,

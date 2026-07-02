@@ -1251,9 +1251,31 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
         expect(lbl.right, 'checkbox label must not overlap MODE control').toBeLessThan(lbl.modeLeft);
     }
     const capacityControl = controls.getByRole('radiogroup', { name: 'Capacity side' });
+    await expect(capacityControl).toHaveClass(/eng-mode-control/);
+    await expect(capacityControl).not.toHaveClass(/stats-view-toggle/);
     await expect(capacityControl.getByRole('radio', { name: 'Product', exact: true })).toHaveAttribute('aria-checked', 'true');
     const modeControl = controls.getByRole('radiogroup', { name: 'Mode' });
+    await expect(modeControl).toHaveClass(/eng-mode-control/);
+    await expect(modeControl).not.toHaveClass(/stats-view-toggle/);
     await expect(modeControl.getByRole('radio', { name: 'Epic' })).toHaveAttribute('aria-checked', 'true');
+    const segmentedChecks = await controls.evaluate((node) => {
+        return Array.from(node.querySelectorAll('[role="radiogroup"]')).map((group) => {
+            const groupRect = group.getBoundingClientRect();
+            const buttonRects = Array.from(group.querySelectorAll('.segmented-control-button')).map((button) => button.getBoundingClientRect());
+            const styles = window.getComputedStyle(group);
+            return {
+                ariaLabel: group.getAttribute('aria-label'),
+                flexWrap: styles.flexWrap,
+                height: Math.round(groupRect.height),
+                buttonTops: buttonRects.map((rect) => Math.round(rect.top)),
+            };
+        });
+    });
+    for (const check of segmentedChecks.filter(item => item.ariaLabel === 'Capacity side' || item.ariaLabel === 'Mode')) {
+        expect(check.flexWrap, `${check.ariaLabel} must use the shared single-row segmented control`).toBe('nowrap');
+        expect(check.height, `${check.ariaLabel} must keep the shared segmented control height`).toBeLessThanOrEqual(42);
+        expect(new Set(check.buttonTops).size, `${check.ariaLabel} buttons must stay on one row`).toBe(1);
+    }
     await expect(controls.getByText('Exclude Ad Hoc')).toBeVisible();
     await expect(controls.getByText('Exclude Excluded Capacity')).toBeVisible();
     // Mode label is "Mode", never "Metric".

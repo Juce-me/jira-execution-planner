@@ -13636,6 +13636,7 @@ import {
                                         <div className="stats-control-group">
                                             <label>Capacity side</label>
                                             <SegmentedControl
+                                                className="eng-mode-control"
                                                 ariaLabel="Capacity side"
                                                 value={projectTrackCapacitySide}
                                                 onChange={(nextSide) => {
@@ -13691,6 +13692,7 @@ import {
                                         <div className="stats-control-group">
                                             <label>Mode</label>
                                             <SegmentedControl
+                                                className="eng-mode-control"
                                                 ariaLabel="Mode"
                                                 value={projectTrackMode}
                                                 onChange={(nextMode) => {

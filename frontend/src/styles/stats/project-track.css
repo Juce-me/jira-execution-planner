@@ -1,11 +1,7 @@
-        /* Flex-wrap row so each control sizes to its own content and wraps to a new
-           line when it does not fit; the 3-button Capacity side control and the
-           exclusion toggles never overflow a fixed grid cell and overlap neighbours.
-           Align to the top so a taller group never sits over a shorter neighbour. */
         .project-track-controls {
             display: flex;
             flex-wrap: wrap;
-            align-items: flex-start;
+            align-items: flex-end;
             gap: 0.6rem 1.1rem;
         }
 
@@ -14,12 +10,8 @@
             flex: 0 0 auto;
         }
 
-        .project-track-controls .segmented-control {
-            margin-left: 0;
+        .project-track-controls .eng-mode-control {
             margin-top: 0;
-            flex-wrap: wrap;
-            height: auto;
-            min-height: var(--control-height);
         }
 
         .project-track-controls select.scenario-input {
@@ -29,24 +21,34 @@
         .project-track-controls .stats-control-group.project-track-exclusions {
             display: flex;
             flex-direction: column;
-            gap: 0.25rem;
+            gap: 0.22rem;
             align-items: flex-start;
         }
 
         .project-track-exclusions .project-track-checkbox {
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 0.4rem;
+            gap: 0.35rem;
+            max-width: 100%;
             font-size: 0.65rem;
             text-transform: none;
             letter-spacing: normal;
             color: var(--text-primary);
             cursor: pointer;
+            line-height: 1.2;
+            margin-bottom: 0;
         }
 
         .project-track-exclusions .project-track-checkbox input {
+            width: 14px;
+            height: 14px;
             margin: 0;
             flex: 0 0 auto;
+        }
+
+        .project-track-exclusions .project-track-checkbox span {
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
 
         .project-track-mode-title {

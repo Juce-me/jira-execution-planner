@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { computeCapacityBarLayout } from './planningCapacityUtils.js';
 
 export default function PlanningCapacityBar({
     capacityEnabled,
@@ -10,15 +11,12 @@ export default function PlanningCapacityBar({
     capacitySummary,
 }) {
     if (capacityEnabled && totalCapacityAdjusted > 0) {
-        const scale = Math.max(totalCapacityAdjusted, selectedSP) * 1.15;
-        const toPct = (v) => Math.min(100, (v / scale) * 100);
-        const selectedPct = toPct(selectedSP);
-        const planningPct = toPct(estimatedCapacityAdjusted);
-        const teamCapPct = toPct(totalCapacityAdjusted);
-        const showPlanningMarker = Math.abs(estimatedCapacityAdjusted - totalCapacityAdjusted) > 0.05;
-        const isOver = capacitySummary.status === 'over';
-        const isUnder = capacitySummary.status === 'under';
-        const varianceOverPct = isOver ? selectedPct - teamCapPct : 0;
+        const { selectedPct, planningPct, teamCapPct, isOver, isUnder, varianceOverPct, fillPct, showPlanningMarker } = computeCapacityBarLayout({
+            totalCapacityAdjusted,
+            estimatedCapacityAdjusted,
+            selectedSP,
+            capacityStatus: capacitySummary.status,
+        });
         return (
             <div className="capacity-bar-graph">
                 <div className="capacity-bar-track">
@@ -35,9 +33,16 @@ export default function PlanningCapacityBar({
                         <div className="capacity-bar-variance-zone under-zone" style={{ left: `${selectedPct}%`, width: `${teamCapPct - selectedPct}%` }} />
                     )}
                     {/* Selected fill - clip at teamCap when over so variance zone is visible */}
-                    <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}${(isOver ? teamCapPct : selectedPct) < 20 ? ' narrow' : ''}`} style={{ width: `${isOver ? teamCapPct : selectedPct}%` }} data-tooltip={`Total story points from ${selectedCount} selected tasks.`}>
-                        <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>
+                    <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}${fillPct < 20 ? ' narrow' : ''}`} style={{ width: `${fillPct}%` }} data-tooltip={`Total story points from ${selectedCount} selected tasks.`}>
+                        {!isOver && (
+                            <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>
+                        )}
                     </div>
+                    {/* When over capacity the selected-total readout sits above the overflow
+                        band's right-top (the selected point), not pinned to the Team Cap line. */}
+                    {isOver && (
+                        <span className="capacity-bar-fill-label capacity-bar-over-label" style={{ right: `${100 - selectedPct}%` }}>{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>
+                    )}
                     {/* Planning marker */}
                     {showPlanningMarker && (
                         <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }} data-tooltip="Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).">

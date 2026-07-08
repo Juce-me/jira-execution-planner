@@ -29,6 +29,34 @@ export function getCapacityStatus(selected, capacity) {
     };
 }
 
+// Layout math for the planning capacity bar. Kept as a pure function so the
+// fill/marker geometry is unit-testable independently of the React render.
+//
+// The fill must never cross the Team Cap marker: whenever selected work exceeds
+// capacity the fill is clipped at the cap (`fillPct === teamCapPct`) and the
+// overshoot is shown as the variance zone. `isOver` is therefore the plain
+// selected-vs-capacity comparison, NOT the ±20% warning threshold from
+// getCapacityStatus — driving geometry off the warning threshold left a 0–20%
+// overflow rendering the fill past the cap line with no overflow indicator.
+export function computeCapacityBarLayout({
+    totalCapacityAdjusted,
+    estimatedCapacityAdjusted,
+    selectedSP,
+    capacityStatus,
+}) {
+    const scale = Math.max(totalCapacityAdjusted, selectedSP) * 1.15;
+    const toPct = (v) => (scale > 0 ? Math.min(100, (v / scale) * 100) : 0);
+    const selectedPct = toPct(selectedSP);
+    const planningPct = toPct(estimatedCapacityAdjusted);
+    const teamCapPct = toPct(totalCapacityAdjusted);
+    const isOver = selectedSP > totalCapacityAdjusted;
+    const isUnder = capacityStatus === 'under';
+    const varianceOverPct = isOver ? selectedPct - teamCapPct : 0;
+    const fillPct = isOver ? teamCapPct : selectedPct;
+    const showPlanningMarker = Math.abs(estimatedCapacityAdjusted - totalCapacityAdjusted) > 0.05;
+    return { scale, selectedPct, planningPct, teamCapPct, isOver, isUnder, varianceOverPct, fillPct, showPlanningMarker };
+}
+
 export function getTeamCapacityMeta(selected, capacity) {
     if (!capacity) return { text: '', status: '', title: '' };
     const delta = selected - capacity;

@@ -7792,6 +7792,13 @@ a.project-track-phase-epic-link:focus-visible {
   white-space: nowrap;
   line-height: 1;
 }
+.capacity-bar-over-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 41;
+  pointer-events: none;
+}
 .capacity-bar-excluded-zone {
   position: absolute;
   top: 0;

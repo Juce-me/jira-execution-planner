@@ -59,8 +59,9 @@ jobs:
           cp -R backend planning frontend release-root/
           rm -rf release-root/frontend/src
           find release-root/frontend -mindepth 1 -maxdepth 1 ! -name dist -exec rm -rf {} +
-          cp jira_server.py jira-dashboard.html requirements.txt install.sh pyproject.toml .env.example INSTALL.md README.md LICENSE release-info.json release-root/
+          cp jira_server.py jira-dashboard.html requirements.txt pyproject.toml .env.example INSTALL.md README.md LICENSE release-info.json release-root/
           cp -R assets release-root/
+          cp -R scripts release-root/
           find release-root -name "__pycache__" -type d -prune -exec rm -rf {} +
           find release-root -name "*.pyc" -delete
           cd release-root

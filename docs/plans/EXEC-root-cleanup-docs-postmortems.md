@@ -229,7 +229,7 @@ git commit -m "refactor(repo): move root icons into assets/ and update packaging
 **Interfaces:**
 - Produces: `scripts/install.sh`, invoked as `./scripts/install.sh` from repo root or extracted release root. The release zip now contains the whole `scripts/` directory (this also fixes an existing gap: `INSTALL.md` tells release users to run `scripts/check_startup_preflight.py`, which the zip previously did not include).
 
-- [ ] **Step 1: Move the script**
+- [x] **Step 1: Move the script**
 
 ```bash
 git mv install.sh scripts/install.sh
@@ -237,7 +237,7 @@ git mv install.sh scripts/install.sh
 
 (No content change needed: the script uses `pwd`-relative paths — `python3 -m venv .venv`, `pip install -r requirements.txt` — so it must be run from the repo/release root, which `./scripts/install.sh` preserves.)
 
-- [ ] **Step 2: Rewrite invocation docs**
+- [x] **Step 2: Rewrite invocation docs**
 
 ```bash
 grep -rln --include='*.md' '\./install\.sh' README.md INSTALL.md AGENTS.md | while read -r f; do
@@ -248,7 +248,7 @@ grep -rn 'install\.sh' README.md INSTALL.md AGENTS.md
 
 Expected after: every remaining mention reads `./scripts/install.sh` or `scripts/install.sh`. Fix any bare `install.sh` mentions by hand (e.g. `AGENTS.md` line `- Optional bootstrap: ./install.sh`).
 
-- [ ] **Step 3: Update `tests/test_project_packaging.py`**
+- [x] **Step 3: Update `tests/test_project_packaging.py`**
 
 Line 16, change:
 
@@ -270,7 +270,7 @@ In `test_release_workflow_defines_runnable_zip_shape`, remove `"install.sh",` fr
         self.assertIn("cp -R scripts release-root/", source)
 ```
 
-- [ ] **Step 4: Update `.github/workflows/release-latest.yml` zip step**
+- [x] **Step 4: Update `.github/workflows/release-latest.yml` zip step**
 
 Change the `cp` line from Task 3 Step 5 to drop `install.sh` and add the scripts directory:
 
@@ -296,14 +296,14 @@ The final zip step block should read:
           zip -r ../jira-execution-planner-latest.zip .
 ```
 
-- [ ] **Step 5: Run packaging tests and a script smoke check**
+- [x] **Step 5: Run packaging tests and a script smoke check**
 
 Run: `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile .venv/bin/python -m unittest tests.test_project_packaging tests.test_container_packaging`
 Expected: OK.
 Run: `bash -n scripts/install.sh`
 Expected: no output (syntax OK).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A

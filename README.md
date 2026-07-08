@@ -79,7 +79,7 @@ If you want the fastest setup with no frontend build step:
 1. Download the latest release asset (e.g. `jira-execution-planner-latest.zip`) from GitHub Releases.
 2. Unzip it anywhere.
 3. Configure `.env` from `.env.example`.
-4. Install backend deps: `chmod +x install.sh && ./install.sh`
+4. Install backend deps: `chmod +x scripts/install.sh && ./scripts/install.sh`
 5. Start the backend: `.venv/bin/python jira_server.py`
 6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`).
 
@@ -108,8 +108,8 @@ Use Python 3.10+ linked against OpenSSL 1.1.1+; macOS system Python builds linke
 
 **Option A - Using install script (recommended):**
 ```bash
-chmod +x install.sh
-./install.sh
+chmod +x scripts/install.sh
+./scripts/install.sh
 ```
 
 **Option B - Manual installation:**

@@ -198,7 +198,7 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 ### Commands
 - Install backend deps: `.venv/bin/python -m pip install -r requirements.txt && .venv/bin/python -m pip install -e .`
 - Install frontend deps: `npm ci`
-- Optional bootstrap: `./install.sh`
+- Optional bootstrap: `./scripts/install.sh`
 - Build: `npm run build`
 - Preflight: `.venv/bin/python scripts/check_startup_preflight.py`
 - Watch frontend: `npm run watch`

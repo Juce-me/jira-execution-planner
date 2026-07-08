@@ -233,6 +233,54 @@ test('selected_count_bucket and selected_sp_bucket helpers reuse the shared buck
     assert.equal(buildSelectedSpBucket(8), bucketCount(8));
 });
 
+test('buildStatusActionAnalyticsParams omits selected_sp_bucket for Catch Up but includes it for Planning', async () => {
+    const { buildStatusActionAnalyticsParams } = await loadUtils();
+    const { sumPlanningStoryPoints } = await import('../frontend/src/eng/planningSelectionStats.js');
+    const { bucketCount } = await import('../frontend/src/analytics/dashboardAnalytics.js');
+
+    const selectedStories = [task('PROD-1', { customfield_10004: '5' })];
+    const targets = [{ key: 'TECH-22', issueType: 'Subtask', currentStatus: 'Analysis', summary: 'Subtask' }];
+
+    const catchUpParams = buildStatusActionAnalyticsParams({
+        sourceSurface: 'catch_up',
+        targets,
+        selectedStories,
+        status: 'Accepted',
+    });
+    assert.deepEqual(catchUpParams, {
+        source_surface: 'catch_up',
+        status_bucket: 'accepted',
+        issue_type_mix: 'subtasks',
+        selected_count_bucket: '1_5',
+    });
+    assert.equal('selected_sp_bucket' in catchUpParams, false, 'Catch Up must never report unrelated Planning-selection story points');
+
+    const planningParams = buildStatusActionAnalyticsParams({
+        sourceSurface: 'planning',
+        targets,
+        selectedStories,
+        status: 'Accepted',
+    });
+    assert.deepEqual(planningParams, {
+        source_surface: 'planning',
+        status_bucket: 'accepted',
+        issue_type_mix: 'subtasks',
+        selected_count_bucket: '1_5',
+        selected_sp_bucket: bucketCount(sumPlanningStoryPoints(selectedStories)),
+    });
+});
+
+test('buildStatusActionAnalyticsParams omits status_bucket when no target status has been chosen yet', async () => {
+    const { buildStatusActionAnalyticsParams } = await loadUtils();
+
+    const params = buildStatusActionAnalyticsParams({
+        sourceSurface: 'catch_up',
+        targets: [{ key: 'PROD-1', issueType: 'Story' }],
+        selectedStories: [],
+    });
+    assert.equal('status_bucket' in params, false, 'status_options_open has no target status yet');
+});
+
 test('status target bucket helpers never receive or return raw issue identifiers', async () => {
     const utils = await loadUtils();
     // Bucketing helpers only accept numbers/status name strings; none of them should be

@@ -231,7 +231,12 @@ test('ENG status transition hook tracks status_change_submit before mutating and
     assert.ok(submitIndex < mutationIndex, 'Expected status_change_submit to be tracked before the mutation call');
 
     assert.match(hookSource, /sourceSurface === 'catch_up'/);
-    assert.match(hookSource, /source_surface: sourceSurface/);
+    // source_surface threading now goes through the shared buildStatusActionAnalyticsParams
+    // helper (frontend/src/eng/engStatusTransitionUtils.js) instead of an inline object
+    // literal, so both status_options_open and status_change_submit hand their real
+    // sourceSurface value to the shared builder rather than a hardcoded string.
+    assert.match(hookSource, /import \{[^}]*buildStatusActionAnalyticsParams[^}]*\} from '\.\/engStatusTransitionUtils\.js';/);
+    assert.match(hookSource, /buildStatusActionAnalyticsParams\(\{\s*\n\s*sourceSurface,/);
 });
 
 test('ENG status transition hook refreshes only after at least one issue succeeds', () => {

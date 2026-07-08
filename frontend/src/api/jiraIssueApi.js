@@ -1,5 +1,5 @@
 import { fetchCsrfToken } from './authApi.js';
-import { json, trackedFetch } from './http.js';
+import { jsonOrStructuredError, trackedFetch } from './http.js';
 
 const headers = (csrfToken = '') => ({
     'Content-Type': 'application/json',
@@ -14,7 +14,7 @@ export function fetchIssueTransitionOptions(backendUrl, issueKeys, { signal } = 
         signal,
         headers: headers(),
         body: JSON.stringify({ issueKeys }),
-    }, { featureName: 'eng_status_transitions' }).then(response => json(response, 'Issue transition options'));
+    }, { featureName: 'eng_status_transitions' }).then(response => jsonOrStructuredError(response, 'Issue transition options'));
 }
 
 export async function transitionIssues(backendUrl, payload, { signal } = {}) {
@@ -25,5 +25,5 @@ export async function transitionIssues(backendUrl, payload, { signal } = {}) {
         signal,
         headers: headers(csrfToken || ''),
         body: JSON.stringify(payload),
-    }, { featureName: 'eng_status_transitions' }).then(response => json(response, 'Issue transition'));
+    }, { featureName: 'eng_status_transitions' }).then(response => jsonOrStructuredError(response, 'Issue transition'));
 }

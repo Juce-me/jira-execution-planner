@@ -4,13 +4,9 @@ import { authRecoveryLoginUrl, redirectToAuthRecovery } from './useEngSprintData
 import {
     buildCatchUpStatusTargets,
     buildEngStatusTargets,
-    buildSelectedCountBucket,
-    buildSelectedSpBucket,
-    buildStatusBucket,
-    summarizeIssueTypeMix,
+    buildStatusActionAnalyticsParams,
     summarizeTransitionResults,
 } from './engStatusTransitionUtils.js';
-import { sumPlanningStoryPoints } from './planningSelectionStats.js';
 
 const EMPTY_OPTIONS_REQUEST = { controller: null, signature: '' };
 
@@ -36,6 +32,7 @@ export function useEngStatusTransitions({
     const [transitionOptions, setTransitionOptions] = React.useState(null);
     const [transitionOptionsLoading, setTransitionOptionsLoading] = React.useState(false);
     const [transitionError, setTransitionError] = React.useState('');
+    const [transitionErrorCode, setTransitionErrorCode] = React.useState('');
     const [transitionResult, setTransitionResult] = React.useState(null);
     const optionsRequestRef = React.useRef(EMPTY_OPTIONS_REQUEST);
 
@@ -57,6 +54,7 @@ export function useEngStatusTransitions({
         setTransitionOptions(null);
         setTransitionOptionsLoading(false);
         setTransitionError('');
+        setTransitionErrorCode('');
         setTransitionResult(null);
     }, [selectedSprint, clearNonStoryStatusTargets, abortInFlightOptionsRequest]);
 
@@ -114,12 +112,12 @@ export function useEngStatusTransitions({
         optionsRequestRef.current = { controller, signature };
         setTransitionOptionsLoading(true);
         setTransitionError('');
-        trackIssueStatusAction('status_options_open', {
-            source_surface: sourceSurface,
-            issue_type_mix: summarizeIssueTypeMix(list),
-            selected_count_bucket: buildSelectedCountBucket(keys.length),
-            selected_sp_bucket: buildSelectedSpBucket(sumPlanningStoryPoints(selectedStories || [])),
-        });
+        setTransitionErrorCode('');
+        trackIssueStatusAction('status_options_open', buildStatusActionAnalyticsParams({
+            sourceSurface,
+            targets: list,
+            selectedStories,
+        }));
 
         try {
             const response = await fetchIssueTransitionOptions(backendUrl, keys, { signal: controller.signal });
@@ -140,6 +138,7 @@ export function useEngStatusTransitions({
                 redirectToAuthRecovery(err);
             }
             setTransitionError(err?.message || 'Failed to load status options.');
+            setTransitionErrorCode(err?.code || '');
             return null;
         } finally {
             if (optionsRequestRef.current.controller === controller) {
@@ -162,6 +161,7 @@ export function useEngStatusTransitions({
         setTransitionOptions(null);
         setTransitionOptionsLoading(false);
         setTransitionError('');
+        setTransitionErrorCode('');
     }, [abortInFlightOptionsRequest]);
 
     // Catch Up passes one explicit target key and never reads/mutates Planning selection
@@ -191,16 +191,16 @@ export function useEngStatusTransitions({
         }
         if (!targets.length) return null;
 
-        const analyticsBaseParams = {
-            source_surface: sourceSurface,
-            status_bucket: buildStatusBucket(status),
-            issue_type_mix: summarizeIssueTypeMix(targets),
-            selected_count_bucket: buildSelectedCountBucket(targets.length),
-            selected_sp_bucket: buildSelectedSpBucket(sumPlanningStoryPoints(selectedStories || [])),
-        };
+        const analyticsBaseParams = buildStatusActionAnalyticsParams({
+            sourceSurface,
+            targets,
+            selectedStories,
+            status,
+        });
 
         trackIssueStatusAction('status_change_submit', analyticsBaseParams);
         setTransitionError('');
+        setTransitionErrorCode('');
 
         try {
             const response = await transitionIssues(backendUrl, {
@@ -220,6 +220,7 @@ export function useEngStatusTransitions({
                 redirectToAuthRecovery(err);
             }
             setTransitionError(err?.message || 'Failed to change status.');
+            setTransitionErrorCode(err?.code || '');
             trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: 'failure' });
             return null;
         }
@@ -250,6 +251,7 @@ export function useEngStatusTransitions({
         transitionOptions,
         transitionOptionsLoading,
         transitionError,
+        transitionErrorCode,
         transitionResult,
         loadTransitionOptions,
         submitStatusTransition,

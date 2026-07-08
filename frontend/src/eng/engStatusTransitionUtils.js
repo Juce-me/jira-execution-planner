@@ -1,4 +1,5 @@
 import { bucketCount } from '../analytics/dashboardAnalytics.js';
+import { sumPlanningStoryPoints } from './planningSelectionStats.js';
 
 // Target shape shared by the hook and UI. `summary` is for UI display only —
 // never put summary/key/URL/team/sprint/JQL into an analytics payload builder.
@@ -203,4 +204,29 @@ export function buildSelectedCountBucket(count) {
 
 export function buildSelectedSpBucket(storyPoints) {
     return bucketCount(storyPoints);
+}
+
+// Builds the shared issue_status_action params for status_options_open,
+// status_change_submit, and status_change_result, so the leak this fixed (Catch
+// Up reporting Planning's selected_sp_bucket) cannot recur by duplicating this
+// assembly at each call site. `status` is omitted so no status_bucket key is
+// sent for status_options_open, where no target status has been chosen yet.
+// selected_sp_bucket reflects Planning's selected Story points; Catch Up acts on
+// one explicit issue unrelated to Planning selection, so it omits
+// selected_sp_bucket entirely rather than reporting an unrelated bucket.
+export function buildStatusActionAnalyticsParams({
+    sourceSurface,
+    targets = [],
+    selectedStories = [],
+    status,
+} = {}) {
+    const list = Array.isArray(targets) ? targets : [];
+    const uniqueKeyCount = new Set(list.map((target) => String(target?.key || target || '').trim()).filter(Boolean)).size;
+    return {
+        source_surface: sourceSurface,
+        ...(status === undefined ? {} : { status_bucket: buildStatusBucket(status) }),
+        issue_type_mix: summarizeIssueTypeMix(list),
+        selected_count_bucket: buildSelectedCountBucket(uniqueKeyCount),
+        ...(sourceSurface === 'catch_up' ? {} : { selected_sp_bucket: buildSelectedSpBucket(sumPlanningStoryPoints(selectedStories || [])) }),
+    };
 }

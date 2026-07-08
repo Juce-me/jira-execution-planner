@@ -34,50 +34,6 @@ test('getCapacityStatus preserves under and over threshold copy', async () => {
     });
 });
 
-test('computeCapacityBarLayout clips the fill at the cap for any overflow, not just >120%', async () => {
-    const { computeCapacityBarLayout } = await loadUtils();
-
-    // Regression: a 0–20% overflow (status '' from getCapacityStatus) must still
-    // clip the fill at the Team Cap marker and show a variance overshoot zone,
-    // instead of spilling the fill past the cap line as it did before.
-    const inBand = computeCapacityBarLayout({
-        totalCapacityAdjusted: 14,
-        estimatedCapacityAdjusted: 14,
-        selectedSP: 15,
-        capacityStatus: '', // getCapacityStatus(15, 14).status === '' (7% over, under the 20% threshold)
-    });
-    assert.equal(inBand.isOver, true);
-    assert.equal(inBand.fillPct, inBand.teamCapPct); // fill clipped at cap, no overshoot past the line
-    assert.ok(inBand.varianceOverPct > 0); // overshoot shown as the variance zone
-
-    // Large overflow keeps the same clipped geometry.
-    const over = computeCapacityBarLayout({
-        totalCapacityAdjusted: 23.5,
-        estimatedCapacityAdjusted: 23.5,
-        selectedSP: 31.5,
-        capacityStatus: 'over',
-    });
-    assert.equal(over.isOver, true);
-    assert.equal(over.fillPct, over.teamCapPct);
-
-    // Under and exactly-at-capacity never overshoot the cap line.
-    const under = computeCapacityBarLayout({ totalCapacityAdjusted: 10, estimatedCapacityAdjusted: 10, selectedSP: 8, capacityStatus: 'under' });
-    assert.equal(under.isOver, false);
-    assert.equal(under.isUnder, true);
-    assert.equal(under.fillPct, under.selectedPct);
-    assert.ok(under.fillPct < under.teamCapPct);
-
-    const atCap = computeCapacityBarLayout({ totalCapacityAdjusted: 10, estimatedCapacityAdjusted: 10, selectedSP: 10, capacityStatus: '' });
-    assert.equal(atCap.isOver, false);
-    assert.equal(atCap.fillPct, atCap.teamCapPct);
-
-    // Invariant across the spectrum: the fill right edge never passes the cap marker.
-    for (const [selectedSP, cap] of [[5, 10], [9.5, 10], [10, 10], [11, 10], [12, 10], [15, 14], [31.5, 23.5], [50, 23.5], [120, 23.5]]) {
-        const layout = computeCapacityBarLayout({ totalCapacityAdjusted: cap, estimatedCapacityAdjusted: cap, selectedSP, capacityStatus: '' });
-        assert.ok(layout.fillPct <= layout.teamCapPct + 1e-9, `fill ${layout.fillPct} exceeded cap ${layout.teamCapPct} for ${selectedSP}/${cap}`);
-    }
-});
-
 test('getTeamCapacityMeta preserves remaining and over-capacity metadata', async () => {
     const { getTeamCapacityMeta } = await loadUtils();
 

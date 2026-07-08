@@ -3,7 +3,6 @@
             margin-bottom: 0.3rem;
         }
 
-
         .capacity-bar-track {
             position: relative;
             height: 18px;
@@ -46,19 +45,6 @@
             color: var(--text-primary);
             white-space: nowrap;
             line-height: 1;
-        }
-
-        /* Over-capacity readout: sits inside the bar, vertically centered, with its
-           right edge aligned to the selected point (set inline), so it reads
-           against the selected total rather than pinned to the Team Cap line.
-           z-index stays above the fill's hover state (40) so hovering the fill —
-           which the label overlaps for small overflows — never covers the text. */
-        .capacity-bar-over-label {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            z-index: 41;
-            pointer-events: none;
         }
 
         .capacity-bar-excluded-zone {
@@ -240,7 +226,6 @@
             transition: outline 0.2s, box-shadow 0.2s, background 0.2s;
         }
 
-        /* Over-capacity overflow is a filled zone beyond the Team Cap line. */
         .capacity-bar-variance-zone.visible {
             background: rgba(212, 56, 13, 0.22);
             border-radius: 0 6px 6px 0;

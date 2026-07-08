@@ -1,0 +1,140 @@
+        /* ── ENG status transitions (Catch Up + Planning) ── */
+
+        /* The interactive status pill is a native <button> that must look identical to
+           the passive <span> StatusPill (MRT021). Neutralize the aggressive global
+           button rule from eng/controls.css and inherit typography from the meta row so
+           the colored .task-status background/padding/radius still win by specificity. */
+        button.status-pill {
+            -webkit-appearance: none;
+            appearance: none;
+            font-family: inherit;
+            font-size: inherit;
+            line-height: inherit;
+            letter-spacing: inherit;
+            text-transform: inherit;
+            font-weight: 500;
+            margin: 0;
+            border: 0;
+            cursor: pointer;
+            transition: box-shadow 0.15s ease, filter 0.15s ease;
+        }
+
+        button.status-pill:hover {
+            transform: none;
+            filter: brightness(0.94);
+            box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
+        }
+
+        button.status-pill:focus-visible {
+            outline: 2px solid rgba(47, 128, 237, 0.65);
+            outline-offset: 1px;
+        }
+
+        .status-transition {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        /* Invisible click-away catcher below the popover but above page content. */
+        .status-transition-menu-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 110;
+            padding: 0;
+            margin: 0;
+            border: 0;
+            background: transparent;
+            cursor: default;
+        }
+
+        .status-transition-menu-backdrop:hover {
+            transform: none;
+            box-shadow: none;
+            background: transparent;
+        }
+
+        .status-transition-menu {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            z-index: 120;
+            min-width: 15rem;
+            max-width: 20rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            padding: 0.7rem;
+            background: var(--bg-primary, #fff);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 10px 28px var(--shadow, rgba(15, 23, 42, 0.18));
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .status-transition-menu-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .status-transition-select {
+            width: 100%;
+            padding: 0.4rem 0.5rem;
+            font-size: 0.8rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-secondary, #fff);
+            color: var(--text-primary);
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .status-transition-submit {
+            margin: 0;
+            padding: 0.45rem 0.75rem;
+            font-size: 0.72rem;
+            border-radius: 8px;
+        }
+
+        .status-transition-target-toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .status-transition-target-toggle {
+            margin: 0;
+        }
+
+        .status-transition-menu-note {
+            font-size: 0.72rem;
+            line-height: 1.35;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .status-transition-menu-loading {
+            color: var(--text-secondary);
+        }
+
+        .status-transition-menu-error {
+            color: #b42318;
+        }
+
+        .status-transition-menu-error.is-too-many {
+            color: #a15c07;
+        }
+
+        .status-transition-menu-result {
+            font-size: 0.72rem;
+            line-height: 1.35;
+            color: var(--text-secondary);
+            text-transform: none;
+            letter-spacing: 0;
+        }

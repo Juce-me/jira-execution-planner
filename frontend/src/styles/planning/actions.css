@@ -67,6 +67,20 @@
             margin-bottom: 0.35rem;
         }
 
+        /* Feedback only: reports selected status-target count / result. The status
+           change itself is triggered from the clicked status pill, never a button here. */
+        .planning-status-feedback {
+            font-size: 0.66rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .planning-status-feedback.is-error {
+            color: #b42318;
+        }
+
         @media (max-width: 760px) {
             .planning-actions {
                 flex-wrap: wrap;

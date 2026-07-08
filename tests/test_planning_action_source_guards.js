@@ -52,6 +52,31 @@ test('planning action row exposes undo for bulk selection changes', () => {
     assert.match(componentSource, />\s*Undo\s*</);
 });
 
+test('planning action bar shows status-target feedback but adds no status-change control', () => {
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningActionBar.jsx');
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
+
+    // Feedback-only props are accepted and surfaced.
+    assert.match(componentSource, /statusTransitionTargetsCount/);
+    assert.match(componentSource, /statusTransitionSubmitting/);
+    assert.match(componentSource, /statusTransitionError/);
+    assert.match(componentSource, /statusTransitionResult/);
+    assert.match(componentSource, /planning-status-feedback/);
+
+    // The status change itself is never triggered from the action bar: no submit/open
+    // handler, no transition menu markup, no native select, no status-change button.
+    assert.doesNotMatch(componentSource, /onSubmitStatusTransition/);
+    assert.doesNotMatch(componentSource, /onOpenStatusTransition/);
+    assert.doesNotMatch(componentSource, /status-transition-submit/);
+    assert.doesNotMatch(componentSource, /<select/);
+    assert.doesNotMatch(componentSource, /Change [Ss]tatus/);
+
+    // Existing selection controls stay intact.
+    assert.match(componentSource, />\s*Select All\s*</);
+    assert.match(componentSource, />\s*Undo\s*</);
+    assert.match(componentSource, />\s*Clear Selected\s*</);
+});
+
 test('planning panel no longer renders capacity bar footer rows', () => {
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');

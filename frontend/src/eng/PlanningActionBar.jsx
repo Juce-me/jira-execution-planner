@@ -21,7 +21,34 @@ export default function PlanningActionBar({
     onUndoPlanningSelection,
     onClearSelected,
     onOpenSelectedInJira,
+    statusTransitionTargetsCount = 0,
+    statusTransitionSubmitting = false,
+    statusTransitionError = '',
+    statusTransitionErrorCode = '',
+    statusTransitionResult = null,
 }) {
+    // Feedback only: the status change itself is triggered from the clicked status
+    // pill/menu, never from a button in this action bar.
+    const statusFeedback = (() => {
+        if (statusTransitionErrorCode === 'too_many_issues') {
+            return 'Too many status targets selected. Narrow your selection, then try again.';
+        }
+        if (statusTransitionSubmitting) return 'Applying status changes...';
+        if (statusTransitionResult) {
+            const { succeeded = 0, failed = 0 } = statusTransitionResult;
+            const noun = (count) => (count === 1 ? 'issue' : 'issues');
+            if (failed === 0) return `Status updated for ${succeeded} ${noun(succeeded)}.`;
+            if (succeeded === 0) return `Status change failed for ${failed} ${noun(failed)}.`;
+            return `Status updated for ${succeeded}, ${failed} failed.`;
+        }
+        if (statusTransitionError) return statusTransitionError;
+        if (statusTransitionTargetsCount > 0) {
+            return `${statusTransitionTargetsCount} status ${statusTransitionTargetsCount === 1 ? 'target' : 'targets'} selected`;
+        }
+        return '';
+    })();
+    const statusFeedbackIsError = Boolean(statusTransitionErrorCode || statusTransitionError);
+
     return (
         <div className="planning-actions">
             <button
@@ -92,6 +119,15 @@ export default function PlanningActionBar({
                     <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
                 </svg>
             </button>
+            {statusFeedback && (
+                <span
+                    className={`planning-status-feedback${statusFeedbackIsError ? ' is-error' : ''}`}
+                    role="status"
+                    aria-live="polite"
+                >
+                    {statusFeedback}
+                </span>
+            )}
         </div>
     );
 }

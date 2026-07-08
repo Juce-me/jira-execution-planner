@@ -411,7 +411,9 @@ test('planning undo restores loaded selection after a bulk status action', async
     await openFuturePlanning(page);
 
     await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
-    await page.getByRole('button', { name: 'Accepted', exact: true }).click();
+    // Scope to the action bar: in Planning, story status pills are now buttons too, so a
+    // story at "Accepted" would otherwise collide with the bulk-include action button.
+    await page.locator('.planning-actions').getByRole('button', { name: 'Accepted', exact: true }).click();
     await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
     await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
     await page.getByRole('button', { name: 'Undo' }).click();

@@ -1,5 +1,6 @@
 import * as React from 'react';
 import StatusPill from '../ui/StatusPill.jsx';
+import StatusTransitionMenu from './StatusTransitionMenu.jsx';
 import { getIssueStatusClassName, getIssueTeamLabel, normalizeIssueStatus } from './issueViewUtils.js';
 import IssueDependencies, { buildIssueDependencyViewModel } from './IssueDependencies.jsx';
 import { buildStorySubtaskProgress, formatSubtaskUpdatedDate } from './subtaskProgressUtils.js';
@@ -25,6 +26,21 @@ export default function IssueCard({
     subtaskState = null,
     onToggleSubtasks,
     onRetrySubtasks,
+    statusTransitionEnabled = false,
+    statusTransitionSourceSurface = 'catch_up',
+    statusTransitionActiveKey = null,
+    statusTransitionOptions = null,
+    statusTransitionOptionsLoading = false,
+    statusTransitionSubmitting = false,
+    statusTransitionError = '',
+    statusTransitionErrorCode = '',
+    statusTransitionResult = null,
+    statusTransitionTargetsCount = 0,
+    subtaskStatusTargetKeys = null,
+    onOpenStatusTransition,
+    onCloseStatusTransition,
+    onSubmitStatusTransition,
+    onToggleSubtaskStatusTarget,
 }) {
     const statusName = task.fields.status?.name;
     const isKilled = statusName === 'Killed';
@@ -191,10 +207,32 @@ export default function IssueCard({
             </div>
             <div className="task-detail-row">
                 <div className="task-meta">
-                    <StatusPill
-                        className={statusClassName || getIssueStatusClassName(statusName)}
-                        label={statusName}
-                    />
+                    {statusTransitionEnabled ? (
+                        <StatusTransitionMenu
+                            issue={task}
+                            fallbackIssueType="Story"
+                            statusLabel={statusName}
+                            statusClassName={statusClassName || getIssueStatusClassName(statusName)}
+                            sourceSurface={statusTransitionSourceSurface}
+                            isOpen={statusTransitionActiveKey === task.key}
+                            options={statusTransitionOptions}
+                            optionsLoading={statusTransitionOptionsLoading}
+                            submitting={statusTransitionSubmitting}
+                            error={statusTransitionError}
+                            errorCode={statusTransitionErrorCode}
+                            result={statusTransitionResult}
+                            targetsCount={statusTransitionTargetsCount}
+                            canToggleTargetSet={false}
+                            onOpen={onOpenStatusTransition}
+                            onClose={onCloseStatusTransition}
+                            onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task, 'Story')}
+                        />
+                    ) : (
+                        <StatusPill
+                            className={statusClassName || getIssueStatusClassName(statusName)}
+                            label={statusName}
+                        />
+                    )}
                     <span className="task-team">{teamLabel || getIssueTeamLabel(teamInfo)}</span>
                     {task.fields.assignee && (
                         <span className="task-assignee">
@@ -270,10 +308,34 @@ export default function IssueCard({
                                     >
                                         {subtask.summary || subtask.key}
                                     </a>
-                                    <StatusPill
-                                        className={getIssueStatusClassName(subtask.status?.name)}
-                                        label={subtask.status?.name || 'Unknown'}
-                                    />
+                                    {statusTransitionEnabled ? (
+                                        <StatusTransitionMenu
+                                            issue={subtask}
+                                            fallbackIssueType="Subtask"
+                                            statusLabel={subtask.status?.name || 'Unknown'}
+                                            statusClassName={getIssueStatusClassName(subtask.status?.name)}
+                                            sourceSurface={statusTransitionSourceSurface}
+                                            isOpen={statusTransitionActiveKey === subtask.key}
+                                            options={statusTransitionOptions}
+                                            optionsLoading={statusTransitionOptionsLoading}
+                                            submitting={statusTransitionSubmitting}
+                                            error={statusTransitionError}
+                                            errorCode={statusTransitionErrorCode}
+                                            result={statusTransitionResult}
+                                            targetsCount={statusTransitionTargetsCount}
+                                            canToggleTargetSet={statusTransitionSourceSurface === 'planning'}
+                                            isInTargetSet={!!subtaskStatusTargetKeys?.has?.(subtask.key)}
+                                            onOpen={onOpenStatusTransition}
+                                            onClose={onCloseStatusTransition}
+                                            onToggleTargetSet={() => onToggleSubtaskStatusTarget?.(subtask.key)}
+                                            onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, subtask, 'Subtask')}
+                                        />
+                                    ) : (
+                                        <StatusPill
+                                            className={getIssueStatusClassName(subtask.status?.name)}
+                                            label={subtask.status?.name || 'Unknown'}
+                                        />
+                                    )}
                                     <span className="story-subtask-assignee">{subtask.assignee?.displayName || 'Unassigned'}</span>
                                     {subtask.updated ? (
                                         <time className="story-subtask-updated" dateTime={subtask.updated}>

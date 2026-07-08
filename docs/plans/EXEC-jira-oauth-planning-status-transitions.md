@@ -635,7 +635,7 @@ Expected: pass.
 - Modify or create: `tests/test_epm_view_source_guards.js`
 - Modify or create: `tests/ui/eng_status_transitions.spec.js`
 
-- [ ] **Step 6.1: Add UI tests before implementation**
+- [x] **Step 6.1: Add UI tests before implementation**
 
 Use synthetic fixtures only. Cover:
 
@@ -663,7 +663,7 @@ npx playwright test tests/ui/eng_status_transitions.spec.js
 
 Expected before implementation: fails because the controls do not exist.
 
-- [ ] **Step 6.2: Extend status-pill trigger and Planning feedback props**
+- [x] **Step 6.2: Extend status-pill trigger and Planning feedback props**
 
 Add compact props to the Epic header renderer and `IssueCard` where the current status is already rendered:
 
@@ -697,7 +697,7 @@ UI rules:
 - Do not add a separate "Change status" button next to Epic, Story, Subtask, or Planning action-bar content.
 - Do not introduce a large modal unless the menu cannot show partial availability accessibly.
 
-- [ ] **Step 6.3: Wire Catch Up status-pill triggers**
+- [x] **Step 6.3: Wire Catch Up status-pill triggers**
 
 In `dashboard.jsx` Epic headers and `IssueCard.jsx`:
 
@@ -708,7 +708,7 @@ In `dashboard.jsx` Epic headers and `IssueCard.jsx`:
 - Keep links, labels, alerts, and existing status pills in their current layout positions; only the status pill/text becomes interactive.
 - Do not render clickable status when the same `IssueCard` component is used by EPM.
 
-- [ ] **Step 6.4: Wire Planning status-pill triggers and batch status targets**
+- [x] **Step 6.4: Wire Planning status-pill triggers and batch status targets**
 
 In `dashboard.jsx` Epic headers:
 
@@ -723,7 +723,7 @@ In `IssueCard.jsx`:
 - Expanded Subtask status pills/text open the status menu and let the menu mark the Subtask as included/excluded from the selected status-target set because Subtasks must not affect Story selected SP.
 - When multiple status targets are selected, the opened menu makes `Apply to selected targets (N)` the primary action and still allows applying only to the clicked issue.
 
-- [ ] **Step 6.5: Keep EPM read-only while Home is gated**
+- [x] **Step 6.5: Keep EPM read-only while Home is gated**
 
 In `EpmView.jsx` and `EpmRollupPanel.jsx`:
 
@@ -731,7 +731,7 @@ In `EpmView.jsx` and `EpmRollupPanel.jsx`:
 - If `IssueCard` grows status-transition props, default them to disabled and require an explicit ENG-only surface guard before making any status pill/text clickable.
 - Add a source guard that fails if EPM imports `jiraIssueApi.js`, `useEngStatusTransitions.js`, or renders text/test ids associated with status transition menus.
 
-- [ ] **Step 6.6: Wire refresh after success**
+- [x] **Step 6.6: Wire refresh after success**
 
 On `succeeded > 0`:
 
@@ -740,7 +740,7 @@ On `succeeded > 0`:
 - Keep failed target selection intact so the user can retry or open Jira.
 - Do not force a full dashboard reload.
 
-- [ ] **Step 6.7: Verify UI and sticky behavior**
+- [x] **Step 6.7: Verify UI and sticky behavior**
 
 Run:
 

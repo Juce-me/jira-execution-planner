@@ -151,5 +151,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-06-12*
-*Total Postmortems: 18*
+*Last Updated: 2026-07-08*
+*Total Postmortems: 22*

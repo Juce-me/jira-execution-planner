@@ -534,7 +534,7 @@ Expected: pass.
 - Modify: `tests/test_planning_action_source_guards.js`
 - Modify or create: `tests/test_epm_view_source_guards.js`
 
-- [ ] **Step 5.1: Add pure utility tests**
+- [x] **Step 5.1: Add pure utility tests**
 
 Cover:
 
@@ -555,7 +555,7 @@ node --test tests/test_eng_status_transition_utils.js
 
 Expected before implementation: fails because the file does not exist.
 
-- [ ] **Step 5.2: Implement pure utilities**
+- [x] **Step 5.2: Implement pure utilities**
 
 The target shape used by the hook and UI should be:
 
@@ -570,7 +570,7 @@ The target shape used by the hook and UI should be:
 
 Do not include assignee, Jira URLs, team names, raw sprint names, or JQL in analytics payload builders.
 
-- [ ] **Step 5.3: Add hook source guards**
+- [x] **Step 5.3: Add hook source guards**
 
 Guard that `useEngStatusTransitions.js`:
 
@@ -583,7 +583,7 @@ Guard that `useEngStatusTransitions.js`:
 - never mutates `selectedTasks` for Epics or Subtasks;
 - exports no EPM helper and imports no `frontend/src/epm` module.
 
-- [ ] **Step 5.4: Implement hook**
+- [x] **Step 5.4: Implement hook**
 
 The hook should own:
 
@@ -611,7 +611,7 @@ Inputs should include `backendUrl`, `selectedStories`, `epicGroups`, `storySubta
 
 For Catch Up, `submitStatusTransition()` must accept one explicit target key and must not read or mutate Planning selection state. For Planning, `submitStatusTransition()` must build the composed target set from selected Stories, selected Epics, and selected Subtasks.
 
-- [ ] **Step 5.5: Verify utility and source guards**
+- [x] **Step 5.5: Verify utility and source guards**
 
 Run:
 

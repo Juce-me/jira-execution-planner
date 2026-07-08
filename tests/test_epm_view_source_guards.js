@@ -974,3 +974,13 @@ test('EPM archived portfolio boards lazy-load Jira rollups on expand', () => {
     assert.ok(dashboardSource.includes('loadArchivedEpmProjectRollup'), 'Expected archived lazy rollup loader in dashboard.jsx');
     assert.ok(epmViewDataSource.includes('fetchEpmProjectRollup(backendUrl, projectId'), 'Expected archived expand to fetch the per-project rollup');
 });
+
+test('ENG status transition hook exposes no EPM helper and stays isolated from the EPM module', () => {
+    const engStatusHookPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngStatusTransitions.js');
+    assert.ok(fs.existsSync(engStatusHookPath), 'Expected frontend/src/eng/useEngStatusTransitions.js to exist');
+    const engStatusHookSource = fs.readFileSync(engStatusHookPath, 'utf8');
+
+    assert.doesNotMatch(engStatusHookSource, /from\s+['"](\.\.\/)+epm\//, 'ENG status transition hook must not import from frontend/src/epm');
+    assert.doesNotMatch(engStatusHookSource, /export\s+(async\s+)?function\s+\w*[Ee]pm\w*/, 'ENG status transition hook must not export an EPM helper');
+    assert.doesNotMatch(engStatusHookSource, /export\s+const\s+\w*[Ee]pm\w*/, 'ENG status transition hook must not export an EPM helper');
+});

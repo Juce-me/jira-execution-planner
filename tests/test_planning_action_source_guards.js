@@ -201,3 +201,54 @@ test('dashboard delegates planning project split bar to ENG component', () => {
     assert.match(componentSource, /Target<br\/>/);
     assert.match(componentSource, /No tasks selected/);
 });
+
+test('ENG status transition hook imports the transition API and auth recovery helpers', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    assert.match(hookSource, /import \{ fetchIssueTransitionOptions, transitionIssues \} from '\.\.\/api\/jiraIssueApi\.js';/);
+    assert.match(hookSource, /import \{ authRecoveryLoginUrl, redirectToAuthRecovery \} from '\.\/useEngSprintData\.js';/);
+});
+
+test('ENG status transition hook aborts in-flight option requests when the target signature changes', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    assert.match(hookSource, /new AbortController\(\)/);
+    assert.match(hookSource, /signal: controller\.signal/);
+    assert.match(hookSource, /optionsRequestRef\.current\.signature === signature/);
+    assert.match(hookSource, /optionsRequestRef\.current\.controller\.abort\(\);/);
+});
+
+test('ENG status transition hook tracks status_change_submit before mutating and threads source_surface through', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    const submitIndex = hookSource.indexOf("trackIssueStatusAction('status_change_submit'");
+    const mutationIndex = hookSource.indexOf('await transitionIssues(');
+    assert.notEqual(submitIndex, -1, 'Expected a status_change_submit analytics call');
+    assert.notEqual(mutationIndex, -1, 'Expected the transitionIssues mutation call');
+    assert.ok(submitIndex < mutationIndex, 'Expected status_change_submit to be tracked before the mutation call');
+
+    assert.match(hookSource, /sourceSurface === 'catch_up'/);
+    assert.match(hookSource, /source_surface: sourceSurface/);
+});
+
+test('ENG status transition hook refreshes only after at least one issue succeeds', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    const guardIndex = hookSource.indexOf('if (summary.succeeded > 0) {');
+    assert.notEqual(guardIndex, -1, 'Expected an explicit succeeded > 0 guard');
+    const guardEnd = hookSource.indexOf('}', guardIndex);
+    const guardBody = hookSource.slice(guardIndex, guardEnd);
+    assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\)/);
+});
+
+test('ENG status transition hook never mutates Planning selectedTasks for Epics or Subtasks', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    assert.doesNotMatch(hookSource, /\bselectedTasks\b/, 'Hook must never read/write the raw Planning selectedTasks map, only selectedStories');
+    assert.doesNotMatch(hookSource, /setSelectedTasks/);
+});

@@ -235,7 +235,7 @@ Expected: pass. The write route sample must require token-bound CSRF in OAuth mo
 - Create: `backend/services/jira_issue_transitions.py`
 - Create: `tests/test_jira_issue_transitions.py`
 
-- [ ] **Step 2.1: Add pure helper tests**
+- [x] **Step 2.1: Add pure helper tests**
 
 Add tests for:
 
@@ -255,7 +255,7 @@ Run:
 
 Expected before implementation: fails because `backend.services.jira_issue_transitions` does not exist.
 
-- [ ] **Step 2.2: Implement pure helpers**
+- [x] **Step 2.2: Implement pure helpers**
 
 Create helpers with these public names:
 
@@ -288,7 +288,7 @@ def shape_transition_failure(key, error, current_status=None, issue_type=None):
 
 Issue key validation should allow standard Jira keys with uppercase letters, digits, and hyphenated numeric suffixes after normalization. Use synthetic keys such as `PROD-1`, `TECH-22`, and `OPS2-3` in tests.
 
-- [ ] **Step 2.3: Add Jira orchestration tests**
+- [x] **Step 2.3: Add Jira orchestration tests**
 
 Add tests using fake request/search functions:
 
@@ -299,7 +299,7 @@ Add tests using fake request/search functions:
 - Options and write flows executed with no Flask request context still reach the real Jira auth wrapper using the passed `context`, proving worker threads do not silently fall back to Basic/service credentials (route mocks alone are not sufficient).
 - An issue already in the target status returns `already_in_status` as a success without posting a transition.
 
-- [ ] **Step 2.4: Implement Jira orchestration helpers**
+- [x] **Step 2.4: Implement Jira orchestration helpers**
 
 Add public helpers:
 
@@ -326,7 +326,7 @@ Implementation rules:
 - Do not call `build_jira_headers()`, `requests`, Home/Townsquare helpers, or service integrations.
 - Return sanitized per-issue errors for Jira `400`, `401`, `403`, `404`, `409`, and `422`.
 
-- [ ] **Step 2.5: Verify backend service**
+- [x] **Step 2.5: Verify backend service**
 
 Run:
 

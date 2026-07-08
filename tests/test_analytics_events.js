@@ -333,6 +333,154 @@ test('project track mode and capacity_side accept only their enum values', async
     );
 });
 
+test('issue_status_action is a canonical userevent requiring feature_name', async () => {
+    const { validateAnalyticsPayload } = await loadEvents();
+
+    assert.throws(
+        () => validateAnalyticsPayload({ event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'issue_status_action' }),
+        /feature_name is required/
+    );
+
+    const payload = validateAnalyticsPayload({
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'issue_status_action',
+        feature_name: 'eng_status_transitions',
+        workflow_action: 'status_change_submit',
+        source_surface: 'planning',
+        result: 'success'
+    });
+    assert.equal(payload.event_name, 'issue_status_action');
+});
+
+test('issue_status_action accepts the eng status transition enum params and rejects unsafe issue_type_mix values', async () => {
+    const { sanitizeAnalyticsParams } = await loadEvents();
+
+    for (const workflowAction of ['status_options_open', 'status_change_submit', 'status_change_result']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'eng_status_transitions',
+                workflow_action: workflowAction,
+                source_surface: 'catch_up'
+            }, 'issue_status_action'),
+            {
+                feature_name: 'eng_status_transitions',
+                workflow_action: workflowAction,
+                source_surface: 'catch_up'
+            }
+        );
+    }
+
+    for (const issueTypeMix of ['stories', 'epics', 'subtasks', 'mixed']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'eng_status_transitions',
+                workflow_action: 'status_change_submit',
+                source_surface: 'planning',
+                status_bucket: 'accepted',
+                selected_count_bucket: '1_5',
+                selected_sp_bucket: '1_5',
+                issue_type_mix: issueTypeMix
+            }, 'issue_status_action'),
+            {
+                feature_name: 'eng_status_transitions',
+                workflow_action: 'status_change_submit',
+                source_surface: 'planning',
+                status_bucket: 'accepted',
+                selected_count_bucket: '1_5',
+                selected_sp_bucket: '1_5',
+                issue_type_mix: issueTypeMix
+            }
+        );
+    }
+
+    for (const result of ['success', 'partial', 'failure']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'eng_status_transitions',
+                workflow_action: 'status_change_result',
+                source_surface: 'planning',
+                result
+            }, 'issue_status_action'),
+            {
+                feature_name: 'eng_status_transitions',
+                workflow_action: 'status_change_result',
+                source_surface: 'planning',
+                result
+            }
+        );
+    }
+
+    // issue_type_mix must never carry a raw issue key or other free text.
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'eng_status_transitions', issue_type_mix: 'PROD-1' }, 'issue_status_action'),
+        /unsafe analytics value/
+    );
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'eng_status_transitions', issue_type_mix: 'Team Platform' }, 'issue_status_action'),
+        /unsafe analytics value/
+    );
+});
+
+test('api_result accepts the jira_issue_transitions surface', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    trackApiResult('jira_issue_transitions', {
+        featureName: 'eng_status_transitions',
+        method: 'POST',
+        status: 200,
+        durationMs: 400
+    });
+
+    assert.equal(pushed.length, 1);
+    assert.equal(pushed[0].api_surface, 'jira_issue_transitions');
+    assert.equal(pushed[0].feature_name, 'eng_status_transitions');
+});
+
+test('issue_status_action pushes the eng status transition contract through the dataLayer', async () => {
+    const { initAnalytics, trackEvent } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    trackEvent('issue_status_action', {
+        feature_name: 'eng_status_transitions',
+        workflow_action: 'status_change_result',
+        source_surface: 'planning',
+        status_bucket: 'accepted',
+        selected_count_bucket: '1_5',
+        selected_sp_bucket: '1_5',
+        issue_type_mix: 'mixed',
+        result: 'partial'
+    });
+
+    assert.equal(pushed.length, 1);
+    assert.deepEqual(pushed[0], {
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'issue_status_action',
+        feature_name: 'eng_status_transitions',
+        workflow_action: 'status_change_result',
+        source_surface: 'planning',
+        status_bucket: 'accepted',
+        selected_count_bucket: '1_5',
+        selected_sp_bucket: '1_5',
+        issue_type_mix: 'mixed',
+        result: 'partial'
+    });
+});
+
 test('external link helper emits bucketed Jira link events without raw URLs', async () => {
     const { initAnalytics, trackExternalLinkOpened } = await loadAnalytics();
     resetDom();
@@ -443,6 +591,44 @@ test('api result helper emits explicit allowlisted API surfaces only', async () 
         epm_tab: 'active',
         project_scope: 'single',
         subgoal_scope: 'single'
+    });
+});
+
+test('api result helper emits eng_subtasks surface for story subtask loads', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    // Mirrors engApi.fetchStorySubtasks -> trackedFetch('eng_subtasks', ..., { featureName: 'eng' }).
+    // Guards the allowlist entry: trackApiResult throws on unknown surfaces and
+    // safelyTrackApiResult swallows that throw in production, so a missing
+    // API_SURFACES entry loses the event without any visible failure.
+    trackApiResult('eng_subtasks', {
+        featureName: 'eng',
+        method: 'GET',
+        status: 200,
+        durationMs: 1250,
+        cacheState: 'hit'
+    });
+
+    assert.equal(pushed.length, 1);
+    assert.deepEqual(pushed[0], {
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'api_result',
+        feature_name: 'eng',
+        api_surface: 'eng_subtasks',
+        method: 'GET',
+        status_bucket: '2xx',
+        result: 'success',
+        duration_bucket: '1_3s',
+        duration_ms: 1250,
+        cache_state: 'hit'
     });
 });
 

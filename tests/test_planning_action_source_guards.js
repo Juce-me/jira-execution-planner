@@ -52,6 +52,31 @@ test('planning action row exposes undo for bulk selection changes', () => {
     assert.match(componentSource, />\s*Undo\s*</);
 });
 
+test('planning action bar shows status-target feedback but adds no status-change control', () => {
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningActionBar.jsx');
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
+
+    // Feedback-only props are accepted and surfaced.
+    assert.match(componentSource, /statusTransitionTargetsCount/);
+    assert.match(componentSource, /statusTransitionSubmitting/);
+    assert.match(componentSource, /statusTransitionError/);
+    assert.match(componentSource, /statusTransitionResult/);
+    assert.match(componentSource, /planning-status-feedback/);
+
+    // The status change itself is never triggered from the action bar: no submit/open
+    // handler, no transition menu markup, no native select, no status-change button.
+    assert.doesNotMatch(componentSource, /onSubmitStatusTransition/);
+    assert.doesNotMatch(componentSource, /onOpenStatusTransition/);
+    assert.doesNotMatch(componentSource, /status-transition-submit/);
+    assert.doesNotMatch(componentSource, /<select/);
+    assert.doesNotMatch(componentSource, /Change [Ss]tatus/);
+
+    // Existing selection controls stay intact.
+    assert.match(componentSource, />\s*Select All\s*</);
+    assert.match(componentSource, />\s*Undo\s*</);
+    assert.match(componentSource, />\s*Clear Selected\s*</);
+});
+
 test('planning panel no longer renders capacity bar footer rows', () => {
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');
@@ -200,4 +225,61 @@ test('dashboard delegates planning project split bar to ENG component', () => {
     assert.match(componentSource, /className="project-bar-fill tech"/);
     assert.match(componentSource, /Target<br\/>/);
     assert.match(componentSource, /No tasks selected/);
+});
+
+test('ENG status transition hook imports the transition API and auth recovery helpers', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    assert.match(hookSource, /import \{ fetchIssueTransitionOptions, transitionIssues \} from '\.\.\/api\/jiraIssueApi\.js';/);
+    assert.match(hookSource, /import \{ authRecoveryLoginUrl, redirectToAuthRecovery \} from '\.\/useEngSprintData\.js';/);
+});
+
+test('ENG status transition hook aborts in-flight option requests when the target signature changes', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    assert.match(hookSource, /new AbortController\(\)/);
+    assert.match(hookSource, /signal: controller\.signal/);
+    assert.match(hookSource, /optionsRequestRef\.current\.signature === signature/);
+    assert.match(hookSource, /optionsRequestRef\.current\.controller\.abort\(\);/);
+});
+
+test('ENG status transition hook tracks status_change_submit before mutating and threads source_surface through', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    const submitIndex = hookSource.indexOf("trackIssueStatusAction('status_change_submit'");
+    const mutationIndex = hookSource.indexOf('await transitionIssues(');
+    assert.notEqual(submitIndex, -1, 'Expected a status_change_submit analytics call');
+    assert.notEqual(mutationIndex, -1, 'Expected the transitionIssues mutation call');
+    assert.ok(submitIndex < mutationIndex, 'Expected status_change_submit to be tracked before the mutation call');
+
+    assert.match(hookSource, /sourceSurface === 'catch_up'/);
+    // source_surface threading now goes through the shared buildStatusActionAnalyticsParams
+    // helper (frontend/src/eng/engStatusTransitionUtils.js) instead of an inline object
+    // literal, so both status_options_open and status_change_submit hand their real
+    // sourceSurface value to the shared builder rather than a hardcoded string.
+    assert.match(hookSource, /import \{[^}]*buildStatusActionAnalyticsParams[^}]*\} from '\.\/engStatusTransitionUtils\.js';/);
+    assert.match(hookSource, /buildStatusActionAnalyticsParams\(\{\s*\n\s*sourceSurface,/);
+});
+
+test('ENG status transition hook refreshes only after at least one issue succeeds', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    const guardIndex = hookSource.indexOf('if (summary.succeeded > 0) {');
+    assert.notEqual(guardIndex, -1, 'Expected an explicit succeeded > 0 guard');
+    // The refresh now carries the affected story keys so only those expanded subtask rows
+    // re-fetch (Fix wave 1); it still fires only inside the succeeded > 0 block.
+    const guardBody = hookSource.slice(guardIndex, guardIndex + 1000);
+    assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
+});
+
+test('ENG status transition hook never mutates Planning selectedTasks for Epics or Subtasks', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    assert.doesNotMatch(hookSource, /\bselectedTasks\b/, 'Hook must never read/write the raw Planning selectedTasks map, only selectedStories');
+    assert.doesNotMatch(hookSource, /setSelectedTasks/);
 });

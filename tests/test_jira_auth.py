@@ -55,6 +55,9 @@ class JiraAuthTests(unittest.TestCase):
         self.assertIn("read:sprint:jira-software", scopes)
         self.assertIn("read:project:jira", scopes)
 
+    def test_default_scopes_include_jira_work_write(self):
+        self.assertIn("write:jira-work", AuthConfig().scopes.split())
+
     def test_missing_oauth_scopes_detects_old_session(self):
         required = {
             "read:me",

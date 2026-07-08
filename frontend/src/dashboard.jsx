@@ -26,6 +26,9 @@ import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
+import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
+import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/engStatusTransitionUtils.js';
+import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
@@ -956,7 +959,7 @@ import {
             }, [refreshHomeTokenConnectionStatus]);
             const {
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
-                trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
+                trackIssueStatusAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, serverConnectionError });
             const {
@@ -10915,6 +10918,97 @@ import {
             }, [showPlanning, selectedTasksList]);
             const selectedCount = showPlanning ? selectedTasksList.length : 0;
 
+            // ── ENG status transitions (Catch Up single issue + Planning batch) ──
+            // Clickable status pills are enabled only on the ENG Catch Up / Planning
+            // task surface. Stats, Scenario, EPM, and an open Settings modal keep inert
+            // pills. EPM never receives these props (see issueCardContext isolation).
+            const statusTransitionSourceSurface = showPlanning ? 'planning' : 'catch_up';
+            const statusTransitionEnabled = isStatusTransitionSurfaceEnabled({
+                selectedView, showPlanning, showStats, showScenario,
+            }) && !showGroupManage;
+            const [statusTransitionSubmitting, setStatusTransitionSubmitting] = useState(false);
+
+            const {
+                activeSingleIssueTarget: statusTransitionActiveTarget,
+                selectedEpicStatusTargets,
+                selectedSubtaskStatusTargets,
+                openSingleIssueStatusControl,
+                closeSingleIssueStatusControl,
+                toggleEpicStatusTarget,
+                toggleSubtaskStatusTarget,
+                clearNonStoryStatusTargets,
+                transitionOptions,
+                transitionOptionsLoading,
+                transitionError,
+                transitionErrorCode,
+                transitionResult,
+                submitStatusTransition,
+            } = useEngStatusTransitions({
+                backendUrl: BACKEND_URL,
+                selectedStories: selectedTasksList,
+                epicGroups,
+                storySubtasksByKey,
+                selectedSprint,
+                sourceSurface: statusTransitionSourceSurface,
+                trackIssueStatusAction,
+                onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
+                onTransitionSuccessRefresh: ({ affectedSubtaskStoryKeys = [] } = {}) => {
+                    // Refresh only the ENG task data for the current scope, not a full reload.
+                    loadProductTasks({ forceRefresh: true });
+                    loadTechTasks({ forceRefresh: true });
+                    loadReadyToCloseProductTasks({ forceRefresh: true });
+                    loadReadyToCloseTechTasks({ forceRefresh: true });
+                    // Re-fetch subtasks for stories whose subtask status changed so the
+                    // expanded subtask rows reflect the new status (backend subtask cache
+                    // already invalidated); avoids a stale pill without a full reload.
+                    affectedSubtaskStoryKeys.forEach((storyKey) => {
+                        retryStorySubtasks({ key: storyKey });
+                    });
+                },
+            });
+
+            const statusTransitionActiveKey = statusTransitionActiveTarget?.key || null;
+
+            // Planning composed target list (selected Stories + marked Epics + marked
+            // Subtasks) drives the "Apply to selected targets (N)" count and the action
+            // bar feedback. Catch Up acts on one explicit issue, so its count stays 0.
+            const planningStatusTargets = React.useMemo(() => {
+                if (statusTransitionSourceSurface !== 'planning') return [];
+                return buildEngStatusTargets({
+                    selectedTasksList,
+                    selectedEpicKeys: Array.from(selectedEpicStatusTargets),
+                    selectedSubtaskKeys: Array.from(selectedSubtaskStatusTargets),
+                    epicGroups,
+                    storySubtasksByKey,
+                });
+            }, [statusTransitionSourceSurface, selectedTasksList, selectedEpicStatusTargets, selectedSubtaskStatusTargets, epicGroups, storySubtasksByKey]);
+            const statusTransitionTargetsCount = planningStatusTargets.length;
+
+            // The hook clears status targets/options on sprint change but not on group
+            // change; clear them here so a group switch never carries stale targets.
+            React.useEffect(() => {
+                clearNonStoryStatusTargets();
+                closeSingleIssueStatusControl();
+            }, [activeGroupId, clearNonStoryStatusTargets, closeSingleIssueStatusControl]);
+
+            // The hook exposes no submitting flag; track it around the awaited submit so
+            // the menu can disable its action and show an in-flight state.
+            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue, opts = {}) => {
+                if (statusTransitionSubmitting) return;
+                setStatusTransitionSubmitting(true);
+                try {
+                    // Catch Up always applies to the clicked issue. Planning applies to the
+                    // composed batch unless the single-issue recovery action was used.
+                    if (statusTransitionSourceSurface === 'catch_up' || opts.singleIssueOnly) {
+                        await submitStatusTransition(targetStatus, issue?.key);
+                    } else {
+                        await submitStatusTransition(targetStatus);
+                    }
+                } finally {
+                    setStatusTransitionSubmitting(false);
+                }
+            }, [statusTransitionSubmitting, statusTransitionSourceSurface, submitStatusTransition]);
+
             const selectedTeamStats = React.useMemo(() => {
                 if (!showPlanning) return {};
                 return buildSelectedTeamStats(selectedTasksList, getTeamInfo);
@@ -12512,10 +12606,35 @@ import {
 	                                    </div>
 	                                    <div className="epic-meta">
                                             {epicStatus && (
-                                                <StatusPill
-                                                    className={epicStatusClassName}
-                                                    label={epicStatus}
-                                                />
+                                                (statusTransitionEnabled && epicGroup.key !== 'NO_EPIC') ? (
+                                                    <StatusTransitionMenu
+                                                        issue={{ key: epicGroup.key, status: epicStatus, summary: epicTitle }}
+                                                        fallbackIssueType="Epic"
+                                                        statusLabel={epicStatus}
+                                                        statusClassName={epicStatusClassName}
+                                                        sourceSurface={statusTransitionSourceSurface}
+                                                        isOpen={statusTransitionActiveKey === epicGroup.key}
+                                                        options={transitionOptions}
+                                                        optionsLoading={transitionOptionsLoading}
+                                                        submitting={statusTransitionSubmitting}
+                                                        error={transitionError}
+                                                        errorCode={transitionErrorCode}
+                                                        result={transitionResult}
+                                                        targetsCount={statusTransitionTargetsCount}
+                                                        canToggleTargetSet={statusTransitionSourceSurface === 'planning'}
+                                                        isInTargetSet={selectedEpicStatusTargets.has(epicGroup.key)}
+                                                        onOpen={openSingleIssueStatusControl}
+                                                        onClose={closeSingleIssueStatusControl}
+                                                        onToggleTargetSet={() => toggleEpicStatusTarget(epicGroup.key)}
+                                                        onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
+                                                        onSubmitSingleIssue={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key }, { singleIssueOnly: true })}
+                                                    />
+                                                ) : (
+                                                    <StatusPill
+                                                        className={epicStatusClassName}
+                                                        label={epicStatus}
+                                                    />
+                                                )
                                             )}
 	                                        <span>SP: {epicTotalSp.toFixed(1)}</span>
 	                                        {epicInfo?.assignee?.displayName && (
@@ -12553,6 +12672,21 @@ import {
                                             subtaskState={storySubtasksByKey[task.key] || null}
                                             onToggleSubtasks={toggleStorySubtasks}
                                             onRetrySubtasks={retryStorySubtasks}
+                                            statusTransitionEnabled={statusTransitionEnabled}
+                                            statusTransitionSourceSurface={statusTransitionSourceSurface}
+                                            statusTransitionActiveKey={statusTransitionActiveKey}
+                                            statusTransitionOptions={transitionOptions}
+                                            statusTransitionOptionsLoading={transitionOptionsLoading}
+                                            statusTransitionSubmitting={statusTransitionSubmitting}
+                                            statusTransitionError={transitionError}
+                                            statusTransitionErrorCode={transitionErrorCode}
+                                            statusTransitionResult={transitionResult}
+                                            statusTransitionTargetsCount={statusTransitionTargetsCount}
+                                            subtaskStatusTargetKeys={selectedSubtaskStatusTargets}
+                                            onOpenStatusTransition={openSingleIssueStatusControl}
+                                            onCloseStatusTransition={closeSingleIssueStatusControl}
+                                            onSubmitStatusTransition={handleSubmitStatusTransition}
+                                            onToggleSubtaskStatusTarget={toggleSubtaskStatusTarget}
                                         />
                                     );
                                 })}
@@ -14862,6 +14996,11 @@ import {
                             onUndoPlanningSelection={undoPlanningSelectionChange}
                             onClearSelected={clearSelectedTasks}
                             onOpenSelectedInJira={openSelectedInJira}
+                            statusTransitionTargetsCount={statusTransitionTargetsCount}
+                            statusTransitionSubmitting={statusTransitionSubmitting}
+                            statusTransitionError={transitionError}
+                            statusTransitionErrorCode={transitionErrorCode}
+                            statusTransitionResult={transitionResult}
                         />
                         {/* --- Capacity Bar Graph --- */}
                         <PlanningCapacityBar

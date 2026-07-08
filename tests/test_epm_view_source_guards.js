@@ -974,3 +974,53 @@ test('EPM archived portfolio boards lazy-load Jira rollups on expand', () => {
     assert.ok(dashboardSource.includes('loadArchivedEpmProjectRollup'), 'Expected archived lazy rollup loader in dashboard.jsx');
     assert.ok(epmViewDataSource.includes('fetchEpmProjectRollup(backendUrl, projectId'), 'Expected archived expand to fetch the per-project rollup');
 });
+
+test('ENG status transition hook exposes no EPM helper and stays isolated from the EPM module', () => {
+    const engStatusHookPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngStatusTransitions.js');
+    assert.ok(fs.existsSync(engStatusHookPath), 'Expected frontend/src/eng/useEngStatusTransitions.js to exist');
+    const engStatusHookSource = fs.readFileSync(engStatusHookPath, 'utf8');
+
+    assert.doesNotMatch(engStatusHookSource, /from\s+['"](\.\.\/)+epm\//, 'ENG status transition hook must not import from frontend/src/epm');
+    assert.doesNotMatch(engStatusHookSource, /export\s+(async\s+)?function\s+\w*[Ee]pm\w*/, 'ENG status transition hook must not export an EPM helper');
+    assert.doesNotMatch(engStatusHookSource, /export\s+const\s+\w*[Ee]pm\w*/, 'ENG status transition hook must not export an EPM helper');
+});
+
+test('EPM stays view-only: no transition imports, no status-transition props on EPM issue cards', () => {
+    const statusMenuPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'StatusTransitionMenu.jsx');
+    const statusMenuSource = fs.existsSync(statusMenuPath) ? fs.readFileSync(statusMenuPath, 'utf8') : '';
+
+    // EPM view and rollup panel must never import the Jira transition API, the ENG
+    // status-transition hook, or render the ENG status transition menu.
+    for (const [label, source] of [['EpmView.jsx', epmViewSource], ['EpmRollupPanel.jsx', epmRollupPanelSource]]) {
+        assert.ok(!source.includes('jiraIssueApi'), `${label} must not import the Jira issue transition API`);
+        assert.ok(!source.includes('useEngStatusTransitions'), `${label} must not import the ENG status transition hook`);
+        assert.ok(!source.includes('StatusTransitionMenu'), `${label} must not render the ENG status transition menu`);
+    }
+
+    // renderEpmIssueCard enumerates props and must pass no status-transition wiring.
+    const renderEpmIssueCardSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderEpmIssueCard = (task) => {',
+        'const renderEpmIssueGroup'
+    );
+    for (const forbidden of [
+        'statusTransition',
+        'onOpenStatusTransition',
+        'onCloseStatusTransition',
+        'onSubmitStatusTransition',
+        'onToggleSubtaskStatusTarget',
+        "sourceSurface='epm'",
+        'sourceSurface="epm"',
+    ]) {
+        assert.ok(!renderEpmIssueCardSource.includes(forbidden), `renderEpmIssueCard must not pass ${forbidden} into IssueCard`);
+    }
+
+    // The shared IssueCard defaults the transition surface off so EPM needs no extra guard.
+    assert.ok(issueCardSource.includes('statusTransitionEnabled = false'), 'IssueCard must default statusTransitionEnabled to false');
+
+    // The status transition menu is presentational and must not import API/hook either,
+    // so importing IssueCard into EPM never drags the transition API into the EPM bundle.
+    assert.ok(statusMenuSource, 'Expected shared StatusTransitionMenu component');
+    assert.ok(!statusMenuSource.includes('jiraIssueApi'), 'StatusTransitionMenu must not import the transition API');
+    assert.ok(!statusMenuSource.includes('useEngStatusTransitions'), 'StatusTransitionMenu must not import the transition hook');
+});

@@ -81,6 +81,8 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("eng-api-dependencies", "/api/dependencies", frozenset({"POST"}), "authenticated_read"),
     EndpointPolicy("eng-api-issue-lookup", "/api/issues/lookup", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("eng-api-story-subtasks", "/api/issues/subtasks", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("jira-issue-transition-options", "/api/issues/transitions/options", frozenset({"POST"}), "authenticated_read"),
+    EndpointPolicy("jira-issue-transitions-write", "/api/issues/transitions", frozenset({"POST"}), "user_write"),
     EndpointPolicy("settings-config-read", "/api/config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-version", "/api/version", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-groups-read", "/api/groups-config", PUBLIC_METHODS, "authenticated_read"),

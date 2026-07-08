@@ -4481,6 +4481,143 @@ button.toggle.initiative-toggle.active {
   }
 }
 
+/* frontend/src/styles/eng/status-transitions.css */
+button.status-pill {
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  font-weight: 500;
+  margin: 0;
+  border: 0;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, filter 0.15s ease;
+}
+button.status-pill:hover {
+  transform: none;
+  filter: brightness(0.94);
+  box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
+}
+button.status-pill:focus-visible {
+  outline: 2px solid rgba(47, 128, 237, 0.65);
+  outline-offset: 1px;
+}
+.status-transition {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.status-transition-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+.status-transition-menu-backdrop:hover {
+  transform: none;
+  box-shadow: none;
+  background: transparent;
+}
+.task-item:has(.status-transition-menu),
+.epic-header:has(.status-transition-menu) {
+  z-index: 121;
+}
+.status-transition-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 120;
+  min-width: 15rem;
+  max-width: 20rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px var(--shadow, rgba(15, 23, 42, 0.18));
+  text-transform: none;
+  letter-spacing: 0;
+}
+.status-transition-menu-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.status-transition-select {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary, #fff);
+  color: var(--text-primary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.status-transition-submit {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.72rem;
+  border-radius: 8px;
+}
+.status-transition-submit-single {
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.7rem;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.status-transition-submit-single:hover:not(:disabled) {
+  transform: none;
+  background: var(--bg-secondary, rgba(15, 23, 42, 0.04));
+  box-shadow: none;
+}
+.status-transition-target-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.status-transition-target-toggle {
+  margin: 0;
+}
+.status-transition-menu-note {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.status-transition-menu-loading {
+  color: var(--text-secondary);
+}
+.status-transition-menu-error {
+  color: #b42318;
+}
+.status-transition-menu-error.is-too-many {
+  color: #a15c07;
+}
+.status-transition-menu-result {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 /* frontend/src/styles/eng.css */
 
 /* frontend/src/styles/stats/summary.css */
@@ -8349,6 +8486,16 @@ a.project-track-phase-epic-link:focus-visible {
   white-space: nowrap;
   margin-top: 0.15rem;
   margin-bottom: 0.35rem;
+}
+.planning-status-feedback {
+  font-size: 0.66rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.planning-status-feedback.is-error {
+  color: #b42318;
 }
 @media (max-width: 760px) {
   .planning-actions {

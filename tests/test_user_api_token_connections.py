@@ -22,7 +22,7 @@ import jira_server
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_INI = REPO_ROOT / 'backend' / 'db' / 'alembic.ini'
 FULL_SCOPE = (
-    'read:me read:jira-work read:jira-user '
+    'read:me read:jira-work write:jira-work read:jira-user '
     'read:board-scope:jira-software read:sprint:jira-software read:project:jira '
     'offline_access'
 )

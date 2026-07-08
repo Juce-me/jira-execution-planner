@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 
@@ -28,6 +29,10 @@ def _section(text, heading):
     if next_heading == -1:
         return text[start:]
     return text[start:next_heading]
+
+
+def _strip_code_blocks(text):
+    return re.sub(r"```.*?```", "", text, flags=re.DOTALL)
 
 
 class EnvConfigDocsTests(unittest.TestCase):
@@ -82,6 +87,29 @@ class EnvConfigDocsTests(unittest.TestCase):
                     offenders.append(f"{path.relative_to(REPO_ROOT)} hosted section contains {env_name}")
 
         self.assertEqual(offenders, [])
+
+    def test_oauth_setup_doc_documents_write_scope_and_global_reauth_impact(self):
+        doc_path = REPO_ROOT / "docs" / "SUPPORT-atlassian-oauth-setup.md"
+        text = doc_path.read_text(encoding="utf8")
+        lower = text.lower()
+        prose = _strip_code_blocks(text).lower()
+
+        # The scope must be documented in the Developer Console permissions
+        # table/prose, not only inside the ATLASSIAN_SCOPES env code block.
+        self.assertIn("write:jira-work", prose)
+        self.assertGreaterEqual(lower.count("write:jira-work"), 2)
+
+        # Must explicitly state the scope forces re-auth for every signed-in
+        # user (including read-only users), not only users attempting a write.
+        # The doc mentions "signed-in" more than once (existing OAuth-session
+        # prose plus the new re-auth-impact note), so check every occurrence
+        # for a nearby "re-authenticate" instead of assuming the first match.
+        signed_in_positions = [match.start() for match in re.finditer("signed-in", prose)]
+        self.assertTrue(signed_in_positions)
+        self.assertTrue(any(
+            "re-authenticate" in prose[max(0, position - 200):position + 200]
+            for position in signed_in_positions
+        ))
 
     def test_install_doc_names_user_home_token_storage_boundaries(self):
         install_doc = (REPO_ROOT / "INSTALL.md").read_text(encoding="utf8")

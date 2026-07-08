@@ -152,3 +152,34 @@ test('Lead Times capacity cohort filter changes local state without an app-owned
         'Expected the Lead Times capacity filter to be documented in the No-Event Allowlist'
     );
 });
+
+test('Jira issue transition API module sends the eng_status_transitions surface for both endpoints', () => {
+    const source = read('frontend/src/api/jiraIssueApi.js');
+    assert.ok(source.includes('/api/issues/transitions/options'), 'Expected the transition options endpoint literal');
+    assert.ok(source.includes('/api/issues/transitions'), 'Expected the transition write endpoint literal');
+    assert.ok(source.includes("trackedFetch('jira_issue_transitions'"), 'Expected both wrappers to use the jira_issue_transitions API surface');
+    assert.ok(source.includes("featureName: 'eng_status_transitions'"), 'Expected both wrappers to tag the eng_status_transitions feature');
+});
+
+test('trackIssueStatusAction emits only the eng status transition contract, never issue-level PII', () => {
+    const source = read('frontend/src/analytics/dashboardAnalytics.js');
+    const match = source.match(/const trackIssueStatusAction = useCallback\(([\s\S]*?)\}, \[trackProductEvent\]\);/);
+    assert.ok(match, 'Expected to locate the trackIssueStatusAction definition');
+
+    const body = match[1];
+    assert.ok(body.includes("'issue_status_action'"), 'Expected trackIssueStatusAction to emit issue_status_action');
+    assert.ok(body.includes("feature_name: 'eng_status_transitions'"), 'Expected trackIssueStatusAction to tag the eng_status_transitions feature');
+
+    const forbiddenSnippets = [
+        'issueKey', 'issue_key', 'summary', 'transitionId', 'transition_id',
+        'assignee', 'jql', 'JQL', 'accountId', 'account_id', 'email',
+        'apiToken', 'authToken', 'csrfToken', 'jiraUrl', 'jira_url'
+    ];
+    for (const snippet of forbiddenSnippets) {
+        assert.equal(
+            body.includes(snippet),
+            false,
+            `trackIssueStatusAction must not reference ${snippet}`
+        );
+    }
+});

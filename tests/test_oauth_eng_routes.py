@@ -3,9 +3,12 @@ import os
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from backend.auth.cache_policy import build_jira_home_process_cache_key
+from backend.routes import eng_routes
+from backend.services.jira_issue_transitions import IssueTransitionServiceError
 import jira_server
 from tests.oauth_test_helpers import install_oauth_session
 
@@ -446,6 +449,292 @@ class OAuthEngRouteTests(unittest.TestCase):
         mock_fetch.assert_called()
 
 
+class IssueTransitionRouteTests(unittest.TestCase):
+    def setUp(self):
+        jira_server.app.config["TESTING"] = True
+        jira_server.app.secret_key = "test-secret"
+        self._env_patcher = patch.dict(os.environ, {
+            "CONFIG_STORAGE_BACKEND": "jsonfile",
+            "DATABASE_URL": "",
+            "TEST_DATABASE_URL": "",
+        }, clear=False)
+        self._env_patcher.start()
+        self.client = jira_server.app.test_client()
+        install_oauth_session(self.client)
+
+    def tearDown(self):
+        jira_server.OAUTH_TOKEN_STORE.clear()
+        jira_server.OAUTH_REFRESH_LOCKS.clear()
+        self._env_patcher.stop()
+
+    def _csrf_token(self):
+        # The write route's token-bound CSRF is bound to the OAuth session, so the
+        # token must be minted under atlassian_oauth mode to validate on the POST.
+        # Patch here so callers work regardless of the process JIRA_AUTH_MODE (CI
+        # runs with JIRA_AUTH_MODE=basic), not only when a local .env sets oauth mode.
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.get("/api/auth/csrf")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.get_json()["csrfToken"]
+
+    def test_transition_options_returns_statuses_in_oauth_mode(self):
+        def fake_search(payload, *, context=None, timeout=30):
+            return FakeResponse(200, {"issues": [
+                {"key": "PROD-1", "fields": {"summary": "S", "status": {"name": "To Do"}, "issuetype": {"name": "Story"}}},
+            ]})
+
+        def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
+            self.assertEqual(method, "GET")
+            return FakeResponse(200, {"transitions": [{"id": "11", "name": "Start Progress", "to": {"name": "In Progress"}}]})
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_search", side_effect=fake_search), \
+             patch.object(jira_server, "current_jira_request", side_effect=fake_request):
+            response = self.client.post(
+                "/api/issues/transitions/options",
+                json={"issueKeys": ["PROD-1"]},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body["issues"], [{
+            "key": "PROD-1",
+            "issueType": "Story",
+            "currentStatus": "To Do",
+            "transitions": [{"name": "Start Progress", "toStatus": "In Progress"}],
+        }])
+        self.assertEqual(body["targetStatuses"], [{"name": "In Progress", "availableCount": 1, "blockedCount": 0}])
+
+    def test_transition_options_requires_x_requested_with_before_route_code(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "load_transition_options", side_effect=AssertionError("route code reached")):
+            response = self.client.post("/api/issues/transitions/options", json={"issueKeys": ["PROD-1"]})
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "csrf_required")
+
+    def test_transition_options_service_error_returns_sanitized_502(self):
+        def fake_load_options(issue_keys, *, jira_request, search_request, context=None):
+            raise IssueTransitionServiceError("issue_snapshot_fetch_failed", 503)
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "load_transition_options", side_effect=fake_load_options):
+            response = self.client.post(
+                "/api/issues/transitions/options",
+                json={"issueKeys": ["PROD-1"]},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "jira_transition_options_failed")
+
+    def test_transitions_write_rejects_missing_x_requested_with_before_route_code(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "transition_issues", side_effect=AssertionError("route code reached")):
+            response = self.client.post(
+                "/api/issues/transitions",
+                json={"issueKeys": ["PROD-1"], "targetStatus": "Accepted"},
+            )
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "csrf_required")
+        self.assertIn("X-Requested-With", response.get_json()["message"])
+
+    def test_transitions_write_rejects_missing_csrf_token_before_route_code(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "transition_issues", side_effect=AssertionError("route code reached")):
+            response = self.client.post(
+                "/api/issues/transitions",
+                json={"issueKeys": ["PROD-1"], "targetStatus": "Accepted"},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "csrf_required")
+        self.assertIn("CSRF", response.get_json()["message"])
+
+    def test_transitions_write_returns_missing_scope_before_jira_call_when_write_scope_absent(self):
+        # Simulate a session/server pair that predates the write:jira-work scope
+        # rollout: the middleware's blanket ATLASSIAN_SCOPES check does not catch
+        # this (server config agrees with the session), so only the route's own
+        # explicit write:jira-work check can catch it.
+        old_scope = (
+            "read:me read:jira-work read:jira-user read:board-scope:jira-software "
+            "read:sprint:jira-software read:project:jira offline_access"
+        )
+        install_oauth_session(self.client, scope=old_scope)
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "ATLASSIAN_SCOPES", old_scope):
+            csrf_token = self._csrf_token()
+            with patch.object(eng_routes, "transition_issues", side_effect=AssertionError("must not resolve/post transitions")), \
+                 patch.object(jira_server, "current_jira_request", side_effect=AssertionError("must not call Jira")), \
+                 patch.object(jira_server, "current_jira_search", side_effect=AssertionError("must not call Jira")):
+                response = self.client.post(
+                    "/api/issues/transitions",
+                    json={"issueKeys": ["PROD-1"], "targetStatus": "Accepted"},
+                    headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+                )
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body["error"], "missing_oauth_scope")
+        self.assertEqual(body["recoveryUrl"], "/login?reason=missing_scope")
+
+    def test_transitions_write_uses_auth_context_and_forwards_to_service(self):
+        sentinel_context = object()
+        captured = {}
+
+        def fake_transition_issues(issue_keys, target_status, *, jira_request, search_request, context=None):
+            captured["context"] = context
+            return {
+                "requested": 1,
+                "succeeded": 1,
+                "failed": 0,
+                "targetStatus": target_status,
+                "results": [{"key": "PROD-1", "result": "success", "fromStatus": "To Do", "toStatus": target_status}],
+            }
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_request_auth_context", return_value=sentinel_context), \
+             patch.object(eng_routes, "transition_issues", side_effect=fake_transition_issues), \
+             patch.object(eng_routes, "clear_jira_issue_status_caches") as mock_clear:
+            response = self.client.post(
+                "/api/issues/transitions",
+                json={"issueKeys": ["PROD-1"], "targetStatus": "Accepted"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertIs(captured["context"], sentinel_context)
+        mock_clear.assert_called_once()
+
+    def test_transitions_write_does_not_call_build_jira_headers(self):
+        def fake_search(payload, *, context=None, timeout=30):
+            return FakeResponse(200, {"issues": [
+                {"key": "PROD-1", "fields": {"summary": "S", "status": {"name": "To Do"}, "issuetype": {"name": "Story"}}},
+            ]})
+
+        def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
+            if method == "GET":
+                return FakeResponse(200, {"transitions": [{"id": "11", "name": "Start Progress", "to": {"name": "Accepted"}}]})
+            return FakeResponse(204, {})
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_search", side_effect=fake_search), \
+             patch.object(jira_server, "current_jira_request", side_effect=fake_request), \
+             patch.object(jira_server, "build_jira_headers", side_effect=AssertionError("build_jira_headers must not be called")), \
+             patch.object(eng_routes, "clear_jira_issue_status_caches") as mock_clear:
+            response = self.client.post(
+                "/api/issues/transitions",
+                json={"issueKeys": ["PROD-1"], "targetStatus": "Accepted"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["succeeded"], 1)
+        mock_clear.assert_called_once()
+
+    def test_transitions_write_does_not_clear_caches_when_nothing_succeeded(self):
+        def fake_transition_issues(issue_keys, target_status, *, jira_request, search_request, context=None):
+            return {
+                "requested": 1,
+                "succeeded": 0,
+                "failed": 1,
+                "targetStatus": target_status,
+                "results": [{"key": "PROD-1", "result": "failure", "error": "transition_not_available"}],
+            }
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "transition_issues", side_effect=fake_transition_issues), \
+             patch.object(eng_routes, "clear_jira_issue_status_caches") as mock_clear:
+            response = self.client.post(
+                "/api/issues/transitions",
+                json={"issueKeys": ["PROD-1"], "targetStatus": "Accepted"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        mock_clear.assert_not_called()
+
+    def test_transitions_write_maps_input_error_to_400(self):
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.post(
+                "/api/issues/transitions",
+                json={"issueKeys": [], "targetStatus": "Accepted"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "issue_keys_required")
+
+    def test_transitions_write_invalid_json_body_returns_400(self):
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.post(
+                "/api/issues/transitions",
+                data="not-json",
+                content_type="application/json",
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "invalid_json")
+
+    def test_transitions_write_service_error_returns_sanitized_502(self):
+        def fake_transition_issues(issue_keys, target_status, *, jira_request, search_request, context=None):
+            raise IssueTransitionServiceError("issue_snapshot_fetch_failed", 503)
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "transition_issues", side_effect=fake_transition_issues):
+            response = self.client.post(
+                "/api/issues/transitions",
+                json={"issueKeys": ["PROD-1"], "targetStatus": "Accepted"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "jira_transition_failed")
+
+
+class MissingWriteJiraWorkScopeHelperTests(unittest.TestCase):
+    """Direct coverage of the route-level defense-in-depth scope check.
+
+    DB-backed auth contexts already had write:jira-work verified inside
+    current_request_auth_context() (resolve_db_request_auth_context checks the
+    full ATLASSIAN_SCOPES set), so the helper must skip the local session
+    re-check for them without touching oauth_session_data() at all.
+    """
+
+    def setUp(self):
+        jira_server.app.config["TESTING"] = True
+        jira_server.app.secret_key = "test-secret"
+
+    def test_skips_recheck_for_db_backed_context(self):
+        db_context = SimpleNamespace(auth_connection_id="db-connection-42")
+        with patch.object(jira_server, "oauth_session_data", side_effect=AssertionError("must not check local session for a DB-backed context")):
+            eng_routes.bind_server_globals(eng_routes.__dict__)
+            self.assertFalse(eng_routes._missing_write_jira_work_scope(db_context))
+
+    def test_flags_local_context_missing_write_scope(self):
+        local_context = SimpleNamespace(auth_connection_id="local-oauth-connection:session-1")
+        with patch.object(jira_server, "oauth_session_data", return_value={"scope": "read:me read:jira-work"}):
+            eng_routes.bind_server_globals(eng_routes.__dict__)
+            self.assertTrue(eng_routes._missing_write_jira_work_scope(local_context))
+
+    def test_local_context_with_write_scope_is_not_missing(self):
+        local_context = SimpleNamespace(auth_connection_id="local-oauth-connection:session-1")
+        with patch.object(jira_server, "oauth_session_data", return_value={"scope": "read:me write:jira-work"}):
+            eng_routes.bind_server_globals(eng_routes.__dict__)
+            self.assertFalse(eng_routes._missing_write_jira_work_scope(local_context))
+
+
 class BasicEngRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
@@ -460,6 +749,31 @@ class BasicEngRouteTests(unittest.TestCase):
 
     def tearDown(self):
         self._env_patcher.stop()
+
+    def test_transition_options_rejects_basic_mode(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
+             patch.object(eng_routes, "load_transition_options", side_effect=AssertionError("must not reach Jira in basic mode")):
+            response = self.client.post(
+                "/api/issues/transitions/options",
+                json={"issueKeys": ["PROD-1"]},
+            )
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
+
+    def test_transitions_write_rejects_basic_mode_after_csrf_satisfied(self):
+        # Basic mode does not enforce X-Requested-With/CSRF at the middleware
+        # layer, so the request reaches route code without those headers; the
+        # route's own OAuth-mode guard must still refuse it.
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
+             patch.object(eng_routes, "transition_issues", side_effect=AssertionError("must not reach Jira in basic mode")):
+            response = self.client.post(
+                "/api/issues/transitions",
+                json={"issueKeys": ["PROD-1"], "targetStatus": "Accepted"},
+            )
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
 
     def test_tasks_with_team_name_basic_uses_jira_url_basic_auth_without_csrf_header(self):
         calls = []

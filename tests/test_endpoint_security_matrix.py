@@ -111,6 +111,21 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
                 matches = matching_path_policies(path, method)
                 self.assertEqual([policy.policy_class for policy in matches], [expected_policy_class])
 
+    def test_issue_transition_policy_classes_have_expected_csrf_requirements(self):
+        from backend.security.guards import CSRF_POLICY_CLASSES, PROTECTED_POLICY_CLASSES
+        from backend.security.policy import classify_rule
+
+        options_policy = classify_rule("/api/issues/transitions/options", ["POST"])
+        write_policy = classify_rule("/api/issues/transitions", ["POST"])
+
+        self.assertIsNotNone(options_policy)
+        self.assertIsNotNone(write_policy)
+        self.assertEqual(options_policy.policy_class, "authenticated_read")
+        self.assertEqual(write_policy.policy_class, "user_write")
+        self.assertIn(options_policy.policy_class, PROTECTED_POLICY_CLASSES)
+        self.assertNotIn(options_policy.policy_class, CSRF_POLICY_CLASSES)
+        self.assertIn(write_policy.policy_class, CSRF_POLICY_CLASSES)
+
     def test_unsafe_oauth_requests_require_x_requested_with_before_route_code(self):
         install_oauth_session(self.client, account_id="tool-admin-account")
         with self._oauth_mode():

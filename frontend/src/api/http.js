@@ -7,6 +7,23 @@ export async function json(response, label) {
     return response.json();
 }
 
+// Same contract as json() on success, but on a non-OK response parses the JSON
+// body and throws an Error carrying .status/.code/.loginUrl/.recoveryUrl so
+// callers can drive auth recovery (authRecoveryLoginUrl/redirectToAuthRecovery)
+// and recoverable-error UI, mirroring useEngSprintData.js's buildTaskResponseError.
+export async function jsonOrStructuredError(response, label) {
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const error = new Error(errorData.message || errorData.error || `${label} error ${response.status}`);
+        error.status = response.status;
+        error.code = errorData.error;
+        error.loginUrl = errorData.loginUrl;
+        error.recoveryUrl = errorData.recoveryUrl;
+        throw error;
+    }
+    return response.json();
+}
+
 function cacheStateFromResponse(response) {
     const header = response?.headers?.get?.('X-Cache') || response?.headers?.get?.('Server-Timing') || '';
     if (!header) return 'unknown';

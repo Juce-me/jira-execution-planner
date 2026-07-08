@@ -139,6 +139,7 @@ gtm_web:
     - { name: "DLV - issue_count", data_layer_variable_name: "issue_count", version: 2, purpose: "approved event metric" }
     - { name: "DLV - issue_count_bucket", data_layer_variable_name: "issue_count_bucket", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - issue_kind", data_layer_variable_name: "issue_kind", version: 2, purpose: "approved event parameter" }
+    - { name: "DLV - issue_type_mix", data_layer_variable_name: "issue_type_mix", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - lane_mode", data_layer_variable_name: "lane_mode", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - link_type", data_layer_variable_name: "link_type", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - method", data_layer_variable_name: "method", version: 2, purpose: "approved event parameter" }

@@ -118,7 +118,7 @@ ATLASSIAN_CLIENT_SECRET = os.getenv('ATLASSIAN_CLIENT_SECRET', '').strip()
 ATLASSIAN_REDIRECT_URI = os.getenv('ATLASSIAN_REDIRECT_URI', '').strip()
 ATLASSIAN_SCOPES = os.getenv(
     'ATLASSIAN_SCOPES',
-    'read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access',
+    'read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access',
 ).strip()
 FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip()
 app = create_app()

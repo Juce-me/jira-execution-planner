@@ -33,7 +33,7 @@ function loadHttpHelpers() {
         .replace(/import\s+\{[^}]+\}\s+from\s+'\.\.\/analytics\/analytics\.js';\n?/, '')
         .replaceAll('export async function ', 'async function ')
         .replaceAll('export function ', 'function ');
-    return new Function('trackApiResult', `${source}; return { json, getJson, postJson, trackedFetch };`)(() => {});
+    return new Function('trackApiResult', `${source}; return { json, jsonOrStructuredError, getJson, postJson, trackedFetch };`)(() => {});
 }
 
 function loadApiModule(fileName, exportNames, dependencies = {}) {
@@ -41,6 +41,7 @@ function loadApiModule(fileName, exportNames, dependencies = {}) {
     assert.ok(fs.existsSync(modulePath), `Expected frontend/src/api/${fileName} to exist`);
     const source = readSource(modulePath)
         .replace(/import\s+\{[^}]+\}\s+from\s+'\.\/http\.js';\n?/, '')
+        .replace(/import\s+\{[^}]+\}\s+from\s+'\.\/authApi\.js';\n?/, '')
         .replaceAll('export async function ', 'async function ')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
@@ -186,6 +187,48 @@ test('shared API HTTP helpers preserve current JSON error behavior', async () =>
         ok: true,
         json: async () => ({ ok: true }),
     }, 'Test payload');
+    assert.deepEqual(payload, { ok: true });
+});
+
+test('shared jsonOrStructuredError helper attaches status/code/loginUrl/recoveryUrl for structured errors', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+
+    await assert.rejects(
+        () => jsonOrStructuredError({
+            ok: false,
+            status: 401,
+            json: async () => ({
+                error: 'auth_required',
+                message: 'Sign in required.',
+                loginUrl: '/login?reason=session_expired',
+            }),
+        }, 'Issue transition'),
+        (err) => {
+            assert.equal(err.status, 401);
+            assert.equal(err.code, 'auth_required');
+            assert.equal(err.loginUrl, '/login?reason=session_expired');
+            assert.equal(err.message, 'Sign in required.');
+            return true;
+        }
+    );
+
+    await assert.rejects(
+        () => jsonOrStructuredError({
+            ok: false,
+            status: 400,
+            json: async () => ({ error: 'too_many_issues' }),
+        }, 'Issue transition'),
+        (err) => {
+            assert.equal(err.status, 400);
+            assert.equal(err.code, 'too_many_issues');
+            return true;
+        }
+    );
+
+    const payload = await jsonOrStructuredError({
+        ok: true,
+        json: async () => ({ ok: true }),
+    }, 'Issue transition');
     assert.deepEqual(payload, { ok: true });
 });
 
@@ -949,4 +992,130 @@ test('Stats and issues API wrappers preserve request details', async () => {
         assert.equal(lookupUrl.searchParams.get('keys'), 'ABC-1,XYZ-2');
         assert.equal(calls[3].options.signal, signal);
     });
+});
+
+test('Jira issue transition API module owns transition options and write endpoint construction', () => {
+    const jiraIssueApiPath = path.join(frontendSrcPath, 'api', 'jiraIssueApi.js');
+    assert.ok(fs.existsSync(jiraIssueApiPath), 'Expected frontend/src/api/jiraIssueApi.js to exist');
+
+    const jiraIssueApiSource = readSource(jiraIssueApiPath);
+
+    assert.ok(jiraIssueApiSource.includes("from './http.js'"), 'Expected Jira issue transition API module to use shared HTTP helpers');
+    assert.ok(jiraIssueApiSource.includes("from './authApi.js'"), 'Expected Jira issue transition API module to reuse the shared CSRF helper');
+    assert.ok(jiraIssueApiSource.includes('/api/issues/transitions/options'), 'Expected transition options URL construction in jiraIssueApi.js');
+    assert.ok(jiraIssueApiSource.includes('/api/issues/transitions'), 'Expected transition write URL construction in jiraIssueApi.js');
+});
+
+test('fetchIssueTransitionOptions posts issue keys with X-Requested-With and tracks the transitions surface', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const calls = [];
+    const jiraIssueApi = loadApiModule('jiraIssueApi.js', [
+        'fetchIssueTransitionOptions',
+    ], {
+        jsonOrStructuredError,
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            calls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ issues: [], targetStatuses: [] });
+        },
+    });
+    const signal = new AbortController().signal;
+
+    const payload = await jiraIssueApi.fetchIssueTransitionOptions('http://backend', ['PROD-1', 'PROD-2'], { signal });
+
+    assert.deepEqual(payload, { issues: [], targetStatuses: [] });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].apiSurface, 'jira_issue_transitions');
+    assert.deepEqual(calls[0].analyticsParams, { featureName: 'eng_status_transitions' });
+    assert.equal(calls[0].url, 'http://backend/api/issues/transitions/options');
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[0].options.cache, 'no-cache');
+    assert.equal(calls[0].options.signal, signal);
+    assert.deepEqual(JSON.parse(calls[0].options.body), { issueKeys: ['PROD-1', 'PROD-2'] });
+    assertJsonHeader(calls[0].options);
+    assert.equal(new Headers(calls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+    assert.equal(new Headers(calls[0].options.headers).has('X-CSRF-Token'), false);
+});
+
+test('transitionIssues fetches a CSRF token before posting the target status with tracked analytics surface', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const calls = [];
+    const jiraIssueApi = loadApiModule('jiraIssueApi.js', [
+        'transitionIssues',
+    ], {
+        jsonOrStructuredError,
+        fetchCsrfToken: async () => ({ csrfToken: 'csrf-token' }),
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            calls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ requested: 1, succeeded: 1, failed: 0, results: [] });
+        },
+    });
+    const signal = new AbortController().signal;
+    const requestPayload = { issueKeys: ['PROD-1'], targetStatus: 'Accepted' };
+
+    const payload = await jiraIssueApi.transitionIssues('http://backend', requestPayload, { signal });
+
+    assert.deepEqual(payload, { requested: 1, succeeded: 1, failed: 0, results: [] });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].apiSurface, 'jira_issue_transitions');
+    assert.deepEqual(calls[0].analyticsParams, { featureName: 'eng_status_transitions' });
+    assert.equal(calls[0].url, 'http://backend/api/issues/transitions');
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[0].options.cache, 'no-cache');
+    assert.equal(calls[0].options.signal, signal);
+    assert.deepEqual(JSON.parse(calls[0].options.body), requestPayload);
+    assertJsonHeader(calls[0].options);
+    assert.equal(new Headers(calls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+    assert.equal(new Headers(calls[0].options.headers).get('X-CSRF-Token'), 'csrf-token');
+});
+
+test('fetchIssueTransitionOptions rejects with a structured auth_required error carrying status/code/loginUrl', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const jiraIssueApi = loadApiModule('jiraIssueApi.js', [
+        'fetchIssueTransitionOptions',
+    ], {
+        jsonOrStructuredError,
+        trackedFetch: async () => ({
+            ok: false,
+            status: 401,
+            json: async () => ({
+                error: 'auth_required',
+                message: 'Sign in required.',
+                loginUrl: '/login?reason=session_expired',
+            }),
+        }),
+    });
+
+    await assert.rejects(
+        () => jiraIssueApi.fetchIssueTransitionOptions('http://backend', ['PROD-1']),
+        (err) => {
+            assert.equal(err.status, 401);
+            assert.equal(err.code, 'auth_required');
+            assert.equal(err.loginUrl, '/login?reason=session_expired');
+            return true;
+        }
+    );
+});
+
+test('transitionIssues rejects with a structured too_many_issues error carrying status/code', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const jiraIssueApi = loadApiModule('jiraIssueApi.js', [
+        'transitionIssues',
+    ], {
+        jsonOrStructuredError,
+        fetchCsrfToken: async () => ({ csrfToken: 'csrf-token' }),
+        trackedFetch: async () => ({
+            ok: false,
+            status: 400,
+            json: async () => ({ error: 'too_many_issues' }),
+        }),
+    });
+
+    await assert.rejects(
+        () => jiraIssueApi.transitionIssues('http://backend', { issueKeys: ['PROD-1'], targetStatus: 'Accepted' }),
+        (err) => {
+            assert.equal(err.status, 400);
+            assert.equal(err.code, 'too_many_issues');
+            return true;
+        }
+    );
 });

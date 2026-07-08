@@ -74,9 +74,9 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Expected output: ENG Planning cards render story points, the rounded checkbox, and Jira key as the final meta-row cluster; selected Planning stories get a subtle selected tint/ring; Playwright geometry and selected-state assertions guard against layout creep.
    - Sequencing: when paired with `EXEC-css-feature-owned-partials.md`, execute this plan first, then move the resulting CSS into feature-owned partials.
 
-3. `EXEC-jira-oauth-planning-status-transitions.md`
-   - Active implementation plan for Jira OAuth-backed ENG Catch Up and Planning status changes across Epics, Stories, and Subtasks.
-   - Expected output: Catch Up can transition one Epic, Story, or expanded Subtask at a time by clicking the displayed status; Planning can fetch transition options from clicked status pills/text and transition every selected status target through the signed-in user's Jira OAuth context; batch mode never silently truncates selected targets, rejects over-cap selections before mutation, preserves Story selection capacity math, and keeps EPM Jira/Home-backed issue surfaces view-only while `GATE-05` is blocked.
+3. `DONE-jira-oauth-planning-status-transitions.md`
+   - Completed Jira OAuth-backed ENG Catch Up and Planning status changes across Epics, Stories, and Subtasks. Merged in [PR #100](https://github.com/Juce-me/jira-execution-planner/pull/100). Use for audit context only.
+   - Output: Catch Up can transition one Epic, Story, or expanded Subtask at a time by clicking the displayed status; Planning can fetch transition options from clicked status pills/text and transition every selected status target through the signed-in user's Jira OAuth context; batch mode never silently truncates selected targets, rejects over-cap selections before mutation, preserves Story selection capacity math, and keeps EPM Jira/Home-backed issue surfaces view-only while `GATE-05` is blocked.
 
 ## Capacity Reporting Workflow
 

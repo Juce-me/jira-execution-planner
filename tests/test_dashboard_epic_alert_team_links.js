@@ -23,14 +23,18 @@ test('epic alert team headers link their epic counts to Jira', () => {
     });
 });
 
-test('needs stories team header links to a semantic JQL filter, not a key list', () => {
+test('needs stories team header links to the exact epic keys shown for that team', () => {
     const source = fs.readFileSync(
         path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngAlertsPanel.jsx'),
         'utf8'
     );
 
+    // The alert list is client-computed (per-team sprint-story coverage, dismissed
+    // alerts, team-field fallback routing), so no label/sprint JQL can reproduce
+    // it. The team header must open exactly the epics rendered under it.
     assert.match(
         source,
-        /needsStoriesTeams\.map\(group => \{\s+const teamLink = buildNeedsStoriesTeamLink\(\{ id: group\.id, name: group\.name \}\);[\s\S]*?className="alert-team-link"/
+        /needsStoriesTeams\.map\(group => \{\s+const teamLink = buildKeyListLink\(group\.items\.map\(entry => entry\.epic\.key\)\);[\s\S]*?className="alert-team-link"/
     );
+    assert.doesNotMatch(source, /buildNeedsStoriesTeamLink/);
 });

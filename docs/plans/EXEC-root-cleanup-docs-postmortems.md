@@ -323,7 +323,7 @@ git commit -m "refactor(repo): move install.sh under scripts/ and ship scripts i
 **Interfaces:**
 - Produces: root contains no loose docs besides `README.md`, `INSTALL.md`, `LICENSE`, `AGENTS.md` (+symlinks).
 
-- [ ] **Step 1: Delete and move**
+- [x] **Step 1: Delete and move**
 
 ```bash
 git rm QUICKSTART_ENV.txt
@@ -332,15 +332,15 @@ git mv project-context/architecture.md docs/architecture.md
 rmdir project-context 2>/dev/null || true
 ```
 
-- [ ] **Step 2: Prune the executed item from `docs/TODO.md`**
+- [x] **Step 2: Prune the executed item from `docs/TODO.md`**
 
 Remove the whole `## Now` block (scenario planner versioned draft history) — it shipped; see `docs/plans/DONE-scenario-planner-quarter-drafts-00-overview.md`. Keep every other section verbatim.
 
-- [ ] **Step 3: Update the stale forward reference in `docs/plans/FUTURE-codebase-operability-improvements.md`**
+- [x] **Step 3: Update the stale forward reference in `docs/plans/FUTURE-codebase-operability-improvements.md`**
 
 In the P2 row `Replace obsolete quickstart docs`, change the files cell `` `QUICKSTART_ENV.txt`, `README.md`, `AGENTS.md` `` to `` `README.md`, `AGENTS.md` `` and append to the outcome cell: `QUICKSTART_ENV.txt was removed in the root cleanup; INSTALL.md is the single install doc.` Leave `docs/plans/DONE-codebase-operability-doc-cleanup.md` untouched (historical audit record).
 
-- [ ] **Step 4: Check nothing else references the removed/moved names**
+- [x] **Step 4: Check nothing else references the removed/moved names**
 
 ```bash
 grep -rn 'QUICKSTART_ENV\|project-context' --include='*.md' --include='*.py' --include='*.yml' --include='*.html' --include='Makefile' . | grep -v node_modules | grep -v docs/plans/DONE-
@@ -349,11 +349,11 @@ grep -rn '\bTODO\.md' --include='*.md' --include='*.py' . | grep -v node_modules
 
 Expected: no output (legacy `DONE-*`/dated plan mentions are allowed to remain).
 
-- [ ] **Step 5: Sanity-check `docs/architecture.md` for contradictions**
+- [x] **Step 5: Sanity-check `docs/architecture.md` for contradictions**
 
 Read `docs/architecture.md` once. It is an unreferenced agent-bootstrap doc; if any statement contradicts current root `AGENTS.md` (e.g., stale layout claims), add a one-line note at the top: `> Historical bootstrap notes. Root AGENTS.md is the source of truth for agent behavior.` Do not rewrite its content.
 
-- [ ] **Step 6: Run tests and commit**
+- [x] **Step 6: Run tests and commit**
 
 Run: `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile .venv/bin/python -m unittest discover -s tests`
 Expected: OK.

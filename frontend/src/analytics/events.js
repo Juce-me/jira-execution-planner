@@ -13,6 +13,7 @@ const EVENT_NAMES = new Set([
     'stats_action',
     'chart_action',
     'epm_action',
+    'issue_status_action',
     'external_link_opened',
     'api_result',
     'app_error_shown'
@@ -48,6 +49,7 @@ const EVENT_PARAMS = new Set([
     'issue_count',
     'issue_count_bucket',
     'issue_kind',
+    'issue_type_mix',
     'lane_mode',
     'link_type',
     'method',

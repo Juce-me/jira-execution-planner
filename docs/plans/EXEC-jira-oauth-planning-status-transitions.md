@@ -443,7 +443,7 @@ Expected: pass.
 - Modify: `tests/test_analytics_events.js`
 - Modify: `tests/test_analytics_source_guards.js`
 
-- [ ] **Step 4.1: Add failing API wrapper tests**
+- [x] **Step 4.1: Add failing API wrapper tests**
 
 Add tests proving:
 
@@ -459,7 +459,7 @@ node --test tests/test_frontend_api_source_guards.js
 
 Expected before implementation: fails because `jiraIssueApi.js` does not exist.
 
-- [ ] **Step 4.2: Implement API wrappers**
+- [x] **Step 4.2: Implement API wrappers**
 
 Create `frontend/src/api/jiraIssueApi.js`:
 
@@ -495,7 +495,7 @@ export async function transitionIssues(backendUrl, payload, { signal } = {}) {
 }
 ```
 
-- [ ] **Step 4.3: Add analytics contract tests**
+- [x] **Step 4.3: Add analytics contract tests**
 
 Add `jira_issue_transitions` to the `api_result` allowlist and add `issue_status_action` as a canonical low-cardinality user event:
 
@@ -511,11 +511,11 @@ result = success | partial | failure
 
 If `issue_type_mix`, `source_surface`, or `status_bucket` is new, add it to `EVENT_PARAMS` with safe enum validation and tests. Do not add custom dimensions or GTM triggers.
 
-- [ ] **Step 4.4: Update analytics docs**
+- [x] **Step 4.4: Update analytics docs**
 
 In `docs/README_ANALYTICS.md`, add the `issue_status_action` row for Catch Up and Planning status changes. Update the `api_result` row or no-event allowlist to state `api_surface=jira_issue_transitions` sends only `feature_name=eng_status_transitions`, source surface, status buckets, issue type mix, result, count buckets, and duration buckets.
 
-- [ ] **Step 4.5: Verify API and analytics**
+- [x] **Step 4.5: Verify API and analytics**
 
 Run:
 

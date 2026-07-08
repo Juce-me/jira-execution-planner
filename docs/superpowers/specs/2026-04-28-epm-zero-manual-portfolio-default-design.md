@@ -46,7 +46,7 @@ The product principle for this work is: the user should do almost nothing. EPM d
 
 `docs/superpowers/specs/2026-04-27-epm-multi-project-rollup-design.md` already designs the all-Projects portfolio rollup endpoint and render branch. This design adopts that default behavior as part of the product goal instead of treating it as optional future work.
 
-`postmortem/MRT012-epm-active-sprint-value-hidden.md` documents the Active sprint visibility bug. This design treats sprint visibility as a prerequisite for a correct EPM Active portfolio view.
+`docs/postmortem/MRT012-epm-active-sprint-value-hidden.md` documents the Active sprint visibility bug. This design treats sprint visibility as a prerequisite for a correct EPM Active portfolio view.
 
 ## Atlassian Home Tag Source
 

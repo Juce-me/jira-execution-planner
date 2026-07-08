@@ -38,6 +38,7 @@ Postmortems serve to:
 | [MRT019](./MRT019-ready-to-close-truncated-child-scan.md) | Ready-to-Close Truncated Child Scan | 2026-06-21 | Medium | Resolved | Silent 250-cap truncation let Ready-to-Close fire on epics with open future-sprint children; fixed with an authoritative open-child count |
 | [MRT020](./MRT020-project-track-filter-bar-bespoke-controls.md) | Project Track Filter Bar Reinvented Existing Controls | 2026-07-01 | Medium | Resolved | New tab's Exclusions group used bespoke CSS/markup instead of existing control patterns; clipped heading + label overflow overlapped MODE; a bounding-box-only Playwright check passed while the render was broken. Fixed by reusing shell.css control typography + element-level render assertions |
 | [MRT021](./MRT021-project-track-segmented-control-override.md) | Project Track Segmented Controls Overridden Instead of Reused | 2026-07-02 | Medium | Resolved | Recurrence of MRT020 on the sibling controls: Capacity/Mode reused SegmentedControl but a local CSS override forced wrap/auto-height and they missed the `eng-mode-control` class; shipped through a "READY TO MERGE" sign-off. Introduced by Claude, fixed by Codex (`c3fe99c`) with `eng-mode-control` reuse + single-row/fixed-height Playwright assertions |
+| [MRT022](./MRT022-agent-branded-branch-names.md) | Agent-Branded Branch Names Ignored Git Conventions | 2026-07-08 | Low | Resolved | Sessions repeatedly started on auto-generated `claude/*` branches despite AGENTS.md forbidding tool branding and requiring typed branch prefixes; fixed with a session-start rename rule in AGENTS.md section 11 |
 
 ## Postmortem Template
 
@@ -91,8 +92,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 21
-- **Metadata complete (Date/Severity/Status)**: 21 (MRT001-MRT021)
+- **Total postmortems**: 22
+- **Metadata complete (Date/Severity/Status)**: 22 (MRT001-MRT022)
 
 ## Common Themes
 
@@ -129,7 +130,7 @@ Across all postmortems, key actions needed:
 When creating a new postmortem:
 
 1. **Review related postmortems first**: Apply relevant lessons before touching related code
-2. **Follow local instructions**: Use [postmortem/AGENTS.md](./AGENTS.md) for directory-specific agent guidance
+2. **Follow local instructions**: Use [docs/postmortem/AGENTS.md](./AGENTS.md) for directory-specific agent guidance
 3. **Name it sequentially**: `MRTXXX-short-title.md` (oldest first, then increment)
 4. **Use the template** above
 5. **Be blameless**: Focus on systems, not people
@@ -137,7 +138,7 @@ When creating a new postmortem:
 7. **Be verified**: Include how the fix or conclusion was validated
 8. **Be actionable**: List concrete action items
 9. **Update this README**: Add entry to the table whenever adding or renaming a postmortem
-10. **Keep docs aligned**: Update `README.md`, `AGENTS.md`, and `postmortem/README.md` together when workflow or structure changes
+10. **Keep docs aligned**: Update `README.md`, `AGENTS.md`, and `docs/postmortem/README.md` together when workflow or structure changes
 
 ## Related Documentation
 
@@ -150,5 +151,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-06-12*
-*Total Postmortems: 18*
+*Last Updated: 2026-07-08*
+*Total Postmortems: 22*

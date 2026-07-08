@@ -26,7 +26,8 @@ class ContainerPackagingTests(unittest.TestCase):
         for required in (
             "COPY backend ./backend",
             "COPY planning ./planning",
-            "COPY jira_server.py jira-dashboard.html favicon.ico epm-burst.svg ./",
+            "COPY jira_server.py jira-dashboard.html ./",
+            "COPY assets ./assets",
             "RUN python -m pip install --no-cache-dir -e .",
         ):
             self.assertIn(required, dockerfile)

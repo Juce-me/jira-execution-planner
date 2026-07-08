@@ -29,7 +29,8 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 COPY pyproject.toml README.md LICENSE ./
 COPY backend ./backend
 COPY planning ./planning
-COPY jira_server.py jira-dashboard.html favicon.ico epm-burst.svg ./
+COPY jira_server.py jira-dashboard.html ./
+COPY assets ./assets
 RUN python -m pip install --no-cache-dir -e .
 
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist

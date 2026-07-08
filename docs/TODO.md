@@ -1,11 +1,5 @@
 # TODO
 
-## Now
-- Scenario planner: add versioned draft history for saved overrides
-  - Keep one active draft per sprint + team/group scope.
-  - Save prior draft snapshots so the user can reload or roll back.
-  - Add rollback/reload from saved scenario history before any Jira write-back.
-
 ## Config / Admin Follow-ups
 - Access model: config tabs/settings admin-only; group config remains editable for non-admin users
 

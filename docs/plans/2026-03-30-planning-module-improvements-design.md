@@ -25,7 +25,7 @@ The current planner already persists some state, but it does so inconsistently:
 
 That split does not match the planning workflow. Users are making a plan for one sprint within one selected group, and they expect that plan to survive a refresh without leaking into other scopes.
 
-The sticky layering guardrail is [MRT009](../../postmortem/MRT009-sticky-layering-regressions.md):
+The sticky layering guardrail is [MRT009](../../docs/postmortem/MRT009-sticky-layering-regressions.md):
 - sticky elements must share one offset model
 - overlays must not sit underneath sticky panels
 - any sticky change must be validated in Catch Up, Planning, and Scenario modes

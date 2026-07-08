@@ -131,9 +131,9 @@ Expected:
 Run:
 
 ```bash
-sed -n '1,220p' postmortem/MRT001-missing-teams-stats.md
-sed -n '1,220p' postmortem/MRT007-bundled-frontend-regression.md
-sed -n '1,220p' postmortem/MRT017-chart-hover-readout-placement.md
+sed -n '1,220p' docs/postmortem/MRT001-missing-teams-stats.md
+sed -n '1,220p' docs/postmortem/MRT007-bundled-frontend-regression.md
+sed -n '1,220p' docs/postmortem/MRT017-chart-hover-readout-placement.md
 ```
 
 Carry these prevention checks into execution:

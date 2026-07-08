@@ -18,7 +18,7 @@ The previous sticky-search branch is not a safe implementation base:
 - its only branch-only change is unrelated `TODO.md`
 - its older sticky-search approach used a separate sticky shell and oversized `z-index` values
 
-The relevant guardrail is [MRT009](../../postmortem/MRT009-sticky-layering-regressions.md):
+The relevant guardrail is [MRT009](../../docs/postmortem/MRT009-sticky-layering-regressions.md):
 - sticky layers must share one offset model
 - ad hoc sticky search containers and independent `top` values caused overlap regressions
 - any header compaction change must be validated in Catch Up, Planning, and Scenario modes

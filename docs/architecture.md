@@ -1,5 +1,7 @@
 # Project Bootstrap
 
+> Historical bootstrap notes. Root AGENTS.md is the source of truth for agent behavior.
+
 You are working on jira-execution-planner.
 
 This is a local Jira execution dashboard. It serves a committed React bundle from

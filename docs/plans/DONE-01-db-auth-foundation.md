@@ -43,7 +43,7 @@ This phase does not include:
 
 - `docs/plans/SUPPORT-atlassian-oauth-auth.md` defines the first OAuth slice and intentionally defers production multi-user persistence.
 - `docs/features/epm-view.md` documents current EPM config shape and exact-label rollup behavior that later phases must preserve.
-- `postmortem/MRT010-startup-api-load-fanout-and-overscoped-payloads.md` and `postmortem/MRT015-epm-first-load-home-fanout-overfetch.md` show why database-backed bootstrapping must stay compact and measured.
+- `docs/postmortem/MRT010-startup-api-load-fanout-and-overscoped-payloads.md` and `docs/postmortem/MRT015-epm-first-load-home-fanout-overfetch.md` show why database-backed bootstrapping must stay compact and measured.
 
 ## Blocker
 

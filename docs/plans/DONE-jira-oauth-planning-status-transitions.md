@@ -1,5 +1,7 @@
 # Jira OAuth ENG Status Transitions Implementation Plan
 
+> **Status:** Done. Executed in [PR #100](https://github.com/Juce-me/jira-execution-planner/pull/100). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let ENG Catch Up and Planning users change Jira status for Epics, Stories, and Subtasks through signed-in-user Jira OAuth, while keeping EPM Jira/Home-backed issue surfaces view-only.
@@ -892,12 +894,26 @@ correct `401 auth_required` for a no-session OAuth request.
 
 ## Current Accuracy
 
-Accurate. The plan describes the shipped implementation. One out-of-scope
-Playwright spec (`tests/ui/eng_alerts_panel_summary.spec.js`) fails on this
-branch; it is unrelated to this work (this branch changed no alerts files) and
-stems from `origin/main` having advanced past the branch base with Needs-Stories
-alert changes (PRs #96-98). It is not part of this plan's required verification
-and will resolve on rebase/merge onto current `main`.
+Accurate. The plan describes the shipped implementation, merged to `main` as
+[PR #100](https://github.com/Juce-me/jira-execution-planner/pull/100).
+
+Post-verification fix before merge: CI (`JIRA_AUTH_MODE=basic`) caught 6
+`IssueTransitionRouteTests` write-route failures (`403 csrf_required`) that a
+local `.env` with `JIRA_AUTH_MODE=atlassian_oauth` had been masking. The
+token-bound CSRF token was minted before the tests patched `JIRA_AUTH_MODE`,
+so it was bound to the wrong session mode. Fixed in `baf0e91` by minting the
+token inside an `atlassian_oauth` patch in the shared `_csrf_token()` helper.
+Reproduced CI's exact env locally afterward (backend suite 999 OK, endpoint
+security 58 OK, frontend unit 472 pass, `frontend/dist` clean) before
+re-pushing; both `verify-container` and `verify-frontend-build` passed on the
+final commit.
+
+The out-of-scope Playwright spec (`tests/ui/eng_alerts_panel_summary.spec.js`)
+still fails 2/3 tests on current `main` post-merge — confirmed unrelated: none
+of this plan's 16 commits touched that spec or `EngAlertsPanel.jsx`; the only
+change to that file arrived via merging `origin/main`'s pre-existing PR #98
+Needs-Stories work. Pre-existing, not part of this plan's required
+verification.
 
 ## Plan Self-Review
 

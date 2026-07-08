@@ -22,6 +22,7 @@ const API_SURFACES = new Set([
     'auth_status',
     'home_connection',
     'eng_tasks',
+    'eng_subtasks',
     'jira_issue_transitions',
     'stats_source',
     'scenario',

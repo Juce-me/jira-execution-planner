@@ -594,6 +594,44 @@ test('api result helper emits explicit allowlisted API surfaces only', async () 
     });
 });
 
+test('api result helper emits eng_subtasks surface for story subtask loads', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    // Mirrors engApi.fetchStorySubtasks -> trackedFetch('eng_subtasks', ..., { featureName: 'eng' }).
+    // Guards the allowlist entry: trackApiResult throws on unknown surfaces and
+    // safelyTrackApiResult swallows that throw in production, so a missing
+    // API_SURFACES entry loses the event without any visible failure.
+    trackApiResult('eng_subtasks', {
+        featureName: 'eng',
+        method: 'GET',
+        status: 200,
+        durationMs: 1250,
+        cacheState: 'hit'
+    });
+
+    assert.equal(pushed.length, 1);
+    assert.deepEqual(pushed[0], {
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'api_result',
+        feature_name: 'eng',
+        api_surface: 'eng_subtasks',
+        method: 'GET',
+        status_bucket: '2xx',
+        result: 'success',
+        duration_bucket: '1_3s',
+        duration_ms: 1250,
+        cache_state: 'hit'
+    });
+});
+
 test('tracked fetch does not let analytics validation failures affect API fetch', async () => {
     const { trackedFetch } = await loadHttp();
     resetDom();

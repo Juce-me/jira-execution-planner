@@ -448,7 +448,7 @@ git commit -m "docs: align AGENTS, README, and plan index with new repo layout"
 **Interfaces:**
 - Consumes: `docs/postmortem/` layout from Task 2. Follow `docs/postmortem/AGENTS.md` rules: blameless, sequential ID, index update.
 
-- [ ] **Step 1: Write `docs/postmortem/MRT022-agent-branded-branch-names.md`**
+- [x] **Step 1: Write `docs/postmortem/MRT022-agent-branded-branch-names.md`**
 
 Author it with the standard sections (Impact, Root Cause, Timeline, Resolution, Verification, Lessons Learned, Prevention, Action Items) from these facts, all of which are verified:
 
@@ -461,7 +461,7 @@ Author it with the standard sections (Impact, Root Cause, Timeline, Resolution, 
 
 Do not include real Jira issue keys, local absolute paths, emails, or tool marketing language beyond naming the branch pattern itself.
 
-- [ ] **Step 2: Add the learning line to root `AGENTS.md` section 11**
+- [x] **Step 2: Add the learning line to root `AGENTS.md` section 11**
 
 Append to the Project Learnings list:
 
@@ -469,7 +469,7 @@ Append to the Project Learnings list:
 - At session start, before the first commit, check `git branch --show-current`; if the branch is auto-generated or agent-branded (e.g. `claude/*`), rename it to `feature/`|`bugfix/`|`improvement/`|`docs/` + kebab-case summary (see docs/postmortem/MRT022-agent-branded-branch-names.md).
 ```
 
-- [ ] **Step 3: Append the index row to `docs/postmortem/README.md`**
+- [x] **Step 3: Append the index row to `docs/postmortem/README.md`**
 
 Add to the bottom of the postmortem table, matching the existing column format:
 
@@ -477,7 +477,7 @@ Add to the bottom of the postmortem table, matching the existing column format:
 | [MRT022](./MRT022-agent-branded-branch-names.md) | Agent-Branded Branch Names Ignored Git Conventions | 2026-07-08 | Low | Resolved | Sessions repeatedly started on auto-generated `claude/*` branches despite AGENTS.md forbidding tool branding and requiring typed branch prefixes; fixed with a session-start rename rule in AGENTS.md section 11 |
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/postmortem/MRT022-agent-branded-branch-names.md docs/postmortem/README.md AGENTS.md

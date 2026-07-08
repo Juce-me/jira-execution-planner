@@ -345,7 +345,7 @@ Expected: pass.
 - Modify: `tests/test_oauth_eng_routes.py`
 - Modify: `tests/test_backend_route_source_guards.py`
 
-- [ ] **Step 3.1: Add route tests before implementation**
+- [x] **Step 3.1: Add route tests before implementation**
 
 Cover:
 
@@ -367,7 +367,7 @@ Run:
 
 Expected before route implementation: fails because the routes do not exist.
 
-- [ ] **Step 3.2: Add focused cache invalidation helper**
+- [x] **Step 3.2: Add focused cache invalidation helper**
 
 Reuse the existing cache clearers instead of re-typing the task/scenario clearing (which would also add lines to the zero-headroom `jira_server.py`). `clear_auth_sensitive_caches(reason=...)` (`jira_server.py:1857`) already clears `TASKS_CACHE`, `MISSING_INFO_CACHE`, `DEPENDENCIES_CACHE`, `EPIC_COHORT_CACHE`, `EXCLUDED_CAPACITY_STATS_SOURCE_CACHE`, `EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE`, and resets `SCENARIO_CACHE`. `clear_epm_caches()` (`jira_server.py:1846`) clears only the EPM caches. Neither clears `SUBTASKS_CACHE`.
 
@@ -388,7 +388,7 @@ If adding this helper to `jira_server.py` would exceed its line budget, define i
 
 Note: these clearers wipe caches for all users/workspaces, so a successful transition in hosted multi-user mode forces a refetch on the next read for every user. This matches existing auth-context-change behavior and is correctness-safe, but keep the Task 2 fan-out cap in mind so a batch does not amplify the refetch cost (MRT010).
 
-- [ ] **Step 3.3: Implement routes**
+- [x] **Step 3.3: Implement routes**
 
 Add routes to `backend/routes/eng_routes.py`:
 
@@ -413,7 +413,7 @@ Route rules:
 - Return sanitized `502` only for unexpected upstream failure that prevents per-issue results.
 - On write success with `succeeded > 0`, call `clear_jira_issue_status_caches()`.
 
-- [ ] **Step 3.4: Add source guards**
+- [x] **Step 3.4: Add source guards**
 
 Guard that:
 
@@ -421,7 +421,7 @@ Guard that:
 - `backend/services/jira_issue_transitions.py` does not import `requests`, `backend.epm`, `service_integration`, or call `build_jira_headers`.
 - `backend/security/policy.py` has the exact two endpoint policies.
 
-- [ ] **Step 3.5: Verify backend routes**
+- [x] **Step 3.5: Verify backend routes**
 
 Run:
 

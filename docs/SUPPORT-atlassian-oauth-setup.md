@@ -36,11 +36,16 @@ Open the app's `Permissions` page and add/configure these APIs.
 | --- | --- | --- |
 | User identity API | `read:me` | Backend calls `https://api.atlassian.com/me` after callback. |
 | Jira API | `read:jira-work` | Jira issue, project, field, label, component, and search reads. |
+| Jira API | `write:jira-work` | Issue status transition writes for ENG Catch Up and Planning. |
 | Jira API | `read:jira-user` | User/profile fields returned by issue and team-related reads. |
 | Jira Software API | `read:board-scope:jira-software` | `/rest/agile/1.0/board` board discovery. |
 | Jira Software API | `read:sprint:jira-software` | `/rest/agile/1.0/board/{boardId}/sprint` sprint discovery. |
 | Jira API | `read:project:jira` | Jira Software board APIs require project read scope. |
 | OAuth authorize URL only | `offline_access` | Refresh tokens for local OAuth sessions; this does not appear as a separate API row. |
+
+### Write Scope Forces Re-Auth For Every Signed-In User
+
+`write:jira-work` is part of the default `ATLASSIAN_SCOPES` string, not an opt-in add-on for users who need it. The existing missing-scope check compares each session's granted scopes against that full default set, so promoting this scope forces every already-signed-in user — including read-only users who never attempt a status transition — to re-authenticate on their next load through `/login?reason=missing_scope`, not only users performing a write. Plan the rollout with that global re-consent in mind.
 
 ### Refresh Tokens
 

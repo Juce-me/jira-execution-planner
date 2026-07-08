@@ -33,7 +33,12 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # renders the section with loading/error/truncated states (Epic mode only).
     # feat/stats-project-track-analytics wires stats_action/chart_action/filter_changed
     # calls into the Capacity side, Mode, and exclusion-toggle handlers (+27 lines).
-    "frontend/src/dashboard.jsx": 15729,
+    # docs/jira-oauth-planning-status-transitions wires the ENG Catch Up/Planning status-pill
+    # transition UI: instantiates useEngStatusTransitions, threads statusTransition* props into
+    # renderEpicBlock + IssueCard + PlanningActionBar, adds the Settings-modal gate, and the
+    # transition-success refresh (task lists + per-story subtask refetch). Menu/state logic
+    # lives in StatusTransitionMenu.jsx + the eng hook/utils, so only wiring lands here (+137).
+    "frontend/src/dashboard.jsx": 15866,
 }
 
 

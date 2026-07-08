@@ -4525,6 +4525,10 @@ button.status-pill:focus-visible {
   box-shadow: none;
   background: transparent;
 }
+.task-item:has(.status-transition-menu),
+.epic-header:has(.status-transition-menu) {
+  z-index: 121;
+}
 .status-transition-menu {
   position: absolute;
   top: calc(100% + 6px);

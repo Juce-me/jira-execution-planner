@@ -54,6 +54,17 @@
             background: transparent;
         }
 
+        /* The open menu is position:absolute inside its .task-item / .epic-header, whose own
+           stacking context (position:relative + the task-appear animation) traps the menu's
+           z-index beneath later sibling cards — so a following card would intercept clicks on
+           the menu's submit button. Lift the card/header that owns an open menu above its
+           siblings and the sticky epic/planning layers, mirroring the established
+           .view-selector:has(.sprint-dropdown-panel) pattern. */
+        .task-item:has(.status-transition-menu),
+        .epic-header:has(.status-transition-menu) {
+            z-index: 121;
+        }
+
         .status-transition-menu {
             position: absolute;
             top: calc(100% + 6px);

@@ -179,9 +179,9 @@ After every session where the agent did something wrong:
 For significant misses, regressions, or repeated mistakes:
 
 - Review existing postmortems before touching related code.
-- Follow `postmortem/AGENTS.md` when creating or updating postmortems.
+- Follow `docs/postmortem/AGENTS.md` when creating or updating postmortems.
 - Follow `docs/AGENTS.md` when creating or updating agent work artifacts such as feature plans, prompt notes, bugfix investigations, or execution summaries.
-- Keep `README.md`, `AGENTS.md`, and `postmortem/README.md` aligned when workflow or structure changes.
+- Keep `README.md`, `AGENTS.md`, and `docs/postmortem/README.md` aligned when workflow or structure changes.
 
 Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Under 300 is a good ceiling. Over 500 and you are fighting your own config.
 
@@ -216,7 +216,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Frontend source: `frontend/src/`, `jira-dashboard.html`
 - Generated frontend output: `frontend/dist/`
 - Tests: `tests/`, `tests/ui/`
-- Docs: `docs/features/`, `docs/AGENTS.md`, `postmortem/`
+- Docs: `docs/features/`, `docs/AGENTS.md`, `docs/postmortem/`
 
 ### Conventions
 - Python: 4-space indentation, `snake_case` functions, `CapWords` classes
@@ -232,7 +232,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - User-visible feature changes must include analytics impact review: `trigger`, `event_type`, canonical `event_name`, `feature_name` or `page_name`, typed params, tests, `docs/README_ANALYTICS.md` taxonomy updates, and GA4 runbook updates when relevant; app-owned analytics must keep the two-trigger GTM dataLayer contract (`pageview`/`userevent`), avoid bulk custom-dimension registration, use `GA4_ENABLED` as the app-level transport gate without in-app consent UI, and never use `event_group`, `ga4_event_name`, Universal Analytics fields, or boolean presence dimensions such as `has_*`; if no event is needed, document the allowlist reason.
 
 ### Repo-specific constraints
-- Review relevant postmortems before making related changes. Add new postmortems under `postmortem/` as `MRTXXX-short-title.md` and update `postmortem/README.md`.
+- Review relevant postmortems before making related changes. Add new postmortems under `docs/postmortem/` as `MRTXXX-short-title.md` and update `docs/postmortem/README.md`.
 - Store Jira credentials in `.env`; never commit secrets.
 - Server-side Jira and Home/Townsquare API-token credentials in `.env` are dedicated service-account credentials; do not ask individual users to create personal Atlassian API tokens for shared app auth.
 - Service-account API tokens for `home_townsquare_basic` and `jira_basic` belong only in `service_integration_tokens`; never store them in normal-user `auth_tokens`.

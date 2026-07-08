@@ -55,7 +55,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - `.gitignore` - Git ignore file (keeps secrets safe)
 - `requirements.txt` - Python dependencies
 - `AGENTS.md` - Contributor guide and workflow conventions
-- `postmortem/` - Postmortems and incident learnings (index in `postmortem/README.md`)
+- `docs/postmortem/` - Postmortems and incident learnings (index in `docs/postmortem/README.md`)
 
 ## 🔧 Setup
 
@@ -473,7 +473,7 @@ jira-dashboard/
 │   └── features/           # User-facing feature guides
 ├── planning/               # Scenario planner core logic
 ├── tests/                  # Python, Node, source-guard, and UI tests
-├── postmortem/             # Postmortems and incident learnings
+├── docs/postmortem/        # Postmortems and incident learnings
 ├── requirements.txt        # Python dependencies
 ├── .env.example           # Environment variables template
 ├── .gitignore             # Git ignore file (includes .env and cache)
@@ -504,10 +504,10 @@ The dashboard uses a few different cache layers to keep Jira traffic reasonable:
 
 ## 📚 Documentation & Postmortems
 
-- Keep `README.md`, `AGENTS.md`, and `postmortem/README.md` aligned with structural or workflow changes.
+- Keep `README.md`, `AGENTS.md`, and `docs/postmortem/README.md` aligned with structural or workflow changes.
 - Agent-created work artifacts live under `docs/agents/` and follow [docs/AGENTS.md](docs/AGENTS.md).
-- Postmortems live in `postmortem/` and follow `MRTXXX-short-title.md` naming in creation order (oldest first).
-- Postmortem-specific agent instructions live in [postmortem/AGENTS.md](postmortem/AGENTS.md).
+- Postmortems live in `docs/postmortem/` and follow `MRTXXX-short-title.md` naming in creation order (oldest first).
+- Postmortem-specific agent instructions live in [docs/postmortem/AGENTS.md](docs/postmortem/AGENTS.md).
 - Capture misses and fixes in postmortems and update the index when adding one.
 
 ## 🤝 Contributing

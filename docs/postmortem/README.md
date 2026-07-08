@@ -129,7 +129,7 @@ Across all postmortems, key actions needed:
 When creating a new postmortem:
 
 1. **Review related postmortems first**: Apply relevant lessons before touching related code
-2. **Follow local instructions**: Use [postmortem/AGENTS.md](./AGENTS.md) for directory-specific agent guidance
+2. **Follow local instructions**: Use [docs/postmortem/AGENTS.md](./AGENTS.md) for directory-specific agent guidance
 3. **Name it sequentially**: `MRTXXX-short-title.md` (oldest first, then increment)
 4. **Use the template** above
 5. **Be blameless**: Focus on systems, not people
@@ -137,7 +137,7 @@ When creating a new postmortem:
 7. **Be verified**: Include how the fix or conclusion was validated
 8. **Be actionable**: List concrete action items
 9. **Update this README**: Add entry to the table whenever adding or renaming a postmortem
-10. **Keep docs aligned**: Update `README.md`, `AGENTS.md`, and `postmortem/README.md` together when workflow or structure changes
+10. **Keep docs aligned**: Update `README.md`, `AGENTS.md`, and `docs/postmortem/README.md` together when workflow or structure changes
 
 ## Related Documentation
 

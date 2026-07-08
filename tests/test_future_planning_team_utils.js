@@ -222,29 +222,11 @@ test('future planning team infos use every matched team label before raw jira te
     });
 });
 
-test('buildNeedsStoriesTeamJql builds a semantic epic filter for the team and sprint', () => {
-    return import('../frontend/src/futurePlanningTeamUtils.mjs').then(({ buildNeedsStoriesTeamJql }) => {
-        assert.equal(
-            buildNeedsStoriesTeamJql({ teamLabel: 'team_alpha_label', selectedSprint: '34626', selectedSprintName: '2026Q3' }),
-            'issuetype = Epic AND labels = "team_alpha_label" AND (Sprint = 34626 OR labels = "2026Q3") AND status not in ("Done","Killed","Incomplete")'
-        );
-    });
-});
-
-test('buildNeedsStoriesTeamJql uses only the sprint id clause when no sprint name is known', () => {
-    return import('../frontend/src/futurePlanningTeamUtils.mjs').then(({ buildNeedsStoriesTeamJql }) => {
-        assert.equal(
-            buildNeedsStoriesTeamJql({ teamLabel: 'team_alpha_label', selectedSprint: '34626', selectedSprintName: '' }),
-            'issuetype = Epic AND labels = "team_alpha_label" AND Sprint = 34626 AND status not in ("Done","Killed","Incomplete")'
-        );
-    });
-});
-
-test('buildNeedsStoriesTeamJql returns empty string without a team label', () => {
-    return import('../frontend/src/futurePlanningTeamUtils.mjs').then(({ buildNeedsStoriesTeamJql }) => {
-        assert.equal(
-            buildNeedsStoriesTeamJql({ teamLabel: '', selectedSprint: '34626', selectedSprintName: '2026Q3' }),
-            ''
-        );
+test('futurePlanningTeamUtils no longer exports the semantic needs-stories JQL builder', () => {
+    return import('../frontend/src/futurePlanningTeamUtils.mjs').then((mod) => {
+        // A label/sprint JQL cannot reproduce the client-side alert list (per-team
+        // story coverage, dismissed alerts, team-field fallback routing), so the
+        // team link must come from the rendered epic keys instead.
+        assert.equal(mod.buildNeedsStoriesTeamJql, undefined);
     });
 });

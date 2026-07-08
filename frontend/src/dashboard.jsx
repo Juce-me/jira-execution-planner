@@ -89,7 +89,7 @@ import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExp
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { buildNeedsStoriesTeamEntries, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
-import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel, buildNeedsStoriesTeamJql } from './futurePlanningTeamUtils.mjs';
+import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
 import {
     fetchMissingPlanningInfo as requestMissingPlanningInfo,
     fetchSprints as requestSprints,
@@ -11367,17 +11367,6 @@ import {
                 return `${jiraUrl}/issues/?jql=${jql}`;
             };
 
-            const buildNeedsStoriesTeamLink = (team) => {
-                if (!jiraUrl || !team) return '';
-                const jql = buildNeedsStoriesTeamJql({
-                    teamLabel: activeGroupTeamLabels?.[team.id] || '',
-                    selectedSprint,
-                    selectedSprintName: selectedSprintInfo?.name || ''
-                });
-                if (!jql) return '';
-                return `${jiraUrl}/issues/?jql=${encodeURIComponent(jql)}`;
-            };
-
             const hasStoryPoints = (task) => {
                 const sp = task.fields.customfield_10004;
                 if (sp === null || sp === undefined || sp === '') {
@@ -14986,7 +14975,6 @@ import {
                                                 blockedAlertTeams,
                                                 blockedTasks,
                                                 buildKeyListLink,
-                                                buildNeedsStoriesTeamLink,
                                                 buildTeamStatusLink,
                                                 consolidatedMissingStories,
                                                 dismissAlertItem,

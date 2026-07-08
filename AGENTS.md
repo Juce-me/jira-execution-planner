@@ -215,6 +215,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Backend/API: `jira_server.py`, `backend/epm/`, `backend/routes/`, `planning/`
 - Frontend source: `frontend/src/`, `jira-dashboard.html`
 - Generated frontend output: `frontend/dist/`
+- Static assets: `assets/`
 - Tests: `tests/`, `tests/ui/`
 - Docs: `docs/features/`, `docs/AGENTS.md`, `docs/postmortem/`
 
@@ -230,6 +231,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Agent work artifacts under `docs/agents/` use `YYYY-MM-DD-status-summary.md` per `docs/AGENTS.md`.
 - Keep `AGENTS.md`, `README.md`, and other contributor docs aligned when workflow or structure changes
 - User-visible feature changes must include analytics impact review: `trigger`, `event_type`, canonical `event_name`, `feature_name` or `page_name`, typed params, tests, `docs/README_ANALYTICS.md` taxonomy updates, and GA4 runbook updates when relevant; app-owned analytics must keep the two-trigger GTM dataLayer contract (`pageview`/`userevent`), avoid bulk custom-dimension registration, use `GA4_ENABLED` as the app-level transport gate without in-app consent UI, and never use `event_group`, `ga4_event_name`, Universal Analytics fields, or boolean presence dimensions such as `has_*`; if no event is needed, document the allowlist reason.
+- Keep the repo root to entry points and packaging/toolchain configs; images belong in `assets/`, scripts in `scripts/`, docs (including `TODO.md` and postmortems) under `docs/`
 
 ### Repo-specific constraints
 - Review relevant postmortems before making related changes. Add new postmortems under `docs/postmortem/` as `MRTXXX-short-title.md` and update `docs/postmortem/README.md`.

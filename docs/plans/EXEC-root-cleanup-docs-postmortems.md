@@ -373,7 +373,7 @@ git commit -m "chore(repo): remove quickstart duplicate, move TODO and architect
 **Interfaces:**
 - Produces: docs that describe the new layout exactly; no reference anywhere to root-level `postmortem/`, `install.sh`, `TODO.md`, `QUICKSTART_ENV.txt`, `epm-burst.svg`, `favicon.ico`, or `project-context/`.
 
-- [ ] **Step 1: Update root `AGENTS.md` section 10 Layout**
+- [x] **Step 1: Update root `AGENTS.md` section 10 Layout**
 
 Change:
 
@@ -393,7 +393,7 @@ Change:
 - Docs: `docs/features/`, `docs/AGENTS.md`, `docs/postmortem/`
 ```
 
-- [ ] **Step 2: Verify the remaining root `AGENTS.md` strings**
+- [x] **Step 2: Verify the remaining root `AGENTS.md` strings**
 
 ```bash
 grep -n 'postmortem\|install\.sh\|QUICKSTART\|project-context\|TODO\.md' AGENTS.md
@@ -401,7 +401,7 @@ grep -n 'postmortem\|install\.sh\|QUICKSTART\|project-context\|TODO\.md' AGENTS.
 
 Expected: every postmortem mention says `docs/postmortem/...`; the bootstrap command says `./scripts/install.sh`; no other hits.
 
-- [ ] **Step 3: Add the root-hygiene rule to root `AGENTS.md` section 10 Conventions**
+- [x] **Step 3: Add the root-hygiene rule to root `AGENTS.md` section 10 Conventions**
 
 Append one line to the Conventions list:
 
@@ -409,17 +409,17 @@ Append one line to the Conventions list:
 - Keep the repo root to entry points and packaging/toolchain configs; images belong in `assets/`, scripts in `scripts/`, docs (including `TODO.md` and postmortems) under `docs/`
 ```
 
-- [ ] **Step 4: Update `README.md` structure surfaces**
+- [x] **Step 4: Update `README.md` structure surfaces**
 
 - Repository guide list (~line 54–58): `install.sh` entry → `scripts/install.sh`; `postmortem/` entry → `docs/postmortem/` (index in `docs/postmortem/README.md`); remove any `QUICKSTART_ENV.txt`/`TODO.md` root entries; add `assets/` if the list enumerates root items.
 - Project structure tree (~line 476): move `postmortem/` under `docs/`, add `assets/`, show `scripts/install.sh`.
 - Contribution notes (~lines 507–511): confirm Task 2 sed produced `docs/postmortem/...` in all three lines.
 
-- [ ] **Step 5: Verify `docs/postmortem/AGENTS.md` reads correctly after the sed**
+- [x] **Step 5: Verify `docs/postmortem/AGENTS.md` reads correctly after the sed**
 
 Title should be `# docs/postmortem/AGENTS.md`; index-maintenance bullet should say `Update docs/postmortem/README.md.`. Fix by hand if the sed produced anything else.
 
-- [ ] **Step 6: Add this plan to `docs/plans/README.md`**
+- [x] **Step 6: Add this plan to `docs/plans/README.md`**
 
 Append an entry in the style of the existing index, under the most fitting section (or a short `## Repo Hygiene` section at the end):
 
@@ -430,7 +430,7 @@ Append an entry in the style of the existing index, under the most fitting secti
   - Root-folder cleanup: icons to `assets/`, `install.sh` to `scripts/`, postmortems to `docs/postmortem/`, redundant root docs removed, AGENTS/README aligned.
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A

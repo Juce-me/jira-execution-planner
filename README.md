@@ -48,6 +48,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - `jira_server.py` - Python Flask backend server
 - `jira-dashboard.html` - Frontend dashboard page
 - `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
+- `assets/` - Static assets (icons, images)
 - `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
 - `docs/AGENTS.md` - Rules for agent-created work artifacts
 - `.env.example` - Template for environment variables
@@ -470,14 +471,15 @@ jira-dashboard/
 │   └── dist/               # Compiled JS + CSS output (committed)
 ├── docs/                   # Documentation
 │   ├── plans/              # EXEC/DONE/FUTURE/SUPPORT/GATE plans
-│   └── features/           # User-facing feature guides
+│   ├── features/           # User-facing feature guides
+│   └── postmortem/         # Postmortems and incident learnings
 ├── planning/               # Scenario planner core logic
 ├── tests/                  # Python, Node, source-guard, and UI tests
-├── docs/postmortem/        # Postmortems and incident learnings
+├── assets/                 # Static assets (icons, images)
 ├── requirements.txt        # Python dependencies
 ├── .env.example           # Environment variables template
 ├── .gitignore             # Git ignore file (includes .env and cache)
-├── install.sh             # Installation script
+├── scripts/install.sh     # Installation script
 ├── README.md              # This file
 ├── .env                   # Your credentials (NOT in git!)
 ├── dashboard-config.json  # Dashboard settings (auto-generated, NOT in git!)

@@ -145,7 +145,7 @@ make preflight
 .venv/bin/python jira_server.py
 ```
 
-After `./install.sh` or `python -m pip install -e .`, the equivalent console command is:
+After `./scripts/install.sh` or `python -m pip install -e .`, the equivalent console command is:
 
 ```bash
 .venv/bin/jira-execution-planner

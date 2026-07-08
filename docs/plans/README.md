@@ -338,3 +338,8 @@ Use this section to avoid treating missing historical artifacts as current work:
 - `DONE-04` supersedes that earlier service-backed EPM read assumption for DB/OAuth mode: EPM Home reads use the current user's connected `atlassian_user_api_token`, and that token is never a shared service credential.
 - Commit each completed task with the commit message specified in the plan.
 - Rename an `EXEC-*` plan to `DONE-*` only after implementation is completed, verified, and accepted or merged, then add a top status note with the execution commit or PR.
+
+## Repo Hygiene
+
+- `EXEC-root-cleanup-docs-postmortems.md`
+  - Root-folder cleanup: icons to `assets/`, `install.sh` to `scripts/`, postmortems to `docs/postmortem/`, redundant root docs removed, AGENTS/README aligned.

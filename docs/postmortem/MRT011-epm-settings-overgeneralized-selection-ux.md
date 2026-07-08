@@ -159,7 +159,7 @@ To avoid this class of issue:
 - Files:
   - `frontend/src/dashboard.jsx`
   - `jira_server.py`
-  - `postmortem/README.md`
+  - `docs/postmortem/README.md`
   - `AGENTS.md`
 - Review evidence:
   - `/Users/a.feygin/Desktop/Screenshot 2026-04-21 at 1.55.34 PM.png`

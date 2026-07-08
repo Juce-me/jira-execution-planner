@@ -29,7 +29,6 @@ export default function EngAlertsPanel({
         blockedAlertTeams,
         blockedTasks,
         buildKeyListLink,
-        buildNeedsStoriesTeamLink,
         buildTeamStatusLink,
         consolidatedMissingStories,
         dismissAlertItem,
@@ -741,7 +740,7 @@ export default function EngAlertsPanel({
                                                 </div>
                                                 <div className={`alert-card-body ${showNeedsStoriesAlert ? '' : 'collapsed'}`}>
                                                     {needsStoriesTeams.map(group => {
-                                                        const teamLink = buildNeedsStoriesTeamLink({ id: group.id, name: group.name });
+                                                        const teamLink = buildKeyListLink(group.items.map(entry => entry.epic.key));
                                                         return (
                                                             <div key={`needs-stories-${group.id}`} className="alert-team-group">
                                                                 <div className="alert-team-header">

@@ -66,7 +66,7 @@ test('future planning epic alerts group by all matched team labels', () => {
 
     assert.match(
         source,
-        /import \{ epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel, buildNeedsStoriesTeamJql \}/
+        /import \{ epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel \}/
     );
     assert.match(
         source,

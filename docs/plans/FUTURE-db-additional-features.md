@@ -93,8 +93,8 @@ The database can store Home project metadata cache rows keyed by workspace, serv
 
 This feature must preserve lessons from:
 
-- `postmortem/MRT014-epm-cold-load-cache-race.md`
-- `postmortem/MRT015-epm-first-load-home-fanout-overfetch.md`
+- `docs/postmortem/MRT014-epm-cold-load-cache-race.md`
+- `docs/postmortem/MRT015-epm-first-load-home-fanout-overfetch.md`
 
 Verification:
 

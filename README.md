@@ -48,6 +48,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - `jira_server.py` - Python Flask backend server
 - `jira-dashboard.html` - Frontend dashboard page
 - `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
+- `assets/` - Static assets (icons, images)
 - `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
 - `docs/AGENTS.md` - Rules for agent-created work artifacts
 - `.env.example` - Template for environment variables
@@ -55,7 +56,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - `.gitignore` - Git ignore file (keeps secrets safe)
 - `requirements.txt` - Python dependencies
 - `AGENTS.md` - Contributor guide and workflow conventions
-- `postmortem/` - Postmortems and incident learnings (index in `postmortem/README.md`)
+- `docs/postmortem/` - Postmortems and incident learnings (index in `docs/postmortem/README.md`)
 
 ## 🔧 Setup
 
@@ -79,7 +80,7 @@ If you want the fastest setup with no frontend build step:
 1. Download the latest release asset (e.g. `jira-execution-planner-latest.zip`) from GitHub Releases.
 2. Unzip it anywhere.
 3. Configure `.env` from `.env.example`.
-4. Install backend deps: `chmod +x install.sh && ./install.sh`
+4. Install backend deps: `chmod +x scripts/install.sh && ./scripts/install.sh`
 5. Start the backend: `.venv/bin/python jira_server.py`
 6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`).
 
@@ -108,8 +109,8 @@ Use Python 3.10+ linked against OpenSSL 1.1.1+; macOS system Python builds linke
 
 **Option A - Using install script (recommended):**
 ```bash
-chmod +x install.sh
-./install.sh
+chmod +x scripts/install.sh
+./scripts/install.sh
 ```
 
 **Option B - Manual installation:**
@@ -470,14 +471,15 @@ jira-dashboard/
 │   └── dist/               # Compiled JS + CSS output (committed)
 ├── docs/                   # Documentation
 │   ├── plans/              # EXEC/DONE/FUTURE/SUPPORT/GATE plans
-│   └── features/           # User-facing feature guides
+│   ├── features/           # User-facing feature guides
+│   └── postmortem/         # Postmortems and incident learnings
 ├── planning/               # Scenario planner core logic
 ├── tests/                  # Python, Node, source-guard, and UI tests
-├── postmortem/             # Postmortems and incident learnings
+├── assets/                 # Static assets (icons, images)
 ├── requirements.txt        # Python dependencies
 ├── .env.example           # Environment variables template
 ├── .gitignore             # Git ignore file (includes .env and cache)
-├── install.sh             # Installation script
+├── scripts/install.sh     # Installation script
 ├── README.md              # This file
 ├── .env                   # Your credentials (NOT in git!)
 ├── dashboard-config.json  # Dashboard settings (auto-generated, NOT in git!)
@@ -504,10 +506,10 @@ The dashboard uses a few different cache layers to keep Jira traffic reasonable:
 
 ## 📚 Documentation & Postmortems
 
-- Keep `README.md`, `AGENTS.md`, and `postmortem/README.md` aligned with structural or workflow changes.
+- Keep `README.md`, `AGENTS.md`, and `docs/postmortem/README.md` aligned with structural or workflow changes.
 - Agent-created work artifacts live under `docs/agents/` and follow [docs/AGENTS.md](docs/AGENTS.md).
-- Postmortems live in `postmortem/` and follow `MRTXXX-short-title.md` naming in creation order (oldest first).
-- Postmortem-specific agent instructions live in [postmortem/AGENTS.md](postmortem/AGENTS.md).
+- Postmortems live in `docs/postmortem/` and follow `MRTXXX-short-title.md` naming in creation order (oldest first).
+- Postmortem-specific agent instructions live in [docs/postmortem/AGENTS.md](docs/postmortem/AGENTS.md).
 - Capture misses and fixes in postmortems and update the index when adding one.
 
 ## 🤝 Contributing

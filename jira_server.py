@@ -79,8 +79,8 @@ from backend.auth.jira_auth import (
     validate_auth_config,
 )
 
-# Load environment variables from .env file before constructing the Flask app.
-load_dotenv()
+# Load only this checkout's .env; a bare call searches parent directories and lets nested worktrees inherit another checkout's .env.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 from backend.app import create_app
 from backend import config_store as _config_store
 from backend import jira_client as _jira_client
@@ -5833,7 +5833,7 @@ def get_project_track_phase_durations():
 
 @app.route('/favicon.ico')
 def get_favicon():
-    favicon_path = os.path.join(os.path.dirname(__file__), 'favicon.ico')
+    favicon_path = os.path.join(os.path.dirname(__file__), 'assets', 'favicon.ico')
     if os.path.exists(favicon_path):
         return send_file(favicon_path, mimetype='image/x-icon')
     return '', 404
@@ -5841,7 +5841,7 @@ def get_favicon():
 
 @app.route('/epm-burst.svg')
 def get_epm_burst_icon():
-    icon_path = os.path.join(os.path.dirname(__file__), 'epm-burst.svg')
+    icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'epm-burst.svg')
     if os.path.exists(icon_path):
         return send_file(icon_path, mimetype='image/svg+xml')
     return '', 404

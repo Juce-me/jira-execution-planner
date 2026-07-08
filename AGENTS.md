@@ -179,9 +179,9 @@ After every session where the agent did something wrong:
 For significant misses, regressions, or repeated mistakes:
 
 - Review existing postmortems before touching related code.
-- Follow `postmortem/AGENTS.md` when creating or updating postmortems.
+- Follow `docs/postmortem/AGENTS.md` when creating or updating postmortems.
 - Follow `docs/AGENTS.md` when creating or updating agent work artifacts such as feature plans, prompt notes, bugfix investigations, or execution summaries.
-- Keep `README.md`, `AGENTS.md`, and `postmortem/README.md` aligned when workflow or structure changes.
+- Keep `README.md`, `AGENTS.md`, and `docs/postmortem/README.md` aligned when workflow or structure changes.
 
 Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Under 300 is a good ceiling. Over 500 and you are fighting your own config.
 
@@ -198,7 +198,7 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 ### Commands
 - Install backend deps: `.venv/bin/python -m pip install -r requirements.txt && .venv/bin/python -m pip install -e .`
 - Install frontend deps: `npm ci`
-- Optional bootstrap: `./install.sh`
+- Optional bootstrap: `./scripts/install.sh`
 - Build: `npm run build`
 - Preflight: `.venv/bin/python scripts/check_startup_preflight.py`
 - Watch frontend: `npm run watch`
@@ -215,8 +215,9 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Backend/API: `jira_server.py`, `backend/epm/`, `backend/routes/`, `planning/`
 - Frontend source: `frontend/src/`, `jira-dashboard.html`
 - Generated frontend output: `frontend/dist/`
+- Static assets: `assets/`
 - Tests: `tests/`, `tests/ui/`
-- Docs: `docs/features/`, `docs/AGENTS.md`, `postmortem/`
+- Docs: `docs/features/`, `docs/AGENTS.md`, `docs/postmortem/`
 
 ### Conventions
 - Python: 4-space indentation, `snake_case` functions, `CapWords` classes
@@ -230,9 +231,10 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Agent work artifacts under `docs/agents/` use `YYYY-MM-DD-status-summary.md` per `docs/AGENTS.md`.
 - Keep `AGENTS.md`, `README.md`, and other contributor docs aligned when workflow or structure changes
 - User-visible feature changes must include analytics impact review: `trigger`, `event_type`, canonical `event_name`, `feature_name` or `page_name`, typed params, tests, `docs/README_ANALYTICS.md` taxonomy updates, and GA4 runbook updates when relevant; app-owned analytics must keep the two-trigger GTM dataLayer contract (`pageview`/`userevent`), avoid bulk custom-dimension registration, use `GA4_ENABLED` as the app-level transport gate without in-app consent UI, and never use `event_group`, `ga4_event_name`, Universal Analytics fields, or boolean presence dimensions such as `has_*`; if no event is needed, document the allowlist reason.
+- Keep the repo root to entry points and packaging/toolchain configs; images belong in `assets/`, scripts in `scripts/`, docs (including `TODO.md` and postmortems) under `docs/`
 
 ### Repo-specific constraints
-- Review relevant postmortems before making related changes. Add new postmortems under `postmortem/` as `MRTXXX-short-title.md` and update `postmortem/README.md`.
+- Review relevant postmortems before making related changes. Add new postmortems under `docs/postmortem/` as `MRTXXX-short-title.md` and update `docs/postmortem/README.md`.
 - Store Jira credentials in `.env`; never commit secrets.
 - Server-side Jira and Home/Townsquare API-token credentials in `.env` are dedicated service-account credentials; do not ask individual users to create personal Atlassian API tokens for shared app auth.
 - Service-account API tokens for `home_townsquare_basic` and `jira_basic` belong only in `service_integration_tokens`; never store them in normal-user `auth_tokens`.
@@ -360,6 +362,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Filter-bar/layout "visual verification" = a screenshot AND element-level geometry assertions on the actual text-bearing elements (label `getBoundingClientRect().right` within its group and clear of the next control; `scrollWidth`/`clientWidth` clip checks). Never rely only on sibling container bounding boxes — they cannot see overflowing `nowrap` text and give false green. Look at the screenshot, don't trust the assertion alone (MRT020).
 - Use one categorical color resolver (e.g. `resolveProjectTrackColor`) as the single source of an entity's color across every chart/section; never let an entity (e.g. `No track`) fall through to a hash-assigned new color in one view while it is fixed in another.
 - For Jira status changes, make the displayed status pill/text the click target; do not add separate Change Status buttons unless explicitly requested.
+- At session start, before the first commit, check `git branch --show-current`; if the branch is auto-generated or agent-branded (e.g. `claude/*`), rename it to `feature/`|`bugfix/`|`improvement/`|`docs/` + kebab-case summary (see docs/postmortem/MRT022-agent-branded-branch-names.md).
+- Run `npm ci` in a fresh git worktree before `npm run build`; a build that resolves node_modules from an ancestor checkout embeds wrong relative paths in `dashboard.js.map` and fails the CI dist check.
 
 ---
 

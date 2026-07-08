@@ -25,7 +25,7 @@
 - Read before execution:
   - `docs/superpowers/specs/2026-04-27-epm-multi-project-rollup-design.md`
   - `docs/superpowers/specs/2026-04-28-epm-zero-manual-portfolio-default-design.md`
-  - `postmortem/MRT012-epm-active-sprint-value-hidden.md`
+  - `docs/postmortem/MRT012-epm-active-sprint-value-hidden.md`
 
 ## File Map
 
@@ -1616,7 +1616,7 @@ Run:
 rg -n "shouldUseEpmSprint\\(epmTab\\) && renderSprintControl\\('(main|compact)'\\)" frontend/src/dashboard.jsx
 ```
 
-Expected: both `main` and `compact` EPM Active sprint controls are still present. Do not modify `postmortem/MRT012-epm-active-sprint-value-hidden.md` unless this verification fails and a sprint-visibility regression is fixed in this plan.
+Expected: both `main` and `compact` EPM Active sprint controls are still present. Do not modify `docs/postmortem/MRT012-epm-active-sprint-value-hidden.md` unless this verification fails and a sprint-visibility regression is fixed in this plan.
 
 - [ ] **Step 4.8: Commit**
 

@@ -13,7 +13,7 @@ class ProjectPackagingTests(unittest.TestCase):
         self.assertIn('jira-execution-planner = "jira_server:main"', source)
 
     def test_install_script_uses_requirements_file(self):
-        source = (ROOT / "install.sh").read_text(encoding="utf8")
+        source = (ROOT / "scripts" / "install.sh").read_text(encoding="utf8")
         self.assertIn(".venv/bin/python -m pip install -r requirements.txt", source)
         self.assertIn(".venv/bin/python -m pip install -e .", source)
         self.assertNotIn("pip3 install --user flask flask-cors requests", source)
@@ -36,7 +36,6 @@ class ProjectPackagingTests(unittest.TestCase):
             "jira_server.py",
             "jira-dashboard.html",
             "requirements.txt",
-            "install.sh",
             "pyproject.toml",
             ".env.example",
             "INSTALL.md",
@@ -47,6 +46,8 @@ class ProjectPackagingTests(unittest.TestCase):
         self.assertIn("cp -R backend planning frontend release-root/", source)
         self.assertIn("rm -rf release-root/frontend/src", source)
         self.assertIn("find release-root/frontend -mindepth 1 -maxdepth 1 ! -name dist", source)
+        self.assertIn("cp -R assets release-root/", source)
+        self.assertIn("cp -R scripts release-root/", source)
 
     def test_docs_state_release_zip_is_runnable_package(self):
         readme = (ROOT / "README.md").read_text(encoding="utf8")

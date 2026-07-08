@@ -109,7 +109,7 @@
 - Read: `postmortem/MRT010-startup-api-load-fanout-and-overscoped-payloads.md`
 - Read: `postmortem/MRT016-exec-02-plan-file-map-drift.md`
 
-- [ ] **Step 0.1: Verify the named file map exists or is marked Create**
+- [x] **Step 0.1: Verify the named file map exists or is marked Create**
 
 Run:
 
@@ -119,7 +119,7 @@ rg --files | rg '^(\.env\.example|backend/routes/eng_routes.py|backend/security/
 
 Expected: every listed `Modify` file appears. If a file is missing, stop and update this plan before coding.
 
-- [ ] **Step 0.2: Recheck gates**
+- [x] **Step 0.2: Recheck gates**
 
 Run:
 
@@ -129,7 +129,7 @@ rg --files docs/plans | rg '/GATE-'
 
 Open every returned file. For `GATE-05`, do not run the destructive Home write probe unless the required disposable Home project inputs are present and approved. If inputs remain unavailable, update only `Checked on`, `Last result`, and `Last Check Notes`, keeping it blocked.
 
-- [ ] **Step 0.3: Confirm this plan does not authorize Home writes**
+- [x] **Step 0.3: Confirm this plan does not authorize Home writes**
 
 Search the future diff:
 
@@ -154,7 +154,7 @@ Expected: matches only in existing gate/support docs or this plan's "do not use"
 - Modify: `tests/test_endpoint_security_matrix.py`
 - Modify: `tests/test_endpoint_policy_inventory.py`
 
-- [ ] **Step 1.1: Add failing scope tests**
+- [x] **Step 1.1: Add failing scope tests**
 
 Add coverage that the default scope strings include `write:jira-work` in:
 
@@ -174,7 +174,7 @@ Run:
 
 Expected before implementation: tests fail because `write:jira-work` is absent.
 
-- [ ] **Step 1.2: Add route policy tests**
+- [x] **Step 1.2: Add route policy tests**
 
 Add policy samples:
 
@@ -198,7 +198,7 @@ Run:
 
 Expected before implementation: policy tests fail because the routes are unclassified or not sampled.
 
-- [ ] **Step 1.3: Implement scope and policy changes**
+- [x] **Step 1.3: Implement scope and policy changes**
 
 Change the default scope string everywhere the repo defines or documents it from:
 
@@ -219,7 +219,7 @@ EndpointPolicy("jira-issue-transition-options", "/api/issues/transitions/options
 EndpointPolicy("jira-issue-transitions-write", "/api/issues/transitions", frozenset({"POST"}), "user_write"),
 ```
 
-- [ ] **Step 1.4: Verify scope and route guard behavior**
+- [x] **Step 1.4: Verify scope and route guard behavior**
 
 Run:
 

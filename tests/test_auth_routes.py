@@ -1,6 +1,7 @@
 import os
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 import threading
 import tempfile
@@ -8,6 +9,10 @@ from urllib.parse import parse_qs, urlparse
 
 from backend import app as app_module
 import jira_server
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestAuthRoutes(unittest.TestCase):
@@ -42,6 +47,27 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertFalse(response.get_json()['authenticated'])
         self.assertTrue(response.get_json()['loginRequired'])
 
+    def test_default_atlassian_scopes_include_write_jira_work(self):
+        self.assertIn("write:jira-work", jira_server.ATLASSIAN_SCOPES.split())
+
+    def test_full_oauth_scope_fixture_includes_write_jira_work(self):
+        self.assertIn("write:jira-work", FULL_OAUTH_SCOPE.split())
+
+    def test_env_and_oauth_setup_docs_document_write_jira_work_scope(self):
+        old_scope = (
+            "ATLASSIAN_SCOPES=read:me read:jira-work read:jira-user "
+            "read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"
+        )
+        new_scope = (
+            "ATLASSIAN_SCOPES=read:me read:jira-work write:jira-work read:jira-user "
+            "read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"
+        )
+        for relative_path in (".env.example", "docs/SUPPORT-atlassian-oauth-setup.md", "INSTALL.md"):
+            with self.subTest(path=relative_path):
+                text = (REPO_ROOT / relative_path).read_text(encoding="utf8")
+                self.assertIn(new_scope, text)
+                self.assertNotIn(old_scope, text)
+
     def test_status_requires_reconsent_when_oauth_session_has_old_scopes(self):
         with self.client.session_transaction() as flask_session:
             flask_session["atlassian_oauth_session_id"] = "session-1"
@@ -59,7 +85,7 @@ class TestAuthRoutes(unittest.TestCase):
         }
 
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "ATLASSIAN_SCOPES", "read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"):
+             patch.object(jira_server, "ATLASSIAN_SCOPES", "read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"):
             response = self.client.get("/api/auth/status")
 
         self.assertEqual(response.status_code, 200)

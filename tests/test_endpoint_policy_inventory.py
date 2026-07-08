@@ -6,6 +6,15 @@ import jira_server
 IGNORED_ENDPOINTS = {"static"}
 IGNORED_METHODS = {"HEAD", "OPTIONS"}
 
+# Declared in backend/security/policy.py ahead of their Flask route registration.
+# The jira-oauth ENG status transitions plan (Task 1) registers these policies so
+# later tasks inherit the right auth/CSRF class; the routes themselves land in a
+# later task. Remove this exemption once those routes are registered.
+POLICY_ONLY_ROUTES_PENDING_IMPLEMENTATION = {
+    "/api/issues/transitions/options",
+    "/api/issues/transitions",
+}
+
 
 class EndpointPolicyInventoryTests(unittest.TestCase):
     def route_methods(self, rule):
@@ -76,6 +85,22 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
         self.assertEqual([policy.name for policy in matches], ["eng-api-story-subtasks"])
         self.assertEqual(matches[0].policy_class, "authenticated_read")
 
+    def test_issue_transition_options_route_has_authenticated_read_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies("/api/issues/transitions/options", ["POST"], "eng_routes.get_issue_transition_options")
+
+        self.assertEqual([policy.name for policy in matches], ["jira-issue-transition-options"])
+        self.assertEqual(matches[0].policy_class, "authenticated_read")
+
+    def test_issue_transitions_write_route_has_user_write_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies("/api/issues/transitions", ["POST"], "eng_routes.post_issue_transitions")
+
+        self.assertEqual([policy.name for policy in matches], ["jira-issue-transitions-write"])
+        self.assertEqual(matches[0].policy_class, "user_write")
+
     def test_dynamic_routes_have_security_samples(self):
         from backend.security.policy import routes_requiring_samples
         from tests.endpoint_security_samples import ROUTE_SAMPLES
@@ -103,6 +128,8 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
 
         missing = []
         for path in sorted(jira_server.OAUTH_READY_API_PATHS):
+            if path in POLICY_ONLY_ROUTES_PENDING_IMPLEMENTATION:
+                continue
             rules = [rule for rule in jira_server.app.url_map.iter_rules() if rule.rule == path]
             if not rules:
                 missing.append({"path": path, "reason": "no flask rule"})

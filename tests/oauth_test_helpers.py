@@ -7,7 +7,7 @@ import jira_server
 
 
 FULL_OAUTH_SCOPE = (
-    "read:me read:jira-work read:jira-user "
+    "read:me read:jira-work write:jira-work read:jira-user "
     "read:board-scope:jira-software read:sprint:jira-software read:project:jira "
     "offline_access"
 )

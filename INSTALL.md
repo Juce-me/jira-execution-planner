@@ -91,7 +91,7 @@ JIRA_AUTH_MODE=atlassian_oauth
 ATLASSIAN_CLIENT_ID=<from Atlassian Developer Console>
 ATLASSIAN_CLIENT_SECRET=<from Atlassian Developer Console>
 ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback
-ATLASSIAN_SCOPES=read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access
+ATLASSIAN_SCOPES=read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access
 FLASK_SECRET_KEY=<random secret>
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
 ```

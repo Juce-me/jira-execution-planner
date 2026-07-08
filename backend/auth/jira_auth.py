@@ -35,7 +35,7 @@ class AuthConfig:
     client_id: str = ""
     client_secret: str = ""
     redirect_uri: str = ""
-    scopes: str = "read:me read:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"
+    scopes: str = "read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"
     flask_secret_key: str = ""
 
 

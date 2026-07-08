@@ -1,5 +1,7 @@
 # Root Cleanup And Postmortem Relocation Implementation Plan
 
+> **Status:** Executed on branch `improvement/root-cleanup-docs-postmortems` (commits `05163ff..961df45`), full suite 932 OK at every step. Pending merge; rename to `DONE-*` after the PR is accepted.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reduce the repo root to entry points, packaging, and toolchain configs: move images to `assets/`, move `install.sh` to `scripts/`, delete the redundant `QUICKSTART_ENV.txt`, relocate `TODO.md` and the orphaned `project-context/architecture.md` under `docs/`, move `postmortem/` to `docs/postmortem/`, and update `AGENTS.md`, subfolder `AGENTS.md` files, `README.md`, tests, Dockerfile, and the release workflow to match.
@@ -32,14 +34,14 @@
 
 **Files:** none (git only)
 
-- [ ] **Step 1: Sync and branch**
+- [x] **Step 1: Sync and branch**
 
 ```bash
 git fetch origin
 git switch -c improvement/root-cleanup-docs-postmortems origin/main
 ```
 
-- [ ] **Step 2: Baseline test run (must be green before any change)**
+- [x] **Step 2: Baseline test run (must be green before any change)**
 
 Run: `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile .venv/bin/python -m unittest discover -s tests`
 Expected: OK (record the test count; the same count must pass at the end).
@@ -55,18 +57,18 @@ Expected: OK (record the test count; the same count must pass at the end).
 **Interfaces:**
 - Produces: canonical postmortem location `docs/postmortem/` with unchanged file names (`MRTXXX-short-title.md`), unchanged index (`docs/postmortem/README.md`), unchanged directory instructions (`docs/postmortem/AGENTS.md`).
 
-- [ ] **Step 1: Move the directory**
+- [x] **Step 1: Move the directory**
 
 ```bash
 git mv postmortem docs/postmortem
 ```
 
-- [ ] **Step 2: Verify symlinks survived**
+- [x] **Step 2: Verify symlinks survived**
 
 Run: `ls -la docs/postmortem/CLAUDE.md docs/postmortem/GEMINI.md`
 Expected: both are symlinks pointing to `AGENTS.md`.
 
-- [ ] **Step 3: Rewrite path references repo-wide (idempotent sed — protects already-correct `docs/postmortem/`)**
+- [x] **Step 3: Rewrite path references repo-wide (idempotent sed — protects already-correct `docs/postmortem/`)**
 
 ```bash
 grep -rl --include='*.md' 'postmortem/' . 2>/dev/null | grep -v node_modules | while read -r f; do
@@ -74,12 +76,12 @@ grep -rl --include='*.md' 'postmortem/' . 2>/dev/null | grep -v node_modules | w
 done
 ```
 
-- [ ] **Step 4: Fix relative markdown links that the sed would have made self-nested**
+- [x] **Step 4: Fix relative markdown links that the sed would have made self-nested**
 
 Run: `grep -n '](docs/postmortem' docs/postmortem/*.md`
 For any hit **inside** `docs/postmortem/` that is a relative markdown link (not backticked prose), rewrite the link target to `./<file>` form (e.g. `](./MRT020-project-track-filter-bar-bespoke-controls.md)`). Backticked prose like `` `docs/postmortem/README.md` `` is correct repo-relative text — leave it.
 
-- [ ] **Step 5: Verify no stale references remain**
+- [x] **Step 5: Verify no stale references remain**
 
 ```bash
 grep -rn --include='*.md' --include='*.py' --include='*.yml' '[^/]postmortem/' . | grep -v node_modules | grep -v 'docs/postmortem'
@@ -87,12 +89,12 @@ grep -rn --include='*.md' --include='*.py' --include='*.yml' '[^/]postmortem/' .
 
 Expected: no output.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile .venv/bin/python -m unittest discover -s tests`
 Expected: OK, same count as baseline.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A
@@ -111,14 +113,14 @@ git commit -m "docs: move postmortems under docs/postmortem and update reference
 **Interfaces:**
 - Produces: `assets/` directory at repo root for static assets (matches root `AGENTS.md` section 3 default layout). Server routes `/favicon.ico` and `/epm-burst.svg` keep serving the same bytes.
 
-- [ ] **Step 1: Move the files**
+- [x] **Step 1: Move the files**
 
 ```bash
 mkdir assets
 git mv epm-burst.svg favicon.ico assets/
 ```
 
-- [ ] **Step 2: Update the two route handlers in `jira_server.py`**
+- [x] **Step 2: Update the two route handlers in `jira_server.py`**
 
 At ~line 5836 change:
 
@@ -146,7 +148,7 @@ to:
 
 (Confirm with `grep -n "epm-burst.svg\|favicon.ico" jira_server.py` that these are the only two file-path references; route decorators `@app.route('/favicon.ico')` / `@app.route('/epm-burst.svg')` stay unchanged.)
 
-- [ ] **Step 3: Update `Dockerfile`**
+- [x] **Step 3: Update `Dockerfile`**
 
 Change:
 
@@ -161,7 +163,7 @@ COPY jira_server.py jira-dashboard.html ./
 COPY assets ./assets
 ```
 
-- [ ] **Step 4: Update `tests/test_container_packaging.py` (`test_dockerfile_includes_runtime_source_layout`)**
+- [x] **Step 4: Update `tests/test_container_packaging.py` (`test_dockerfile_includes_runtime_source_layout`)**
 
 Change the required-lines tuple entry:
 
@@ -176,7 +178,7 @@ to:
             "COPY assets ./assets",
 ```
 
-- [ ] **Step 5: Update `.github/workflows/release-latest.yml` "Create release zip" step**
+- [x] **Step 5: Update `.github/workflows/release-latest.yml` "Create release zip" step**
 
 Change:
 
@@ -193,12 +195,12 @@ to:
 
 (`install.sh` moves out of this line in Task 4; keep it here for now so each commit stays green.)
 
-- [ ] **Step 6: Run packaging tests**
+- [x] **Step 6: Run packaging tests**
 
 Run: `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile .venv/bin/python -m unittest tests.test_container_packaging tests.test_project_packaging`
 Expected: OK.
 
-- [ ] **Step 7: Launch the server and verify the routes serve the moved files**
+- [x] **Step 7: Launch the server and verify the routes serve the moved files**
 
 ```bash
 .venv/bin/python jira_server.py &
@@ -211,7 +213,7 @@ kill %1
 
 Expected: `200 image/x-icon`, `200 image/svg+xml` (Flask may report `image/svg+xml; charset=utf-8`), and a JSON success body from `/api/test`. No dependency/runtime warnings before the Flask startup banner.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A
@@ -490,21 +492,21 @@ git commit -m "docs(postmortem): MRT022 agent-branded branch names ignored git c
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Full Python suite**
+- [x] **Step 1: Full Python suite**
 
 Run: `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile .venv/bin/python -m unittest discover -s tests`
 Expected: OK with the same test count as the Task 1 baseline.
 
-- [ ] **Step 2: Confirm no frontend churn**
+- [x] **Step 2: Confirm no frontend churn**
 
 Run: `git status --porcelain -- frontend/`
 Expected: empty (no source touched, no rebuild needed).
 
-- [ ] **Step 3: Server launch check (required because `jira_server.py` changed)**
+- [x] **Step 3: Server launch check (required because `jira_server.py` changed)**
 
 Repeat Task 3 Step 7 (launch, curl `/api/test`, `/favicon.ico`, `/epm-burst.svg`, kill). Expected: all 200, no pre-banner warnings.
 
-- [ ] **Step 4: Stale-path sweep**
+- [x] **Step 4: Stale-path sweep**
 
 ```bash
 git grep -n 'QUICKSTART_ENV\|project-context/' -- '*.md' '*.py' '*.yml' | grep -v docs/plans/DONE-
@@ -514,7 +516,7 @@ ls AGENTS.md CLAUDE.md GEMINI.md README.md INSTALL.md LICENSE Makefile Dockerfil
 
 Expected: first two greps empty; root listing shows only the intended survivors plus configs.
 
-- [ ] **Step 5: Review history and stop for user confirmation before push**
+- [x] **Step 5: Review history and stop for user confirmation before push**
 
 ```bash
 git log --oneline -8

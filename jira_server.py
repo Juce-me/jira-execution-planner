@@ -5833,7 +5833,7 @@ def get_project_track_phase_durations():
 
 @app.route('/favicon.ico')
 def get_favicon():
-    favicon_path = os.path.join(os.path.dirname(__file__), 'favicon.ico')
+    favicon_path = os.path.join(os.path.dirname(__file__), 'assets', 'favicon.ico')
     if os.path.exists(favicon_path):
         return send_file(favicon_path, mimetype='image/x-icon')
     return '', 404
@@ -5841,7 +5841,7 @@ def get_favicon():
 
 @app.route('/epm-burst.svg')
 def get_epm_burst_icon():
-    icon_path = os.path.join(os.path.dirname(__file__), 'epm-burst.svg')
+    icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'epm-burst.svg')
     if os.path.exists(icon_path):
         return send_file(icon_path, mimetype='image/svg+xml')
     return '', 404

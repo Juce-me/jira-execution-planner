@@ -6,14 +6,12 @@ import jira_server
 IGNORED_ENDPOINTS = {"static"}
 IGNORED_METHODS = {"HEAD", "OPTIONS"}
 
-# Declared in backend/security/policy.py ahead of their Flask route registration.
-# The jira-oauth ENG status transitions plan (Task 1) registers these policies so
-# later tasks inherit the right auth/CSRF class; the routes themselves land in a
-# later task. Remove this exemption once those routes are registered.
-POLICY_ONLY_ROUTES_PENDING_IMPLEMENTATION = {
-    "/api/issues/transitions/options",
-    "/api/issues/transitions",
-}
+# Paths declared in backend/security/policy.py ahead of their Flask route
+# registration, e.g. when a plan lands the endpoint policy in one task and the
+# route itself in a later task. Remove each entry as soon as its route is
+# registered; test_policy_only_routes_pending_implementation_have_no_registered_rule
+# fails if an entry is left behind after that happens.
+POLICY_ONLY_ROUTES_PENDING_IMPLEMENTATION = set()
 
 
 class EndpointPolicyInventoryTests(unittest.TestCase):
@@ -140,6 +138,19 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
                     missing.append({"path": path, "methods": methods, "reason": "no policy"})
 
         self.assertEqual(missing, [])
+
+    def test_policy_only_routes_pending_implementation_have_no_registered_rule(self):
+        """Tripwire: a path left in the pending set after its route ships would
+        otherwise silently skip test_policy_covers_existing_oauth_ready_routes_before_wrapper_removal
+        for that path forever."""
+        registered = {rule.rule for rule in jira_server.app.url_map.iter_rules()}
+        stale = sorted(path for path in POLICY_ONLY_ROUTES_PENDING_IMPLEMENTATION if path in registered)
+
+        self.assertEqual(
+            stale,
+            [],
+            "Remove these paths from POLICY_ONLY_ROUTES_PENDING_IMPLEMENTATION now that they have a registered Flask rule",
+        )
 
     def test_policy_marks_existing_shared_config_writes_admin_only(self):
         from backend.security.policy import classify_rule

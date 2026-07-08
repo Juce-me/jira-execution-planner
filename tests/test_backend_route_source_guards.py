@@ -1,3 +1,4 @@
+import ast
 import re
 import sys
 import types
@@ -30,8 +31,10 @@ FRONTEND_SRC_PATH = REPO_ROOT / "frontend" / "src"
 # leading slash before `api`).
 BARE_STATS_ENDPOINT_PATTERN = re.compile(r"(?<=['\"`}])/api/stats['\"`]")
 BACKEND_SECURITY_GUARDS_PATH = REPO_ROOT / "backend" / "security" / "guards.py"
+BACKEND_SECURITY_POLICY_PATH = REPO_ROOT / "backend" / "security" / "policy.py"
 BACKEND_EPM_PATH = REPO_ROOT / "backend" / "epm"
 BACKEND_EPM_HOME_PATH = BACKEND_EPM_PATH / "home.py"
+BACKEND_JIRA_ISSUE_TRANSITIONS_PATH = REPO_ROOT / "backend" / "services" / "jira_issue_transitions.py"
 APP_ROUTE_EPM_PATTERN = re.compile(
     r"@app\.(?:route|get|post|put|patch|delete)\(\s*['\"]\/api\/epm(?:\/|['\"])",
     re.MULTILINE,
@@ -346,6 +349,55 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
         self.assertIn("normalize-tasks;dur=", server_timing)
         self.assertIn("epic-enrichment;dur=", server_timing)
         self.assertIn("build-response;dur=", server_timing)
+
+    def test_eng_routes_registers_both_issue_transition_routes(self):
+        source = BACKEND_ENG_ROUTES_PATH.read_text(encoding="utf8")
+        self.assertIn("@bp.route('/api/issues/transitions/options', methods=['POST'])", source)
+        self.assertIn("@bp.route('/api/issues/transitions', methods=['POST'])", source)
+
+    def test_issue_transition_routes_do_not_call_build_jira_headers(self):
+        source = BACKEND_ENG_ROUTES_PATH.read_text(encoding="utf8")
+        self.assertNotIn("build_jira_headers(", source)
+
+    def test_jira_issue_transitions_service_has_no_forbidden_imports_or_calls(self):
+        # Parse actual import statements (not the module's own docstring prose,
+        # which names these same forbidden dependencies to document their
+        # absence) so the guard cannot false-positive on the file describing
+        # its own constraints.
+        source = BACKEND_JIRA_ISSUE_TRANSITIONS_PATH.read_text(encoding="utf8")
+        tree = ast.parse(source)
+        imported_modules = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_modules.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported_modules.append(node.module)
+
+        forbidden_modules = [
+            name for name in imported_modules
+            if name == "requests" or name.startswith("backend.epm") or "service_integration" in name
+        ]
+        self.assertEqual(
+            forbidden_modules,
+            [],
+            "backend/services/jira_issue_transitions.py must stay dependency-injected and avoid direct Jira/Home credential helpers",
+        )
+        self.assertNotIn(
+            "build_jira_headers(",
+            source,
+            "backend/services/jira_issue_transitions.py must not call build_jira_headers()",
+        )
+
+    def test_security_policy_has_exact_issue_transition_endpoint_policies(self):
+        source = BACKEND_SECURITY_POLICY_PATH.read_text(encoding="utf8")
+        self.assertIn(
+            'EndpointPolicy("jira-issue-transition-options", "/api/issues/transitions/options", frozenset({"POST"}), "authenticated_read"),',
+            source,
+        )
+        self.assertIn(
+            'EndpointPolicy("jira-issue-transitions-write", "/api/issues/transitions", frozenset({"POST"}), "user_write"),',
+            source,
+        )
 
 
 if __name__ == "__main__":

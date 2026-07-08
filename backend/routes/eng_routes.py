@@ -13,6 +13,12 @@ from backend.services.eng_subtasks import (
     normalize_sprint_id,
     shape_subtasks_payload,
 )
+from backend.services.jira_issue_transitions import (
+    IssueTransitionInputError,
+    IssueTransitionServiceError,
+    load_transition_options,
+    transition_issues,
+)
 
 from . import bind_server_globals
 
@@ -32,6 +38,37 @@ def _eng_auth_error_response(error):
         payload, status = oauth_auth_required_payload()
         return jsonify(payload), status
     return auth_error_response(error, 401)
+
+
+def clear_jira_issue_status_caches(reason='issue_status_transition'):
+    """Invalidate Jira-derived process caches after a successful status transition.
+
+    Composes the existing auth-sensitive and EPM cache clearers (so
+    jira_server.py does not grow) and additionally clears the local
+    SUBTASKS_CACHE, which neither of those touches.
+    """
+    clear_auth_sensitive_caches(reason=reason)
+    clear_epm_caches()
+    try:
+        with _cache_lock:
+            SUBTASKS_CACHE.clear()
+    except Exception:
+        log_warning(f'Unable to clear subtask cache after {reason}')
+
+
+def _missing_write_jira_work_scope(auth_context):
+    """Defense-in-depth check that the current session was granted write:jira-work.
+
+    DB-backed auth contexts already had every ATLASSIAN_SCOPES entry (including
+    write:jira-work) verified inside current_request_auth_context(), via
+    resolve_db_request_auth_context(); re-checking the local OAuth session store
+    for those contexts would be both redundant and wrong (it holds no data for a
+    DB-backed session). This only re-checks local (non-DB) OAuth sessions,
+    mirroring backend/routes/auth_routes.py::api_auth_status().
+    """
+    if is_db_auth_context(auth_context):
+        return False
+    return bool(missing_oauth_scopes(oauth_session_data(), {'write:jira-work'}))
 
 
 @bp.route('/api/dependencies', methods=['POST'])
@@ -210,6 +247,73 @@ def get_story_subtasks():
     except Exception:
         logger.exception('Story subtasks endpoint error')
         return jsonify({'error': 'subtasks_fetch_failed', 'message': 'Failed to fetch subtasks from Jira.'}), 502
+
+
+@bp.route('/api/issues/transitions/options', methods=['POST'])
+def get_issue_transition_options():
+    """Fetch available Jira status transitions for selected ENG issue keys."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_json'}), 400
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'error': 'jira_oauth_required'}), 403
+
+    try:
+        auth_context = current_request_auth_context()
+        result = load_transition_options(
+            payload.get('issueKeys'),
+            jira_request=current_jira_request,
+            search_request=current_jira_search,
+            context=auth_context,
+        )
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except IssueTransitionInputError as error:
+        return jsonify({'error': error.code}), 400
+    except IssueTransitionServiceError:
+        logger.exception('Issue transition options Jira fetch failed')
+        return jsonify({'error': 'jira_transition_options_failed'}), 502
+    except Exception:
+        logger.exception('Issue transition options endpoint error')
+        return jsonify({'error': 'jira_transition_options_failed'}), 502
+
+    return jsonify(result)
+
+
+@bp.route('/api/issues/transitions', methods=['POST'])
+def post_issue_transitions():
+    """Transition selected ENG issue keys to a requested Jira status."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_json'}), 400
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'error': 'jira_oauth_required'}), 403
+
+    try:
+        auth_context = current_request_auth_context()
+        if _missing_write_jira_work_scope(auth_context):
+            raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
+        result = transition_issues(
+            payload.get('issueKeys'),
+            payload.get('targetStatus'),
+            jira_request=current_jira_request,
+            search_request=current_jira_search,
+            context=auth_context,
+        )
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except IssueTransitionInputError as error:
+        return jsonify({'error': error.code}), 400
+    except IssueTransitionServiceError:
+        logger.exception('Issue transition write Jira fetch failed')
+        return jsonify({'error': 'jira_transition_failed'}), 502
+    except Exception:
+        logger.exception('Issue transition write endpoint error')
+        return jsonify({'error': 'jira_transition_failed'}), 502
+
+    if result.get('succeeded', 0) > 0:
+        clear_jira_issue_status_caches()
+    return jsonify(result)
 
 
 @bp.route('/api/missing-info', methods=['GET'])

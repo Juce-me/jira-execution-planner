@@ -468,7 +468,12 @@ class IssueTransitionRouteTests(unittest.TestCase):
         self._env_patcher.stop()
 
     def _csrf_token(self):
-        response = self.client.get("/api/auth/csrf")
+        # The write route's token-bound CSRF is bound to the OAuth session, so the
+        # token must be minted under atlassian_oauth mode to validate on the POST.
+        # Patch here so callers work regardless of the process JIRA_AUTH_MODE (CI
+        # runs with JIRA_AUTH_MODE=basic), not only when a local .env sets oauth mode.
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.get("/api/auth/csrf")
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()["csrfToken"]
 

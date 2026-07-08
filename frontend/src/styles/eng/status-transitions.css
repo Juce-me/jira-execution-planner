@@ -98,6 +98,24 @@
             border-radius: 8px;
         }
 
+        /* Secondary "Apply to this issue only" recovery action: visually quieter than the
+           primary batch submit so the composed-set apply stays the primary action. */
+        .status-transition-submit-single {
+            margin: 0;
+            padding: 0.4rem 0.75rem;
+            font-size: 0.7rem;
+            border-radius: 8px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+        .status-transition-submit-single:hover:not(:disabled) {
+            transform: none;
+            background: var(--bg-secondary, rgba(15, 23, 42, 0.04));
+            box-shadow: none;
+        }
+
         .status-transition-target-toggle-row {
             display: flex;
             align-items: center;

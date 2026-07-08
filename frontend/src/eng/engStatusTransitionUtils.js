@@ -1,6 +1,10 @@
 import { bucketCount } from '../analytics/dashboardAnalytics.js';
 import { sumPlanningStoryPoints } from './planningSelectionStats.js';
 
+// Client-side cap for a single status-transition batch. Must match backend
+// backend/services/jira_issue_transitions.py MAX_STATUS_TRANSITION_ISSUES.
+export const MAX_STATUS_TRANSITION_ISSUES = 50;
+
 // Target shape shared by the hook and UI. `summary` is for UI display only —
 // never put summary/key/URL/team/sprint/JQL into an analytics payload builder.
 // { key, issueType, currentStatus, summary }
@@ -110,6 +114,23 @@ function resolveSubtaskStatusTargets(selectedSubtaskKeys, storySubtasksByKey) {
     return (selectedSubtaskKeys || [])
         .map((key) => buildCatchUpStatusTargets(findSubtaskItemByKey(storySubtasksByKey, key) || { key }, 'Subtask'))
         .filter(Boolean);
+}
+
+// Maps subtask keys to the parent Story keys whose expanded subtask lists contain them,
+// so a successful subtask status change can refresh only the affected stories' subtasks
+// (keeping an expanded subtask row from showing a stale pill) without a full reload.
+export function resolveSubtaskParentStoryKeys(subtaskKeys, storySubtasksByKey) {
+    const wanted = new Set((subtaskKeys || []).map(normalizeStatusTargetKey).filter(Boolean));
+    if (!wanted.size) return [];
+    const storyKeys = new Set();
+    const byStory = storySubtasksByKey || {};
+    for (const storyKey of Object.keys(byStory)) {
+        const items = byStory[storyKey]?.items || [];
+        if (items.some((item) => wanted.has(normalizeStatusTargetKey(item?.key)))) {
+            storyKeys.add(storyKey);
+        }
+    }
+    return Array.from(storyKeys);
 }
 
 // Inserts each target list in low-to-high precedence order so a later list's value wins

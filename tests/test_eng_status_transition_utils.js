@@ -290,3 +290,26 @@ test('status target bucket helpers never receive or return raw issue identifiers
     assert.notEqual(utils.buildStatusBucket('PROD-1'), 'PROD-1');
     assert.equal(utils.buildStatusBucket('PROD-1'), 'other');
 });
+
+test('MAX_STATUS_TRANSITION_ISSUES matches the backend cap of 50', async () => {
+    const { MAX_STATUS_TRANSITION_ISSUES } = await loadUtils();
+    assert.equal(MAX_STATUS_TRANSITION_ISSUES, 50);
+});
+
+test('resolveSubtaskParentStoryKeys returns only stories whose subtask list contains a changed key', async () => {
+    const { resolveSubtaskParentStoryKeys } = await loadUtils();
+    const storySubtasksByKey = {
+        'PROD-1': { items: [{ key: 'PROD-1-A' }, { key: 'PROD-1-B' }] },
+        'PROD-2': { items: [{ key: 'PROD-2-A' }] },
+        'PROD-3': { items: [] },
+    };
+
+    // Only PROD-1 owns PROD-1-A; a story key or unknown subtask key resolves to nothing.
+    assert.deepEqual(resolveSubtaskParentStoryKeys(['PROD-1-A'], storySubtasksByKey), ['PROD-1']);
+    assert.deepEqual(
+        resolveSubtaskParentStoryKeys(['prod-1-b', 'PROD-2-A'], storySubtasksByKey).sort(),
+        ['PROD-1', 'PROD-2'],
+    );
+    assert.deepEqual(resolveSubtaskParentStoryKeys(['PROD-1'], storySubtasksByKey), []);
+    assert.deepEqual(resolveSubtaskParentStoryKeys([], storySubtasksByKey), []);
+});

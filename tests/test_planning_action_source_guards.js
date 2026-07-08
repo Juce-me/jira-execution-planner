@@ -270,9 +270,10 @@ test('ENG status transition hook refreshes only after at least one issue succeed
 
     const guardIndex = hookSource.indexOf('if (summary.succeeded > 0) {');
     assert.notEqual(guardIndex, -1, 'Expected an explicit succeeded > 0 guard');
-    const guardEnd = hookSource.indexOf('}', guardIndex);
-    const guardBody = hookSource.slice(guardIndex, guardEnd);
-    assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\)/);
+    // The refresh now carries the affected story keys so only those expanded subtask rows
+    // re-fetch (Fix wave 1); it still fires only inside the succeeded > 0 block.
+    const guardBody = hookSource.slice(guardIndex, guardIndex + 1000);
+    assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
 });
 
 test('ENG status transition hook never mutates Planning selectedTasks for Epics or Subtasks', () => {

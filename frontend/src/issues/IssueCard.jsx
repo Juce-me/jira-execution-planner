@@ -225,7 +225,8 @@ export default function IssueCard({
                             canToggleTargetSet={false}
                             onOpen={onOpenStatusTransition}
                             onClose={onCloseStatusTransition}
-                            onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task, 'Story')}
+                            onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task)}
+                            onSubmitSingleIssue={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task, { singleIssueOnly: true })}
                         />
                     ) : (
                         <StatusPill
@@ -328,7 +329,8 @@ export default function IssueCard({
                                             onOpen={onOpenStatusTransition}
                                             onClose={onCloseStatusTransition}
                                             onToggleTargetSet={() => onToggleSubtaskStatusTarget?.(subtask.key)}
-                                            onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, subtask, 'Subtask')}
+                                            onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, subtask)}
+                                            onSubmitSingleIssue={(targetStatus) => onSubmitStatusTransition?.(targetStatus, subtask, { singleIssueOnly: true })}
                                         />
                                     ) : (
                                         <StatusPill

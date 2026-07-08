@@ -1,5 +1,6 @@
 import * as React from 'react';
 import StatusPill from '../ui/StatusPill.jsx';
+import { MAX_STATUS_TRANSITION_ISSUES } from '../eng/engStatusTransitionUtils.js';
 
 // Shared ENG status-transition control used by Catch Up (single issue) and Planning
 // (composed batch) for Epic, Story, and Subtask status pills. It is presentational:
@@ -75,6 +76,7 @@ export default function StatusTransitionMenu({
     onClose,
     onToggleTargetSet,
     onSubmit,
+    onSubmitSingleIssue,
 }) {
     const [selectedTargetStatus, setSelectedTargetStatus] = React.useState('');
     const selectRef = React.useRef(null);
@@ -94,16 +96,23 @@ export default function StatusTransitionMenu({
         }
     }, [isOpen, optionsLoading]);
 
-    const isTooMany = errorCode === 'too_many_issues';
+    const isServerTooMany = errorCode === 'too_many_issues';
     const isPlanning = sourceSurface === 'planning';
+    // Client-side over-cap: the composed Planning batch exceeds the shared cap. Unlike a
+    // server too_many_issues (options failed, so no valid statuses), the fetched options
+    // are still valid here, so keep the controls visible but disable the batch submit and
+    // offer the single-issue recovery action below.
+    const isOverCap = isPlanning && targetsCount > MAX_STATUS_TRANSITION_ISSUES;
+    const showTooManyMessage = isServerTooMany || isOverCap;
     const targetStatuses = resolveTargetStatuses(options);
+    const canApplySelectedStatus = !!selectedTargetStatus && !optionsLoading && !submitting;
     const submitDisabled = (
-        !selectedTargetStatus ||
-        optionsLoading ||
-        submitting ||
-        isTooMany ||
+        !canApplySelectedStatus ||
+        isServerTooMany ||
+        isOverCap ||
         (isPlanning ? targetsCount === 0 : false)
     );
+    const showSingleIssueAction = isPlanning && targetsCount > 1 && typeof onSubmitSingleIssue === 'function';
 
     const submitLabel = isPlanning
         ? `Apply to selected ${targetsCount === 1 ? 'target' : 'targets'} (${targetsCount})`
@@ -120,6 +129,13 @@ export default function StatusTransitionMenu({
     const handleSubmit = () => {
         if (submitDisabled) return;
         onSubmit?.(selectedTargetStatus);
+    };
+
+    // "Apply to this issue only" acts on the single clicked issue, so it stays available
+    // even when the composed batch is over the cap — it is the recovery path.
+    const handleSubmitSingle = () => {
+        if (!canApplySelectedStatus) return;
+        onSubmitSingleIssue?.(selectedTargetStatus);
     };
 
     const handleMenuKeyDown = (event) => {
@@ -171,15 +187,15 @@ export default function StatusTransitionMenu({
                         {optionsLoading && (
                             <div className="status-transition-menu-note status-transition-menu-loading">Loading status options...</div>
                         )}
-                        {!optionsLoading && error && (
+                        {!optionsLoading && (error || showTooManyMessage) && (
                             <div
-                                className={`status-transition-menu-note status-transition-menu-error${isTooMany ? ' is-too-many' : ''}`}
+                                className={`status-transition-menu-note status-transition-menu-error${showTooManyMessage ? ' is-too-many' : ''}`}
                                 role="alert"
                             >
-                                {isTooMany ? TOO_MANY_ISSUES_MESSAGE : error}
+                                {showTooManyMessage ? TOO_MANY_ISSUES_MESSAGE : error}
                             </div>
                         )}
-                        {!optionsLoading && !isTooMany && (
+                        {!optionsLoading && !isServerTooMany && (
                             <div className="status-transition-menu-controls">
                                 <select
                                     ref={selectRef}
@@ -204,6 +220,16 @@ export default function StatusTransitionMenu({
                                 >
                                     {submitting ? 'Applying...' : submitLabel}
                                 </button>
+                                {showSingleIssueAction && (
+                                    <button
+                                        type="button"
+                                        className="status-transition-submit-single"
+                                        onClick={handleSubmitSingle}
+                                        disabled={!canApplySelectedStatus}
+                                    >
+                                        Apply to this issue only
+                                    </button>
+                                )}
                             </div>
                         )}
                         {result && (

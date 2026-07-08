@@ -10952,12 +10952,18 @@ import {
                 sourceSurface: statusTransitionSourceSurface,
                 trackIssueStatusAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
-                onTransitionSuccessRefresh: () => {
+                onTransitionSuccessRefresh: ({ affectedSubtaskStoryKeys = [] } = {}) => {
                     // Refresh only the ENG task data for the current scope, not a full reload.
                     loadProductTasks({ forceRefresh: true });
                     loadTechTasks({ forceRefresh: true });
                     loadReadyToCloseProductTasks({ forceRefresh: true });
                     loadReadyToCloseTechTasks({ forceRefresh: true });
+                    // Re-fetch subtasks for stories whose subtask status changed so the
+                    // expanded subtask rows reflect the new status (backend subtask cache
+                    // already invalidated); avoids a stale pill without a full reload.
+                    affectedSubtaskStoryKeys.forEach((storyKey) => {
+                        retryStorySubtasks({ key: storyKey });
+                    });
                 },
             });
 
@@ -10987,11 +10993,13 @@ import {
 
             // The hook exposes no submitting flag; track it around the awaited submit so
             // the menu can disable its action and show an in-flight state.
-            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue) => {
+            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue, opts = {}) => {
                 if (statusTransitionSubmitting) return;
                 setStatusTransitionSubmitting(true);
                 try {
-                    if (statusTransitionSourceSurface === 'catch_up') {
+                    // Catch Up always applies to the clicked issue. Planning applies to the
+                    // composed batch unless the single-issue recovery action was used.
+                    if (statusTransitionSourceSurface === 'catch_up' || opts.singleIssueOnly) {
                         await submitStatusTransition(targetStatus, issue?.key);
                     } else {
                         await submitStatusTransition(targetStatus);
@@ -12630,6 +12638,7 @@ import {
                                                         onClose={closeSingleIssueStatusControl}
                                                         onToggleTargetSet={() => toggleEpicStatusTarget(epicGroup.key)}
                                                         onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
+                                                        onSubmitSingleIssue={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key }, { singleIssueOnly: true })}
                                                     />
                                                 ) : (
                                                     <StatusPill

@@ -2,9 +2,11 @@ import * as React from 'react';
 import { fetchIssueTransitionOptions, transitionIssues } from '../api/jiraIssueApi.js';
 import { authRecoveryLoginUrl, redirectToAuthRecovery } from './useEngSprintData.js';
 import {
+    MAX_STATUS_TRANSITION_ISSUES,
     buildCatchUpStatusTargets,
     buildEngStatusTargets,
     buildStatusActionAnalyticsParams,
+    resolveSubtaskParentStoryKeys,
     summarizeTransitionResults,
 } from './engStatusTransitionUtils.js';
 
@@ -171,14 +173,17 @@ export function useEngStatusTransitions({
         const status = String(targetStatus || '').trim();
         if (!status) return null;
 
+        const explicitKey = String(explicitTargetKey || '').trim();
         let targets;
-        if (sourceSurface === 'catch_up') {
-            const key = String(explicitTargetKey || '').trim();
-            if (!key) return null;
+        // Catch Up always acts on one explicit key. Planning defaults to the composed
+        // target set, but also honors an explicit single key for its "Apply to this
+        // issue only" recovery action (Step 6.4), regardless of surface.
+        if (sourceSurface === 'catch_up' || explicitKey) {
+            if (!explicitKey) return null;
             targets = [
-                activeSingleIssueTarget && activeSingleIssueTarget.key === key
+                activeSingleIssueTarget && activeSingleIssueTarget.key === explicitKey
                     ? activeSingleIssueTarget
-                    : { key, issueType: '', currentStatus: '', summary: '' }
+                    : { key: explicitKey, issueType: '', currentStatus: '', summary: '' }
             ];
         } else {
             targets = buildEngStatusTargets({
@@ -188,6 +193,15 @@ export function useEngStatusTransitions({
                 epicGroups,
                 storySubtasksByKey,
             });
+            // Client-side cap guard (defense-in-depth; the menu also disables the batch
+            // submit past the cap). Surface the same recoverable code the backend returns
+            // and send no mutation request.
+            if (targets.length > MAX_STATUS_TRANSITION_ISSUES) {
+                setTransitionResult(null);
+                setTransitionError('');
+                setTransitionErrorCode('too_many_issues');
+                return { error: 'too_many_issues', code: 'too_many_issues' };
+            }
         }
         if (!targets.length) return null;
 
@@ -211,7 +225,15 @@ export function useEngStatusTransitions({
             setTransitionResult({ ...summary, targetStatus: status });
             trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: summary.result });
             if (summary.succeeded > 0) {
-                onTransitionSuccessRefresh?.();
+                // Report which stories had a subtask succeed so the caller can refresh
+                // only those expanded subtask rows (not a full reload). Raw keys stay
+                // local here; they never reach an analytics payload.
+                const succeededKeys = (response?.results || [])
+                    .filter((entry) => entry?.result === 'success' || entry?.result === 'already_in_status')
+                    .map((entry) => entry?.key)
+                    .filter(Boolean);
+                const affectedSubtaskStoryKeys = resolveSubtaskParentStoryKeys(succeededKeys, storySubtasksByKey);
+                onTransitionSuccessRefresh?.({ affectedSubtaskStoryKeys });
             }
             return response;
         } catch (err) {

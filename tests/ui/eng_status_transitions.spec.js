@@ -1,3 +1,4 @@
+const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
@@ -14,6 +15,14 @@ const activeSprintName = '2026Q2 Sprint 42';
 const futureSprintId = 4002;
 const futureSprintName = '2026Q3 Sprint 1';
 const groupTeamIds = ['team-alpha'];
+// The bundle strips CSS (loader '.css': 'empty') and the shell serves the pre-built
+// frontend/dist/dashboard.css, which does not include the source status-transitions.css
+// reset. The MRT021 parity test injects that source reset so it validates the real
+// button.status-pill styling rather than a stale build.
+const statusTransitionsCss = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'frontend', 'src', 'styles', 'eng', 'status-transitions.css'),
+    'utf8',
+);
 let dashboardJs;
 
 test.beforeAll(() => {
@@ -130,8 +139,12 @@ async function installEngStatusFixture(page, {
     optionsStatus = 200,
     optionsBody = defaultOptionsBody,
     transitions = successTransition,
+    stories = null,
 } = {}) {
     const calls = [];
+    // Applied statuses recorded from successful mutations so a subsequent subtask
+    // re-fetch returns the new status (simulates the backend after cache invalidation).
+    const appliedStatus = {};
     const groupsConfigPayload = {
         version: 1,
         configRevision: 1,
@@ -192,9 +205,10 @@ async function installEngStatusFixture(page, {
             const purpose = url.searchParams.get('purpose');
             const sprint = Number(url.searchParams.get('sprint')) || activeSprintId;
             const sprintName = sprint === futureSprintId ? futureSprintName : activeSprintName;
-            const issues = project === 'product' && !purpose
+            const defaultIssues = project === 'product' && !purpose
                 ? [makeStory('PROD-1', 'To Do', sprint, sprintName), makeStory('PROD-2', 'To Do', sprint, sprintName)]
                 : [];
+            const issues = (stories && project === 'product' && !purpose) ? stories : defaultIssues;
             const epic = makeEpic(sprint, sprintName);
             return json(route, {
                 issues,
@@ -203,7 +217,13 @@ async function installEngStatusFixture(page, {
                 names: {},
             });
         }
-        if (url.pathname === '/api/issues/subtasks') return json(route, subtaskPayload(Number(url.searchParams.get('sprint')) || activeSprintId));
+        if (url.pathname === '/api/issues/subtasks') {
+            const payload = subtaskPayload(Number(url.searchParams.get('sprint')) || activeSprintId);
+            payload.subtasks = payload.subtasks.map((subtask) => (
+                appliedStatus[subtask.key] ? { ...subtask, status: { name: appliedStatus[subtask.key] } } : subtask
+            ));
+            return json(route, payload);
+        }
         if (url.pathname === '/api/missing-info') return json(route, { issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
         if (url.pathname === '/api/dependencies') return json(route, { dependencies: {} });
@@ -213,7 +233,13 @@ async function installEngStatusFixture(page, {
             return json(route, payload, optionsStatus);
         }
         if (url.pathname === '/api/issues/transitions') {
-            return json(route, transitions(body));
+            const response = transitions(body);
+            (response.results || []).forEach((entry) => {
+                if (entry.result === 'success' || entry.result === 'already_in_status') {
+                    appliedStatus[entry.key] = body.targetStatus;
+                }
+            });
+            return json(route, response);
         }
         return json(route, { error: `Unexpected ${request.method()} ${url.pathname}` }, 404);
     });
@@ -279,6 +305,48 @@ test('Catch Up epic, story, and subtask status pills are real button triggers wi
     // A normal (non-forced) click opens the anchored menu.
     await storyPill.click();
     await expect(menu(page, 'PROD-1')).toBeVisible();
+});
+
+test('interactive status pill matches the inert status pill visual box (MRT021 parity)', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    // Ensure the source button.status-pill reset is present (see note above).
+    await page.addStyleTag({ content: statusTransitionsCss });
+
+    const storyPill = trigger(page, 'story', 'PROD-1');
+    expect(await storyPill.evaluate(el => el.tagName)).toBe('BUTTON');
+
+    // Build a reference inert <span> StatusPill with the identical classes as a sibling of
+    // the interactive button, then compare the computed visual box. This fails if the
+    // button.status-pill reset ever drifts from the passive span (MRT021).
+    const parity = await storyPill.evaluate((btn) => {
+        const span = document.createElement('span');
+        span.className = btn.className; // same 'status-pill task-status <state>' classes
+        span.textContent = btn.textContent;
+        btn.insertAdjacentElement('afterend', span);
+        const pick = (el) => {
+            const s = getComputedStyle(el);
+            return {
+                paddingTop: s.paddingTop,
+                paddingRight: s.paddingRight,
+                paddingBottom: s.paddingBottom,
+                paddingLeft: s.paddingLeft,
+                backgroundColor: s.backgroundColor,
+                color: s.color,
+                fontSize: s.fontSize,
+                lineHeight: s.lineHeight,
+                fontWeight: s.fontWeight,
+                minHeight: s.minHeight,
+                borderTopLeftRadius: s.borderTopLeftRadius,
+            };
+        };
+        const result = { button: pick(btn), reference: pick(span) };
+        span.remove();
+        return result;
+    });
+    expect(parity.button).toEqual(parity.reference);
 });
 
 test('Catch Up status change sends exactly one issue key in the mutation body', async ({ page }) => {
@@ -406,19 +474,78 @@ test('Planning partial success shows a result summary and keeps failed targets s
     await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('2 · 2.0 SP');
 });
 
-test('Planning too_many_issues shows a recoverable message and sends no mutation request', async ({ page }) => {
+test('Planning over-cap batch disables apply, shows a recoverable message, and sends no mutation', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
-    const { calls } = await installEngStatusFixture(page, { optionsStatus: 400, optionsBody: { error: 'too_many_issues' } });
+    // 51 selected Stories drives the composed target count past the cap of 50, exercising
+    // the real client-side guard (not a faked options 400 the server can never return here).
+    const overCapStories = Array.from({ length: 51 }, (_, i) => makeStory(`PROD-${i + 1}`, 'To Do', futureSprintId, futureSprintName));
+    const { calls } = await installEngStatusFixture(page, { stories: overCapStories });
     await page.goto(appBaseUrl);
-    await openPlanning(page);
+
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.getByRole('button', { name: 'Select All' }).click();
+    await expect(page.locator('.planning-actions .planning-status-feedback')).toContainText('51 status targets selected');
 
     await trigger(page, 'story', 'PROD-1').click();
     const storyMenu = menu(page, 'PROD-1');
+    // Recoverable over-cap message uses the same rendering as the server too_many_issues code.
     await expect(storyMenu.locator('.status-transition-menu-error.is-too-many')).toContainText('Narrow your selection');
-    // No submit control is offered, so no mutation can be sent.
-    await expect(storyMenu.locator('.status-transition-submit')).toHaveCount(0);
+    // The batch submit reflects the real composed count but stays disabled even after a
+    // target status is chosen, so a >50 mutation can never be sent.
+    const batchSubmit = storyMenu.locator('.status-transition-submit');
+    await expect(batchSubmit).toContainText('(51)');
+    await storyMenu.locator('.status-transition-select').selectOption({ value: 'In Progress' });
+    await expect(batchSubmit).toBeDisabled();
+    // Even forcing a click past the disabled state sends no mutation request.
+    await batchSubmit.click({ force: true }).catch(() => {});
     await page.waitForTimeout(150);
     expect(transitionCalls(calls)).toHaveLength(0);
+});
+
+test('Planning applies to only the clicked issue via the single-issue recovery action', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await openPlanning(page); // selects PROD-1 + PROD-2 -> composed target count 2
+
+    await trigger(page, 'story', 'PROD-1').click();
+    const storyMenu = menu(page, 'PROD-1');
+    // Primary action still targets the whole composed batch.
+    await expect(storyMenu.locator('.status-transition-submit')).toContainText('Apply to selected targets (2)');
+    // The secondary single-issue action appears because more than one target is selected.
+    const singleApply = storyMenu.locator('.status-transition-submit-single');
+    await expect(singleApply).toBeVisible();
+    await storyMenu.locator('.status-transition-select').selectOption({ value: 'In Progress' });
+    await singleApply.click();
+
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    const mutation = transitionCalls(calls)[0];
+    // Applies to exactly the clicked issue, not the composed set.
+    expect(mutation.body.issueKeys).toEqual(['PROD-1']);
+    expect(mutation.body.targetStatus).toBe('In Progress');
+});
+
+test('Subtask status change refreshes the expanded subtask row without a full reload', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+
+    // Expand subtasks; PROD-1-A starts at "To Do".
+    await page.locator('.task-item[data-task-key="PROD-1"] .story-subtasks-toggle').click();
+    const subtaskRow = page.locator('.story-subtask-row', { hasText: 'Subtask A' });
+    await expect(subtaskRow.locator('.status-pill')).toContainText('To Do');
+
+    await trigger(page, 'subtask', 'PROD-1-A').click();
+    const subtaskMenu = menu(page, 'PROD-1-A');
+    await subtaskMenu.locator('.status-transition-select').selectOption({ value: 'In Progress' });
+    await subtaskMenu.locator('.status-transition-submit').click();
+
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    // The expanded subtask row reflects the new status after the targeted subtask re-fetch.
+    await expect(subtaskRow.locator('.status-pill')).toContainText('In Progress');
 });
 
 test('Statistics and Scenario ENG views render inert status pills (no triggers)', async ({ page }) => {

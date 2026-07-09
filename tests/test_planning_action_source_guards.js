@@ -272,9 +272,10 @@ test('ENG status transition hook refreshes only after at least one issue succeed
     assert.notEqual(guardIndex, -1, 'Expected an explicit succeeded > 0 guard');
     // The refresh now carries the affected story keys so only those expanded subtask rows
     // re-fetch (Fix wave 1); it still fires only inside the succeeded > 0 block. The window
-    // widened past 1000 chars to also cover the tuple-based transitionOptionsCache
-    // invalidation (Step 3.4) that now runs earlier in the same guard block.
-    const guardBody = hookSource.slice(guardIndex, guardIndex + 2000);
+    // widened past 1000 chars to also cover the tuple/per-key transitionOptionsCache
+    // invalidation (Step 3.4 + degenerate-signature fix) that now runs earlier in the same
+    // guard block.
+    const guardBody = hookSource.slice(guardIndex, guardIndex + 3000);
     assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
 });
 
@@ -301,6 +302,68 @@ test('ENG status transition hook moved its options cache to module scope shared 
     assert.doesNotMatch(hookSource, /React\.useRef\(new Map\(\)\)/, 'Options cache must no longer be a per-instance React ref');
     assert.match(hookSource, /function transitionOptionCacheKey\(targets\)/, 'Expected the tuple-based cache key helper');
     assert.match(hookSource, /export function clearTransitionOptionsCache\(\)/, 'Expected a test/auth-recovery cache-clear escape hatch');
+});
+
+test('transitionOptionCacheKey keeps the mandated tuple for full targets and never collapses degenerate targets into a shared bucket', async () => {
+    const { transitionOptionCacheKey } = await import('../frontend/src/eng/useEngStatusTransitions.js');
+
+    // Full targets keep the mandated project|issueType|currentStatus tuple: two issues
+    // sharing project/type/status intentionally share one cache signature.
+    assert.equal(
+        transitionOptionCacheKey([{ key: 'PROD-1', issueType: 'Story', currentStatus: 'To Do', summary: 'A' }]),
+        'PROD|Story|To Do'
+    );
+    assert.equal(
+        transitionOptionCacheKey([{ key: 'PROD-2', issueType: 'Story', currentStatus: 'To Do', summary: 'B' }]),
+        'PROD|Story|To Do'
+    );
+
+    // Raw string keys must not collapse into one shared "||" bucket across issues.
+    const rawA = transitionOptionCacheKey(['PROD-1']);
+    const rawB = transitionOptionCacheKey(['TECH-9']);
+    assert.notEqual(rawA, rawB, 'distinct raw keys must produce distinct cache signatures');
+    assert.ok(!rawA.includes('|'), `raw-key signature must not degenerate to a tuple: ${rawA}`);
+
+    // Type/status-less fallback targets (submit's explicit-key shape) must be unique per
+    // issue key too, not a shared "PREFIX||" bucket for a whole project.
+    const fallbackA = transitionOptionCacheKey([{ key: 'PROD-1', issueType: '', currentStatus: '', summary: '' }]);
+    const fallbackB = transitionOptionCacheKey([{ key: 'PROD-2', issueType: '', currentStatus: '', summary: '' }]);
+    assert.notEqual(fallbackA, fallbackB, 'distinct context-less targets must produce distinct cache signatures');
+    assert.notEqual(fallbackA, 'PROD||', 'context-less targets must not share a project-wide degenerate tuple');
+    assert.equal(fallbackA, rawA, 'raw key and context-less target for the same issue share one per-key signature so key-based invalidation reaches both');
+
+    // A degenerate signature can never equal any real tuple entry.
+    assert.notEqual(fallbackA, transitionOptionCacheKey([{ key: 'PROD-1', issueType: 'Story', currentStatus: 'To Do' }]));
+});
+
+test('ENG status transition submit invalidation covers degenerate and per-key cache signatures', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    const guardIndex = hookSource.indexOf('if (summary.succeeded > 0) {');
+    assert.notEqual(guardIndex, -1, 'Expected an explicit succeeded > 0 guard');
+    const guardBody = hookSource.slice(guardIndex, guardIndex + 3000);
+
+    // Fallback-submit targets ({key, issueType:'', currentStatus:''}) carry no workflow
+    // context, so the tuple entries that covered them cannot be identified: the success
+    // path must clear the whole cache rather than under-invalidate.
+    assert.match(
+        guardBody,
+        /succeededTargets\.some\(\(target\) => !target\.issueType && !target\.currentStatus\)/,
+        'Expected the succeeded-target degenerate-context check'
+    );
+    assert.match(
+        guardBody,
+        /clearTransitionOptionsCache\(\);/,
+        'Expected a whole-cache clear on the degenerate fallback-submit path'
+    );
+    // Full-target invalidation must also drop any per-key entry cached for the same issue
+    // by a raw-key/context-less options load.
+    assert.match(
+        guardBody,
+        /transitionOptionKeySignature\(target\.key\)/,
+        'Expected per-key signature invalidation alongside tuple invalidation'
+    );
 });
 
 test('ENG priority transition hook keeps a module-level priority options cache shared across hook instances', () => {

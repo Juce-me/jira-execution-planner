@@ -14,19 +14,39 @@ const EMPTY_OPTIONS_REQUEST = { controller: null, signature: '' };
 
 // Module-level cache shared by every hook instance/mount, so switching sprints, groups, or
 // which Story/Epic/Subtask menu is open no longer forces a refetch for a target signature
-// already seen this app session. Keyed by project/issue-type/current-status tuples (never
-// by raw issue key) so different issues that share a tuple reuse one fetch; invalidated
-// per-tuple after a successful transition (see submitStatusTransition) instead of wholesale
-// on scope changes.
+// already seen this app session. Keyed by project/issue-type/current-status tuples so
+// different issues that share a tuple reuse one fetch (degenerate context-less elements
+// fall back to a per-issue-key signature; see transitionOptionCacheKey); invalidated
+// per-tuple after a successful transition (see submitStatusTransition) instead of
+// wholesale on scope changes.
 const transitionOptionsCache = new Map();
 
-function transitionOptionCacheKey(targets) {
+// Per-issue-key signature for degenerate elements: raw key strings, or targets carrying
+// neither issueType nor currentStatus (e.g. submit's explicit-key fallback shape).
+// Distinct from every project|type|status tuple, so a context-less element can never
+// collapse into a shared "PREFIX||"/"||" bucket with other issues, and the
+// success-invalidation below can re-derive it from the issue key alone.
+function transitionOptionKeySignature(keyValue) {
+    return `key:${String(keyValue || '').trim()}`;
+}
+
+// Exported for direct unit coverage of the cache-signature contract
+// (tests/test_planning_action_source_guards.js).
+export function transitionOptionCacheKey(targets) {
     return targets
-        .map(target => [
-            target.projectKey || String(target.key || '').split('-')[0],
-            target.issueType || '',
-            target.currentStatus || '',
-        ].join('|'))
+        .map(target => {
+            if (!target?.issueType && !target?.currentStatus) {
+                // No workflow context: the tuple below would degenerate to a shared
+                // "PREFIX||" (or "||" for raw strings) bucket across distinct issues
+                // and serve cross-issue-stale options; key by the issue key instead.
+                return transitionOptionKeySignature(target?.key || target);
+            }
+            return [
+                target.projectKey || String(target.key || '').split('-')[0],
+                target.issueType || '',
+                target.currentStatus || '',
+            ].join('|');
+        })
         .sort()
         .join(',');
 }
@@ -116,9 +136,12 @@ export function useEngStatusTransitions({
         });
     }, []);
 
-    // Fetches available transitions for the given targets (an array of {key, ...} targets
-    // or raw keys). Aborts any in-flight request for a different target signature before
-    // starting the new one, and dedupes a repeat call for the same in-flight signature.
+    // Fetches available transitions for the given targets — an array of full
+    // {key, issueType, currentStatus} targets from the target builders (the only shape
+    // callers pass today). Raw string keys or type/status-less targets are tolerated
+    // defensively and cache under a per-issue-key signature, never a shared tuple.
+    // Aborts any in-flight request for a different target signature before starting
+    // the new one, and dedupes a repeat call for the same in-flight signature.
     const loadTransitionOptions = React.useCallback(async (targets) => {
         const list = Array.isArray(targets) ? targets : [];
         const keys = Array.from(new Set(list.map((t) => String(t?.key || t || '').trim()).filter(Boolean))).sort();
@@ -277,12 +300,22 @@ export function useEngStatusTransitions({
                 // targets. Uses the pre-transition targets' currentStatus (unchanged by the
                 // mutation response) via the same tuple derivation as transitionOptionCacheKey.
                 const succeededKeySet = new Set(succeededKeys);
-                const affectedTuples = new Set(
-                    targets
-                        .filter((target) => succeededKeySet.has(target.key))
-                        .map((target) => transitionOptionCacheKey([target]))
-                );
-                if (affectedTuples.size) {
+                const succeededTargets = targets.filter((target) => succeededKeySet.has(target.key));
+                if (succeededTargets.some((target) => !target.issueType && !target.currentStatus)) {
+                    // Submit's explicit-key fallback target carries only an issue key, so
+                    // the tuple entries that covered that issue (cached by the open path
+                    // under its real project|type|status) cannot be identified here. Clear
+                    // the whole cache on this rare recovery path rather than risk serving
+                    // stale options (worst case: one extra options refetch per menu open).
+                    clearTransitionOptionsCache();
+                } else if (succeededTargets.length) {
+                    const affectedTuples = new Set();
+                    succeededTargets.forEach((target) => {
+                        affectedTuples.add(transitionOptionCacheKey([target]));
+                        // Also drop any degenerate per-key entry cached for this issue by
+                        // a raw-key/context-less options load.
+                        affectedTuples.add(transitionOptionKeySignature(target.key));
+                    });
                     for (const cacheKey of transitionOptionsCache.keys()) {
                         if (cacheKey.split(',').some((tuple) => affectedTuples.has(tuple))) {
                             transitionOptionsCache.delete(cacheKey);

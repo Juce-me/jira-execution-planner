@@ -150,7 +150,7 @@ Open `docs/plans/GATE-05-home-write-capability.md`. If the required `HOME_WRITE_
 - Create: `backend/services/jira_issue_priorities.py`
 - Test: `tests/test_jira_issue_priorities.py`
 
-- [ ] **Step 1.1: Write failing service tests**
+- [x] **Step 1.1: Write failing service tests**
 
 Add tests covering:
 
@@ -180,7 +180,7 @@ Run:
 
 Expected before implementation: fails because `backend.services.jira_issue_priorities` does not exist.
 
-- [ ] **Step 1.2: Implement the pure service**
+- [x] **Step 1.2: Implement the pure service**
 
 Create `backend/services/jira_issue_priorities.py` with these public symbols:
 
@@ -220,7 +220,7 @@ def update_issue_priorities(issue_keys, target_priority_id, *, jira_request, sea
 
 Reuse the status service's issue-key validation shape where practical, but avoid circular imports if extraction becomes messy.
 
-- [ ] **Step 1.3: Run service tests**
+- [x] **Step 1.3: Run service tests**
 
 Run:
 
@@ -230,7 +230,7 @@ Run:
 
 Expected: pass.
 
-- [ ] **Step 1.4: Commit**
+- [x] **Step 1.4: Commit**
 
 ```bash
 git add backend/services/jira_issue_priorities.py tests/test_jira_issue_priorities.py

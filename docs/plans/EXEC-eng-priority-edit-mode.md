@@ -242,12 +242,14 @@ git commit -m "add jira issue priority service"
 **Files:**
 - Modify: `backend/routes/eng_routes.py`
 - Modify: `backend/security/policy.py`
+- Modify: `backend/services/jira_issue_transitions.py` (added `shape_status_catalog`/`load_status_catalog`; reuses the existing `IssueTransitionServiceError` instead of a new module/exception)
 - Modify: `tests/test_oauth_eng_routes.py`
 - Modify: `tests/test_endpoint_security_matrix.py`
 - Modify: `tests/test_endpoint_policy_inventory.py`
 - Modify: `tests/test_backend_route_source_guards.py`
+- Modify: `tests/test_jira_issue_transitions.py` (direct unit coverage for the new pure catalog-shaping helpers)
 
-- [ ] **Step 2.1: Write failing route and policy tests**
+- [x] **Step 2.1: Write failing route and policy tests**
 
 Add route tests for:
 
@@ -277,7 +279,7 @@ Run:
 
 Expected before implementation: fails because the routes and policies do not exist.
 
-- [ ] **Step 2.2: Add endpoint policies**
+- [x] **Step 2.2: Add endpoint policies**
 
 Add to `backend/security/policy.py` near the existing Jira issue transition policies:
 
@@ -287,7 +289,7 @@ EndpointPolicy("jira-issue-priorities-write", "/api/issues/priorities", frozense
 EndpointPolicy("jira-issue-status-catalog", "/api/issues/statuses/catalog", PUBLIC_METHODS, "authenticated_read"),
 ```
 
-- [ ] **Step 2.3: Add routes**
+- [x] **Step 2.3: Add routes**
 
 Add route handlers in `backend/routes/eng_routes.py` near the status transition routes:
 
@@ -338,7 +340,7 @@ def post_issue_priorities():
 
 Add `GET /api/issues/statuses/catalog` using `GET /rest/api/3/status`, shaped without raw Jira URLs.
 
-- [ ] **Step 2.4: Run backend route tests**
+- [x] **Step 2.4: Run backend route tests**
 
 Run:
 
@@ -348,7 +350,7 @@ Run:
 
 Expected: pass.
 
-- [ ] **Step 2.5: Commit**
+- [x] **Step 2.5: Commit**
 
 ```bash
 git add backend/routes/eng_routes.py backend/security/policy.py tests/test_oauth_eng_routes.py tests/test_endpoint_security_matrix.py tests/test_endpoint_policy_inventory.py tests/test_backend_route_source_guards.py tests/test_jira_issue_priorities.py

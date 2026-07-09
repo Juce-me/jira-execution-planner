@@ -18,8 +18,15 @@ SECURITY_SAMPLES = {
         ("GET", "/api/epm/projects/home-project-1/issues"),
         ("GET", "/api/stats"),
         ("GET", "/api/scenario/drafts"),
+        ("GET", "/api/issues/priorities/options"),
+        ("GET", "/api/issues/statuses/catalog"),
     ],
-    "user_write": [("POST", "/api/me/views"), ("POST", "/api/groups-preferences"), ("POST", "/api/export-excel")],
+    "user_write": [
+        ("POST", "/api/me/views"),
+        ("POST", "/api/groups-preferences"),
+        ("POST", "/api/export-excel"),
+        ("POST", "/api/issues/priorities"),
+    ],
     "workspace_write": [
         ("POST", "/api/scenario/drafts"),
         ("POST", "/api/scenario/drafts/draft-1/rollback"),

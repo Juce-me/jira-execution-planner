@@ -13,9 +13,16 @@ from backend.services.eng_subtasks import (
     normalize_sprint_id,
     shape_subtasks_payload,
 )
+from backend.services.jira_issue_priorities import (
+    IssuePriorityInputError,
+    IssuePriorityServiceError,
+    load_priority_options,
+    update_issue_priorities,
+)
 from backend.services.jira_issue_transitions import (
     IssueTransitionInputError,
     IssueTransitionServiceError,
+    load_status_catalog,
     load_transition_options,
     transition_issues,
 )
@@ -313,6 +320,86 @@ def post_issue_transitions():
 
     if result.get('succeeded', 0) > 0:
         clear_jira_issue_status_caches()
+    return jsonify(result)
+
+
+@bp.route('/api/issues/priorities/options', methods=['GET'])
+def get_issue_priority_options():
+    """Fetch the Jira priority catalog used by priority edit menus."""
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'error': 'jira_oauth_required'}), 403
+
+    try:
+        auth_context = current_request_auth_context()
+        result = load_priority_options(jira_request=current_jira_request, context=auth_context)
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except IssuePriorityServiceError:
+        logger.exception('Issue priority options Jira fetch failed')
+        return jsonify({'error': 'jira_priority_options_failed'}), 502
+    except Exception:
+        logger.exception('Issue priority options endpoint error')
+        return jsonify({'error': 'jira_priority_options_failed'}), 502
+
+    result['cached'] = False
+    return jsonify(result)
+
+
+@bp.route('/api/issues/priorities', methods=['POST'])
+def post_issue_priorities():
+    """Change one or more ENG issue priorities to a target Jira priority ID."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_json'}), 400
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'error': 'jira_oauth_required'}), 403
+
+    try:
+        auth_context = current_request_auth_context()
+        if _missing_write_jira_work_scope(auth_context):
+            raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
+        result = update_issue_priorities(
+            payload.get('issueKeys'),
+            payload.get('targetPriorityId'),
+            jira_request=current_jira_request,
+            search_request=current_jira_search,
+            context=auth_context,
+        )
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except IssuePriorityInputError as error:
+        return jsonify({'error': error.code}), 400
+    except IssuePriorityServiceError:
+        logger.exception('Issue priority write Jira fetch failed')
+        return jsonify({'error': 'jira_priority_update_failed'}), 502
+    except Exception:
+        logger.exception('Issue priority write endpoint error')
+        return jsonify({'error': 'jira_priority_update_failed'}), 502
+
+    if result.get('succeeded', 0) > 0:
+        clear_jira_issue_status_caches(reason='issue_priority_update')
+    return jsonify(result)
+
+
+@bp.route('/api/issues/statuses/catalog', methods=['GET'])
+def get_issue_status_catalog():
+    """Fetch the full Jira workflow status catalog once per app session."""
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'error': 'jira_oauth_required'}), 403
+
+    try:
+        auth_context = current_request_auth_context()
+        result = load_status_catalog(jira_request=current_jira_request, context=auth_context)
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except IssueTransitionServiceError:
+        logger.exception('Issue status catalog Jira fetch failed')
+        return jsonify({'error': 'jira_status_catalog_failed'}), 502
+    except Exception:
+        logger.exception('Issue status catalog endpoint error')
+        return jsonify({'error': 'jira_status_catalog_failed'}), 502
+
+    result['cached'] = False
     return jsonify(result)
 
 

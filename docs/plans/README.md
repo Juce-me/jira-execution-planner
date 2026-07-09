@@ -78,6 +78,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed Jira OAuth-backed ENG Catch Up and Planning status changes across Epics, Stories, and Subtasks. Merged in [PR #100](https://github.com/Juce-me/jira-execution-planner/pull/100). Use for audit context only.
    - Output: Catch Up can transition one Epic, Story, or expanded Subtask at a time by clicking the displayed status; Planning can fetch transition options from clicked status pills/text and transition every selected status target through the signed-in user's Jira OAuth context; batch mode never silently truncates selected targets, rejects over-cap selections before mutation, preserves Story selection capacity math, and keeps EPM Jira/Home-backed issue surfaces view-only while `GATE-05` is blocked.
 
+4. `EXEC-eng-priority-edit-mode.md`
+   - Active implementation plan for adding OAuth-backed ENG priority edits from the existing `task-priority-icon`, reusing the compact status dropdown UI/API pattern, and caching priority/status catalogs across app usage.
+   - Expected output: Story and Epic priority icons open a compact dropdown; priority options are fetched once per app session; priority writes use signed-in user Jira OAuth only; status transition option caching is widened safely without treating every status as universally transitionable; EPM remains read-only.
+
 ## Capacity Reporting Workflow
 
 1. `EXEC-ad-hoc-capacity-epics.md`

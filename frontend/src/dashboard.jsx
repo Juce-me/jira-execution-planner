@@ -10993,13 +10993,13 @@ import {
 
             // The hook exposes no submitting flag; track it around the awaited submit so
             // the menu can disable its action and show an in-flight state.
-            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue, opts = {}) => {
+            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue) => {
                 if (statusTransitionSubmitting) return;
                 setStatusTransitionSubmitting(true);
                 try {
                     // Catch Up always applies to the clicked issue. Planning applies to the
-                    // composed batch unless the single-issue recovery action was used.
-                    if (statusTransitionSourceSurface === 'catch_up' || opts.singleIssueOnly) {
+                    // composed batch.
+                    if (statusTransitionSourceSurface === 'catch_up') {
                         await submitStatusTransition(targetStatus, issue?.key);
                     } else {
                         await submitStatusTransition(targetStatus);
@@ -12627,7 +12627,6 @@ import {
                                                         onClose={closeSingleIssueStatusControl}
                                                         onToggleTargetSet={() => toggleEpicStatusTarget(epicGroup.key)}
                                                         onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
-                                                        onSubmitSingleIssue={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key }, { singleIssueOnly: true })}
                                                     />
                                                 ) : (
                                                     <StatusPill

@@ -37,6 +37,7 @@ export function useEngStatusTransitions({
     const [transitionErrorCode, setTransitionErrorCode] = React.useState('');
     const [transitionResult, setTransitionResult] = React.useState(null);
     const optionsRequestRef = React.useRef(EMPTY_OPTIONS_REQUEST);
+    const optionsCacheRef = React.useRef(new Map());
 
     const abortInFlightOptionsRequest = React.useCallback(() => {
         optionsRequestRef.current.controller?.abort();
@@ -53,6 +54,7 @@ export function useEngStatusTransitions({
         clearNonStoryStatusTargets();
         setActiveSingleIssueTarget(null);
         abortInFlightOptionsRequest();
+        optionsCacheRef.current.clear();
         setTransitionOptions(null);
         setTransitionOptionsLoading(false);
         setTransitionError('');
@@ -110,6 +112,15 @@ export function useEngStatusTransitions({
             return null;
         }
 
+        if (optionsCacheRef.current.has(signature)) {
+            const cached = optionsCacheRef.current.get(signature);
+            setTransitionOptions(cached);
+            setTransitionOptionsLoading(false);
+            setTransitionError('');
+            setTransitionErrorCode('');
+            return cached;
+        }
+
         const controller = new AbortController();
         optionsRequestRef.current = { controller, signature };
         setTransitionOptionsLoading(true);
@@ -126,6 +137,7 @@ export function useEngStatusTransitions({
             if (optionsRequestRef.current.controller !== controller) {
                 return null; // Superseded by a newer request; drop this stale response.
             }
+            optionsCacheRef.current.set(signature, response);
             setTransitionOptions(response);
             return response;
         } catch (err) {

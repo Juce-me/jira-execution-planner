@@ -109,6 +109,19 @@ const defaultOptionsBody = {
     ],
 };
 
+const mixedStatusOptionsBody = {
+    issues: [{ key: 'PROD-1', issueType: 'Story', currentStatus: 'To Do', transitions: [] }],
+    targetStatuses: [
+        { name: 'Done', availableCount: 1, blockedCount: 0 },
+        { name: 'Accepted', availableCount: 1, blockedCount: 0 },
+        { name: 'Blocked', availableCount: 1, blockedCount: 0 },
+        { name: 'Pending', availableCount: 1, blockedCount: 0 },
+        { name: 'Release', availableCount: 1, blockedCount: 0 },
+        { name: 'In Progress', availableCount: 1, blockedCount: 0 },
+        { name: 'Postponed', availableCount: 1, blockedCount: 0 },
+    ],
+};
+
 function successTransition(body) {
     const keys = body?.issueKeys || [];
     return {
@@ -349,6 +362,77 @@ test('interactive status pill matches the inert status pill visual box (MRT021 p
     expect(parity.button).toEqual(parity.reference);
 });
 
+test('status transition menu uses compact app dropdown rows with status color markers', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    await installEngStatusFixture(page, { optionsBody: mixedStatusOptionsBody });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.addStyleTag({ content: statusTransitionsCss });
+
+    await trigger(page, 'story', 'PROD-1').click();
+    const storyMenu = menu(page, 'PROD-1');
+    await expect(storyMenu).toBeVisible();
+
+    const labels = await storyMenu.locator('.status-transition-option-label').allTextContents();
+    expect(labels).toEqual(['Pending', 'Postponed', 'Blocked', 'In Progress', 'Accepted', 'Release', 'Done']);
+
+    const menuBox = await storyMenu.boundingBox();
+    expect(menuBox.width).toBeLessThanOrEqual(280);
+
+    const firstOption = storyMenu.locator('.status-transition-option').first();
+    const firstOptionBox = await firstOption.boundingBox();
+    expect(firstOptionBox.height).toBeLessThanOrEqual(36);
+    await expect(firstOption).not.toHaveClass(/task-status/);
+
+    await expect(firstOption.locator('.status-transition-option-marker')).toHaveClass(/task-status/);
+    await expect(firstOption.locator('.status-transition-option-marker')).toHaveClass(/waiting/);
+    await expect(storyMenu.getByRole('menuitem', { name: 'Blocked' }).locator('.status-transition-option-marker')).toHaveClass(/blocked/);
+    await expect(storyMenu.getByRole('menuitem', { name: 'In Progress' }).locator('.status-transition-option-marker')).toHaveClass(/in-progress/);
+    await expect(storyMenu.getByRole('menuitem', { name: 'Done' }).locator('.status-transition-option-marker')).toHaveClass(/done/);
+
+    const markerBox = await firstOption.locator('.status-transition-option-marker').boundingBox();
+    expect(markerBox.width).toBeLessThanOrEqual(10);
+    expect(markerBox.height).toBeLessThanOrEqual(10);
+
+    const beforeHover = await firstOption.evaluate((node) => getComputedStyle(node).backgroundColor);
+    await firstOption.hover();
+    await expect.poll(async () => firstOption.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe(beforeHover);
+    const hoverStyles = await firstOption.evaluate((node) => {
+        const styles = getComputedStyle(node);
+        return {
+            backgroundColor: styles.backgroundColor,
+            transitionProperty: styles.transitionProperty,
+            borderTopLeftRadius: styles.borderTopLeftRadius,
+        };
+    });
+    expect(hoverStyles.backgroundColor).not.toBe(beforeHover);
+    expect(hoverStyles.transitionProperty).toContain('background-color');
+    expect(Number.parseFloat(hoverStyles.borderTopLeftRadius)).toBeGreaterThanOrEqual(6);
+});
+
+test('story status transition and team pills use rounded app pill geometry', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+
+    const geometry = await page.locator('.task-item[data-task-key="PROD-1"]').evaluate((card) => {
+        const radiusOf = (selector) => {
+            const node = card.querySelector(selector);
+            return node ? Number.parseFloat(getComputedStyle(node).borderTopLeftRadius) : 0;
+        };
+        return {
+            statusTransition: radiusOf('.status-transition'),
+            statusPill: radiusOf('.task-status'),
+            team: radiusOf('.task-team'),
+        };
+    });
+
+    expect(geometry.statusTransition).toBeGreaterThanOrEqual(6);
+    expect(geometry.statusPill).toBeGreaterThanOrEqual(6);
+    expect(geometry.team).toBeGreaterThanOrEqual(6);
+});
+
 test('Catch Up status change sends exactly one issue key in the mutation body', async ({ page }) => {
     await setPrefs(page, catchUpPrefs());
     const { calls } = await installEngStatusFixture(page);
@@ -358,15 +442,36 @@ test('Catch Up status change sends exactly one issue key in the mutation body', 
     await trigger(page, 'story', 'PROD-1').click();
     await expect(menu(page, 'PROD-1')).toBeVisible();
 
-    // Options are fetched for exactly the clicked issue.
-    await expect.poll(() => calls.filter(c => c.pathname === '/api/issues/transitions/options').length).toBeGreaterThan(0);
-    const optionsCall = calls.find(c => c.pathname === '/api/issues/transitions/options');
-    expect(optionsCall.body.issueKeys).toEqual(['PROD-1']);
+    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
 
-    const select = menu(page, 'PROD-1').locator('.status-transition-select');
-    await expect(select).toBeEnabled();
-    await select.selectOption({ value: 'In Progress' });
-    await menu(page, 'PROD-1').locator('.status-transition-submit').click();
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    const mutation = transitionCalls(calls)[0];
+    expect(mutation.body.issueKeys).toEqual(['PROD-1']);
+    expect(mutation.body.targetStatus).toBe('In Progress');
+});
+
+test('Catch Up status menu reuses fetched options and changes status on option click', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await trigger(page, 'story', 'PROD-1').click();
+
+    const storyMenu = menu(page, 'PROD-1');
+    await expect(storyMenu).toBeVisible();
+    await expect(storyMenu.locator('.status-transition-menu-loading')).toHaveCount(0);
+    await expect(storyMenu.locator('.status-transition-select')).toHaveCount(0);
+    await expect(storyMenu.locator('.status-transition-submit')).toHaveCount(0);
+    await expect.poll(() => calls.filter(c => c.pathname === '/api/issues/transitions/options').length).toBe(1);
+
+    await page.keyboard.press('Escape');
+    await expect(storyMenu).toHaveCount(0);
+    await trigger(page, 'story', 'PROD-1').click();
+    await expect(menu(page, 'PROD-1')).toBeVisible();
+    expect(calls.filter(c => c.pathname === '/api/issues/transitions/options')).toHaveLength(1);
+
+    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
     const mutation = transitionCalls(calls)[0];
@@ -409,9 +514,7 @@ test('Planning batch status change sends all selected Story, Epic, and Subtask k
     // Composed count is now 2 stories + 1 epic + 1 subtask = 4.
     await trigger(page, 'story', 'PROD-1').click();
     const storyMenu = menu(page, 'PROD-1');
-    await expect(storyMenu.locator('.status-transition-submit')).toContainText('Apply to selected targets (4)');
-    await storyMenu.locator('.status-transition-select').selectOption({ value: 'Accepted' });
-    await storyMenu.locator('.status-transition-submit').click();
+    await storyMenu.getByRole('menuitem', { name: 'Accepted' }).click();
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
     const mutation = transitionCalls(calls)[0];
@@ -464,8 +567,7 @@ test('Planning partial success shows a result summary and keeps failed targets s
 
     await trigger(page, 'story', 'PROD-1').click();
     const storyMenu = menu(page, 'PROD-1');
-    await storyMenu.locator('.status-transition-select').selectOption({ value: 'Accepted' });
-    await storyMenu.locator('.status-transition-submit').click();
+    await storyMenu.getByRole('menuitem', { name: 'Accepted' }).click();
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
     await expect(storyMenu.locator('.status-transition-menu-result')).toContainText('1 failed');
@@ -492,19 +594,14 @@ test('Planning over-cap batch disables apply, shows a recoverable message, and s
     const storyMenu = menu(page, 'PROD-1');
     // Recoverable over-cap message uses the same rendering as the server too_many_issues code.
     await expect(storyMenu.locator('.status-transition-menu-error.is-too-many')).toContainText('Narrow your selection');
-    // The batch submit reflects the real composed count but stays disabled even after a
-    // target status is chosen, so a >50 mutation can never be sent.
-    const batchSubmit = storyMenu.locator('.status-transition-submit');
-    await expect(batchSubmit).toContainText('(51)');
-    await storyMenu.locator('.status-transition-select').selectOption({ value: 'In Progress' });
-    await expect(batchSubmit).toBeDisabled();
-    // Even forcing a click past the disabled state sends no mutation request.
-    await batchSubmit.click({ force: true }).catch(() => {});
+    const inProgressOption = storyMenu.getByRole('menuitem', { name: 'In Progress' });
+    await expect(inProgressOption).toBeDisabled();
+    await inProgressOption.click({ force: true }).catch(() => {});
     await page.waitForTimeout(150);
     expect(transitionCalls(calls)).toHaveLength(0);
 });
 
-test('Planning applies to only the clicked issue via the single-issue recovery action', async ({ page }) => {
+test('Planning status option applies to selected targets in one click', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
@@ -512,18 +609,11 @@ test('Planning applies to only the clicked issue via the single-issue recovery a
 
     await trigger(page, 'story', 'PROD-1').click();
     const storyMenu = menu(page, 'PROD-1');
-    // Primary action still targets the whole composed batch.
-    await expect(storyMenu.locator('.status-transition-submit')).toContainText('Apply to selected targets (2)');
-    // The secondary single-issue action appears because more than one target is selected.
-    const singleApply = storyMenu.locator('.status-transition-submit-single');
-    await expect(singleApply).toBeVisible();
-    await storyMenu.locator('.status-transition-select').selectOption({ value: 'In Progress' });
-    await singleApply.click();
+    await storyMenu.getByRole('menuitem', { name: 'In Progress' }).click();
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
     const mutation = transitionCalls(calls)[0];
-    // Applies to exactly the clicked issue, not the composed set.
-    expect(mutation.body.issueKeys).toEqual(['PROD-1']);
+    expect(mutation.body.issueKeys).toEqual(['PROD-1', 'PROD-2']);
     expect(mutation.body.targetStatus).toBe('In Progress');
 });
 
@@ -540,8 +630,7 @@ test('Subtask status change refreshes the expanded subtask row without a full re
 
     await trigger(page, 'subtask', 'PROD-1-A').click();
     const subtaskMenu = menu(page, 'PROD-1-A');
-    await subtaskMenu.locator('.status-transition-select').selectOption({ value: 'In Progress' });
-    await subtaskMenu.locator('.status-transition-submit').click();
+    await subtaskMenu.getByRole('menuitem', { name: 'In Progress' }).click();
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
     // The expanded subtask row reflects the new status after the targeted subtask re-fetch.

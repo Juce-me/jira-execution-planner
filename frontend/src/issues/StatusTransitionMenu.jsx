@@ -1,6 +1,7 @@
 import * as React from 'react';
 import StatusPill from '../ui/StatusPill.jsx';
 import { MAX_STATUS_TRANSITION_ISSUES } from '../eng/engStatusTransitionUtils.js';
+import { getIssueStatusClassName, normalizeIssueStatus } from './issueViewUtils.js';
 
 // Shared ENG status-transition control used by Catch Up (single issue) and Planning
 // (composed batch) for Epic, Story, and Subtask status pills. It is presentational:
@@ -10,6 +11,39 @@ import { MAX_STATUS_TRANSITION_ISSUES } from '../eng/engStatusTransitionUtils.js
 // Settings open) keep rendering the plain <StatusPill> span at the call site instead.
 
 const TOO_MANY_ISSUES_MESSAGE = 'Too many issues selected. Narrow your selection, then try again.';
+const STATUS_SORT_RANK = new Map([
+    ['pending', 10],
+    ['to do', 20],
+    ['todo', 20],
+    ['awaiting validation', 30],
+    ['postponed', 40],
+    ['blocked', 50],
+    ['analysis', 60],
+    ['in progress', 70],
+    ['accepted', 80],
+    ['release', 90],
+    ['waiting for release', 90],
+    ['done', 100],
+    ['killed', 110],
+    ['incomplete', 120],
+]);
+
+function statusSortRank(name) {
+    const normalized = normalizeIssueStatus(name);
+    if (STATUS_SORT_RANK.has(normalized)) return STATUS_SORT_RANK.get(normalized);
+    if (normalized.includes('blocked')) return 50;
+    if (normalized.includes('progress')) return 70;
+    if (normalized.includes('done') || normalized.includes('complete')) return 100;
+    return 55;
+}
+
+function sortTargetStatuses(statuses) {
+    return [...statuses].sort((a, b) => {
+        const rankDelta = statusSortRank(a.name) - statusSortRank(b.name);
+        if (rankDelta !== 0) return rankDelta;
+        return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+}
 
 // Prefer the aggregated targetStatuses from the options contract; fall back to the
 // distinct per-issue transition target names when the aggregate list is absent.
@@ -76,44 +110,34 @@ export default function StatusTransitionMenu({
     onClose,
     onToggleTargetSet,
     onSubmit,
-    onSubmitSingleIssue,
 }) {
-    const [selectedTargetStatus, setSelectedTargetStatus] = React.useState('');
-    const selectRef = React.useRef(null);
+    const firstOptionRef = React.useRef(null);
     const issueKey = String(issue?.key || '').trim();
-
-    // Reset the chosen status when the menu opens for a (possibly different) issue.
-    React.useEffect(() => {
-        if (isOpen) {
-            setSelectedTargetStatus('');
-        }
-    }, [isOpen, issueKey]);
 
     // Move focus into the menu once options are available.
     React.useEffect(() => {
-        if (isOpen && !optionsLoading && selectRef.current) {
-            selectRef.current.focus();
+        if (isOpen && !optionsLoading && firstOptionRef.current) {
+            firstOptionRef.current.focus();
         }
     }, [isOpen, optionsLoading]);
 
     const isServerTooMany = errorCode === 'too_many_issues';
     const isPlanning = sourceSurface === 'planning';
     // Client-side over-cap: the composed Planning batch exceeds the shared cap. Unlike a
-    // server too_many_issues (options failed, so no valid statuses), the fetched options
-    // are still valid here, so keep the controls visible but disable the batch submit and
-    // offer the single-issue recovery action below.
+    // server too_many_issues (options failed, so no valid statuses), the cached status
+    // options are still visible but disabled so a >50 mutation can never be sent.
     const isOverCap = isPlanning && targetsCount > MAX_STATUS_TRANSITION_ISSUES;
     const showTooManyMessage = isServerTooMany || isOverCap;
-    const targetStatuses = resolveTargetStatuses(options);
-    const canApplySelectedStatus = !!selectedTargetStatus && !optionsLoading && !submitting;
-    const submitDisabled = (
-        !canApplySelectedStatus ||
+    const currentStatusName = normalizeIssueStatus(statusLabel);
+    const targetStatuses = sortTargetStatuses(resolveTargetStatuses(options)
+        .filter((entry) => normalizeIssueStatus(entry.name) !== currentStatusName));
+    const optionDisabled = (
+        optionsLoading ||
+        submitting ||
         isServerTooMany ||
         isOverCap ||
         (isPlanning ? targetsCount === 0 : false)
     );
-    const showSingleIssueAction = isPlanning && targetsCount > 1 && typeof onSubmitSingleIssue === 'function';
-
     const submitLabel = isPlanning
         ? `Apply to selected ${targetsCount === 1 ? 'target' : 'targets'} (${targetsCount})`
         : 'Apply';
@@ -126,16 +150,9 @@ export default function StatusTransitionMenu({
         }
     };
 
-    const handleSubmit = () => {
-        if (submitDisabled) return;
-        onSubmit?.(selectedTargetStatus);
-    };
-
-    // "Apply to this issue only" acts on the single clicked issue, so it stays available
-    // even when the composed batch is over the cap — it is the recovery path.
-    const handleSubmitSingle = () => {
-        if (!canApplySelectedStatus) return;
-        onSubmitSingleIssue?.(selectedTargetStatus);
+    const handleOptionClick = (targetStatus) => {
+        if (optionDisabled) return;
+        onSubmit?.(targetStatus);
     };
 
     const handleMenuKeyDown = (event) => {
@@ -195,41 +212,28 @@ export default function StatusTransitionMenu({
                                 {showTooManyMessage ? TOO_MANY_ISSUES_MESSAGE : error}
                             </div>
                         )}
-                        {!optionsLoading && !isServerTooMany && (
-                            <div className="status-transition-menu-controls">
-                                <select
-                                    ref={selectRef}
-                                    className="status-transition-select"
-                                    value={selectedTargetStatus}
-                                    onChange={(event) => setSelectedTargetStatus(event.target.value)}
-                                    disabled={submitting || targetStatuses.length === 0}
-                                    aria-label="Target status"
-                                >
-                                    <option value="">
-                                        {targetStatuses.length === 0 ? 'No available transitions' : 'Choose status...'}
-                                    </option>
-                                    {targetStatuses.map((entry) => (
-                                        <option key={entry.name} value={entry.name}>{optionLabel(entry)}</option>
-                                    ))}
-                                </select>
-                                <button
-                                    type="button"
-                                    className="status-transition-submit"
-                                    onClick={handleSubmit}
-                                    disabled={submitDisabled}
-                                >
-                                    {submitting ? 'Applying...' : submitLabel}
-                                </button>
-                                {showSingleIssueAction && (
+                        {!optionsLoading && !isServerTooMany && targetStatuses.length === 0 && (
+                            <div className="status-transition-menu-note">No available transitions.</div>
+                        )}
+                        {!optionsLoading && !isServerTooMany && targetStatuses.length > 0 && (
+                            <div className="status-transition-menu-options" aria-label={submitLabel}>
+                                {targetStatuses.map((entry, index) => (
                                     <button
+                                        key={entry.name}
+                                        ref={index === 0 ? firstOptionRef : null}
                                         type="button"
-                                        className="status-transition-submit-single"
-                                        onClick={handleSubmitSingle}
-                                        disabled={!canApplySelectedStatus}
+                                        className="status-transition-option"
+                                        role="menuitem"
+                                        onClick={() => handleOptionClick(entry.name)}
+                                        disabled={optionDisabled}
                                     >
-                                        Apply to this issue only
+                                        <span
+                                            className={getIssueStatusClassName(entry.name, 'status-transition-option-marker')}
+                                            aria-hidden="true"
+                                        />
+                                        <span className="status-transition-option-label">{optionLabel(entry)}</span>
                                     </button>
-                                )}
+                                ))}
                             </div>
                         )}
                         {result && (

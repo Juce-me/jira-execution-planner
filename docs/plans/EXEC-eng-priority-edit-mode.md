@@ -754,7 +754,7 @@ git commit -m "guard priority edit surface isolation"
 - Generated: `frontend/dist/dashboard.js.map`
 - Generated: `frontend/dist/dashboard.css`
 
-- [ ] **Step 6.1: Build frontend**
+- [x] **Step 6.1: Build frontend**
 
 Run:
 
@@ -764,7 +764,7 @@ npm run build
 
 Expected: exit 0 and generated dist changes.
 
-- [ ] **Step 6.2: Run focused UI and source checks**
+- [x] **Step 6.2: Run focused UI and source checks**
 
 Run:
 
@@ -776,7 +776,7 @@ node --test tests/test_frontend_api_source_guards.js tests/test_eng_priority_tra
 
 Expected: all pass.
 
-- [ ] **Step 6.3: Run full backend suite before push**
+- [x] **Step 6.3: Run full backend suite before push**
 
 Run:
 
@@ -786,7 +786,7 @@ Run:
 
 Expected: pass. If the sandbox blocks the local PostgreSQL socket, rerun the same command with approved escalation and record that the sandbox run failed for socket access only.
 
-- [ ] **Step 6.4: Review and commit dist**
+- [x] **Step 6.4: Review and commit dist**
 
 Run:
 

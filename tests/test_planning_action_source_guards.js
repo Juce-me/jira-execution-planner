@@ -271,8 +271,10 @@ test('ENG status transition hook refreshes only after at least one issue succeed
     const guardIndex = hookSource.indexOf('if (summary.succeeded > 0) {');
     assert.notEqual(guardIndex, -1, 'Expected an explicit succeeded > 0 guard');
     // The refresh now carries the affected story keys so only those expanded subtask rows
-    // re-fetch (Fix wave 1); it still fires only inside the succeeded > 0 block.
-    const guardBody = hookSource.slice(guardIndex, guardIndex + 1000);
+    // re-fetch (Fix wave 1); it still fires only inside the succeeded > 0 block. The window
+    // widened past 1000 chars to also cover the tuple-based transitionOptionsCache
+    // invalidation (Step 3.4) that now runs earlier in the same guard block.
+    const guardBody = hookSource.slice(guardIndex, guardIndex + 2000);
     assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
 });
 
@@ -282,4 +284,37 @@ test('ENG status transition hook never mutates Planning selectedTasks for Epics 
 
     assert.doesNotMatch(hookSource, /\bselectedTasks\b/, 'Hook must never read/write the raw Planning selectedTasks map, only selectedStories');
     assert.doesNotMatch(hookSource, /setSelectedTasks/);
+});
+
+test('ENG status transition hook moved its options cache to module scope shared across hook instances', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    const cacheDeclIndex = hookSource.indexOf('const transitionOptionsCache = new Map();');
+    const hookFnIndex = hookSource.indexOf('export function useEngStatusTransitions');
+    assert.notEqual(cacheDeclIndex, -1, 'Expected a module-level transitionOptionsCache Map');
+    assert.notEqual(hookFnIndex, -1, 'Expected the useEngStatusTransitions hook export');
+    assert.ok(
+        cacheDeclIndex !== -1 && hookFnIndex !== -1 && cacheDeclIndex < hookFnIndex,
+        'Expected transitionOptionsCache to be declared at module scope, before the hook function, so every hook instance/mount shares one cache instead of re-creating a per-instance ref'
+    );
+    assert.doesNotMatch(hookSource, /React\.useRef\(new Map\(\)\)/, 'Options cache must no longer be a per-instance React ref');
+    assert.match(hookSource, /function transitionOptionCacheKey\(targets\)/, 'Expected the tuple-based cache key helper');
+    assert.match(hookSource, /export function clearTransitionOptionsCache\(\)/, 'Expected a test/auth-recovery cache-clear escape hatch');
+});
+
+test('ENG priority transition hook keeps a module-level priority options cache shared across hook instances', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngPriorityTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    const cacheDeclIndex = hookSource.indexOf('let priorityOptionsCache');
+    const hookFnIndex = hookSource.indexOf('export function useEngPriorityTransitions');
+    assert.notEqual(cacheDeclIndex, -1, 'Expected a module-level priorityOptionsCache declaration');
+    assert.notEqual(hookFnIndex, -1, 'Expected the useEngPriorityTransitions hook export');
+    assert.ok(
+        cacheDeclIndex !== -1 && hookFnIndex !== -1 && cacheDeclIndex < hookFnIndex,
+        'Expected priorityOptionsCache to be declared at module scope, before the hook function, so every hook instance shares one fetch instead of re-fetching per mount'
+    );
+    assert.match(hookSource, /let priorityOptionsPromise/, 'Expected an in-flight promise so concurrent opens dedupe to one fetch');
+    assert.match(hookSource, /export function clearPriorityOptionsCache\(\)/, 'Expected a test/auth-recovery cache-clear escape hatch');
 });

@@ -1119,3 +1119,128 @@ test('transitionIssues rejects with a structured too_many_issues error carrying 
         }
     );
 });
+
+test('Jira issue transition API module owns priority and status catalog endpoint construction', () => {
+    const jiraIssueApiPath = path.join(frontendSrcPath, 'api', 'jiraIssueApi.js');
+    const jiraIssueApiSource = readSource(jiraIssueApiPath);
+
+    assert.ok(jiraIssueApiSource.includes('/api/issues/priorities/options'), 'Expected priority options URL construction in jiraIssueApi.js');
+    assert.ok(jiraIssueApiSource.includes('/api/issues/priorities'), 'Expected priority write URL construction in jiraIssueApi.js');
+    assert.ok(jiraIssueApiSource.includes('/api/issues/statuses/catalog'), 'Expected status catalog URL construction in jiraIssueApi.js');
+});
+
+test('fetchIssuePriorityOptions sends X-Requested-With and tracks the jira_issue_priorities surface', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const calls = [];
+    const jiraIssueApi = loadApiModule('jiraIssueApi.js', [
+        'fetchIssuePriorityOptions',
+    ], {
+        jsonOrStructuredError,
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            calls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ priorities: [], source: 'jira' });
+        },
+    });
+    const signal = new AbortController().signal;
+
+    const payload = await jiraIssueApi.fetchIssuePriorityOptions('http://backend', { signal });
+
+    assert.deepEqual(payload, { priorities: [], source: 'jira' });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].apiSurface, 'jira_issue_priorities');
+    assert.deepEqual(calls[0].analyticsParams, { featureName: 'eng_priority_changes' });
+    assert.equal(calls[0].url, 'http://backend/api/issues/priorities/options');
+    assert.equal(calls[0].options.method, 'GET');
+    assert.equal(calls[0].options.cache, 'no-cache');
+    assert.equal(calls[0].options.signal, signal);
+    assert.equal(new Headers(calls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+    assert.equal(new Headers(calls[0].options.headers).has('X-CSRF-Token'), false);
+});
+
+test('updateIssuePriorities fetches a CSRF token before posting the target priority with tracked analytics surface', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const calls = [];
+    const jiraIssueApi = loadApiModule('jiraIssueApi.js', [
+        'updateIssuePriorities',
+    ], {
+        jsonOrStructuredError,
+        fetchCsrfToken: async () => ({ csrfToken: 'csrf-token' }),
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            calls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ requested: 1, succeeded: 1, failed: 0, results: [] });
+        },
+    });
+    const signal = new AbortController().signal;
+    const requestPayload = { issueKeys: ['PROD-1'], targetPriorityId: '3' };
+
+    const payload = await jiraIssueApi.updateIssuePriorities('http://backend', requestPayload, { signal });
+
+    assert.deepEqual(payload, { requested: 1, succeeded: 1, failed: 0, results: [] });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].apiSurface, 'jira_issue_priorities');
+    assert.deepEqual(calls[0].analyticsParams, { featureName: 'eng_priority_changes' });
+    assert.equal(calls[0].url, 'http://backend/api/issues/priorities');
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[0].options.cache, 'no-cache');
+    assert.equal(calls[0].options.signal, signal);
+    assert.deepEqual(JSON.parse(calls[0].options.body), requestPayload);
+    assertJsonHeader(calls[0].options);
+    assert.equal(new Headers(calls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+    assert.equal(new Headers(calls[0].options.headers).get('X-CSRF-Token'), 'csrf-token');
+});
+
+test('fetchIssuePriorityOptions rejects with a structured auth_required error carrying status/code/loginUrl', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const jiraIssueApi = loadApiModule('jiraIssueApi.js', [
+        'fetchIssuePriorityOptions',
+    ], {
+        jsonOrStructuredError,
+        trackedFetch: async () => ({
+            ok: false,
+            status: 401,
+            json: async () => ({
+                error: 'auth_required',
+                message: 'Sign in required.',
+                loginUrl: '/login?reason=session_expired',
+            }),
+        }),
+    });
+
+    await assert.rejects(
+        () => jiraIssueApi.fetchIssuePriorityOptions('http://backend'),
+        (err) => {
+            assert.equal(err.status, 401);
+            assert.equal(err.code, 'auth_required');
+            assert.equal(err.loginUrl, '/login?reason=session_expired');
+            return true;
+        }
+    );
+});
+
+test('fetchIssueStatusCatalog sends X-Requested-With and tracks the jira_issue_transitions surface', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const calls = [];
+    const jiraIssueApi = loadApiModule('jiraIssueApi.js', [
+        'fetchIssueStatusCatalog',
+    ], {
+        jsonOrStructuredError,
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            calls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ statuses: [], source: 'jira' });
+        },
+    });
+    const signal = new AbortController().signal;
+
+    const payload = await jiraIssueApi.fetchIssueStatusCatalog('http://backend', { signal });
+
+    assert.deepEqual(payload, { statuses: [], source: 'jira' });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].apiSurface, 'jira_issue_transitions');
+    assert.deepEqual(calls[0].analyticsParams, { featureName: 'eng_status_transitions' });
+    assert.equal(calls[0].url, 'http://backend/api/issues/statuses/catalog');
+    assert.equal(calls[0].options.method, 'GET');
+    assert.equal(calls[0].options.cache, 'no-cache');
+    assert.equal(calls[0].options.signal, signal);
+    assert.equal(new Headers(calls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+    assert.equal(new Headers(calls[0].options.headers).has('X-CSRF-Token'), false);
+});

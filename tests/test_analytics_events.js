@@ -423,6 +423,151 @@ test('issue_status_action accepts the eng status transition enum params and reje
     );
 });
 
+test('issue_priority_action is a canonical userevent requiring feature_name', async () => {
+    const { validateAnalyticsPayload } = await loadEvents();
+
+    assert.throws(
+        () => validateAnalyticsPayload({ event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'issue_priority_action' }),
+        /feature_name is required/
+    );
+
+    const payload = validateAnalyticsPayload({
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'issue_priority_action',
+        feature_name: 'eng_priority_changes',
+        workflow_action: 'priority_change_submit',
+        source_surface: 'planning',
+        priority_bucket: 'high',
+        result: 'success'
+    });
+    assert.equal(payload.event_name, 'issue_priority_action');
+});
+
+test('issue_priority_action accepts the eng priority transition enum params and rejects unsafe priority_bucket values', async () => {
+    const { sanitizeAnalyticsParams } = await loadEvents();
+
+    for (const workflowAction of ['priority_options_open', 'priority_change_submit', 'priority_change_result']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'eng_priority_changes',
+                workflow_action: workflowAction,
+                source_surface: 'catch_up'
+            }, 'issue_priority_action'),
+            {
+                feature_name: 'eng_priority_changes',
+                workflow_action: workflowAction,
+                source_surface: 'catch_up'
+            }
+        );
+    }
+
+    for (const priorityBucket of ['highest', 'high', 'medium', 'low', 'lowest', 'other']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'eng_priority_changes',
+                workflow_action: 'priority_change_submit',
+                source_surface: 'planning',
+                selected_count_bucket: '1_5',
+                issue_type_mix: 'epics',
+                priority_bucket: priorityBucket
+            }, 'issue_priority_action'),
+            {
+                feature_name: 'eng_priority_changes',
+                workflow_action: 'priority_change_submit',
+                source_surface: 'planning',
+                selected_count_bucket: '1_5',
+                issue_type_mix: 'epics',
+                priority_bucket: priorityBucket
+            }
+        );
+    }
+
+    for (const result of ['success', 'partial', 'failure']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'eng_priority_changes',
+                workflow_action: 'priority_change_result',
+                source_surface: 'planning',
+                result
+            }, 'issue_priority_action'),
+            {
+                feature_name: 'eng_priority_changes',
+                workflow_action: 'priority_change_result',
+                source_surface: 'planning',
+                result
+            }
+        );
+    }
+
+    // priority_bucket must never carry a raw Jira priority id or name string.
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'eng_priority_changes', priority_bucket: '3' }, 'issue_priority_action'),
+        /unsafe analytics value/
+    );
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'eng_priority_changes', priority_bucket: 'Highest' }, 'issue_priority_action'),
+        /unsafe analytics value/
+    );
+});
+
+test('api_result accepts the jira_issue_priorities surface', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    trackApiResult('jira_issue_priorities', {
+        featureName: 'eng_priority_changes',
+        method: 'POST',
+        status: 200,
+        durationMs: 400
+    });
+
+    assert.equal(pushed.length, 1);
+    assert.equal(pushed[0].api_surface, 'jira_issue_priorities');
+    assert.equal(pushed[0].feature_name, 'eng_priority_changes');
+});
+
+test('issue_priority_action pushes the eng priority transition contract through the dataLayer', async () => {
+    const { initAnalytics, trackEvent } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    trackEvent('issue_priority_action', {
+        feature_name: 'eng_priority_changes',
+        workflow_action: 'priority_change_result',
+        source_surface: 'planning',
+        selected_count_bucket: '1_5',
+        issue_type_mix: 'stories',
+        priority_bucket: 'medium',
+        result: 'success'
+    });
+
+    assert.equal(pushed.length, 1);
+    assert.deepEqual(pushed[0], {
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'issue_priority_action',
+        feature_name: 'eng_priority_changes',
+        workflow_action: 'priority_change_result',
+        source_surface: 'planning',
+        selected_count_bucket: '1_5',
+        issue_type_mix: 'stories',
+        priority_bucket: 'medium',
+        result: 'success'
+    });
+});
+
 test('api_result accepts the jira_issue_transitions surface', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();

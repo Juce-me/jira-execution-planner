@@ -12,6 +12,31 @@ import {
 
 const EMPTY_OPTIONS_REQUEST = { controller: null, signature: '' };
 
+// Module-level cache shared by every hook instance/mount, so switching sprints, groups, or
+// which Story/Epic/Subtask menu is open no longer forces a refetch for a target signature
+// already seen this app session. Keyed by project/issue-type/current-status tuples (never
+// by raw issue key) so different issues that share a tuple reuse one fetch; invalidated
+// per-tuple after a successful transition (see submitStatusTransition) instead of wholesale
+// on scope changes.
+const transitionOptionsCache = new Map();
+
+function transitionOptionCacheKey(targets) {
+    return targets
+        .map(target => [
+            target.projectKey || String(target.key || '').split('-')[0],
+            target.issueType || '',
+            target.currentStatus || '',
+        ].join('|'))
+        .sort()
+        .join(',');
+}
+
+// Test/auth-recovery escape hatch mirroring clearPriorityOptionsCache in
+// useEngPriorityTransitions.js.
+export function clearTransitionOptionsCache() {
+    transitionOptionsCache.clear();
+}
+
 // React state for ENG Catch Up single-issue status changes and Planning selected
 // Epic/Subtask status targets, option loading, mutation submission, auth recovery, and
 // result state. Planning Story selection keeps using the caller's existing selection map
@@ -37,7 +62,6 @@ export function useEngStatusTransitions({
     const [transitionErrorCode, setTransitionErrorCode] = React.useState('');
     const [transitionResult, setTransitionResult] = React.useState(null);
     const optionsRequestRef = React.useRef(EMPTY_OPTIONS_REQUEST);
-    const optionsCacheRef = React.useRef(new Map());
 
     const abortInFlightOptionsRequest = React.useCallback(() => {
         optionsRequestRef.current.controller?.abort();
@@ -54,7 +78,9 @@ export function useEngStatusTransitions({
         clearNonStoryStatusTargets();
         setActiveSingleIssueTarget(null);
         abortInFlightOptionsRequest();
-        optionsCacheRef.current.clear();
+        // transitionOptionsCache is module-level and app-session scoped; it is invalidated
+        // per-tuple after a successful transition (see submitStatusTransition), not
+        // wholesale on every sprint change.
         setTransitionOptions(null);
         setTransitionOptionsLoading(false);
         setTransitionError('');
@@ -96,7 +122,7 @@ export function useEngStatusTransitions({
     const loadTransitionOptions = React.useCallback(async (targets) => {
         const list = Array.isArray(targets) ? targets : [];
         const keys = Array.from(new Set(list.map((t) => String(t?.key || t || '').trim()).filter(Boolean))).sort();
-        const signature = keys.join(',');
+        const signature = transitionOptionCacheKey(list);
 
         if (optionsRequestRef.current.controller) {
             if (optionsRequestRef.current.signature === signature) {
@@ -112,8 +138,8 @@ export function useEngStatusTransitions({
             return null;
         }
 
-        if (optionsCacheRef.current.has(signature)) {
-            const cached = optionsCacheRef.current.get(signature);
+        if (transitionOptionsCache.has(signature)) {
+            const cached = transitionOptionsCache.get(signature);
             setTransitionOptions(cached);
             setTransitionOptionsLoading(false);
             setTransitionError('');
@@ -137,7 +163,7 @@ export function useEngStatusTransitions({
             if (optionsRequestRef.current.controller !== controller) {
                 return null; // Superseded by a newer request; drop this stale response.
             }
-            optionsCacheRef.current.set(signature, response);
+            transitionOptionsCache.set(signature, response);
             setTransitionOptions(response);
             return response;
         } catch (err) {
@@ -149,6 +175,7 @@ export function useEngStatusTransitions({
             }
             if (authRecoveryLoginUrl(err)) {
                 onAuthRecoveryRequired?.();
+                clearTransitionOptionsCache();
                 redirectToAuthRecovery(err);
             }
             setTransitionError(err?.message || 'Failed to load status options.');
@@ -244,6 +271,24 @@ export function useEngStatusTransitions({
                     .filter((entry) => entry?.result === 'success' || entry?.result === 'already_in_status')
                     .map((entry) => entry?.key)
                     .filter(Boolean);
+                // Invalidate cached options responses that involved one of the
+                // project/issueType/old-status tuples that just changed status, including
+                // batch entries that combined a succeeded target with other still-unchanged
+                // targets. Uses the pre-transition targets' currentStatus (unchanged by the
+                // mutation response) via the same tuple derivation as transitionOptionCacheKey.
+                const succeededKeySet = new Set(succeededKeys);
+                const affectedTuples = new Set(
+                    targets
+                        .filter((target) => succeededKeySet.has(target.key))
+                        .map((target) => transitionOptionCacheKey([target]))
+                );
+                if (affectedTuples.size) {
+                    for (const cacheKey of transitionOptionsCache.keys()) {
+                        if (cacheKey.split(',').some((tuple) => affectedTuples.has(tuple))) {
+                            transitionOptionsCache.delete(cacheKey);
+                        }
+                    }
+                }
                 const affectedSubtaskStoryKeys = resolveSubtaskParentStoryKeys(succeededKeys, storySubtasksByKey);
                 onTransitionSuccessRefresh?.({ affectedSubtaskStoryKeys });
             }
@@ -251,6 +296,7 @@ export function useEngStatusTransitions({
         } catch (err) {
             if (authRecoveryLoginUrl(err)) {
                 onAuthRecoveryRequired?.();
+                clearTransitionOptionsCache();
                 redirectToAuthRecovery(err);
             }
             setTransitionError(err?.message || 'Failed to change status.');

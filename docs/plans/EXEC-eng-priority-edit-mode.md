@@ -374,7 +374,7 @@ git commit -m "add oauth priority edit routes"
 - Modify: `tests/test_analytics_events.js`
 - Modify: `tests/test_analytics_source_guards.js`
 
-- [ ] **Step 3.1: Write failing API/cache tests**
+- [x] **Step 3.1: Write failing API/cache tests**
 
 Add tests proving:
 
@@ -397,7 +397,7 @@ node --test tests/test_frontend_api_source_guards.js tests/test_eng_priority_tra
 
 Expected before implementation: fails because wrappers/hook/utils/events do not exist.
 
-- [ ] **Step 3.2: Add frontend API wrappers**
+- [x] **Step 3.2: Add frontend API wrappers**
 
 In `frontend/src/api/jiraIssueApi.js` add:
 
@@ -432,7 +432,7 @@ export function fetchIssueStatusCatalog(backendUrl, { signal } = {}) {
 }
 ```
 
-- [ ] **Step 3.3: Add priority hook with one-fetch app cache**
+- [x] **Step 3.3: Add priority hook with one-fetch app cache**
 
 Create `frontend/src/eng/useEngPriorityTransitions.js` with a module-level cache:
 
@@ -463,7 +463,7 @@ async function loadPriorityOptionsOnce(backendUrl, signal) {
 
 The hook should expose `openPriorityControl(issue)`, `closePriorityControl()`, `submitPriorityChange(priorityId, issueKey)`, loading/error/result state, and `activePriorityTarget`.
 
-- [ ] **Step 3.4: Extend status caching across app usage**
+- [x] **Step 3.4: Extend status caching across app usage**
 
 Move the current hook-local `optionsCacheRef` behavior into a module-level cache in `useEngStatusTransitions.js`:
 
@@ -486,7 +486,7 @@ function transitionOptionCacheKey(targets) {
 
 Do not key only by status name. Include project key, issue type, and current status. On successful status transition, invalidate cache entries for the affected project/status tuples and the old issue-key signature. Keep write-time backend validation unchanged.
 
-- [ ] **Step 3.5: Add analytics contract**
+- [x] **Step 3.5: Add analytics contract**
 
 Add:
 
@@ -506,7 +506,7 @@ const trackIssuePriorityAction = useCallback((workflowAction, params = {}) => {
 
 Allowed params: `source_surface`, `issue_type_mix`, `selected_count_bucket`, `priority_bucket`, `result`. Do not include raw issue keys or priority IDs.
 
-- [ ] **Step 3.6: Run frontend API/cache/analytics tests**
+- [x] **Step 3.6: Run frontend API/cache/analytics tests**
 
 Run:
 
@@ -516,7 +516,7 @@ node --test tests/test_frontend_api_source_guards.js tests/test_eng_priority_tra
 
 Expected: pass.
 
-- [ ] **Step 3.7: Commit**
+- [x] **Step 3.7: Commit**
 
 ```bash
 git add frontend/src/api/jiraIssueApi.js frontend/src/eng/engPriorityTransitionUtils.js frontend/src/eng/useEngPriorityTransitions.js frontend/src/eng/useEngStatusTransitions.js frontend/src/analytics/analytics.js frontend/src/analytics/dashboardAnalytics.js frontend/src/analytics/events.js docs/README_ANALYTICS.md tests/test_frontend_api_source_guards.js tests/test_eng_priority_transition_utils.js tests/test_planning_action_source_guards.js tests/test_analytics_events.js tests/test_analytics_source_guards.js

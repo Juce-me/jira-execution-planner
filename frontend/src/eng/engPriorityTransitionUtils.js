@@ -81,6 +81,26 @@ export function summarizePriorityTransitionResults(results) {
     return { total, succeeded, failed, result };
 }
 
+// After a successful priority write, patches the matching Story's rendered priority in
+// place so its icon/card color reflect the change before the task-list refresh resolves.
+// Epic priority writes have no matching entry in the Story task list (epicGroup.key is
+// never a Story's own key there), so this is a harmless no-op for Epics: the Epic header
+// icon is a derived "most urgent child Story priority" (getEpicEffectivePriority in
+// engTaskUtils.js), not a value this patches directly. Returns the same array reference
+// when no task matches, so a no-op call never forces an extra re-render.
+export function applyLocalPriorityUpdate(tasks, issueKey, priorityPatch) {
+    const key = String(issueKey || '').trim();
+    if (!key || !priorityPatch) return tasks;
+    const list = Array.isArray(tasks) ? tasks : [];
+    let changed = false;
+    const next = list.map((task) => {
+        if (!task || task.key !== key) return task;
+        changed = true;
+        return { ...task, fields: { ...task.fields, priority: priorityPatch } };
+    });
+    return changed ? next : tasks;
+}
+
 // Builds the shared issue_priority_action params for priority_options_open,
 // priority_change_submit, and priority_change_result. `priorityId` is omitted for
 // priority_options_open, where no target priority has been chosen yet, so no

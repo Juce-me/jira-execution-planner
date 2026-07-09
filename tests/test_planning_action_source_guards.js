@@ -381,3 +381,28 @@ test('ENG priority transition hook keeps a module-level priority options cache s
     assert.match(hookSource, /let priorityOptionsPromise/, 'Expected an in-flight promise so concurrent opens dedupe to one fetch');
     assert.match(hookSource, /export function clearPriorityOptionsCache\(\)/, 'Expected a test/auth-recovery cache-clear escape hatch');
 });
+
+test('dashboard wires the priority hook and menu without owning their catalog/menu/API logic', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngPriorityTransitions.js');
+    const menuPath = path.resolve(__dirname, '../frontend/src/issues/PriorityTransitionMenu.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.ok(fs.existsSync(hookPath), 'Expected frontend/src/eng/useEngPriorityTransitions.js to exist');
+    assert.ok(fs.existsSync(menuPath), 'Expected frontend/src/issues/PriorityTransitionMenu.jsx to exist');
+
+    // dashboard.jsx imports the hook and the presentational menu, and calls the hook once.
+    assert.match(source, /import \{ useEngPriorityTransitions \} from '\.\/eng\/useEngPriorityTransitions\.js';/);
+    assert.match(source, /import PriorityTransitionMenu from '\.\/issues\/PriorityTransitionMenu\.jsx';/);
+    assert.match(source, /\} = useEngPriorityTransitions\(\{/);
+
+    // Menu/catalog/submit logic lives in the hook + PriorityTransitionMenu; dashboard.jsx
+    // must only wire props, never inline the priority API, a second module-level catalog
+    // cache, the shared option-menu renderer, or the interactive trigger's data attribute.
+    assert.doesNotMatch(source, /jiraIssueApi/, 'dashboard.jsx must not import the priority/transition API directly');
+    assert.doesNotMatch(source, /fetchIssuePriorityOptions\(/, 'dashboard.jsx must not call the priority options fetch directly');
+    assert.doesNotMatch(source, /updateIssuePriorities\(/, 'dashboard.jsx must not call the priority mutation directly');
+    assert.doesNotMatch(source, /IssueFieldOptionMenu/, 'dashboard.jsx must not import the shared option-menu renderer directly');
+    assert.doesNotMatch(source, /priorityOptionsCache/, 'dashboard.jsx must not own a second priority catalog cache');
+    assert.doesNotMatch(source, /data-priority-transition-trigger/, 'dashboard.jsx must not hand-roll the priority trigger attribute');
+});

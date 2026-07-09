@@ -28,6 +28,7 @@ import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
 import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
+import { applyLocalPriorityUpdate } from './eng/engPriorityTransitionUtils.js';
 import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/engStatusTransitionUtils.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
@@ -10974,9 +10975,12 @@ import {
             // ── ENG priority transitions (Catch Up single issue + Planning) ──
             // Same ENG-only surface gate as status (EPM/Stats/Scenario/Settings stay inert).
             // Menu/catalog/submit logic lives in useEngPriorityTransitions +
-            // PriorityTransitionMenu; dashboard only wires props. Refresh-on-success is
-            // intentionally not wired here (owned by a later slice); the inline result note
-            // in the menu is enough for a single priority change.
+            // PriorityTransitionMenu; dashboard only wires props. On success the hook applies
+            // the new priority to the in-memory Story immediately (applyLocalPriorityUpdate
+            // in engPriorityTransitionUtils.js) so the icon/card color do not wait on the
+            // refresh, then triggers the same task-list refresh the status flow uses.
+            // Priority edits never affect subtasks in this slice, so unlike status there is
+            // no affectedSubtaskStoryKeys work to do here.
             const priorityTransitionEnabled = statusTransitionEnabled;
             const {
                 activePriorityTarget,
@@ -10994,6 +10998,17 @@ import {
                 sourceSurface: statusTransitionSourceSurface,
                 trackIssuePriorityAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
+                onApplyLocalPriority: (issueKey, priorityPatch) => {
+                    setProductTasks(prev => applyLocalPriorityUpdate(prev, issueKey, priorityPatch));
+                    setTechTasks(prev => applyLocalPriorityUpdate(prev, issueKey, priorityPatch));
+                },
+                onPrioritySuccessRefresh: () => {
+                    // Refresh only the ENG task data for the current scope, not a full reload.
+                    loadProductTasks({ forceRefresh: true });
+                    loadTechTasks({ forceRefresh: true });
+                    loadReadyToCloseProductTasks({ forceRefresh: true });
+                    loadReadyToCloseTechTasks({ forceRefresh: true });
+                },
             });
             const priorityTransitionActiveKey = activePriorityTarget?.key || null;
 

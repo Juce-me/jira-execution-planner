@@ -44,6 +44,7 @@ export function useEngPriorityTransitions({
     sourceSurface,
     trackIssuePriorityAction,
     onAuthRecoveryRequired,
+    onApplyLocalPriority,
     onPrioritySuccessRefresh,
 }) {
     const [activePriorityTarget, setActivePriorityTarget] = React.useState(null);
@@ -155,7 +156,12 @@ export function useEngPriorityTransitions({
             setPriorityResult({ ...summary, targetPriorityId });
             trackIssuePriorityAction('priority_change_result', { ...analyticsBaseParams, result: summary.result });
             if (summary.succeeded > 0) {
-                onPrioritySuccessRefresh?.({ issueKey: key, targetPriority: response?.targetPriority });
+                // Apply the new priority to the in-memory issue immediately (icon/card color
+                // do not wait on the refetch below), then reuse the same refresh callback
+                // shape as status. Priority edits never affect subtasks in this slice, so
+                // affectedSubtaskStoryKeys is always empty (see the plan's Feasibility Answer).
+                onApplyLocalPriority?.(key, response?.targetPriority);
+                onPrioritySuccessRefresh?.({ affectedSubtaskStoryKeys: [] });
             }
             return response;
         } catch (err) {
@@ -174,7 +180,7 @@ export function useEngPriorityTransitions({
         } finally {
             setPrioritySubmitting(false);
         }
-    }, [activePriorityTarget, sourceSurface, backendUrl, trackIssuePriorityAction, onPrioritySuccessRefresh, onAuthRecoveryRequired]);
+    }, [activePriorityTarget, sourceSurface, backendUrl, trackIssuePriorityAction, onApplyLocalPriority, onPrioritySuccessRefresh, onAuthRecoveryRequired]);
 
     return {
         activePriorityTarget,

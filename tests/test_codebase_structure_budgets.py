@@ -38,7 +38,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # renderEpicBlock + IssueCard + PlanningActionBar, adds the Settings-modal gate, and the
     # transition-success refresh (task lists + per-story subtask refetch). Menu/state logic
     # lives in StatusTransitionMenu.jsx + the eng hook/utils, so only wiring lands here (+137).
-    "frontend/src/dashboard.jsx": 15866,
+    # docs/eng-priority-edit-mode-plan wires the ENG priority icon edit hook and menu props.
+    # Menu/state/API logic lives in dedicated eng/issues modules, so dashboard growth is wiring
+    # only: importing applyLocalPriorityUpdate, and the onApplyLocalPriority/
+    # onPrioritySuccessRefresh callbacks passed into useEngPriorityTransitions (+15).
+    "frontend/src/dashboard.jsx": 15927,
 }
 
 

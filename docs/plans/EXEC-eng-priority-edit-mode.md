@@ -687,7 +687,7 @@ git commit -m "add priority icon edit menu"
 - Modify: `tests/test_planning_action_source_guards.js`
 - Modify: `tests/test_codebase_structure_budgets.py`
 
-- [ ] **Step 5.1: Add source guards first**
+- [x] **Step 5.1: Add source guards first**
 
 Add assertions:
 
@@ -707,7 +707,7 @@ node --test tests/test_epm_view_source_guards.js tests/test_planning_action_sour
 
 Expected before wiring cleanup: fail until guards and wiring match.
 
-- [ ] **Step 5.2: Refresh affected rows**
+- [x] **Step 5.2: Refresh affected rows**
 
 After `submitPriorityChange` succeeds, reuse the same refresh callback shape as status:
 
@@ -717,7 +717,7 @@ onPrioritySuccessRefresh?.({ affectedSubtaskStoryKeys: [] });
 
 For Stories/Epics, update local rendered priority immediately where the data model is already in memory, then trigger the existing task-list refresh. Do not add a new startup fetch.
 
-- [ ] **Step 5.3: Budget dashboard wiring**
+- [x] **Step 5.3: Budget dashboard wiring**
 
 If `frontend/src/dashboard.jsx` grows, update `tests/test_codebase_structure_budgets.py` with a short comment like:
 
@@ -729,7 +729,7 @@ If `frontend/src/dashboard.jsx` grows, update `tests/test_codebase_structure_bud
 
 Do not increase `jira_server.py` budget for this plan.
 
-- [ ] **Step 5.4: Run guards**
+- [x] **Step 5.4: Run guards**
 
 Run:
 
@@ -740,7 +740,7 @@ node --test tests/test_epm_view_source_guards.js tests/test_planning_action_sour
 
 Expected: pass.
 
-- [ ] **Step 5.5: Commit**
+- [x] **Step 5.5: Commit**
 
 ```bash
 git add frontend/src/dashboard.jsx tests/test_epm_view_source_guards.js tests/test_planning_action_source_guards.js tests/test_codebase_structure_budgets.py

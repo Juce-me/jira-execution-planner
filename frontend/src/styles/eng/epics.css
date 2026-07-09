@@ -312,7 +312,7 @@
 
         .task-status {
             padding: 0.2rem 0.6rem;
-            border-radius: 2px;
+            border-radius: 8px;
             font-weight: 500;
             white-space: nowrap;
         }

@@ -20,7 +20,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # against boundary-record re-inclusion from the paged /changelog endpoint (+10 lines).
     # feat/stats-expose-created-transitions adds created + transitions to _fetch_epic_track_phase
     # return dict so the frontend can compute avg days-to-Committed (+2 lines).
-    "jira_server.py": 6188,
+    # docs/eng-priority-edit-mode-plan adds the Epic's own priority to fetch_epic_details_bulk
+    # (fields list + shaped name) so the Epic priority menu can omit the Epic's own value (+1 line).
+    "jira_server.py": 6189,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -38,11 +40,15 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # renderEpicBlock + IssueCard + PlanningActionBar, adds the Settings-modal gate, and the
     # transition-success refresh (task lists + per-story subtask refetch). Menu/state logic
     # lives in StatusTransitionMenu.jsx + the eng hook/utils, so only wiring lands here (+137).
-    # docs/eng-priority-edit-mode-plan wires the ENG priority icon edit hook and menu props.
-    # Menu/state/API logic lives in dedicated eng/issues modules, so dashboard growth is wiring
-    # only: importing applyLocalPriorityUpdate, and the onApplyLocalPriority/
-    # onPrioritySuccessRefresh callbacks passed into useEngPriorityTransitions (+15).
-    "frontend/src/dashboard.jsx": 15927,
+    # docs/eng-priority-edit-mode-plan wires the ENG priority icon edit UI. Menu/state/API logic
+    # lives in dedicated eng/issues modules, so dashboard growth is wiring only, itemized:
+    # Task 4 (+46) instantiates useEngPriorityTransitions and threads the PriorityTransitionMenu +
+    # priority props through renderEpicBlock and IssueCard; Task 5 (+15) imports
+    # applyLocalPriorityUpdate and the onApplyLocalPriority/onPrioritySuccessRefresh callbacks; the
+    # final-review fix (+7) adds the epicOwnPriority normalization + currentPriorityLabel prop so the
+    # Epic menu omits the Epic's OWN priority while the icon still shows the derived child priority
+    # (+68 total over main's 15866).
+    "frontend/src/dashboard.jsx": 15934,
 }
 
 

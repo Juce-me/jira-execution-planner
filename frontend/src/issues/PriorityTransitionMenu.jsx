@@ -29,6 +29,7 @@ export default function PriorityTransitionMenu({
     issue,
     fallbackIssueType = '',
     priorityLabel,
+    currentPriorityLabel,
     renderPriorityIcon,
     isOpen = false,
     options = null,
@@ -42,7 +43,13 @@ export default function PriorityTransitionMenu({
 }) {
     const issueKey = String(issue?.key || '').trim();
     const kind = String(fallbackIssueType || '').toLowerCase();
-    const currentPriorityName = normalizeIssueStatus(priorityLabel);
+    // priorityLabel drives the icon. Epic headers render a DERIVED (most-urgent child) priority
+    // there, but the field the menu edits — and therefore omits as "current" — is the issue's OWN
+    // priority. currentPriorityLabel carries that own value; it defaults to priorityLabel so Story
+    // cards (icon === own priority) omit correctly and are unchanged. An explicit '' (issue with no
+    // own priority) omits nothing, so every option is a real change.
+    const ownPriorityLabel = currentPriorityLabel === undefined ? priorityLabel : currentPriorityLabel;
+    const currentPriorityName = normalizeIssueStatus(ownPriorityLabel);
 
     // Reuse the dashboard priority-icon element as the button's contents/attributes so the
     // interactive trigger keeps its .task-priority-icon classes, tooltip data-attrs, and

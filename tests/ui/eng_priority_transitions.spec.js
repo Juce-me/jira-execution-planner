@@ -288,6 +288,37 @@ test('priority option click changes the clicked issue priority in one action', a
     await expect(menu1.locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
 });
 
+test('epic header priority menu omits the epic OWN priority, not the derived child priority', async ({ page }) => {
+    // The header icon shows a DERIVED priority (most-urgent child = Medium here), but the menu
+    // edits the epic's OWN priority field (High in the fixture). It must omit the OWN value as
+    // "current" and keep the derived value selectable, mirroring how the epic status menu edits
+    // the epic's own status. Submit still POSTs the epic key.
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngPriorityFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+
+    // Trigger icon keeps rendering the derived (child) priority: Medium, not the epic's own High.
+    const epicTrigger = priorityTrigger(page, 'epic', 'PROD-EPIC');
+    await expect(epicTrigger).toHaveCount(1);
+    await expect(epicTrigger).toHaveAttribute('data-priority', 'Medium');
+
+    await epicTrigger.click();
+    const menu = priorityMenu(page, 'PROD-EPIC');
+    await expect(menu).toBeVisible();
+
+    // Omitted-as-current is the epic's OWN priority (High); the derived value (Medium) stays.
+    const labels = await menu.locator('.priority-transition-option-label').allTextContents();
+    expect(labels).toEqual(['Highest', 'Medium', 'Major', 'Low']);
+
+    // Choosing the derived value is a real change; the mutation targets the epic key.
+    await menu.getByRole('menuitem', { name: 'Medium' }).click();
+    await expect.poll(() => priorityWriteCalls(calls).length).toBe(1);
+    const mutation = priorityWriteCalls(calls)[0];
+    expect(mutation.body.issueKeys).toEqual(['PROD-EPIC']);
+    expect(mutation.body.targetPriorityId).toBe('3');
+});
+
 test('EPM issue boards render inert priority icons and never call priority APIs', async ({ page }) => {
     await setPrefs(page, { selectedView: 'epm', epmTab: 'active', epmSelectedProjectId: '', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42' });
     const { calls } = await installDashboardFixture(page, {

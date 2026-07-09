@@ -12575,6 +12575,12 @@ import {
                             ? getIssueStatusClassName(epicStatus, 'epic-status-pill')
                             : '';
                         const effectivePriority = getEpicEffectivePriority(epicGroup);
+                        // The header icon shows the derived (most-urgent child) priority, but the
+                        // priority menu edits the Epic's OWN priority field; normalize it to a name
+                        // the same way epicStatus is handled above.
+                        const epicOwnPriority = typeof epicInfo?.priority === 'string'
+                            ? epicInfo.priority
+                            : epicInfo?.priority?.name || '';
                         const projectTrackValue = epicInfo?.projectTrack || '';
                         const projectTrackEmoji = getProjectTrackEmoji(projectTrackValue);
                         return (
@@ -12605,9 +12611,10 @@ import {
                                             {effectivePriority.name && (
                                                 (priorityTransitionEnabled && epicGroup.key !== 'NO_EPIC') ? (
                                                     <PriorityTransitionMenu
-                                                        issue={{ key: epicGroup.key, priority: effectivePriority.name, summary: epicTitle }}
+                                                        issue={{ key: epicGroup.key, priority: epicOwnPriority, summary: epicTitle }}
                                                         fallbackIssueType="Epic"
                                                         priorityLabel={effectivePriority.name}
+                                                        currentPriorityLabel={epicOwnPriority}
                                                         renderPriorityIcon={renderPriorityIcon}
                                                         isOpen={priorityTransitionActiveKey === epicGroup.key}
                                                         options={priorityOptions}

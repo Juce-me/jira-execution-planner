@@ -535,7 +535,7 @@ git commit -m "add frontend priority edit api and caches"
 - Modify: `tests/ui/eng_priority_transitions.spec.js`
 - Modify: `tests/ui/eng_status_transitions.spec.js`
 
-- [ ] **Step 4.1: Write failing Playwright UI tests**
+- [x] **Step 4.1: Write failing Playwright UI tests**
 
 Create `tests/ui/eng_priority_transitions.spec.js` with assertions mirroring status:
 
@@ -572,7 +572,7 @@ npx playwright test tests/ui/eng_priority_transitions.spec.js tests/ui/eng_statu
 
 Expected before implementation: fails because priority UI does not exist and status cache is not tuple-wide.
 
-- [ ] **Step 4.2: Extract shared option menu**
+- [x] **Step 4.2: Extract shared option menu**
 
 Create `frontend/src/issues/IssueFieldOptionMenu.jsx`:
 
@@ -597,7 +597,7 @@ export default function IssueFieldOptionMenu({
 
 Refactor `StatusTransitionMenu.jsx` to call `IssueFieldOptionMenu` and keep its public props stable.
 
-- [ ] **Step 4.3: Add priority menu**
+- [x] **Step 4.3: Add priority menu**
 
 Create `frontend/src/issues/PriorityTransitionMenu.jsx`:
 
@@ -623,7 +623,7 @@ export default function PriorityTransitionMenu({
 
 The trigger must preserve `.task-priority-icon` classes and data attributes so existing tooltip/visual tests continue to pass.
 
-- [ ] **Step 4.4: Wire Story cards and Epic headers**
+- [x] **Step 4.4: Wire Story cards and Epic headers**
 
 Modify `IssueCard.jsx` to accept priority edit props and render `PriorityTransitionMenu` only when `priorityTransitionEnabled` is true.
 
@@ -638,7 +638,7 @@ onSubmitPriorityTransition={submitPriorityChange}
 
 Wire Epic headers where `renderPriorityIcon(effectivePriority.name, epicGroup.key)` currently renders the icon.
 
-- [ ] **Step 4.5: Apply shared styling**
+- [x] **Step 4.5: Apply shared styling**
 
 Use `.issue-field-menu*` shared selectors or alias the existing `.status-transition-menu*` selectors without duplicating declarations. Add a button reset for interactive priority icons:
 
@@ -662,7 +662,7 @@ button.task-priority-icon:focus-visible {
 }
 ```
 
-- [ ] **Step 4.6: Run UI tests**
+- [x] **Step 4.6: Run UI tests**
 
 Run:
 
@@ -672,7 +672,7 @@ npx playwright test tests/ui/eng_priority_transitions.spec.js tests/ui/eng_statu
 
 Expected: pass.
 
-- [ ] **Step 4.7: Commit**
+- [x] **Step 4.7: Commit**
 
 ```bash
 git add frontend/src/issues/IssueFieldOptionMenu.jsx frontend/src/issues/StatusTransitionMenu.jsx frontend/src/issues/PriorityTransitionMenu.jsx frontend/src/issues/IssueCard.jsx frontend/src/dashboard.jsx frontend/src/styles/eng/status-transitions.css frontend/src/styles/eng/issues.css tests/ui/eng_priority_transitions.spec.js tests/ui/eng_status_transitions.spec.js

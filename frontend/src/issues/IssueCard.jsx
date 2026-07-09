@@ -1,6 +1,7 @@
 import * as React from 'react';
 import StatusPill from '../ui/StatusPill.jsx';
 import StatusTransitionMenu from './StatusTransitionMenu.jsx';
+import PriorityTransitionMenu from './PriorityTransitionMenu.jsx';
 import { getIssueStatusClassName, getIssueTeamLabel, normalizeIssueStatus } from './issueViewUtils.js';
 import IssueDependencies, { buildIssueDependencyViewModel } from './IssueDependencies.jsx';
 import { buildStorySubtaskProgress, formatSubtaskUpdatedDate } from './subtaskProgressUtils.js';
@@ -41,6 +42,16 @@ export default function IssueCard({
     onCloseStatusTransition,
     onSubmitStatusTransition,
     onToggleSubtaskStatusTarget,
+    priorityTransitionEnabled = false,
+    priorityTransitionActiveKey = null,
+    priorityTransitionOptions = null,
+    priorityTransitionOptionsLoading = false,
+    priorityTransitionSubmitting = false,
+    priorityTransitionError = '',
+    priorityTransitionResult = null,
+    onOpenPriorityTransition,
+    onClosePriorityTransition,
+    onSubmitPriorityTransition,
 }) {
     const statusName = task.fields.status?.name;
     const isKilled = statusName === 'Killed';
@@ -179,7 +190,25 @@ export default function IssueCard({
                             <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
                         </svg>
                     </span>
-                    {renderPriorityIcon(task.fields.priority?.name, task.key)}
+                    {priorityTransitionEnabled ? (
+                        <PriorityTransitionMenu
+                            issue={task}
+                            fallbackIssueType="Story"
+                            priorityLabel={task.fields.priority?.name}
+                            renderPriorityIcon={renderPriorityIcon}
+                            isOpen={priorityTransitionActiveKey === task.key}
+                            options={priorityTransitionOptions}
+                            optionsLoading={priorityTransitionOptionsLoading}
+                            submitting={priorityTransitionSubmitting}
+                            error={priorityTransitionError}
+                            result={priorityTransitionResult}
+                            onOpen={onOpenPriorityTransition}
+                            onClose={onClosePriorityTransition}
+                            onSubmit={onSubmitPriorityTransition}
+                        />
+                    ) : (
+                        renderPriorityIcon(task.fields.priority?.name, task.key)
+                    )}
                     <h3 className="task-title">
                         {isIncomplete && <span className="task-incomplete-icon" title="Incomplete - work started but not finished this sprint">&#9680;</span>}
                         <a

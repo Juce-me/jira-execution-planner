@@ -479,6 +479,28 @@ test('Catch Up status menu reuses fetched options and changes status on option c
     expect(mutation.body.targetStatus).toBe('In Progress');
 });
 
+test('status transition options reuse safe tuple cache across matching issue icons', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+
+    // Two "To Do" Story issues in the same project share the project|type|status tuple, so
+    // the module-level cache serves the second icon's options without a refetch. Prove it
+    // across two DIFFERENT icons (PROD-1 then PROD-2), not a reopen of the same one.
+    await trigger(page, 'story', 'PROD-1').click();
+    await expect(menu(page, 'PROD-1')).toBeVisible();
+    await expect.poll(() => calls.filter(c => c.pathname === '/api/issues/transitions/options').length).toBe(1);
+
+    await page.keyboard.press('Escape');
+    await expect(menu(page, 'PROD-1')).toHaveCount(0);
+
+    await trigger(page, 'story', 'PROD-2').click();
+    await expect(menu(page, 'PROD-2')).toBeVisible();
+    // Second open of a matching-tuple icon must not refetch options.
+    expect(calls.filter(c => c.pathname === '/api/issues/transitions/options')).toHaveLength(1);
+});
+
 test('Planning action bar shows target count feedback and adds no status-change button', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     await installEngStatusFixture(page);

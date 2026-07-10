@@ -250,7 +250,7 @@ test('ENG status transition hook tracks status_change_submit before mutating and
     const hookSource = fs.readFileSync(hookPath, 'utf8');
 
     const submitIndex = hookSource.indexOf("trackIssueStatusAction('status_change_submit'");
-    const mutationIndex = hookSource.indexOf('await transitionIssues(');
+    const mutationIndex = hookSource.indexOf('transitionIssues(backendUrl');
     assert.notEqual(submitIndex, -1, 'Expected a status_change_submit analytics call');
     assert.notEqual(mutationIndex, -1, 'Expected the transitionIssues mutation call');
     assert.ok(submitIndex < mutationIndex, 'Expected status_change_submit to be tracked before the mutation call');
@@ -277,6 +277,7 @@ test('ENG status transition hook refreshes only after at least one issue succeed
     // guard block.
     const guardBody = hookSource.slice(guardIndex, guardIndex + 3000);
     assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
+    assert.match(guardBody, /if \(!isCatchUp\) \{\s*onTransitionSuccessRefresh/, 'Catch Up must reconcile locally instead of starting scope refreshes');
 });
 
 test('ENG status transition hook never mutates Planning selectedTasks for Epics or Subtasks', () => {
@@ -382,6 +383,22 @@ test('ENG priority transition hook keeps a module-level per-tuple priority optio
     assert.match(hookSource, /priorityOptionCacheKey/, 'Expected the hook to key the cache by the project|issueType tuple');
     assert.match(hookSource, /priorities\.length > 0/, 'Expected only successful NON-EMPTY schemes to be cached so an uneditable issue never poisons the tuple');
     assert.match(hookSource, /export function clearPriorityOptionsCache\(\)/, 'Expected a test/auth-recovery cache-clear escape hatch');
+});
+
+test('ENG targeted mutations guard same-key duplicates and stale scope completions', () => {
+    const statusPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const priorityPath = path.resolve(__dirname, '../frontend/src/eng/useEngPriorityTransitions.js');
+    const statusSource = fs.readFileSync(statusPath, 'utf8');
+    const prioritySource = fs.readFileSync(priorityPath, 'utf8');
+
+    assert.match(statusSource, /mutationScopeKey/);
+    assert.match(statusSource, /mutationScopeRef/);
+    assert.match(statusSource, /pendingMutationKeysRef/);
+    assert.match(statusSource, /pendingMutationKeysRef\.current\.has\(catchUpKey\)/);
+    assert.match(prioritySource, /mutationScopeKey/);
+    assert.match(prioritySource, /mutationScopeRef/);
+    assert.match(prioritySource, /pendingMutationKeysRef/);
+    assert.match(prioritySource, /pendingMutationKeysRef\.current\.has\(key\)/);
 });
 
 test('priority options per-tuple cache: two tuples fetch twice, same tuple once, empty is not cached, clear wipes', async () => {

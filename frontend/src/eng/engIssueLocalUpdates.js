@@ -2,6 +2,30 @@ function normalizedIssueKey(value) {
     return String(value || '').trim().toUpperCase();
 }
 
+const DONE_STATUS_NAMES = new Set(['done']);
+const IN_PROGRESS_STATUS_NAMES = new Set(['analysis', 'in progress', 'release', 'waiting for release']);
+const EXCLUDED_STATUS_NAMES = new Set(['killed']);
+
+function normalizedStatusName(value) {
+    return String(typeof value === 'string' ? value : value?.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function buildLocalSubtaskSummary(items) {
+    const summary = { total: 0, done: 0, inProgress: 0, waiting: 0, percentComplete: 0, statusCounts: {} };
+    (Array.isArray(items) ? items : []).forEach((item) => {
+        const statusName = String(item?.status?.name || '').trim();
+        const normalized = normalizedStatusName(statusName);
+        if (EXCLUDED_STATUS_NAMES.has(normalized)) return;
+        summary.total += 1;
+        if (statusName) summary.statusCounts[statusName] = (summary.statusCounts[statusName] || 0) + 1;
+        if (DONE_STATUS_NAMES.has(normalized)) summary.done += 1;
+        else if (IN_PROGRESS_STATUS_NAMES.has(normalized)) summary.inProgress += 1;
+        else summary.waiting += 1;
+    });
+    if (summary.total) summary.percentComplete = Math.round((summary.done / summary.total) * 1000) / 10;
+    return summary;
+}
+
 export function applyLocalIssueFieldUpdate(issues, issueKey, fieldName, fieldValue) {
     const key = normalizedIssueKey(issueKey);
     const field = String(fieldName || '').trim();
@@ -41,11 +65,14 @@ export function applyLocalSubtaskFieldUpdate(storySubtasksByKey, issueKey, field
         const items = applyLocalIssueFieldUpdate(state?.items, issueKey, fieldName, fieldValue);
         if (items !== state?.items) {
             changed = true;
-            next[storyKey] = { ...state, items };
+            next[storyKey] = {
+                ...state,
+                items,
+                ...(String(fieldName || '').trim() === 'status' ? { summary: buildLocalSubtaskSummary(items) } : {}),
+            };
         } else {
             next[storyKey] = state;
         }
     });
     return changed ? next : storySubtasksByKey;
 }
-

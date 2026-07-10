@@ -42,6 +42,7 @@ test('local subtask field update patches the matching expanded row without refet
     const state = {
         'PROD-1': {
             expanded: true,
+            summary: { total: 2, done: 0, inProgress: 1, waiting: 1, percentComplete: 0, statusCounts: { 'To Do': 1, 'In Progress': 1 } },
             items: [
                 { key: 'PROD-1-A', status: { name: 'To Do' } },
                 { key: 'PROD-1-B', status: { name: 'In Progress' } },
@@ -53,8 +54,15 @@ test('local subtask field update patches the matching expanded row without refet
     const updated = applyLocalSubtaskFieldUpdate(state, 'PROD-1-A', 'status', { name: 'Done' });
 
     assert.equal(updated['PROD-1'].items[0].status.name, 'Done');
+    assert.deepEqual(updated['PROD-1'].summary, {
+        total: 2,
+        done: 1,
+        inProgress: 1,
+        waiting: 0,
+        percentComplete: 50,
+        statusCounts: { Done: 1, 'In Progress': 1 },
+    });
     assert.equal(updated['PROD-1'].items[1], state['PROD-1'].items[1]);
     assert.equal(updated['PROD-2'], state['PROD-2']);
     assert.equal(applyLocalSubtaskFieldUpdate(state, 'UNKNOWN-1', 'status', { name: 'Done' }), state);
 });
-

@@ -28,7 +28,7 @@ import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
 import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
-import { applyLocalPriorityUpdate } from './eng/engPriorityTransitionUtils.js';
+import { applyLocalEpicDetailsFieldUpdate, applyLocalIssueFieldUpdate } from './eng/engIssueLocalUpdates.js';
 import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/engStatusTransitionUtils.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
@@ -5659,6 +5659,7 @@ import {
                 clearStorySubtasks,
                 toggleStorySubtasks,
                 retryStorySubtasks,
+                applyLocalSubtaskField,
             } = useStorySubtasks({
                 backendUrl: BACKEND_URL,
                 selectedSprint,
@@ -10931,6 +10932,22 @@ import {
             }) && !showGroupManage;
             const [statusTransitionSubmitting, setStatusTransitionSubmitting] = useState(false);
 
+            const applyLocalEngIssueField = React.useCallback((issueKey, fieldName, fieldValue) => {
+                const patchList = prev => applyLocalIssueFieldUpdate(prev, issueKey, fieldName, fieldValue);
+                setProductTasks(patchList);
+                setTechTasks(patchList);
+                setLoadedProductTasks(patchList);
+                setLoadedTechTasks(patchList);
+                setReadyToCloseProductTasks(patchList);
+                setReadyToCloseTechTasks(patchList);
+                setProductEpicsInScope(patchList);
+                setTechEpicsInScope(patchList);
+                setReadyToCloseProductEpicsInScope(patchList);
+                setReadyToCloseTechEpicsInScope(patchList);
+                setEpicDetails(prev => applyLocalEpicDetailsFieldUpdate(prev, issueKey, fieldName, fieldValue));
+                applyLocalSubtaskField(issueKey, fieldName, fieldValue);
+            }, [applyLocalSubtaskField]);
+
             const {
                 activeSingleIssueTarget: statusTransitionActiveTarget,
                 selectedEpicStatusTargets,
@@ -10945,6 +10962,7 @@ import {
                 transitionError,
                 transitionErrorCode,
                 transitionResult,
+                pendingIssueKeys: pendingStatusIssueKeys,
                 submitStatusTransition,
             } = useEngStatusTransitions({
                 backendUrl: BACKEND_URL,
@@ -10953,10 +10971,14 @@ import {
                 storySubtasksByKey,
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
+                mutationScopeKey={`${selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`},
                 trackIssueStatusAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
+                onApplyLocalStatus: (issueKey, statusName) => {
+                    applyLocalEngIssueField(issueKey, 'status', { name: statusName });
+                },
                 onTransitionSuccessRefresh: ({ affectedSubtaskStoryKeys = [] } = {}) => {
-                    // Refresh only the ENG task data for the current scope, not a full reload.
+                    // Planning batch transitions still refresh the current ENG scope.
                     loadProductTasks({ forceRefresh: true });
                     loadTechTasks({ forceRefresh: true });
                     loadReadyToCloseProductTasks({ forceRefresh: true });
@@ -10975,12 +10997,9 @@ import {
             // ── ENG priority transitions (Catch Up single issue + Planning) ──
             // Same ENG-only surface gate as status (EPM/Stats/Scenario/Settings stay inert).
             // Menu/catalog/submit logic lives in useEngPriorityTransitions +
-            // PriorityTransitionMenu; dashboard only wires props. On success the hook applies
-            // the new priority to the in-memory Story immediately (applyLocalPriorityUpdate
-            // in engPriorityTransitionUtils.js) so the icon/card color do not wait on the
-            // refresh, then triggers the same task-list refresh the status flow uses.
-            // Priority edits never affect subtasks in this slice, so unlike status there is
-            // no affectedSubtaskStoryKeys work to do here.
+            // PriorityTransitionMenu; dashboard only wires props. Catch Up changes patch the
+            // selected issue immediately and reconcile through the shared background queue;
+            // Planning keeps the existing post-success scope refresh.
             const priorityTransitionEnabled = statusTransitionEnabled;
             const {
                 activePriorityTarget,
@@ -10991,19 +11010,20 @@ import {
                 prioritySubmitting,
                 priorityError,
                 priorityResult,
+                pendingIssueKeys: pendingPriorityIssueKeys,
                 submitPriorityChange,
             } = useEngPriorityTransitions({
                 backendUrl: BACKEND_URL,
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
+                mutationScopeKey={`${selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`},
                 trackIssuePriorityAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalPriority: (issueKey, priorityPatch) => {
-                    setProductTasks(prev => applyLocalPriorityUpdate(prev, issueKey, priorityPatch));
-                    setTechTasks(prev => applyLocalPriorityUpdate(prev, issueKey, priorityPatch));
+                    applyLocalEngIssueField(issueKey, 'priority', priorityPatch);
                 },
                 onPrioritySuccessRefresh: () => {
-                    // Refresh only the ENG task data for the current scope, not a full reload.
+                    // Planning priority changes still refresh the current ENG scope.
                     loadProductTasks({ forceRefresh: true });
                     loadTechTasks({ forceRefresh: true });
                     loadReadyToCloseProductTasks({ forceRefresh: true });
@@ -11038,16 +11058,13 @@ import {
             // The hook exposes no submitting flag; track it around the awaited submit so
             // the menu can disable its action and show an in-flight state.
             const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue) => {
-                if (statusTransitionSubmitting) return;
+                if (statusTransitionSourceSurface === 'catch_up') {
+                    return submitStatusTransition(targetStatus, issue?.key);
+                }
+                if (statusTransitionSubmitting) return null;
                 setStatusTransitionSubmitting(true);
                 try {
-                    // Catch Up always applies to the clicked issue. Planning applies to the
-                    // composed batch.
-                    if (statusTransitionSourceSurface === 'catch_up') {
-                        await submitStatusTransition(targetStatus, issue?.key);
-                    } else {
-                        await submitStatusTransition(targetStatus);
-                    }
+                    return await submitStatusTransition(targetStatus);
                 } finally {
                     setStatusTransitionSubmitting(false);
                 }
@@ -12619,7 +12636,7 @@ import {
                                                         isOpen={priorityTransitionActiveKey === epicGroup.key}
                                                         options={priorityOptions}
                                                         optionsLoading={priorityOptionsLoading}
-                                                        submitting={prioritySubmitting}
+                                                        submitting={prioritySubmitting || pendingPriorityIssueKeys.has(epicGroup.key)}
                                                         error={priorityError}
                                                         result={priorityResult}
                                                         onOpen={openPriorityControl}
@@ -12687,7 +12704,7 @@ import {
                                                         isOpen={statusTransitionActiveKey === epicGroup.key}
                                                         options={transitionOptions}
                                                         optionsLoading={transitionOptionsLoading}
-                                                        submitting={statusTransitionSubmitting}
+                                                        submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(epicGroup.key)}
                                                         error={transitionError}
                                                         errorCode={transitionErrorCode}
                                                         result={transitionResult}
@@ -12752,6 +12769,7 @@ import {
                                             statusTransitionErrorCode={transitionErrorCode}
                                             statusTransitionResult={transitionResult}
                                             statusTransitionTargetsCount={statusTransitionTargetsCount}
+                                            statusTransitionPendingIssueKeys={pendingStatusIssueKeys}
                                             subtaskStatusTargetKeys={selectedSubtaskStatusTargets}
                                             onOpenStatusTransition={openSingleIssueStatusControl}
                                             onCloseStatusTransition={closeSingleIssueStatusControl}
@@ -12764,6 +12782,7 @@ import {
                                             priorityTransitionSubmitting={prioritySubmitting}
                                             priorityTransitionError={priorityError}
                                             priorityTransitionResult={priorityResult}
+                                            priorityTransitionPendingIssueKeys={pendingPriorityIssueKeys}
                                             onOpenPriorityTransition={openPriorityControl}
                                             onClosePriorityTransition={closePriorityControl}
                                             onSubmitPriorityTransition={submitPriorityChange}

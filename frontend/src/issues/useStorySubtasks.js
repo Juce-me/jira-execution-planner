@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { fetchStorySubtasks } from '../api/engApi.js';
 import { authRecoveryLoginUrl, redirectToAuthRecovery } from '../eng/useEngSprintData.js';
+import { applyLocalSubtaskFieldUpdate } from '../eng/engIssueLocalUpdates.js';
 
 const EMPTY_SUMMARY = { total: 0, done: 0, inProgress: 0, waiting: 0, percentComplete: 0, statusCounts: {} };
 
@@ -124,10 +125,15 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
         void loadStorySubtasks(task, { forceRefresh: true });
     }, [loadStorySubtasks]);
 
+    const applyLocalSubtaskField = React.useCallback((issueKey, fieldName, fieldValue) => {
+        setStorySubtasksByKey(prev => applyLocalSubtaskFieldUpdate(prev, issueKey, fieldName, fieldValue));
+    }, []);
+
     return {
         storySubtasksByKey,
         clearStorySubtasks,
         toggleStorySubtasks,
         retryStorySubtasks,
+        applyLocalSubtaskField,
     };
 }

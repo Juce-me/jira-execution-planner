@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.10+ Flask blueprints, Jira Cloud REST API v3 issue priorities and issue edit APIs, Atlassian OAuth 2.0 3LO, existing token-bound CSRF guards, React 19, existing `trackedFetch` API wrappers, Playwright UI assertions, Node source guards, Python `unittest`, GA4 dataLayer analytics contract.
 
+> **Implementation status (2026-07-09):** Implemented and verified on branch `docs/eng-priority-edit-mode-plan` across commits `04be74a..8e4d764` — the 7 plan tasks, the Epic current-field fix (`00aa79f`), and the product-review pivots/bugfixes (real priority icons, editmeta per-project option filtering, outside-click dismiss). Full Python suite 1046 OK (1 skip), Node 503/503, Playwright green, dist clean after fresh build. Awaiting final whole-branch review acceptance and user-confirmed merge; kept as `EXEC-` until merged. See "Amendments (2026-07-09 product review)" below.
+
 ---
 
 ## Feasibility Answer
@@ -132,7 +134,7 @@ After the product owner reviewed the live UI, three corrections were implemented
 - Read: `docs/postmortem/MRT010-startup-api-load-fanout-and-overscoped-payloads.md`
 - Read: `docs/postmortem/MRT016-exec-02-plan-file-map-drift.md`
 
-- [ ] **Step 0.1: Confirm branch and clean state**
+- [x] **Step 0.1: Confirm branch and clean state**
 
 Run:
 
@@ -142,7 +144,7 @@ git status --short --branch
 
 Expected: a non-`main` branch and no unrelated dirty files. Stop if on `main`.
 
-- [ ] **Step 0.2: Verify every Modify path exists**
+- [x] **Step 0.2: Verify every Modify path exists**
 
 Run:
 
@@ -152,7 +154,7 @@ rg --files | rg '^(backend/services/jira_issue_transitions.py|backend/routes/eng
 
 Expected: every listed `Modify` file appears. If any path is missing, update this plan before coding.
 
-- [ ] **Step 0.3: Keep Home write gate blocked**
+- [x] **Step 0.3: Keep Home write gate blocked**
 
 Open `docs/plans/GATE-05-home-write-capability.md`. If the required `HOME_WRITE_PROBE_*` inputs are unavailable, do not run the Home write probe and keep the gate blocked. This priority plan must not add Home/Townsquare writes.
 
@@ -818,11 +820,11 @@ git commit -m "build priority edit frontend assets"
 
 ## Self-Review Checklist
 
-- [ ] Priority options are fetched once per app session and reused across different priority icon clicks.
-- [ ] Status catalog is fetched once per app session, but transition availability is not treated as globally valid.
-- [ ] Status transition option cache keys include enough dimensions to avoid cross-workflow mistakes.
-- [ ] Priority writes use Jira priority IDs and current user's OAuth context only.
-- [ ] EPM, Statistics, Scenario, and Settings modal surfaces remain inert.
-- [ ] The priority menu uses the same compact dropdown visual system as the status menu.
-- [ ] Analytics contains no issue keys, priority IDs, raw errors, account IDs, Jira URLs, or JQL.
-- [ ] No Home/Townsquare write route or mutation UI is introduced.
+- [x] Priority options are fetched once per app session and reused across different priority icon clicks. (Refined by the 2026-07-09 amendment: fetched once per `projectKey|issueType` per session via editmeta so only the issue's real project scheme is shown.)
+- [x] Status catalog is fetched once per app session, but transition availability is not treated as globally valid.
+- [x] Status transition option cache keys include enough dimensions to avoid cross-workflow mistakes.
+- [x] Priority writes use Jira priority IDs and current user's OAuth context only.
+- [x] EPM, Statistics, Scenario, and Settings modal surfaces remain inert.
+- [x] The priority menu uses the same compact dropdown visual system as the status menu. (Option rows render the app's priority icons; outside-click dismiss shared with the status menu.)
+- [x] Analytics contains no issue keys, priority IDs, raw errors, account IDs, Jira URLs, or JQL.
+- [x] No Home/Townsquare write route or mutation UI is introduced.

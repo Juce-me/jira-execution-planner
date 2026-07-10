@@ -3823,6 +3823,7 @@ button.task-priority-icon:focus-visible {
   flex-direction: column;
   align-items: flex-end;
   gap: 0.12rem;
+  flex-shrink: 0;
 }
 .dependency-pill {
   font-family: "IBM Plex Mono", monospace;
@@ -3834,6 +3835,7 @@ button.task-priority-icon:focus-visible {
   border: 1px solid var(--border);
   color: var(--text-secondary);
   background: #f4f5f7;
+  white-space: nowrap;
 }
 .dependency-pill.blocked {
   color: #b91c1c;

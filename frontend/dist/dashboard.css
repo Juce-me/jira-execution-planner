@@ -4533,23 +4533,6 @@ button.status-pill:focus-visible {
   align-items: center;
   border-radius: 8px;
 }
-.status-transition-menu-backdrop,
-.priority-transition-menu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 110;
-  padding: 0;
-  margin: 0;
-  border: 0;
-  background: transparent;
-  cursor: default;
-}
-.status-transition-menu-backdrop:hover,
-.priority-transition-menu-backdrop:hover {
-  transform: none;
-  box-shadow: none;
-  background: transparent;
-}
 .task-item:has(.status-transition-menu),
 .epic-header:has(.status-transition-menu),
 .task-item:has(.priority-transition-menu),
@@ -4614,6 +4597,12 @@ button.status-pill:focus-visible {
 .status-transition-option + .status-transition-option,
 .priority-transition-option + .priority-transition-option {
   border-top: 1px dashed var(--border);
+}
+.priority-transition-option {
+  grid-template-columns: 1.1rem minmax(0, 1fr);
+}
+.priority-transition-option > .task-priority-icon {
+  justify-self: center;
 }
 .status-transition-option:hover:not(:disabled),
 .status-transition-option:focus-visible,

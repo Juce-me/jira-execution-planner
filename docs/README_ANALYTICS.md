@@ -190,6 +190,7 @@ State-changing routes or user-visible surfaces without analytics must be documen
 | EPM nested Home goal project discovery | `backend/epm/home.py` | Backend broadens the existing selected sub-goal project catalog; existing EPM API result, rollup load, and sub-goal filter analytics cover the workflow without adding a new user action. | 2026-05-28 |
 | EPM Pending lifecycle tab correction | `backend/epm/projects.py`, `frontend/src/epm/epmProjectUtils.mjs` | Lifecycle bucket correction changes which existing EPM tab displays Pending projects; existing EPM API result and tab/filter analytics cover the workflow. | 2026-05-28 |
 | EPM collapse-all control placement | `frontend/src/epm/EpmControls.jsx` | Placement-only UI change for the existing expand/collapse control; existing `epm_action` expand/collapse analytics cover usage. | 2026-05-28 |
+| ENG Catch Up targeted background reconciliation | `frontend/src/eng/useEngStatusTransitions.js`, `frontend/src/eng/useEngPriorityTransitions.js` | Existing `issue_status_action` / `issue_priority_action` submit-result events and `api_result` already cover adoption and reliability; another event would duplicate the same user action. | 2026-07-10 |
 
 ## Drift Checks
 

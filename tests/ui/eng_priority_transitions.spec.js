@@ -133,8 +133,13 @@ function priorityWriteResponse(body) {
     };
 }
 
-async function installEngPriorityFixture(page, { stories = null } = {}) {
+async function installEngPriorityFixture(page, {
+    stories = null,
+    priorityDelayMs = 0,
+    priorityWrite = priorityWriteResponse,
+} = {}) {
     const calls = [];
+    const priorityState = { inFlight: 0, maxInFlight: 0 };
     const groupsConfigPayload = {
         version: 1,
         configRevision: 1,
@@ -208,10 +213,21 @@ async function installEngPriorityFixture(page, { stories = null } = {}) {
         if (url.pathname === '/api/dependencies') return json(route, { dependencies: {} });
         if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
         if (url.pathname === '/api/issues/priorities/options') return json(route, priorityOptionsForIssue(url.searchParams.get('issueKey') || ''));
-        if (url.pathname === '/api/issues/priorities') return json(route, priorityWriteResponse(body));
+        if (url.pathname === '/api/issues/priorities') {
+            priorityState.inFlight += 1;
+            priorityState.maxInFlight = Math.max(priorityState.maxInFlight, priorityState.inFlight);
+            try {
+                if (priorityDelayMs) {
+                    await new Promise(resolve => setTimeout(resolve, priorityDelayMs));
+                }
+                return json(route, priorityWrite(body));
+            } finally {
+                priorityState.inFlight -= 1;
+            }
+        }
         return json(route, { error: `Unexpected ${request.method()} ${url.pathname}` }, 404);
     });
-    return { calls };
+    return { calls, priorityState };
 }
 
 async function setPrefs(page, prefs) {
@@ -312,6 +328,67 @@ test('priority option click changes the clicked issue priority in one action', a
     expect(mutation.body.targetPriorityId).toBe('4');
     // The inline result note appears without any extra step.
     await expect(menu1.locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
+});
+
+test('Catch Up applies rapid Story priority changes optimistically without task-list refetches', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls, priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 1000 });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
+
+    await priorityTrigger(page, 'story', 'PROD-1').click();
+    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
+    await expect.poll(() => priorityState.inFlight).toBe(1);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+
+    await page.locator('.subtitle-secondary').click();
+    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeDisabled();
+    await expect(priorityTrigger(page, 'story', 'PROD-2')).toBeEnabled();
+    await priorityTrigger(page, 'story', 'PROD-2').click();
+    const secondOption = priorityMenu(page, 'PROD-2').getByText('High', { exact: true }).locator('..');
+    await expect(secondOption).toBeEnabled();
+    await secondOption.click();
+
+    await expect.poll(() => priorityWriteCalls(calls).length).toBe(2);
+    await expect.poll(() => priorityState.maxInFlight).toBe(2);
+    await expect(priorityTrigger(page, 'story', 'PROD-2')).toHaveAttribute('data-priority', 'High');
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await expect(priorityMenu(page, 'PROD-2').locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
+    await page.waitForTimeout(100);
+
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequests);
+});
+
+test('Catch Up rolls back a failed optimistic priority change without refetching task lists', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const failedPriorityWrite = body => ({
+        requested: 1,
+        succeeded: 0,
+        failed: 1,
+        targetPriority: { id: body.targetPriorityId, name: 'Major' },
+        results: [{ key: body.issueKeys[0], result: 'failure', error: 'priority_update_forbidden' }],
+    });
+    const { calls, priorityState } = await installEngPriorityFixture(page, {
+        priorityDelayMs: 500,
+        priorityWrite: failedPriorityWrite,
+    });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
+
+    await priorityTrigger(page, 'story', 'PROD-1').click();
+    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
+    await expect.poll(() => priorityState.inFlight).toBe(1);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await expect(priorityMenu(page, 'PROD-1').locator('.priority-transition-menu-result')).toContainText('No issues updated');
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Medium');
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequests);
 });
 
 test('epic header priority menu omits the epic OWN priority, not the derived child priority', async ({ page }) => {

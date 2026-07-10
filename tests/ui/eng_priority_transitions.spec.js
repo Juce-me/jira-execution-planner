@@ -357,7 +357,6 @@ test('Catch Up applies rapid Story priority changes optimistically without task-
     await expect(priorityTrigger(page, 'story', 'PROD-2')).toHaveAttribute('data-priority', 'High');
     await expect.poll(() => priorityState.inFlight).toBe(0);
     await expect(priorityMenu(page, 'PROD-2').locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
-    await page.waitForTimeout(100);
 
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequests);
 });

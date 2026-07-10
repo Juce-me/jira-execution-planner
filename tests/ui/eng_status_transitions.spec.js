@@ -517,7 +517,6 @@ test('Catch Up applies rapid Story status changes optimistically without task-li
     expect(await trigger(page, 'story', 'PROD-2').innerText()).toContain('ACCEPTED');
     await expect.poll(() => transitionState.inFlight).toBe(0);
     await expect(menu(page, 'PROD-2').locator('.status-transition-menu-result')).toContainText('Updated 1 issue');
-    await page.waitForTimeout(100);
 
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequests);
 });

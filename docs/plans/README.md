@@ -65,20 +65,24 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Frontend Planning Workflow
 
-1. `DONE-planning-default-selection-undo.md`
+1. `EXEC-auth-unfocused-auto-refresh.md`
+   - Active, revalidated implementation plan for reloading JDP exactly once when the user returns after more than 12 minutes continuously unfocused or hidden.
+   - Expected output: a baseline proves one auth-script GET per document load, `auth-focus-refresh.js` records blur/hidden time without polling or browser storage, boundary and auth-recovery tests cover the state machine, the long-absence path creates exactly one intentional reload, and no unrelated static cache/path change is presented as a fix for an unproven navigation burst.
+
+2. `DONE-planning-default-selection-undo.md`
    - Completed and verified locally on 2026-06-09. Use for audit only; do not execute as active work.
    - Output: unseen future sprint/group scopes default to all visible Planning stories selected, Planning/Reporting epic Included/Excluded toggles persist to the selected group's shared `excludedCapacityEpics` config, manual checkbox edits persist until Select All, bulk status/select/clear actions can be undone to the loaded-page baseline, existing analytics events cover undo and shared excluded-capacity toggles, and focused Node/Python plus Playwright coverage verifies the behavior.
 
-2. `EXEC-planning-selection-card-grid.md`
+3. `EXEC-planning-selection-card-grid.md`
    - Active implementation plan for aligning Planning story selection controls with story-point metadata while keeping non-Planning and EPM card layouts unchanged.
    - Expected output: ENG Planning cards render story points, the rounded checkbox, and Jira key as the final meta-row cluster; selected Planning stories get a subtle selected tint/ring; Playwright geometry and selected-state assertions guard against layout creep.
    - Sequencing: when paired with `EXEC-css-feature-owned-partials.md`, execute this plan first, then move the resulting CSS into feature-owned partials.
 
-3. `DONE-jira-oauth-planning-status-transitions.md`
+4. `DONE-jira-oauth-planning-status-transitions.md`
    - Completed Jira OAuth-backed ENG Catch Up and Planning status changes across Epics, Stories, and Subtasks. Merged in [PR #100](https://github.com/Juce-me/jira-execution-planner/pull/100). Use for audit context only.
    - Output: Catch Up can transition one Epic, Story, or expanded Subtask at a time by clicking the displayed status; Planning can fetch transition options from clicked status pills/text and transition every selected status target through the signed-in user's Jira OAuth context; batch mode never silently truncates selected targets, rejects over-cap selections before mutation, preserves Story selection capacity math, and keeps EPM Jira/Home-backed issue surfaces view-only while `GATE-05` is blocked.
 
-4. `EXEC-eng-priority-edit-mode.md`
+5. `EXEC-eng-priority-edit-mode.md`
    - Implemented and verified on branch `docs/eng-priority-edit-mode-plan` (commits `04be74a..8e4d764`), awaiting final review acceptance and user-confirmed merge; kept as `EXEC-` until merged. OAuth-backed ENG priority edits from the existing `task-priority-icon`, reusing the compact status dropdown UI/API pattern, and caching priority/status catalogs across app usage.
    - Expected output: Story and Epic priority icons open a compact dropdown whose option rows show the app's own priority icons and are filtered per issue to that project/issue-type scheme (via editmeta), fetched once per project/issue-type per app session; the menu dismisses on any outside click; priority writes use signed-in user Jira OAuth only; status transition option caching is widened safely without treating every status as universally transitionable; EPM remains read-only.
 

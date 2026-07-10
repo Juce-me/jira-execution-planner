@@ -821,7 +821,7 @@ git commit -m "build priority edit frontend assets"
 ## Self-Review Checklist
 
 - [x] Priority options are fetched once per app session and reused across different priority icon clicks. (Refined by the 2026-07-09 amendment: fetched once per `projectKey|issueType` per session via editmeta so only the issue's real project scheme is shown.)
-- [x] Status catalog is fetched once per app session, but transition availability is not treated as globally valid.
+- [x] Status catalog endpoint/route/wrapper exist (OAuth-guarded) and its result is never treated as per-issue transition availability. Frontend consumption is intentionally deferred — `fetchIssueStatusCatalog` currently has no caller (tree-shaken out of dist), so no status-catalog fetch happens yet; wiring the ordering/category-hint consumer is a follow-up.
 - [x] Status transition option cache keys include enough dimensions to avoid cross-workflow mistakes.
 - [x] Priority writes use Jira priority IDs and current user's OAuth context only.
 - [x] EPM, Statistics, Scenario, and Settings modal surfaces remain inert.

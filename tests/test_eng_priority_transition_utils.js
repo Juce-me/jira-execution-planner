@@ -54,6 +54,28 @@ test('buildCatchUpPriorityTargets is total: missing key returns null, missing pr
     });
 });
 
+test('priorityOptionCacheKey keys by projectKey|issueType, ignores current priority, and stays per-issue for context-less targets', async () => {
+    const { priorityOptionCacheKey } = await loadUtils();
+
+    // Same project + issue type share ONE key regardless of current priority: the priority
+    // scheme depends on project + type, not the issue's current priority (unlike the status
+    // transitionOptionCacheKey, which must include currentStatus).
+    assert.equal(priorityOptionCacheKey({ key: 'PROD-1', issueType: 'Story', currentPriority: 'Medium' }), 'PROD|Story');
+    assert.equal(priorityOptionCacheKey({ key: 'PROD-2', issueType: 'Story', currentPriority: 'High' }), 'PROD|Story');
+
+    // A different issue type in the same project is a DIFFERENT scheme -> different key.
+    assert.equal(priorityOptionCacheKey({ key: 'PROD-EPIC', issueType: 'Epic' }), 'PROD|Epic');
+    // A different project -> different key.
+    assert.equal(priorityOptionCacheKey({ key: 'TECH-1', issueType: 'Story' }), 'TECH|Story');
+    // An explicit projectKey wins over the key prefix.
+    assert.equal(priorityOptionCacheKey({ key: 'PROD-1', projectKey: 'CORE', issueType: 'Story' }), 'CORE|Story');
+
+    // A context-less target still keys by project prefix (distinct types never collapse);
+    // a fully keyless target falls back to a per-key signature.
+    assert.equal(priorityOptionCacheKey({ key: 'PROD-9' }), 'PROD|');
+    assert.equal(priorityOptionCacheKey({}), 'key:');
+});
+
 test('sortPriorityOptionsByRank returns an ascending-rank copy without mutating the input', async () => {
     const { sortPriorityOptionsByRank } = await loadUtils();
 

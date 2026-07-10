@@ -91,17 +91,34 @@ function makeEpic(sprintId, sprintName) {
     };
 }
 
+const HIGHEST = { id: '1', name: 'Highest', statusColor: '#CD1317', iconUrl: 'https://jira.example/p1.svg', rank: 10 };
+const HIGH = { id: '2', name: 'High', statusColor: '#E9494A', iconUrl: 'https://jira.example/p2.svg', rank: 20 };
+const MEDIUM = { id: '3', name: 'Medium', statusColor: '#E97F33', iconUrl: 'https://jira.example/p3.svg', rank: 30 };
+const MAJOR = { id: '4', name: 'Major', statusColor: '#F5CD47', iconUrl: 'https://jira.example/p4.svg', rank: 40 };
+const LOW = { id: '5', name: 'Low', statusColor: '#2D8738', iconUrl: 'https://jira.example/p5.svg', rank: 50 };
+
+// The PROD Story scheme (issue's own editmeta-filtered priorities). Stories start at Medium,
+// which the menu omits as "current", leaving Highest/High/Major/Low.
 const priorityCatalog = {
-    priorities: [
-        { id: '1', name: 'Highest', statusColor: '#CD1317', iconUrl: 'https://jira.example/p1.svg', rank: 10 },
-        { id: '2', name: 'High', statusColor: '#E9494A', iconUrl: 'https://jira.example/p2.svg', rank: 20 },
-        { id: '3', name: 'Medium', statusColor: '#E97F33', iconUrl: 'https://jira.example/p3.svg', rank: 30 },
-        { id: '4', name: 'Major', statusColor: '#F5CD47', iconUrl: 'https://jira.example/p4.svg', rank: 40 },
-        { id: '5', name: 'Low', statusColor: '#2D8738', iconUrl: 'https://jira.example/p5.svg', rank: 50 },
-    ],
+    priorities: [HIGHEST, HIGH, MEDIUM, MAJOR, LOW],
     source: 'jira',
     cached: false,
 };
+
+// The PROD Epic scheme is DELIBERATELY different (no Major) so a per-project/issue-type
+// refetch is observable and proves options are filtered to the clicked issue's real scheme.
+const priorityEpicScheme = {
+    priorities: [HIGHEST, HIGH, MEDIUM, LOW],
+    source: 'jira',
+    cached: false,
+};
+
+// Simulates the backend editmeta filtering: the app endpoint returns the issue's own
+// (already-filtered) priority scheme, keyed here by the issueKey's project + inferred type.
+function priorityOptionsForIssue(issueKey) {
+    if (issueKey === 'PROD-EPIC') return priorityEpicScheme;
+    return priorityCatalog;
+}
 
 function priorityWriteResponse(body) {
     const keys = body?.issueKeys || [];
@@ -190,7 +207,7 @@ async function installEngPriorityFixture(page, { stories = null } = {}) {
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
         if (url.pathname === '/api/dependencies') return json(route, { dependencies: {} });
         if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
-        if (url.pathname === '/api/issues/priorities/options') return json(route, priorityCatalog);
+        if (url.pathname === '/api/issues/priorities/options') return json(route, priorityOptionsForIssue(url.searchParams.get('issueKey') || ''));
         if (url.pathname === '/api/issues/priorities') return json(route, priorityWriteResponse(body));
         return json(route, { error: `Unexpected ${request.method()} ${url.pathname}` }, 404);
     });
@@ -239,10 +256,12 @@ test('priority icon opens compact app dropdown and fetches priorities once acros
     await trigger1.click();
     const menu1 = priorityMenu(page, 'PROD-1');
     await expect(menu1).toBeVisible();
-    // Options fetched exactly once on first open.
+    // Options fetched exactly once on first open, scoped to the clicked issue's own scheme.
     await expect.poll(() => priorityOptionsCalls(calls).length).toBe(1);
+    expect(priorityOptionsCalls(calls)[0].params.issueKey).toBe('PROD-1');
 
-    // Current priority (Medium) is omitted, mirroring how the status menu omits current.
+    // Current priority (Medium) is omitted, mirroring how the status menu omits current, and
+    // the list is exactly the issue's PROD scheme (no site-wide extras).
     const labels = await menu1.locator('.priority-transition-option-label').allTextContents();
     expect(labels).toEqual(['Highest', 'High', 'Major', 'Low']);
 
@@ -315,8 +334,12 @@ test('epic header priority menu omits the epic OWN priority, not the derived chi
     await expect(menu).toBeVisible();
 
     // Omitted-as-current is the epic's OWN priority (High); the derived value (Medium) stays.
+    // Options are the epic's OWN scheme (this fixture's epic scheme omits Major), proving the
+    // per-issue editmeta filter composes with the own-priority omit (filter first, omit next).
     const labels = await menu.locator('.priority-transition-option-label').allTextContents();
-    expect(labels).toEqual(['Highest', 'Medium', 'Major', 'Low']);
+    expect(labels).toEqual(['Highest', 'Medium', 'Low']);
+    expect(labels).not.toContain('High');
+    expect(labels).not.toContain('Major');
 
     // Choosing the derived value is a real change; the mutation targets the epic key.
     await menu.getByRole('menuitem', { name: 'Medium' }).click();
@@ -324,6 +347,30 @@ test('epic header priority menu omits the epic OWN priority, not the derived chi
     const mutation = priorityWriteCalls(calls)[0];
     expect(mutation.body.issueKeys).toEqual(['PROD-EPIC']);
     expect(mutation.body.targetPriorityId).toBe('3');
+});
+
+test('priority options refetch per project/issue-type tuple with the issue-scoped scheme', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngPriorityFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+
+    // PROD-1 (PROD|Story) -> request 1, carrying the issue key for editmeta filtering.
+    await priorityTrigger(page, 'story', 'PROD-1').click();
+    await expect(priorityMenu(page, 'PROD-1')).toBeVisible();
+    await expect.poll(() => priorityOptionsCalls(calls).length).toBe(1);
+    expect(priorityOptionsCalls(calls)[0].params.issueKey).toBe('PROD-1');
+
+    // A DIFFERENT tuple (PROD-EPIC = PROD|Epic) -> exactly one extra request carrying that
+    // issue key, returning a DIFFERENT scheme (this fixture's epic scheme omits Major).
+    await page.keyboard.press('Escape');
+    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
+    await priorityTrigger(page, 'epic', 'PROD-EPIC').click();
+    await expect(priorityMenu(page, 'PROD-EPIC')).toBeVisible();
+    await expect.poll(() => priorityOptionsCalls(calls).length).toBe(2);
+    expect(priorityOptionsCalls(calls)[1].params.issueKey).toBe('PROD-EPIC');
+    const epicLabels = await priorityMenu(page, 'PROD-EPIC').locator('.priority-transition-option-label').allTextContents();
+    expect(epicLabels).not.toContain('Major');
 });
 
 test('EPM issue boards render inert priority icons and never call priority APIs', async ({ page }) => {

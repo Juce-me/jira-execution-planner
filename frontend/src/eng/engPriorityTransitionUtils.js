@@ -42,6 +42,21 @@ export function isRecognizedPriorityIconName(name) {
     return RECOGNIZED_PRIORITY_ICON_TOKENS.some((token) => normalized.includes(token));
 }
 
+// Cache key for a per-project/issue-type priority scheme. A Jira issue's allowed priorities
+// depend on its project + issue type (its priority scheme), NOT its current priority — so this
+// deliberately OMITS currentPriority, unlike useEngStatusTransitions' three-part
+// transitionOptionCacheKey (which must include currentStatus for transition availability).
+// Mirroring that derivation here (instead of importing the status hook) keeps the two hooks
+// decoupled. A context-less target still keys by project prefix so distinct issue types never
+// collapse; a fully keyless target falls back to a per-key signature.
+export function priorityOptionCacheKey(target) {
+    const key = String(target?.key || '').trim();
+    const projectKey = target?.projectKey || key.split('-')[0] || '';
+    const issueType = String(target?.issueType || '').trim();
+    if (!projectKey && !issueType) return `key:${key}`;
+    return `${projectKey}|${issueType}`;
+}
+
 // Ascending-rank copy of a priority catalog list (defensive; the backend catalog already
 // returns priorities in urgency order). Never mutates the input array.
 export function sortPriorityOptionsByRank(priorities) {

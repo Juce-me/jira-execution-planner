@@ -4,37 +4,53 @@ import { authRecoveryLoginUrl, redirectToAuthRecovery } from './useEngSprintData
 import {
     buildCatchUpPriorityTargets,
     buildPriorityActionAnalyticsParams,
+    priorityOptionCacheKey,
     summarizePriorityTransitionResults,
 } from './engPriorityTransitionUtils.js';
 
-let priorityOptionsCache = null;
-let priorityOptionsPromise = null;
+// Per-project/issue-type priority scheme cache, shared by every hook instance/mount so
+// switching sprints, groups, or which icon is open never refetches a scheme already seen this
+// app session. Keyed by priorityOptionCacheKey (project|issueType). Only successful NON-EMPTY
+// schemes are cached, so an uneditable issue's empty result never poisons the tuple for a
+// different editable issue of the same project/type. priorityOptionsPromises dedups concurrent
+// opens of one tuple; its in-flight entry is dropped on settle so a failed fetch is retried on
+// the next open. Cleared wholesale only via clearPriorityOptionsCache (auth recovery / hard
+// refresh / stale-catalog).
+const priorityOptionsCache = new Map();
+const priorityOptionsPromises = new Map();
 
 export function clearPriorityOptionsCache() {
-    priorityOptionsCache = null;
-    priorityOptionsPromise = null;
+    priorityOptionsCache.clear();
+    priorityOptionsPromises.clear();
 }
 
-async function loadPriorityOptionsOnce(backendUrl, signal) {
-    if (priorityOptionsCache) return priorityOptionsCache;
-    if (!priorityOptionsPromise) {
-        priorityOptionsPromise = fetchIssuePriorityOptions(backendUrl, { signal })
-            .then((payload) => {
-                priorityOptionsCache = payload;
-                return payload;
-            })
-            .finally(() => {
-                priorityOptionsPromise = null;
-            });
-    }
-    return priorityOptionsPromise;
+// Loads (and per-tuple dedups/caches) the priority scheme for one cache key. `fetchOptions` is
+// injectable for tests; production passes the real fetchIssuePriorityOptions with the issue's
+// key so the backend filters the catalog to that issue's scheme via editmeta. Only a non-empty
+// result is cached (see above). Exported for direct behavioral coverage of the cache contract.
+export function loadPriorityOptionsForTuple(cacheKey, issueKey, backendUrl, fetchOptions = fetchIssuePriorityOptions) {
+    if (priorityOptionsCache.has(cacheKey)) return Promise.resolve(priorityOptionsCache.get(cacheKey));
+    if (priorityOptionsPromises.has(cacheKey)) return priorityOptionsPromises.get(cacheKey);
+    const promise = Promise.resolve()
+        .then(() => fetchOptions(backendUrl, { issueKey }))
+        .then((payload) => {
+            if (payload && Array.isArray(payload.priorities) && payload.priorities.length > 0) {
+                priorityOptionsCache.set(cacheKey, payload);
+            }
+            return payload;
+        })
+        .finally(() => {
+            priorityOptionsPromises.delete(cacheKey);
+        });
+    priorityOptionsPromises.set(cacheKey, promise);
+    return promise;
 }
 
 // React state for ENG Catch Up/Planning Story card and Epic header priority changes: active
-// target, one-fetch-per-app-session priority catalog loading, mutation submission, auth
+// target, once-per-project/issue-type priority scheme loading, mutation submission, auth
 // recovery, and result state. Mirrors useEngStatusTransitions.js's single-issue control
 // shape; unlike status there is no Epic/Subtask batch selection surface here. The priority
-// catalog fetch is module-shared (loadPriorityOptionsOnce), so this hook never creates an
+// scheme fetch is module-shared (loadPriorityOptionsForTuple), so this hook never creates an
 // AbortController for it — aborting would cancel a fetch other hook instances may also be
 // waiting on. A local staleness token instead guards against setting state after this
 // particular open() call has been superseded or the menu closed.
@@ -85,9 +101,10 @@ export function useEngPriorityTransitions({
         setPriorityError('');
         setPriorityErrorCode('');
 
-        if (priorityOptionsCache) {
+        const cacheKey = priorityOptionCacheKey(target);
+        if (priorityOptionsCache.has(cacheKey)) {
             requestTokenRef.current = null;
-            setPriorityOptions(priorityOptionsCache);
+            setPriorityOptions(priorityOptionsCache.get(cacheKey));
             setPriorityOptionsLoading(false);
             return;
         }
@@ -101,7 +118,7 @@ export function useEngPriorityTransitions({
             targets: [target],
         }));
 
-        loadPriorityOptionsOnce(backendUrl)
+        loadPriorityOptionsForTuple(cacheKey, target.key, backendUrl)
             .then((payload) => {
                 if (requestTokenRef.current !== token) return; // Superseded; drop the stale response.
                 setPriorityOptions(payload);
@@ -139,7 +156,9 @@ export function useEngPriorityTransitions({
             sourceSurface,
             targets: [target],
             priorityId: targetPriorityId,
-            priorityOptions: priorityOptionsCache?.priorities,
+            // The active menu's shown scheme (the tuple's cached payload) resolves the target
+            // priority's rank -> low-cardinality bucket. No raw id/name leaves this builder.
+            priorityOptions: priorityOptions?.priorities,
         });
 
         trackIssuePriorityAction('priority_change_submit', analyticsBaseParams);
@@ -180,7 +199,7 @@ export function useEngPriorityTransitions({
         } finally {
             setPrioritySubmitting(false);
         }
-    }, [activePriorityTarget, sourceSurface, backendUrl, trackIssuePriorityAction, onApplyLocalPriority, onPrioritySuccessRefresh, onAuthRecoveryRequired]);
+    }, [activePriorityTarget, priorityOptions, sourceSurface, backendUrl, trackIssuePriorityAction, onApplyLocalPriority, onPrioritySuccessRefresh, onAuthRecoveryRequired]);
 
     return {
         activePriorityTarget,

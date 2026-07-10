@@ -28,8 +28,12 @@ export async function transitionIssues(backendUrl, payload, { signal } = {}) {
     }, { featureName: 'eng_status_transitions' }).then(response => jsonOrStructuredError(response, 'Issue transition'));
 }
 
-export function fetchIssuePriorityOptions(backendUrl, { signal } = {}) {
-    return trackedFetch('jira_issue_priorities', `${backendUrl}/api/issues/priorities/options`, {
+export function fetchIssuePriorityOptions(backendUrl, { issueKey, signal } = {}) {
+    // With an issueKey the backend filters the catalog to that issue's own priority scheme
+    // (editmeta); without it the full site catalog is returned (backward-compatible URL).
+    const key = String(issueKey || '').trim();
+    const query = key ? `?issueKey=${encodeURIComponent(key)}` : '';
+    return trackedFetch('jira_issue_priorities', `${backendUrl}/api/issues/priorities/options${query}`, {
         method: 'GET',
         cache: 'no-cache',
         signal,

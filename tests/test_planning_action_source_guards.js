@@ -366,20 +366,90 @@ test('ENG status transition submit invalidation covers degenerate and per-key ca
     );
 });
 
-test('ENG priority transition hook keeps a module-level priority options cache shared across hook instances', () => {
+test('ENG priority transition hook keeps a module-level per-tuple priority options cache shared across hook instances', () => {
     const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngPriorityTransitions.js');
     const hookSource = fs.readFileSync(hookPath, 'utf8');
 
-    const cacheDeclIndex = hookSource.indexOf('let priorityOptionsCache');
+    const cacheDeclIndex = hookSource.indexOf('const priorityOptionsCache = new Map()');
     const hookFnIndex = hookSource.indexOf('export function useEngPriorityTransitions');
-    assert.notEqual(cacheDeclIndex, -1, 'Expected a module-level priorityOptionsCache declaration');
+    assert.notEqual(cacheDeclIndex, -1, 'Expected a module-level priorityOptionsCache Map keyed by project|issueType tuple');
     assert.notEqual(hookFnIndex, -1, 'Expected the useEngPriorityTransitions hook export');
     assert.ok(
         cacheDeclIndex !== -1 && hookFnIndex !== -1 && cacheDeclIndex < hookFnIndex,
-        'Expected priorityOptionsCache to be declared at module scope, before the hook function, so every hook instance shares one fetch instead of re-fetching per mount'
+        'Expected priorityOptionsCache to be declared at module scope, before the hook function, so every hook instance shares one per-tuple fetch instead of re-fetching per mount'
     );
-    assert.match(hookSource, /let priorityOptionsPromise/, 'Expected an in-flight promise so concurrent opens dedupe to one fetch');
+    assert.match(hookSource, /const priorityOptionsPromises = new Map\(\)/, 'Expected a per-tuple in-flight promise map so concurrent opens of one tuple dedupe to a single fetch');
+    assert.match(hookSource, /priorityOptionCacheKey/, 'Expected the hook to key the cache by the project|issueType tuple');
+    assert.match(hookSource, /priorities\.length > 0/, 'Expected only successful NON-EMPTY schemes to be cached so an uneditable issue never poisons the tuple');
     assert.match(hookSource, /export function clearPriorityOptionsCache\(\)/, 'Expected a test/auth-recovery cache-clear escape hatch');
+});
+
+test('priority options per-tuple cache: two tuples fetch twice, same tuple once, empty is not cached, clear wipes', async () => {
+    const { loadPriorityOptionsForTuple, clearPriorityOptionsCache } = await import('../frontend/src/eng/useEngPriorityTransitions.js');
+    clearPriorityOptionsCache();
+
+    let fetchCount = 0;
+    const nonEmpty = () => { fetchCount += 1; return Promise.resolve({ priorities: [{ id: '1', name: 'Highest', rank: 10 }], source: 'jira', cached: false }); };
+
+    // Two distinct tuples -> two fetches.
+    await loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', nonEmpty);
+    await loadPriorityOptionsForTuple('PROD|Epic', 'PROD-EPIC', 'http://x', nonEmpty);
+    assert.equal(fetchCount, 2);
+
+    // Same tuple again (a different issue) -> cache hit, no new fetch.
+    await loadPriorityOptionsForTuple('PROD|Story', 'PROD-2', 'http://x', nonEmpty);
+    assert.equal(fetchCount, 2);
+
+    // An empty (uneditable) result must NOT be cached: a later editable issue of the SAME
+    // tuple still fetches.
+    clearPriorityOptionsCache();
+    let attempts = 0;
+    const emptyThenFull = () => {
+        attempts += 1;
+        return Promise.resolve(attempts === 1
+            ? { priorities: [], source: 'jira', cached: false }
+            : { priorities: [{ id: '1', name: 'Highest', rank: 10 }], source: 'jira', cached: false });
+    };
+    const first = await loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', emptyThenFull);
+    assert.deepEqual(first.priorities, []);
+    const second = await loadPriorityOptionsForTuple('PROD|Story', 'PROD-9', 'http://x', emptyThenFull);
+    assert.equal(second.priorities.length, 1, 'empty result must not poison the tuple');
+    assert.equal(attempts, 2, 'the empty result was not cached, so the second call refetched');
+
+    // clear wipes the map: a previously cached tuple refetches.
+    clearPriorityOptionsCache();
+    fetchCount = 0;
+    await loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', nonEmpty);
+    assert.equal(fetchCount, 1);
+});
+
+test('priority options per-tuple cache dedups concurrent loads and never poisons a tuple after a failed fetch', async () => {
+    const { loadPriorityOptionsForTuple, clearPriorityOptionsCache } = await import('../frontend/src/eng/useEngPriorityTransitions.js');
+
+    // Concurrent opens of the same tuple share ONE fetch.
+    clearPriorityOptionsCache();
+    let fetchCount = 0;
+    const slow = () => { fetchCount += 1; return new Promise((resolve) => setTimeout(() => resolve({ priorities: [{ id: '1', name: 'Highest', rank: 10 }], source: 'jira', cached: false }), 10)); };
+    const [a, b] = await Promise.all([
+        loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', slow),
+        loadPriorityOptionsForTuple('PROD|Story', 'PROD-2', 'http://x', slow),
+    ]);
+    assert.equal(fetchCount, 1, 'concurrent opens of the same tuple share one fetch');
+    assert.deepEqual(a, b);
+
+    // A failed fetch is not cached: the next open of the same tuple retries.
+    clearPriorityOptionsCache();
+    let attempts = 0;
+    const failThenSucceed = () => {
+        attempts += 1;
+        return attempts === 1
+            ? Promise.reject(new Error('boom'))
+            : Promise.resolve({ priorities: [{ id: '1', name: 'Highest', rank: 10 }], source: 'jira', cached: false });
+    };
+    await assert.rejects(() => loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', failThenSucceed));
+    const recovered = await loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', failThenSucceed);
+    assert.equal(recovered.priorities.length, 1, 'a failed fetch must not poison the tuple');
+    assert.equal(attempts, 2);
 });
 
 test('dashboard wires the priority hook and menu without owning their catalog/menu/API logic', () => {

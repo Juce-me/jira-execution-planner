@@ -107,6 +107,83 @@ def load_priority_options(*, jira_request, context=None):
     return {"priorities": priorities, "source": "jira"}
 
 
+def filter_priority_options_by_allowed_values(catalog_priorities, allowed_values):
+    """Restrict the shaped catalog to an issue's editmeta ``allowedValues``.
+
+    Preserves catalog order, rank, statusColor, and iconUrl for ids present in both. An
+    allowed value whose id is absent from the catalog is appended, shaped from its own fields
+    with a null ``statusColor`` (editmeta priority allowedValues carry no statusColor) and a
+    rank that sorts it after every catalog entry. Empty/absent ``allowed_values`` yields an
+    empty list.
+    """
+    allowed = []
+    seen = set()
+    for raw in allowed_values or []:
+        entry = raw or {}
+        allowed_id = str(entry.get("id") or "").strip()
+        if allowed_id and allowed_id not in seen:
+            seen.add(allowed_id)
+            allowed.append((allowed_id, entry))
+    if not allowed:
+        return []
+
+    catalog = list(catalog_priorities or [])
+    catalog_ids = {str(option.get("id") or "") for option in catalog}
+
+    filtered = [option for option in catalog if str(option.get("id") or "") in seen]
+
+    appended_rank_base = (len(catalog) + 1) * 10
+    appended_index = 0
+    for allowed_id, entry in allowed:
+        if allowed_id in catalog_ids:
+            continue
+        filtered.append({
+            "id": allowed_id,
+            "name": entry.get("name") or "",
+            "statusColor": None,
+            "iconUrl": entry.get("iconUrl") or "",
+            "rank": appended_rank_base + appended_index * 10,
+        })
+        appended_index += 1
+    return filtered
+
+
+def _normalize_single_issue_key(value):
+    """Validate a single issue key's format, reusing the shared list validator."""
+    return _normalize_issue_keys([value])[0]
+
+
+def load_priority_options_for_issue(issue_key, *, jira_request, context=None):
+    """Return the site priority catalog filtered to one issue's editmeta priority scheme.
+
+    Reads ``GET /rest/api/3/issue/{key}/editmeta`` (OAuth ``read:jira-work``) and:
+    - priority field present -> intersect the catalog with its ``allowedValues``;
+    - priority field absent (the user cannot edit priority) -> return an empty list so the
+      menu's empty state tells the truth, without fetching the catalog;
+    - editmeta ``404`` -> raise ``IssuePriorityServiceError('issue_not_found', 404)``;
+    - any other editmeta failure -> raise the sanitized ``priority_options_fetch_failed``.
+    Makes at most one editmeta call plus one catalog call (only on the editable path).
+    """
+    key = _normalize_single_issue_key(issue_key)
+    response = jira_request("GET", f"/rest/api/3/issue/{key}/editmeta", context=context)
+    status_code = getattr(response, "status_code", None)
+    if status_code == 404:
+        raise IssuePriorityServiceError("issue_not_found", 404)
+    if status_code != 200:
+        raise IssuePriorityServiceError("priority_options_fetch_failed", status_code)
+
+    fields = (response.json() or {}).get("fields") or {}
+    priority_field = fields.get("priority")
+    if not priority_field:
+        return {"priorities": [], "source": "jira"}
+
+    catalog = load_priority_options(jira_request=jira_request, context=context)
+    filtered = filter_priority_options_by_allowed_values(
+        catalog.get("priorities") or [], priority_field.get("allowedValues") or []
+    )
+    return {"priorities": filtered, "source": "jira"}
+
+
 def build_priority_snapshot_search_payload(issue_keys):
     """Single-page ``/rest/api/3/search/jql`` payload for priority snapshots."""
     quoted = ",".join(f'"{key}"' for key in issue_keys)

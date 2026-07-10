@@ -764,6 +764,86 @@ class IssuePriorityRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["error"], "jira_priority_options_failed")
 
+    def test_priority_options_route_with_issue_key_filters_via_editmeta(self):
+        sentinel_context = object()
+        calls = []
+
+        def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
+            calls.append({"method": method, "path": path, "context": context})
+            if "editmeta" in path:
+                return FakeResponse(200, {"fields": {"priority": {"allowedValues": [
+                    {"id": "2", "name": "High"},
+                    {"id": "4", "name": "Major"},
+                ]}}})
+            return FakeResponse(200, [
+                {"id": "1", "name": "Highest", "statusColor": "#ff5630", "iconUrl": ""},
+                {"id": "2", "name": "High", "statusColor": "#ff7452", "iconUrl": ""},
+                {"id": "3", "name": "Medium", "statusColor": "#ffab00", "iconUrl": ""},
+                {"id": "4", "name": "Major", "statusColor": "#f5cd47", "iconUrl": ""},
+                {"id": "5", "name": "Low", "statusColor": "#2d8738", "iconUrl": ""},
+            ])
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_request_auth_context", return_value=sentinel_context), \
+             patch.object(jira_server, "current_jira_request", side_effect=fake_request):
+            response = self.client.get("/api/issues/priorities/options?issueKey=PROD-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = response.get_json()
+        # Site catalog filtered to the issue's editmeta allowed priorities, catalog order kept.
+        self.assertEqual([p["id"] for p in body["priorities"]], ["2", "4"])
+        self.assertEqual(body["cached"], False)
+        editmeta_calls = [c for c in calls if "editmeta" in c["path"]]
+        self.assertEqual(len(editmeta_calls), 1)
+        self.assertEqual(editmeta_calls[0]["path"], "/rest/api/3/issue/PROD-1/editmeta")
+        self.assertIs(editmeta_calls[0]["context"], sentinel_context)
+
+    def test_priority_options_route_invalid_issue_key_returns_400(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_request", side_effect=AssertionError("must not call Jira for an invalid key")):
+            response = self.client.get("/api/issues/priorities/options?issueKey=PROD")
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "invalid_issue_key")
+
+    def test_priority_options_route_editmeta_404_returns_issue_not_found(self):
+        def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
+            return FakeResponse(404, {"errorMessages": ["not found detail"]})
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_request", side_effect=fake_request):
+            response = self.client.get("/api/issues/priorities/options?issueKey=PROD-999")
+
+        self.assertEqual(response.status_code, 404, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "issue_not_found")
+
+    def test_priority_options_route_without_issue_key_skips_editmeta(self):
+        def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
+            if "editmeta" in path:
+                raise AssertionError("no-issueKey path must not call editmeta")
+            return FakeResponse(200, [{"id": "3", "name": "Major", "statusColor": "#ffab00", "iconUrl": ""}])
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_request", side_effect=fake_request):
+            response = self.client.get("/api/issues/priorities/options")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual([p["id"] for p in response.get_json()["priorities"]], ["3"])
+
+    def test_priority_options_with_issue_key_does_not_call_build_jira_headers(self):
+        def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
+            if "editmeta" in path:
+                return FakeResponse(200, {"fields": {"priority": {"allowedValues": [{"id": "3", "name": "Major"}]}}})
+            return FakeResponse(200, [{"id": "3", "name": "Major", "statusColor": "#ffab00", "iconUrl": ""}])
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_request", side_effect=fake_request), \
+             patch.object(jira_server, "build_jira_headers", side_effect=AssertionError("build_jira_headers must not be called")):
+            response = self.client.get("/api/issues/priorities/options?issueKey=PROD-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual([p["id"] for p in response.get_json()["priorities"]], ["3"])
+
     def test_priority_write_rejects_missing_x_requested_with_before_route_code(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(eng_routes, "update_issue_priorities", side_effect=AssertionError("route code reached")):

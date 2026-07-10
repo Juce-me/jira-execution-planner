@@ -22,11 +22,14 @@ Subtasks are out of scope for the first priority UI slice because expanded subta
 
 - Atlassian documents `GET /rest/api/3/priority` as returning all issue priorities, requiring Jira access and classic OAuth scope `read:jira-work`; the same page says it is deprecated in favor of search, but search currently documents `manage:jira-configuration`, which is too broad for normal users. Use `/priority` unless this scope situation changes.
 - Atlassian documents `GET /rest/api/3/priority/search` as supporting project filters, but its documented OAuth scope is `manage:jira-configuration`; do not add that scope for this UX.
+- Atlassian documents `GET /rest/api/3/issue/{issueIdOrKey}/editmeta` as returning the fields the current user may edit on that issue, including `fields.priority.allowedValues` (the issue's real priority scheme). Required classic OAuth scope is `read:jira-work` (granular `read:issue-meta:jira`, `read:field-configuration:jira`) — the SAME `read:jira-work` already granted for issue reads, so filtering priority options to one issue's scheme needs NO new scope and no `manage:jira-configuration`. Scope confirmed 2026-07-10 via WebSearch of the Atlassian "Scopes for OAuth 2.0 (3LO) and Forge apps" reference; the direct api-group-issues WebFetch returned truncated page content, so this is fetched-via-search-and-reasoned-consistent with the plan's existing "issue read = `read:jira-work`" citation, not fetched from the endpoint anchor itself.
 - Atlassian documents `PUT /rest/api/3/issue/{issueIdOrKey}` as editing fields, requiring Browse Projects + Edit Issues and classic OAuth scope `write:jira-work`. Use this route with `{"fields":{"priority":{"id":"<priorityId>"}}}` and do not send `transition`, `update`, `historyMetadata`, or arbitrary fields.
 - Atlassian documents `GET /rest/api/3/status` as returning statuses associated with active workflows with classic OAuth scope `read:jira-work`; this is appropriate for a session-level status catalog, but not a replacement for per-issue transition validation.
 - Keep these source URLs in docs/plans or support docs, not in production comments:
   - https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-priorities/
   - https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-issueidorkey-put
+  - https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-issueidorkey-editmeta
+  - https://developer.atlassian.com/cloud/jira/platform/scopes-for-oauth-2-3LO-and-forge-apps/
   - https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-workflow-statuses/
 
 ## Product And Safety Decisions
@@ -42,6 +45,14 @@ Subtasks are out of scope for the first priority UI slice because expanded subta
 - Reuse the compact status dropdown visual grammar: narrow white panel, shadow, dashed rows, full-row hover, color/icon marker, rounded corners, and no chip-like option cards.
 - Analytics uses a new low-cardinality `issue_priority_action` event and a new `jira_issue_priorities` API surface. Do not emit issue keys, summaries, Jira URLs, priority IDs, account IDs, raw errors, or JQL.
 
+### Amendments (2026-07-09 product review)
+
+After the product owner reviewed the live UI, three corrections were implemented in a follow-up batch. No change to the one-click flow, OAuth-only posture, EPM/Stats/Scenario/Settings inertness, or analytics contract.
+
+- **REQ-A — real priority icons in the menu.** Option rows now render the app's OWN priority icon (the same `renderPriorityIcon` visual as the trigger and task rows), seeded uniquely per option (`${issueKey}-${option.id}`) so gradient/aria ids stay collision-free. A colored `statusColor` dot is kept only as a fallback for an exotic priority the app has no icon for (name not in `isRecognizedPriorityIconName`) that still carries a Jira color. Status-menu markers are unchanged (dots are their grammar).
+- **REQ-B — real priority values (per-project scheme).** The menu no longer lists the site-wide catalog. `GET /api/issues/priorities/options` accepts an optional `issueKey` and filters the catalog to that issue's `fields.priority.allowedValues` via editmeta (OAuth `read:jira-work` only; NOT `/priority/search` / `manage:jira-configuration`). The frontend cache moved from a single global catalog to a module-level Map keyed by the issue's `projectKey|issueType` tuple (`priorityOptionCacheKey`), with per-tuple promise dedup; only successful NON-EMPTY schemes are cached so an uneditable issue's empty result never poisons the tuple. Steady state: one options request per project/issue-type per app session (≈2–6 small requests for 2 projects). The no-`issueKey` full-catalog path is kept for backward compatibility. Epic own-priority omission composes after the scheme filter (filter first, omit the Epic's own current priority next).
+- **REQ-C — dismiss the menu on any outside click.** The shared `IssueFieldOptionMenu` now dismisses on a document-level `pointerdown` scoped to the field wrapper (trigger + menu), replacing the click-away backdrop that `.task-item`/`.epic-header`'s persisted `task-appear` transform had clamped to the card box (a non-none transform makes the card the containing block for `position:fixed`, so outside-card clicks missed the backdrop). Escape still closes; the defeated backdrop element was removed. Fixes both the priority and the shipped status menu (shared component).
+
 ## Endpoint Contracts
 
 ### `GET /api/issues/priorities/options`
@@ -51,10 +62,11 @@ Subtasks are out of scope for the first priority UI slice because expanded subta
 | Purpose | Return the Jira priority catalog used by priority edit menus. |
 | Auth | `authenticated_read`, route code rejects non-OAuth with `403 jira_oauth_required` to keep edit-mode behavior OAuth-only. |
 | CSRF | No CSRF token; safe `GET`. |
-| Query | No required query. Optional future `projectKey` is accepted but not used until Jira exposes a normal-user project-filtered priority catalog. |
-| Jira call | `current_jira_request("GET", "/rest/api/3/priority", context=auth_context)`. |
-| Success body | `{"priorities":[{"id":"1","name":"Highest","statusColor":"#ff5630","iconUrl":"https://...","rank":10},{"id":"3","name":"Major","statusColor":"#ffab00","iconUrl":"https://...","rank":40}],"source":"jira","cached":false}` |
-| Errors | `401` auth recovery payloads, `403 jira_oauth_required`, sanitized `502 jira_priority_options_failed`. |
+| Query | Optional `issueKey`. Present: filter the catalog to that issue's own priority scheme via editmeta (see below). Absent: return the full site catalog (backward-compatible). |
+| Jira call | No `issueKey`: `current_jira_request("GET", "/rest/api/3/priority", context=auth_context)`. With `issueKey`: `GET /rest/api/3/issue/{key}/editmeta` (read `fields.priority.allowedValues`), then — only when priority is editable — `GET /rest/api/3/priority`, filtered to the allowed ids preserving catalog order/rank/statusColor/iconUrl. One editmeta call + at most one catalog call; no other fan-out. OAuth-only (`current_jira_request`, request auth context); never `build_jira_headers`, Basic, Home, or service creds. |
+| Per-project filtering | An allowed id missing from the catalog is appended, shaped from the allowedValue's own fields with `statusColor: null`, ranked after every catalog entry. If editmeta omits the priority field entirely (user cannot edit priority), return `{"priorities": []}` so the menu's empty state tells the truth. |
+| Success body | `{"priorities":[{"id":"1","name":"Highest","statusColor":"#ff5630","iconUrl":"https://...","rank":10},{"id":"3","name":"Major","statusColor":"#ffab00","iconUrl":"https://...","rank":40}],"source":"jira","cached":false}` (same shape with or without `issueKey`). |
+| Errors | `400 invalid_issue_key` (malformed `issueKey`), `404 issue_not_found` (editmeta 404), `401` auth recovery payloads, `403 jira_oauth_required`, sanitized `502 jira_priority_options_failed`. |
 
 ### `POST /api/issues/priorities`
 

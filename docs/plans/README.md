@@ -80,7 +80,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 4. `EXEC-eng-priority-edit-mode.md`
    - Active implementation plan for adding OAuth-backed ENG priority edits from the existing `task-priority-icon`, reusing the compact status dropdown UI/API pattern, and caching priority/status catalogs across app usage.
-   - Expected output: Story and Epic priority icons open a compact dropdown; priority options are fetched once per app session; priority writes use signed-in user Jira OAuth only; status transition option caching is widened safely without treating every status as universally transitionable; EPM remains read-only.
+   - Expected output: Story and Epic priority icons open a compact dropdown whose option rows show the app's own priority icons and are filtered per issue to that project/issue-type scheme (via editmeta), fetched once per project/issue-type per app session; the menu dismisses on any outside click; priority writes use signed-in user Jira OAuth only; status transition option caching is widened safely without treating every status as universally transitionable; EPM remains read-only.
 
 ## Capacity Reporting Workflow
 

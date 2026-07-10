@@ -17,6 +17,7 @@ from backend.services.jira_issue_priorities import (
     IssuePriorityInputError,
     IssuePriorityServiceError,
     load_priority_options,
+    load_priority_options_for_issue,
     update_issue_priorities,
 )
 from backend.services.jira_issue_transitions import (
@@ -325,16 +326,31 @@ def post_issue_transitions():
 
 @bp.route('/api/issues/priorities/options', methods=['GET'])
 def get_issue_priority_options():
-    """Fetch the Jira priority catalog used by priority edit menus."""
+    """Fetch the Jira priority catalog used by priority edit menus.
+
+    With an optional ``issueKey`` query param, the catalog is filtered to that issue's own
+    priority scheme via editmeta (OAuth read:jira-work only); without it, the full site
+    catalog is returned (backward-compatible).
+    """
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return jsonify({'error': 'jira_oauth_required'}), 403
 
+    issue_key = (request.args.get('issueKey') or '').strip()
     try:
         auth_context = current_request_auth_context()
-        result = load_priority_options(jira_request=current_jira_request, context=auth_context)
+        if issue_key:
+            result = load_priority_options_for_issue(
+                issue_key, jira_request=current_jira_request, context=auth_context
+            )
+        else:
+            result = load_priority_options(jira_request=current_jira_request, context=auth_context)
     except AuthError as error:
         return _eng_auth_error_response(error)
-    except IssuePriorityServiceError:
+    except IssuePriorityInputError as error:
+        return jsonify({'error': error.code}), 400
+    except IssuePriorityServiceError as error:
+        if error.code == 'issue_not_found':
+            return jsonify({'error': 'issue_not_found'}), 404
         logger.exception('Issue priority options Jira fetch failed')
         return jsonify({'error': 'jira_priority_options_failed'}), 502
     except Exception:

@@ -10971,7 +10971,7 @@ import {
                 storySubtasksByKey,
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
-                mutationScopeKey={`${selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`},
+                mutationScopeKey: `${selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
                 trackIssueStatusAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalStatus: (issueKey, statusName) => {
@@ -11016,7 +11016,7 @@ import {
                 backendUrl: BACKEND_URL,
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
-                mutationScopeKey={`${selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`},
+                mutationScopeKey: `${selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
                 trackIssuePriorityAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalPriority: (issueKey, priorityPatch) => {

@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-> **Gate status:** Blocked. Checked on 2026-07-07. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+> **Gate status:** Blocked. Checked on 2026-07-10. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,7 +15,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-07-07 |
+| Checked on | 2026-07-10 |
 | Last result | FAIL insufficient_home_write_probe_input |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
@@ -127,6 +127,9 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-07-10: Startup sweep rechecked the gate while validating the auth unfocused auto-refresh plan against `origin/main` at `d37f911`. Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs remain unavailable, and the revised plan adds no Home/Townsquare write route or mutation UI. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-07-09: Startup sweep reviewed the gate while creating the ENG priority edit-mode plan. Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs are not available in this session, and this plan adds no Home/Townsquare write route or mutation UI. The planned write path is Jira REST issue priority edit only, through the signed-in user's OAuth Jira context. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-07-09: Startup sweep reviewed the gate while creating the auth focus/unfocused auto-refresh plan. Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs are not present in the local environment, and this plan adds no Home/Townsquare write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-07-07: Startup sweep reviewed the gate while creating the Jira OAuth ENG Catch Up and Planning status-transition plan. Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs are not available in this session, and this plan adds no Home/Townsquare write route or mutation UI. The planned write path is Jira REST issue transition only, through the signed-in user's OAuth Jira context. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-06-18: Startup sweep reviewed the gate while executing the Ad Hoc capacity epic configuration plan. Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs are not available in this session, and this plan adds no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-06-12: Startup sweep reviewed the gate while executing Planning card-grid and CSS feature-owned partial plans. Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs are not present in the local environment, and these plans add no Home write route or mutation UI. No real Home write probe pass is recorded in the repo. Keep blocked with `FAIL insufficient_home_write_probe_input`.

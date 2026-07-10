@@ -253,7 +253,14 @@ test('priority icon opens compact app dropdown and fetches priorities once acros
     const firstOptionBox = await firstOption.boundingBox();
     expect(firstOptionBox.height).toBeLessThanOrEqual(36);
     await expect(firstOption).not.toHaveClass(/task-status/);
-    await expect(firstOption.locator('.priority-transition-option-marker')).toHaveCount(1);
+    // REQ-A: each option row renders the app's OWN priority icon (the same visual as the
+    // trigger + task rows) carrying the option's real priority name in data-priority, not a
+    // bare color dot. All four visible options are known priorities, so no dot markers remain.
+    const firstOptionIcon = firstOption.locator('.task-priority-icon');
+    await expect(firstOptionIcon).toHaveCount(1);
+    await expect(firstOptionIcon).toHaveAttribute('data-priority', 'Highest');
+    await expect(menu1.locator('.priority-transition-option .task-priority-icon')).toHaveCount(4);
+    await expect(menu1.locator('.priority-transition-option-marker')).toHaveCount(0);
 
     const beforeHover = await firstOption.evaluate((node) => getComputedStyle(node).backgroundColor);
     await firstOption.hover();

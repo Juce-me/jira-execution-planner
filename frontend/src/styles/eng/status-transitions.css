@@ -134,6 +134,17 @@
             border-top: 1px dashed var(--border);
         }
 
+        /* The priority menu marker is the app's 16x16 priority icon (not the 0.45rem status
+           dot), so its first grid column is widened to fit and center that icon. The status
+           menu keeps its narrow dot column. Row height still clears the icon well under 36px. */
+        .priority-transition-option {
+            grid-template-columns: 1.1rem minmax(0, 1fr);
+        }
+
+        .priority-transition-option > .task-priority-icon {
+            justify-self: center;
+        }
+
         .status-transition-option:hover:not(:disabled),
         .status-transition-option:focus-visible,
         .priority-transition-option:hover:not(:disabled),

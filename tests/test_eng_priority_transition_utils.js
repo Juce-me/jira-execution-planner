@@ -117,6 +117,23 @@ test('summarizePriorityTransitionResults returns success/partial/failure counts 
     assert.deepEqual(summarizePriorityTransitionResults(undefined), { total: 0, succeeded: 0, failed: 0, result: 'failure' });
 });
 
+test('isRecognizedPriorityIconName matches the app priority-icon vocabulary and rejects exotic names', async () => {
+    const { isRecognizedPriorityIconName } = await loadUtils();
+
+    // Standard project priorities the app renders a real icon for (mirrors renderPriorityIcon).
+    for (const name of ['Blocker', 'Critical', 'Highest', 'High', 'Major', 'Medium', 'Minor', 'Lowest', 'Low', 'Trivial']) {
+        assert.equal(isRecognizedPriorityIconName(name), true, `${name} should be recognized`);
+    }
+    // Case/substring tolerant, mirroring the includes-based matching in renderPriorityIcon.
+    assert.equal(isRecognizedPriorityIconName('low (migrated)'), true);
+    // Exotic priorities the app has no icon for fall through to the Jira color-dot fallback.
+    assert.equal(isRecognizedPriorityIconName('Urgent'), false);
+    assert.equal(isRecognizedPriorityIconName('P0'), false);
+    assert.equal(isRecognizedPriorityIconName(''), false);
+    assert.equal(isRecognizedPriorityIconName(null), false);
+    assert.equal(isRecognizedPriorityIconName(undefined), false);
+});
+
 test('buildPriorityActionAnalyticsParams omits priority_bucket when no target priority has been chosen yet', async () => {
     const { buildPriorityActionAnalyticsParams } = await loadUtils();
 

@@ -1,7 +1,7 @@
 import * as React from 'react';
 import IssueFieldOptionMenu from './IssueFieldOptionMenu.jsx';
 import { normalizeIssueStatus } from './issueViewUtils.js';
-import { sortPriorityOptionsByRank } from '../eng/engPriorityTransitionUtils.js';
+import { isRecognizedPriorityIconName, sortPriorityOptionsByRank } from '../eng/engPriorityTransitionUtils.js';
 
 // Shared ENG priority-change control used by Catch Up / Planning Story cards and Epic
 // headers. Presentational: all catalog/loading/submit state and handlers arrive as props
@@ -100,13 +100,25 @@ export default function PriorityTransitionMenu({
                     options={priorities}
                     optionKey={(option) => option.id}
                     optionLabel={(option) => option.name}
-                    renderMarker={(option) => (
-                        <span
-                            className="priority-transition-option-marker"
-                            style={option.statusColor ? { background: option.statusColor } : undefined}
-                            aria-hidden="true"
-                        />
-                    )}
+                    renderMarker={(option) => {
+                        // Show the app's OWN priority icon (identical to the trigger + task
+                        // rows) via renderPriorityIcon, seeded uniquely per option so any
+                        // gradient/aria ids stay collision-free. Only for an exotic priority
+                        // the app has no icon for AND for which Jira supplied a color do we
+                        // fall back to the colored dot, so that color signal is not lost.
+                        if (!isRecognizedPriorityIconName(option.name) && option.statusColor) {
+                            return (
+                                <span
+                                    className="priority-transition-option-marker"
+                                    style={{ background: option.statusColor }}
+                                    aria-hidden="true"
+                                />
+                            );
+                        }
+                        return renderPriorityIcon
+                            ? renderPriorityIcon(option.name, `${issueKey}-${option.id}`)
+                            : null;
+                    }}
                     onSelect={(option) => onSubmit?.(option.id, issueKey)}
                     disabled={submitting}
                     result={priorityResultMessage(result)}

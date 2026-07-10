@@ -25,6 +25,23 @@ export function buildCatchUpPriorityTargets(issue, fallbackIssueType = '') {
     return { key, issueType, currentPriority, summary };
 }
 
+// Priority names the app renders a first-class icon for via renderPriorityIcon
+// (dashboard.jsx): the Blocker/Critical flags, the High/Low chevron stacks, and the neutral
+// circle used for Medium, Trivial, and the empty/none state. This mirrors that function's
+// (and formatPriorityShort's) includes-based vocabulary so the priority menu can decide, per
+// option, between the app's own icon and a Jira status-color dot fallback for an exotic
+// priority the app has no icon for — without importing the large dashboard module. Keep this
+// list aligned with renderPriorityIcon's branches if that icon vocabulary changes.
+const RECOGNIZED_PRIORITY_ICON_TOKENS = [
+    'blocker', 'critical', 'highest', 'high', 'major', 'medium', 'minor', 'lowest', 'low', 'trivial',
+];
+
+export function isRecognizedPriorityIconName(name) {
+    const normalized = String(name || '').trim().toLowerCase();
+    if (!normalized) return false;
+    return RECOGNIZED_PRIORITY_ICON_TOKENS.some((token) => normalized.includes(token));
+}
+
 // Ascending-rank copy of a priority catalog list (defensive; the backend catalog already
 // returns priorities in urgency order). Never mutates the input array.
 export function sortPriorityOptionsByRank(priorities) {

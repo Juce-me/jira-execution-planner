@@ -1,5 +1,6 @@
 import * as React from 'react';
 import StatusPill from '../ui/StatusPill.jsx';
+import IssueFieldOptionMenu from './IssueFieldOptionMenu.jsx';
 import { MAX_STATUS_TRANSITION_ISSUES } from '../eng/engStatusTransitionUtils.js';
 import { getIssueStatusClassName, normalizeIssueStatus } from './issueViewUtils.js';
 
@@ -111,15 +112,10 @@ export default function StatusTransitionMenu({
     onToggleTargetSet,
     onSubmit,
 }) {
-    const firstOptionRef = React.useRef(null);
     const issueKey = String(issue?.key || '').trim();
-
-    // Move focus into the menu once options are available.
-    React.useEffect(() => {
-        if (isOpen && !optionsLoading && firstOptionRef.current) {
-            firstOptionRef.current.focus();
-        }
-    }, [isOpen, optionsLoading]);
+    // Wraps BOTH the trigger and the menu; IssueFieldOptionMenu uses it to scope its
+    // outside-click dismissal (an in-wrapper click is never treated as "outside").
+    const fieldRef = React.useRef(null);
 
     const isServerTooMany = errorCode === 'too_many_issues';
     const isPlanning = sourceSurface === 'planning';
@@ -155,15 +151,8 @@ export default function StatusTransitionMenu({
         onSubmit?.(targetStatus);
     };
 
-    const handleMenuKeyDown = (event) => {
-        if (event.key === 'Escape') {
-            event.stopPropagation();
-            onClose?.();
-        }
-    };
-
     return (
-        <span className="status-transition">
+        <span className="status-transition" ref={fieldRef}>
             <StatusPill
                 interactive
                 className={statusClassName}
@@ -176,73 +165,42 @@ export default function StatusTransitionMenu({
                 data-issue-kind={String(fallbackIssueType || '').toLowerCase()}
             />
             {isOpen && (
-                <>
-                    <button
-                        type="button"
-                        className="status-transition-menu-backdrop"
-                        aria-label="Close status menu"
-                        onClick={() => onClose?.()}
-                    />
-                    <div
-                        className="status-transition-menu"
-                        role="menu"
-                        data-status-transition-menu="true"
-                        data-issue-key={issueKey}
-                        onKeyDown={handleMenuKeyDown}
-                    >
-                        {canToggleTargetSet && (
-                            <label className="status-transition-target-toggle-row">
-                                <input
-                                    type="checkbox"
-                                    className="status-transition-target-toggle"
-                                    checked={!!isInTargetSet}
-                                    onChange={() => onToggleTargetSet?.()}
-                                />
-                                <span>Include in batch</span>
-                            </label>
-                        )}
-                        {optionsLoading && (
-                            <div className="status-transition-menu-note status-transition-menu-loading">Loading status options...</div>
-                        )}
-                        {!optionsLoading && (error || showTooManyMessage) && (
-                            <div
-                                className={`status-transition-menu-note status-transition-menu-error${showTooManyMessage ? ' is-too-many' : ''}`}
-                                role="alert"
-                            >
-                                {showTooManyMessage ? TOO_MANY_ISSUES_MESSAGE : error}
-                            </div>
-                        )}
-                        {!optionsLoading && !isServerTooMany && targetStatuses.length === 0 && (
-                            <div className="status-transition-menu-note">No available transitions.</div>
-                        )}
-                        {!optionsLoading && !isServerTooMany && targetStatuses.length > 0 && (
-                            <div className="status-transition-menu-options" aria-label={submitLabel}>
-                                {targetStatuses.map((entry, index) => (
-                                    <button
-                                        key={entry.name}
-                                        ref={index === 0 ? firstOptionRef : null}
-                                        type="button"
-                                        className="status-transition-option"
-                                        role="menuitem"
-                                        onClick={() => handleOptionClick(entry.name)}
-                                        disabled={optionDisabled}
-                                    >
-                                        <span
-                                            className={getIssueStatusClassName(entry.name, 'status-transition-option-marker')}
-                                            aria-hidden="true"
-                                        />
-                                        <span className="status-transition-option-label">{optionLabel(entry)}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                        {result && (
-                            <div className="status-transition-menu-result" role="status">
-                                {resultMessage(result)}
-                            </div>
-                        )}
-                    </div>
-                </>
+                <IssueFieldOptionMenu
+                    blockClass="status-transition"
+                    issueKey={issueKey}
+                    menuLabel={submitLabel}
+                    leadingContent={canToggleTargetSet ? (
+                        <label className="status-transition-target-toggle-row">
+                            <input
+                                type="checkbox"
+                                className="status-transition-target-toggle"
+                                checked={!!isInTargetSet}
+                                onChange={() => onToggleTargetSet?.()}
+                            />
+                            <span>Include in batch</span>
+                        </label>
+                    ) : null}
+                    loading={optionsLoading}
+                    loadingLabel="Loading status options..."
+                    error={showTooManyMessage ? TOO_MANY_ISSUES_MESSAGE : (error || '')}
+                    errorTooMany={showTooManyMessage}
+                    showEmpty={!isServerTooMany && targetStatuses.length === 0}
+                    emptyLabel="No available transitions."
+                    options={isServerTooMany ? [] : targetStatuses}
+                    optionKey={(entry) => entry.name}
+                    optionLabel={optionLabel}
+                    renderMarker={(entry) => (
+                        <span
+                            className={getIssueStatusClassName(entry.name, 'status-transition-option-marker')}
+                            aria-hidden="true"
+                        />
+                    )}
+                    onSelect={(entry) => handleOptionClick(entry.name)}
+                    disabled={optionDisabled}
+                    result={result ? resultMessage(result) : ''}
+                    onEscape={() => onClose?.()}
+                    dismissRef={fieldRef}
+                />
             )}
         </span>
     );

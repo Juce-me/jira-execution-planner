@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-> **Gate status:** Blocked. Checked on 2026-07-10. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-07-10. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 

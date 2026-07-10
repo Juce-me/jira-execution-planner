@@ -151,6 +151,7 @@ gtm_web:
     - { name: "DLV - pending_unsaved_state", data_layer_variable_name: "pending_unsaved_state", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - point_bucket", data_layer_variable_name: "point_bucket", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - previous_status", data_layer_variable_name: "previous_status", version: 2, purpose: "approved event parameter" }
+    - { name: "DLV - priority_bucket", data_layer_variable_name: "priority_bucket", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - project_count", data_layer_variable_name: "project_count", version: 2, purpose: "approved event metric" }
     - { name: "DLV - project_count_bucket", data_layer_variable_name: "project_count_bucket", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - project_scope", data_layer_variable_name: "project_scope", version: 2, purpose: "approved event parameter" }

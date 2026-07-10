@@ -27,8 +27,11 @@ import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
+import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
+import { applyLocalPriorityUpdate } from './eng/engPriorityTransitionUtils.js';
 import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/engStatusTransitionUtils.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
+import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
@@ -959,7 +962,7 @@ import {
             }, [refreshHomeTokenConnectionStatus]);
             const {
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
-                trackIssueStatusAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
+                trackIssueStatusAction, trackIssuePriorityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, serverConnectionError });
             const {
@@ -10969,6 +10972,46 @@ import {
 
             const statusTransitionActiveKey = statusTransitionActiveTarget?.key || null;
 
+            // ── ENG priority transitions (Catch Up single issue + Planning) ──
+            // Same ENG-only surface gate as status (EPM/Stats/Scenario/Settings stay inert).
+            // Menu/catalog/submit logic lives in useEngPriorityTransitions +
+            // PriorityTransitionMenu; dashboard only wires props. On success the hook applies
+            // the new priority to the in-memory Story immediately (applyLocalPriorityUpdate
+            // in engPriorityTransitionUtils.js) so the icon/card color do not wait on the
+            // refresh, then triggers the same task-list refresh the status flow uses.
+            // Priority edits never affect subtasks in this slice, so unlike status there is
+            // no affectedSubtaskStoryKeys work to do here.
+            const priorityTransitionEnabled = statusTransitionEnabled;
+            const {
+                activePriorityTarget,
+                openPriorityControl,
+                closePriorityControl,
+                priorityOptions,
+                priorityOptionsLoading,
+                prioritySubmitting,
+                priorityError,
+                priorityResult,
+                submitPriorityChange,
+            } = useEngPriorityTransitions({
+                backendUrl: BACKEND_URL,
+                selectedSprint,
+                sourceSurface: statusTransitionSourceSurface,
+                trackIssuePriorityAction,
+                onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
+                onApplyLocalPriority: (issueKey, priorityPatch) => {
+                    setProductTasks(prev => applyLocalPriorityUpdate(prev, issueKey, priorityPatch));
+                    setTechTasks(prev => applyLocalPriorityUpdate(prev, issueKey, priorityPatch));
+                },
+                onPrioritySuccessRefresh: () => {
+                    // Refresh only the ENG task data for the current scope, not a full reload.
+                    loadProductTasks({ forceRefresh: true });
+                    loadTechTasks({ forceRefresh: true });
+                    loadReadyToCloseProductTasks({ forceRefresh: true });
+                    loadReadyToCloseTechTasks({ forceRefresh: true });
+                },
+            });
+            const priorityTransitionActiveKey = activePriorityTarget?.key || null;
+
             // Planning composed target list (selected Stories + marked Epics + marked
             // Subtasks) drives the "Apply to selected targets (N)" count and the action
             // bar feedback. Catch Up acts on one explicit issue, so its count stays 0.
@@ -10989,7 +11032,8 @@ import {
             React.useEffect(() => {
                 clearNonStoryStatusTargets();
                 closeSingleIssueStatusControl();
-            }, [activeGroupId, clearNonStoryStatusTargets, closeSingleIssueStatusControl]);
+                closePriorityControl();
+            }, [activeGroupId, clearNonStoryStatusTargets, closeSingleIssueStatusControl, closePriorityControl]);
 
             // The hook exposes no submitting flag; track it around the awaited submit so
             // the menu can disable its action and show an in-flight state.
@@ -12531,6 +12575,12 @@ import {
                             ? getIssueStatusClassName(epicStatus, 'epic-status-pill')
                             : '';
                         const effectivePriority = getEpicEffectivePriority(epicGroup);
+                        // The header icon shows the derived (most-urgent child) priority, but the
+                        // priority menu edits the Epic's OWN priority field; normalize it to a name
+                        // the same way epicStatus is handled above.
+                        const epicOwnPriority = typeof epicInfo?.priority === 'string'
+                            ? epicInfo.priority
+                            : epicInfo?.priority?.name || '';
                         const projectTrackValue = epicInfo?.projectTrack || '';
                         const projectTrackEmoji = getProjectTrackEmoji(projectTrackValue);
                         return (
@@ -12558,7 +12608,28 @@ import {
                                                     />
                                                 </svg>
                                             </span>
-                                            {effectivePriority.name && renderPriorityIcon(effectivePriority.name, epicGroup.key)}
+                                            {effectivePriority.name && (
+                                                (priorityTransitionEnabled && epicGroup.key !== 'NO_EPIC') ? (
+                                                    <PriorityTransitionMenu
+                                                        issue={{ key: epicGroup.key, priority: epicOwnPriority, summary: epicTitle }}
+                                                        fallbackIssueType="Epic"
+                                                        priorityLabel={effectivePriority.name}
+                                                        currentPriorityLabel={epicOwnPriority}
+                                                        renderPriorityIcon={renderPriorityIcon}
+                                                        isOpen={priorityTransitionActiveKey === epicGroup.key}
+                                                        options={priorityOptions}
+                                                        optionsLoading={priorityOptionsLoading}
+                                                        submitting={prioritySubmitting}
+                                                        error={priorityError}
+                                                        result={priorityResult}
+                                                        onOpen={openPriorityControl}
+                                                        onClose={closePriorityControl}
+                                                        onSubmit={submitPriorityChange}
+                                                    />
+                                                ) : (
+                                                    renderPriorityIcon(effectivePriority.name, epicGroup.key)
+                                                )
+                                            )}
                                             {projectTrackEmoji && (
                                                 <span
                                                     className="epic-track-indicator"
@@ -12686,6 +12757,16 @@ import {
                                             onCloseStatusTransition={closeSingleIssueStatusControl}
                                             onSubmitStatusTransition={handleSubmitStatusTransition}
                                             onToggleSubtaskStatusTarget={toggleSubtaskStatusTarget}
+                                            priorityTransitionEnabled={priorityTransitionEnabled}
+                                            priorityTransitionActiveKey={priorityTransitionActiveKey}
+                                            priorityTransitionOptions={priorityOptions}
+                                            priorityTransitionOptionsLoading={priorityOptionsLoading}
+                                            priorityTransitionSubmitting={prioritySubmitting}
+                                            priorityTransitionError={priorityError}
+                                            priorityTransitionResult={priorityResult}
+                                            onOpenPriorityTransition={openPriorityControl}
+                                            onClosePriorityTransition={closePriorityControl}
+                                            onSubmitPriorityTransition={submitPriorityChange}
                                         />
                                     );
                                 })}

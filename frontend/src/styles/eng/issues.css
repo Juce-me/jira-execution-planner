@@ -367,6 +367,31 @@
             height: 14px;
         }
 
+        /* The interactive priority icon (ENG Catch Up / Planning) is a native <button> that
+           carries the same .task-priority-icon classes and data-attrs as the passive <span>,
+           so the tooltip and 16x16 geometry are preserved. Neutralize the aggressive global
+           button rule (and its hover lift) from eng/controls.css and add a hover/focus
+           affordance mirroring the status pill. */
+        button.task-priority-icon {
+            -webkit-appearance: none;
+            appearance: none;
+            padding: 0;
+            margin: 0;
+            border: 0;
+            background: transparent;
+            font: inherit;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+        }
+
+        button.task-priority-icon:hover,
+        button.task-priority-icon:focus-visible {
+            transform: none;
+            background: var(--bg-primary);
+            box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.22);
+        }
+
         .task-priority-icon[data-priority] {
             position: relative;
         }

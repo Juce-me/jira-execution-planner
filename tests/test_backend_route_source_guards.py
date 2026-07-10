@@ -355,6 +355,12 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
         self.assertIn("@bp.route('/api/issues/transitions/options', methods=['POST'])", source)
         self.assertIn("@bp.route('/api/issues/transitions', methods=['POST'])", source)
 
+    def test_eng_routes_registers_priority_and_status_catalog_routes(self):
+        source = BACKEND_ENG_ROUTES_PATH.read_text(encoding="utf8")
+        self.assertIn("@bp.route('/api/issues/priorities/options', methods=['GET'])", source)
+        self.assertIn("@bp.route('/api/issues/priorities', methods=['POST'])", source)
+        self.assertIn("@bp.route('/api/issues/statuses/catalog', methods=['GET'])", source)
+
     def test_issue_transition_routes_do_not_call_build_jira_headers(self):
         source = BACKEND_ENG_ROUTES_PATH.read_text(encoding="utf8")
         self.assertNotIn("build_jira_headers(", source)
@@ -396,6 +402,21 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
         )
         self.assertIn(
             'EndpointPolicy("jira-issue-transitions-write", "/api/issues/transitions", frozenset({"POST"}), "user_write"),',
+            source,
+        )
+
+    def test_security_policy_has_exact_issue_priority_and_status_catalog_endpoint_policies(self):
+        source = BACKEND_SECURITY_POLICY_PATH.read_text(encoding="utf8")
+        self.assertIn(
+            'EndpointPolicy("jira-issue-priority-options", "/api/issues/priorities/options", PUBLIC_METHODS, "authenticated_read"),',
+            source,
+        )
+        self.assertIn(
+            'EndpointPolicy("jira-issue-priorities-write", "/api/issues/priorities", frozenset({"POST"}), "user_write"),',
+            source,
+        )
+        self.assertIn(
+            'EndpointPolicy("jira-issue-status-catalog", "/api/issues/statuses/catalog", PUBLIC_METHODS, "authenticated_read"),',
             source,
         )
 

@@ -271,8 +271,11 @@ test('ENG status transition hook refreshes only after at least one issue succeed
     const guardIndex = hookSource.indexOf('if (summary.succeeded > 0) {');
     assert.notEqual(guardIndex, -1, 'Expected an explicit succeeded > 0 guard');
     // The refresh now carries the affected story keys so only those expanded subtask rows
-    // re-fetch (Fix wave 1); it still fires only inside the succeeded > 0 block.
-    const guardBody = hookSource.slice(guardIndex, guardIndex + 1000);
+    // re-fetch (Fix wave 1); it still fires only inside the succeeded > 0 block. The window
+    // widened past 1000 chars to also cover the tuple/per-key transitionOptionsCache
+    // invalidation (Step 3.4 + degenerate-signature fix) that now runs earlier in the same
+    // guard block.
+    const guardBody = hookSource.slice(guardIndex, guardIndex + 3000);
     assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
 });
 
@@ -282,4 +285,194 @@ test('ENG status transition hook never mutates Planning selectedTasks for Epics 
 
     assert.doesNotMatch(hookSource, /\bselectedTasks\b/, 'Hook must never read/write the raw Planning selectedTasks map, only selectedStories');
     assert.doesNotMatch(hookSource, /setSelectedTasks/);
+});
+
+test('ENG status transition hook moved its options cache to module scope shared across hook instances', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    const cacheDeclIndex = hookSource.indexOf('const transitionOptionsCache = new Map();');
+    const hookFnIndex = hookSource.indexOf('export function useEngStatusTransitions');
+    assert.notEqual(cacheDeclIndex, -1, 'Expected a module-level transitionOptionsCache Map');
+    assert.notEqual(hookFnIndex, -1, 'Expected the useEngStatusTransitions hook export');
+    assert.ok(
+        cacheDeclIndex !== -1 && hookFnIndex !== -1 && cacheDeclIndex < hookFnIndex,
+        'Expected transitionOptionsCache to be declared at module scope, before the hook function, so every hook instance/mount shares one cache instead of re-creating a per-instance ref'
+    );
+    assert.doesNotMatch(hookSource, /React\.useRef\(new Map\(\)\)/, 'Options cache must no longer be a per-instance React ref');
+    assert.match(hookSource, /function transitionOptionCacheKey\(targets\)/, 'Expected the tuple-based cache key helper');
+    assert.match(hookSource, /export function clearTransitionOptionsCache\(\)/, 'Expected a test/auth-recovery cache-clear escape hatch');
+});
+
+test('transitionOptionCacheKey keeps the mandated tuple for full targets and never collapses degenerate targets into a shared bucket', async () => {
+    const { transitionOptionCacheKey } = await import('../frontend/src/eng/useEngStatusTransitions.js');
+
+    // Full targets keep the mandated project|issueType|currentStatus tuple: two issues
+    // sharing project/type/status intentionally share one cache signature.
+    assert.equal(
+        transitionOptionCacheKey([{ key: 'PROD-1', issueType: 'Story', currentStatus: 'To Do', summary: 'A' }]),
+        'PROD|Story|To Do'
+    );
+    assert.equal(
+        transitionOptionCacheKey([{ key: 'PROD-2', issueType: 'Story', currentStatus: 'To Do', summary: 'B' }]),
+        'PROD|Story|To Do'
+    );
+
+    // Raw string keys must not collapse into one shared "||" bucket across issues.
+    const rawA = transitionOptionCacheKey(['PROD-1']);
+    const rawB = transitionOptionCacheKey(['TECH-9']);
+    assert.notEqual(rawA, rawB, 'distinct raw keys must produce distinct cache signatures');
+    assert.ok(!rawA.includes('|'), `raw-key signature must not degenerate to a tuple: ${rawA}`);
+
+    // Type/status-less fallback targets (submit's explicit-key shape) must be unique per
+    // issue key too, not a shared "PREFIX||" bucket for a whole project.
+    const fallbackA = transitionOptionCacheKey([{ key: 'PROD-1', issueType: '', currentStatus: '', summary: '' }]);
+    const fallbackB = transitionOptionCacheKey([{ key: 'PROD-2', issueType: '', currentStatus: '', summary: '' }]);
+    assert.notEqual(fallbackA, fallbackB, 'distinct context-less targets must produce distinct cache signatures');
+    assert.notEqual(fallbackA, 'PROD||', 'context-less targets must not share a project-wide degenerate tuple');
+    assert.equal(fallbackA, rawA, 'raw key and context-less target for the same issue share one per-key signature so key-based invalidation reaches both');
+
+    // A degenerate signature can never equal any real tuple entry.
+    assert.notEqual(fallbackA, transitionOptionCacheKey([{ key: 'PROD-1', issueType: 'Story', currentStatus: 'To Do' }]));
+});
+
+test('ENG status transition submit invalidation covers degenerate and per-key cache signatures', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    const guardIndex = hookSource.indexOf('if (summary.succeeded > 0) {');
+    assert.notEqual(guardIndex, -1, 'Expected an explicit succeeded > 0 guard');
+    const guardBody = hookSource.slice(guardIndex, guardIndex + 3000);
+
+    // Fallback-submit targets ({key, issueType:'', currentStatus:''}) carry no workflow
+    // context, so the tuple entries that covered them cannot be identified: the success
+    // path must clear the whole cache rather than under-invalidate.
+    assert.match(
+        guardBody,
+        /succeededTargets\.some\(\(target\) => !target\.issueType && !target\.currentStatus\)/,
+        'Expected the succeeded-target degenerate-context check'
+    );
+    assert.match(
+        guardBody,
+        /clearTransitionOptionsCache\(\);/,
+        'Expected a whole-cache clear on the degenerate fallback-submit path'
+    );
+    // Full-target invalidation must also drop any per-key entry cached for the same issue
+    // by a raw-key/context-less options load.
+    assert.match(
+        guardBody,
+        /transitionOptionKeySignature\(target\.key\)/,
+        'Expected per-key signature invalidation alongside tuple invalidation'
+    );
+});
+
+test('ENG priority transition hook keeps a module-level per-tuple priority options cache shared across hook instances', () => {
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngPriorityTransitions.js');
+    const hookSource = fs.readFileSync(hookPath, 'utf8');
+
+    const cacheDeclIndex = hookSource.indexOf('const priorityOptionsCache = new Map()');
+    const hookFnIndex = hookSource.indexOf('export function useEngPriorityTransitions');
+    assert.notEqual(cacheDeclIndex, -1, 'Expected a module-level priorityOptionsCache Map keyed by project|issueType tuple');
+    assert.notEqual(hookFnIndex, -1, 'Expected the useEngPriorityTransitions hook export');
+    assert.ok(
+        cacheDeclIndex !== -1 && hookFnIndex !== -1 && cacheDeclIndex < hookFnIndex,
+        'Expected priorityOptionsCache to be declared at module scope, before the hook function, so every hook instance shares one per-tuple fetch instead of re-fetching per mount'
+    );
+    assert.match(hookSource, /const priorityOptionsPromises = new Map\(\)/, 'Expected a per-tuple in-flight promise map so concurrent opens of one tuple dedupe to a single fetch');
+    assert.match(hookSource, /priorityOptionCacheKey/, 'Expected the hook to key the cache by the project|issueType tuple');
+    assert.match(hookSource, /priorities\.length > 0/, 'Expected only successful NON-EMPTY schemes to be cached so an uneditable issue never poisons the tuple');
+    assert.match(hookSource, /export function clearPriorityOptionsCache\(\)/, 'Expected a test/auth-recovery cache-clear escape hatch');
+});
+
+test('priority options per-tuple cache: two tuples fetch twice, same tuple once, empty is not cached, clear wipes', async () => {
+    const { loadPriorityOptionsForTuple, clearPriorityOptionsCache } = await import('../frontend/src/eng/useEngPriorityTransitions.js');
+    clearPriorityOptionsCache();
+
+    let fetchCount = 0;
+    const nonEmpty = () => { fetchCount += 1; return Promise.resolve({ priorities: [{ id: '1', name: 'Highest', rank: 10 }], source: 'jira', cached: false }); };
+
+    // Two distinct tuples -> two fetches.
+    await loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', nonEmpty);
+    await loadPriorityOptionsForTuple('PROD|Epic', 'PROD-EPIC', 'http://x', nonEmpty);
+    assert.equal(fetchCount, 2);
+
+    // Same tuple again (a different issue) -> cache hit, no new fetch.
+    await loadPriorityOptionsForTuple('PROD|Story', 'PROD-2', 'http://x', nonEmpty);
+    assert.equal(fetchCount, 2);
+
+    // An empty (uneditable) result must NOT be cached: a later editable issue of the SAME
+    // tuple still fetches.
+    clearPriorityOptionsCache();
+    let attempts = 0;
+    const emptyThenFull = () => {
+        attempts += 1;
+        return Promise.resolve(attempts === 1
+            ? { priorities: [], source: 'jira', cached: false }
+            : { priorities: [{ id: '1', name: 'Highest', rank: 10 }], source: 'jira', cached: false });
+    };
+    const first = await loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', emptyThenFull);
+    assert.deepEqual(first.priorities, []);
+    const second = await loadPriorityOptionsForTuple('PROD|Story', 'PROD-9', 'http://x', emptyThenFull);
+    assert.equal(second.priorities.length, 1, 'empty result must not poison the tuple');
+    assert.equal(attempts, 2, 'the empty result was not cached, so the second call refetched');
+
+    // clear wipes the map: a previously cached tuple refetches.
+    clearPriorityOptionsCache();
+    fetchCount = 0;
+    await loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', nonEmpty);
+    assert.equal(fetchCount, 1);
+});
+
+test('priority options per-tuple cache dedups concurrent loads and never poisons a tuple after a failed fetch', async () => {
+    const { loadPriorityOptionsForTuple, clearPriorityOptionsCache } = await import('../frontend/src/eng/useEngPriorityTransitions.js');
+
+    // Concurrent opens of the same tuple share ONE fetch.
+    clearPriorityOptionsCache();
+    let fetchCount = 0;
+    const slow = () => { fetchCount += 1; return new Promise((resolve) => setTimeout(() => resolve({ priorities: [{ id: '1', name: 'Highest', rank: 10 }], source: 'jira', cached: false }), 10)); };
+    const [a, b] = await Promise.all([
+        loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', slow),
+        loadPriorityOptionsForTuple('PROD|Story', 'PROD-2', 'http://x', slow),
+    ]);
+    assert.equal(fetchCount, 1, 'concurrent opens of the same tuple share one fetch');
+    assert.deepEqual(a, b);
+
+    // A failed fetch is not cached: the next open of the same tuple retries.
+    clearPriorityOptionsCache();
+    let attempts = 0;
+    const failThenSucceed = () => {
+        attempts += 1;
+        return attempts === 1
+            ? Promise.reject(new Error('boom'))
+            : Promise.resolve({ priorities: [{ id: '1', name: 'Highest', rank: 10 }], source: 'jira', cached: false });
+    };
+    await assert.rejects(() => loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', failThenSucceed));
+    const recovered = await loadPriorityOptionsForTuple('PROD|Story', 'PROD-1', 'http://x', failThenSucceed);
+    assert.equal(recovered.priorities.length, 1, 'a failed fetch must not poison the tuple');
+    assert.equal(attempts, 2);
+});
+
+test('dashboard wires the priority hook and menu without owning their catalog/menu/API logic', () => {
+    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngPriorityTransitions.js');
+    const menuPath = path.resolve(__dirname, '../frontend/src/issues/PriorityTransitionMenu.jsx');
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    assert.ok(fs.existsSync(hookPath), 'Expected frontend/src/eng/useEngPriorityTransitions.js to exist');
+    assert.ok(fs.existsSync(menuPath), 'Expected frontend/src/issues/PriorityTransitionMenu.jsx to exist');
+
+    // dashboard.jsx imports the hook and the presentational menu, and calls the hook once.
+    assert.match(source, /import \{ useEngPriorityTransitions \} from '\.\/eng\/useEngPriorityTransitions\.js';/);
+    assert.match(source, /import PriorityTransitionMenu from '\.\/issues\/PriorityTransitionMenu\.jsx';/);
+    assert.match(source, /\} = useEngPriorityTransitions\(\{/);
+
+    // Menu/catalog/submit logic lives in the hook + PriorityTransitionMenu; dashboard.jsx
+    // must only wire props, never inline the priority API, a second module-level catalog
+    // cache, the shared option-menu renderer, or the interactive trigger's data attribute.
+    assert.doesNotMatch(source, /jiraIssueApi/, 'dashboard.jsx must not import the priority/transition API directly');
+    assert.doesNotMatch(source, /fetchIssuePriorityOptions\(/, 'dashboard.jsx must not call the priority options fetch directly');
+    assert.doesNotMatch(source, /updateIssuePriorities\(/, 'dashboard.jsx must not call the priority mutation directly');
+    assert.doesNotMatch(source, /IssueFieldOptionMenu/, 'dashboard.jsx must not import the shared option-menu renderer directly');
+    assert.doesNotMatch(source, /priorityOptionsCache/, 'dashboard.jsx must not own a second priority catalog cache');
+    assert.doesNotMatch(source, /data-priority-transition-trigger/, 'dashboard.jsx must not hand-roll the priority trigger attribute');
 });

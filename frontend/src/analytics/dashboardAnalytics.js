@@ -185,6 +185,14 @@ export function useDashboardAnalytics(React, {
         });
     }, [trackProductEvent]);
 
+    const trackIssuePriorityAction = useCallback((workflowAction, params = {}) => {
+        trackProductEvent('issue_priority_action', {
+            feature_name: 'eng_priority_changes',
+            workflow_action: workflowAction,
+            ...params
+        });
+    }, [trackProductEvent]);
+
     const trackSelectContent = useCallback((contentType, contentId, params = {}) => {
         trackProductEvent('select_content', {
             feature_name: 'dashboard',
@@ -240,6 +248,7 @@ export function useDashboardAnalytics(React, {
         trackApiResult,
         trackEpmAction,
         trackFilterChanged,
+        trackIssuePriorityAction,
         trackIssueStatusAction,
         trackPlanningSelection,
         trackProductEvent,

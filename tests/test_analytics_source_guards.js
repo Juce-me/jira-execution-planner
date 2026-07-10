@@ -183,3 +183,34 @@ test('trackIssueStatusAction emits only the eng status transition contract, neve
         );
     }
 });
+
+test('Jira issue priority API module sends the jira_issue_priorities surface for both endpoints', () => {
+    const source = read('frontend/src/api/jiraIssueApi.js');
+    assert.ok(source.includes('/api/issues/priorities/options'), 'Expected the priority options endpoint literal');
+    assert.ok(source.includes('/api/issues/priorities'), 'Expected the priority write endpoint literal');
+    assert.ok(source.includes("trackedFetch('jira_issue_priorities'"), 'Expected both priority wrappers to use the jira_issue_priorities API surface');
+    assert.ok(source.includes("featureName: 'eng_priority_changes'"), 'Expected both priority wrappers to tag the eng_priority_changes feature');
+});
+
+test('trackIssuePriorityAction emits only the eng priority transition contract, never issue-level PII or raw priority ids', () => {
+    const source = read('frontend/src/analytics/dashboardAnalytics.js');
+    const match = source.match(/const trackIssuePriorityAction = useCallback\(([\s\S]*?)\}, \[trackProductEvent\]\);/);
+    assert.ok(match, 'Expected to locate the trackIssuePriorityAction definition');
+
+    const body = match[1];
+    assert.ok(body.includes("'issue_priority_action'"), 'Expected trackIssuePriorityAction to emit issue_priority_action');
+    assert.ok(body.includes("feature_name: 'eng_priority_changes'"), 'Expected trackIssuePriorityAction to tag the eng_priority_changes feature');
+
+    const forbiddenSnippets = [
+        'issueKey', 'issue_key', 'summary', 'priorityId', 'priority_id',
+        'assignee', 'jql', 'JQL', 'accountId', 'account_id', 'email',
+        'apiToken', 'authToken', 'csrfToken', 'jiraUrl', 'jira_url'
+    ];
+    for (const snippet of forbiddenSnippets) {
+        assert.equal(
+            body.includes(snippet),
+            false,
+            `trackIssuePriorityAction must not reference ${snippet}`
+        );
+    }
+});

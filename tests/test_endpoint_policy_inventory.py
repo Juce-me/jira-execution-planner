@@ -99,6 +99,30 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
         self.assertEqual([policy.name for policy in matches], ["jira-issue-transitions-write"])
         self.assertEqual(matches[0].policy_class, "user_write")
 
+    def test_issue_priority_options_route_has_authenticated_read_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies("/api/issues/priorities/options", ["GET"], "eng_routes.get_issue_priority_options")
+
+        self.assertEqual([policy.name for policy in matches], ["jira-issue-priority-options"])
+        self.assertEqual(matches[0].policy_class, "authenticated_read")
+
+    def test_issue_priorities_write_route_has_user_write_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies("/api/issues/priorities", ["POST"], "eng_routes.post_issue_priorities")
+
+        self.assertEqual([policy.name for policy in matches], ["jira-issue-priorities-write"])
+        self.assertEqual(matches[0].policy_class, "user_write")
+
+    def test_issue_status_catalog_route_has_authenticated_read_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies("/api/issues/statuses/catalog", ["GET"], "eng_routes.get_issue_status_catalog")
+
+        self.assertEqual([policy.name for policy in matches], ["jira-issue-status-catalog"])
+        self.assertEqual(matches[0].policy_class, "authenticated_read")
+
     def test_dynamic_routes_have_security_samples(self):
         from backend.security.policy import routes_requiring_samples
         from tests.endpoint_security_samples import ROUTE_SAMPLES

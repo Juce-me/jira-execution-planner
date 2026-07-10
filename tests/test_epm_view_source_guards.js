@@ -1024,3 +1024,41 @@ test('EPM stays view-only: no transition imports, no status-transition props on 
     assert.ok(!statusMenuSource.includes('jiraIssueApi'), 'StatusTransitionMenu must not import the transition API');
     assert.ok(!statusMenuSource.includes('useEngStatusTransitions'), 'StatusTransitionMenu must not import the transition hook');
 });
+
+test('EPM stays view-only: no priority-transition imports, no priority-transition props on EPM issue cards', () => {
+    const priorityMenuPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'PriorityTransitionMenu.jsx');
+    const priorityMenuSource = fs.existsSync(priorityMenuPath) ? fs.readFileSync(priorityMenuPath, 'utf8') : '';
+
+    // EPM view and rollup panel must never import the ENG priority transition hook or
+    // render the ENG priority transition menu.
+    for (const [label, source] of [['EpmView.jsx', epmViewSource], ['EpmRollupPanel.jsx', epmRollupPanelSource]]) {
+        assert.ok(!source.includes('useEngPriorityTransitions'), `${label} must not import the ENG priority transition hook`);
+        assert.ok(!source.includes('PriorityTransitionMenu'), `${label} must not render the ENG priority transition menu`);
+    }
+
+    // renderEpmIssueCard enumerates props and must pass no priority-transition wiring, and
+    // the EPM issue board must never hand-roll the interactive trigger's data attribute.
+    const renderEpmIssueCardSource = getSnippetBetween(
+        epmRollupPanelSource,
+        'const renderEpmIssueCard = (task) => {',
+        'const renderEpmIssueGroup'
+    );
+    for (const forbidden of [
+        'priorityTransition',
+        'onOpenPriorityTransition',
+        'onClosePriorityTransition',
+        'onSubmitPriorityTransition',
+        'data-priority-transition-trigger',
+    ]) {
+        assert.ok(!renderEpmIssueCardSource.includes(forbidden), `renderEpmIssueCard must not pass ${forbidden} into IssueCard`);
+    }
+
+    // The shared IssueCard defaults the transition surface off so EPM needs no extra guard.
+    assert.ok(issueCardSource.includes('priorityTransitionEnabled = false'), 'IssueCard must default priorityTransitionEnabled to false');
+
+    // The priority transition menu is presentational and must not import API/hook either,
+    // so importing IssueCard into EPM never drags the priority API into the EPM bundle.
+    assert.ok(priorityMenuSource, 'Expected shared PriorityTransitionMenu component');
+    assert.ok(!priorityMenuSource.includes('jiraIssueApi'), 'PriorityTransitionMenu must not import the priority API');
+    assert.ok(!priorityMenuSource.includes('useEngPriorityTransitions'), 'PriorityTransitionMenu must not import the priority transition hook');
+});

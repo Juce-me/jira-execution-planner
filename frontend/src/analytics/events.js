@@ -14,6 +14,7 @@ const EVENT_NAMES = new Set([
     'chart_action',
     'epm_action',
     'issue_status_action',
+    'issue_priority_action',
     'external_link_opened',
     'api_result',
     'app_error_shown'
@@ -61,6 +62,7 @@ const EVENT_PARAMS = new Set([
     'pending_unsaved_state',
     'point_bucket',
     'previous_status',
+    'priority_bucket',
     'project_count',
     'project_count_bucket',
     'project_scope',

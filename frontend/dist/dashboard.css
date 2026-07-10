@@ -3534,6 +3534,27 @@ button.alerts-panel-summary-pill.done:hover {
   width: 14px;
   height: 14px;
 }
+button.task-priority-icon {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  transition:
+    background-color 0.16s ease,
+    box-shadow 0.16s ease,
+    opacity 0.16s ease;
+}
+button.task-priority-icon:hover,
+button.task-priority-icon:focus-visible {
+  transform: none;
+  background: var(--bg-primary);
+  box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.22);
+}
 .task-priority-icon[data-priority] {
   position: relative;
 }
@@ -4505,32 +4526,21 @@ button.status-pill:focus-visible {
   outline: 2px solid rgba(47, 128, 237, 0.65);
   outline-offset: 1px;
 }
-.status-transition {
+.status-transition,
+.priority-transition {
   position: relative;
   display: inline-flex;
   align-items: center;
   border-radius: 8px;
 }
-.status-transition-menu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 110;
-  padding: 0;
-  margin: 0;
-  border: 0;
-  background: transparent;
-  cursor: default;
-}
-.status-transition-menu-backdrop:hover {
-  transform: none;
-  box-shadow: none;
-  background: transparent;
-}
 .task-item:has(.status-transition-menu),
-.epic-header:has(.status-transition-menu) {
+.epic-header:has(.status-transition-menu),
+.task-item:has(.priority-transition-menu),
+.epic-header:has(.priority-transition-menu) {
   z-index: 121;
 }
-.status-transition-menu {
+.status-transition-menu,
+.priority-transition-menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
@@ -4550,12 +4560,14 @@ button.status-pill:focus-visible {
   letter-spacing: 0;
   box-sizing: border-box;
 }
-.status-transition-menu-options {
+.status-transition-menu-options,
+.priority-transition-menu-options {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
-.status-transition-option {
+.status-transition-option,
+.priority-transition-option {
   width: 100%;
   display: grid;
   grid-template-columns: 0.7rem minmax(0, 1fr);
@@ -4582,24 +4594,36 @@ button.status-pill:focus-visible {
     box-shadow 0.16s ease,
     opacity 0.16s ease;
 }
-.status-transition-option + .status-transition-option {
+.status-transition-option + .status-transition-option,
+.priority-transition-option + .priority-transition-option {
   border-top: 1px dashed var(--border);
 }
+.priority-transition-option {
+  grid-template-columns: 1.1rem minmax(0, 1fr);
+}
+.priority-transition-option > .task-priority-icon {
+  justify-self: center;
+}
 .status-transition-option:hover:not(:disabled),
-.status-transition-option:focus-visible {
+.status-transition-option:focus-visible,
+.priority-transition-option:hover:not(:disabled),
+.priority-transition-option:focus-visible {
   transform: none;
   background: var(--bg-primary);
   box-shadow: inset 0 0 0 1px rgba(47, 128, 237, 0.18);
 }
-.status-transition-option:focus-visible {
+.status-transition-option:focus-visible,
+.priority-transition-option:focus-visible {
   outline: 2px solid rgba(47, 128, 237, 0.65);
   outline-offset: 1px;
 }
-.status-transition-option:disabled {
+.status-transition-option:disabled,
+.priority-transition-option:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
-.status-transition-option-marker.task-status {
+.status-transition-option-marker.task-status,
+.priority-transition-option-marker {
   display: inline-flex;
   width: 0.45rem;
   min-width: 0.45rem;
@@ -4611,7 +4635,8 @@ button.status-pill:focus-visible {
   font-size: 0;
   line-height: 0;
 }
-.status-transition-option-label {
+.status-transition-option-label,
+.priority-transition-option-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4629,22 +4654,27 @@ button.status-pill:focus-visible {
 .status-transition-target-toggle {
   margin: 0;
 }
-.status-transition-menu-note {
+.status-transition-menu-note,
+.priority-transition-menu-note {
   font-size: 0.72rem;
   line-height: 1.35;
   text-transform: none;
   letter-spacing: 0;
 }
-.status-transition-menu-loading {
+.status-transition-menu-loading,
+.priority-transition-menu-loading {
   color: var(--text-secondary);
 }
-.status-transition-menu-error {
+.status-transition-menu-error,
+.priority-transition-menu-error {
   color: #b42318;
 }
-.status-transition-menu-error.is-too-many {
+.status-transition-menu-error.is-too-many,
+.priority-transition-menu-error.is-too-many {
   color: #a15c07;
 }
-.status-transition-menu-result {
+.status-transition-menu-result,
+.priority-transition-menu-result {
   font-size: 0.72rem;
   line-height: 1.35;
   color: var(--text-secondary);

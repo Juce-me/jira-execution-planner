@@ -12,11 +12,13 @@ from backend.services.jira_issue_transitions import (
     MAX_STATUS_TRANSITION_ISSUES,
     build_issue_snapshot_search_payload,
     load_issue_snapshots,
+    load_status_catalog,
     load_transition_options,
     normalize_issue_keys,
     normalize_status_name,
     resolve_issue_transition,
     select_transition_for_target,
+    shape_status_catalog,
     shape_transition_failure,
     shape_transition_success,
     summarize_transition_options,
@@ -515,6 +517,73 @@ class NoRequestContextRealAuthWrapperTests(unittest.TestCase):
         for _method, headers in request_headers:
             self.assertEqual(headers.get("Authorization"), "Bearer access-123")
             self.assertFalse(str(headers.get("Authorization", "")).startswith("Basic "))
+
+
+class ShapeStatusCatalogTests(unittest.TestCase):
+    def test_shapes_catalog_without_raw_jira_fields(self):
+        raw = [
+            {
+                "id": "10000",
+                "name": "To Do",
+                "description": "internal description",
+                "iconUrl": "https://jira.example/icons/generic.png",
+                "self": "https://jira.example/rest/api/3/status/10000",
+                "statusCategory": {
+                    "id": 2,
+                    "key": "new",
+                    "colorName": "blue-gray",
+                    "name": "To Do",
+                    "self": "https://jira.example/rest/api/3/statuscategory/2",
+                },
+            },
+        ]
+        statuses = shape_status_catalog(raw)
+        self.assertEqual(statuses, [{
+            "id": "10000",
+            "name": "To Do",
+            "statusCategoryKey": "new",
+            "statusCategoryColor": "blue-gray",
+        }])
+        for status in statuses:
+            self.assertNotIn("self", status)
+            self.assertNotIn("description", status)
+            self.assertNotIn("iconUrl", status)
+
+    def test_skips_entries_without_id(self):
+        self.assertEqual(shape_status_catalog([{"name": "No id"}, None]), [])
+
+    def test_missing_status_category_yields_empty_hints(self):
+        self.assertEqual(
+            shape_status_catalog([{"id": "1", "name": "Odd"}]),
+            [{"id": "1", "name": "Odd", "statusCategoryKey": "", "statusCategoryColor": ""}],
+        )
+
+
+class LoadStatusCatalogTests(unittest.TestCase):
+    def test_load_status_catalog_shapes_response(self):
+        calls = []
+
+        def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
+            calls.append((method, path, context))
+            return FakeResponse(200, [
+                {"id": "10000", "name": "To Do", "statusCategory": {"key": "new", "colorName": "blue-gray"}},
+            ])
+
+        result = load_status_catalog(jira_request=fake_request, context="ctx")
+
+        self.assertEqual(result, {
+            "statuses": [{"id": "10000", "name": "To Do", "statusCategoryKey": "new", "statusCategoryColor": "blue-gray"}],
+            "source": "jira",
+        })
+        self.assertEqual(calls, [("GET", "/rest/api/3/status", "ctx")])
+
+    def test_raises_service_error_on_non_200(self):
+        def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
+            return FakeResponse(503, [])
+
+        with self.assertRaises(IssueTransitionServiceError) as ctx:
+            load_status_catalog(jira_request=fake_request)
+        self.assertEqual(ctx.exception.code, "status_catalog_fetch_failed")
 
 
 if __name__ == "__main__":

@@ -403,3 +403,39 @@ def transition_issues(issue_keys, target_status, *, jira_request, search_request
         "targetStatus": target,
         "results": results,
     }
+
+
+def shape_status_catalog(raw_statuses):
+    """Shape raw ``/rest/api/3/status`` catalog entries for callers.
+
+    Keeps only ``id``, ``name``, and status category ordering/color hints;
+    the raw Jira ``self`` URL, ``description``, and ``iconUrl`` are never
+    included.
+    """
+    statuses = []
+    for raw in raw_statuses or []:
+        entry = raw or {}
+        status_id = str(entry.get("id") or "").strip()
+        if not status_id:
+            continue
+        category = entry.get("statusCategory") or {}
+        statuses.append({
+            "id": status_id,
+            "name": entry.get("name") or "",
+            "statusCategoryKey": category.get("key") or "",
+            "statusCategoryColor": category.get("colorName") or "",
+        })
+    return statuses
+
+
+def load_status_catalog(*, jira_request, context=None):
+    """Fetch and shape the full Jira workflow status catalog.
+
+    This is a session-level catalog fetch (``GET /rest/api/3/status``), not a
+    per-issue transition check: callers must still resolve transition
+    availability through ``load_transition_options``/``transition_issues``.
+    """
+    response = jira_request("GET", "/rest/api/3/status", context=context)
+    if getattr(response, "status_code", None) != 200:
+        raise IssueTransitionServiceError("status_catalog_fetch_failed", getattr(response, "status_code", None))
+    return {"statuses": shape_status_catalog(response.json() or []), "source": "jira"}

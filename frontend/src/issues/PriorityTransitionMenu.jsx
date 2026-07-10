@@ -57,6 +57,10 @@ export default function PriorityTransitionMenu({
     const icon = renderPriorityIcon ? renderPriorityIcon(priorityLabel, issueKey) : null;
     const iconProps = icon?.props || {};
 
+    // Wraps BOTH the trigger and the menu; IssueFieldOptionMenu uses it to scope its
+    // outside-click dismissal (an in-wrapper click is never treated as "outside").
+    const fieldRef = React.useRef(null);
+
     // Omit the current priority, mirroring how the status menu omits the current status.
     const priorities = sortPriorityOptionsByRank(options?.priorities)
         .filter((option) => normalizeIssueStatus(option?.name) !== currentPriorityName);
@@ -70,7 +74,7 @@ export default function PriorityTransitionMenu({
     };
 
     return (
-        <span className="priority-transition">
+        <span className="priority-transition" ref={fieldRef}>
             <button
                 type="button"
                 className={iconProps.className || 'task-priority-icon none'}
@@ -91,7 +95,6 @@ export default function PriorityTransitionMenu({
                     blockClass="priority-transition"
                     issueKey={issueKey}
                     menuLabel="Change priority"
-                    closeLabel="Close priority menu"
                     loading={optionsLoading}
                     loadingLabel="Loading priority options..."
                     error={error || ''}
@@ -123,6 +126,7 @@ export default function PriorityTransitionMenu({
                     disabled={submitting}
                     result={priorityResultMessage(result)}
                     onEscape={() => onClose?.()}
+                    dismissRef={fieldRef}
                 />
             )}
         </span>

@@ -373,6 +373,44 @@ test('priority options refetch per project/issue-type tuple with the issue-scope
     expect(epicLabels).not.toContain('Major');
 });
 
+test('outside-card click dismisses the priority menu; Escape, trigger toggle, and option click unaffected', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    await installEngPriorityFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.addStyleTag({ content: priorityMenuCss });
+
+    const trigger = priorityTrigger(page, 'story', 'PROD-1');
+    const menu = priorityMenu(page, 'PROD-1');
+
+    // A NORMAL click far outside the card (the page subtitle) closes the menu. Pre-fix the
+    // click-away backdrop was clamped to the card box by the task-appear transform, so an
+    // outside-card click missed it and the menu hung around.
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    await page.locator('.subtitle-secondary').click();
+    await expect(menu).toHaveCount(0);
+
+    // The trigger still toggles the menu closed (an in-wrapper click must not be treated as
+    // "outside" and must not close-then-reopen).
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    await trigger.click();
+    await expect(menu).toHaveCount(0);
+
+    // Escape still closes.
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+
+    // A click INSIDE the menu (an option) is not treated as outside: it still submits.
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    await menu.getByRole('menuitem', { name: 'Major' }).click();
+    await expect(menu.locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
+});
+
 test('EPM issue boards render inert priority icons and never call priority APIs', async ({ page }) => {
     await setPrefs(page, { selectedView: 'epm', epmTab: 'active', epmSelectedProjectId: '', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42' });
     const { calls } = await installDashboardFixture(page, {

@@ -501,6 +501,37 @@ test('status transition options reuse safe tuple cache across matching issue ico
     expect(calls.filter(c => c.pathname === '/api/issues/transitions/options')).toHaveLength(1);
 });
 
+test('outside-card click dismisses the status menu; Escape and trigger toggle unaffected', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.addStyleTag({ content: statusTransitionsCss });
+
+    const storyTrigger = trigger(page, 'story', 'PROD-1');
+    const storyMenu = menu(page, 'PROD-1');
+
+    // A NORMAL click far outside the card closes the menu. Pre-fix the click-away backdrop was
+    // clamped to the card box by the shared .task-item task-appear transform, so an
+    // outside-card click missed it (same shared IssueFieldOptionMenu as the priority menu).
+    await storyTrigger.click();
+    await expect(storyMenu).toBeVisible();
+    await page.locator('.subtitle-secondary').click();
+    await expect(storyMenu).toHaveCount(0);
+
+    // The trigger still toggles the menu closed.
+    await storyTrigger.click();
+    await expect(storyMenu).toBeVisible();
+    await storyTrigger.click();
+    await expect(storyMenu).toHaveCount(0);
+
+    // Escape still closes.
+    await storyTrigger.click();
+    await expect(storyMenu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(storyMenu).toHaveCount(0);
+});
+
 test('Planning action bar shows target count feedback and adds no status-change button', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     await installEngStatusFixture(page);

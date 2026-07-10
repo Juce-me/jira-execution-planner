@@ -113,6 +113,9 @@ export default function StatusTransitionMenu({
     onSubmit,
 }) {
     const issueKey = String(issue?.key || '').trim();
+    // Wraps BOTH the trigger and the menu; IssueFieldOptionMenu uses it to scope its
+    // outside-click dismissal (an in-wrapper click is never treated as "outside").
+    const fieldRef = React.useRef(null);
 
     const isServerTooMany = errorCode === 'too_many_issues';
     const isPlanning = sourceSurface === 'planning';
@@ -149,7 +152,7 @@ export default function StatusTransitionMenu({
     };
 
     return (
-        <span className="status-transition">
+        <span className="status-transition" ref={fieldRef}>
             <StatusPill
                 interactive
                 className={statusClassName}
@@ -166,7 +169,6 @@ export default function StatusTransitionMenu({
                     blockClass="status-transition"
                     issueKey={issueKey}
                     menuLabel={submitLabel}
-                    closeLabel="Close status menu"
                     leadingContent={canToggleTargetSet ? (
                         <label className="status-transition-target-toggle-row">
                             <input
@@ -197,6 +199,7 @@ export default function StatusTransitionMenu({
                     disabled={optionDisabled}
                     result={result ? resultMessage(result) : ''}
                     onEscape={() => onClose?.()}
+                    dismissRef={fieldRef}
                 />
             )}
         </span>

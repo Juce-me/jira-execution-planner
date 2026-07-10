@@ -41,26 +41,6 @@
             border-radius: 8px;
         }
 
-        /* Invisible click-away catcher below the popover but above page content. */
-        .status-transition-menu-backdrop,
-        .priority-transition-menu-backdrop {
-            position: fixed;
-            inset: 0;
-            z-index: 110;
-            padding: 0;
-            margin: 0;
-            border: 0;
-            background: transparent;
-            cursor: default;
-        }
-
-        .status-transition-menu-backdrop:hover,
-        .priority-transition-menu-backdrop:hover {
-            transform: none;
-            box-shadow: none;
-            background: transparent;
-        }
-
         /* The open menu is position:absolute inside its .task-item / .epic-header, whose own
            stacking context (position:relative + the task-appear animation) traps the menu's
            z-index beneath later sibling cards — so a following card would intercept clicks on

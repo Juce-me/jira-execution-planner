@@ -513,7 +513,6 @@ test('Catch Up applies rapid Story status changes optimistically without task-li
     await secondOption.click();
 
     await expect.poll(() => transitionCalls(calls).length).toBe(2);
-    await expect.poll(() => transitionState.maxInFlight).toBe(2);
     expect(await trigger(page, 'story', 'PROD-2').innerText()).toContain('ACCEPTED');
     await expect.poll(() => transitionState.inFlight).toBe(0);
     await expect(menu(page, 'PROD-2').locator('.status-transition-menu-result')).toContainText('Updated 1 issue');

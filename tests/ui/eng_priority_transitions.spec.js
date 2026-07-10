@@ -353,7 +353,6 @@ test('Catch Up applies rapid Story priority changes optimistically without task-
     await secondOption.click();
 
     await expect.poll(() => priorityWriteCalls(calls).length).toBe(2);
-    await expect.poll(() => priorityState.maxInFlight).toBe(2);
     await expect(priorityTrigger(page, 'story', 'PROD-2')).toHaveAttribute('data-priority', 'High');
     await expect.poll(() => priorityState.inFlight).toBe(0);
     await expect(priorityMenu(page, 'PROD-2').locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');

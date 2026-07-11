@@ -379,6 +379,118 @@ test('ENG header dependency pill sits below story meta without remove overlap', 
     await page.screenshot({ path: `${screenshotDir}/header-pill-no-remove-overlap.png`, fullPage: false });
 });
 
+test('ENG header BLOCKED BY pill stays single-line under a wide story meta row', async ({ page }) => {
+    await installDashboardShell(page);
+    // Narrow enough that task-meta's own wrap no longer absorbs the squeeze,
+    // forcing the sibling pill stack to shrink (the reported creep) without flex-shrink: 0.
+    await page.setViewportSize({ width: 800, height: 760 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        showPlanning: false,
+        showScenario: false,
+    });
+    const wideStory = story('TECH-27119', 'In Progress', 'Enable Perimeter to preserve end-to-end trace continuity across covered HTTP flows');
+    wideStory.fields.assignee = { displayName: 'Kirill Liubavskii' };
+    wideStory.fields.teamName = 'R&D Bidline';
+    await page.route('**/api/**', route => {
+        const url = new URL(route.request().url());
+        const json = (body) => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(body),
+        });
+        if (url.pathname === '/api/config') {
+            return json({
+                jiraUrl: 'https://jira.example',
+                projectsConfigured: true,
+                settingsAdminOnly: false,
+                userCanEditSettings: true,
+                epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
+            });
+        }
+        if (url.pathname === '/api/version') return json({ enabled: false });
+        if (url.pathname === '/api/groups-config') {
+            return json({
+                version: 1,
+                groups: [{ id: 'grp-default', name: 'Default', teamIds: ['team-rnd'], teamLabels: { 'team-rnd': 'R&D BSW UI' } }],
+                defaultGroupId: 'grp-default',
+            });
+        }
+        if (url.pathname === '/api/projects/selected') return json({ selected: [] });
+        if (url.pathname === '/api/sprints') return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+        if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
+        if (url.pathname === '/api/tasks-with-team-name') {
+            const project = url.searchParams.get('project');
+            const issues = project === 'product' && !url.searchParams.get('purpose') ? [wideStory] : [];
+            return json({
+                issues,
+                epics: {
+                    'PRODUCT-27078': {
+                        key: 'PRODUCT-27078',
+                        summary: 'Sync monitoring process reboot',
+                        status: { name: 'In Progress' },
+                        teamId: 'team-rnd',
+                        teamName: 'R&D BSW UI',
+                        sprint: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+                    },
+                },
+                epicsInScope: [],
+                names: {},
+            });
+        }
+        if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
+        if (url.pathname === '/api/dependencies') {
+            return json({
+                dependencies: {
+                    'TECH-27119': [{
+                        key: 'PRODUCT-31219',
+                        category: 'dependency',
+                        direction: 'outward',
+                        relation: 'is blocked by',
+                        status: 'In Progress',
+                        summary: 'Upstream perimeter trace work',
+                        teamName: 'R&D Perimeter',
+                        assignee: 'Dasha Saukh',
+                    }],
+                },
+            });
+        }
+        return json({});
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
+    const task = page.locator('.task-item[data-task-key="TECH-27119"]');
+    const pill = task.locator('.dependency-pill.blocked');
+    await expect(pill).toContainText('BLOCKED BY');
+    const metrics = await task.evaluate((element) => {
+        const pillNode = element.querySelector('.dependency-pill.blocked');
+        const removeNode = element.querySelector('.task-remove');
+        const pillRect = pillNode.getBoundingClientRect();
+        const removeRect = removeNode.getBoundingClientRect();
+        return {
+            pillHeight: pillRect.height,
+            whiteSpace: getComputedStyle(pillNode).whiteSpace,
+            stackFlexShrink: getComputedStyle(pillNode.parentElement).flexShrink,
+            overlapsRemove: pillRect.x < removeRect.right &&
+                pillRect.right > removeRect.x &&
+                pillRect.y < removeRect.bottom &&
+                pillRect.bottom > removeRect.y,
+        };
+    });
+    // Single-line pill height at font-size 0.55rem + 0.1rem vertical padding is ~15px;
+    // a two-line wrap (the reported creep) roughly doubles that.
+    expect(metrics.pillHeight).toBeLessThan(20);
+    expect(metrics.whiteSpace).toBe('nowrap');
+    expect(metrics.stackFlexShrink).toBe('0');
+    expect(metrics.overlapsRemove).toBe(false);
+    await page.screenshot({ path: `${screenshotDir}/header-pill-wide-meta-no-wrap.png`, fullPage: false });
+});
+
 test('ENG task remove dissolves before removing the card', async ({ page }) => {
     await installDashboardShell(page);
     await page.addInitScript((prefs) => {

@@ -48,7 +48,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # final-review fix (+7) adds the epicOwnPriority normalization + currentPriorityLabel prop so the
     # Epic menu omits the Epic's OWN priority while the icon still shows the derived child priority
     # (+68 total over main's 15866).
-    "frontend/src/dashboard.jsx": 15934,
+    # feature/eng-targeted-task-updates replaces Catch Up scope refetches with one shared local
+    # issue-field patch callback, per-key pending sets, and mutation scope key (+19).
+    "frontend/src/dashboard.jsx": 15953,
 }
 
 

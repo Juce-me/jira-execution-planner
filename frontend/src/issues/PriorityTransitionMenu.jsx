@@ -87,6 +87,7 @@ export default function PriorityTransitionMenu({
                 data-issue-key={issueKey}
                 data-issue-kind={kind}
                 onClick={handleTriggerClick}
+                disabled={submitting && !isOpen}
             >
                 {iconProps.children}
             </button>

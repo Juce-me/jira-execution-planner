@@ -152,9 +152,11 @@ async function installEngStatusFixture(page, {
     optionsStatus = 200,
     optionsBody = defaultOptionsBody,
     transitions = successTransition,
+    transitionDelayMs = 0,
     stories = null,
 } = {}) {
     const calls = [];
+    const transitionState = { inFlight: 0, maxInFlight: 0 };
     // Applied statuses recorded from successful mutations so a subsequent subtask
     // re-fetch returns the new status (simulates the backend after cache invalidation).
     const appliedStatus = {};
@@ -246,17 +248,26 @@ async function installEngStatusFixture(page, {
             return json(route, payload, optionsStatus);
         }
         if (url.pathname === '/api/issues/transitions') {
-            const response = transitions(body);
-            (response.results || []).forEach((entry) => {
-                if (entry.result === 'success' || entry.result === 'already_in_status') {
-                    appliedStatus[entry.key] = body.targetStatus;
+            transitionState.inFlight += 1;
+            transitionState.maxInFlight = Math.max(transitionState.maxInFlight, transitionState.inFlight);
+            try {
+                if (transitionDelayMs) {
+                    await new Promise(resolve => setTimeout(resolve, transitionDelayMs));
                 }
-            });
-            return json(route, response);
+                const response = transitions(body);
+                (response.results || []).forEach((entry) => {
+                    if (entry.result === 'success' || entry.result === 'already_in_status') {
+                        appliedStatus[entry.key] = body.targetStatus;
+                    }
+                });
+                return json(route, response);
+            } finally {
+                transitionState.inFlight -= 1;
+            }
         }
         return json(route, { error: `Unexpected ${request.method()} ${url.pathname}` }, 404);
     });
-    return { calls };
+    return { calls, transitionState };
 }
 
 async function setPrefs(page, prefs) {
@@ -479,6 +490,65 @@ test('Catch Up status menu reuses fetched options and changes status on option c
     expect(mutation.body.targetStatus).toBe('In Progress');
 });
 
+test('Catch Up applies rapid Story status changes optimistically without task-list refetches', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls, transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 1000 });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
+
+    await trigger(page, 'story', 'PROD-1').click();
+    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
+    await expect.poll(() => transitionState.inFlight).toBe(1);
+    expect(await trigger(page, 'story', 'PROD-1').innerText()).toContain('IN PROGRESS');
+
+    await page.locator('.subtitle-secondary').click();
+    await expect(menu(page, 'PROD-1')).toHaveCount(0);
+    await expect(trigger(page, 'story', 'PROD-1')).toBeDisabled();
+    await expect(trigger(page, 'story', 'PROD-2')).toBeEnabled();
+    await trigger(page, 'story', 'PROD-2').click();
+    const secondOption = menu(page, 'PROD-2').getByRole('menuitem', { name: 'Accepted' });
+    await expect(secondOption).toBeEnabled();
+    await secondOption.click();
+
+    await expect.poll(() => transitionCalls(calls).length).toBe(2);
+    expect(await trigger(page, 'story', 'PROD-2').innerText()).toContain('ACCEPTED');
+    await expect.poll(() => transitionState.inFlight).toBe(0);
+    await expect(menu(page, 'PROD-2').locator('.status-transition-menu-result')).toContainText('Updated 1 issue');
+
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequests);
+});
+
+test('Catch Up rolls back a failed optimistic status change without refetching task lists', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const failedTransition = body => ({
+        requested: 1,
+        succeeded: 0,
+        failed: 1,
+        targetStatus: body.targetStatus,
+        results: [{ key: body.issueKeys[0], result: 'failure', error: 'transition_not_available', currentStatus: 'To Do' }],
+    });
+    const { calls, transitionState } = await installEngStatusFixture(page, {
+        transitions: failedTransition,
+        transitionDelayMs: 500,
+    });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
+
+    await trigger(page, 'story', 'PROD-1').click();
+    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
+    await expect.poll(() => transitionState.inFlight).toBe(1);
+    expect(await trigger(page, 'story', 'PROD-1').innerText()).toContain('IN PROGRESS');
+
+    await expect.poll(() => transitionState.inFlight).toBe(0);
+    await expect(menu(page, 'PROD-1').locator('.status-transition-menu-result')).toContainText('No issues updated');
+    await expect(trigger(page, 'story', 'PROD-1')).toContainText('To Do');
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequests);
+});
+
 test('status transition options reuse safe tuple cache across matching issue icons', async ({ page }) => {
     await setPrefs(page, catchUpPrefs());
     const { calls } = await installEngStatusFixture(page);
@@ -670,7 +740,7 @@ test('Planning status option applies to selected targets in one click', async ({
     expect(mutation.body.targetStatus).toBe('In Progress');
 });
 
-test('Subtask status change refreshes the expanded subtask row without a full reload', async ({ page }) => {
+test('Subtask status change patches the expanded row without a follow-up fetch', async ({ page }) => {
     await setPrefs(page, catchUpPrefs());
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
@@ -683,11 +753,12 @@ test('Subtask status change refreshes the expanded subtask row without a full re
 
     await trigger(page, 'subtask', 'PROD-1-A').click();
     const subtaskMenu = menu(page, 'PROD-1-A');
+    const initialSubtaskRequests = calls.filter(call => call.pathname === '/api/issues/subtasks').length;
     await subtaskMenu.getByRole('menuitem', { name: 'In Progress' }).click();
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
-    // The expanded subtask row reflects the new status after the targeted subtask re-fetch.
     await expect(subtaskRow.locator('.status-pill')).toContainText('In Progress');
+    expect(calls.filter(call => call.pathname === '/api/issues/subtasks')).toHaveLength(initialSubtaskRequests);
 });
 
 test('Statistics and Scenario ENG views render inert status pills (no triggers)', async ({ page }) => {

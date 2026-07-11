@@ -163,6 +163,7 @@ export default function StatusTransitionMenu({
                 data-status-transition-trigger="true"
                 data-issue-key={issueKey}
                 data-issue-kind={String(fallbackIssueType || '').toLowerCase()}
+                disabled={submitting && !isOpen}
             />
             {isOpen && (
                 <IssueFieldOptionMenu

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { fetchIssueTransitionOptions, transitionIssues } from '../api/jiraIssueApi.js';
 import { authRecoveryLoginUrl, redirectToAuthRecovery } from './useEngSprintData.js';
+import { enqueueEngIssueMutation } from './engIssueMutationQueue.js';
 import {
     MAX_STATUS_TRANSITION_ISSUES,
     buildCatchUpStatusTargets,
@@ -69,8 +70,10 @@ export function useEngStatusTransitions({
     storySubtasksByKey,
     selectedSprint,
     sourceSurface,
+    mutationScopeKey = '',
     trackIssueStatusAction,
     onAuthRecoveryRequired,
+    onApplyLocalStatus,
     onTransitionSuccessRefresh,
 }) {
     const [selectedEpicStatusTargets, setSelectedEpicStatusTargets] = React.useState(() => new Set());
@@ -81,7 +84,12 @@ export function useEngStatusTransitions({
     const [transitionError, setTransitionError] = React.useState('');
     const [transitionErrorCode, setTransitionErrorCode] = React.useState('');
     const [transitionResult, setTransitionResult] = React.useState(null);
+    const [pendingIssueKeys, setPendingIssueKeys] = React.useState(() => new Set());
     const optionsRequestRef = React.useRef(EMPTY_OPTIONS_REQUEST);
+    const activeSingleIssueTargetRef = React.useRef(null);
+    const mutationScopeRef = React.useRef(mutationScopeKey);
+    mutationScopeRef.current = mutationScopeKey;
+    const pendingMutationKeysRef = React.useRef(new Set());
 
     const abortInFlightOptionsRequest = React.useCallback(() => {
         optionsRequestRef.current.controller?.abort();
@@ -93,10 +101,13 @@ export function useEngStatusTransitions({
         setSelectedSubtaskStatusTargets(new Set());
     }, []);
 
-    // Selected status targets and any open menu/options/result are scoped to one sprint.
+    // Selected status targets and any open menu/options/result are scoped to one sprint and
+    // Catch Up/Planning surface. In-flight writes keep their own scope token so a late
+    // response cannot patch a newly selected sprint or group.
     React.useEffect(() => {
         clearNonStoryStatusTargets();
         setActiveSingleIssueTarget(null);
+        activeSingleIssueTargetRef.current = null;
         abortInFlightOptionsRequest();
         // transitionOptionsCache is module-level and app-session scoped; it is invalidated
         // per-tuple after a successful transition (see submitStatusTransition), not
@@ -106,7 +117,9 @@ export function useEngStatusTransitions({
         setTransitionError('');
         setTransitionErrorCode('');
         setTransitionResult(null);
-    }, [selectedSprint, clearNonStoryStatusTargets, abortInFlightOptionsRequest]);
+        setPendingIssueKeys(new Set());
+        pendingMutationKeysRef.current.clear();
+    }, [selectedSprint, sourceSurface, mutationScopeKey, clearNonStoryStatusTargets, abortInFlightOptionsRequest]);
 
     const toggleEpicStatusTarget = React.useCallback((epicKey) => {
         const key = String(epicKey || '').trim();
@@ -216,11 +229,13 @@ export function useEngStatusTransitions({
         if (!target) return;
         setTransitionResult(null);
         setActiveSingleIssueTarget(target);
+        activeSingleIssueTargetRef.current = target;
         void loadTransitionOptions([target]);
     }, [loadTransitionOptions]);
 
     const closeSingleIssueStatusControl = React.useCallback(() => {
         setActiveSingleIssueTarget(null);
+        activeSingleIssueTargetRef.current = null;
         abortInFlightOptionsRequest();
         setTransitionOptions(null);
         setTransitionOptionsLoading(false);
@@ -278,14 +293,43 @@ export function useEngStatusTransitions({
         setTransitionError('');
         setTransitionErrorCode('');
 
+        const isCatchUp = sourceSurface === 'catch_up';
+        const catchUpTarget = isCatchUp ? targets[0] : null;
+        const catchUpKey = catchUpTarget?.key || '';
+        if (isCatchUp && pendingMutationKeysRef.current.has(catchUpKey)) return null;
+        const mutationScope = mutationScopeKey;
+        if (isCatchUp) {
+            pendingMutationKeysRef.current.add(catchUpKey);
+            onApplyLocalStatus?.(catchUpKey, status);
+            setPendingIssueKeys((prev) => new Set(prev).add(catchUpKey));
+        }
+
         try {
-            const response = await transitionIssues(backendUrl, {
+            const runMutation = () => transitionIssues(backendUrl, {
                 issueKeys: targets.map((target) => target.key),
                 targetStatus: status,
             });
+            const response = await (isCatchUp
+                ? enqueueEngIssueMutation(catchUpKey, runMutation)
+                : runMutation());
             const summary = summarizeTransitionResults(response?.results);
-            setTransitionResult({ ...summary, targetStatus: status });
+            const isCurrentMutation = !isCatchUp || mutationScopeRef.current === mutationScope;
+            if (isCurrentMutation && (!isCatchUp || activeSingleIssueTargetRef.current?.key === catchUpKey)) {
+                setTransitionResult({ ...summary, targetStatus: status });
+            }
             trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: summary.result });
+            if (isCatchUp) {
+                const issueResult = (response?.results || []).find(entry => entry?.key === catchUpKey);
+                const succeeded = issueResult?.result === 'success' || issueResult?.result === 'already_in_status';
+                if (isCurrentMutation) {
+                    onApplyLocalStatus?.(
+                        catchUpKey,
+                        succeeded
+                            ? (issueResult?.toStatus || response?.targetStatus || status)
+                            : (issueResult?.currentStatus || catchUpTarget?.currentStatus || ''),
+                    );
+                }
+            }
             if (summary.succeeded > 0) {
                 // Report which stories had a subtask succeed so the caller can refresh
                 // only those expanded subtask rows (not a full reload). Raw keys stay
@@ -323,7 +367,9 @@ export function useEngStatusTransitions({
                     }
                 }
                 const affectedSubtaskStoryKeys = resolveSubtaskParentStoryKeys(succeededKeys, storySubtasksByKey);
-                onTransitionSuccessRefresh?.({ affectedSubtaskStoryKeys });
+                if (!isCatchUp) {
+                    onTransitionSuccessRefresh?.({ affectedSubtaskStoryKeys });
+                }
             }
             return response;
         } catch (err) {
@@ -332,10 +378,26 @@ export function useEngStatusTransitions({
                 clearTransitionOptionsCache();
                 redirectToAuthRecovery(err);
             }
-            setTransitionError(err?.message || 'Failed to change status.');
-            setTransitionErrorCode(err?.code || '');
+            if (isCatchUp && mutationScopeRef.current === mutationScope) {
+                onApplyLocalStatus?.(catchUpKey, catchUpTarget?.currentStatus || '');
+            }
+            if ((!isCatchUp || mutationScopeRef.current === mutationScope) && (!isCatchUp || activeSingleIssueTargetRef.current?.key === catchUpKey)) {
+                setTransitionError(err?.message || 'Failed to change status.');
+                setTransitionErrorCode(err?.code || '');
+            }
             trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: 'failure' });
             return null;
+        } finally {
+            if (isCatchUp) {
+                if (mutationScopeRef.current === mutationScope) {
+                    pendingMutationKeysRef.current.delete(catchUpKey);
+                    setPendingIssueKeys((prev) => {
+                        const next = new Set(prev);
+                        next.delete(catchUpKey);
+                        return next;
+                    });
+                }
+            }
         }
     }, [
         sourceSurface,
@@ -345,8 +407,10 @@ export function useEngStatusTransitions({
         selectedSubtaskStatusTargets,
         epicGroups,
         storySubtasksByKey,
+        mutationScopeKey,
         trackIssueStatusAction,
         backendUrl,
+        onApplyLocalStatus,
         onTransitionSuccessRefresh,
         onAuthRecoveryRequired,
     ]);
@@ -366,6 +430,7 @@ export function useEngStatusTransitions({
         transitionError,
         transitionErrorCode,
         transitionResult,
+        pendingIssueKeys,
         loadTransitionOptions,
         submitStatusTransition,
     };

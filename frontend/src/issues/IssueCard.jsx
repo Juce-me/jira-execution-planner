@@ -37,6 +37,7 @@ export default function IssueCard({
     statusTransitionErrorCode = '',
     statusTransitionResult = null,
     statusTransitionTargetsCount = 0,
+    statusTransitionPendingIssueKeys = null,
     subtaskStatusTargetKeys = null,
     onOpenStatusTransition,
     onCloseStatusTransition,
@@ -49,6 +50,7 @@ export default function IssueCard({
     priorityTransitionSubmitting = false,
     priorityTransitionError = '',
     priorityTransitionResult = null,
+    priorityTransitionPendingIssueKeys = null,
     onOpenPriorityTransition,
     onClosePriorityTransition,
     onSubmitPriorityTransition,
@@ -199,7 +201,7 @@ export default function IssueCard({
                             isOpen={priorityTransitionActiveKey === task.key}
                             options={priorityTransitionOptions}
                             optionsLoading={priorityTransitionOptionsLoading}
-                            submitting={priorityTransitionSubmitting}
+                            submitting={priorityTransitionSubmitting || !!priorityTransitionPendingIssueKeys?.has(task.key)}
                             error={priorityTransitionError}
                             result={priorityTransitionResult}
                             onOpen={onOpenPriorityTransition}
@@ -246,7 +248,7 @@ export default function IssueCard({
                             isOpen={statusTransitionActiveKey === task.key}
                             options={statusTransitionOptions}
                             optionsLoading={statusTransitionOptionsLoading}
-                            submitting={statusTransitionSubmitting}
+                            submitting={statusTransitionSubmitting || !!statusTransitionPendingIssueKeys?.has(task.key)}
                             error={statusTransitionError}
                             errorCode={statusTransitionErrorCode}
                             result={statusTransitionResult}
@@ -347,7 +349,7 @@ export default function IssueCard({
                                             isOpen={statusTransitionActiveKey === subtask.key}
                                             options={statusTransitionOptions}
                                             optionsLoading={statusTransitionOptionsLoading}
-                                            submitting={statusTransitionSubmitting}
+                                            submitting={statusTransitionSubmitting || !!statusTransitionPendingIssueKeys?.has(subtask.key)}
                                             error={statusTransitionError}
                                             errorCode={statusTransitionErrorCode}
                                             result={statusTransitionResult}

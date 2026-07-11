@@ -1143,13 +1143,16 @@ test('fetchIssuePriorityOptions sends X-Requested-With and tracks the jira_issue
     });
     const signal = new AbortController().signal;
 
-    const payload = await jiraIssueApi.fetchIssuePriorityOptions('http://backend', { signal });
+    const payload = await jiraIssueApi.fetchIssuePriorityOptions('http://backend', { issueKey: 'PROD/1', signal });
 
     assert.deepEqual(payload, { priorities: [], source: 'jira' });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].apiSurface, 'jira_issue_priorities');
     assert.deepEqual(calls[0].analyticsParams, { featureName: 'eng_priority_changes' });
-    assert.equal(calls[0].url, 'http://backend/api/issues/priorities/options');
+    const optionsUrl = new URL(calls[0].url);
+    assert.equal(optionsUrl.origin, 'http://backend');
+    assert.equal(optionsUrl.pathname, '/api/issues/priorities/options');
+    assert.equal(optionsUrl.searchParams.get('issueKey'), 'PROD/1');
     assert.equal(calls[0].options.method, 'GET');
     assert.equal(calls[0].options.cache, 'no-cache');
     assert.equal(calls[0].options.signal, signal);
@@ -1187,6 +1190,75 @@ test('updateIssuePriorities fetches a CSRF token before posting the target prior
     assertJsonHeader(calls[0].options);
     assert.equal(new Headers(calls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
     assert.equal(new Headers(calls[0].options.headers).get('X-CSRF-Token'), 'csrf-token');
+});
+
+test('concurrent Jira issue writes share one in-flight CSRF request', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const calls = [];
+    let csrfCalls = 0;
+    let resolveCsrf;
+    const csrfResponse = new Promise(resolve => { resolveCsrf = resolve; });
+    const jiraIssueApi = loadApiModule('jiraIssueApi.js', [
+        'transitionIssues',
+        'updateIssuePriorities',
+    ], {
+        jsonOrStructuredError,
+        fetchCsrfToken: async () => {
+            csrfCalls += 1;
+            return csrfResponse;
+        },
+        trackedFetch: async (apiSurface, url, options) => {
+            calls.push({ apiSurface, url, options });
+            return jsonResponse({ requested: 1, succeeded: 1, failed: 0, results: [] });
+        },
+    });
+
+    const statusWrite = jiraIssueApi.transitionIssues('http://backend', {
+        issueKeys: ['PROD-1'],
+        targetStatus: 'In Progress',
+    });
+    const priorityWrite = jiraIssueApi.updateIssuePriorities('http://backend', {
+        issueKeys: ['PROD-2'],
+        targetPriorityId: '3',
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(csrfCalls, 1, 'simultaneous writes should not fan out duplicate CSRF reads');
+    resolveCsrf({ csrfToken: 'csrf-token' });
+    await Promise.all([statusWrite, priorityWrite]);
+    assert.equal(calls.length, 2);
+    calls.forEach(call => assert.equal(new Headers(call.options.headers).get('X-CSRF-Token'), 'csrf-token'));
+});
+
+test('failed CSRF reads are removed from the shared mutation request cache', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    let csrfCalls = 0;
+    const calls = [];
+    const jiraIssueApi = loadApiModule('jiraIssueApi.js', ['transitionIssues'], {
+        jsonOrStructuredError,
+        fetchCsrfToken: async () => {
+            csrfCalls += 1;
+            if (csrfCalls === 1) throw new Error('csrf unavailable');
+            return { csrfToken: 'csrf-retry' };
+        },
+        trackedFetch: async (_apiSurface, url, options) => {
+            calls.push({ url, options });
+            return jsonResponse({ requested: 1, succeeded: 1, failed: 0, results: [] });
+        },
+    });
+
+    await assert.rejects(() => jiraIssueApi.transitionIssues('http://backend', {
+        issueKeys: ['PROD-1'],
+        targetStatus: 'In Progress',
+    }), /csrf unavailable/);
+    await jiraIssueApi.transitionIssues('http://backend', {
+        issueKeys: ['PROD-2'],
+        targetStatus: 'Accepted',
+    });
+
+    assert.equal(csrfCalls, 2);
+    assert.equal(calls.length, 1);
+    assert.equal(new Headers(calls[0].options.headers).get('X-CSRF-Token'), 'csrf-retry');
 });
 
 test('fetchIssuePriorityOptions rejects with a structured auth_required error carrying status/code/loginUrl', async () => {

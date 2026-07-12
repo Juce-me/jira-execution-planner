@@ -90,6 +90,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented and verified locally on `feature/eng-targeted-task-updates` across the execution commits listed in the plan; kept as `EXEC-` pending user review/merge.
    - Expected output: ENG Catch Up status and priority writes optimistically patch only the selected Epic, Story, or expanded Subtask, reconcile in the background through a four-request shared queue with same-key serialization, roll back failed writes, ignore stale scope completions, and never refetch the Catch Up task lists; Planning and non-ENG surfaces retain their existing behavior.
 
+7. `EXEC-priority-refresh-preserve-team-filter.md`
+   - Active, design-approved bugfix and regression plan for preserving a configured single-team ENG filter across Planning priority-change refreshes.
+   - Expected output: configured group teams remain authoritative across Planning priority refreshes, true config removal still falls back to All Teams, behavioral Node and Playwright coverage passes, and generated dist is rebuilt.
+
 ## Capacity Reporting Workflow
 
 1. `EXEC-ad-hoc-capacity-epics.md`

@@ -50,7 +50,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # (+68 total over main's 15866).
     # feature/eng-targeted-task-updates replaces Catch Up scope refetches with one shared local
     # issue-field patch callback, per-key pending sets, and mutation scope key (+19).
-    "frontend/src/dashboard.jsx": 15953,
+    # bugfix/priority-change-drops-single-team-filter extracts teamOptions construction into
+    # the pure buildTeamOptionsForScope helper in teamSelectionUtils.mjs (configured group
+    # teams stay authoritative across a Planning task refetch instead of being scanned from
+    # fetched capacityTasks), which nets the entrypoint down below the prior ceiling.
+    "frontend/src/dashboard.jsx": 15951,
 }
 
 

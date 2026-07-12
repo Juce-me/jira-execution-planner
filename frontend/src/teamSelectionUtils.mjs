@@ -15,6 +15,45 @@ export function selectedTeamSelectionsEqual(left, right) {
         && normalizedLeft.every((id, index) => id === normalizedRight[index]);
 }
 
+export function buildTeamOptionsForScope({
+    capacityTasks = [],
+    activeGroupTeamIds = [],
+    activeGroupTeamLabels = {},
+    getTeamInfo = () => ({})
+} = {}) {
+    const allTeams = { id: 'all', name: 'All Teams' };
+    const configuredTeamIds = [];
+    const configuredSeen = new Set();
+
+    (activeGroupTeamIds || []).forEach((value) => {
+        const id = String(value || '').trim();
+        if (!id || configuredSeen.has(id)) return;
+        configuredSeen.add(id);
+        configuredTeamIds.push(id);
+    });
+
+    if (configuredTeamIds.length) {
+        return [
+            allTeams,
+            ...configuredTeamIds.map(id => ({
+                id,
+                name: String(activeGroupTeamLabels?.[id] || id).trim() || id
+            }))
+        ];
+    }
+
+    const taskTeams = [];
+    const taskSeen = new Set();
+    (capacityTasks || []).forEach((task) => {
+        const team = getTeamInfo(task) || {};
+        const id = String(team.id || 'unknown').trim() || 'unknown';
+        if (taskSeen.has(id)) return;
+        taskSeen.add(id);
+        taskTeams.push({ id, name: String(team.name || id).trim() || id });
+    });
+    return [allTeams, ...taskTeams];
+}
+
 export function sanitizeSelectedTeamsForScope(selectedTeams, {
     activeGroupTeamIds = [],
     availableTeamIds = []

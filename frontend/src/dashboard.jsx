@@ -211,7 +211,11 @@ import {
     resolvePlanningTeamSelection
 } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
-import { sanitizeSelectedTeamsForScope, selectedTeamSelectionsEqual } from './teamSelectionUtils.mjs';
+import {
+    buildTeamOptionsForScope,
+    sanitizeSelectedTeamsForScope,
+    selectedTeamSelectionsEqual
+} from './teamSelectionUtils.mjs';
 import {
     collectJiraExportKeysFromEpmRollupBoards,
     collectJiraExportKeysFromScenarioIssues,
@@ -6364,18 +6368,12 @@ import {
             const techTasksCount = techTasks.length;
             const productTasksCount = productTasks.length;
 
-            const teamOptions = React.useMemo(() => {
-                const base = ['all', ...new Set(capacityTasks.map(t => getTeamInfo(t).id || 'unknown'))]
-                    .map(id => ({
-                        id,
-                        name: id === 'all' ? 'All Teams' : getTeamInfo(capacityTasks.find(t => getTeamInfo(t).id === id) || {}).name
-                    }))
-                    .filter((team, index, arr) => arr.findIndex(t => t.id === team.id) === index);
-                if (!activeGroupTeamIds.length) {
-                    return base.length ? base : [{ id: 'all', name: 'All Teams' }];
-                }
-                return base.filter(team => team.id === 'all' || activeGroupTeamSet.has(team.id));
-            }, [capacityTasks, activeGroupTeamIds, activeGroupTeamSet]);
+            const teamOptions = React.useMemo(() => buildTeamOptionsForScope({
+                capacityTasks,
+                activeGroupTeamIds,
+                activeGroupTeamLabels,
+                getTeamInfo
+            }), [capacityTasks, activeGroupTeamIds, activeGroupTeamLabels]);
             const teamNameById = React.useMemo(() => {
                 const map = new Map();
                 teamOptions.forEach(team => {

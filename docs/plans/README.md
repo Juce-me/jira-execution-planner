@@ -96,6 +96,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Active implementation plan for adding department/team-group Ad Hoc capacity epic configuration as included Product capacity, separate from excluded capacity.
    - Expected output: `teamGroups.groups[].adHocCapacityEpics` round-trips through shared group config, Settings exposes a separate epic selector, Ad Hoc stories remain included in Product Planning and reporting, excluded capacity behavior remains driven only by `excludedCapacityEpics`, and affected Planning, Stats, Burndown, Lead Times, Mono vs Cross, and Scenario paths have focused verification.
 
+2. `EXEC-statistics-consistency-bugfix.md`
+   - Active bugfix plan, with decisions recorded in `SUPPORT-statistics-consistency-bugfix-design.md`, for shared Statistics team colors, the redundant Excluded Capacity Range card, and a bounded Lead Times creation cohort.
+   - Expected output: Priority, Burndown, Excluded Capacity, and Mono vs Cross consume one deterministic active-group color map; Excluded Capacity drops only its Range card; Lead Times adds an inclusive End Quarter with last-control-wins reconciliation, half-open Jira creation-date JQL, matching Jira links, and terminal dates preserved beyond the cohort boundary.
+
 ## Project Grade Security Hardening
 
 1. `DONE-project-grade-security-hardening.md`

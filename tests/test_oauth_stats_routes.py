@@ -146,12 +146,22 @@ class OAuthStatsRouteTests(unittest.TestCase):
             response = self.client.post(
                 "/api/stats/epic-cohort",
                 headers={"X-Requested-With": "jira-execution-planner"},
-                json={"startQuarter": "2026Q2"},
+                json={"startQuarter": "2026Q2", "endQuarter": "2026Q2"},
             )
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["data"], {"quarters": []})
         mock_fetch.assert_called_once()
+
+    def test_epic_cohort_post_requires_oauth_requested_with_header(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.post("/api/stats/epic-cohort", json={
+                "startQuarter": "2026Q1",
+                "endQuarter": "2026Q2",
+            })
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["error"], "csrf_required")
 
     def test_project_track_phase_post_is_oauth_ready_with_requested_with_header(self):
         issue = FakeResponse(200, {
@@ -375,7 +385,7 @@ class BasicStatsRouteTests(unittest.TestCase):
              patch.object(jira_server, "jira_home_process_cache_enabled", return_value=False), \
              patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
              patch.object(jira_server, "fetch_epic_cohort_data", return_value=({"quarters": []}, None)):
-            response = self.client.post("/api/stats/epic-cohort", json={"startQuarter": "2026Q2"})
+            response = self.client.post("/api/stats/epic-cohort", json={"startQuarter": "2026Q2", "endQuarter": "2026Q2"})
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 

@@ -22,7 +22,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # return dict so the frontend can compute avg days-to-Committed (+2 lines).
     # docs/eng-priority-edit-mode-plan adds the Epic's own priority to fetch_epic_details_bulk
     # (fields list + shaped name) so the Epic priority menu can omit the Epic's own value (+1 line).
-    "jira_server.py": 6189,
+    # bugfix/statistics-consistency-exec adds resolve_epic_cohort_range (bounds Lead Times
+    # cohorts by start+end quarter, capped at today) and the half-open end-exclusive JQL
+    # derivation in fetch_epic_cohort_data (+10 lines).
+    "jira_server.py": 6199,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.

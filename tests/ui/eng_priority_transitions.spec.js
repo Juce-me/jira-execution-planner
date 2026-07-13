@@ -12,7 +12,14 @@ const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const activeSprintId = 3001;
 const activeSprintName = '2026Q2 Sprint 42';
-const groupTeamIds = ['team-alpha'];
+const groupTeamIds = ['team-alpha', 'team-beta'];
+// group.teamLabels maps team ID -> Jira EPIC LABEL (Future Planning epic matching / JQL), never a
+// display name. Values are label slugs on purpose: team display names must come from task payloads
+// (retained in-session by the teamOptions memo) or the warmed team catalog, never from teamLabels.
+const groupTeamLabels = {
+    'team-alpha': 'alpha_team_label',
+    'team-beta': 'beta_team_label',
+};
 // The esbuild bundle strips CSS (loader '.css': 'empty'); the priority menu styles live in
 // status-transitions.css (shared .issue-field/.priority-transition selectors) and the
 // interactive-icon button reset lives in issues.css. Inject both source files so the
@@ -27,8 +34,10 @@ const issuesCss = fs.readFileSync(
 );
 const priorityMenuCss = `${statusTransitionsCss}\n${issuesCss}`;
 let dashboardJs;
+const screenshotDir = path.join(repoRoot, 'tmp', 'priority-team-filter');
 
 test.beforeAll(() => {
+    fs.mkdirSync(screenshotDir, { recursive: true });
     const result = esbuild.buildSync({
         entryPoints: [path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx')],
         bundle: true,
@@ -54,7 +63,14 @@ function requestBody(request) {
 
 // Stories start at "Medium" so the current-priority option is filtered out of the menu
 // (mirroring how the status menu omits the current status) while "Major" stays selectable.
-function makeStory(key, sprintId, sprintName, epicKey = 'PROD-EPIC') {
+function makeStory(
+    key,
+    sprintId,
+    sprintName,
+    epicKey = 'PROD-EPIC',
+    teamId = 'team-alpha',
+    teamName = 'Alpha Team',
+) {
     return {
         id: key,
         key,
@@ -69,8 +85,8 @@ function makeStory(key, sprintId, sprintName, epicKey = 'PROD-EPIC') {
             epicKey,
             parentSummary: 'Synthetic product epic',
             projectKey: 'PROD',
-            teamId: 'team-alpha',
-            teamName: 'Alpha Team',
+            teamId,
+            teamName,
             sprint: [{ id: sprintId, name: sprintName, state: 'active' }],
             subtaskSummary: null,
         },
@@ -137,15 +153,16 @@ async function installEngPriorityFixture(page, {
     stories = null,
     priorityDelayMs = 0,
     priorityWrite = priorityWriteResponse,
+    omitSelectedTeamAfterPriority = false,
 } = {}) {
     const calls = [];
-    const priorityState = { inFlight: 0, maxInFlight: 0 };
+    const priorityState = { inFlight: 0, maxInFlight: 0, successfulWrite: false };
     const groupsConfigPayload = {
         version: 1,
         configRevision: 1,
         source: 'workspace_db',
         defaultGroupId: 'group-alpha',
-        groups: [{ id: 'group-alpha', name: 'Alpha Department', teamIds: groupTeamIds, labels: ['alpha_label'], excludedCapacityEpics: [] }],
+        groups: [{ id: 'group-alpha', name: 'Alpha Department', teamIds: groupTeamIds, teamLabels: groupTeamLabels, labels: ['alpha_label'], excludedCapacityEpics: [] }],
         preferences: {
             onboardingRequired: false,
             customized: false,
@@ -195,8 +212,14 @@ async function installEngPriorityFixture(page, {
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
+            const refreshedStories = omitSelectedTeamAfterPriority && priorityState.successfulWrite
+                ? [makeStory('PROD-BETA-1', activeSprintId, activeSprintName, 'PROD-EPIC', 'team-beta', 'Beta Team')]
+                : null;
             const defaultIssues = project === 'product' && !purpose
-                ? [makeStory('PROD-1', activeSprintId, activeSprintName), makeStory('PROD-2', activeSprintId, activeSprintName)]
+                ? (refreshedStories || [
+                    makeStory('PROD-1', activeSprintId, activeSprintName),
+                    makeStory('PROD-2', activeSprintId, activeSprintName),
+                ])
                 : [];
             const issues = (stories && project === 'product' && !purpose) ? stories : defaultIssues;
             const epic = makeEpic(activeSprintId, activeSprintName);
@@ -220,7 +243,9 @@ async function installEngPriorityFixture(page, {
                 if (priorityDelayMs) {
                     await new Promise(resolve => setTimeout(resolve, priorityDelayMs));
                 }
-                return json(route, priorityWrite(body));
+                const responseBody = priorityWrite(body);
+                if (responseBody?.succeeded > 0) priorityState.successfulWrite = true;
+                return json(route, responseBody);
             } finally {
                 priorityState.inFlight -= 1;
             }
@@ -521,4 +546,56 @@ test('EPM issue boards render inert priority icons and never call priority APIs'
     await expect(page.locator('[data-priority-transition-trigger]')).toHaveCount(0);
     await expect(page.locator('.epm-project-board button.task-priority-icon')).toHaveCount(0);
     expect(calls.filter(c => c.pathname.startsWith('/api/issues/priorities'))).toHaveLength(0);
+});
+
+test('Planning priority refresh preserves a configured single-team filter when refreshed tasks omit that team', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ showPlanning: true, selectedTeams: ['team-alpha'] }));
+    await page.addInitScript(({ scopeKey }) => {
+        window.localStorage.setItem('jira_dashboard_team_selection_state_v1', JSON.stringify({
+            [scopeKey]: {
+                selectedTeams: ['team-alpha'],
+                selectedTeamId: 'team-alpha',
+            },
+        }));
+    }, { scopeKey: `team-selection::${activeSprintId}::group-alpha` });
+
+    const { calls } = await installEngPriorityFixture(page, {
+        omitSelectedTeamAfterPriority: true,
+    });
+    await page.goto(appBaseUrl);
+
+    const teamToggle = page.locator('.view-selector .team-dropdown-toggle').first();
+    const teamLabel = teamToggle.locator('.team-dropdown-selection-label');
+    await expect(teamLabel).toHaveText('Alpha Team');
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.screenshot({ path: path.join(screenshotDir, 'before-refresh.png'), fullPage: false });
+
+    const initialTaskRequestCount = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
+    await priorityTrigger(page, 'story', 'PROD-1').click();
+    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
+
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length)
+        .toBeGreaterThan(initialTaskRequestCount);
+    // The refreshed payload drops PROD-1 (Alpha) and returns only a Beta story, so proving the
+    // Alpha row is gone confirms the following assertions run against post-refresh state.
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toHaveCount(0);
+    // Alpha's display name survives via in-session retention of task-derived names (the pre-refresh
+    // payload named it); Beta's name comes from the refreshed tasks. teamLabels never name teams.
+    await expect(teamLabel).toHaveText('Alpha Team');
+
+    // Interacting with PROD-1's priority menu scrolls the page down past the sticky header,
+    // which is unrelated Planning-surface behavior (the header swaps to its compact-sticky
+    // form). Scroll back to the top control bar before exercising the team dropdown so this
+    // assertion targets the filter-preservation fix, not incidental scroll position.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(0);
+    await teamToggle.click();
+    await expect(page.locator('.team-dropdown-panel')).toContainText('Alpha Team');
+    await expect(page.locator('.team-dropdown-panel')).toContainText('Beta Team');
+    await page.screenshot({ path: path.join(screenshotDir, 'after-refresh.png'), fullPage: false });
+
+    await expect.poll(() => page.evaluate((scopeKey) => {
+        const state = JSON.parse(window.localStorage.getItem('jira_dashboard_team_selection_state_v1') || '{}');
+        return state[scopeKey]?.selectedTeams || [];
+    }, `team-selection::${activeSprintId}::group-alpha`)).toEqual(['team-alpha']);
 });

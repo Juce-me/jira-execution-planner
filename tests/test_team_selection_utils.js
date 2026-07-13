@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-test('team selection resets to all when selected sprint has no data for the selected team', () => {
+test('team selection resets to all when the selected team is absent from the authoritative available-team catalog', () => {
     return import('../frontend/src/teamSelectionUtils.mjs').then(({
         sanitizeSelectedTeamsForScope
     }) => {
@@ -13,6 +13,93 @@ test('team selection resets to all when selected sprint has no data for the sele
             ['all']
         );
     });
+});
+
+test('configured group teams stay available when fetched task data omits the selected team', async () => {
+    const { buildTeamOptionsForScope } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const getTeamInfo = task => ({ id: task?.teamId, name: task?.teamName });
+
+    assert.deepEqual(
+        buildTeamOptionsForScope({
+            capacityTasks: [{ teamId: 'team-beta', teamName: 'Beta Team' }],
+            activeGroupTeamIds: ['team-alpha', 'team-beta'],
+            teamNameLookup: {
+                'team-alpha': 'Alpha Team',
+                'team-beta': 'Beta Team'
+            },
+            getTeamInfo
+        }),
+        [
+            { id: 'all', name: 'All Teams' },
+            { id: 'team-alpha', name: 'Alpha Team' },
+            { id: 'team-beta', name: 'Beta Team' }
+        ]
+    );
+});
+
+test('team options fall back to fetched task teams only without configured group teams', async () => {
+    const { buildTeamOptionsForScope } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const getTeamInfo = task => ({ id: task?.teamId, name: task?.teamName });
+
+    assert.deepEqual(
+        buildTeamOptionsForScope({
+            capacityTasks: [
+                { teamId: 'team-alpha', teamName: 'Alpha Team' },
+                { teamId: 'team-alpha', teamName: 'Alpha Team' },
+                { teamId: 'team-beta', teamName: 'Beta Team' }
+            ],
+            activeGroupTeamIds: [],
+            teamNameLookup: {},
+            getTeamInfo
+        }),
+        [
+            { id: 'all', name: 'All Teams' },
+            { id: 'team-alpha', name: 'Alpha Team' },
+            { id: 'team-beta', name: 'Beta Team' }
+        ]
+    );
+});
+
+test('configured team options dedupe repeated IDs and drop blank IDs', async () => {
+    const { buildTeamOptionsForScope } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const getTeamInfo = task => ({ id: task?.teamId, name: task?.teamName });
+
+    assert.deepEqual(
+        buildTeamOptionsForScope({
+            capacityTasks: [],
+            activeGroupTeamIds: ['team-alpha', 'team-alpha', ' ', 'team-beta'],
+            teamNameLookup: {
+                'team-alpha': 'Alpha Team',
+                'team-beta': 'Beta Team'
+            },
+            getTeamInfo
+        }),
+        [
+            { id: 'all', name: 'All Teams' },
+            { id: 'team-alpha', name: 'Alpha Team' },
+            { id: 'team-beta', name: 'Beta Team' }
+        ]
+    );
+});
+
+test('configured team names resolve from the catalog lookup, then task data, then the raw id', async () => {
+    const { buildTeamOptionsForScope } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const getTeamInfo = task => ({ id: task?.teamId, name: task?.teamName });
+
+    assert.deepEqual(
+        buildTeamOptionsForScope({
+            capacityTasks: [{ teamId: 'team-beta', teamName: 'Beta From Task' }],
+            activeGroupTeamIds: ['team-alpha', 'team-beta', 'team-gamma'],
+            teamNameLookup: { 'team-alpha': 'Alpha Team' },
+            getTeamInfo
+        }),
+        [
+            { id: 'all', name: 'All Teams' },
+            { id: 'team-alpha', name: 'Alpha Team' },
+            { id: 'team-beta', name: 'Beta From Task' },
+            { id: 'team-gamma', name: 'team-gamma' }
+        ]
+    );
 });
 
 test('team selection keeps a selected team when it still has data in the selected sprint', () => {

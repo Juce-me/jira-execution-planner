@@ -90,6 +90,14 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented and verified locally on `feature/eng-targeted-task-updates` across the execution commits listed in the plan; kept as `EXEC-` pending user review/merge.
    - Expected output: ENG Catch Up status and priority writes optimistically patch only the selected Epic, Story, or expanded Subtask, reconcile in the background through a four-request shared queue with same-key serialization, roll back failed writes, ignore stale scope completions, and never refetch the Catch Up task lists; Planning and non-ENG surfaces retain their existing behavior.
 
+7. `EXEC-priority-refresh-preserve-team-filter.md`
+   - Implemented and verified locally on `bugfix/priority-change-drops-single-team-filter` across the execution commits listed in the plan; kept as `EXEC-` pending user review/merge. Corrected during execution: team display names come from the team catalog lookup plus in-session retained task names, never `teamLabels` (Jira epic labels).
+   - Expected output: configured group teams remain authoritative across Planning priority refreshes, true config removal still falls back to All Teams, behavioral Node and Playwright coverage passes, and generated dist is rebuilt.
+
+8. `FUTURE-warm-team-catalog-team-names.md`
+   - Deferred Minor follow-up to `EXEC-priority-refresh-preserve-team-filter.md`: warm the team catalog once per session, only when a configured team option is visibly degraded to its raw id, so cold loads show catalog display names without any unconditional initial-load request.
+   - Expected output: degradation-triggered `GET /api/team-catalog` warm effect, Playwright proof of the rename plus a no-request guard when names already resolve, and no changes to selection behavior, `availableTeams`, or analytics events.
+
 ## Capacity Reporting Workflow
 
 1. `EXEC-ad-hoc-capacity-epics.md`

@@ -6,6 +6,7 @@ import { buildJiraCohortStatusSearchUrl } from '../jiraExportUtils.mjs';
 export default function LeadTimesWorkflowStatusCard({
     jiraUrl,
     cohortStartQuarter,
+    cohortEndQuarter,
     cohortSummary,
     cohortWorkflowStatusTotal
 }) {
@@ -14,10 +15,11 @@ export default function LeadTimesWorkflowStatusCard({
         return buildJiraCohortStatusSearchUrl({
             jiraUrl,
             startQuarter: cohortStartQuarter,
+            endQuarter: cohortEndQuarter,
             statuses: ['In Progress', 'Postponed', 'Awaiting Validation'],
             issueType: 'Epic',
         });
-    }, [jiraUrl, cohortStartQuarter, cohortWorkflowStatusTotal]);
+    }, [jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortWorkflowStatusTotal]);
 
     return (
         <div className="stats-card">

@@ -11,6 +11,7 @@ function buildCohortSearchUrl({
     rows,
     jiraUrl,
     cohortStartQuarter,
+    cohortEndQuarter,
     cohortGroupBy,
     cohortSelectedRow,
     cohortProjectFilter,
@@ -21,6 +22,7 @@ function buildCohortSearchUrl({
     return buildJiraCohortIssueSearchUrl({
         jiraUrl,
         startQuarter: cohortStartQuarter,
+        endQuarter: cohortEndQuarter,
         groupBy: cohortGroupBy,
         rowKey: cohortSelectedRow,
         statuses: buildStatusList(rows),
@@ -38,6 +40,7 @@ export default function LeadTimesEpicCharts({
     cohortSelectedRowLabel,
     jiraUrl,
     cohortStartQuarter,
+    cohortEndQuarter,
     cohortGroupBy,
     cohortSelectedRow,
     cohortProjectFilter,
@@ -48,6 +51,7 @@ export default function LeadTimesEpicCharts({
     const searchFilters = {
         jiraUrl,
         cohortStartQuarter,
+        cohortEndQuarter,
         cohortGroupBy,
         cohortSelectedRow,
         cohortProjectFilter,
@@ -57,11 +61,11 @@ export default function LeadTimesEpicCharts({
     };
     const openJiraSearchUrl = React.useMemo(
         () => buildCohortSearchUrl({ ...searchFilters, rows: cohortOpenBars }),
-        [cohortOpenBars, jiraUrl, cohortStartQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds, cohortAssigneeFilter]
+        [cohortOpenBars, jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds, cohortAssigneeFilter]
     );
     const completedJiraSearchUrl = React.useMemo(
         () => buildCohortSearchUrl({ ...searchFilters, rows: cohortCompletedBars }),
-        [cohortCompletedBars, jiraUrl, cohortStartQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds, cohortAssigneeFilter]
+        [cohortCompletedBars, jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds, cohortAssigneeFilter]
     );
 
     return (
@@ -69,7 +73,7 @@ export default function LeadTimesEpicCharts({
             <div className="cohort-section">
                 <OpenEpicsChart
                     title={cohortSelectedRowLabel ? `Open Epics (${cohortSelectedRowLabel})` : 'Open Epics (All Cohorts)'}
-                    description={cohortSelectedRowLabel ? '' : 'Created on or after the selected Lead Times start quarter and still non-terminal today.'}
+                    description={cohortSelectedRowLabel ? '' : 'Created within the selected Lead Times quarter range and still non-terminal today.'}
                     items={cohortOpenBars}
                     jiraBaseUrl={jiraUrl}
                     jiraSearchUrl={openJiraSearchUrl}
@@ -84,7 +88,7 @@ export default function LeadTimesEpicCharts({
             <div className="cohort-section">
                 <OpenEpicsChart
                     title={cohortSelectedRowLabel ? `Completed Epics — Lead Time (${cohortSelectedRowLabel})` : 'Completed Epics — Lead Time (All Cohorts)'}
-                    description={cohortSelectedRowLabel ? '' : 'Created on or after the selected Lead Times start quarter and reached a terminal status, with lead time shown.'}
+                    description={cohortSelectedRowLabel ? '' : 'Created within the selected Lead Times quarter range and reached a terminal status, with lead time shown.'}
                     items={cohortCompletedBars}
                     jiraBaseUrl={jiraUrl}
                     jiraSearchUrl={completedJiraSearchUrl}

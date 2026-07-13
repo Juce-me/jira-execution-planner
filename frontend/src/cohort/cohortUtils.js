@@ -31,6 +31,19 @@ export function shiftQuarterLabel(label, delta) {
     return `${nextYear}Q${nextQuarter}`;
 }
 
+function quarterOrdinal(label) {
+    const match = String(label || '').trim().match(/^(\d{4})Q([1-4])$/i);
+    if (!match) return null;
+    return (Number(match[1]) * 4) + Number(match[2]) - 1;
+}
+
+export function compareQuarterLabels(left, right) {
+    const leftOrdinal = quarterOrdinal(left);
+    const rightOrdinal = quarterOrdinal(right);
+    if (leftOrdinal === null || rightOrdinal === null) return null;
+    return Math.sign(leftOrdinal - rightOrdinal);
+}
+
 export function buildQuarterOptions(endQuarter, total = 12) {
     const safeTotal = Math.max(1, Number(total) || 12);
     const anchor = String(endQuarter || '').trim() || getCurrentQuarterLabel();

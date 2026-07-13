@@ -81,6 +81,14 @@ test('stats utilities normalize priorities, rates, weights, colors, and radar po
     assert.match(resolveTeamColor('team-outside-group', teamColors), /^#[0-9a-f]{6}$/i);
 });
 
+test('compareQuarterLabels orders quarter labels and rejects invalid input', async () => {
+    const { compareQuarterLabels } = await import('../frontend/src/cohort/cohortUtils.js');
+    assert.equal(compareQuarterLabels('2026Q1', '2026Q2'), -1);
+    assert.equal(compareQuarterLabels('2026Q2', '2026Q2'), 0);
+    assert.equal(compareQuarterLabels('2026Q3', '2026Q2'), 1);
+    assert.equal(compareQuarterLabels('invalid', '2026Q2'), null);
+});
+
 test('cohort summary counts actual open Jira statuses for workflow card', async () => {
     const { aggregateCohortSummary } = await import('../frontend/src/cohort/cohortUtils.js');
     const summary = aggregateCohortSummary([

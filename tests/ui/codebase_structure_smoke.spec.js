@@ -378,6 +378,13 @@ function callsFor(calls, pathname, method = 'GET') {
     return calls.filter(call => call.method === method && call.pathname === pathname);
 }
 
+// Independent ordinal check (not the app's own compareQuarterLabels) so the test does not
+// share a bug with the implementation it is verifying.
+function quarterLabelOrdinal(label) {
+    const match = String(label || '').match(/^(\d{4})Q([1-4])$/);
+    return match ? (Number(match[1]) * 4) + Number(match[2]) : null;
+}
+
 function requestBody(request) {
     const postData = request.postData();
     if (!postData) return null;
@@ -1082,7 +1089,8 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
         showScenario: false,
         showStats: true,
         statsView: 'teams',
-        cohortStartQuarter: '2026Q2',
+        cohortStartQuarter: '2026Q1',
+        cohortEndQuarter: '2026Q2',
         excludedCapacityStartSprintId: String(selectedSprintId),
         excludedCapacityEndSprintId: String(selectedSprintId),
     });
@@ -1131,18 +1139,19 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     const leadTimesJiraLink = cohortSummary.getByRole('link', { name: 'Open in progress, postponed, and awaiting validation epics in Jira' });
     await expect(leadTimesJiraLink).toBeVisible();
     const leadTimesJql = decodeURIComponent(new URL(await leadTimesJiraLink.getAttribute('href')).searchParams.get('jql'));
-    expect(leadTimesJql).toBe('issuetype = "Epic" AND created >= "2026-04-01" AND status in ("In Progress", "Postponed", "Awaiting Validation")');
+    expect(leadTimesJql).toBe('issuetype = "Epic" AND created >= "2026-01-01" AND created < "2026-07-01" AND status in ("In Progress", "Postponed", "Awaiting Validation")');
     await expect(page.locator('.stats-view.open')).toContainText('Cohort Heatmap');
     await expect(page.locator('.stats-view.open')).toContainText('In Progress');
     await expect(page.locator('.stats-view.open')).toContainText('Awaiting Validation');
-    await expect(page.locator('.stats-view.open')).toContainText('Created on or after the selected Lead Times start quarter and still non-terminal today.');
-    await expect(page.locator('.stats-view.open')).toContainText('Created on or after the selected Lead Times start quarter and reached a terminal status, with lead time shown.');
+    await expect(page.locator('.stats-view.open')).toContainText('Created within the selected Lead Times quarter range and still non-terminal today.');
+    await expect(page.locator('.stats-view.open')).toContainText('Created within the selected Lead Times quarter range and reached a terminal status, with lead time shown.');
     const openLeadTimesSection = page.locator('.cohort-section', { hasText: 'Open Epics (All Cohorts)' }).first();
     const openLeadTimesJiraLink = openLeadTimesSection.getByRole('link', { name: 'Open all open epics in Jira' });
     await expect(openLeadTimesJiraLink).toBeVisible();
     const openLeadTimesJql = decodeURIComponent(new URL(await openLeadTimesJiraLink.getAttribute('href')).searchParams.get('jql'));
     expect(openLeadTimesJql).toContain('issuetype = "Epic"');
-    expect(openLeadTimesJql).toContain('created >= "2026-04-01"');
+    expect(openLeadTimesJql).toContain('created >= "2026-01-01"');
+    expect(openLeadTimesJql).toContain('created < "2026-07-01"');
     expect(openLeadTimesJql).toContain('status in ("In Progress", "Awaiting Validation")');
     expect(openLeadTimesJql).toContain('"Team[Team]" in ("team-alpha", "team-beta")');
     expect(openLeadTimesJql).not.toContain('key in');
@@ -1150,6 +1159,8 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     const completedLeadTimesJiraLink = completedLeadTimesSection.getByRole('link', { name: 'Open all completed epics in Jira' });
     await expect(completedLeadTimesJiraLink).toBeVisible();
     const completedLeadTimesJql = decodeURIComponent(new URL(await completedLeadTimesJiraLink.getAttribute('href')).searchParams.get('jql'));
+    expect(completedLeadTimesJql).toContain('created >= "2026-01-01"');
+    expect(completedLeadTimesJql).toContain('created < "2026-07-01"');
     expect(completedLeadTimesJql).toContain('status in ("Done")');
     expect(completedLeadTimesJql).not.toContain('key in');
     const headingLayout = await openLeadTimesSection.locator('.cohort-open-heading').evaluate((heading) => {
@@ -1166,12 +1177,85 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     const cohortCall = callsFor(calls, '/api/stats/epic-cohort', 'POST')[0];
     expect(cohortCall.headers['x-requested-with']).toBe('jira-execution-planner');
     expect(cohortCall.body).toMatchObject({
-        startQuarter: '2026Q2',
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q2',
         teamIds: groupTeamIds,
         components: [],
         refresh: false,
     });
     await captureSmokeScreenshot(page, 'statistics-lead-times');
+
+    // End Quarter reconciliation: last-control-wins, one debounced request per change, and no
+    // request is ever sent with an inverted (start > end) pair.
+    const cohortControls = page.locator('.stats-view.open .cohort-controls');
+    const cohortStartQuarterSelect = cohortControls.locator('.stats-control-group', { hasText: 'Start Quarter' }).locator('select');
+    const cohortEndQuarterSelect = cohortControls.locator('.stats-control-group', { hasText: 'End Quarter' }).locator('select');
+    await expect(cohortStartQuarterSelect).toHaveValue('2026Q1');
+    await expect(cohortEndQuarterSelect).toHaveValue('2026Q2');
+
+    await cohortStartQuarterSelect.selectOption('2026Q3');
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 2);
+    await expect(cohortStartQuarterSelect).toHaveValue('2026Q3');
+    await expect(cohortEndQuarterSelect).toHaveValue('2026Q3');
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[1].body).toMatchObject({
+        startQuarter: '2026Q3',
+        endQuarter: '2026Q3',
+    });
+
+    await cohortEndQuarterSelect.selectOption('2026Q1');
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 3);
+    await expect(cohortStartQuarterSelect).toHaveValue('2026Q1');
+    await expect(cohortEndQuarterSelect).toHaveValue('2026Q1');
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[2].body).toMatchObject({
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q1',
+    });
+
+    callsFor(calls, '/api/stats/epic-cohort', 'POST').forEach((call) => {
+        expect(quarterLabelOrdinal(call.body.startQuarter)).toBeLessThanOrEqual(quarterLabelOrdinal(call.body.endQuarter));
+    });
+
+    // 2026Q3 (not 2026Q2) so this lands on a range never fetched before: the debounced
+    // cohort effect short-circuits on a cohortQueryKey cache hit (cohortCacheRef), and
+    // 2026Q1/2026Q2 was already cached from the very first load above.
+    await cohortEndQuarterSelect.selectOption('2026Q3');
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 4);
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[3].body).toMatchObject({
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q3',
+    });
+    await captureSmokeScreenshot(page, 'statistics-lead-times-quarter-range');
+
+    // Per-group persistence: the reconciled pair round-trips through jira_dashboard_ui_prefs_v1.
+    await expect.poll(() => page.evaluate(() => {
+        const stored = JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}');
+        return { start: stored.cohortStartQuarter, end: stored.cohortEndQuarter };
+    })).toEqual({ start: '2026Q1', end: '2026Q3' });
+
+    // Re-seed the init script with the state actually persisted mid-test (rather than the
+    // original fixture values) so the reload below proves restoration of the user's
+    // interaction, not just of the test's initial seed.
+    const persistedPrefs = await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'));
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, persistedPrefs);
+    const cohortCallCountBeforeReload = callsFor(calls, '/api/stats/epic-cohort', 'POST').length;
+    await page.reload({ waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', cohortCallCountBeforeReload + 1);
+    await expect(cohortStartQuarterSelect).toHaveValue('2026Q1');
+    await expect(cohortEndQuarterSelect).toHaveValue('2026Q3');
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[cohortCallCountBeforeReload].body).toMatchObject({
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q3',
+    });
+
+    // Client-side Group By stays client-side: toggling it never re-fetches the cohort.
+    const cohortRequestCountAfterReload = callsFor(calls, '/api/stats/epic-cohort', 'POST').length;
+    const cohortGroupBySelect = cohortControls.locator('.stats-control-group', { hasText: 'Group By' }).locator('select');
+    await cohortGroupBySelect.selectOption('month');
+    await cohortGroupBySelect.selectOption('quarter');
+    await page.waitForTimeout(400);
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST').length).toBe(cohortRequestCountAfterReload);
 
     await statsTabs.getByRole('radio', { name: 'Excluded Capacity' }).click();
     await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
@@ -1423,6 +1507,7 @@ test('Lead Times caps long epic lists with load more and keeps overflow scrollab
         showStats: true,
         statsView: 'cohort',
         cohortStartQuarter: '2026Q1',
+        cohortEndQuarter: '2026Q1',
     });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });

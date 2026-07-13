@@ -43,6 +43,7 @@ import {
     buildCompletedEpicsBars,
     buildOpenEpicsBars,
     buildQuarterOptions,
+    compareQuarterLabels,
     deriveAssigneeOptions,
     deriveProjectOptions,
     filterCohortIssues,
@@ -693,6 +694,7 @@ import {
             const [cohortLoading, setCohortLoading] = useState(false);
             const [cohortError, setCohortError] = useState('');
             const [cohortStartQuarter, setCohortStartQuarter] = useState(savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel());
+            const [cohortEndQuarter, setCohortEndQuarter] = useState(savedPrefsRef.current.cohortEndQuarter || getCurrentQuarterLabel());
             const [cohortGroupBy, setCohortGroupBy] = useState(resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy));
             const [cohortProjectFilter, setCohortProjectFilter] = useState(savedPrefsRef.current.cohortProjectFilter || 'all');
             const [cohortAssigneeFilter, setCohortAssigneeFilter] = useState(savedPrefsRef.current.cohortAssigneeFilter || 'all');
@@ -4661,6 +4663,7 @@ import {
                     cohortLoading: false,
                     cohortError: '',
                     cohortStartQuarter: savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel(),
+                    cohortEndQuarter: savedPrefsRef.current.cohortEndQuarter || getCurrentQuarterLabel(),
                     cohortGroupBy: resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy),
                     cohortProjectFilter: savedPrefsRef.current.cohortProjectFilter || 'all',
                     cohortAssigneeFilter: savedPrefsRef.current.cohortAssigneeFilter || 'all',
@@ -4763,6 +4766,7 @@ import {
                 cohortLoading,
                 cohortError,
                 cohortStartQuarter,
+                cohortEndQuarter,
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
@@ -4870,6 +4874,7 @@ import {
                 setCohortLoading(false);
                 setCohortError(nextState.cohortError || '');
                 setCohortStartQuarter(nextState.cohortStartQuarter || getCurrentQuarterLabel());
+                setCohortEndQuarter(nextState.cohortEndQuarter || getCurrentQuarterLabel());
                 setCohortGroupBy(resolveCohortGroupBy(nextState.cohortGroupBy));
                 setCohortProjectFilter(nextState.cohortProjectFilter || 'all');
                 setCohortAssigneeFilter(nextState.cohortAssigneeFilter || 'all');
@@ -4976,6 +4981,7 @@ import {
                 cohortLoading,
                 cohortError,
                 cohortStartQuarter,
+                cohortEndQuarter,
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
@@ -5342,6 +5348,7 @@ import {
                     burnoutAssigneeFilter,
                     burndownMetric,
                     cohortStartQuarter,
+                    cohortEndQuarter,
                     cohortGroupBy,
                     cohortProjectFilter,
                     cohortAssigneeFilter,
@@ -5397,6 +5404,7 @@ import {
                 burnoutAssigneeFilter,
                 burndownMetric,
                 cohortStartQuarter,
+                cohortEndQuarter,
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
@@ -6687,9 +6695,10 @@ import {
             }, [selectedSprintInfo?.name, burnoutClosureScopeKey, burnoutScopedTeamSignature, burnoutIssueKeysSignature]);
             const cohortQueryKey = React.useMemo(() => {
                 const startQuarter = String(cohortStartQuarter || '').trim();
-                if (!startQuarter) return '';
-                return `${startQuarter}::${cohortScopedTeamSignature}::${adHocEpicSignature || 'no-adhoc'}`;
-            }, [cohortStartQuarter, cohortScopedTeamSignature, adHocEpicSignature]);
+                const endQuarter = String(cohortEndQuarter || '').trim();
+                if (!startQuarter || !endQuarter) return '';
+                return `${startQuarter}::${endQuarter}::${cohortScopedTeamSignature}::${adHocEpicSignature || 'no-adhoc'}`;
+            }, [cohortStartQuarter, cohortEndQuarter, cohortScopedTeamSignature, adHocEpicSignature]);
 
             useEffect(() => {
                 if (!showStats || statsView !== 'burnout') return;
@@ -6829,9 +6838,10 @@ import {
                 if (!showStats || statsView !== 'cohort') return;
                 if (groupPreferences.onboardingRequired) { setCohortData(null); setCohortError(''); setCohortLoading(false); return; }
                 const startQuarter = String(cohortStartQuarter || '').trim();
-                if (!startQuarter) {
+                const endQuarter = String(cohortEndQuarter || '').trim();
+                if (!startQuarter || !endQuarter) {
                     setCohortData(null);
-                    setCohortError('Start quarter is required.');
+                    setCohortError('Start and end quarter are required.');
                     setCohortLoading(false);
                     return;
                 }
@@ -6859,7 +6869,8 @@ import {
                         const response = await requestEpicCohortStats(
                             BACKEND_URL,
                             {
-                                startQuarter: startQuarter,
+                                startQuarter,
+                                endQuarter,
                                 teamIds: burnoutScopedTeamIds,
                                 components: activeGroupMissingComponents,
                                 adHocCapacityEpics: activeGroupAdHocCapacityEpics,
@@ -6902,7 +6913,7 @@ import {
                         // ignore abort errors
                     }
                 };
-            }, [showStats, statsView, cohortStartQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired]);
+            }, [showStats, statsView, cohortStartQuarter, cohortEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired]);
 
             const cohortQuarterOptions = React.useMemo(() => {
                 return buildQuarterOptions(getCurrentQuarterLabel(), 16);
@@ -14010,7 +14021,26 @@ import {
                                                 className="scenario-input"
                                                 value={cohortStartQuarter}
                                                 onChange={(event) => {
-                                                    setCohortStartQuarter(event.target.value);
+                                                    const nextStart = event.target.value;
+                                                    setCohortStartQuarter(nextStart);
+                                                    if (compareQuarterLabels(nextStart, cohortEndQuarter) > 0) setCohortEndQuarter(nextStart);
+                                                    setCohortSelectedRow(null);
+                                                }}
+                                            >
+                                                {cohortQuarterOptions.map((quarterLabel) => (
+                                                    <option key={quarterLabel} value={quarterLabel}>{quarterLabel}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="stats-control-group">
+                                            <label>End Quarter</label>
+                                            <select
+                                                className="scenario-input"
+                                                value={cohortEndQuarter}
+                                                onChange={(event) => {
+                                                    const nextEnd = event.target.value;
+                                                    setCohortEndQuarter(nextEnd);
+                                                    if (compareQuarterLabels(cohortStartQuarter, nextEnd) > 0) setCohortStartQuarter(nextEnd);
                                                     setCohortSelectedRow(null);
                                                 }}
                                             >
@@ -14121,6 +14151,7 @@ import {
                                         <LeadTimesWorkflowStatusCard
                                             jiraUrl={jiraUrl}
                                             cohortStartQuarter={cohortStartQuarter}
+                                            cohortEndQuarter={cohortEndQuarter}
                                             cohortSummary={cohortSummary}
                                             cohortWorkflowStatusTotal={cohortWorkflowStatusTotal}
                                         />
@@ -14182,6 +14213,7 @@ import {
                                                 cohortSelectedRowLabel={cohortSelectedRowLabel}
                                                 jiraUrl={jiraUrl}
                                                 cohortStartQuarter={cohortStartQuarter}
+                                                cohortEndQuarter={cohortEndQuarter}
                                                 cohortGroupBy={cohortGroupBy}
                                                 cohortSelectedRow={cohortSelectedRow}
                                                 cohortProjectFilter={cohortProjectFilter}

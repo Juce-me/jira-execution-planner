@@ -1091,6 +1091,9 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
     const statsPanel = page.locator('.stats-panel.open');
     const statsTabs = statsPanel.locator('.stats-view-toggle');
+    const legendColors = async (selector) => page.locator(selector).evaluateAll((items) => Object.fromEntries(
+        items.map((item) => [item.textContent.trim(), getComputedStyle(item.querySelector('i')).backgroundColor])
+    ));
     await expect(statsPanel).toBeVisible();
     await expect(statsTabs.getByRole('radio', { name: 'Teams' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator('.stats-view.open .stats-bars')).toBeVisible();
@@ -1101,6 +1104,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await expect(page.locator('.stats-view.open .priority-radar')).toBeVisible();
     await expect(page.locator('.stats-view.open .priority-legend')).toContainText('Alpha Team');
     await expect(page.locator('.stats-view.open .stats-table')).toContainText('Major');
+    const priorityLegendColors = await legendColors('.stats-view.open .priority-legend > span');
     await captureSmokeScreenshot(page, 'statistics-priority');
 
     await statsTabs.getByRole('radio', { name: 'Burndown' }).click();
@@ -1116,6 +1120,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
         includePostSprintClosures: false,
     });
     expect([...burnoutCall.body.issueKeys].sort()).toEqual(expectedStatsIssueKeys);
+    const burnoutLegendColors = await legendColors('.stats-view.open .burnout-legend > span');
     await captureSmokeScreenshot(page, 'statistics-burndown');
 
     await statsTabs.getByRole('radio', { name: 'Lead Times' }).click();
@@ -1175,6 +1180,15 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await statsTabs.getByRole('radio', { name: 'Mono vs Cross' }).click();
     await expect(page.locator('.stats-view.open')).toContainText('Team Cross Share');
     await expect(page.locator('.stats-view.open .excluded-capacity-line-chart')).toBeVisible();
+    await captureSmokeScreenshot(page, 'statistics-mono-cross');
+    const monoCrossLegendColors = await legendColors('.stats-view.open .excluded-capacity-line-legend-item');
+
+    // Acceptance proof for the statistics color-consistency fix: Priority, Burndown, and
+    // Mono vs Cross must resolve the same team to the same color via resolveStatsTeamColor.
+    expect(burnoutLegendColors['Alpha Team']).toBe(priorityLegendColors['Alpha Team']);
+    expect(monoCrossLegendColors['Alpha Team']).toBe(priorityLegendColors['Alpha Team']);
+    expect(burnoutLegendColors['Beta Team']).toBe(priorityLegendColors['Beta Team']);
+    expect(monoCrossLegendColors['Beta Team']).toBe(priorityLegendColors['Beta Team']);
 
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
@@ -1488,6 +1502,9 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     await expect(summary.locator('.stats-card', { hasText: 'Ad Hoc Share' })).toContainText('0.00%');
     await expect(summary.locator('.stats-card', { hasText: 'Product total' })).toContainText('65.00%');
     await expect(summary.locator('.stats-card', { hasText: 'Tech Share' })).toContainText('20.00%');
+    // Excluded SP, Excluded Share, Ad Hoc Share, Product total, Tech Share; Range card removed.
+    await expect(summary.locator('.stats-card')).toHaveCount(5);
+    await expect(summary.locator('.stats-card', { hasText: 'Range' })).toHaveCount(0);
     await expect(summary.getByText('Source')).toHaveCount(0);
     await expect(summary.getByText('Planning config')).toHaveCount(0);
     await expect(summary.getByText('Excluded epic keys from team group settings')).toHaveCount(0);

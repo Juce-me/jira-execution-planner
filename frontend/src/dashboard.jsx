@@ -13620,11 +13620,6 @@ import {
 
                                     <div className="stats-summary excluded-capacity-summary">
                                         <div className="stats-card">
-                                            <h4>Range</h4>
-                                            <div className="stat-value">{excludedCapacitySprintRange.length}</div>
-                                            <div className="stats-note">Selected Jira sprints</div>
-                                        </div>
-                                        <div className="stats-card">
                                             <h4>Excluded SP</h4>
                                             <div className="stat-value">{formatExcludedPoints(effortSplitTotals.excludedCapacityPoints)}</div>
                                             <div className="stats-note">Out of {formatExcludedPoints(effortSplitTotals.totalPoints)} scoped SP</div>

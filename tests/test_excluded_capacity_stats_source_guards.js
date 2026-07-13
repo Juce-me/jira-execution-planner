@@ -109,6 +109,10 @@ test('excluded-capacity summary shows effort share cards instead of source copy'
         'Expected visible Tech Share card'
     );
     assert.ok(
+        !excludedSummaryBlock.includes('<h4>Range</h4>'),
+        'Excluded Capacity summary should not repeat the selected sprint range as a card'
+    );
+    assert.ok(
         !excludedSummaryBlock.includes('<h4>Source</h4>'),
         'Excluded Capacity summary should not render the old Source card'
     );

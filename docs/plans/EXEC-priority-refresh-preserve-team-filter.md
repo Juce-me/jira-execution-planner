@@ -1,8 +1,8 @@
 # Planning Priority Refresh Team-Filter Preservation Implementation Plan
 
-> **Status:** Active. Design approved on 2026-07-12. The current branch contains a partial uncommitted fix and generated build output; execution must preserve and reshape that work, not discard it.
+> **Status:** Implemented and verified locally on `bugfix/priority-change-drops-single-team-filter` (commits `0038c2a`, `e98fb23`, `4efbcb6`, `ff2962e`, `2842c39`); final whole-branch review verdict: ready to merge. Kept as `EXEC-` pending user review/merge.
 
-> **Corrected during execution:** team display names come from the team catalog lookup (`teamNameLookup`) merged with in-session retained task-derived names, not `teamLabels` (which are Jira epic labels); found by final review. The `teamOptions` memo retains each team's last known task-derived name for the session, so names stay stable across refreshes without any new initial-load request. The only remaining degradation is a cold load where a configured team has had no tasks in the session AND the team catalog was never warmed (its option shows the raw team id; the filter selection is still preserved). Catalog warm-up on ENG load was deliberately NOT added, honoring the no-new-initial-load-request acceptance criterion; it is left as a user follow-up decision.
+> **Corrected during execution:** team display names come from the team catalog lookup (`teamNameLookup`) merged with in-session retained task-derived names, not `teamLabels` (which are Jira epic labels); found by final review. The `teamOptions` memo retains each team's last known task-derived name for the session, so names stay stable across refreshes without any new initial-load request. The only remaining degradation is a cold load where a configured team has had no tasks in the session AND the team catalog was never warmed (its option shows the raw team id; the filter selection is still preserved). Catalog warm-up on ENG load was deliberately NOT added, honoring the no-new-initial-load-request acceptance criterion; it is left as a user follow-up decision. The in-session retention glue grew `frontend/src/dashboard.jsx` to `15965` lines, superseding Task 1 Step 7's `15953` ceiling statement (which was met at the extraction commit); the structural budget is ratcheted to the exact value with an itemized comment.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -251,7 +251,7 @@ Run:
 wc -l frontend/src/dashboard.jsx
 ```
 
-Set `LEGACY_ENTRYPOINT_LINE_BUDGETS['frontend/src/dashboard.jsx']` to that exact integer. Expected: the extraction removes the partial fix's `+3` growth and the final value is no greater than the pre-branch ceiling `15953`. Replace the current budget comment with a concise note that the helper extraction reduced or preserved the entrypoint size.
+Set `LEGACY_ENTRYPOINT_LINE_BUDGETS['frontend/src/dashboard.jsx']` to that exact integer. Expected: the extraction removes the partial fix's `+3` growth and the final value is no greater than the pre-branch ceiling `15953`. Replace the current budget comment with a concise note that the helper extraction reduced or preserved the entrypoint size. (Superseded during execution: the extraction met this at `15951`, but the later name-retention correction legitimately grew the file to `15965`; see the top correction note.)
 
 Run:
 

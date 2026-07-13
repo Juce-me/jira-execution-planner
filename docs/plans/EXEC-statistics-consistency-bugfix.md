@@ -1,5 +1,9 @@
 # Statistics Consistency Bugfix Implementation Plan
 
+> **Status:** Implemented and verified on branch `bugfix/statistics-consistency-exec`, integrated into parent `bugfix/statistics-colors-capacity-lead-time` via fast-forward (not pushed; no PR to `main` yet). Kept as `EXEC-` pending user review and merge to `main`, per repo convention for implemented-but-unmerged plans. Execution commits: `a42e7ca` (Task 1 shared team colors), `90d3213` (Task 2 Range-card removal + cross-view color proof), `fd4435a` (Task 3 two-quarter backend contract), `d63d8db` (Task 4 End Quarter state/controls/links), `c4fb36c` (Task 5 generated bundle). Per-task reviews all passed (spec ✅ + quality Approved); final whole-branch review clean (0 Critical/Important). Suites: node 515/515, Python 1052/1052 (+1 Postgres skip), Playwright 153/157 (2 intentional skips + 2 pre-existing `eng_alerts_panel_summary` failures unrelated to this work — branch touches no alert code).
+>
+> **Current accuracy note:** Task 2's "four Excluded Capacity cards" was corrected to FIVE during execution — a pre-existing `Excluded SP` card (present before this branch at base `4b0ce6b`) was omitted from the plan's enumeration. Removing only the redundant `Range` card is correct; the committed test asserts `toHaveCount(5)`. The card-count references below were updated to match reality.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give Priority, Burndown, and Mono vs Cross one group-scoped team-color mapping, remove the redundant Excluded Capacity Range card, and add an inclusive End Quarter to Lead Times.
@@ -263,7 +267,7 @@ git commit -m "fix: unify statistics team colors"
 
 **Interfaces:**
 - Consumes: `resolveStatsTeamColor` from Task 1.
-- Produces: four Excluded Capacity cards: Excluded Share, Ad Hoc Share, Product total, Tech Share.
+- Produces: five Excluded Capacity cards: Excluded SP, Excluded Share, Ad Hoc Share, Product total, Tech Share (Excluded SP pre-existed this branch; only the redundant Range card is removed).
 
 - [ ] **Step 1: Add the failing source assertion**
 
@@ -297,7 +301,7 @@ Do not remove Mono vs Cross or Project Track Range cards.
 In the existing summary test:
 
 ```js
-await expect(summary.locator('.stats-card')).toHaveCount(4);
+await expect(summary.locator('.stats-card')).toHaveCount(5);
 await expect(summary.locator('.stats-card', { hasText: 'Range' })).toHaveCount(0);
 ```
 
@@ -319,7 +323,7 @@ npm run build
 npx playwright test tests/ui/codebase_structure_smoke.spec.js -g "Statistics subviews|Excluded Capacity summary"
 ```
 
-Expected: PASS; settled screenshot shows four compact cards. The build is required because the Statistics subviews smoke test deliberately sets `useCommittedDist: true`; keep the generated dist changes unstaged until Task 5.
+Expected: PASS; settled screenshot shows five compact cards. The build is required because the Statistics subviews smoke test deliberately sets `useCommittedDist: true`; keep the generated dist changes unstaged until Task 5.
 
 - [ ] **Step 6: Commit**
 
@@ -790,7 +794,7 @@ Verify:
 
 ```text
 Priority, Burndown, Mono vs Cross: identical Alpha/Beta colors
-Excluded Capacity: four cards and no blank Range slot
+Excluded Capacity: five cards and no blank Range slot
 Lead Times: both quarter controls; current quarter does not create future empty months
 MRT017: chart hover readouts stay within bounds
 MRT018: long Lead Times lists retain load-more and panel containment

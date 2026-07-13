@@ -39,6 +39,7 @@ test('priority weight helpers normalize rows and fall back to defaults', async (
 test('stats utilities normalize priorities, rates, weights, colors, and radar points', async () => {
     const {
         buildRadarPoints,
+        buildTeamColorMap,
         computePriorityWeighted,
         computeRate,
         formatPercent,
@@ -64,6 +65,20 @@ test('stats utilities normalize priorities, rates, weights, colors, and radar po
         buildRadarPoints({ values: { Blocker: 1 }, radius: 50, center: 60, maxValue: 1, axes: ['Blocker'] }),
         '60.00,10.00'
     );
+
+    const teamColors = buildTeamColorMap([
+        { id: 'team-gamma', name: 'Gamma Team' },
+        { id: 'team-alpha', name: 'Alpha Team' },
+        { id: 'team-beta', name: 'Beta Team' },
+        { id: 'team-beta', name: 'Duplicate Beta' },
+    ]);
+    assert.deepEqual(teamColors, {
+        'team-alpha': '#0ea5e9',
+        'team-beta': '#eab308',
+        'team-gamma': '#84cc16',
+    });
+    assert.equal(resolveTeamColor('team-beta', teamColors), '#eab308');
+    assert.match(resolveTeamColor('team-outside-group', teamColors), /^#[0-9a-f]{6}$/i);
 });
 
 test('cohort summary counts actual open Jira statuses for workflow card', async () => {

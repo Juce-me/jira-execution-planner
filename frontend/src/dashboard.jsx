@@ -71,6 +71,7 @@ import { buildBurnoutChartModel } from './stats/burnoutChartUtils.js';
 import {
     buildLocalStatsFromTasks,
     buildRadarPoints,
+    buildTeamColorMap,
     computePriorityWeighted,
     computeRate,
     formatPercent,
@@ -4537,6 +4538,13 @@ import {
                 });
                 return ids;
             }, [activeGroup]);
+            const statsTeamColorMap = React.useMemo(() => buildTeamColorMap(
+                activeGroupTeamIds.map((teamId) => ({ id: teamId, name: resolveTeamName(teamId) }))
+            ), [activeGroupTeamIds, teamNameLookup]);
+            const resolveStatsTeamColor = React.useCallback(
+                (teamId) => resolveTeamColor(teamId, statsTeamColorMap),
+                [statsTeamColorMap]
+            );
             const activeGroupMissingComponents = React.useMemo(() => {
                 const seen = new Set();
                 const names = [];
@@ -10282,7 +10290,7 @@ import {
                 issueWeightByKey: burnoutIssueWeightByKey,
                 isCompletedSprintSelected,
                 metric: burndownMetric,
-                resolveTeamColor,
+                resolveTeamColor: resolveStatsTeamColor,
                 isClosedStatus: isBurnoutClosedStatus
             }), [
                 burnoutData,
@@ -10292,7 +10300,8 @@ import {
                 burnoutIssueWeightByKey,
                 isCompletedSprintSelected,
                 burndownMetric,
-                isBurnoutClosedStatus
+                isBurnoutClosedStatus,
+                resolveStatsTeamColor
             ]);
 
             const burnoutTotals = burnoutChartModel?.summary || {
@@ -13455,7 +13464,7 @@ import {
                                     buildRadarPoints={buildRadarPoints}
                                     buildPriorityStatLink={buildPriorityStatLink}
                                     formatPercent={formatPercent}
-                                    resolveTeamColor={resolveTeamColor}
+                                    resolveTeamColor={resolveStatsTeamColor}
                                 />
 
                                 <BurnoutChart
@@ -13699,7 +13708,7 @@ import {
                                                         isolatedSeriesId={excludedCapacityIsolatedTeam}
                                                         onSelectSeries={setExcludedCapacityIsolatedTeam}
                                                         onAnalyticsAction={trackStatsAnalyticsAction}
-                                                        resolveTeamColor={resolveTeamColor}
+                                                        resolveTeamColor={resolveStatsTeamColor}
                                                         formatExcludedPoints={formatExcludedPoints}
                                                         formatPercent={formatPercent}
                                                     />
@@ -13815,7 +13824,7 @@ import {
                                                     isolatedSeriesId={excludedCapacityIsolatedTeam}
                                                     onSelectSeries={setExcludedCapacityIsolatedTeam}
                                                     onAnalyticsAction={trackStatsAnalyticsAction}
-                                                    resolveTeamColor={resolveTeamColor}
+                                                    resolveTeamColor={resolveStatsTeamColor}
                                                     formatExcludedPoints={formatExcludedPoints}
                                                     formatPercent={formatPercent}
                                                     ariaLabel="Team cross share per sprint"

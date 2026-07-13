@@ -79,3 +79,29 @@ test('buildBurnoutChartModel filters assignees and closed-before-start stories',
     assert.equal(model.summary.start, 1);
     assert.deepEqual(model.issueSnapshots.map((snapshot) => snapshot.issueKey), ['OPEN-1']);
 });
+
+test('buildBurnoutChartModel preserves injected shared team colors', async () => {
+    const { buildBurnoutChartModel } = await import('../frontend/src/stats/burnoutChartUtils.js');
+    const colors = { 'team-alpha': '#111111', 'team-beta': '#eeeeee' };
+    const model = buildBurnoutChartModel({
+        burnoutData: {
+            range: { startDate: '2026-04-01', endDate: '2026-04-03' },
+            issuesMeta: [
+                { issueKey: 'A-1', createdDate: '2026-03-30', teamAtStart: { id: 'team-alpha', name: 'Alpha Team' }, assignee: {} },
+                { issueKey: 'B-1', createdDate: '2026-03-30', teamAtStart: { id: 'team-beta', name: 'Beta Team' }, assignee: {} },
+            ],
+            events: [],
+        },
+        assigneeFilter: 'all',
+        taskTeamByIssueKey: new Map(),
+        taskStatusByIssueKey: new Map([['A-1', 'to do'], ['B-1', 'to do']]),
+        issueWeightByKey: new Map([['A-1', 1], ['B-1', 1]]),
+        isCompletedSprintSelected: false,
+        metric: 'issueCount',
+        resolveTeamColor: (teamId) => colors[teamId],
+    });
+    assert.deepEqual(model.teams.map(({ key, color }) => [key, color]), [
+        ['team-alpha', '#111111'],
+        ['team-beta', '#eeeeee'],
+    ]);
+});

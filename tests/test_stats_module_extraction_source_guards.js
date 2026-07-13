@@ -110,6 +110,14 @@ test('dashboard no longer owns extracted statistics implementation bodies', () =
     });
 });
 
+test('statistics team colors are unified through one shared resolver', () => {
+    const burnoutUtilsSource = readStatsFile('burnoutChartUtils.js');
+    assert.equal(burnoutUtilsSource.includes("import { RADAR_PALETTE }"), false);
+    assert.equal(burnoutUtilsSource.includes('team.color = RADAR_PALETTE'), false);
+    assert.ok(dashboardSource.includes('resolveTeamColor: resolveStatsTeamColor'));
+    assert.ok((dashboardSource.match(/resolveTeamColor=\{resolveStatsTeamColor\}/g) || []).length >= 3);
+});
+
 test('extracted statistics components own their expected view markup', () => {
     assert.ok(readStatsFile('StatsDeliverySummary.jsx').includes("setStatsGraphMode('absolute')"));
     assert.ok(readStatsFile('StatsTeamsView.jsx').includes('stats-bars'));

@@ -50,10 +50,36 @@ export function hashTeamId(value) {
     return Math.abs(hash);
 }
 
-export function resolveTeamColor(teamId) {
+export function buildTeamColorMap(teams) {
+    if (!RADAR_PALETTE.length) return {};
+    const byId = new Map();
+    (teams || []).forEach((team) => {
+        const id = String(team?.id || '').trim();
+        if (!id || id === 'all' || byId.has(id)) return;
+        const name = String(team?.name || id).trim() || id;
+        byId.set(id, { id, name });
+    });
+    return Object.fromEntries(
+        Array.from(byId.values())
+            .sort((a, b) => {
+                const leftName = a.name.toLowerCase();
+                const rightName = b.name.toLowerCase();
+                if (leftName < rightName) return -1;
+                if (leftName > rightName) return 1;
+                if (a.id < b.id) return -1;
+                if (a.id > b.id) return 1;
+                return 0;
+            })
+            .map((team, index) => [team.id, RADAR_PALETTE[index % RADAR_PALETTE.length]])
+    );
+}
+
+export function resolveTeamColor(teamId, colorMap = null) {
+    const key = String(teamId || '').trim();
+    const mapped = key && colorMap ? colorMap[key] : '';
+    if (mapped) return mapped;
     if (!RADAR_PALETTE.length) return '#94a3b8';
-    const index = hashTeamId(teamId) % RADAR_PALETTE.length;
-    return RADAR_PALETTE[index];
+    return RADAR_PALETTE[hashTeamId(key) % RADAR_PALETTE.length];
 }
 
 // Categorical color for a Project Track value. Fixed colors for the known tracks

@@ -23,7 +23,7 @@ test('configured group teams stay available when fetched task data omits the sel
         buildTeamOptionsForScope({
             capacityTasks: [{ teamId: 'team-beta', teamName: 'Beta Team' }],
             activeGroupTeamIds: ['team-alpha', 'team-beta'],
-            activeGroupTeamLabels: {
+            teamNameLookup: {
                 'team-alpha': 'Alpha Team',
                 'team-beta': 'Beta Team'
             },
@@ -49,13 +49,55 @@ test('team options fall back to fetched task teams only without configured group
                 { teamId: 'team-beta', teamName: 'Beta Team' }
             ],
             activeGroupTeamIds: [],
-            activeGroupTeamLabels: {},
+            teamNameLookup: {},
             getTeamInfo
         }),
         [
             { id: 'all', name: 'All Teams' },
             { id: 'team-alpha', name: 'Alpha Team' },
             { id: 'team-beta', name: 'Beta Team' }
+        ]
+    );
+});
+
+test('configured team options dedupe repeated IDs and drop blank IDs', async () => {
+    const { buildTeamOptionsForScope } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const getTeamInfo = task => ({ id: task?.teamId, name: task?.teamName });
+
+    assert.deepEqual(
+        buildTeamOptionsForScope({
+            capacityTasks: [],
+            activeGroupTeamIds: ['team-alpha', 'team-alpha', ' ', 'team-beta'],
+            teamNameLookup: {
+                'team-alpha': 'Alpha Team',
+                'team-beta': 'Beta Team'
+            },
+            getTeamInfo
+        }),
+        [
+            { id: 'all', name: 'All Teams' },
+            { id: 'team-alpha', name: 'Alpha Team' },
+            { id: 'team-beta', name: 'Beta Team' }
+        ]
+    );
+});
+
+test('configured team names resolve from the catalog lookup, then task data, then the raw id', async () => {
+    const { buildTeamOptionsForScope } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const getTeamInfo = task => ({ id: task?.teamId, name: task?.teamName });
+
+    assert.deepEqual(
+        buildTeamOptionsForScope({
+            capacityTasks: [{ teamId: 'team-beta', teamName: 'Beta From Task' }],
+            activeGroupTeamIds: ['team-alpha', 'team-beta', 'team-gamma'],
+            teamNameLookup: { 'team-alpha': 'Alpha Team' },
+            getTeamInfo
+        }),
+        [
+            { id: 'all', name: 'All Teams' },
+            { id: 'team-alpha', name: 'Alpha Team' },
+            { id: 'team-beta', name: 'Beta From Task' },
+            { id: 'team-gamma', name: 'team-gamma' }
         ]
     );
 });

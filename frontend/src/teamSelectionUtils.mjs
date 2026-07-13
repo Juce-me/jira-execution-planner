@@ -18,7 +18,7 @@ export function selectedTeamSelectionsEqual(left, right) {
 export function buildTeamOptionsForScope({
     capacityTasks = [],
     activeGroupTeamIds = [],
-    activeGroupTeamLabels = {},
+    teamNameLookup = {},
     getTeamInfo = () => ({})
 } = {}) {
     const allTeams = { id: 'all', name: 'All Teams' };
@@ -33,11 +33,25 @@ export function buildTeamOptionsForScope({
     });
 
     if (configuredTeamIds.length) {
+        // Configured team IDs are authoritative for availability; display names come from the
+        // team catalog lookup (teamNameById/teamCatalog), NOT group teamLabels (those are Jira
+        // epic labels). Task-derived names are the fallback so names still render before the
+        // catalog loads; the raw id is the last resort.
+        const taskNames = {};
+        (capacityTasks || []).forEach((task) => {
+            const team = getTeamInfo(task) || {};
+            const id = String(team.id || '').trim();
+            if (!id || Object.prototype.hasOwnProperty.call(taskNames, id)) return;
+            const name = String(team.name || '').trim();
+            if (name) {
+                taskNames[id] = name;
+            }
+        });
         return [
             allTeams,
             ...configuredTeamIds.map(id => ({
                 id,
-                name: String(activeGroupTeamLabels?.[id] || id).trim() || id
+                name: String(teamNameLookup?.[id] || taskNames[id] || id).trim() || id
             }))
         ];
     }

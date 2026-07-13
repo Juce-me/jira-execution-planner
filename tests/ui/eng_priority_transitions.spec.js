@@ -13,9 +13,22 @@ const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const activeSprintId = 3001;
 const activeSprintName = '2026Q2 Sprint 42';
 const groupTeamIds = ['team-alpha', 'team-beta'];
+// group.teamLabels maps team ID -> Jira EPIC LABEL (Future Planning epic matching / JQL), never a
+// display name. Values are label slugs on purpose so team display names must come from the team
+// catalog (below), not from teamLabels.
 const groupTeamLabels = {
-    'team-alpha': 'Alpha Team',
-    'team-beta': 'Beta Team',
+    'team-alpha': 'alpha_team_label',
+    'team-beta': 'beta_team_label',
+};
+// Team display names flow through the real production path: GET /api/team-catalog ->
+// { catalog: { <id>: { id, name } }, meta } -> availableTeams (buildTeamCatalogList) + teamCatalog
+// -> teamNameLookup -> teamOptions names.
+const teamCatalogPayload = {
+    catalog: {
+        'team-alpha': { id: 'team-alpha', name: 'Alpha Team' },
+        'team-beta': { id: 'team-beta', name: 'Beta Team' },
+    },
+    meta: {},
 };
 // The esbuild bundle strips CSS (loader '.css': 'empty'); the priority menu styles live in
 // status-transitions.css (shared .issue-field/.priority-transition selectors) and the
@@ -199,6 +212,7 @@ async function installEngPriorityFixture(page, {
         if (url.pathname === '/api/version') return json(route, { enabled: false });
         if (url.pathname === '/api/groups-config' && request.method() === 'GET') return json(route, groupsConfigPayload);
         if (url.pathname === '/api/groups-config' && request.method() === 'POST') return json(route, groupsConfigPayload);
+        if (url.pathname === '/api/team-catalog' && request.method() === 'GET') return json(route, teamCatalogPayload);
         if (url.pathname === '/api/projects/selected') return json(route, { selected: [] });
         if (url.pathname === '/api/stats/priority-weights-config') return json(route, { weights: [], source: 'test' });
         if (url.pathname === '/api/sprints') {
@@ -565,6 +579,17 @@ test('Planning priority refresh preserves a configured single-team filter when r
     const teamLabel = teamToggle.locator('.team-dropdown-selection-label');
     await expect(teamLabel).toHaveText('Alpha Team');
     await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+
+    // Warm teamNameLookup through the real production path: opening the team-groups Settings modal
+    // fires loadTeamCatalog() -> GET /api/team-catalog, which populates the team catalog / available
+    // teams that feed teamNameLookup. This is the durable display-name source that must outlive a
+    // task refresh dropping a configured team's issues; task-derived names cannot name a team once
+    // its issues are gone. (teamLabels are Jira epic labels and are deliberately NOT a name source.)
+    await page.locator('.group-gear-button').first().click();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/team-catalog').length).toBeGreaterThan(0);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.group-modal-backdrop')).toHaveCount(0);
+    await expect(teamLabel).toHaveText('Alpha Team');
     await page.screenshot({ path: path.join(screenshotDir, 'before-refresh.png'), fullPage: false });
 
     const initialTaskRequestCount = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
@@ -573,6 +598,9 @@ test('Planning priority refresh preserves a configured single-team filter when r
 
     await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length)
         .toBeGreaterThan(initialTaskRequestCount);
+    // The refreshed payload drops PROD-1 (Alpha) and returns only a Beta story, so proving the
+    // Alpha row is gone confirms the following assertions run against post-refresh state.
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toHaveCount(0);
     await expect(teamLabel).toHaveText('Alpha Team');
 
     // Interacting with PROD-1's priority menu scrolls the page down past the sticky header,

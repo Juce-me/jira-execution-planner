@@ -2,6 +2,8 @@
 
 > **Status:** Active. Design approved on 2026-07-12. The current branch contains a partial uncommitted fix and generated build output; execution must preserve and reshape that work, not discard it.
 
+> **Corrected during execution:** team display names come from the team catalog lookup (`teamNameLookup`), not `teamLabels` (which are Jira epic labels); found by final review.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Keep a configured single-team ENG filter selected when a successful Planning priority change refreshes task data that temporarily contains no issues for that team.
@@ -13,7 +15,7 @@
 ## Global Constraints
 
 - Preserve all existing scoped selection storage keys and payloads; do not migrate or clear browser storage.
-- When `activeGroupTeamIds` is non-empty, build options only from those configured IDs and `activeGroupTeamLabels`; issue/task results must not add or remove options.
+- When `activeGroupTeamIds` is non-empty, build options only from those configured IDs, resolving each display name from the team catalog lookup (`teamNameLookup`) with a task-derived name and then the raw id as fallbacks; issue/task results must not add or remove options. `teamLabels` are Jira epic labels, never display names, and must not be used as the option name source.
 - Preserve the existing task-derived fallback only when the active group has no configured team IDs.
 - A team that is removed from the configured group catalog remains invalid and must still reconcile to `All Teams`.
 - Do not alter priority mutation APIs, OAuth/CSRF behavior, Jira request payloads, refresh fan-out, or Catch Up targeted-update behavior.
@@ -26,7 +28,7 @@
 
 | State | Team-option source | Required result |
 | --- | --- | --- |
-| Active group has configured `teamIds` | `activeGroup.teamIds` and `activeGroup.teamLabels` | Every configured team remains available even with zero returned issues; issue-only teams are excluded. |
+| Active group has configured `teamIds` | `activeGroup.teamIds` for availability; display names from the team catalog lookup (`teamNameLookup`), then task-derived names, then the raw id (never `teamLabels`, which are Jira epic labels) | Every configured team remains available even with zero returned issues; issue-only teams are excluded. |
 | Active group has no configured `teamIds` | Unique team IDs/names from `capacityTasks` through `getTeamInfo` | Preserve the current legacy fallback. |
 | Selected team remains configured but disappears from refreshed issues | Configured group catalog | Keep the visible selection and scoped storage value. |
 | Selected team is removed from configured group catalog | Configured group catalog | Existing reconciliation falls back to `All Teams`. |
@@ -82,7 +84,7 @@ No backend files, route policies, CSS, storage schemas, or analytics schemas cha
 
 **Interfaces:**
 
-- Consumes: `capacityTasks: Array<object>`, `activeGroupTeamIds: Array<string>`, `activeGroupTeamLabels: Record<string,string>`, and `getTeamInfo(task): {id?: string, name?: string}`.
+- Consumes: `capacityTasks: Array<object>`, `activeGroupTeamIds: Array<string>`, `teamNameLookup: Record<string,string>` (team id → display name, from the team catalog), and `getTeamInfo(task): {id?: string, name?: string}`. (Corrected during execution: the shipped helper takes `teamNameLookup`, not `activeGroupTeamLabels`; `teamLabels` are Jira epic labels, not display names.)
 - Produces: `buildTeamOptionsForScope(args): Array<{id: string, name: string}>`, always beginning with `{ id: 'all', name: 'All Teams' }`.
 
 - [x] **Step 1: Record and preserve the partial working-tree baseline**
@@ -162,6 +164,8 @@ Expected before helper extraction: FAIL because `buildTeamOptionsForScope` is no
 - [x] **Step 4: Implement the smallest pure helper**
 
 Add to `frontend/src/teamSelectionUtils.mjs`:
+
+> **Corrected during execution:** the shipped helper takes `teamNameLookup` (team id → display name from the team catalog), not `activeGroupTeamLabels`. Configured display names resolve `teamNameLookup[id]` first, then a task-derived name (from `capacityTasks` via `getTeamInfo`), then the raw id. `teamLabels` are Jira epic labels used for Future Planning epic matching and JQL, never display names. The code block below shows the original (superseded) signature; the illustrative test and memo blocks in Steps 2 and 5 change `activeGroupTeamLabels` to `teamNameLookup` accordingly.
 
 ```js
 export function buildTeamOptionsForScope({
@@ -278,6 +282,8 @@ Expected: only the helper, dashboard wiring, behavioral tests, and budget guard 
 
 - Consumes: the existing `installEngPriorityFixture`, `setPrefs`, `priorityTrigger`, and `priorityMenu` helpers.
 - Produces: one regression test that observes the existing priority POST, ensuing task refetch, visible team label, dropdown catalog, and scoped local-storage state.
+
+> **Corrected during execution:** the fixture's synthetic group carries `teamLabels` as Jira epic-label slugs (not display names), and team display names are served through the real `GET /api/team-catalog` endpoint (`{ catalog: { <id>: { id, name } }, meta }`). `teamNameLookup` is only populated when `loadTeamCatalog()` runs, which fires on opening the team-groups Settings modal — there is no ENG-load path — so the regression opens Settings once to warm the catalog through that real endpoint before asserting the configured team name survives the refresh. Residual limitation: on a fresh ENG session where Settings was never opened, a configured team whose issues are dropped by the refresh falls back to its task-derived name and then the raw team id; the filter selection itself is still preserved.
 
 - [x] **Step 1: Extend the existing synthetic fixture without changing production APIs**
 
@@ -517,7 +523,7 @@ git log --oneline -5
 
 Expected: all frontend unit and Python tests pass; no whitespace errors; only plan-scoped source, tests, docs, and generated dist changes remain. Review output for secrets, real Jira data, absolute local paths, and unintended artifacts.
 
-- [ ] **Step 6: Commit docs and generated assets**
+- [x] **Step 6: Commit docs and generated assets**
 
 ```bash
 git add docs/README_ANALYTICS.md docs/plans/README.md docs/plans/EXEC-priority-refresh-preserve-team-filter.md frontend/dist/dashboard.js frontend/dist/dashboard.js.map

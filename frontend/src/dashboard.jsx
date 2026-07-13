@@ -6371,9 +6371,9 @@ import {
             const teamOptions = React.useMemo(() => buildTeamOptionsForScope({
                 capacityTasks,
                 activeGroupTeamIds,
-                activeGroupTeamLabels,
+                teamNameLookup,
                 getTeamInfo
-            }), [capacityTasks, activeGroupTeamIds, activeGroupTeamLabels]);
+            }), [capacityTasks, activeGroupTeamIds, teamNameLookup]);
             const teamNameById = React.useMemo(() => {
                 const map = new Map();
                 teamOptions.forEach(team => {

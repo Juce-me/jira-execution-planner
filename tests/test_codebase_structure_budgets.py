@@ -53,8 +53,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # bugfix/priority-change-drops-single-team-filter extracts teamOptions construction into
     # the pure buildTeamOptionsForScope helper in teamSelectionUtils.mjs (configured group
     # teams stay authoritative across a Planning task refetch instead of being scanned from
-    # fetched capacityTasks), which nets the entrypoint down below the prior ceiling.
-    "frontend/src/dashboard.jsx": 15951,
+    # fetched capacityTasks), and adds in-session retention of task-derived team display
+    # names in the teamOptions memo so a configured team keeps its visible name when a
+    # refresh drops its issues without any new initial-load request (+14 over the 15951
+    # extraction result).
+    "frontend/src/dashboard.jsx": 15965,
 }
 
 

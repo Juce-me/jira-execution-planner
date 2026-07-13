@@ -6368,12 +6368,26 @@ import {
             const techTasksCount = techTasks.length;
             const productTasksCount = productTasks.length;
 
-            const teamOptions = React.useMemo(() => buildTeamOptionsForScope({
-                capacityTasks,
-                activeGroupTeamIds,
-                teamNameLookup,
-                getTeamInfo
-            }), [capacityTasks, activeGroupTeamIds, teamNameLookup]);
+            // Retain each team's last known task-derived display name for the session so a
+            // configured team keeps its name when a refresh drops its issues; the warmed team
+            // catalog lookup still wins when present.
+            const lastKnownTeamNamesRef = React.useRef({});
+            const teamOptions = React.useMemo(() => {
+                const taskNames = {};
+                (capacityTasks || []).forEach((task) => {
+                    const team = getTeamInfo(task) || {};
+                    const id = String(team.id || '').trim();
+                    const name = String(team.name || '').trim();
+                    if (id && name) taskNames[id] = name;
+                });
+                lastKnownTeamNamesRef.current = { ...lastKnownTeamNamesRef.current, ...taskNames };
+                return buildTeamOptionsForScope({
+                    capacityTasks,
+                    activeGroupTeamIds,
+                    teamNameLookup: { ...lastKnownTeamNamesRef.current, ...teamNameLookup },
+                    getTeamInfo
+                });
+            }, [capacityTasks, activeGroupTeamIds, teamNameLookup]);
             const teamNameById = React.useMemo(() => {
                 const map = new Map();
                 teamOptions.forEach(team => {

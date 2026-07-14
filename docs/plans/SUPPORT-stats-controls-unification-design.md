@@ -56,8 +56,11 @@ close and optional type-ahead search (useful for long sprint lists). Props: `lab
 - Lead Times: replace both native quarter selects with `RangeSelectDropdown` bound to
   `cohortStartQuarter/EndQuarter` + `cohortQuarterOptions`. **The last-control-wins reconciliation and
   the debounced refetch stay in the parent onChange** — the widget only reports the chosen value.
-- **Control-label text shortens to just `Start` and `End`** in every view (dropping "Sprint"/"Quarter").
-  The selected value shown inside the dropdown still names the sprint/quarter.
+- **Two label elements per control** (per the inspected DOM): the `ControlField` `control-label`
+  span = **`Start`** / **`End`** (position); the bare `<label>` element = the **kind**, **`Sprint`**
+  for the three sprint views and **`Quarter`** for Lead Times. Today's single `<label>Start Sprint</label>`
+  splits into `control-label "Start"` + `<label>Sprint</label>`. The dropdown toggle shows the selected
+  sprint/quarter value.
 
 ### C. Lead Times Capacity → two exclude checkboxes
 
@@ -111,8 +114,12 @@ segmented controls use. Remains client-side regrouping — **no refetch**.
 - Source guards for `cohortExcludeAdHoc` persistence sites.
 - `npm run build`; full unit + Playwright suites; rebuild dist drift-free.
 
-## Open Questions For Reviewer
+## Labeling (resolved)
 
-1. **"label will become sprint"** is implemented as: the *widget* becomes the shared sprint-style
-   dropdown, and the visible control-label text becomes `Start` / `End`. Correct?
-2. **Global top SPRINT control** left unchanged in this work (risk reduction) — agree, or unify it too?
+Each range control renders both label elements: `control-label` span = `Start` / `End`; bare `<label>`
+= `Sprint` (sprint views) / `Quarter` (Lead Times). Exact visual arrangement (order/size) will be shown
+in a screenshot during implementation and matched to the existing control styling.
+
+## Open Question For Reviewer
+
+- **Global top SPRINT control** left unchanged in this work (risk reduction) — agree, or unify it too?

@@ -52,14 +52,10 @@
             min-width: 0;
         }
 
-        .excluded-capacity-filter-controls .excluded-capacity-start-sprint-control {
-            grid-column: 2;
+        .excluded-capacity-filter-controls [data-stats-range="excluded-capacity-sprint"] {
+            grid-column: 2 / span 2;
             grid-row: 1;
-        }
-
-        .excluded-capacity-filter-controls .excluded-capacity-end-sprint-control {
-            grid-column: 3;
-            grid-row: 1;
+            min-width: 0;
         }
 
         .excluded-capacity-filter-controls .excluded-capacity-sprint-control {
@@ -566,8 +562,7 @@
             }
 
             .excluded-capacity-filter-controls .excluded-capacity-epic-filter,
-            .excluded-capacity-filter-controls .excluded-capacity-start-sprint-control,
-            .excluded-capacity-filter-controls .excluded-capacity-end-sprint-control {
+            .excluded-capacity-filter-controls [data-stats-range="excluded-capacity-sprint"] {
                 grid-column: auto;
                 grid-row: auto;
             }

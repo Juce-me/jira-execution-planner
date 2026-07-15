@@ -1638,6 +1638,23 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     await expect(rangeGroup.getByRole('button', { name: 'Start sprint' })).toBeVisible();
     await expect(rangeGroup.getByRole('button', { name: 'End sprint' })).toBeVisible();
 
+    // The merged range group must lay Start/End out side by side (not stacked)
+    // with no clipped toggle text, and get enough width for both (MRT020).
+    const rangeGeometry = await rangeGroup.evaluate((group) => {
+        const toggles = Array.from(group.querySelectorAll('.sprint-dropdown-toggle'));
+        return {
+            groupWidth: group.getBoundingClientRect().width,
+            tops: toggles.map((toggle) => toggle.getBoundingClientRect().top),
+            overflow: toggles.map((toggle) => ({ scrollWidth: toggle.scrollWidth, clientWidth: toggle.clientWidth })),
+        };
+    });
+    expect(rangeGeometry.tops).toHaveLength(2);
+    expect(rangeGeometry.tops[0]).toBe(rangeGeometry.tops[1]);
+    for (const { scrollWidth, clientWidth } of rangeGeometry.overflow) {
+        expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    }
+    expect(rangeGeometry.groupWidth).toBeGreaterThanOrEqual(240);
+
     const summary = page.locator('.stats-view.open .excluded-capacity-summary');
     await expect(summary).toBeVisible();
     await expect(summary.locator('.stats-card', { hasText: 'Excluded Share' })).toContainText('15.00%');

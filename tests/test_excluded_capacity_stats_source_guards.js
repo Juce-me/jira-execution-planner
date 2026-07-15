@@ -625,13 +625,15 @@ test('excluded-capacity controls reserve the wide column for the epic filter', (
         dashboardSource.includes('excluded-capacity-filter-controls'),
         'Expected excluded capacity controls to opt into the compact sprint/filter layout'
     );
-    assert.ok(
-        dashboardSource.includes('excluded-capacity-start-sprint-control'),
-        'Expected start sprint control to be targetable as a compact sprint selector'
+    assert.match(
+        dashboardSource,
+        /<StatsRangeControl\s+idPrefix="excluded-capacity-sprint"[\s\S]*?startValue=\{excludedCapacityStartSprintId\}[\s\S]*?endValue=\{excludedCapacityEndSprintId\}/,
+        'Expected the unified sprint range control to be bound to the excluded-capacity start/end sprint state'
     );
-    assert.ok(
-        dashboardSource.includes('excluded-capacity-end-sprint-control'),
-        'Expected end sprint control to be targetable as a compact sprint selector'
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-filter-controls \[data-stats-range="excluded-capacity-sprint"\]\s*\{[\s\S]*grid-column:\s*2 \/ span 2/,
+        'Expected the unified sprint range group to span both compact sprint columns'
     );
     assert.match(
         cssSource,

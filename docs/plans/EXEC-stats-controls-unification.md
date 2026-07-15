@@ -642,7 +642,7 @@ git commit -m "refactor: make lead times group by a segmented control"
 
 **Interfaces:** `filterCohortIssues` accepts `excludeAdHoc: boolean`, drops the inclusive `capacityType` selector. `cohortExcludeAdHoc` defaults false; `cohortExcludeCapacity` keeps its existing default true and key. A saved legacy `cohortCapacityFilter: 'ad_hoc'` does not map to the inverse exclusion control; it resets to `cohortExcludeAdHoc: false`, then disappears on the next preference save.
 
-- [ ] **Step 1: Failing `filterCohortIssues` test** — replace the ad-hoc-narrowing test in `tests/test_stats_utils.js:107-122` with:
+- [x] **Step 1: Failing `filterCohortIssues` test** — replace the ad-hoc-narrowing test in `tests/test_stats_utils.js:107-122` with:
 
 ```js
 test('filterCohortIssues drops ad_hoc records only when excludeAdHoc is set', async () => {
@@ -660,9 +660,9 @@ test('filterCohortIssues drops ad_hoc records only when excludeAdHoc is set', as
 
 Update the `:124-150` test to exercise `excludeAdHoc` (ad_hoc epic dropped under `excludeAdHoc:true`, present otherwise) instead of the removed `capacityType` narrowing.
 
-- [ ] **Step 2: Run — verify fail:** `fnm exec --using 20 node --test tests/test_stats_utils.js` → FAIL.
+- [x] **Step 2: Run — verify fail:** `fnm exec --using 20 node --test tests/test_stats_utils.js` → FAIL.
 
-- [ ] **Step 3: Update `filterCohortIssues`** — in `cohort/cohortUtils.js` replace `const capacityFilter = String(filters.capacityType || 'all');` with `const excludeAdHoc = Boolean(filters.excludeAdHoc);` and replace the capacity clause with:
+- [x] **Step 3: Update `filterCohortIssues`** — in `cohort/cohortUtils.js` replace `const capacityFilter = String(filters.capacityType || 'all');` with `const excludeAdHoc = Boolean(filters.excludeAdHoc);` and replace the capacity clause with:
 
 ```js
         if (excludeAdHoc && String(issue?.capacityType || '') === 'ad_hoc') {
@@ -670,15 +670,15 @@ Update the `:124-150` test to exercise `excludeAdHoc` (ad_hoc epic dropped under
         }
 ```
 
-- [ ] **Step 4: Run — verify pass:** `fnm exec --using 20 node --test tests/test_stats_utils.js` → PASS.
+- [x] **Step 4: Run — verify pass:** `fnm exec --using 20 node --test tests/test_stats_utils.js` → PASS.
 
-- [ ] **Step 5: State + explicit legacy behavior** — in `dashboard.jsx` delete `resolveCohortCapacityFilter` (`:684`) and `cohortCapacityFilter` useState (`:701`); add after `:702`:
+- [x] **Step 5: State + explicit legacy behavior** — in `dashboard.jsx` delete `resolveCohortCapacityFilter` (`:684`) and `cohortCapacityFilter` useState (`:701`); add after `:702`:
 
 ```jsx
 const [cohortExcludeAdHoc, setCohortExcludeAdHoc] = useState(Boolean(savedPrefsRef.current.cohortExcludeAdHoc));
 ```
 
-- [ ] **Step 6: Replace the Capacity dropdown with two checkboxes** — replace `dashboard.jsx:14098-14111` with:
+- [x] **Step 6: Replace the Capacity dropdown with two checkboxes** — replace `dashboard.jsx:14098-14111` with:
 
 ```jsx
 <div className="stats-control-group project-track-exclusions" data-stats-capacity-filters>
@@ -696,9 +696,9 @@ const [cohortExcludeAdHoc, setCohortExcludeAdHoc] = useState(Boolean(savedPrefsR
 </div>
 ```
 
-- [ ] **Step 7: Remove the standalone "Excluded Capacity" toggle button** at `dashboard.jsx:14114-14124`; keep the `cohortStatusControls.map(...)` status toggles.
+- [x] **Step 7: Remove the standalone "Excluded Capacity" toggle button** at `dashboard.jsx:14114-14124`; keep the `cohortStatusControls.map(...)` status toggles.
 
-- [ ] **Step 8: Update the filter memo** at `:6930-6938`:
+- [x] **Step 8: Update the filter memo** at `:6930-6938`:
 
 ```jsx
 const cohortFilteredIssues = React.useMemo(() => {
@@ -712,11 +712,11 @@ const cohortFilteredIssues = React.useMemo(() => {
 }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
 ```
 
-- [ ] **Step 9: Persistence** — at all four state-transfer sites (`buildDefaultGroupState:4670`, `buildGroupStateSnapshot` payload `:4773` + memo deps `:4988`, `applyGroupState:4881`, `saveUiPrefs` payload `:5355` + effect deps `:5411`): remove `cohortCapacityFilter`, add `cohortExcludeAdHoc`. Defaults: `buildDefaultGroupState` → `cohortExcludeAdHoc: Boolean(savedPrefsRef.current.cohortExcludeAdHoc)`; `applyGroupState` → `setCohortExcludeAdHoc(Boolean(nextState.cohortExcludeAdHoc))`. Leave `cohortExcludeCapacity` at every site. Because `saveUiPrefs` replaces the entire localStorage object, the next save must remove the obsolete legacy key.
+- [x] **Step 9: Persistence** — at all four state-transfer sites (`buildDefaultGroupState:4670`, `buildGroupStateSnapshot` payload `:4773` + memo deps `:4988`, `applyGroupState:4881`, `saveUiPrefs` payload `:5355` + effect deps `:5411`): remove `cohortCapacityFilter`, add `cohortExcludeAdHoc`. Defaults: `buildDefaultGroupState` → `cohortExcludeAdHoc: Boolean(savedPrefsRef.current.cohortExcludeAdHoc)`; `applyGroupState` → `setCohortExcludeAdHoc(Boolean(nextState.cohortExcludeAdHoc))`. Leave `cohortExcludeCapacity` at every site. Because `saveUiPrefs` replaces the entire localStorage object, the next save must remove the obsolete legacy key.
 
-- [ ] **Step 10: Reuse the corrected checkbox layout** — in `styles/stats/project-track.css:21`, broaden only `.project-track-controls .stats-control-group.project-track-exclusions` to `.stats-control-group.project-track-exclusions`. Leave every child rule unchanged; do not add a Lead Times override. Re-run Project Track's label-boundary and SegmentedControl geometry assertions because MRT020/MRT021 make sibling-control verification mandatory.
+- [x] **Step 10: Reuse the corrected checkbox layout** — in `styles/stats/project-track.css:21`, broaden only `.project-track-controls .stats-control-group.project-track-exclusions` to `.stats-control-group.project-track-exclusions`. Leave every child rule unchanged; do not add a Lead Times override. Re-run Project Track's label-boundary and SegmentedControl geometry assertions because MRT020/MRT021 make sibling-control verification mandatory.
 
-- [ ] **Step 11: Source guard for `cohortExcludeAdHoc`** — in `tests/test_stats_module_extraction_source_guards.js`, add:
+- [x] **Step 11: Source guard for `cohortExcludeAdHoc`** — in `tests/test_stats_module_extraction_source_guards.js`, add:
 
 ```js
 test('cohort capacity exclusions replace the legacy inclusive filter at every state site', () => {
@@ -758,7 +758,7 @@ test('cohort capacity exclusions replace the legacy inclusive filter at every st
 });
 ```
 
-- [ ] **Step 12: Rewrite the analytics guard** in `tests/test_analytics_source_guards.js`:
+- [x] **Step 12: Rewrite the analytics guard** in `tests/test_analytics_source_guards.js`:
 
 ```js
 test('Lead Times capacity exclusions change local state without an app-owned event', () => {
@@ -779,7 +779,7 @@ test('Lead Times capacity exclusions change local state without an app-owned eve
 
 Do not regex against a closing `</select>` that no longer exists.
 
-- [ ] **Step 13: Analytics doc** — replace the existing row (do not add a second row):
+- [x] **Step 13: Analytics doc** — replace the existing row (do not add a second row):
 
 ```markdown
 | Lead Times capacity cohort filter | `frontend/src/dashboard.jsx`, `frontend/src/cohort/cohortUtils.js` | The existing uninstrumented local-only Capacity filter is expressed as `Exclude Ad Hoc` and `Exclude Excluded Capacity` checkboxes. Both only re-slice already-fetched issues, add no request or data contract, and send no epic keys, summaries, team names, or other user data; this preserves the existing no-event decision. | 2026-07-15 |
@@ -787,7 +787,7 @@ Do not regex against a closing `</select>` that no longer exists.
 
 Do not claim there is "no new user action"; the defensible reason is continuity with the existing no-event decision and zero new data/refetch/PII contract.
 
-- [ ] **Step 14: Add a browser-state test for semantics, no-refetch, migration, and reload**:
+- [x] **Step 14: Add a browser-state test for semantics, no-refetch, migration, and reload**:
 
 ```js
 test('Lead Times capacity exclusions re-slice locally and replace the legacy inclusive filter', async ({ page }) => {
@@ -840,7 +840,9 @@ test('Lead Times capacity exclusions re-slice locally and replace the legacy inc
 });
 ```
 
-- [ ] **Step 15: Run focused tests + build**
+**Divergence:** the reload assertions above (`page.getByRole('checkbox', { name: 'Exclude Ad Hoc' })` / `'Exclude Excluded Capacity'`) failed with a Playwright strict-mode violation: `.stats-view` panels stay mounted in the DOM at all times (hidden via `opacity:0; max-height:0; overflow:hidden`, not `display:none` — see `frontend/src/styles/stats/shell.css:184-199`), so the identically-labeled Project Track exclusion checkboxes are also matched. Fixed by scoping both post-reload assertions to the existing `view` locator (`page.locator('.stats-view.open')`), consistent with every other assertion earlier in the same test. No other test semantics changed.
+
+- [x] **Step 15: Run focused tests + build**
 
 ```bash
 fnm exec --using 20 node --test tests/test_stats_utils.js tests/test_stats_module_extraction_source_guards.js tests/test_analytics_source_guards.js tests/test_stats_controls_source_guards.js
@@ -848,7 +850,7 @@ fnm exec --using 20 npm run build
 fnm exec --using 20 npx playwright test tests/ui/codebase_structure_smoke.spec.js -g "Statistics subviews|Lead Times capacity exclusions|Project Track tab"
 ```
 
-- [ ] **Step 16: Commit**
+- [x] **Step 16: Commit**
 
 ```bash
 git add frontend/src/cohort/cohortUtils.js frontend/src/dashboard.jsx frontend/src/styles/stats/project-track.css tests/test_stats_utils.js tests/test_stats_module_extraction_source_guards.js tests/test_analytics_source_guards.js tests/ui/codebase_structure_smoke.spec.js docs/README_ANALYTICS.md

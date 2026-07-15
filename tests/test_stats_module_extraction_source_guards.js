@@ -192,3 +192,41 @@ test('cohortEndQuarter is threaded through every per-group persistence site', ()
         'saveUiPrefs payload and its effect dependency array must both include cohortEndQuarter'
     );
 });
+
+test('cohort capacity exclusions replace the legacy inclusive filter at every state site', () => {
+    assert.ok(dashboardSource.includes('const [cohortExcludeAdHoc, setCohortExcludeAdHoc]'));
+    assert.equal(dashboardSource.includes('cohortCapacityFilter'), false);
+
+    const defaultState = sliceBetween(
+        dashboardSource,
+        'const buildDefaultGroupState = (groupId) => {',
+        'const buildGroupStateSnapshot = () => ('
+    );
+    const snapshot = sliceBetween(
+        dashboardSource,
+        'const buildGroupStateSnapshot = () => (',
+        'const applyGroupState = (state) => {'
+    );
+    const applyState = sliceBetween(
+        dashboardSource,
+        'const applyGroupState = (state) => {',
+        'const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), ['
+    );
+    const snapshotDeps = sliceBetween(
+        dashboardSource,
+        'const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), [',
+        ']);'
+    );
+    const savedPrefs = sliceBetween(dashboardSource, 'saveUiPrefs({', ']);');
+
+    assert.ok(defaultState.includes('cohortExcludeAdHoc: Boolean(savedPrefsRef.current.cohortExcludeAdHoc)'));
+    assert.ok(defaultState.includes('cohortExcludeCapacity:'));
+    assert.ok(snapshot.includes('cohortExcludeAdHoc,'));
+    assert.ok(snapshot.includes('cohortExcludeCapacity,'));
+    assert.ok(snapshotDeps.includes('cohortExcludeAdHoc,'));
+    assert.ok(snapshotDeps.includes('cohortExcludeCapacity,'));
+    assert.ok(applyState.includes('setCohortExcludeAdHoc(Boolean(nextState.cohortExcludeAdHoc))'));
+    assert.ok(applyState.includes('setCohortExcludeCapacity(nextState.cohortExcludeCapacity ?? true)'));
+    assert.equal((savedPrefs.match(/cohortExcludeAdHoc/g) || []).length >= 2, true);
+    assert.equal((savedPrefs.match(/cohortExcludeCapacity/g) || []).length >= 2, true);
+});

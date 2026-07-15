@@ -134,7 +134,7 @@ export function filterCohortIssues(issues, filters = {}) {
     const source = Array.isArray(issues) ? issues : [];
     const projectFilter = String(filters.projectKey || 'all');
     const assigneeFilter = String(filters.assigneeKey || 'all');
-    const capacityFilter = String(filters.capacityType || 'all');
+    const excludeAdHoc = Boolean(filters.excludeAdHoc);
     const statusToggles = filters.statusToggles || {};
     const excludedKeys = filters.excludeEpicKeys instanceof Set
         ? filters.excludeEpicKeys
@@ -147,10 +147,7 @@ export function filterCohortIssues(issues, filters = {}) {
         if (projectFilter !== 'all' && String(issue?.projectKey || '') !== projectFilter) {
             return false;
         }
-        // A specific capacity selection (e.g. `ad_hoc`) narrows the cohort to
-        // records whose backend `capacityType` tag matches; untagged ordinary
-        // Product/Tech epics are dropped. `all` (default) skips this filter.
-        if (capacityFilter !== 'all' && String(issue?.capacityType || '') !== capacityFilter) {
+        if (excludeAdHoc && String(issue?.capacityType || '') === 'ad_hoc') {
             return false;
         }
         const assignee = issue?.assignee || {};

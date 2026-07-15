@@ -18,7 +18,7 @@
             min-width: 150px;
         }
 
-        .project-track-controls .stats-control-group.project-track-exclusions {
+        .stats-control-group.project-track-exclusions {
             display: flex;
             flex-direction: column;
             gap: 0.22rem;

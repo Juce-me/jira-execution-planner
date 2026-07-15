@@ -682,7 +682,6 @@ import {
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
             const resolveCohortGroupBy = (value) => (value === 'month' || value === 'quarter') ? value : 'quarter';
-            const resolveCohortCapacityFilter = (value) => (value === 'ad_hoc') ? value : 'all';
             const [statsView, setStatsView] = useState(resolveStatsView(savedPrefsRef.current.statsView));
             const [statsGraphMode, setStatsGraphMode] = useState(resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode));
             const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
@@ -699,7 +698,7 @@ import {
             const [cohortGroupBy, setCohortGroupBy] = useState(resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy));
             const [cohortProjectFilter, setCohortProjectFilter] = useState(savedPrefsRef.current.cohortProjectFilter || 'all');
             const [cohortAssigneeFilter, setCohortAssigneeFilter] = useState(savedPrefsRef.current.cohortAssigneeFilter || 'all');
-            const [cohortCapacityFilter, setCohortCapacityFilter] = useState(resolveCohortCapacityFilter(savedPrefsRef.current.cohortCapacityFilter));
+            const [cohortExcludeAdHoc, setCohortExcludeAdHoc] = useState(Boolean(savedPrefsRef.current.cohortExcludeAdHoc));
             const [cohortExcludeCapacity, setCohortExcludeCapacity] = useState(savedPrefsRef.current.cohortExcludeCapacity ?? true);
             const [cohortStatusToggles, setCohortStatusToggles] = useState(() => ({
                 done: true,
@@ -4668,7 +4667,7 @@ import {
                     cohortGroupBy: resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy),
                     cohortProjectFilter: savedPrefsRef.current.cohortProjectFilter || 'all',
                     cohortAssigneeFilter: savedPrefsRef.current.cohortAssigneeFilter || 'all',
-                    cohortCapacityFilter: resolveCohortCapacityFilter(savedPrefsRef.current.cohortCapacityFilter),
+                    cohortExcludeAdHoc: Boolean(savedPrefsRef.current.cohortExcludeAdHoc),
                     cohortExcludeCapacity: savedPrefsRef.current.cohortExcludeCapacity ?? true,
                     cohortStatusToggles: {
                         done: true,
@@ -4771,7 +4770,7 @@ import {
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
-                cohortCapacityFilter,
+                cohortExcludeAdHoc,
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 cohortSelectedRow,
@@ -4879,7 +4878,7 @@ import {
                 setCohortGroupBy(resolveCohortGroupBy(nextState.cohortGroupBy));
                 setCohortProjectFilter(nextState.cohortProjectFilter || 'all');
                 setCohortAssigneeFilter(nextState.cohortAssigneeFilter || 'all');
-                setCohortCapacityFilter(resolveCohortCapacityFilter(nextState.cohortCapacityFilter));
+                setCohortExcludeAdHoc(Boolean(nextState.cohortExcludeAdHoc));
                 setCohortExcludeCapacity(nextState.cohortExcludeCapacity ?? true);
                 setCohortStatusToggles({
                     done: true,
@@ -4986,7 +4985,7 @@ import {
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
-                cohortCapacityFilter,
+                cohortExcludeAdHoc,
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 cohortSelectedRow,
@@ -5353,7 +5352,7 @@ import {
                     cohortGroupBy,
                     cohortProjectFilter,
                     cohortAssigneeFilter,
-                    cohortCapacityFilter,
+                    cohortExcludeAdHoc,
                     cohortExcludeCapacity,
                     cohortStatusToggles,
                     excludedCapacityStartSprintId,
@@ -5409,7 +5408,7 @@ import {
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
-                cohortCapacityFilter,
+                cohortExcludeAdHoc,
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 excludedCapacityStartSprintId,
@@ -6932,11 +6931,11 @@ import {
                 return filterCohortIssues(cohortIssues, {
                     projectKey: cohortProjectFilter,
                     assigneeKey: cohortAssigneeFilter,
-                    capacityType: cohortCapacityFilter,
+                    excludeAdHoc: cohortExcludeAdHoc,
                     excludeEpicKeys: cohortExcludeCapacity ? excludedEpicSet : EMPTY_ARRAY,
                     statusToggles: cohortStatusToggles
                 });
-            }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortCapacityFilter, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
+            }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
             const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortFilteredIssues), [cohortFilteredIssues]);
             const cohortWorkflowStatusTotal = (cohortSummary.inProgress || 0) + (cohortSummary.postponed || 0) + (cohortSummary.awaitingValidation || 0);
             const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortFilteredIssues, {
@@ -14034,33 +14033,22 @@ import {
                                                 ))}
                                             </select>
                                         </div>
-                                        <div className="stats-control-group">
+                                        <div className="stats-control-group project-track-exclusions" data-stats-capacity-filters>
                                             <label>Capacity</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={cohortCapacityFilter}
-                                                onChange={(event) => {
-                                                    setCohortCapacityFilter(resolveCohortCapacityFilter(event.target.value));
-                                                    setCohortSelectedRow(null);
-                                                }}
-                                            >
-                                                <option value="all">All Capacity</option>
-                                                <option value="ad_hoc">Ad Hoc</option>
-                                            </select>
+                                            <label className="project-track-checkbox">
+                                                <input type="checkbox" checked={cohortExcludeAdHoc}
+                                                    onChange={(e) => { setCohortExcludeAdHoc(e.target.checked); setCohortSelectedRow(null); }} />
+                                                <span>Exclude Ad Hoc</span>
+                                            </label>
+                                            <label className="project-track-checkbox">
+                                                <input type="checkbox" checked={cohortExcludeCapacity}
+                                                    onChange={(e) => { setCohortExcludeCapacity(e.target.checked); setCohortSelectedRow(null); }} />
+                                                <span>Exclude Excluded Capacity</span>
+                                            </label>
                                         </div>
                                     </div>
 
                                     <div className="stats-actions cohort-status-actions">
-                                        <button
-                                            className={`stats-toggle ${cohortExcludeCapacity ? 'active' : ''}`}
-                                            onClick={() => {
-                                                setCohortExcludeCapacity((prev) => !prev);
-                                                setCohortSelectedRow(null);
-                                            }}
-                                            type="button"
-                                        >
-                                            Excluded Capacity
-                                        </button>
                                         {cohortStatusControls.map((item) => (
                                             <button
                                                 key={item.key}

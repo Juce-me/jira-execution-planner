@@ -1345,6 +1345,58 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
+test('Lead Times capacity exclusions re-slice locally and replace the legacy inclusive filter', async ({ page }) => {
+    const calls = [];
+    const issues = [
+        { ...makeOpenCohortEpic(1), key: 'ADHOC-1', summary: 'Ad Hoc epic', capacityType: 'ad_hoc' },
+        { ...makeOpenCohortEpic(2), key: 'BAU-EPIC', summary: 'Excluded capacity epic' },
+        { ...makeOpenCohortEpic(3), key: 'PRODUCT-1', summary: 'Product epic', capacityType: 'product' },
+    ];
+    const apiMocks = await installApiMocks(page, calls, { cohortIssues: issues, excludedCapacityEpics: ['BAU-EPIC'] });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true, statsView: 'cohort',
+        cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q1', cohortCapacityFilter: 'ad_hoc',
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, (call) => call.pathname === '/api/stats/epic-cohort', 1);
+    const view = page.locator('.stats-view.open');
+    const excludeAdHoc = view.getByRole('checkbox', { name: 'Exclude Ad Hoc' });
+    const excludeExcluded = view.getByRole('checkbox', { name: 'Exclude Excluded Capacity' });
+    await expect(excludeAdHoc).not.toBeChecked();
+    await expect(excludeExcluded).toBeChecked();
+    await expect(view.getByText('ADHOC-1', { exact: true })).toBeVisible();
+    await expect(view.getByText('BAU-EPIC', { exact: true })).toHaveCount(0);
+    const requestCount = callsFor(calls, '/api/stats/epic-cohort', 'POST').length;
+    await excludeAdHoc.check();
+    await expect(view.getByText('ADHOC-1', { exact: true })).toHaveCount(0);
+    await excludeExcluded.uncheck();
+    await expect(view.getByText('BAU-EPIC', { exact: true })).toBeVisible();
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST').length).toBe(requestCount);
+    await expect.poll(() => page.evaluate(() => {
+        const stored = JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}');
+        return {
+            excludeAdHoc: stored.cohortExcludeAdHoc,
+            excludeCapacity: stored.cohortExcludeCapacity,
+            hasLegacyKey: Object.prototype.hasOwnProperty.call(stored, 'cohortCapacityFilter'),
+        };
+    })).toEqual({ excludeAdHoc: true, excludeCapacity: false, hasLegacyKey: false });
+    const saved = await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'));
+    expect(saved).not.toHaveProperty('cohortCapacityFilter');
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, saved);
+    await page.reload({ waitUntil: 'networkidle' });
+    // Scoped to the open Lead Times panel: other stats subviews (e.g. Project Track)
+    // stay mounted in the DOM (hidden via opacity/max-height, not display:none) and
+    // expose their own identically-labeled "Exclude Ad Hoc" checkbox.
+    await expect(view.getByRole('checkbox', { name: 'Exclude Ad Hoc' })).toBeChecked();
+    await expect(view.getByRole('checkbox', { name: 'Exclude Excluded Capacity' })).not.toBeChecked();
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
 test('Project Track tab renders filter bar, mode title, totals, per-sprint and breakdown charts', async ({ page }) => {
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, {

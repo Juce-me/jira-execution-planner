@@ -104,24 +104,19 @@ test('cohort summary counts actual open Jira statuses for workflow card', async 
     assert.equal(summary.postponed, 1);
 });
 
-test('filterCohortIssues narrows to tagged ad_hoc records and drops untagged ones', async () => {
+test('filterCohortIssues drops ad_hoc records only when excludeAdHoc is set', async () => {
     const { filterCohortIssues } = await import('../frontend/src/cohort/cohortUtils.js');
     const issues = [
         { key: 'EPIC-1', status: 'open', capacityType: 'ad_hoc' },
         { key: 'EPIC-2', status: 'open', capacityType: 'product' },
         { key: 'EPIC-3', status: 'open' },
     ];
-
-    // No capacity filter: every issue passes, including untagged ones.
     assert.equal(filterCohortIssues(issues).length, 3);
-    assert.equal(filterCohortIssues(issues, { capacityType: 'all' }).length, 3);
-
-    // ad_hoc filter keeps only tagged ad_hoc records; untagged and other-typed records are dropped.
-    const adHocOnly = filterCohortIssues(issues, { capacityType: 'ad_hoc' });
-    assert.deepEqual(adHocOnly.map((issue) => issue.key), ['EPIC-1']);
+    assert.equal(filterCohortIssues(issues, { excludeAdHoc: false }).length, 3);
+    assert.deepEqual(filterCohortIssues(issues, { excludeAdHoc: true }).map((i) => i.key), ['EPIC-2', 'EPIC-3']);
 });
 
-test('Tech-project ad_hoc epic stays visible by key and only leaves on a different project', async () => {
+test('Tech-project ad_hoc epic stays visible by key and only leaves when excluded', async () => {
     const { filterCohortIssues, deriveProjectOptions } = await import('../frontend/src/cohort/cohortUtils.js');
     // TECH-9 has a raw project (TECH) outside the cohort project scope; it was
     // returned by the `key in (...)` branch and tagged ad_hoc by the backend.
@@ -135,10 +130,10 @@ test('Tech-project ad_hoc epic stays visible by key and only leaves on a differe
     const projectValues = deriveProjectOptions(issues).map((option) => option.value);
     assert.deepEqual(projectValues, ['all', 'PRODUCT', 'TECH']);
 
-    // Selectable via the Ad Hoc capacity filter: the tagged Tech-project epic
-    // stays in view, and the untagged ordinary Product epic is hidden.
-    const adHocSelected = filterCohortIssues(issues, { capacityType: 'ad_hoc' });
-    assert.deepEqual(adHocSelected.map((issue) => issue.key), ['TECH-9']);
+    // excludeAdHoc drops the tagged Tech-project epic; the untagged Product
+    // epic remains.
+    const adHocExcluded = filterCohortIssues(issues, { excludeAdHoc: true });
+    assert.deepEqual(adHocExcluded.map((issue) => issue.key), ['PRODUCT-1']);
 
     // Only removed by raw-project selection when the user picks a different project.
     const productOnly = filterCohortIssues(issues, { projectKey: 'PRODUCT' });

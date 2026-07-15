@@ -13974,40 +13974,24 @@ import {
 
                                 <div className={`stats-view ${statsView === 'cohort' ? 'open' : ''}`}>
                                     <div className="stats-controls cohort-controls">
-                                        <div className="stats-control-group">
-                                            <label>Start Quarter</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={cohortStartQuarter}
-                                                onChange={(event) => {
-                                                    const nextStart = event.target.value;
-                                                    setCohortStartQuarter(nextStart);
-                                                    if (compareQuarterLabels(nextStart, cohortEndQuarter) > 0) setCohortEndQuarter(nextStart);
-                                                    setCohortSelectedRow(null);
-                                                }}
-                                            >
-                                                {cohortQuarterOptions.map((quarterLabel) => (
-                                                    <option key={quarterLabel} value={quarterLabel}>{quarterLabel}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <label>End Quarter</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={cohortEndQuarter}
-                                                onChange={(event) => {
-                                                    const nextEnd = event.target.value;
-                                                    setCohortEndQuarter(nextEnd);
-                                                    if (compareQuarterLabels(cohortStartQuarter, nextEnd) > 0) setCohortStartQuarter(nextEnd);
-                                                    setCohortSelectedRow(null);
-                                                }}
-                                            >
-                                                {cohortQuarterOptions.map((quarterLabel) => (
-                                                    <option key={quarterLabel} value={quarterLabel}>{quarterLabel}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                        <StatsRangeControl
+                                            idPrefix="lead-times-quarter"
+                                            kindLabel="Quarter"
+                                            options={cohortQuarterOptions.map((quarter) => ({ value: quarter, label: quarter }))}
+                                            startValue={cohortStartQuarter}
+                                            endValue={cohortEndQuarter}
+                                            onStartChange={(nextStart) => {
+                                                setCohortStartQuarter(nextStart);
+                                                if (compareQuarterLabels(nextStart, cohortEndQuarter) > 0) setCohortEndQuarter(nextStart);
+                                                setCohortSelectedRow(null);
+                                            }}
+                                            onEndChange={(nextEnd) => {
+                                                setCohortEndQuarter(nextEnd);
+                                                if (compareQuarterLabels(cohortStartQuarter, nextEnd) > 0) setCohortStartQuarter(nextEnd);
+                                                setCohortSelectedRow(null);
+                                            }}
+                                            active={statsView === 'cohort'}
+                                        />
                                         <div className="stats-control-group">
                                             <label>Group By</label>
                                             <select

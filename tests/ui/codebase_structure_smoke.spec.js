@@ -1188,24 +1188,32 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     // End Quarter reconciliation: last-control-wins, one debounced request per change, and no
     // request is ever sent with an inverted (start > end) pair.
     const cohortControls = page.locator('.stats-view.open .cohort-controls');
-    const cohortStartQuarterSelect = cohortControls.locator('.stats-control-group', { hasText: 'Start Quarter' }).locator('select');
-    const cohortEndQuarterSelect = cohortControls.locator('.stats-control-group', { hasText: 'End Quarter' }).locator('select');
-    await expect(cohortStartQuarterSelect).toHaveValue('2026Q1');
-    await expect(cohortEndQuarterSelect).toHaveValue('2026Q2');
+    const quarterRange = cohortControls.locator('[data-stats-range="lead-times-quarter"]');
+    const quarterButton = (end) => quarterRange.getByRole('button', { name: `${end} quarter` });
+    const pickQuarter = async (end, quarter) => {
+        const button = quarterButton(end);
+        await button.click();
+        await quarterRange.getByRole('listbox', { name: `${end} quarter` })
+            .getByRole('option', { name: quarter })
+            .click();
+    };
+    const quarterValue = async (end) => (await quarterButton(end).locator('span').innerText()).trim();
+    expect(await quarterValue('Start')).toBe('2026Q1');
+    expect(await quarterValue('End')).toBe('2026Q2');
 
-    await cohortStartQuarterSelect.selectOption('2026Q3');
+    await pickQuarter('Start', '2026Q3');
     await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 2);
-    await expect(cohortStartQuarterSelect).toHaveValue('2026Q3');
-    await expect(cohortEndQuarterSelect).toHaveValue('2026Q3');
+    expect(await quarterValue('Start')).toBe('2026Q3');
+    expect(await quarterValue('End')).toBe('2026Q3');
     expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[1].body).toMatchObject({
         startQuarter: '2026Q3',
         endQuarter: '2026Q3',
     });
 
-    await cohortEndQuarterSelect.selectOption('2026Q1');
+    await pickQuarter('End', '2026Q1');
     await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 3);
-    await expect(cohortStartQuarterSelect).toHaveValue('2026Q1');
-    await expect(cohortEndQuarterSelect).toHaveValue('2026Q1');
+    expect(await quarterValue('Start')).toBe('2026Q1');
+    expect(await quarterValue('End')).toBe('2026Q1');
     expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[2].body).toMatchObject({
         startQuarter: '2026Q1',
         endQuarter: '2026Q1',
@@ -1215,10 +1223,45 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
         expect(quarterLabelOrdinal(call.body.startQuarter)).toBeLessThanOrEqual(quarterLabelOrdinal(call.body.endQuarter));
     });
 
+    // Keyboard support: ArrowDown opens the listbox on the selected option, arrows move focus,
+    // Escape closes and returns focus to the toggle.
+    const startQuarterButton = quarterButton('Start');
+    await startQuarterButton.press('ArrowDown');
+    const startListbox = quarterRange.getByRole('listbox', { name: 'Start quarter' });
+    await expect(startListbox).toBeVisible();
+    const selectedOption = startListbox.locator('[role="option"][aria-selected="true"]');
+    await expect(selectedOption).toBeFocused();
+    await selectedOption.press('ArrowDown');
+    await expect(startListbox.locator('[role="option"]:focus')).toHaveCount(1);
+    await startListbox.locator('[role="option"]:focus').press('Escape');
+    await expect(startQuarterButton).toHaveAttribute('aria-expanded', 'false');
+    await expect(startQuarterButton).toBeFocused();
+
+    // Responsive proof: at 375px the quarter range reflows without horizontal overflow.
+    // Overflow is asserted on the cohort controls row rather than the whole document:
+    // the dashboard shell has a pre-existing 4px document overflow at 375px from the
+    // header .eng-mode-control, unrelated to the stats controls under test here.
+    await page.setViewportSize({ width: 375, height: 760 });
+    const reflow = await quarterRange.evaluate((node) => {
+        const controls = node.closest('.cohort-controls');
+        const viewportWidth = document.documentElement.clientWidth;
+        return {
+            controlsOverflow: controls.scrollWidth > controls.clientWidth
+                || Math.round(controls.getBoundingClientRect().right) > viewportWidth,
+            controlsVisible: Array.from(node.querySelectorAll('.sprint-dropdown-toggle')).every((toggle) => {
+                const rect = toggle.getBoundingClientRect();
+                return rect.left >= 0 && rect.right <= viewportWidth;
+            }),
+        };
+    });
+    expect(reflow.controlsOverflow).toBeFalsy();
+    expect(reflow.controlsVisible).toBeTruthy();
+    await page.setViewportSize({ width: 1280, height: 760 });
+
     // 2026Q3 (not 2026Q2) so this lands on a range never fetched before: the debounced
     // cohort effect short-circuits on a cohortQueryKey cache hit (cohortCacheRef), and
     // 2026Q1/2026Q2 was already cached from the very first load above.
-    await cohortEndQuarterSelect.selectOption('2026Q3');
+    await pickQuarter('End', '2026Q3');
     await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 4);
     expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[3].body).toMatchObject({
         startQuarter: '2026Q1',
@@ -1242,8 +1285,8 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     const cohortCallCountBeforeReload = callsFor(calls, '/api/stats/epic-cohort', 'POST').length;
     await page.reload({ waitUntil: 'networkidle' });
     await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', cohortCallCountBeforeReload + 1);
-    await expect(cohortStartQuarterSelect).toHaveValue('2026Q1');
-    await expect(cohortEndQuarterSelect).toHaveValue('2026Q3');
+    expect(await quarterValue('Start')).toBe('2026Q1');
+    expect(await quarterValue('End')).toBe('2026Q3');
     expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[cohortCallCountBeforeReload].body).toMatchObject({
         startQuarter: '2026Q1',
         endQuarter: '2026Q3',

@@ -575,7 +575,7 @@ git commit -m "refactor: unify lead times quarter controls"
 - Modify: `frontend/src/dashboard.jsx:14052-14065`
 - Test: `tests/ui/codebase_structure_smoke.spec.js:1252-1258`
 
-- [ ] **Step 1: Replace the Group By `<select>` with `SegmentedControl`** — replace `dashboard.jsx:14052-14065` with:
+- [x] **Step 1: Replace the Group By `<select>` with `SegmentedControl`** — replace `dashboard.jsx:14052-14065` with:
 
 ```jsx
 <div className="stats-control-group">
@@ -592,7 +592,7 @@ git commit -m "refactor: unify lead times quarter controls"
 
 Group By is already absent from the cohort refetch deps (`:6916`) — do not add it. No refetch.
 
-- [ ] **Step 2: Update the Group By Playwright assertion** — in the no-refetch block (`:1252-1258`):
+- [x] **Step 2: Update the Group By Playwright assertion** — in the no-refetch block (`:1252-1258`):
 
 ```js
 const groupBy = cohortControls.locator('.stats-control-group', { hasText: 'Group By' }).getByRole('radiogroup');
@@ -614,14 +614,14 @@ expect(new Set(groupByLayout.buttonTops).size).toBe(1);
 
 Do not add a Lead-Times-local `SegmentedControl` layout override; MRT021 makes the existing component plus `eng-mode-control` the complete visual contract.
 
-- [ ] **Step 3: Build + run**
+- [x] **Step 3: Build + run**
 
 ```bash
 fnm exec --using 20 npm run build
 fnm exec --using 20 npx playwright test tests/ui/codebase_structure_smoke.spec.js -g "Statistics subviews"
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add frontend/src/dashboard.jsx tests/ui/codebase_structure_smoke.spec.js

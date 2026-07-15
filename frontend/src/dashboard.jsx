@@ -13994,17 +13994,13 @@ import {
                                         />
                                         <div className="stats-control-group">
                                             <label>Group By</label>
-                                            <select
-                                                className="scenario-input"
+                                            <SegmentedControl
+                                                className="eng-mode-control"
+                                                ariaLabel="Group by"
                                                 value={cohortGroupBy}
-                                                onChange={(event) => {
-                                                    setCohortGroupBy(event.target.value === 'month' ? 'month' : 'quarter');
-                                                    setCohortSelectedRow(null);
-                                                }}
-                                            >
-                                                <option value="quarter">Quarter</option>
-                                                <option value="month">Month</option>
-                                            </select>
+                                                onChange={(next) => { setCohortGroupBy(next === 'month' ? 'month' : 'quarter'); setCohortSelectedRow(null); }}
+                                                options={[{ value: 'quarter', label: 'Quarter' }, { value: 'month', label: 'Month' }]}
+                                            />
                                         </div>
                                         <div className="stats-control-group">
                                             <label>Project</label>

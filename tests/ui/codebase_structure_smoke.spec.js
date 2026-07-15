@@ -1294,11 +1294,21 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
 
     // Client-side Group By stays client-side: toggling it never re-fetches the cohort.
     const cohortRequestCountAfterReload = callsFor(calls, '/api/stats/epic-cohort', 'POST').length;
-    const cohortGroupBySelect = cohortControls.locator('.stats-control-group', { hasText: 'Group By' }).locator('select');
-    await cohortGroupBySelect.selectOption('month');
-    await cohortGroupBySelect.selectOption('quarter');
+    const groupBy = cohortControls.locator('.stats-control-group', { hasText: 'Group By' }).getByRole('radiogroup');
+    await expect(groupBy).toHaveClass(/eng-mode-control/);
+    await expect(groupBy).not.toHaveClass(/stats-view-toggle/);
+    await groupBy.getByRole('radio', { name: 'Month' }).click();
+    await groupBy.getByRole('radio', { name: 'Quarter' }).click();
     await page.waitForTimeout(400);
     expect(callsFor(calls, '/api/stats/epic-cohort', 'POST').length).toBe(cohortRequestCountAfterReload);
+    const groupByLayout = await groupBy.evaluate((node) => ({
+        flexWrap: getComputedStyle(node).flexWrap,
+        height: Math.round(node.getBoundingClientRect().height),
+        buttonTops: Array.from(node.querySelectorAll('.segmented-control-button')).map((button) => Math.round(button.getBoundingClientRect().top)),
+    }));
+    expect(groupByLayout.flexWrap).toBe('nowrap');
+    expect(groupByLayout.height).toBeLessThanOrEqual(42);
+    expect(new Set(groupByLayout.buttonTops).size).toBe(1);
 
     await statsTabs.getByRole('radio', { name: 'Excluded Capacity' }).click();
     await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);

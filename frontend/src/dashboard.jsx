@@ -13570,30 +13570,16 @@ import {
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="stats-control-group excluded-capacity-sprint-control excluded-capacity-start-sprint-control">
-                                            <label>Start Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityStartSprintId}
-                                                onChange={(event) => setExcludedCapacityStartSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group excluded-capacity-sprint-control excluded-capacity-end-sprint-control">
-                                            <label>End Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityEndSprintId}
-                                                onChange={(event) => setExcludedCapacityEndSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                        <StatsRangeControl
+                                            idPrefix="excluded-capacity-sprint"
+                                            kindLabel="Sprint"
+                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
+                                            startValue={excludedCapacityStartSprintId}
+                                            endValue={excludedCapacityEndSprintId}
+                                            onStartChange={setExcludedCapacityStartSprintId}
+                                            onEndChange={setExcludedCapacityEndSprintId}
+                                            active={statsView === 'excludedCapacity'}
+                                        />
                                     </div>
 
                                     <div className="excluded-capacity-actions">
@@ -13727,30 +13713,16 @@ import {
 
                                 <div className={`stats-view ${statsView === 'monoCrossShare' ? 'open' : ''}`}>
                                     <div className="stats-controls excluded-capacity-controls">
-                                        <div className="stats-control-group">
-                                            <label>Start Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityStartSprintId}
-                                                onChange={(event) => setExcludedCapacityStartSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <label>End Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityEndSprintId}
-                                                onChange={(event) => setExcludedCapacityEndSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                        <StatsRangeControl
+                                            idPrefix="mono-cross-sprint"
+                                            kindLabel="Sprint"
+                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
+                                            startValue={excludedCapacityStartSprintId}
+                                            endValue={excludedCapacityEndSprintId}
+                                            onStartChange={setExcludedCapacityStartSprintId}
+                                            onEndChange={setExcludedCapacityEndSprintId}
+                                            active={statsView === 'monoCrossShare'}
+                                        />
                                     </div>
 
                                     <div className="stats-summary excluded-capacity-summary">

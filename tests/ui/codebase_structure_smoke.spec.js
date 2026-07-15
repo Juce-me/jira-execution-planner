@@ -1261,11 +1261,26 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
     await expect(page.locator('.stats-view.open .effort-type-split-chart')).toBeVisible();
 
+    // Excluded Capacity shares the StatsRangeControl range group; no native Start/End select remains.
+    const excludedRange = page.locator('[data-stats-range="excluded-capacity-sprint"]');
+    await expect(excludedRange).toBeVisible();
+    await expect(excludedRange.locator('select')).toHaveCount(0);
+    const excludedEnd = excludedRange.getByRole('button', { name: 'End sprint' });
+    await excludedEnd.click();
+    await expect(excludedEnd).toHaveAttribute('aria-expanded', 'true');
+
     await statsTabs.getByRole('radio', { name: 'Mono vs Cross' }).click();
     await expect(page.locator('.stats-view.open')).toContainText('Team Cross Share');
     await expect(page.locator('.stats-view.open .excluded-capacity-line-chart')).toBeVisible();
+    const monoCrossRange = page.locator('[data-stats-range="mono-cross-sprint"]');
+    await expect(monoCrossRange).toBeVisible();
+    await expect(monoCrossRange.locator('select')).toHaveCount(0);
     await captureSmokeScreenshot(page, 'statistics-mono-cross');
     const monoCrossLegendColors = await legendColors('.stats-view.open .excluded-capacity-line-legend-item');
+
+    // View-switch menu leak: returning to Excluded Capacity must not leave its End menu open.
+    await statsTabs.getByRole('radio', { name: 'Excluded Capacity' }).click();
+    await expect(excludedEnd).toHaveAttribute('aria-expanded', 'false');
 
     // Acceptance proof for the statistics color-consistency fix: Priority, Burndown, and
     // Mono vs Cross must resolve the same team to the same color via resolveStatsTeamColor.
@@ -1614,6 +1629,14 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+
+    // Excluded Capacity renders exactly one StatsRangeControl range group with Start/End
+    // buttons and no leftover native Start/End select.
+    const rangeGroup = page.locator('[data-stats-range="excluded-capacity-sprint"]');
+    await expect(rangeGroup).toHaveCount(1);
+    await expect(rangeGroup.locator('select')).toHaveCount(0);
+    await expect(rangeGroup.getByRole('button', { name: 'Start sprint' })).toBeVisible();
+    await expect(rangeGroup.getByRole('button', { name: 'End sprint' })).toBeVisible();
 
     const summary = page.locator('.stats-view.open .excluded-capacity-summary');
     await expect(summary).toBeVisible();

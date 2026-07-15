@@ -20,3 +20,11 @@ test('dashboard keeps the global Sprint control isolated from stats ranges', () 
     assert.ok(globalSprint.includes('<ControlField label="Sprint">'));
     assert.equal(globalSprint.includes('StatsRangeControl'), false);
 });
+
+test('implemented stats ranges use StatsRangeControl and native non-range selects remain', () => {
+    assert.equal((dashboard.match(/<StatsRangeControl/g) || []).length, 3);
+    assert.equal(/<label>Start Sprint<\/label>/.test(dashboard), false);
+    assert.equal(/<label>End Sprint<\/label>/.test(dashboard), false);
+    assert.ok(dashboard.includes('<label>Project</label>'));
+    assert.ok(dashboard.includes('<label>Assignee</label>'));
+});

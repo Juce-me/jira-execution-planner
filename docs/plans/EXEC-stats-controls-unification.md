@@ -401,7 +401,7 @@ git commit -m "refactor: extract shared statistics range control"
 
 **Interfaces:** Consumes `StatsRangeControl` (Task 1) + the shared `excludedCapacity*SprintId` state. The two views intentionally continue to share the same values; only one view is active at a time.
 
-- [ ] **Step 1: Convert Excluded Capacity Start/End Sprint** — replace both native selects at `dashboard.jsx:13572-13595`:
+- [x] **Step 1: Convert Excluded Capacity Start/End Sprint** — replace both native selects at `dashboard.jsx:13572-13595`:
 
 ```jsx
 <StatsRangeControl
@@ -416,7 +416,7 @@ git commit -m "refactor: extract shared statistics range control"
 />
 ```
 
-- [ ] **Step 2: Convert Mono vs Cross Start/End Sprint** — replace both native selects at `dashboard.jsx:13729-13752`:
+- [x] **Step 2: Convert Mono vs Cross Start/End Sprint** — replace both native selects at `dashboard.jsx:13729-13752`:
 
 ```jsx
 <StatsRangeControl
@@ -431,13 +431,15 @@ git commit -m "refactor: extract shared statistics range control"
 />
 ```
 
-- [ ] **Step 3: Extend the source guard**:
+- [x] **Step 3: Extend the source guard**:
+
+**Divergence:** implemented with the label regexes scoped to `Sprint` only (dropped the `Quarter` alternation). Lead Times' Start/End Quarter selects are still native `<label>Start Quarter</label>`/`<label>End Quarter</label>` at this point in the branch (Task 3's scope, not yet executed), so the verbatim regex below would assert `false` against a `true` match and fail. Task 3 must re-widen these two regexes back to `/<label>Start (?:Sprint|Quarter)<\/label>/` / `/<label>End (?:Sprint|Quarter)<\/label>/` (in addition to raising the call-site count to `4`) once it converts the Lead Times quarter selects.
 
 ```js
 test('implemented stats ranges use StatsRangeControl and native non-range selects remain', () => {
     assert.equal((dashboard.match(/<StatsRangeControl/g) || []).length, 3);
-    assert.equal(/<label>Start (?:Sprint|Quarter)<\/label>/.test(dashboard), false);
-    assert.equal(/<label>End (?:Sprint|Quarter)<\/label>/.test(dashboard), false);
+    assert.equal(/<label>Start Sprint<\/label>/.test(dashboard), false);
+    assert.equal(/<label>End Sprint<\/label>/.test(dashboard), false);
     assert.ok(dashboard.includes('<label>Project</label>'));
     assert.ok(dashboard.includes('<label>Assignee</label>'));
 });
@@ -445,7 +447,7 @@ test('implemented stats ranges use StatsRangeControl and native non-range select
 
 Task 3 changes the expected call-site count from `3` to `4` when Lead Times is migrated; do not weaken the final assertion.
 
-- [ ] **Step 4: Update Playwright** — in the Statistics subviews and Excluded Capacity summary tests, assert each active view has exactly one range group with the expected `data-stats-range`, Start/End buttons, and no native Start/End `<select>`. Open the End menu in Excluded Capacity, switch to Mono vs Cross, return, and prove `aria-expanded="false"` so hidden-view state does not leak:
+- [x] **Step 4: Update Playwright** — in the Statistics subviews and Excluded Capacity summary tests, assert each active view has exactly one range group with the expected `data-stats-range`, Start/End buttons, and no native Start/End `<select>`. Open the End menu in Excluded Capacity, switch to Mono vs Cross, return, and prove `aria-expanded="false"` so hidden-view state does not leak:
 
 ```js
 const excludedRange = page.locator('[data-stats-range="excluded-capacity-sprint"]');
@@ -458,7 +460,7 @@ await statsTabs.getByRole('radio', { name: 'Excluded Capacity' }).click();
 await expect(excludedEnd).toHaveAttribute('aria-expanded', 'false');
 ```
 
-- [ ] **Step 5: Build + run**
+- [x] **Step 5: Build + run**
 
 ```bash
 fnm exec --using 20 node --test tests/test_stats_controls_source_guards.js
@@ -466,7 +468,7 @@ fnm exec --using 20 npm run build
 fnm exec --using 20 npx playwright test tests/ui/codebase_structure_smoke.spec.js -g "Statistics subviews|Excluded Capacity summary"
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/dashboard.jsx tests/test_stats_controls_source_guards.js tests/ui/codebase_structure_smoke.spec.js

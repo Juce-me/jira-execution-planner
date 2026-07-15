@@ -1303,10 +1303,44 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     const statsView = page.locator('.stats-view.open');
     await expect(statsView).toBeVisible();
 
-    // Filter bar: shared sprint range selects + capacity-side / mode segmented controls + exclusion toggles.
+    // Filter bar: shared sprint range control + capacity-side / mode segmented controls + exclusion toggles.
     const controls = statsView.locator('.project-track-controls');
     await expect(controls).toBeVisible();
-    await expect(controls.locator('select')).toHaveCount(2);
+    const rangeGroup = controls.locator('[data-stats-range="project-track-sprint"]');
+    await expect(rangeGroup).toHaveAttribute('aria-label', 'Sprint range');
+    await expect(rangeGroup.locator('.controls-label')).toHaveText('Sprint');
+    const startToggle = rangeGroup.getByRole('button', { name: 'Start sprint' });
+    await expect(startToggle).toHaveAttribute('aria-haspopup', 'listbox');
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'false');
+    await startToggle.click();
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'true');
+    const listbox = rangeGroup.getByRole('listbox', { name: 'Start sprint' });
+    const option = listbox.getByRole('option', { name: selectedSprintName });
+    const geometry = await option.evaluate((node) => {
+        const panel = node.closest('.sprint-dropdown-panel').getBoundingClientRect();
+        const toggle = node.closest('.sprint-dropdown').querySelector('.sprint-dropdown-toggle').getBoundingClientRect();
+        const point = { x: panel.left + Math.min(12, panel.width / 2), y: panel.top + Math.min(12, panel.height / 2) };
+        return {
+            opensBelow: panel.top >= toggle.bottom,
+            topHitIsPanel: node.closest('.sprint-dropdown-panel').contains(document.elementFromPoint(point.x, point.y)),
+        };
+    });
+    expect(geometry.opensBelow).toBeTruthy();
+    expect(geometry.topHitIsPanel).toBeTruthy();
+    await option.click(); // normal, never force
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(startToggle).toBeFocused();
+    await startToggle.click();
+    await controls.getByRole('radio', { name: 'Epic' }).focus();
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'false');
+    await startToggle.click();
+    await controls.getByRole('radio', { name: 'Epic' }).click();
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'false');
+    await startToggle.press('Enter');
+    await expect(listbox).toBeVisible();
+    await listbox.getByRole('option', { name: selectedSprintName }).press('Escape');
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(startToggle).toBeFocused();
     // Filter-bar groups never overlap: each control group's layout box stays clear of neighbours.
     const controlBoxes = await controls.evaluate((node) => {
         return Array.from(node.querySelectorAll(':scope > .stats-control-group')).map((group) => {

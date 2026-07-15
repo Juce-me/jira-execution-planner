@@ -87,7 +87,7 @@ State-machine verification is mandatory:
 - Owns: one open end (`null | 'start' | 'end'`), outside/focus/Escape close, roving option focus, and existing dropdown markup/classes.
 - Does not own: range ordering, persistence, analytics, requests, or shared sprint/quarter state.
 
-- [ ] **Step 0: Record the clean baseline before editing**:
+- [x] **Step 0: Record the clean baseline before editing**:
 
 ```bash
 fnm exec --using 20 node --test tests/test_stats_utils.js tests/test_stats_module_extraction_source_guards.js tests/test_analytics_source_guards.js
@@ -104,7 +104,7 @@ cp /tmp/codebase-structure-qa/statistics-mono-cross.png tmp/stats-controls-unifi
 cp /tmp/codebase-structure-qa/statistics-project-track-epic.png tmp/stats-controls-unification/before/project-track.png
 ```
 
-- [ ] **Step 1: Write failing source guards** in `tests/test_stats_controls_source_guards.js`:
+- [x] **Step 1: Write failing source guards** in `tests/test_stats_controls_source_guards.js`:
 
 ```js
 const test = require('node:test');
@@ -135,7 +135,7 @@ Run: `fnm exec --using 20 node --test tests/test_stats_controls_source_guards.js
 
 Expected: FAIL because `StatsRangeControl.jsx` does not exist.
 
-- [ ] **Step 2: Create `StatsRangeControl.jsx` using only existing classes**:
+- [x] **Step 2: Create `StatsRangeControl.jsx` using only existing classes**:
 
 ```jsx
 import * as React from 'react';
@@ -302,7 +302,7 @@ export default function StatsRangeControl({
 
 No search input: the current sprint/quarter option sets are bounded and `.sprint-dropdown-list` already scrolls at 200 px.
 
-- [ ] **Step 3: Add the positioned overlay lift** in `frontend/src/styles/stats/shell.css`:
+- [x] **Step 3: Add the positioned overlay lift** in `frontend/src/styles/stats/shell.css`:
 
 ```css
 .stats-controls:has(.sprint-dropdown-panel) {
@@ -313,7 +313,7 @@ No search input: the current sprint/quarter option sets are bounded and `.sprint
 
 Do not add `stats-range-*` classes. `.view-filters` already supplies flex, gap, width, and wrapping.
 
-- [ ] **Step 4: Import and pilot on Project Track**:
+- [x] **Step 4: Import and pilot on Project Track**:
 
 ```jsx
 import StatsRangeControl from './stats/StatsRangeControl.jsx';
@@ -334,7 +334,7 @@ Replace both Project Track native selects with:
 />
 ```
 
-- [ ] **Step 5: Replace the Project Track native-select assertion with interaction, layer, and keyboard checks**:
+- [x] **Step 5: Replace the Project Track native-select assertion with interaction, layer, and keyboard checks**:
 
 ```js
 const rangeGroup = controls.locator('[data-stats-range="project-track-sprint"]');
@@ -376,7 +376,7 @@ await expect(startToggle).toBeFocused();
 
 Keep the existing Capacity side, Mode, and exclusion geometry assertions unchanged.
 
-- [ ] **Step 6: Run focused verification**:
+- [x] **Step 6: Run focused verification**:
 
 ```bash
 fnm exec --using 20 node --test tests/test_stats_controls_source_guards.js
@@ -386,7 +386,7 @@ fnm exec --using 20 npx playwright test tests/ui/codebase_structure_smoke.spec.j
 
 Expected: PASS. Keep `frontend/dist/` unstaged.
 
-- [ ] **Step 7: Commit**:
+- [x] **Step 7: Commit**:
 
 ```bash
 git add frontend/src/stats/StatsRangeControl.jsx frontend/src/dashboard.jsx frontend/src/styles/stats/shell.css tests/test_stats_controls_source_guards.js tests/ui/codebase_structure_smoke.spec.js

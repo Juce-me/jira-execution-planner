@@ -91,6 +91,7 @@ import ProjectTrackTotalsBar from './stats/ProjectTrackTotalsBar.jsx';
 import ProjectTrackSprintChart from './stats/ProjectTrackSprintChart.jsx';
 import ProjectTrackBreakdownChart from './stats/ProjectTrackBreakdownChart.jsx';
 import ProjectTrackPhaseChart from './stats/ProjectTrackPhaseChart.jsx';
+import StatsRangeControl from './stats/StatsRangeControl.jsx';
 import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, inScopeEpicKeys as projectTrackInScopeEpicKeys } from './stats/projectTrackStats.js';
 import { summarizeTrackPhaseDurations } from './stats/projectTrackPhaseStats.js';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
@@ -13842,30 +13843,16 @@ import {
 
                                 <div className={`stats-view ${statsView === 'projectTrack' ? 'open' : ''}`}>
                                     <div className="stats-controls project-track-controls">
-                                        <div className="stats-control-group">
-                                            <label>Start Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityStartSprintId}
-                                                onChange={(event) => setExcludedCapacityStartSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <label>End Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityEndSprintId}
-                                                onChange={(event) => setExcludedCapacityEndSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                        <StatsRangeControl
+                                            idPrefix="project-track-sprint"
+                                            kindLabel="Sprint"
+                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
+                                            startValue={excludedCapacityStartSprintId}
+                                            endValue={excludedCapacityEndSprintId}
+                                            onStartChange={setExcludedCapacityStartSprintId}
+                                            onEndChange={setExcludedCapacityEndSprintId}
+                                            active={statsView === 'projectTrack'}
+                                        />
                                         <div className="stats-control-group">
                                             <label>Capacity side</label>
                                             <SegmentedControl

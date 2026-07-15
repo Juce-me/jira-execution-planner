@@ -6373,6 +6373,10 @@ button.status-pill:focus-visible {
 .cohort-controls {
   margin-bottom: 0.65rem;
 }
+.cohort-controls [data-stats-range=lead-times-quarter] {
+  grid-column: span 2;
+  min-width: 0;
+}
 .cohort-status-actions {
   margin-bottom: 0.75rem;
 }
@@ -6846,6 +6850,9 @@ button.status-pill:focus-visible {
   .excluded-capacity-filter-controls [data-stats-range=excluded-capacity-sprint] {
     grid-column: auto;
     grid-row: auto;
+  }
+  .cohort-controls [data-stats-range=lead-times-quarter] {
+    grid-column: auto;
   }
   .epic-mode-row {
     grid-template-columns: minmax(0, 1fr);

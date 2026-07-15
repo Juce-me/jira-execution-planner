@@ -58,14 +58,6 @@
             min-width: 0;
         }
 
-        .excluded-capacity-filter-controls .excluded-capacity-sprint-control {
-            min-width: 0;
-        }
-
-        .excluded-capacity-filter-controls .scenario-input {
-            width: 100%;
-        }
-
         .excluded-capacity-epic-dropdown {
             width: 100%;
             min-width: 0;

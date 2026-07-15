@@ -1645,7 +1645,10 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
         return {
             groupWidth: group.getBoundingClientRect().width,
             tops: toggles.map((toggle) => toggle.getBoundingClientRect().top),
-            overflow: toggles.map((toggle) => ({ scrollWidth: toggle.scrollWidth, clientWidth: toggle.clientWidth })),
+            overflow: toggles.map((toggle) => {
+                const label = toggle.querySelector('span');
+                return { scrollWidth: label.scrollWidth, clientWidth: label.clientWidth };
+            }),
         };
     });
     expect(rangeGeometry.tops).toHaveLength(2);

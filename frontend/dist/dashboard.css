@@ -7614,9 +7614,6 @@ button.status-pill:focus-visible {
 .project-track-controls .eng-mode-control {
   margin-top: 0;
 }
-.project-track-controls select.scenario-input {
-  min-width: 150px;
-}
 .stats-control-group.project-track-exclusions {
   display: flex;
   flex-direction: column;

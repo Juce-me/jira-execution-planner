@@ -40,13 +40,19 @@ capacity filter. Three user-reported problems:
 
 ## Design
 
-### A. Shared range dropdown (`frontend/src/ui/RangeSelectDropdown.jsx`, reusing `sprint-dropdown` CSS)
+### A. Reuse the existing dropdown — NO new component/design
 
-A small single-select component extracted from the `sprint-dropdown` pattern so it is not hand-rolled:
-button + positioned panel that **opens downward**, sized to content (narrower), with outside-click
-close and optional type-ahead search (useful for long sprint lists). Props: `label`, `options:
-[{value,label}]`, `value`, `onChange(value)`, plus an id/aria hook. It reuses the existing
-`sprint-dropdown-*` class family (per repo rule: reuse dropdown classes, no bespoke hover/caret/radius).
+Everything needed already exists. We assemble, not invent:
+- `ControlField` (`frontend/src/ui/ControlField.jsx`) already renders the in-border `control-label`.
+- The `.sprint-dropdown` markup + `.sprint-dropdown-*` rules in `styles/shared/controls.css` already are
+  a content-width dropdown whose panel opens downward (`top: calc(100% + .35rem)`).
+- `SegmentedControl` already backs `CAPACITY SIDE` and `MODE` in Project Track.
+- Project Track's `Exclude Ad Hoc` / `Exclude Excluded Capacity` `project-track-checkbox`es already exist.
+
+Implementation: add a render helper in `dashboard.jsx` that mirrors the existing `renderSprintControl`
+and returns the SAME `.sprint-dropdown` markup, parameterized by `{ options, value, onChange }` plus a
+shared "which range dropdown is open" key (one `openRangeDropdown` state + an outside-click listener,
+copied from the sprint dropdown's own `mousedown` effect). No new file, no new CSS, no new visual design.
 
 ### B. Apply the shared dropdown to all 8 stats range selectors; relabel
 
@@ -114,11 +120,12 @@ segmented controls use. Remains client-side regrouping — **no refetch**.
 - Source guards for `cohortExcludeAdHoc` persistence sites.
 - `npm run build`; full unit + Playwright suites; rebuild dist drift-free.
 
-## Labeling (resolved)
+## Labeling (resolved by reference screenshots)
 
-Each range control renders both label elements: `control-label` span = `Start` / `End`; bare `<label>`
-= `Sprint` (sprint views) / `Quarter` (Lead Times). Exact visual arrangement (order/size) will be shown
-in a screenshot during implementation and matched to the existing control styling.
+Per-view layout: ONE `<label>` group heading (`Sprint` for the 3 sprint views, `Quarter` for Lead
+Times) over the pair; each of the two dropdowns is wrapped in `ControlField` whose `control-label`
+reads `Start` / `End`. i.e. today's two `<label>Start Sprint</label>` / `<label>End Sprint</label>`
+collapse to one `<label>Sprint</label>` heading + `ControlField` control-labels `Start` and `End`.
 
 ## Open Question For Reviewer
 

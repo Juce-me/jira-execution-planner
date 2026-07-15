@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Design (pending user review) → feeds `EXEC-stats-controls-unification.md` |
+| Status | Validated against current source and postmortems; feeds `EXEC-stats-controls-unification.md` |
 | Branch | `improvement/stats-controls-unification` (off `bugfix/statistics-colors-capacity-lead-time`) |
 | Type | UI consistency improvement (Statistics views), no backend change |
 
@@ -40,7 +40,7 @@ capacity filter. Three user-reported problems:
 
 ## Design
 
-### A. Reuse the existing dropdown — NO new component/design
+### A. Extract the existing dropdown pattern; do not create a new visual design
 
 Everything needed already exists. We assemble, not invent:
 - `ControlField` (`frontend/src/ui/ControlField.jsx`) already renders the in-border `control-label`.
@@ -49,24 +49,30 @@ Everything needed already exists. We assemble, not invent:
 - `SegmentedControl` already backs `CAPACITY SIDE` and `MODE` in Project Track.
 - Project Track's `Exclude Ad Hoc` / `Exclude Excluded Capacity` `project-track-checkbox`es already exist.
 
-Implementation: add a render helper in `dashboard.jsx` that mirrors the existing `renderSprintControl`
-and returns the SAME `.sprint-dropdown` markup, parameterized by `{ options, value, onChange }` plus a
-shared "which range dropdown is open" key (one `openRangeDropdown` state + an outside-click listener,
-copied from the sprint dropdown's own `mousedown` effect). No new file, no new CSS, no new visual design.
+Implementation: create one stats-owned `frontend/src/stats/StatsRangeControl.jsx` used by all four
+Statistics views. It composes `ControlField`, `.stats-control-group`, `.controls-label`,
+`.view-filters`, and the SAME `.sprint-dropdown*` classes, while `dashboard.jsx` keeps values,
+ordering, persistence, analytics, and request behavior. This is a component-boundary extraction of
+repeated markup, not a new control style.
+The global Sprint control stays isolated because its main/compact sticky behavior is load-bearing.
+
+The extracted control closes on outside pointer/focus, Escape, or Statistics view switch; exposes a
+button + listbox/option accessibility contract; supports arrow/Home/End navigation; and lets the
+existing `.view-filters` wrap Start/End on narrow screens. The only CSS change is a positioned
+open-panel z-index lift on `.stats-controls:has(.sprint-dropdown-panel)`.
 
 ### B. Apply the shared dropdown to all 8 stats range selectors; relabel
 
 - Excluded Capacity, Mono vs Cross, Project Track: replace both native sprint selects with
-  `RangeSelectDropdown` bound to the existing `excludedCapacityStartSprintId/EndSprintId` +
+  `StatsRangeControl` bound to the existing `excludedCapacityStartSprintId/EndSprintId` +
   `excludedCapacitySprintOptions` (mapped to `{value:String(id), label:name||id}`).
-- Lead Times: replace both native quarter selects with `RangeSelectDropdown` bound to
+- Lead Times: replace both native quarter selects with `StatsRangeControl` bound to
   `cohortStartQuarter/EndQuarter` + `cohortQuarterOptions`. **The last-control-wins reconciliation and
   the debounced refetch stay in the parent onChange** — the widget only reports the chosen value.
-- **Two label elements per control** (per the inspected DOM): the `ControlField` `control-label`
-  span = **`Start`** / **`End`** (position); the bare `<label>` element = the **kind**, **`Sprint`**
-  for the three sprint views and **`Quarter`** for Lead Times. Today's single `<label>Start Sprint</label>`
-  splits into `control-label "Start"` + `<label>Sprint</label>`. The dropdown toggle shows the selected
-  sprint/quarter value.
+- The existing `ControlField` `control-label` span remains **`Start`** / **`End`**. The range kind uses
+  existing `.controls-label` (`Sprint` or `Quarter`) inside a `role="group"` with an accessible range
+  name; do not add an unassociated bare `<label>`. Each trigger has the complete accessible name
+  `Start sprint`, `End sprint`, `Start quarter`, or `End quarter`.
 
 ### C. Lead Times Capacity → two exclude checkboxes
 
@@ -96,8 +102,8 @@ segmented controls use. Remains client-side regrouping — **no refetch**.
   We reuse its CSS/pattern for the shared component but do NOT refactor the global control in this work.
   (Confirm at review; unifying it too can be a follow-up.)
 - **Project and Assignee selects stay native** (not requested).
-- No analytics event added — matches the existing uninstrumented cohort filters; record a no-event
-  allowlist line if the repo requires one.
+- No analytics event added — update the existing `Lead Times capacity cohort filter` no-event row to
+  describe the two local-only exclusion checkboxes; do not add a duplicate allowlist entry.
 
 ## Risks & Mitigations
 
@@ -105,28 +111,31 @@ segmented controls use. Remains client-side regrouping — **no refetch**.
   ancestor `overflow`/transform). The panel now lives in four stats containers; each needs the
   z-index/overflow handling, verified by a **real (non-forced) click** on an option, not just a
   screenshot.
-- **Lead Times behavior regressions**: reconciliation, debounced single-request, and no-refetch-on-
-  Group-By are all covered by existing Playwright assertions that must keep passing.
+- **Lead Times behavior regressions**: preserve existing reconciliation/refetch assertions and add
+  coverage for checkbox semantics, legacy preference migration, reload, and no-refetch-on-Group-By.
 - **Shared-state surprise**: because 3 views share the sprint range, per-view tests must not assume
   independent ranges.
 
 ## Verification Strategy
 
-- Unit: `cohortUtils` test for `excludeAdHoc`; component test for `RangeSelectDropdown`
-  (opens down, selects, closes on outside click).
+- Unit/source: `cohortUtils` test for `excludeAdHoc`; source guards for one `StatsRangeControl`, four
+  call sites, existing-class reuse, global Sprint isolation, and all persistence sites.
 - Playwright (per view): shared dropdown opens downward + option clickable with a normal click +
-  content width; Start/End labels; Lead Times capacity checkboxes filter correctly; Group By segmented
-  toggles without a cohort refetch; Lead Times reconciliation still one debounced request.
+  top-layer hit testing; pointer, keyboard, outside-focus, Escape, and view-switch close behavior;
+  375 px reflow with no page overflow; Lead Times capacity checkboxes filter correctly and survive
+  reload; Group By toggles without a cohort refetch; Lead Times reconciliation still one debounced request.
 - Source guards for `cohortExcludeAdHoc` persistence sites.
 - `npm run build`; full unit + Playwright suites; rebuild dist drift-free.
 
-## Labeling (resolved by reference screenshots)
+## Labeling Contract
 
-Per-view layout: ONE `<label>` group heading (`Sprint` for the 3 sprint views, `Quarter` for Lead
-Times) over the pair; each of the two dropdowns is wrapped in `ControlField` whose `control-label`
-reads `Start` / `End`. i.e. today's two `<label>Start Sprint</label>` / `<label>End Sprint</label>`
-collapse to one `<label>Sprint</label>` heading + `ControlField` control-labels `Start` and `End`.
+Per-view layout: ONE existing `.controls-label` group heading (`Sprint` for the 3 sprint views,
+`Quarter` for Lead Times) over the pair; each dropdown is wrapped in `ControlField` whose
+`control-label` reads `Start` / `End`. The group exposes `aria-label="Sprint range"` or
+`aria-label="Quarter range"`; the triggers expose the full position + kind accessible name.
 
-## Open Question For Reviewer
+## Resolved Boundary
 
-- **Global top SPRINT control** left unchanged in this work (risk reduction) — agree, or unify it too?
+- **Global top SPRINT control stays unchanged.** It shares the visual class contract but has distinct
+  main/compact sticky-surface behavior. Migrating it would broaden this Statistics-only change and
+  re-open MRT009 risk without improving the requested flow.

@@ -304,7 +304,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 ## Stats Controls Unification
 
 1. `EXEC-stats-controls-unification.md`
-   - Validated implementation plan for unifying Statistics Start/End ranges through one stats-owned component extracted from the existing `sprint-dropdown` pattern, reusing `ControlField`, `.controls-label`, `.view-filters`, `.sprint-dropdown*`, `SegmentedControl`, and the corrected Project Track checkbox treatment.
+   - Implemented on `improvement/stats-controls-unification` (2026-07-15, execution commits `331f3c9..2d5f0a7`; full JS/Python/Playwright regression green apart from 2 pre-existing `eng_alerts_panel_summary` failures inherited from the ancestor branch); pending acceptance/merge, kept as `EXEC-`. Unifies Statistics Start/End ranges through one stats-owned component extracted from the existing `sprint-dropdown` pattern, reusing `ControlField`, `.controls-label`, `.view-filters`, `.sprint-dropdown*`, `SegmentedControl`, and the corrected Project Track checkbox treatment; per-task divergence notes live in the plan.
    - Expected output: Excluded Capacity, Mono vs Cross, Project Track, and Lead Times share one accessible downward-opening range-control implementation; Lead Times Group By uses the existing segmented control; its Capacity filter becomes Exclude Ad Hoc + Exclude Excluded Capacity checkboxes; range/refetch/persistence semantics stay unchanged and receive pointer, keyboard, view-switch, reload, layer, and narrow-viewport verification.
    - No backend route, auth/CSRF, Jira/Home credential, mutation, or new analytics-event contract; the global sticky Sprint control, Project select, and Assignee select remain out of scope.
 

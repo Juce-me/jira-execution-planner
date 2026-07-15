@@ -1,6 +1,6 @@
 # Stats Controls Unification Implementation Plan
 
-> **Status:** Validated against the current source, existing test contracts, and MRT009/MRT018/MRT020/MRT021 on 2026-07-15. Implementation has not started.
+> **Status:** Implemented and verified on `improvement/stats-controls-unification` (2026-07-15), execution commits `331f3c9..2d5f0a7` after plan-validation commit `253b427`: Task 1 `331f3c9`, Task 2 `5eb1358`+`19d4da6`+`78ffd0e`+`36fe47f`, Task 3 `e353112`, Task 4 `23502d6`, Task 5 `cdbffac`, Task 6 `cb84a8d`+`4bfca2e`+`efb30c0`+`2d5f0a7`. Full regression at final head: JS unit 519/519, Python 1052/1052 (1 expected skip), Playwright 154 passed with only the 2 pre-existing `eng_alerts_panel_summary` failures already present on the ancestor branch. Divergences are recorded inline per task; Task 6 additionally reconciled the Lead Times controls grid (`.cohort-controls [data-stats-range="lead-times-quarter"] { grid-column: span 2; }`) so desktop Start/End render side by side like the other three views, and removed CSS rules orphaned by the replaced native selects. Final whole-branch review: ready to merge. Kept as `EXEC-` pending acceptance/merge; not pushed.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -863,11 +863,11 @@ git commit -m "fix: replace lead times capacity dropdown with exclusion checkbox
 - Modify generated: `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, `frontend/dist/dashboard.css`
 - Modify at close: `docs/plans/EXEC-stats-controls-unification.md`, `docs/plans/README.md`
 
-- [ ] **Step 1: Build:** `fnm exec --using 20 npm run build`
+- [x] **Step 1: Build:** `fnm exec --using 20 npm run build`
 
-- [ ] **Step 2: Budget canary:** `.venv/bin/python -m unittest tests.test_codebase_structure_budgets`. Do not raise the `dashboard.jsx` budget: extracting `StatsRangeControl` should keep or reduce dashboard ownership. If it grows, simplify or move duplicated range composition into the component.
+- [x] **Step 2: Budget canary:** `.venv/bin/python -m unittest tests.test_codebase_structure_budgets`. Do not raise the `dashboard.jsx` budget: extracting `StatsRangeControl` should keep or reduce dashboard ownership. If it grows, simplify or move duplicated range composition into the component.
 
-- [ ] **Step 3: Full regression**
+- [x] **Step 3: Full regression**
 
 ```bash
 fnm exec --using 20 npm run test:frontend:unit
@@ -877,7 +877,7 @@ fnm exec --using 20 npm run test:frontend:ui
 
 Expected: all three commands green. Do not normalize or waive a red test as "pre-existing" unless Task 1 Step 0 reproduced and recorded that exact failure before implementation; even then, the touched Statistics suites must be green.
 
-- [ ] **Step 4: Settled before/after visual verification** — save after screenshots under ignored `tmp/stats-controls-unification/after/`, open every before/after pair, and inspect the actual text-bearing controls (not only container boxes):
+- [x] **Step 4: Settled before/after visual verification** — save after screenshots under ignored `tmp/stats-controls-unification/after/`, open every before/after pair, and inspect the actual text-bearing controls (not only container boxes):
 
 ```text
 Project Track / Mono vs Cross / Excluded Capacity: existing typography, spacing, radii, caret, and control height preserved; "SPRINT" groups Start/End; Project Track Capacity side / Mode / Exclusions are visually unchanged.
@@ -897,9 +897,9 @@ cp /tmp/codebase-structure-qa/statistics-project-track-epic.png tmp/stats-contro
 
 Open all eight files with the image viewer before accepting the comparison.
 
-- [ ] **Step 5: Repo state:** `git diff --check` && `git status --short`.
+- [x] **Step 5: Repo state:** `git diff --check` && `git status --short`.
 
-- [ ] **Step 6: Commit generated output**
+- [x] **Step 6: Commit generated output**
 
 ```bash
 git add frontend/dist/dashboard.js frontend/dist/dashboard.js.map frontend/dist/dashboard.css
@@ -908,9 +908,9 @@ git commit -m "build: refresh stats controls frontend bundle"
 
 Then confirm drift-free: `fnm exec --using 20 npm run build && git status --short` shows no dist change.
 
-- [ ] **Step 7: Status note + index (kept as `EXEC-` pending acceptance/merge)** — add a top `Status:` note naming the execution commits and verified branch, then update the existing `docs/plans/README.md` entry with the same state. Do not claim a merge that has not happened and do not rename to `DONE-` before acceptance/merge.
+- [x] **Step 7: Status note + index (kept as `EXEC-` pending acceptance/merge)** — add a top `Status:` note naming the execution commits and verified branch, then update the existing `docs/plans/README.md` entry with the same state. Do not claim a merge that has not happened and do not rename to `DONE-` before acceptance/merge.
 
-- [ ] **Step 8: Commit plan/index status and final cleanliness**:
+- [x] **Step 8: Commit plan/index status and final cleanliness**:
 
 ```bash
 git add docs/plans/EXEC-stats-controls-unification.md docs/plans/README.md

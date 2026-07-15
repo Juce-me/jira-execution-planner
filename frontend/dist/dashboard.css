@@ -5999,6 +5999,10 @@ button.status-pill:focus-visible {
   align-items: end;
   margin-bottom: 0.8rem;
 }
+.stats-controls:has(.sprint-dropdown-panel) {
+  position: relative;
+  z-index: calc(var(--sticky-control-overlay-z) + 2);
+}
 .stats-control-group label {
   display: block;
   font-size: 0.65rem;
@@ -6410,19 +6414,10 @@ button.status-pill:focus-visible {
   grid-row: 1;
   min-width: 0;
 }
-.excluded-capacity-filter-controls .excluded-capacity-start-sprint-control {
-  grid-column: 2;
+.excluded-capacity-filter-controls [data-stats-range=excluded-capacity-sprint] {
+  grid-column: 2 / span 2;
   grid-row: 1;
-}
-.excluded-capacity-filter-controls .excluded-capacity-end-sprint-control {
-  grid-column: 3;
-  grid-row: 1;
-}
-.excluded-capacity-filter-controls .excluded-capacity-sprint-control {
   min-width: 0;
-}
-.excluded-capacity-filter-controls .scenario-input {
-  width: 100%;
 }
 .excluded-capacity-epic-dropdown {
   width: 100%;
@@ -6848,8 +6843,7 @@ button.status-pill:focus-visible {
     grid-template-columns: 1fr;
   }
   .excluded-capacity-filter-controls .excluded-capacity-epic-filter,
-  .excluded-capacity-filter-controls .excluded-capacity-start-sprint-control,
-  .excluded-capacity-filter-controls .excluded-capacity-end-sprint-control {
+  .excluded-capacity-filter-controls [data-stats-range=excluded-capacity-sprint] {
     grid-column: auto;
     grid-row: auto;
   }
@@ -7616,7 +7610,7 @@ button.status-pill:focus-visible {
 .project-track-controls select.scenario-input {
   min-width: 150px;
 }
-.project-track-controls .stats-control-group.project-track-exclusions {
+.stats-control-group.project-track-exclusions {
   display: flex;
   flex-direction: column;
   gap: 0.22rem;

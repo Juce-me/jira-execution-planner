@@ -1185,6 +1185,27 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     });
     await captureSmokeScreenshot(page, 'statistics-lead-times');
 
+    // The merged quarter range group must lay Start/End out side by side (not stacked)
+    // with no clipped toggle text, and get enough width for both (MRT020).
+    const leadTimesQuarterRange = page.locator('[data-stats-range="lead-times-quarter"]');
+    const leadTimesQuarterGeometry = await leadTimesQuarterRange.evaluate((group) => {
+        const toggles = Array.from(group.querySelectorAll('.sprint-dropdown-toggle'));
+        return {
+            groupWidth: group.getBoundingClientRect().width,
+            tops: toggles.map((toggle) => toggle.getBoundingClientRect().top),
+            overflow: toggles.map((toggle) => {
+                const label = toggle.querySelector('span');
+                return { scrollWidth: label.scrollWidth, clientWidth: label.clientWidth };
+            }),
+        };
+    });
+    expect(leadTimesQuarterGeometry.tops).toHaveLength(2);
+    expect(leadTimesQuarterGeometry.tops[0]).toBe(leadTimesQuarterGeometry.tops[1]);
+    for (const { scrollWidth, clientWidth } of leadTimesQuarterGeometry.overflow) {
+        expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    }
+    expect(leadTimesQuarterGeometry.groupWidth).toBeGreaterThanOrEqual(240);
+
     // End Quarter reconciliation: last-control-wins, one debounced request per change, and no
     // request is ever sent with an inverted (start > end) pair.
     const cohortControls = page.locator('.stats-view.open .cohort-controls');

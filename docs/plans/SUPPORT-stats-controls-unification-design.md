@@ -139,3 +139,30 @@ Per-view layout: ONE existing `.controls-label` group heading (`Sprint` for the 
 - **Global top SPRINT control stays unchanged.** It shares the visual class contract but has distinct
   main/compact sticky-surface behavior. Migrating it would broaden this Statistics-only change and
   re-open MRT009 risk without improving the requested flow.
+
+## Approved Follow-up: Lead Times Control-row Compaction
+
+The initial implementation is functionally correct, but its auto-fit grid gives the quarter range two
+columns and pushes Capacity onto a second row. The grid also bottom-aligns groups with different internal
+heights, so the visible headings do not share a baseline. The approved refinement is limited to the Lead
+Times control row:
+
+- Use a content-aware desktop row for Quarter, Group By, Project, Assignee, and the capacity exclusions.
+  Keep the existing responsive wrap below the available width; do not introduce horizontal scrolling.
+- Reuse the existing `.controls-label` typography for every top-level heading so Quarter, Group By,
+  Project, Assignee, and Exclude share the same size, casing, spacing, and horizontal level.
+- Keep `StatsRangeControl`, `SegmentedControl`, and the native Project/Assignee selects. This is layout and
+  labeling only; no filter state, request key, persistence, or regrouping behavior changes.
+- Rename the Capacity heading to **Exclude** and shorten the checkbox labels to **Ad Hoc** and
+  **Excluded Capacity**. Keep their accessible names explicit as **Exclude Ad Hoc** and
+  **Exclude Excluded Capacity** so screen-reader meaning and existing behavioral locators remain clear.
+- Place both exclusion checkboxes inline at desktop widths. They may wrap together with their group on
+  narrow screens, but must not split into a detached second control row at the reference desktop width.
+- Keep the existing no-event analytics decision. Update the Lead Times capacity-filter allowlist wording
+  and its source guard because the visible labels change, but do not add an analytics event.
+
+Verification adds rendered geometry assertions at the reference desktop viewport: all five top-level
+headings have the same top coordinate, all five groups occupy one row, and both checkbox controls share
+one vertical level. Existing 375 px no-overflow coverage remains required, along with accessible-name and
+no-refetch assertions for Group By and both exclusions. A settled screenshot is required for final visual
+review.

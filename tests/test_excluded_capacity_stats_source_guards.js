@@ -620,30 +620,48 @@ test('excluded-capacity line chart uses a readable custom hover readout', () => 
     );
 });
 
-test('excluded-capacity controls reserve the wide column for the epic filter', () => {
+test('excluded-capacity controls keep sprint first and actions on the right', () => {
+    const controlsStart = dashboardSource.indexOf('className="stats-controls excluded-capacity-controls excluded-capacity-filter-controls"');
+    const controlsEnd = dashboardSource.indexOf('<div className="stats-summary excluded-capacity-summary">', controlsStart);
+    const controlsSource = dashboardSource.slice(controlsStart, controlsEnd);
     assert.ok(
-        dashboardSource.includes('excluded-capacity-filter-controls'),
+        controlsStart >= 0 && controlsEnd > controlsStart,
         'Expected excluded capacity controls to opt into the compact sprint/filter layout'
     );
     assert.match(
-        dashboardSource,
+        controlsSource,
         /<StatsRangeControl\s+idPrefix="excluded-capacity-sprint"[\s\S]*?startValue=\{excludedCapacityStartSprintId\}[\s\S]*?endValue=\{excludedCapacityEndSprintId\}/,
         'Expected the unified sprint range control to be bound to the excluded-capacity start/end sprint state'
     );
-    assert.match(
-        cssSource,
-        /\.excluded-capacity-filter-controls \[data-stats-range="excluded-capacity-sprint"\]\s*\{[\s\S]*grid-column:\s*2 \/ span 2/,
-        'Expected the unified sprint range group to span both compact sprint columns'
+    assert.ok(
+        controlsSource.indexOf('idPrefix="excluded-capacity-sprint"') <
+            controlsSource.indexOf('className="stats-control-group excluded-capacity-epic-filter"'),
+        'Expected Sprint to precede Excluded Epics in DOM order'
+    );
+    assert.ok(
+        controlsSource.indexOf('className="stats-control-group excluded-capacity-epic-filter"') <
+            controlsSource.indexOf('className="excluded-capacity-actions"'),
+        'Expected both segmented controls to follow Excluded Epics in the same control row'
     );
     assert.match(
         cssSource,
-        /\.excluded-capacity-filter-controls\s*\{[\s\S]*grid-template-columns:\s*minmax\(320px, 1fr\) repeat\(2, minmax\(118px, 148px\)\)/,
-        'Expected excluded epics to get the flexible column and sprint selectors to stay compact'
+        /\.excluded-capacity-filter-controls\s*\{[\s\S]*grid-template-columns:\s*max-content minmax\(240px, 1fr\) max-content/,
+        'Expected Sprint and actions to stay content-sized while Excluded Epics uses the remaining width'
     );
     assert.match(
         cssSource,
-        /\.excluded-capacity-filter-controls \.excluded-capacity-epic-filter\s*\{[\s\S]*grid-column:\s*1/,
-        'Expected excluded epic filter to sit in the wide first column'
+        /\.excluded-capacity-filter-controls \[data-stats-range="excluded-capacity-sprint"\]\s*\{[\s\S]*grid-column:\s*1/,
+        'Expected the sprint range to occupy the first column'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-filter-controls \.excluded-capacity-epic-filter\s*\{[\s\S]*grid-column:\s*2/,
+        'Expected Excluded Epics to occupy the flexible middle column'
+    );
+    assert.match(
+        cssSource,
+        /\.excluded-capacity-filter-controls \.excluded-capacity-actions\s*\{[\s\S]*grid-column:\s*3/,
+        'Expected both segmented controls to occupy the right column'
     );
 });
 

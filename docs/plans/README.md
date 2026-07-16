@@ -104,11 +104,15 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Approved design for compacting Excluded Capacity into one desktop control row: Sprint first, Excluded Epics flexible in the middle, and both segmented controls grouped on the right.
    - Presentation-only scope; existing state, analytics, requests, and calculations remain unchanged.
 
-2. `EXEC-ad-hoc-capacity-epics.md`
+2. `EXEC-excluded-capacity-control-row.md`
+   - Implemented and verified locally on 2026-07-16; pending PR review/merge.
+   - Output: Sprint first, Excluded Epics flexible in the middle, and both segmented controls aligned on the right, with focused source and rendered-geometry verification.
+
+3. `EXEC-ad-hoc-capacity-epics.md`
    - Active implementation plan for adding department/team-group Ad Hoc capacity epic configuration as included Product capacity, separate from excluded capacity.
    - Expected output: `teamGroups.groups[].adHocCapacityEpics` round-trips through shared group config, Settings exposes a separate epic selector, Ad Hoc stories remain included in Product Planning and reporting, excluded capacity behavior remains driven only by `excludedCapacityEpics`, and affected Planning, Stats, Burndown, Lead Times, Mono vs Cross, and Scenario paths have focused verification.
 
-3. `EXEC-statistics-consistency-bugfix.md`
+4. `EXEC-statistics-consistency-bugfix.md`
    - Implemented and verified on branch `bugfix/statistics-consistency-exec`, integrated into `bugfix/statistics-colors-capacity-lead-time` (commits `a42e7ca..c4fb36c`); kept as `EXEC-` pending user review/merge to `main`. Shared Statistics team colors, removal of the redundant Excluded Capacity Range card, and a bounded Lead Times creation cohort with inclusive End Quarter. Decisions recorded in `SUPPORT-statistics-consistency-bugfix-design.md`.
    - Expected output: Priority, Burndown, Excluded Capacity, and Mono vs Cross consume one deterministic active-group color map; Excluded Capacity drops only its Range card; Lead Times adds an inclusive End Quarter with last-control-wins reconciliation, half-open Jira creation-date JQL, matching Jira links, and terminal dates preserved beyond the cohort boundary.
 

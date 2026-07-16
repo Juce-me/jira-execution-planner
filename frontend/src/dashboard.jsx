@@ -13516,6 +13516,16 @@ import {
                                 />
                                 <div className={`stats-view ${statsView === 'excludedCapacity' ? 'open' : ''}`}>
                                     <div className="stats-controls excluded-capacity-controls excluded-capacity-filter-controls">
+                                        <StatsRangeControl
+                                            idPrefix="excluded-capacity-sprint"
+                                            kindLabel="Sprint"
+                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
+                                            startValue={excludedCapacityStartSprintId}
+                                            endValue={excludedCapacityEndSprintId}
+                                            onStartChange={setExcludedCapacityStartSprintId}
+                                            onEndChange={setExcludedCapacityEndSprintId}
+                                            active={statsView === 'excludedCapacity'}
+                                        />
                                         <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>
                                             <label>Excluded Epics</label>
                                             <div className="team-dropdown excluded-capacity-epic-dropdown">
@@ -13581,50 +13591,39 @@ import {
                                                 )}
                                             </div>
                                         </div>
-                                        <StatsRangeControl
-                                            idPrefix="excluded-capacity-sprint"
-                                            kindLabel="Sprint"
-                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
-                                            startValue={excludedCapacityStartSprintId}
-                                            endValue={excludedCapacityEndSprintId}
-                                            onStartChange={setExcludedCapacityStartSprintId}
-                                            onEndChange={setExcludedCapacityEndSprintId}
-                                            active={statsView === 'excludedCapacity'}
-                                        />
-                                    </div>
-
-                                    <div className="excluded-capacity-actions">
-                                        <SegmentedControl
-                                            ariaLabel="Series mode"
-                                            value={excludedCapacityChartMode}
-                                            onChange={(nextMode) => {
-                                                trackStatsAnalyticsAction('chart_action', {
-                                                    workflow_action: 'mode_change',
-                                                    chart_id: 'excluded_capacity',
-                                                    series_type: analyticsToken(nextMode)
-                                                });
-                                                setExcludedCapacityChartMode(nextMode);
-                                            }}
-                                            options={[
-                                                { value: 'teams', label: 'Teams' },
-                                                { value: 'group', label: 'Group' }
-                                            ]}
-                                        />
-                                        <SegmentedControl
-                                            ariaLabel="Metric"
-                                            value={excludedCapacityMetric}
-                                            onChange={(nextMetric) => {
-                                                trackStatsAnalyticsAction('stats_action', {
-                                                    workflow_action: 'metric_change',
-                                                    metric: nextMetric === 'storyPoints' ? 'story_points' : 'percent'
-                                                });
-                                                setExcludedCapacityMetric(nextMetric);
-                                            }}
-                                            options={[
-                                                { value: 'percent', label: 'Percentage' },
-                                                { value: 'storyPoints', label: 'Story Points' }
-                                            ]}
-                                        />
+                                        <div className="excluded-capacity-actions">
+                                            <SegmentedControl
+                                                ariaLabel="Series mode"
+                                                value={excludedCapacityChartMode}
+                                                onChange={(nextMode) => {
+                                                    trackStatsAnalyticsAction('chart_action', {
+                                                        workflow_action: 'mode_change',
+                                                        chart_id: 'excluded_capacity',
+                                                        series_type: analyticsToken(nextMode)
+                                                    });
+                                                    setExcludedCapacityChartMode(nextMode);
+                                                }}
+                                                options={[
+                                                    { value: 'teams', label: 'Teams' },
+                                                    { value: 'group', label: 'Group' }
+                                                ]}
+                                            />
+                                            <SegmentedControl
+                                                ariaLabel="Metric"
+                                                value={excludedCapacityMetric}
+                                                onChange={(nextMetric) => {
+                                                    trackStatsAnalyticsAction('stats_action', {
+                                                        workflow_action: 'metric_change',
+                                                        metric: nextMetric === 'storyPoints' ? 'story_points' : 'percent'
+                                                    });
+                                                    setExcludedCapacityMetric(nextMetric);
+                                                }}
+                                                options={[
+                                                    { value: 'percent', label: 'Percentage' },
+                                                    { value: 'storyPoints', label: 'Story Points' }
+                                                ]}
+                                            />
+                                        </div>
                                     </div>
 
                                     <div className="stats-summary excluded-capacity-summary">

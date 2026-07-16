@@ -313,7 +313,12 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 2. `SUPPORT-eng-project-track-write-switch-design.md`
    - User-approved design reference for the follow-up OAuth-backed ENG Project Track write plan.
    - Expected output: every real ENG Epic header renders 🔒 Committed, 🤷 Flexible, or ⚪ Unidentified; clicking the indicator in Catch Up or Planning opens the existing compact issue-field option-menu behavior and writes only the configured Jira Project Track field through the signed-in user's OAuth context, with the same queue, optimistic update, rollback, stale-scope, auth-recovery, analytics, and surface-isolation contracts as status and priority changes.
-   - No Home/Townsquare or EPM mutation; `GATE-05` remains blocked. This support document feeds `EXEC-eng-project-track-write-switch.md` and is not itself executable.
+   - No Home/Townsquare or EPM mutation; `GATE-05` remains blocked. This support document feeds `EXEC-eng-project-track-write-switch.md`, which now exists.
+
+3. `EXEC-eng-project-track-write-switch.md`
+   - Implemented on branch `feature/eng-project-track-write-switch`, pending merge. Rename to `DONE-*` after merge.
+   - Expected output: every real ENG Epic header renders an always-visible 🔒/🤷/⚪ Project Track indicator that, on Catch Up/Planning with Settings closed, is a native button opening the shared compact option menu and writing only the configured Jira Project Track field between Flexible and Committed through the signed-in user's OAuth context, with the same queue/optimistic/rollback/stale-scope/auth-recovery/analytics contracts as status and priority changes.
+   - No Home/Townsquare or EPM mutation; `GATE-05` unaffected.
 
 ## Stats Project Track By Sprint
 

@@ -12,7 +12,7 @@
 
 ## Status
 
-In progress on branch `feature/eng-project-track-write-switch`. Rename to `DONE-*` only after implementation is completed, verified, and merged per `docs/plans/AGENTS.md`. Track per-task completion in the checkboxes below.
+Executed on branch `feature/eng-project-track-write-switch`, commit range `7ba5490..a7feb5d`, verified 2026-07-16. Rename to `DONE-*` only after merge per `docs/plans/AGENTS.md`. Track per-task completion in the checkboxes below.
 
 ## Global Constraints
 
@@ -1012,7 +1012,7 @@ Add `closeProjectTrackControl()` to the existing `activeGroupId` cleanup effect.
 - Modify: `docs/plans/GATE-05-home-write-capability.md` (sweep note)
 - Modify: this plan (Status → executed summary)
 
-- [ ] **Step 7.1: Analytics contract.** Add the taxonomy row after `issue_priority_action` (line 99):
+- [x] **Step 7.1: Analytics contract.** Add the taxonomy row after `issue_priority_action` (line 99):
 
 ```
 | `issue_project_track_action` | `workflow_action` (`project_track_options_open`\|`project_track_change_submit`\|`project_track_change_result`), `source_surface` (`catch_up`\|`planning`), `selected_count_bucket`, `issue_type_mix` (`epics`), `value_state` (`flexible`\|`committed`, only after a target is selected), `result` (`success`\|`failure`, result event only) | ENG Catch Up/Planning Epic header Project Track change | `frontend/src/eng/useEngProjectTrackTransitions.js`, `frontend/src/analytics/dashboardAnalytics.js` | browser | ENG Project Track change adoption and reliability |
@@ -1020,9 +1020,9 @@ Add `closeProjectTrackControl()` to the existing `activeGroupId` cleanup effect.
 
 Extend the `api_result` row (line 100) with `api_surface=jira_issue_project_track` → `feature_name=eng_project_track_changes`, mirroring the priority clause. No GA4/GTM runbook change, no new custom dimension, no new param key.
 
-- [ ] **Step 7.2: Plan index + gate sweep.** In `docs/plans/README.md` under `## ENG Epic Sort And Track`, add the `EXEC-eng-project-track-write-switch.md` entry (implemented on branch `feature/eng-project-track-write-switch`; expected output = interactive 🔒/🤷/⚪ Epic-header control writing only the configured Jira Project Track field via the signed-in user's OAuth context with status/priority-parity behavior; `GATE-05` unaffected) and update the SUPPORT design entry to note the EXEC plan now exists. Append a 2026-07-16 execution sweep note to `GATE-05-home-write-capability.md` Last Check Notes (plan adds Jira OAuth issue-edit only; no Home/Townsquare or EPM mutation; probe inputs still unavailable; keep Blocked).
+- [x] **Step 7.2: Plan index + gate sweep.** In `docs/plans/README.md` under `## ENG Epic Sort And Track`, add the `EXEC-eng-project-track-write-switch.md` entry (implemented on branch `feature/eng-project-track-write-switch`; expected output = interactive 🔒/🤷/⚪ Epic-header control writing only the configured Jira Project Track field via the signed-in user's OAuth context with status/priority-parity behavior; `GATE-05` unaffected) and update the SUPPORT design entry to note the EXEC plan now exists. Append a 2026-07-16 execution sweep note to `GATE-05-home-write-capability.md` Last Check Notes (plan adds Jira OAuth issue-edit only; no Home/Townsquare or EPM mutation; probe inputs still unavailable; keep Blocked).
 
-- [ ] **Step 7.3: Final verification gates.** Run and read each:
+- [x] **Step 7.3: Final verification gates.** Run and read each:
 
 ```bash
 JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile .venv/bin/python -m unittest discover -s tests
@@ -1036,6 +1036,20 @@ curl http://localhost:5050/api/test
 
 All must pass (Playwright pre-existing failures unrelated to this feature must be triaged and reported, not ignored silently).
 
-- [ ] **Step 7.4: Commit docs.** `git add docs/ && git commit -m "docs: record Project Track write switch analytics contract and plan status"`
+- [x] **Step 7.4: Commit docs.** `git add docs/ && git commit -m "docs: record Project Track write switch analytics contract and plan status"`
 
 ---
+
+## Outcome
+
+Implemented as planned. Approved divergences recorded during execution:
+
+1. Service docstring prose reworded to avoid self-tripping the source-text guard.
+2. Menu `showEmpty` guard includes `visibleOptions.length === 0`, matching the priority sibling.
+3. Trigger affordance copies the real `button.task-priority-icon` box-shadow pattern.
+4. Dashboard destructures `pendingProjectTrackIssueKeys` (the hook's real export name).
+5. `trackedFetch`/`trackProductEvent` real signatures used over the plan's illustrative shapes.
+
+## Current Accuracy
+
+Accurate as of execution (2026-07-16); shipped code and tests are the source of truth.

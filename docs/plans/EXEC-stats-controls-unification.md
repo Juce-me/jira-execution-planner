@@ -1,6 +1,6 @@
 # Stats Controls Unification Implementation Plan
 
-> **Status:** Implemented and verified on `improvement/stats-controls-unification` (2026-07-15), execution commits `331f3c9..2d5f0a7` after plan-validation commit `253b427`: Task 1 `331f3c9`, Task 2 `5eb1358`+`19d4da6`+`78ffd0e`+`36fe47f`, Task 3 `e353112`, Task 4 `23502d6`, Task 5 `cdbffac`, Task 6 `cb84a8d`+`4bfca2e`+`efb30c0`+`2d5f0a7`. Full regression at final head: JS unit 519/519, Python 1052/1052 (1 expected skip), Playwright 154 passed with only the 2 pre-existing `eng_alerts_panel_summary` failures already present on the ancestor branch. Divergences are recorded inline per task; Task 6 additionally reconciled the Lead Times controls grid (`.cohort-controls [data-stats-range="lead-times-quarter"] { grid-column: span 2; }`) so desktop Start/End render side by side like the other three views, and removed CSS rules orphaned by the replaced native selects. Final whole-branch review: ready to merge. Kept as `EXEC-` pending acceptance/merge; not pushed.
+> **Status:** Initial implementation verified on `improvement/stats-controls-unification` (2026-07-15), execution commits `331f3c9..2d5f0a7` after plan-validation commit `253b427`: Task 1 `331f3c9`, Task 2 `5eb1358`+`19d4da6`+`78ffd0e`+`36fe47f`, Task 3 `e353112`, Task 4 `23502d6`, Task 5 `cdbffac`, Task 6 `cb84a8d`+`4bfca2e`+`efb30c0`+`2d5f0a7`. Full regression at that head: JS unit 519/519, Python 1052/1052 (1 expected skip), Playwright 154 passed with only the 2 pre-existing `eng_alerts_panel_summary` failures already present on the ancestor branch. A user-approved Lead Times control-row compaction follow-up is pending in Task 7. Kept as `EXEC-` pending follow-up execution and acceptance/merge; not pushed.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -921,3 +921,274 @@ git log --oneline -5
 ```
 
 Expected: clean worktree, no dist drift, no tracked files under `tmp/`. Wait for explicit user confirmation before push, per repo workflow.
+
+### Task 7: Compact and align the Lead Times control row
+
+**Files:**
+- Modify: `frontend/src/dashboard.jsx:13975-14051`
+- Modify: `frontend/src/styles/stats/excluded-capacity.css:1-9,557-570`
+- Modify: `tests/test_stats_controls_source_guards.js`
+- Modify: `tests/test_analytics_source_guards.js:132-148`
+- Modify: `tests/ui/codebase_structure_smoke.spec.js:1185-1300,1375-1425`
+- Modify: `docs/README_ANALYTICS.md`
+- Modify generated: `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, `frontend/dist/dashboard.css`
+- Modify at close: `docs/plans/EXEC-stats-controls-unification.md`, `docs/plans/README.md`
+
+**Interfaces:**
+- Consumes: existing `StatsRangeControl`, `SegmentedControl`, `.controls-label`, `.scenario-input`,
+  `.project-track-checkbox`, `cohortExcludeAdHoc`, and `cohortExcludeCapacity` contracts.
+- Produces: one content-aware desktop Lead Times row whose five group headings share the existing
+  `.controls-label` typography and top coordinate; visible exclusion copy is `Exclude` + `Ad Hoc` +
+  `Excluded Capacity`, while checkbox accessible names remain `Exclude Ad Hoc` and
+  `Exclude Excluded Capacity`.
+- Preserves: all range reconciliation, filter state, local persistence, client-side regrouping, request
+  counts, and the existing no-event analytics decision.
+
+- [ ] **Step 1: Write failing source guards for the new visual and accessibility contract.**
+
+Replace the last test in `tests/test_stats_controls_source_guards.js` with:
+
+```js
+test('implemented stats ranges use StatsRangeControl and Lead Times headings share one style', () => {
+    assert.equal((dashboard.match(/<StatsRangeControl/g) || []).length, 4);
+    assert.equal(/<label>Start (?:Sprint|Quarter)<\/label>/.test(dashboard), false);
+    assert.equal(/<label>End (?:Sprint|Quarter)<\/label>/.test(dashboard), false);
+
+    const start = dashboard.indexOf('<div className="stats-controls cohort-controls">');
+    const end = dashboard.indexOf('<div className="stats-actions cohort-status-actions">', start);
+    assert.ok(start >= 0 && end > start, 'Expected the Lead Times controls block');
+    const controls = dashboard.slice(start, end);
+    ['Group By', 'Project', 'Assignee', 'Exclude'].forEach((label) => {
+        assert.ok(controls.includes(`<div className="controls-label">${label}</div>`), label);
+    });
+    assert.ok(controls.includes('aria-label="Project"'));
+    assert.ok(controls.includes('aria-label="Assignee"'));
+    assert.ok(controls.includes('aria-label="Exclude Ad Hoc"'));
+    assert.ok(controls.includes('aria-label="Exclude Excluded Capacity"'));
+    assert.ok(controls.includes('<span>Ad Hoc</span>'));
+    assert.ok(controls.includes('<span>Excluded Capacity</span>'));
+    assert.equal(controls.includes('<span>Exclude Ad Hoc</span>'), false);
+    assert.equal(controls.includes('<span>Exclude Excluded Capacity</span>'), false);
+});
+```
+
+In the existing Lead Times analytics guard in `tests/test_analytics_source_guards.js`, replace the four
+visible-copy checks with the exact visual/accessibility checks below; retain the state-setter,
+no-legacy-state, no-tracking-call, and documentation assertions:
+
+```js
+    assert.ok(capacityControls.includes('aria-label="Exclude Ad Hoc"'));
+    assert.ok(capacityControls.includes('aria-label="Exclude Excluded Capacity"'));
+    assert.ok(capacityControls.includes('<span>Ad Hoc</span>'));
+    assert.ok(capacityControls.includes('<span>Excluded Capacity</span>'));
+```
+
+- [ ] **Step 2: Write failing rendered-layout and visible-copy assertions.**
+
+In the `Statistics subviews` Playwright test, immediately after the first
+`captureSmokeScreenshot(page, 'statistics-lead-times')`, add:
+
+```js
+    await page.setViewportSize({ width: 1964, height: 900 });
+    const cohortControls = page.locator('.stats-view.open .cohort-controls');
+    const desktopControlLayout = await cohortControls.evaluate((node) => {
+        const groups = Array.from(node.querySelectorAll(':scope > .stats-control-group'));
+        const headings = Array.from(node.querySelectorAll(':scope > .stats-control-group > .controls-label'));
+        const checkboxes = Array.from(node.querySelectorAll('[data-stats-capacity-filters] .project-track-checkbox'));
+        return {
+            groupTops: groups.map((group) => Math.round(group.getBoundingClientRect().top)),
+            headingTops: headings.map((heading) => Math.round(heading.getBoundingClientRect().top)),
+            checkboxTops: checkboxes.map((checkbox) => Math.round(checkbox.getBoundingClientRect().top)),
+        };
+    });
+    expect(desktopControlLayout.groupTops).toHaveLength(5);
+    expect(new Set(desktopControlLayout.groupTops).size).toBe(1);
+    expect(desktopControlLayout.headingTops).toHaveLength(5);
+    expect(new Set(desktopControlLayout.headingTops).size).toBe(1);
+    expect(desktopControlLayout.checkboxTops).toHaveLength(2);
+    expect(new Set(desktopControlLayout.checkboxTops).size).toBe(1);
+    await page.setViewportSize({ width: 1280, height: 760 });
+```
+
+Reuse the new `cohortControls` declaration below this insertion by removing the later duplicate
+`const cohortControls = page.locator('.stats-view.open .cohort-controls');` line before quarter
+reconciliation.
+
+In `Lead Times capacity exclusions re-slice locally and replace the legacy inclusive filter`, add these
+assertions after `const view = page.locator('.stats-view.open')` and before locating the checkboxes:
+
+```js
+    await expect(view.getByText('Exclude', { exact: true })).toBeVisible();
+    await expect(view.getByText('Ad Hoc', { exact: true })).toBeVisible();
+    await expect(view.getByText('Excluded Capacity', { exact: true })).toBeVisible();
+    await expect(view.getByText('Exclude Ad Hoc', { exact: true })).toHaveCount(0);
+    await expect(view.getByText('Exclude Excluded Capacity', { exact: true })).toHaveCount(0);
+```
+
+- [ ] **Step 3: Run the focused tests and confirm RED for the missing layout/copy.**
+
+Run:
+
+```bash
+fnm exec --using 20 node --test tests/test_stats_controls_source_guards.js tests/test_analytics_source_guards.js
+fnm exec --using 20 npx playwright test tests/ui/codebase_structure_smoke.spec.js -g "Statistics subviews|Lead Times capacity exclusions"
+```
+
+Expected: the source tests fail because Group By/Project/Assignee/Exclude do not yet use
+`.controls-label` and the short visible spans do not exist. Playwright fails because only one top-level
+heading uses `.controls-label`, Capacity is on a second row, and the old visible exclusion strings remain.
+Record the exact failures in the task report before changing source.
+
+- [ ] **Step 4: Apply the minimal Lead Times markup change.**
+
+In the Lead Times controls block in `frontend/src/dashboard.jsx`:
+
+1. Replace the visual `<label>` above `SegmentedControl` with
+   `<div className="controls-label">Group By</div>`.
+2. Replace the visual Project and Assignee `<label>` elements with
+   `<div className="controls-label">Project</div>` and
+   `<div className="controls-label">Assignee</div>`, and add `aria-label="Project"` /
+   `aria-label="Assignee"` to the corresponding native selects.
+3. Replace the capacity group contents with this exact structure while retaining the existing state
+   setters and selected-row resets:
+
+```jsx
+<div className="stats-control-group project-track-exclusions" data-stats-capacity-filters>
+    <div className="controls-label">Exclude</div>
+    <div className="cohort-exclusion-options">
+        <label className="project-track-checkbox">
+            <input
+                type="checkbox"
+                aria-label="Exclude Ad Hoc"
+                checked={cohortExcludeAdHoc}
+                onChange={(e) => { setCohortExcludeAdHoc(e.target.checked); setCohortSelectedRow(null); }}
+            />
+            <span>Ad Hoc</span>
+        </label>
+        <label className="project-track-checkbox">
+            <input
+                type="checkbox"
+                aria-label="Exclude Excluded Capacity"
+                checked={cohortExcludeCapacity}
+                onChange={(e) => { setCohortExcludeCapacity(e.target.checked); setCohortSelectedRow(null); }}
+            />
+            <span>Excluded Capacity</span>
+        </label>
+    </div>
+</div>
+```
+
+Do not change `StatsRangeControl`, state names, callbacks, option arrays, request dependencies, or
+Project Track's existing exclusion markup.
+
+- [ ] **Step 5: Replace the Lead Times grid override with scoped content-aware flex layout.**
+
+Replace the opening `.cohort-controls` rules in
+`frontend/src/styles/stats/excluded-capacity.css` with:
+
+```css
+        .cohort-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 0.6rem 1rem;
+            margin-bottom: 0.65rem;
+        }
+
+        .cohort-controls > .stats-control-group {
+            flex: 0 0 auto;
+            min-width: 0;
+        }
+
+        .cohort-controls > .stats-control-group:has(> .scenario-input) {
+            flex: 1 1 12rem;
+            max-width: 20rem;
+        }
+
+        .cohort-controls > .stats-control-group > .scenario-input {
+            box-sizing: border-box;
+            height: var(--control-height);
+            margin-top: 0.4rem;
+        }
+
+        .cohort-controls .project-track-exclusions {
+            gap: 0;
+        }
+
+        .cohort-exclusion-options {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            min-height: var(--control-height);
+            margin-top: 0.4rem;
+        }
+```
+
+Delete the now-inert `grid-column` rule for `[data-stats-range="lead-times-quarter"]` at the top of the
+file and its mobile reset inside `@media (max-width: 760px)`. Add only this mobile rule inside that media
+query so the checkbox pair cannot create horizontal overflow:
+
+```css
+            .cohort-exclusion-options {
+                flex-wrap: wrap;
+            }
+```
+
+- [ ] **Step 6: Update the existing analytics no-event record without adding an event.**
+
+Replace the Lead Times capacity cohort filter row in `docs/README_ANALYTICS.md` with:
+
+```markdown
+| Lead Times capacity cohort filter | `frontend/src/dashboard.jsx`, `frontend/src/cohort/cohortUtils.js` | The existing uninstrumented local-only exclusion group is displayed as `Exclude` with `Ad Hoc` and `Excluded Capacity` checkboxes; their accessible names remain `Exclude Ad Hoc` and `Exclude Excluded Capacity`. Both only re-slice already-fetched issues, add no request or data contract, and send no epic keys, summaries, team names, or other user data; this preserves the existing no-event decision. | 2026-07-16 |
+```
+
+- [ ] **Step 7: Run GREEN verification, rebuild generated output, and inspect the settled screenshot.**
+
+Run:
+
+```bash
+fnm exec --using 20 node --test tests/test_stats_controls_source_guards.js tests/test_analytics_source_guards.js
+fnm exec --using 20 npm run build
+fnm exec --using 20 npx playwright test tests/ui/codebase_structure_smoke.spec.js -g "Statistics subviews|Lead Times capacity exclusions"
+fnm exec --using 20 npm run test:frontend:unit
+.venv/bin/python -m unittest tests.test_codebase_structure_budgets
+git diff --check
+```
+
+Expected: all commands exit 0 with pristine output. Copy the settled screenshot generated by the
+`Statistics subviews` test into ignored task evidence and open it with the image viewer:
+
+```bash
+mkdir -p tmp/stats-controls-unification/follow-up
+cp /tmp/codebase-structure-qa/statistics-lead-times.png tmp/stats-controls-unification/follow-up/lead-times.png
+```
+
+Visual acceptance: at 1964 px, Quarter, Group By, Project, Assignee, and Exclude occupy one row; all five
+headings share the same typography and top coordinate; Start/End, segmented buttons, selects, and inline
+checkboxes share one control level; no text clips or overlaps. At 375 px, controls wrap without horizontal
+overflow. Report what is visible rather than treating the geometry assertions alone as visual proof.
+
+- [ ] **Step 8: Commit the implementation and generated bundle.**
+
+```bash
+git add frontend/src/dashboard.jsx frontend/src/styles/stats/excluded-capacity.css tests/test_stats_controls_source_guards.js tests/test_analytics_source_guards.js tests/ui/codebase_structure_smoke.spec.js docs/README_ANALYTICS.md frontend/dist/dashboard.js frontend/dist/dashboard.js.map frontend/dist/dashboard.css
+git commit -m "fix: compact lead times controls"
+```
+
+- [ ] **Step 9: Record the follow-up execution using the real implementation commit.**
+
+Read the implementation commit with `git log -1 --format='%h %s'`. Update the top status note in this plan
+and the existing Stats Controls Unification entry in `docs/plans/README.md` with that exact short SHA,
+the focused test counts, screenshot inspection result, and `pending acceptance/merge; not pushed`. Mark
+Task 7's steps complete, then commit only the two plan files:
+
+```bash
+git add docs/plans/EXEC-stats-controls-unification.md docs/plans/README.md
+git commit -m "docs: record compact lead times controls"
+git diff --check
+git status --short
+git log --oneline -5
+```
+
+Expected: the only untracked path remains the pre-existing `.playwright-mcp/`; no tracked `tmp/` files
+and no generated-bundle drift. Do not push without explicit user confirmation.

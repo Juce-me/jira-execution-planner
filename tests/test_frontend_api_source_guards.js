@@ -1316,3 +1316,44 @@ test('fetchIssueStatusCatalog sends X-Requested-With and tracks the jira_issue_t
     assert.equal(new Headers(calls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
     assert.equal(new Headers(calls[0].options.headers).has('X-CSRF-Token'), false);
 });
+
+test('auth refresh contract module defines exactly the shared refresh constants and stays side-effect-free', () => {
+    const contractPath = path.join(frontendSrcPath, 'api', 'authRefreshContract.js');
+    assert.ok(fs.existsSync(contractPath), 'Expected frontend/src/api/authRefreshContract.js to exist');
+
+    const source = readSource(contractPath);
+
+    assert.ok(source.includes('AUTH_REFRESH_THROTTLE_MS'), 'Expected AUTH_REFRESH_THROTTLE_MS constant');
+    assert.ok(source.includes('LONG_ABSENCE_MS'), 'Expected LONG_ABSENCE_MS constant');
+    assert.ok(source.includes('AUTH_REFRESH_SHARED_STORAGE_KEY'), 'Expected AUTH_REFRESH_SHARED_STORAGE_KEY constant');
+    assert.ok(source.includes('AUTH_LONG_ABSENCE_EVENT'), 'Expected AUTH_LONG_ABSENCE_EVENT constant');
+    assert.ok(source.includes("'jep.auth.lastRefreshAt'"), 'Expected the exact shared storage key literal');
+    assert.ok(source.includes("'jep:auth-long-absence-return'"), 'Expected the exact long-absence event name literal');
+
+    ['fetch', 'addEventListener', 'localStorage'].forEach((token) => {
+        assert.ok(!source.includes(token), `Expected authRefreshContract.js to stay side-effect-free (found "${token}")`);
+    });
+});
+
+test('auth focus refresh module imports the shared contract and keeps the refresh-only long-absence design', () => {
+    const authFocusRefreshPath = path.join(frontendSrcPath, 'api', 'authFocusRefresh.js');
+    assert.ok(fs.existsSync(authFocusRefreshPath), 'Expected frontend/src/api/authFocusRefresh.js to exist');
+
+    const source = readSource(authFocusRefreshPath);
+
+    assert.ok(source.includes("from './authRefreshContract"), 'Expected authFocusRefresh.js to import the shared contract constants');
+    assert.ok(source.includes("'X-Requested-With': 'jira-execution-planner'"), 'Expected the existing auth refresh request header to be preserved');
+    assert.ok(source.includes("method: 'POST'"), 'Expected the auth refresh POST method to be preserved');
+
+    ['location.reload', 'setInterval', 'setTimeout', 'sessionStorage', 'BroadcastChannel'].forEach((token) => {
+        assert.ok(!source.includes(token), `authFocusRefresh.js must not reintroduce "${token}"`);
+    });
+});
+
+test('dashboard imports the long-absence event name from the contract module and does not import the auth focus refresh shell', () => {
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+
+    assert.ok(dashboardSource.includes("from './api/authRefreshContract"), 'Expected dashboard.jsx to import from the auth refresh contract module');
+    assert.ok(dashboardSource.includes('AUTH_LONG_ABSENCE_EVENT'), 'Expected dashboard.jsx to reference AUTH_LONG_ABSENCE_EVENT');
+    assert.ok(!dashboardSource.includes('authFocusRefresh'), 'dashboard.jsx must not import the self-installing auth focus refresh shell');
+});

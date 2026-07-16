@@ -1,10 +1,10 @@
 # Auth Unfocused Auto-Refresh Implementation Plan
 
-> **Status:** Revalidated 2026-07-10 against `origin/main` at `d37f911`. The auth shell and its route/test contracts are unchanged upstream. Implementation-ready after the execution branch contains the fetched `origin/main` and the baseline request-count check in Task 1 passes.
+> **Status:** Implemented pending merge. Amended 2026-07-16 and executed on branch `improvement/auth-unfocused-refresh`, commits `015cd62..2ad7439`. The previously planned full-page `location.reload()` after a long absence is **rejected**: repeated document loads were the observed problem, and a reload path multiplies them (each reload re-downloads the ~818 KB dashboard bundle and restarts API initialization). The prior unmerged implementation of the reload approach lives on branch `feature/auth-unfocused-auto-refresh` and is superseded by this amendment; do not merge it. This amendment replaces the reload with a single throttled `POST /api/auth/refresh` plus an in-page stale-data refresh of the active view, adds cross-tab deduplication, request-count regression coverage, and temporary server-side diagnostics to identify the real navigation owner. All 7 tasks complete and task-reviewed; final whole-branch review pending. NOT pushed — awaiting explicit user confirmation per repo policy.
 
-**Goal:** Reload Jira Delivery Planner exactly once when the user returns after the dashboard has been continuously unfocused or hidden for more than 12 minutes, while preserving the existing event-driven auth refresh and proving that focus events do not create unexplained static-asset request bursts.
+**Goal:** When the user returns to Jira Delivery Planner after the dashboard has been continuously unfocused or hidden for more than 12 minutes, issue exactly one throttled `POST /api/auth/refresh` (deduplicated across tabs) and, on success, refresh only the active view's stale data in place. Never reload the document. Preserve the existing throttled event-driven auth refresh and the existing `401` login recovery, and prove with request-count regression tests that focus events cannot create document or static-asset request bursts.
 
-**Architecture:** Keep the behavior in `frontend/src/api/authFocusRefresh.js`, outside `frontend/src/dashboard.jsx`. Record the first `blur` or hidden timestamp in memory, evaluate elapsed time when a focus event occurs while visible or when a hidden document becomes visible, and reload once when the elapsed time is strictly greater than 12 minutes. Do not add timers, polling, storage, backend routes, or cache-policy changes. Use an in-memory reload-started guard for duplicate focus/visibility events; a newly loaded document starts with no unfocused timestamp and therefore cannot reload recursively.
+**Architecture:** Keep the absence state machine in `frontend/src/api/authFocusRefresh.js` (the separate auth-shell IIFE bundle). Record the earliest of `window.blur` / document-hidden in memory; when a visible return happens, compute the continuous unfocused time and pass a long-absence flag into the existing refresh function. Cross-tab deduplication uses one short-lived shared timestamp in `localStorage` (no `BroadcastChannel`, no timers, no polling, no backend session state). Timing/name constants shared with the dashboard live in a new side-effect-free module `frontend/src/api/authRefreshContract.js`; `frontend/src/dashboard.jsx` imports only the event name from it and re-runs its existing manual-refresh path when the event arrives. `jira_server.py` gains one temporary after-request diagnostics log line for document and `frontend/dist` requests.
 
 **Tech Stack:** esbuild IIFE auth-shell bundle, Flask-served dashboard, Python `unittest`, Node `node:test`, Playwright, and the existing GA4/GTM analytics contract.
 
@@ -12,237 +12,284 @@
 
 ## Execution Prerequisites
 
-The plan branch is based on `1a633b4`, while the fetched `origin/main` is `d37f911`. Upstream added ENG priority editing and changed shared dashboard source/dist, analytics taxonomy, source guards, plan index, and gate notes. Before implementation, update the branch and verify it contains the freshly fetched mainline:
+- Branch `improvement/auth-unfocused-refresh`, created from current `origin/main`; verify `git merge-base --is-ancestor origin/main HEAD` passes.
+- Shell Node resolves v26; the repo pins Node 20.x. Run every node/npm/npx/playwright command through `fnm exec --using 20 <cmd>`. Python commands use `.venv/bin/python`.
+- The user's own server occupies port 5050 (`http://127.0.0.1:5050`); never kill or restart it. Playwright specs use it only as the request origin — all document/asset/API responses in specs are `page.route`-fulfilled.
+- The superseded branch `feature/auth-unfocused-auto-refresh` may be consulted read-only (via `git show`) for reviewed harness patterns (esbuild+vm unit harness, Playwright clock shim, request counting). Do not cherry-pick its reload behavior, its reload tests, or its analytics row.
 
-```bash
-git fetch origin
-git merge-base --is-ancestor origin/main HEAD
-```
+## Amendment Rationale (2026-07-16)
 
-If the ancestry check exits nonzero, merge or rebase according to the repository's branch workflow before changing source or running `npm run build`. Preserve the upstream ENG priority source, generated assets, analytics rows, source-guard tests, plan-index entry, and gate note while resolving overlaps.
-
-The revalidation checkout also did not have `.venv` or `node_modules`, and its shell resolved Node 26 rather than the repository's required Node 20.x. Before executing Task 1:
-
-```bash
-./scripts/install.sh
-npm ci
-node --version
-.venv/bin/python -c "import ssl; print(ssl.OPENSSL_VERSION)"
-```
-
-Use the repository's Node 20.x runtime or configured runtime manager for all npm, Node, and Playwright commands. The Python command must report an OpenSSL-backed runtime supported by the root `AGENTS.md`. Dependency bootstrap is an environment step, not part of the feature diff.
-
-## Revalidation Findings Incorporated
-
-- `origin/main` at `d37f911` does not change `frontend/src/api/authFocusRefresh.js`, `jira-dashboard.html`, `tests/test_auth_entry_page.py`, `tests/ui/epm_home_token_fixture.js`, `package.json`, `/api/auth/refresh`, or the auth-flow request guard. The endpoint and state-machine assumptions below remain current.
-- Upstream does change `tests/test_frontend_api_source_guards.js`, `docs/README_ANALYTICS.md`, `docs/plans/README.md`, dashboard source, and generated dashboard assets. Implementation must begin from updated mainline and add to those files without removing the ENG priority-edit coverage or analytics contract.
-- The reported lines are `GET /frontend/dist/auth-focus-refresh.js`, not calls to `POST /api/auth/refresh`.
-- The current HTML contains one auth script include, and the current frontend has no `location.reload()` call. Four script GETs therefore imply four document/script loads, such as repeated navigation or several tabs; they do not prove an auth listener loop.
-- Changing the script URL from relative to absolute does not alter its resolved URL from `/` or `/jira-dashboard.html`.
-- A short asset cache header would not identify or prevent repeated document reloads and would introduce unrelated unversioned-asset staleness. This plan does not change `jira-dashboard.html` paths or `jira_server.py` cache behavior.
-- The previous `sessionStorage` reload guard was unnecessary. `reloadStarted` handles same-document event bursts, and a fresh document has no elapsed unfocused state.
-- Verification must cover hidden-tab behavior, the exact 12-minute boundary, duplicate listener installation, and existing `401` recovery, not only `blur/focus` happy paths.
+- The reported burst lines were `GET /frontend/dist/auth-focus-refresh.js`, i.e. repeated document/script loads — not auth-refresh POSTs. The current shell cannot produce that burst: one HTML include, throttled POST, no `location.reload()`, ETag-validated asset (a normal conditional request returns `304`).
+- A full-page auto-reload would convert every long absence into a document navigation: at the observed scale (~40 users) that risks repeated ~818 KB bundle downloads and full API re-initialization. The steady-state auth-check rate of the refresh-only design is ~0.056 req/s before cross-tab dedup.
+- Therefore: no reload path anywhere; refresh auth once, then refresh stale data in place.
+- Temporary server diagnostics (Referer, `Sec-Fetch-Dest`, validator presence, anonymized client correlation, request id) are added to identify the actual owner of repeated document navigations.
 
 ## Scope And Decisions
 
-- "Unfocused" starts at the earliest of `window.blur` or `document.visibilityState !== 'visible'`.
-- A focus event while the document is still hidden does not clear the timestamp or reload. The decision waits for a visible return.
-- Returning before or exactly at 12 minutes clears the unfocused timestamp and runs the existing throttled auth refresh.
-- Returning after more than 12 minutes reloads the document and skips the pre-reload auth refresh. The new document performs the normal initial auth refresh.
-- Repeated `focus` and `visibilitychange` events after the reload decision may call `window.location.reload()` only once.
-- No OAuth entry UI, dashboard auth UI, backend auth contract, Home/Townsquare route, Jira write path, or service credential changes are in scope.
-- No separate analytics event is added. The automatic reliability behavior is added to the No-Event Allowlist; the reloaded dashboard retains its existing pageview.
+- "Unfocused" starts at the earliest of `window.blur` or `document.visibilityState !== 'visible'`; the timestamp is kept until a visible return.
+- A focus event while the document is still hidden preserves the timestamp and does not refresh; the decision waits for a visible return.
+- Returning before or exactly at 12 minutes: existing behavior — throttled auth refresh, no long-absence event.
+- Returning after strictly more than 12 minutes: one `POST /api/auth/refresh` (subject to the shared throttle), and on confirmation of fresh auth dispatch one `CustomEvent` on `window` so the dashboard refreshes the active view's data. Never `location.reload()`.
+- Cross-tab deduplication: the refresh timestamp is shared via one `localStorage` key. A tab that returns from long absence while the shared timestamp is fresh (another tab refreshed within the throttle window) skips its POST but still dispatches its own long-absence event, because its own view data is stale. `localStorage` failures degrade gracefully to per-tab in-memory throttling.
+- A new tab load within the throttle window of another tab's refresh also skips the initial POST (auth session is cookie-shared). This is the "one auth POST per cooldown window" behavior.
+- On `401`: unchanged visible recovery — `location.assign(loginUrl || '/login?reason=session_expired')`. On `401` the shared timestamp is cleared first so other tabs are not suppressed from discovering the expiry.
+- Staleness definition for the dashboard: the event fires only after >12 continuous unfocused minutes and the dashboard never auto-refreshes in the background, so event receipt means the active view's data is stale by construction. The dashboard handler re-runs exactly the same scoped fetches as the existing manual refresh control and must be a no-op whenever that control would be unavailable or disabled (e.g. groups still loading, onboarding).
+- `frontend/src/dashboard.jsx` must not import `authFocusRefresh.js` (it self-installs); it imports only the event name from the side-effect-free contract module.
+- Temporary diagnostics: one INFO log line per document/`frontend/dist` request on logger `jep.static_diagnostics`. Remove after the navigation owner is identified (removal criterion recorded here).
+- No OAuth entry UI, backend auth contract change, Home/Townsquare route, Jira write path, or service credential changes. `GATE-05` stays blocked.
+- No separate analytics event; the behavior is added to the No-Event Allowlist.
+
+## Deferred Scope (recorded, intentionally not executed here)
+
+Content-hashed production assets with `Cache-Control: public, max-age=31536000, immutable` served via a hosting proxy/CDN remain defense-in-depth for reload cost, not a fix for the unidentified navigation owner. Serving through a proxy/CDN is deployment infrastructure outside this repo, and content-hashing is a build-pipeline change touching HTML, build scripts, and Flask routes. Do not present any cache/path change as the fix; revisit after the diagnostics from this plan identify the reload owner.
 
 ## Endpoint Contract
 
-No endpoint changes are planned. The existing browser call remains:
+No backend auth route changes. The existing browser call remains:
 
 | Path | Method | Auth/policy | Required headers | Body | Success | Auth-expired | Other failure |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `/api/auth/refresh` | `POST` | Existing `auth_flow`; Basic or current OAuth browser session | `X-Requested-With: jira-execution-planner`; the existing auth-flow policy does not require token-bound CSRF for this refresh endpoint | None | `200` JSON in Basic/OAuth mode; no token material | `401` JSON with `loginUrl`, followed by browser redirect | Network/other response leaves recovery to the next eligible focus or API request |
+| `/api/auth/refresh` | `POST` | Existing `auth_flow`; Basic or current OAuth browser session | `X-Requested-With: jira-execution-planner` | None | `200` JSON; no token material | `401` JSON with `loginUrl`, then `location.assign` | Network/other response leaves recovery to the next eligible attempt |
 
 The implementation must not change the request method, headers, response handling, endpoint policy, or backend route.
+
+## Frontend Contract Constants (`frontend/src/api/authRefreshContract.js`)
+
+```javascript
+export const AUTH_REFRESH_THROTTLE_MS = 60 * 1000;
+export const LONG_ABSENCE_MS = 12 * 60 * 1000;
+export const AUTH_REFRESH_SHARED_STORAGE_KEY = 'jep.auth.lastRefreshAt';
+export const AUTH_LONG_ABSENCE_EVENT = 'jep:auth-long-absence-return';
+```
+
+The module must stay side-effect-free: constants only — no listeners, no fetch, no storage access.
+
+## Auth Shell Behavior (`frontend/src/api/authFocusRefresh.js`)
+
+Module state: `lastAuthRefreshAt = 0`, `unfocusedSince = null`, `refreshInFlight = false`, `listenersInstalled = false`. Storage helpers `readSharedRefreshAt()` / `writeSharedRefreshAt(ts)` / `clearSharedRefreshAt()` wrap `localStorage` in try/catch and degrade to `0` / no-op.
+
+```text
+refreshAuthOnFocus({ longAbsence = false, unfocusedMs = 0 } = {}):
+  exit if document is non-visible
+  exit if refreshInFlight
+  last = max(lastAuthRefreshAt, readSharedRefreshAt())
+  if last != 0 and now - last < AUTH_REFRESH_THROTTLE_MS:
+      if longAbsence: dispatch long-absence event   # auth already fresh (this tab or another)
+      return
+  lastAuthRefreshAt = now; writeSharedRefreshAt(now); refreshInFlight = true
+  try:
+      POST /api/auth/refresh (same-origin, X-Requested-With)
+      on 401: clearSharedRefreshAt(); location.assign(loginUrl or fallback)
+      on ok and longAbsence: dispatch long-absence event
+  catch: leave network failures to the next eligible attempt
+  finally: refreshInFlight = false
+
+noteDashboardUnfocused(): unfocusedSince = now, only if currently null (earliest wins)
+
+handleVisibleReturn():
+  if document non-visible: noteDashboardUnfocused(); return   # focus while hidden
+  unfocusedMs = unfocusedSince == null ? 0 : now - unfocusedSince; unfocusedSince = null
+  refreshAuthOnFocus({ longAbsence: unfocusedMs > LONG_ABSENCE_MS, unfocusedMs })
+
+handleVisibilityChange(): hidden -> noteDashboardUnfocused(); visible -> handleVisibleReturn()
+
+installAuthFocusRefresh():
+  exit if listenersInstalled; set listenersInstalled
+  window blur -> noteDashboardUnfocused; window focus -> handleVisibleReturn
+  document visibilitychange -> handleVisibilityChange
+  handleVisibleReturn()   # initial load: visible -> initial refresh; hidden -> record start
+```
+
+The long-absence event is `new CustomEvent(AUTH_LONG_ABSENCE_EVENT, { detail: { unfocusedMs } })` dispatched on `window`. `Date.now()` is the only time source. No `setInterval`/`setTimeout`, no `location.reload`, no `sessionStorage`, no `BroadcastChannel`, no backend state, no production test hooks.
 
 ## State-Machine Checklist
 
 | Start/event sequence | Expected result |
 | --- | --- |
-| Initial visible load | One auth refresh; no reload |
-| Initial hidden load | Record hidden start; no auth refresh until visible |
-| Blur, return before 12 minutes | No reload; one eligible auth refresh |
-| Blur, return at exactly 12 minutes | No reload; one eligible auth refresh |
-| Blur, return after 12 minutes | One reload; no pre-reload auth refresh |
-| Hidden, visible after 12 minutes | One reload on the visible event; no pre-reload auth refresh |
-| Focus fires while still hidden | Preserve unfocused start; wait for visible return |
-| Focus and visible events burst after threshold | One reload total |
-| Installer called twice | One listener registration per event; one initial refresh |
-| Refresh returns `401` | Redirect to response `loginUrl` or existing expired-session fallback |
-| Reloaded document initializes | Normal initial auth refresh; no recursive reload |
+| Initial visible load | One auth POST; no long-absence event |
+| Initial visible load, shared timestamp fresh (another tab) | No POST; no event |
+| Initial hidden load | Record hidden start; no POST until visible |
+| Blur, return before 12 minutes | One eligible throttled POST; no event |
+| Blur, return at exactly 12 minutes | Same as before-threshold; no event |
+| Blur, return after 12 minutes + 1 ms | One POST; on 200 exactly one long-absence event with `unfocusedMs` |
+| Hidden, visible after >12 minutes | Same as blur path |
+| Focus fires while still hidden | Preserve earliest unfocused start; wait for visible return |
+| Focus and visibilitychange burst after a long-absence return | One POST, one event total |
+| Long absence, shared timestamp fresh (another tab refreshed) | No POST; one long-absence event |
+| Long absence, POST returns 401 | No event; clear shared timestamp; `location.assign(loginUrl)` |
+| 401 without `loginUrl` | Fallback `/login?reason=session_expired` |
+| Long absence, network error | No event, no crash; next eligible attempt recovers |
+| `localStorage` throws | Behavior identical minus cross-tab dedup; no crash |
+| Installer called twice | One listener registration per event; one initial POST |
+| Dashboard receives long-absence event | Active view re-runs the manual-refresh fetch path; no document request |
 
-There is no dirty state, save, conflict, rollback, workspace switch, or remote-edit behavior in this auth-shell feature.
+There is no reload state anywhere: over-threshold return produces zero additional document or auth-script requests.
 
 ## File Map
 
+- Create: `frontend/src/api/authRefreshContract.js`
 - Modify: `frontend/src/api/authFocusRefresh.js`
+- Modify: `frontend/src/dashboard.jsx` (long-absence listener + manual-refresh handler extraction only)
+- Modify: `jira_server.py` (temporary static/document diagnostics log hook only)
 - Modify: `tests/test_auth_entry_page.py`
 - Modify: `tests/test_frontend_api_source_guards.js`
 - Create: `tests/test_auth_focus_refresh.js`
-- Create: `tests/ui/auth_focus_auto_reload.spec.js`
+- Create: `tests/ui/auth_focus_refresh_counts.spec.js`
+- Create: `tests/test_static_request_diagnostics.py`
 - Modify: `docs/README_ANALYTICS.md`
-- Generated by build: `frontend/dist/auth-focus-refresh.js`
-- Generated by build: `frontend/dist/auth-focus-refresh.js.map`
+- Modify: `docs/plans/README.md` (index entry for this plan)
+- Generated by build: `frontend/dist/auth-focus-refresh.js(.map)`, `frontend/dist/dashboard.js(.map)`
 
-Explicitly unchanged: `jira-dashboard.html`, `jira_server.py`, `frontend/src/dashboard.jsx`, endpoint security policy, and backend auth routes.
+Explicitly unchanged: `jira-dashboard.html`, backend auth routes, endpoint security policy, `frontend/dist/dashboard.css` (no CSS changes expected).
 
 ## Task 1: Establish The Static-Request Baseline
 
 **Files:**
 - Modify: `tests/test_auth_entry_page.py`
-- Create: `tests/ui/auth_focus_auto_reload.spec.js`
+- Create: `tests/ui/auth_focus_refresh_counts.spec.js`
 
-- [ ] Add a source assertion that `jira-dashboard.html` contains exactly one `auth-focus-refresh.js` script include. Do not require an absolute URL; the current relative URL resolves correctly from both dashboard routes.
-- [ ] Add an initial Playwright baseline using `installDashboardShell(page)` and the existing API route-stub pattern. Count document requests and requests whose pathname is `/frontend/dist/auth-focus-refresh.js`.
-- [ ] On one `page.goto()`, assert one document load and one auth-script request. Dispatch under-threshold focus/visibility event bursts and assert both counts remain unchanged.
-- [ ] Run the baseline against the current build before adding reload behavior:
+- [x] In `test_dashboard_auth_shell_refreshes_on_initial_load`, add an assertion that `jira-dashboard.html` contains exactly one `auth-focus-refresh.js` script include; replace the `refreshAuthOnFocus();` literal assertion with `installAuthFocusRefresh();` (which survives the rewrite); add `assertNotIn('location.reload', refresh_source)`.
+- [x] Create the Playwright spec with a self-contained shell: fulfill the document from on-disk `jira-dashboard.html`, fulfill `**/frontend/dist/auth-focus-refresh.js` from an in-memory esbuild IIFE build of `frontend/src/api/authFocusRefresh.js` (build:auth flags, no minify/sourcemap) done once in `beforeAll`, stub `dashboard.js`/`dashboard.css` as empty, stub `POST **/api/auth/refresh` → 200 `{}`, count document requests, auth-script requests, and auth POSTs. Origin stays `http://127.0.0.1:5050` (route-fulfilled; the live server is never load-bearing for specs).
+- [x] Baseline test: one `page.goto()` → exactly one document request, one auth-script request, one auth POST. Then dispatch a visible-state focus/visibilitychange burst → zero additional document/script requests and zero additional POSTs (60s throttle).
+- [x] Run against the current unmodified module and record the result:
 
 ```bash
-.venv/bin/python jira_server.py
-npx playwright test tests/ui/auth_focus_auto_reload.spec.js
+fnm exec --using 20 npx playwright test tests/ui/auth_focus_refresh_counts.spec.js
+.venv/bin/python -m unittest tests.test_auth_entry_page
 ```
 
-Expected current result: one script GET per document load and no extra script GET from focus/visibility events.
+Expected: pass against current behavior. If one document load produces multiple auth-script GETs before any behavior change, stop and identify the request owner. If the baseline passes, record in the PR notes that the original log burst is not reproducible from a single loaded page and remains consistent with repeated navigations/tabs.
 
-If one document load produces multiple auth-script GETs, or focus events produce new document/script requests before this feature exists, stop execution and identify the navigation or request owner. Do not mask that separate defect with cache headers. If the baseline passes, record in the PR notes that the original four-line log burst was not reproducible from a single loaded page and remains consistent with multiple document loads or tabs.
-
-## Task 2: Add Focus State Unit Tests
+## Task 2: Add Focus State Unit Tests (Expected Red)
 
 **Files:**
 - Create: `tests/test_auth_focus_refresh.js`
 - Modify: `tests/test_frontend_api_source_guards.js`
 
-- [ ] Bundle `frontend/src/api/authFocusRefresh.js` to CommonJS in memory with esbuild and evaluate it in a fake browser environment with controllable `Date.now`, visibility state, listeners, `fetch`, and `window.location`.
-- [ ] Return the module exports and listener registration counts from the harness so behavior, not source text alone, proves idempotent installation.
-- [ ] Add tests for every row in the state-machine checklist, including:
-  - initial visible and initial hidden load;
-  - 11 minutes, exactly 12 minutes, and 12 minutes plus 1 ms;
-  - blur/focus and hidden/visible paths;
-  - focus while still hidden;
-  - focus/visibility event bursts after the reload decision;
-  - calling `installAuthFocusRefresh()` twice;
-  - `401` with supplied `loginUrl` and fallback login URL.
-- [ ] Assert the long-absence path has one pre-reload auth call total, then rely on Playwright to prove the new document performs its normal second initial call.
-- [ ] Add focused source guards for the 12-minute constant, `POST`, `X-Requested-With`, one reload call site, and absence of `setInterval`/`setTimeout`. Place them near the auth API guards and preserve the upstream ENG priority/status-catalog tests added after `d37f911`.
+- [x] Build `frontend/src/api/authFocusRefresh.js` to CJS in memory with esbuild and evaluate it per test in a fresh `vm` context (pattern: superseded branch's `tests/test_auth_focus_refresh.js`) with controllable `Date.now`, mutable `document.visibilityState`, recorded `window`/`document` listener registrations, recorded `window.dispatchEvent` calls, a scriptable `fetch` mock, a fake `localStorage` (plus a throwing variant), and a recorded `location.assign`.
+- [x] Drive behavior only through recorded listeners and the module's public install/refresh exports — no production test hooks.
+- [x] Cover every row of the State-Machine Checklist above, pinning the boundary at exactly 12:00.000 (no event) vs 12:00.000 + 1 ms (event), the `refreshInFlight` burst guard, cross-tab skip via a pre-seeded fresh shared timestamp, 401-with/without-`loginUrl`, shared-timestamp clear on 401, network error, throwing `localStorage`, double install, and the event `detail.unfocusedMs` value.
+- [x] Add source guards in `tests/test_frontend_api_source_guards.js`: the contract module contains the four exact constants and no `fetch`/`addEventListener`/`localStorage` tokens; `authFocusRefresh.js` imports from `./authRefreshContract`, contains `'X-Requested-With': 'jira-execution-planner'` and `method: 'POST'`, and contains no `location.reload`, `setInterval`, `setTimeout`, `sessionStorage`, or `BroadcastChannel` tokens; `dashboard.jsx` imports `AUTH_LONG_ABSENCE_EVENT` from the contract module and does not import `authFocusRefresh`.
 
 Run before implementation:
 
 ```bash
-node --test tests/test_auth_focus_refresh.js tests/test_frontend_api_source_guards.js
+fnm exec --using 20 node --test tests/test_auth_focus_refresh.js tests/test_frontend_api_source_guards.js
 ```
 
-Expected: the new behavior tests fail for missing blur tracking and reload behavior.
+Expected: new behavior tests and new guards fail (missing contract module, absence tracking, event dispatch, storage dedup); all pre-existing guards stay green.
 
-## Task 3: Implement The Event-Driven Reload
+## Task 3: Implement The Refresh-Only Long-Absence Behavior
 
 **Files:**
+- Create: `frontend/src/api/authRefreshContract.js`
 - Modify: `frontend/src/api/authFocusRefresh.js`
 
-- [ ] Introduce named constants:
-
-```javascript
-export const AUTH_REFRESH_THROTTLE_MS = 60 * 1000;
-export const AUTO_RELOAD_AFTER_UNFOCUSED_MS = 12 * 60 * 1000;
-```
-
-- [ ] Keep minimal module state: `lastAuthRefreshAt`, `unfocusedSince` using `null` for "not unfocused", `reloadStarted`, and `listenersInstalled`.
-- [ ] Preserve the current `refreshAuthOnFocus` request and `401` redirect behavior. Accept an optional timestamp argument for deterministic tests, and ensure initial visible load is never suppressed by a zero/sentinel collision.
-- [ ] Add `noteDashboardUnfocused(now)` that preserves the earliest continuous blur/hidden timestamp.
-- [ ] Add a focus-return handler that:
-  1. records unfocused state and exits if the document is still hidden;
-  2. reloads once when elapsed time is strictly greater than `AUTO_RELOAD_AFTER_UNFOCUSED_MS`;
-  3. otherwise clears the timestamp and invokes the throttled auth refresh.
-- [ ] Register `blur`, `focus`, and `visibilitychange` once. Hidden transitions record state; visible/focus returns evaluate it. Invoke the return handler once at module installation for the existing initial refresh behavior.
-- [ ] Do not add `sessionStorage`, `localStorage`, timers, polling, backend state, or production test hooks.
+- [x] Implement exactly the contract module and the auth-shell behavior specified above. Preserve the existing fetch call shape, throttle semantics, and 401 recovery. Keep the module self-installing (`installAuthFocusRefresh();` at the bottom) and idempotent.
 
 Run:
 
 ```bash
-node --test tests/test_auth_focus_refresh.js tests/test_frontend_api_source_guards.js
+fnm exec --using 20 node --test tests/test_auth_focus_refresh.js tests/test_frontend_api_source_guards.js
+.venv/bin/python -m unittest tests.test_auth_entry_page
 ```
 
-Expected: pass.
+Expected: pass (dashboard.jsx guard from Task 2 remains red until Task 4).
 
-## Task 4: Prove Navigation And Request Counts In A Browser
+## Task 4: Dashboard Stale-View Refresh On Long-Absence Return
 
 **Files:**
-- Modify: `tests/ui/auth_focus_auto_reload.spec.js`
+- Modify: `frontend/src/dashboard.jsx`
 
-- [ ] Keep the Task 1 baseline assertion.
-- [ ] Under threshold, assert exactly one document request, one auth-script GET, two auth-refresh POSTs (initial plus focus return), and zero reloads.
-- [ ] At exactly 12 minutes, assert the same no-reload behavior.
-- [ ] Over threshold, assert exactly two document requests, two auth-script GETs, and two auth-refresh POSTs: one from the original load and one from the reloaded document, with no extra pre-reload POST.
-- [ ] After the over-threshold counts reach two, wait through a short stability window and assert they remain two so an event burst or reload loop cannot pass transiently.
-- [ ] Assert no uncaught page errors. The test should use the real built `auth-focus-refresh.js`; do not stub that asset with alternate logic.
-- [ ] Override `Date.now` only inside the loaded page to trigger elapsed-time transitions. If browser behavior makes that unreliable, use `page.addInitScript` before script execution; do not add production hooks.
+- [x] Extract the existing refresh control's `onClick` body (`IconButton` `refresh-icon`, near `dashboard.jsx:12910`) into one named function in the same scope, used by both the button and the new listener; byte-identical logic, no behavior change to the manual path.
+- [x] Add a mount-once `useEffect` that subscribes to `AUTH_LONG_ABSENCE_EVENT` (imported from `./api/authRefreshContract`) via a latest-callback ref, calls the extracted function, and unsubscribes on unmount. The listener must be a no-op whenever the manual control would be unavailable or disabled (reuse the same conditions the control uses; verify what gates it before wiring).
+- [x] Do not import `authFocusRefresh.js` into the dashboard bundle. No other dashboard changes.
 
-Run with the local server:
+Run:
 
 ```bash
-npx playwright test tests/ui/auth_focus_auto_reload.spec.js
+fnm exec --using 20 node --test tests/test_frontend_api_source_guards.js
 ```
 
-Expected: pass with one intentional extra document/script load only on the over-12-minute path.
+Expected: the dashboard wiring guard from Task 2 turns green; runtime proof lands in Task 5.
 
-## Task 5: Record Analytics Impact
+## Task 5: Prove Request Counts And Wiring In A Browser
+
+**Files:**
+- Modify: `tests/ui/auth_focus_refresh_counts.spec.js`
+
+- [x] Keep the Task 1 baseline test unchanged.
+- [x] Clock control: `addInitScript` offset shim over `Date.now` with an in-page `__advanceClock(ms)`; visibility control: `addInitScript` override of `document.visibilityState` with an in-page setter that also dispatches `visibilitychange`. Track long-absence events per page via an init-script `window` listener counter.
+- [x] Under threshold: blur → advance 11 min → focus: zero additional document/script requests, exactly one additional POST (throttle window passed), zero long-absence events.
+- [x] Exactly 12 minutes: same expectations as under threshold.
+- [x] Over threshold (both blur→focus and hidden→visible variants): exactly one additional POST, exactly one long-absence event, zero additional document/script requests; then a focus/visibilitychange burst plus a short stability wait keeps all counts unchanged.
+- [x] Multi-tab: two pages in one context (shared origin storage, same clock offsets). Page B loaded inside page A's throttle window skips its initial POST. Both go hidden, both clocks advance >12 min; page A returns → one POST + one event; page B returns within the throttle window → zero POSTs + one event. Total POSTs across the context: exactly 2.
+- [x] 401 recovery: (a) initial POST → 401 with `loginUrl` navigates to the stubbed login page; (b) long-absence POST → 401 navigates to login, dispatches no long-absence event, and never re-requests the dashboard document.
+- [x] Dashboard wiring: esbuild-bundle `frontend/src/dashboard.jsx` in `beforeAll` (existing `eng_priority_transitions.spec.js` self-host pattern) with `installDashboardFixture`; after initial data loads, record the API `calls` length, dispatch the long-absence `CustomEvent` on `window`, and assert the active view re-runs its scoped data fetches (new entries in `calls`) with zero document requests.
+- [x] Assert no uncaught page errors in every test.
+
+Run:
+
+```bash
+fnm exec --using 20 npx playwright test tests/ui/auth_focus_refresh_counts.spec.js
+```
+
+Expected: pass; the only intentional extra requests anywhere are auth POSTs, never documents or assets.
+
+## Task 6: Temporary Static/Document Request Diagnostics
+
+**Files:**
+- Modify: `jira_server.py`
+- Create: `tests/test_static_request_diagnostics.py`
+
+- [x] Add an `after_request` hook that, only for paths `/`, `/jira-dashboard.html`, and `/frontend/dist/<...>`, emits one INFO line on logger `jep.static_diagnostics` with fields: short per-request id (uuid4 hex, 12 chars), method, path, response status, `Referer` with any query string stripped (`-` when absent), `Sec-Fetch-Dest` (`-` when absent), validator presence (`etag`, `modified-since`, or `none` from `If-None-Match`/`If-Modified-Since`), and anonymized client correlation: `sha256(Cookie header)[:12]` or `-` when no cookie. Never log raw cookie, token, or query-string values. Mark the hook with a one-line comment naming this plan and the removal criterion (navigation owner identified).
+- [x] Tests: hook fires for `/frontend/dist/auth-focus-refresh.js` and `/` (including redirect statuses) and not for `/api/*`; validator field reflects `If-None-Match`; a request with a cookie logs the 12-hex hash and never the raw value; a `Referer` with a query string is logged without it.
+
+Run:
+
+```bash
+.venv/bin/python -m unittest tests.test_static_request_diagnostics
+```
+
+Expected: pass; no other route behavior changes.
+
+## Task 7: Analytics Record, Docs, Build, And Full Verification
 
 **Files:**
 - Modify: `docs/README_ANALYTICS.md`
+- Modify: `docs/plans/README.md`
+- Generated: `frontend/dist/*`
 
-- [ ] Add a row under `### No-Event Allowlist`:
+- [x] Add under `### No-Event Allowlist` (preserving all existing rows):
 
 ```md
-| Auth focus auto-reload after long absence | `frontend/src/api/authFocusRefresh.js` | No separate `userevent`; this is automatic reliability recovery after the page was continuously unfocused or hidden for more than 12 minutes. The reloaded dashboard retains the existing pageview, while browser tests guard against duplicate reloads and request bursts. | 2026-07-10 |
+| Auth long-absence refresh (no reload) | `frontend/src/api/authFocusRefresh.js`, `frontend/src/dashboard.jsx` | No separate `userevent`; automatic reliability recovery after >12 continuously unfocused/hidden minutes issues one throttled cross-tab-deduplicated `POST /api/auth/refresh` and re-runs the active view's existing scoped fetches, which are already covered by `api_result`. No document reload and no new client identifiers. | 2026-07-16 |
 ```
 
-- [ ] Do not add a new event name, parameter, GTM trigger, or GA4 runbook step.
-- [ ] Preserve the upstream `issue_priority_action` taxonomy and `jira_issue_priorities` addition to the `api_result` contract; this task only appends the auth no-event row.
-
-## Task 6: Build And Verify
-
-- [ ] Rebuild generated frontend output; never hand-edit `frontend/dist`:
+- [x] Update the `EXEC-auth-unfocused-auto-refresh.md` entry in `docs/plans/README.md` to describe the refresh-only behavior, cross-tab dedup, diagnostics, and the deferred cache-hardening scope.
+- [x] Rebuild generated output (`fnm exec --using 20 npm run build`); commit dist changes; never hand-edit `frontend/dist`.
+- [x] Full verification matrix:
 
 ```bash
-npm run build
-```
-
-- [ ] Run focused verification:
-
-```bash
-.venv/bin/python -m unittest tests.test_auth_entry_page
-node --test tests/test_auth_focus_refresh.js tests/test_frontend_api_source_guards.js
-npx playwright test tests/ui/auth_focus_auto_reload.spec.js
-```
-
-- [ ] Run the required pre-push verification:
-
-```bash
-npm run build
+fnm exec --using 20 npm run build
 .venv/bin/python scripts/check_startup_preflight.py
 .venv/bin/python -m unittest discover -s tests
-npm run test:frontend:unit
+fnm exec --using 20 npm run test:frontend:unit
+fnm exec --using 20 npx playwright test tests/ui/auth_focus_refresh_counts.spec.js
 ```
 
-- [ ] Review `git diff --check`, confirm the build leaves no unexplained generated diff, review `git log --oneline -5`, and wait for explicit user confirmation before push.
-- [ ] Confirm the final diff retains the upstream ENG priority source/tests and does not regenerate `dashboard.js`, `dashboard.js.map`, or `dashboard.css` back to the pre-`d37f911` state.
+- [x] Live-server verification against the user's running `http://127.0.0.1:5050` (read-only; do not restart it): the served `/frontend/dist/auth-focus-refresh.js` contains the long-absence event name and no `location.reload`; a conditional GET with the returned ETag yields `304`. Verify the diagnostics hook by launching a second server instance on an unused port (or, if binding is impossible, via the unittest coverage) — never by restarting the user's server.
+- [x] Review `git diff --check`, confirm build idempotence (second build → no diff), review `git log --oneline`, and wait for explicit user confirmation before any push.
 
 ## Completion Criteria
 
-- [ ] No timer or two-minute heartbeat exists.
-- [ ] `POST /api/auth/refresh` remains event-driven, throttled, and unchanged at the backend boundary.
-- [ ] Before or exactly at 12 minutes: no reload.
-- [ ] More than 12 minutes: exactly one reload on a visible focus return or hidden-to-visible return.
-- [ ] Hidden-tab, focus-while-hidden, duplicate-install, event-burst, and `401` recovery paths pass.
-- [ ] One document load produces one auth-script GET; under-threshold focus events produce none.
-- [ ] The intentional long-absence reload produces one additional document load and one additional auth-script GET, with stable counts afterward.
-- [ ] No static cache/path change is presented as a fix for an unproven navigation burst.
-- [ ] Analytics no-event rationale is documented.
-- [ ] `GATE-05` remains blocked; no Home/Townsquare mutation behavior is introduced.
+- [x] No `location.reload` call site exists anywhere in `frontend/src`; no timer, no polling, no `BroadcastChannel`, no backend session state.
+- [x] `POST /api/auth/refresh` remains event-driven and throttled with the backend boundary unchanged.
+- [x] Before or exactly at 12 minutes: no long-absence event; existing throttled refresh only.
+- [x] More than 12 minutes: exactly one auth POST per cooldown window across all tabs, exactly one long-absence event per returning tab, zero document/asset reloads.
+- [x] Dashboard refreshes only the active view's data via its existing manual-refresh path, gated by the same availability conditions.
+- [x] 401 recovery (with and without `loginUrl`) is intact on both the initial and long-absence paths.
+- [x] Request-count regression suite covers: one navigation → one auth-script GET; focus bursts → zero document/asset requests; multi-tab → one POST per cooldown window; long absence → in-place data refresh only; 401 recovery.
+- [x] Temporary diagnostics log line ships with tests proving anonymization (no raw cookies, no query strings) and scoping (document/dist paths only).
+- [x] Content-hashed/immutable asset serving is recorded as deferred scope, not implemented, and no cache/path change is presented as the fix.
+- [x] Analytics no-event rationale is documented; `GATE-05` remains blocked; no Home/Townsquare mutation behavior is introduced.

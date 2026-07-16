@@ -187,6 +187,7 @@ import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { fetchCsrfToken, fetchHomeTokenConnection } from './api/authApi.js';
+import { AUTH_LONG_ABSENCE_EVENT } from './api/authRefreshContract.js';
 import { analyticsToken, bucketCount, exposeAnalyticsForTests, useDashboardAnalytics } from './analytics/dashboardAnalytics.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
@@ -12876,6 +12877,43 @@ import {
             const settingsSaveTitle = saveBlockedReason || '';
             const settingsSaveLabel = groupSaving || epmConfigSaving ? 'Saving...' : 'Save';
 
+            const longAbsenceRefreshRef = useRef(null);
+            const refreshActiveViewFromJira = () => {
+                if (selectedView === 'epm') {
+                    void refreshEpmView();
+                    return;
+                }
+                if (activeGroupId) {
+                    groupStateRef.current.delete(activeGroupId);
+                }
+                burnoutCacheRef.current = {};
+                cohortCacheRef.current = {};
+                excludedCapacityCacheRef.current = {};
+                loadSprints(true);
+                if (isStatsSourceOnlyStatsView) {
+                    excludedCapacityForceRefreshRef.current = true;
+                    setExcludedCapacityData(null);
+                    setExcludedCapacityError('');
+                    setExcludedCapacityRefreshNonce(prev => prev + 1);
+                    return;
+                }
+                loadProductTasks({ forceRefresh: true });
+                loadTechTasks({ forceRefresh: true });
+                loadReadyToCloseProductTasks({ forceRefresh: true });
+                loadReadyToCloseTechTasks({ forceRefresh: true });
+            };
+            const manualRefreshDisabled = selectedView === 'eng'
+                ? (loading || selectedSprint === null)
+                : (epmProjectsLoading || epmRollupLoading);
+            longAbsenceRefreshRef.current = manualRefreshDisabled ? null : refreshActiveViewFromJira;
+            useEffect(() => {
+                const handleLongAbsenceReturn = () => {
+                    longAbsenceRefreshRef.current?.();
+                };
+                window.addEventListener(AUTH_LONG_ABSENCE_EVENT, handleLongAbsenceReturn);
+                return () => window.removeEventListener(AUTH_LONG_ABSENCE_EVENT, handleLongAbsenceReturn);
+            }, []);
+
             return (
                 <div className="container" style={containerStyle}>
                     <header ref={headerRef}>
@@ -12911,31 +12949,8 @@ import {
                                         variant="secondary compact"
                                         className="refresh-icon"
                                         isLoading={selectedView === 'epm' && epmProjectsLoading}
-                                        onClick={() => {
-                                            if (selectedView === 'epm') {
-                                                void refreshEpmView();
-                                                return;
-                                            }
-                                            if (activeGroupId) {
-                                                groupStateRef.current.delete(activeGroupId);
-                                            }
-                                            burnoutCacheRef.current = {};
-                                            cohortCacheRef.current = {};
-                                            excludedCapacityCacheRef.current = {};
-                                            loadSprints(true);
-                                            if (isStatsSourceOnlyStatsView) {
-                                                excludedCapacityForceRefreshRef.current = true;
-                                                setExcludedCapacityData(null);
-                                                setExcludedCapacityError('');
-                                                setExcludedCapacityRefreshNonce(prev => prev + 1);
-                                                return;
-                                            }
-                                            loadProductTasks({ forceRefresh: true });
-                                            loadTechTasks({ forceRefresh: true });
-                                            loadReadyToCloseProductTasks({ forceRefresh: true });
-                                            loadReadyToCloseTechTasks({ forceRefresh: true });
-                                        }}
-                                        disabled={selectedView === 'eng' ? (loading || selectedSprint === null) : (epmProjectsLoading || epmRollupLoading)}
+                                        onClick={refreshActiveViewFromJira}
+                                        disabled={manualRefreshDisabled}
                                         title={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                         aria-label={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                     >

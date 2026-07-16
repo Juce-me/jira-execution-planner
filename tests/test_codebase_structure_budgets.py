@@ -25,7 +25,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # bugfix/statistics-consistency-exec adds resolve_epic_cohort_range (bounds Lead Times
     # cohorts by start+end quarter, capped at today) and the half-open end-exclusive JQL
     # derivation in fetch_epic_cohort_data (+10 lines).
-    "jira_server.py": 6199,
+    # improvement/auth-unfocused-refresh adds a temporary, anonymized after_request
+    # diagnostics hook (jep.static_diagnostics) scoped to document/frontend-dist requests,
+    # to identify the real owner of a reported repeated-request burst (+37 lines); remove
+    # once the navigation owner is identified, per the hook's own removal-criterion comment.
+    "jira_server.py": 6236,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.

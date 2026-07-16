@@ -5881,6 +5881,43 @@ def serve_frontend_dist(filename):
     return response
 
 
+STATIC_DIAGNOSTICS_DOCUMENT_PATHS = {'/', '/jira-dashboard.html'}
+STATIC_DIAGNOSTICS_ASSET_PREFIX = '/frontend/dist/'
+static_diagnostics_logger = logging.getLogger('jep.static_diagnostics')
+
+
+# EXEC-auth-unfocused-auto-refresh: temporary diagnostics to identify the
+# source of repeated static/document requests seen in production; remove
+# once the navigation owner is identified from these logs.
+@app.after_request
+def log_static_document_request_diagnostics(response):
+    path = request.path
+    if path not in STATIC_DIAGNOSTICS_DOCUMENT_PATHS and not path.startswith(STATIC_DIAGNOSTICS_ASSET_PREFIX):
+        return response
+    referer = request.headers.get('Referer')
+    referer_logged = referer.split('?', 1)[0] if referer else '-'
+    if request.headers.get('If-None-Match'):
+        validator = 'etag'
+    elif request.headers.get('If-Modified-Since'):
+        validator = 'modified-since'
+    else:
+        validator = 'none'
+    cookie_header = request.headers.get('Cookie')
+    client_hash = hashlib.sha256(cookie_header.encode('utf-8')).hexdigest()[:12] if cookie_header else '-'
+    static_diagnostics_logger.info(
+        'request_id=%s method=%s path=%s status=%s referer=%s sec_fetch_dest=%s validator=%s client=%s',
+        uuid.uuid4().hex[:12],
+        request.method,
+        path,
+        response.status_code,
+        referer_logged,
+        request.headers.get('Sec-Fetch-Dest', '-'),
+        validator,
+        client_hash,
+    )
+    return response
+
+
 PROJECTS_CACHE = {'data': None, 'timestamp': 0}
 PROJECTS_CACHE_TTL = 60 * 60  # 1 hour
 

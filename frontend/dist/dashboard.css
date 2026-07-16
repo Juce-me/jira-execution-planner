@@ -6371,11 +6371,34 @@ button.status-pill:focus-visible {
 
 /* frontend/src/styles/stats/excluded-capacity.css */
 .cohort-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.6rem 1rem;
   margin-bottom: 0.65rem;
 }
-.cohort-controls [data-stats-range=lead-times-quarter] {
-  grid-column: span 2;
+.cohort-controls > .stats-control-group {
+  flex: 0 0 auto;
   min-width: 0;
+}
+.cohort-controls > .stats-control-group:has(> .scenario-input) {
+  flex: 1 1 8.5rem;
+  max-width: 20rem;
+}
+.cohort-controls > .stats-control-group > .scenario-input {
+  box-sizing: border-box;
+  height: var(--control-height);
+  margin-top: 0.4rem;
+}
+.cohort-controls .project-track-exclusions {
+  gap: 0;
+}
+.cohort-exclusion-options {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: var(--control-height);
+  margin-top: 0.4rem;
 }
 .cohort-status-actions {
   margin-bottom: 0.75rem;
@@ -6851,8 +6874,8 @@ button.status-pill:focus-visible {
     grid-column: auto;
     grid-row: auto;
   }
-  .cohort-controls [data-stats-range=lead-times-quarter] {
-    grid-column: auto;
+  .cohort-exclusion-options {
+    flex-wrap: wrap;
   }
   .epic-mode-row {
     grid-template-columns: minmax(0, 1fr);

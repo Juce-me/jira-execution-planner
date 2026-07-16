@@ -13992,7 +13992,7 @@ import {
                                             active={statsView === 'cohort'}
                                         />
                                         <div className="stats-control-group">
-                                            <label>Group By</label>
+                                            <div className="controls-label">Group By</div>
                                             <SegmentedControl
                                                 className="eng-mode-control"
                                                 ariaLabel="Group by"
@@ -14002,9 +14002,10 @@ import {
                                             />
                                         </div>
                                         <div className="stats-control-group">
-                                            <label>Project</label>
+                                            <div className="controls-label">Project</div>
                                             <select
                                                 className="scenario-input"
+                                                aria-label="Project"
                                                 value={cohortProjectFilter}
                                                 onChange={(event) => {
                                                     setCohortProjectFilter(event.target.value);
@@ -14017,9 +14018,10 @@ import {
                                             </select>
                                         </div>
                                         <div className="stats-control-group">
-                                            <label>Assignee</label>
+                                            <div className="controls-label">Assignee</div>
                                             <select
                                                 className="scenario-input"
+                                                aria-label="Assignee"
                                                 value={cohortAssigneeFilter}
                                                 onChange={(event) => {
                                                     setCohortAssigneeFilter(event.target.value);
@@ -14034,17 +14036,27 @@ import {
                                             </select>
                                         </div>
                                         <div className="stats-control-group project-track-exclusions" data-stats-capacity-filters>
-                                            <label>Capacity</label>
-                                            <label className="project-track-checkbox">
-                                                <input type="checkbox" checked={cohortExcludeAdHoc}
-                                                    onChange={(e) => { setCohortExcludeAdHoc(e.target.checked); setCohortSelectedRow(null); }} />
-                                                <span>Exclude Ad Hoc</span>
-                                            </label>
-                                            <label className="project-track-checkbox">
-                                                <input type="checkbox" checked={cohortExcludeCapacity}
-                                                    onChange={(e) => { setCohortExcludeCapacity(e.target.checked); setCohortSelectedRow(null); }} />
-                                                <span>Exclude Excluded Capacity</span>
-                                            </label>
+                                            <div className="controls-label">Exclude</div>
+                                            <div className="cohort-exclusion-options">
+                                                <label className="project-track-checkbox">
+                                                    <input
+                                                        type="checkbox"
+                                                        aria-label="Exclude Ad Hoc"
+                                                        checked={cohortExcludeAdHoc}
+                                                        onChange={(e) => { setCohortExcludeAdHoc(e.target.checked); setCohortSelectedRow(null); }}
+                                                    />
+                                                    <span>Ad Hoc</span>
+                                                </label>
+                                                <label className="project-track-checkbox">
+                                                    <input
+                                                        type="checkbox"
+                                                        aria-label="Exclude Excluded Capacity"
+                                                        checked={cohortExcludeCapacity}
+                                                        onChange={(e) => { setCohortExcludeCapacity(e.target.checked); setCohortSelectedRow(null); }}
+                                                    />
+                                                    <span>Excluded Capacity</span>
+                                                </label>
+                                            </div>
                                         </div>
                                     </div>
 

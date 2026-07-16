@@ -1185,6 +1185,26 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     });
     await captureSmokeScreenshot(page, 'statistics-lead-times');
 
+    await page.setViewportSize({ width: 1964, height: 900 });
+    const cohortControls = page.locator('.stats-view.open .cohort-controls');
+    const desktopControlLayout = await cohortControls.evaluate((node) => {
+        const groups = Array.from(node.querySelectorAll(':scope > .stats-control-group'));
+        const headings = Array.from(node.querySelectorAll(':scope > .stats-control-group > .controls-label'));
+        const checkboxes = Array.from(node.querySelectorAll('[data-stats-capacity-filters] .project-track-checkbox'));
+        return {
+            groupTops: groups.map((group) => Math.round(group.getBoundingClientRect().top)),
+            headingTops: headings.map((heading) => Math.round(heading.getBoundingClientRect().top)),
+            checkboxTops: checkboxes.map((checkbox) => Math.round(checkbox.getBoundingClientRect().top)),
+        };
+    });
+    expect(desktopControlLayout.groupTops).toHaveLength(5);
+    expect(new Set(desktopControlLayout.groupTops).size).toBe(1);
+    expect(desktopControlLayout.headingTops).toHaveLength(5);
+    expect(new Set(desktopControlLayout.headingTops).size).toBe(1);
+    expect(desktopControlLayout.checkboxTops).toHaveLength(2);
+    expect(new Set(desktopControlLayout.checkboxTops).size).toBe(1);
+    await page.setViewportSize({ width: 1280, height: 760 });
+
     // The merged quarter range group must lay Start/End out side by side (not stacked)
     // with no clipped toggle text, and get enough width for both (MRT020).
     const leadTimesQuarterRange = page.locator('[data-stats-range="lead-times-quarter"]');
@@ -1208,7 +1228,6 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
 
     // End Quarter reconciliation: last-control-wins, one debounced request per change, and no
     // request is ever sent with an inverted (start > end) pair.
-    const cohortControls = page.locator('.stats-view.open .cohort-controls');
     const quarterRange = cohortControls.locator('[data-stats-range="lead-times-quarter"]');
     const quarterButton = (end) => quarterRange.getByRole('button', { name: `${end} quarter` });
     const pickQuarter = async (end, quarter) => {
@@ -1384,6 +1403,11 @@ test('Lead Times capacity exclusions re-slice locally and replace the legacy inc
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await waitForCallCount(calls, (call) => call.pathname === '/api/stats/epic-cohort', 1);
     const view = page.locator('.stats-view.open');
+    await expect(view.getByText('Exclude', { exact: true })).toBeVisible();
+    await expect(view.getByText('Ad Hoc', { exact: true })).toBeVisible();
+    await expect(view.getByText('Excluded Capacity', { exact: true })).toBeVisible();
+    await expect(view.getByText('Exclude Ad Hoc', { exact: true })).toHaveCount(0);
+    await expect(view.getByText('Exclude Excluded Capacity', { exact: true })).toHaveCount(0);
     const excludeAdHoc = view.getByRole('checkbox', { name: 'Exclude Ad Hoc' });
     const excludeExcluded = view.getByRole('checkbox', { name: 'Exclude Excluded Capacity' });
     await expect(excludeAdHoc).not.toBeChecked();

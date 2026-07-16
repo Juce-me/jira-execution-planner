@@ -137,8 +137,10 @@ test('Lead Times capacity exclusions change local state without an app-owned eve
     const capacityControls = source.slice(start, end);
     assert.ok(capacityControls.includes('setCohortExcludeAdHoc'));
     assert.ok(capacityControls.includes('setCohortExcludeCapacity'));
-    assert.ok(capacityControls.includes('Exclude Ad Hoc'));
-    assert.ok(capacityControls.includes('Exclude Excluded Capacity'));
+    assert.ok(capacityControls.includes('aria-label="Exclude Ad Hoc"'));
+    assert.ok(capacityControls.includes('aria-label="Exclude Excluded Capacity"'));
+    assert.ok(capacityControls.includes('<span>Ad Hoc</span>'));
+    assert.ok(capacityControls.includes('<span>Excluded Capacity</span>'));
     assert.equal(capacityControls.includes('setCohortCapacityFilter'), false);
     assert.equal(/trackFilterChanged|trackStatsAnalyticsAction|trackEvent/.test(capacityControls), false);
     assert.ok(read('docs/README_ANALYTICS.md').includes('Lead Times capacity cohort filter'));

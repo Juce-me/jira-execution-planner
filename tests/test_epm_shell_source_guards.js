@@ -128,7 +128,8 @@ test('dashboard source adds EPM rollup loading state and refresh-button branchin
     assert.ok(epmViewDataSource.includes('setEpmRollupTree(null);'), 'Expected EPM rollup to clear before reload');
     assert.ok(dashboardSource.includes("if (selectedView === 'epm') {"), 'Expected refresh button EPM branch');
     assert.ok(dashboardSource.includes('void refreshEpmView();'), 'Expected refresh button to call EPM refresh path');
-    assert.ok(dashboardSource.includes("disabled={selectedView === 'eng' ? (loading || selectedSprint === null) : (epmProjectsLoading || epmRollupLoading)}"), 'Expected refresh button disable logic to branch by view');
+    assert.ok(dashboardSource.includes("const manualRefreshDisabled = selectedView === 'eng'") && dashboardSource.includes('? (loading || selectedSprint === null)') && dashboardSource.includes(': (epmProjectsLoading || epmRollupLoading);'), 'Expected refresh button disable logic to branch by view');
+    assert.ok(dashboardSource.includes('disabled={manualRefreshDisabled}'), 'Expected refresh button to consume the shared disable expression');
 });
 
 test('dashboard delegates EPM view data state to useEpmViewData', () => {

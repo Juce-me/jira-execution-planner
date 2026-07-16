@@ -267,7 +267,7 @@ Expected: pass; no other route behavior changes.
 ```
 
 - [x] Update the `EXEC-auth-unfocused-auto-refresh.md` entry in `docs/plans/README.md` to describe the refresh-only behavior, cross-tab dedup, diagnostics, and the deferred cache-hardening scope.
-- [ ] Rebuild generated output (`fnm exec --using 20 npm run build`); commit dist changes; never hand-edit `frontend/dist`.
+- [x] Rebuild generated output (`fnm exec --using 20 npm run build`); commit dist changes; never hand-edit `frontend/dist`.
 - [ ] Full verification matrix:
 
 ```bash

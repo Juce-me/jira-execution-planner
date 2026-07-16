@@ -201,9 +201,9 @@ Expected: pass (dashboard.jsx guard from Task 2 remains red until Task 4).
 **Files:**
 - Modify: `frontend/src/dashboard.jsx`
 
-- [ ] Extract the existing refresh control's `onClick` body (`IconButton` `refresh-icon`, near `dashboard.jsx:12910`) into one named function in the same scope, used by both the button and the new listener; byte-identical logic, no behavior change to the manual path.
-- [ ] Add a mount-once `useEffect` that subscribes to `AUTH_LONG_ABSENCE_EVENT` (imported from `./api/authRefreshContract`) via a latest-callback ref, calls the extracted function, and unsubscribes on unmount. The listener must be a no-op whenever the manual control would be unavailable or disabled (reuse the same conditions the control uses; verify what gates it before wiring).
-- [ ] Do not import `authFocusRefresh.js` into the dashboard bundle. No other dashboard changes.
+- [x] Extract the existing refresh control's `onClick` body (`IconButton` `refresh-icon`, near `dashboard.jsx:12910`) into one named function in the same scope, used by both the button and the new listener; byte-identical logic, no behavior change to the manual path.
+- [x] Add a mount-once `useEffect` that subscribes to `AUTH_LONG_ABSENCE_EVENT` (imported from `./api/authRefreshContract`) via a latest-callback ref, calls the extracted function, and unsubscribes on unmount. The listener must be a no-op whenever the manual control would be unavailable or disabled (reuse the same conditions the control uses; verify what gates it before wiring).
+- [x] Do not import `authFocusRefresh.js` into the dashboard bundle. No other dashboard changes.
 
 Run:
 

@@ -1049,6 +1049,9 @@ Implemented as planned. Approved divergences recorded during execution:
 3. Trigger affordance copies the real `button.task-priority-icon` box-shadow pattern.
 4. Dashboard destructures `pendingProjectTrackIssueKeys` (the hook's real export name).
 5. `trackedFetch`/`trackProductEvent` real signatures used over the plan's illustrative shapes.
+6. Final whole-branch review found the Planning-surface success path missing the local
+   reconcile patch (Catch-Up-only guards); fixed by applying the server-canonical value on
+   Planning success (scope-guarded), with a Planning-surface Playwright test added.
 
 ## Current Accuracy
 

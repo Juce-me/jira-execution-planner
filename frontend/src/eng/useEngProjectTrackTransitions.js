@@ -136,8 +136,14 @@ export function useEngProjectTrackTransitions({
                 setProjectTrackResult(response?.result || 'success');
             }
             trackIssueProjectTrackAction('project_track_change_result', { ...analyticsBaseParams, result: 'success' });
-            if (isCatchUp && isCurrentMutation) {
-                // Server canonical value: 'already_in_track' responses carry only fromTrack.
+            if (isCatchUp) {
+                if (isCurrentMutation) {
+                    // Server canonical value: 'already_in_track' responses carry only fromTrack.
+                    onApplyLocalProjectTrack?.(key, response?.toTrack ?? response?.fromTrack);
+                }
+            } else if (mutationScopeRef.current === mutationScope) {
+                // Planning has no task-list refresh, so this is the only path that keeps the
+                // header emoji, track-based sort, and menu currentTrack in sync after a write.
                 onApplyLocalProjectTrack?.(key, response?.toTrack ?? response?.fromTrack);
             }
             return response;

@@ -336,6 +336,28 @@ test('selecting the alternative track updates the header emoji and resorts track
     expect(taskListCalls(calls)).toHaveLength(initialTaskRequests);
 });
 
+test('Planning: a successful track change updates the header emoji with zero task-list refetches', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
+    const { calls } = await installEngProjectTrackFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="COMMIT-2"]')).toBeVisible();
+
+    const initialTaskRequests = taskListCalls(calls).length;
+
+    const trigger = trackTrigger(page, 'FLEX-1');
+    await expect(trigger).toHaveText('🤷');
+    await trigger.click();
+    const menu = trackMenu(page, 'FLEX-1');
+    await expect(menu).toBeVisible();
+    await menu.getByRole('menuitem', { name: 'Committed' }).click();
+
+    await expect.poll(() => projectTrackWriteCalls(calls).length).toBe(1);
+    // The success reconcile patches local state on Planning too (no refresh callback exists
+    // for this feature), so the header emoji reflects the server-canonical toTrack.
+    await expect(trigger).toHaveText('🔒');
+    expect(taskListCalls(calls)).toHaveLength(initialTaskRequests);
+});
+
 test('current recognized track is omitted from the menu; unidentified shows both options', async ({ page }) => {
     await setPrefs(page, catchUpPrefs());
     await installEngProjectTrackFixture(page);

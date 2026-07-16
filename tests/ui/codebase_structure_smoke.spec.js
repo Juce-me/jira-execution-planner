@@ -1139,6 +1139,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 1);
     const cohortSummary = page.locator('.stats-view.open .cohort-summary');
     await expect(cohortSummary).toContainText('Epics Overview');
+    await expect(cohortSummary.getByRole('heading', { name: 'Workflow Status', exact: true })).toBeVisible();
     await expect(cohortSummary).toContainText('1 in progress · 0 postponed · 1 awaiting validation');
     const leadTimesJiraLink = cohortSummary.getByRole('link', { name: 'Open in progress, postponed, and awaiting validation epics in Jira' });
     await expect(leadTimesJiraLink).toBeVisible();

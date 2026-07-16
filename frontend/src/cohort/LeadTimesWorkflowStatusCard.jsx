@@ -23,7 +23,7 @@ export default function LeadTimesWorkflowStatusCard({
 
     return (
         <div className="stats-card">
-            <h4>In Progress / Postponed / Awaiting Validation</h4>
+            <h4>Workflow Status</h4>
             <div className="stat-value">{cohortWorkflowStatusTotal}</div>
             <div className="stats-note">
                 {cohortSummary.inProgress || 0} in progress · {cohortSummary.postponed} postponed · {cohortSummary.awaitingValidation || 0} awaiting validation

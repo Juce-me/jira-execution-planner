@@ -1,6 +1,6 @@
 # Auth Unfocused Auto-Refresh Implementation Plan
 
-> **Status:** Amended 2026-07-16 and re-approved for execution. The previously planned full-page `location.reload()` after a long absence is **rejected**: repeated document loads were the observed problem, and a reload path multiplies them (each reload re-downloads the ~818 KB dashboard bundle and restarts API initialization). The prior unmerged implementation of the reload approach lives on branch `feature/auth-unfocused-auto-refresh` and is superseded by this amendment; do not merge it. This amendment replaces the reload with a single throttled `POST /api/auth/refresh` plus an in-page stale-data refresh of the active view, adds cross-tab deduplication, request-count regression coverage, and temporary server-side diagnostics to identify the real navigation owner.
+> **Status:** Implemented pending merge. Amended 2026-07-16 and executed on branch `improvement/auth-unfocused-refresh`, commits `015cd62..2ad7439`. The previously planned full-page `location.reload()` after a long absence is **rejected**: repeated document loads were the observed problem, and a reload path multiplies them (each reload re-downloads the ~818 KB dashboard bundle and restarts API initialization). The prior unmerged implementation of the reload approach lives on branch `feature/auth-unfocused-auto-refresh` and is superseded by this amendment; do not merge it. This amendment replaces the reload with a single throttled `POST /api/auth/refresh` plus an in-page stale-data refresh of the active view, adds cross-tab deduplication, request-count regression coverage, and temporary server-side diagnostics to identify the real navigation owner. All 7 tasks complete and task-reviewed; final whole-branch review pending. NOT pushed — awaiting explicit user confirmation per repo policy.
 
 **Goal:** When the user returns to Jira Delivery Planner after the dashboard has been continuously unfocused or hidden for more than 12 minutes, issue exactly one throttled `POST /api/auth/refresh` (deduplicated across tabs) and, on success, refresh only the active view's stale data in place. Never reload the document. Preserve the existing throttled event-driven auth refresh and the existing `401` login recovery, and prove with request-count regression tests that focus events cannot create document or static-asset request bursts.
 
@@ -268,7 +268,7 @@ Expected: pass; no other route behavior changes.
 
 - [x] Update the `EXEC-auth-unfocused-auto-refresh.md` entry in `docs/plans/README.md` to describe the refresh-only behavior, cross-tab dedup, diagnostics, and the deferred cache-hardening scope.
 - [x] Rebuild generated output (`fnm exec --using 20 npm run build`); commit dist changes; never hand-edit `frontend/dist`.
-- [ ] Full verification matrix:
+- [x] Full verification matrix:
 
 ```bash
 fnm exec --using 20 npm run build
@@ -278,18 +278,18 @@ fnm exec --using 20 npm run test:frontend:unit
 fnm exec --using 20 npx playwright test tests/ui/auth_focus_refresh_counts.spec.js
 ```
 
-- [ ] Live-server verification against the user's running `http://127.0.0.1:5050` (read-only; do not restart it): the served `/frontend/dist/auth-focus-refresh.js` contains the long-absence event name and no `location.reload`; a conditional GET with the returned ETag yields `304`. Verify the diagnostics hook by launching a second server instance on an unused port (or, if binding is impossible, via the unittest coverage) — never by restarting the user's server.
-- [ ] Review `git diff --check`, confirm build idempotence (second build → no diff), review `git log --oneline`, and wait for explicit user confirmation before any push.
+- [x] Live-server verification against the user's running `http://127.0.0.1:5050` (read-only; do not restart it): the served `/frontend/dist/auth-focus-refresh.js` contains the long-absence event name and no `location.reload`; a conditional GET with the returned ETag yields `304`. Verify the diagnostics hook by launching a second server instance on an unused port (or, if binding is impossible, via the unittest coverage) — never by restarting the user's server.
+- [x] Review `git diff --check`, confirm build idempotence (second build → no diff), review `git log --oneline`, and wait for explicit user confirmation before any push.
 
 ## Completion Criteria
 
-- [ ] No `location.reload` call site exists anywhere in `frontend/src`; no timer, no polling, no `BroadcastChannel`, no backend session state.
-- [ ] `POST /api/auth/refresh` remains event-driven and throttled with the backend boundary unchanged.
-- [ ] Before or exactly at 12 minutes: no long-absence event; existing throttled refresh only.
-- [ ] More than 12 minutes: exactly one auth POST per cooldown window across all tabs, exactly one long-absence event per returning tab, zero document/asset reloads.
-- [ ] Dashboard refreshes only the active view's data via its existing manual-refresh path, gated by the same availability conditions.
-- [ ] 401 recovery (with and without `loginUrl`) is intact on both the initial and long-absence paths.
-- [ ] Request-count regression suite covers: one navigation → one auth-script GET; focus bursts → zero document/asset requests; multi-tab → one POST per cooldown window; long absence → in-place data refresh only; 401 recovery.
-- [ ] Temporary diagnostics log line ships with tests proving anonymization (no raw cookies, no query strings) and scoping (document/dist paths only).
-- [ ] Content-hashed/immutable asset serving is recorded as deferred scope, not implemented, and no cache/path change is presented as the fix.
-- [ ] Analytics no-event rationale is documented; `GATE-05` remains blocked; no Home/Townsquare mutation behavior is introduced.
+- [x] No `location.reload` call site exists anywhere in `frontend/src`; no timer, no polling, no `BroadcastChannel`, no backend session state.
+- [x] `POST /api/auth/refresh` remains event-driven and throttled with the backend boundary unchanged.
+- [x] Before or exactly at 12 minutes: no long-absence event; existing throttled refresh only.
+- [x] More than 12 minutes: exactly one auth POST per cooldown window across all tabs, exactly one long-absence event per returning tab, zero document/asset reloads.
+- [x] Dashboard refreshes only the active view's data via its existing manual-refresh path, gated by the same availability conditions.
+- [x] 401 recovery (with and without `loginUrl`) is intact on both the initial and long-absence paths.
+- [x] Request-count regression suite covers: one navigation → one auth-script GET; focus bursts → zero document/asset requests; multi-tab → one POST per cooldown window; long absence → in-place data refresh only; 401 recovery.
+- [x] Temporary diagnostics log line ships with tests proving anonymization (no raw cookies, no query strings) and scoping (document/dist paths only).
+- [x] Content-hashed/immutable asset serving is recorded as deferred scope, not implemented, and no cache/path change is presented as the fix.
+- [x] Analytics no-event rationale is documented; `GATE-05` remains blocked; no Home/Townsquare mutation behavior is introduced.

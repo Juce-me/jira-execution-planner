@@ -43,6 +43,7 @@ import {
     buildCompletedEpicsBars,
     buildOpenEpicsBars,
     buildQuarterOptions,
+    compareQuarterLabels,
     deriveAssigneeOptions,
     deriveProjectOptions,
     filterCohortIssues,
@@ -71,6 +72,7 @@ import { buildBurnoutChartModel } from './stats/burnoutChartUtils.js';
 import {
     buildLocalStatsFromTasks,
     buildRadarPoints,
+    buildTeamColorMap,
     computePriorityWeighted,
     computeRate,
     formatPercent,
@@ -89,6 +91,7 @@ import ProjectTrackTotalsBar from './stats/ProjectTrackTotalsBar.jsx';
 import ProjectTrackSprintChart from './stats/ProjectTrackSprintChart.jsx';
 import ProjectTrackBreakdownChart from './stats/ProjectTrackBreakdownChart.jsx';
 import ProjectTrackPhaseChart from './stats/ProjectTrackPhaseChart.jsx';
+import StatsRangeControl from './stats/StatsRangeControl.jsx';
 import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, inScopeEpicKeys as projectTrackInScopeEpicKeys } from './stats/projectTrackStats.js';
 import { summarizeTrackPhaseDurations } from './stats/projectTrackPhaseStats.js';
 import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
@@ -683,7 +686,6 @@ import {
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
             const resolveCohortGroupBy = (value) => (value === 'month' || value === 'quarter') ? value : 'quarter';
-            const resolveCohortCapacityFilter = (value) => (value === 'ad_hoc') ? value : 'all';
             const [statsView, setStatsView] = useState(resolveStatsView(savedPrefsRef.current.statsView));
             const [statsGraphMode, setStatsGraphMode] = useState(resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode));
             const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
@@ -696,10 +698,11 @@ import {
             const [cohortLoading, setCohortLoading] = useState(false);
             const [cohortError, setCohortError] = useState('');
             const [cohortStartQuarter, setCohortStartQuarter] = useState(savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel());
+            const [cohortEndQuarter, setCohortEndQuarter] = useState(savedPrefsRef.current.cohortEndQuarter || getCurrentQuarterLabel());
             const [cohortGroupBy, setCohortGroupBy] = useState(resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy));
             const [cohortProjectFilter, setCohortProjectFilter] = useState(savedPrefsRef.current.cohortProjectFilter || 'all');
             const [cohortAssigneeFilter, setCohortAssigneeFilter] = useState(savedPrefsRef.current.cohortAssigneeFilter || 'all');
-            const [cohortCapacityFilter, setCohortCapacityFilter] = useState(resolveCohortCapacityFilter(savedPrefsRef.current.cohortCapacityFilter));
+            const [cohortExcludeAdHoc, setCohortExcludeAdHoc] = useState(Boolean(savedPrefsRef.current.cohortExcludeAdHoc));
             const [cohortExcludeCapacity, setCohortExcludeCapacity] = useState(savedPrefsRef.current.cohortExcludeCapacity ?? true);
             const [cohortStatusToggles, setCohortStatusToggles] = useState(() => ({
                 done: true,
@@ -4541,6 +4544,13 @@ import {
                 });
                 return ids;
             }, [activeGroup]);
+            const statsTeamColorMap = React.useMemo(() => buildTeamColorMap(
+                activeGroupTeamIds.map((teamId) => ({ id: teamId, name: resolveTeamName(teamId) }))
+            ), [activeGroupTeamIds, teamNameLookup]);
+            const resolveStatsTeamColor = React.useCallback(
+                (teamId) => resolveTeamColor(teamId, statsTeamColorMap),
+                [statsTeamColorMap]
+            );
             const activeGroupMissingComponents = React.useMemo(() => {
                 const seen = new Set();
                 const names = [];
@@ -4657,10 +4667,11 @@ import {
                     cohortLoading: false,
                     cohortError: '',
                     cohortStartQuarter: savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel(),
+                    cohortEndQuarter: savedPrefsRef.current.cohortEndQuarter || getCurrentQuarterLabel(),
                     cohortGroupBy: resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy),
                     cohortProjectFilter: savedPrefsRef.current.cohortProjectFilter || 'all',
                     cohortAssigneeFilter: savedPrefsRef.current.cohortAssigneeFilter || 'all',
-                    cohortCapacityFilter: resolveCohortCapacityFilter(savedPrefsRef.current.cohortCapacityFilter),
+                    cohortExcludeAdHoc: Boolean(savedPrefsRef.current.cohortExcludeAdHoc),
                     cohortExcludeCapacity: savedPrefsRef.current.cohortExcludeCapacity ?? true,
                     cohortStatusToggles: {
                         done: true,
@@ -4759,10 +4770,11 @@ import {
                 cohortLoading,
                 cohortError,
                 cohortStartQuarter,
+                cohortEndQuarter,
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
-                cohortCapacityFilter,
+                cohortExcludeAdHoc,
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 cohortSelectedRow,
@@ -4866,10 +4878,11 @@ import {
                 setCohortLoading(false);
                 setCohortError(nextState.cohortError || '');
                 setCohortStartQuarter(nextState.cohortStartQuarter || getCurrentQuarterLabel());
+                setCohortEndQuarter(nextState.cohortEndQuarter || getCurrentQuarterLabel());
                 setCohortGroupBy(resolveCohortGroupBy(nextState.cohortGroupBy));
                 setCohortProjectFilter(nextState.cohortProjectFilter || 'all');
                 setCohortAssigneeFilter(nextState.cohortAssigneeFilter || 'all');
-                setCohortCapacityFilter(resolveCohortCapacityFilter(nextState.cohortCapacityFilter));
+                setCohortExcludeAdHoc(Boolean(nextState.cohortExcludeAdHoc));
                 setCohortExcludeCapacity(nextState.cohortExcludeCapacity ?? true);
                 setCohortStatusToggles({
                     done: true,
@@ -4972,10 +4985,11 @@ import {
                 cohortLoading,
                 cohortError,
                 cohortStartQuarter,
+                cohortEndQuarter,
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
-                cohortCapacityFilter,
+                cohortExcludeAdHoc,
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 cohortSelectedRow,
@@ -5338,10 +5352,11 @@ import {
                     burnoutAssigneeFilter,
                     burndownMetric,
                     cohortStartQuarter,
+                    cohortEndQuarter,
                     cohortGroupBy,
                     cohortProjectFilter,
                     cohortAssigneeFilter,
-                    cohortCapacityFilter,
+                    cohortExcludeAdHoc,
                     cohortExcludeCapacity,
                     cohortStatusToggles,
                     excludedCapacityStartSprintId,
@@ -5393,10 +5408,11 @@ import {
                 burnoutAssigneeFilter,
                 burndownMetric,
                 cohortStartQuarter,
+                cohortEndQuarter,
                 cohortGroupBy,
                 cohortProjectFilter,
                 cohortAssigneeFilter,
-                cohortCapacityFilter,
+                cohortExcludeAdHoc,
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 excludedCapacityStartSprintId,
@@ -6691,9 +6707,10 @@ import {
             }, [selectedSprintInfo?.name, burnoutClosureScopeKey, burnoutScopedTeamSignature, burnoutIssueKeysSignature]);
             const cohortQueryKey = React.useMemo(() => {
                 const startQuarter = String(cohortStartQuarter || '').trim();
-                if (!startQuarter) return '';
-                return `${startQuarter}::${cohortScopedTeamSignature}::${adHocEpicSignature || 'no-adhoc'}`;
-            }, [cohortStartQuarter, cohortScopedTeamSignature, adHocEpicSignature]);
+                const endQuarter = String(cohortEndQuarter || '').trim();
+                if (!startQuarter || !endQuarter) return '';
+                return `${startQuarter}::${endQuarter}::${cohortScopedTeamSignature}::${adHocEpicSignature || 'no-adhoc'}`;
+            }, [cohortStartQuarter, cohortEndQuarter, cohortScopedTeamSignature, adHocEpicSignature]);
 
             useEffect(() => {
                 if (!showStats || statsView !== 'burnout') return;
@@ -6833,9 +6850,10 @@ import {
                 if (!showStats || statsView !== 'cohort') return;
                 if (groupPreferences.onboardingRequired) { setCohortData(null); setCohortError(''); setCohortLoading(false); return; }
                 const startQuarter = String(cohortStartQuarter || '').trim();
-                if (!startQuarter) {
+                const endQuarter = String(cohortEndQuarter || '').trim();
+                if (!startQuarter || !endQuarter) {
                     setCohortData(null);
-                    setCohortError('Start quarter is required.');
+                    setCohortError('Start and end quarter are required.');
                     setCohortLoading(false);
                     return;
                 }
@@ -6863,7 +6881,8 @@ import {
                         const response = await requestEpicCohortStats(
                             BACKEND_URL,
                             {
-                                startQuarter: startQuarter,
+                                startQuarter,
+                                endQuarter,
                                 teamIds: burnoutScopedTeamIds,
                                 components: activeGroupMissingComponents,
                                 adHocCapacityEpics: activeGroupAdHocCapacityEpics,
@@ -6906,7 +6925,7 @@ import {
                         // ignore abort errors
                     }
                 };
-            }, [showStats, statsView, cohortStartQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired]);
+            }, [showStats, statsView, cohortStartQuarter, cohortEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired]);
 
             const cohortQuarterOptions = React.useMemo(() => {
                 return buildQuarterOptions(getCurrentQuarterLabel(), 16);
@@ -6924,11 +6943,11 @@ import {
                 return filterCohortIssues(cohortIssues, {
                     projectKey: cohortProjectFilter,
                     assigneeKey: cohortAssigneeFilter,
-                    capacityType: cohortCapacityFilter,
+                    excludeAdHoc: cohortExcludeAdHoc,
                     excludeEpicKeys: cohortExcludeCapacity ? excludedEpicSet : EMPTY_ARRAY,
                     statusToggles: cohortStatusToggles
                 });
-            }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortCapacityFilter, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
+            }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
             const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortFilteredIssues), [cohortFilteredIssues]);
             const cohortWorkflowStatusTotal = (cohortSummary.inProgress || 0) + (cohortSummary.postponed || 0) + (cohortSummary.awaitingValidation || 0);
             const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortFilteredIssues, {
@@ -10294,7 +10313,7 @@ import {
                 issueWeightByKey: burnoutIssueWeightByKey,
                 isCompletedSprintSelected,
                 metric: burndownMetric,
-                resolveTeamColor,
+                resolveTeamColor: resolveStatsTeamColor,
                 isClosedStatus: isBurnoutClosedStatus
             }), [
                 burnoutData,
@@ -10304,7 +10323,8 @@ import {
                 burnoutIssueWeightByKey,
                 isCompletedSprintSelected,
                 burndownMetric,
-                isBurnoutClosedStatus
+                isBurnoutClosedStatus,
+                resolveStatsTeamColor
             ]);
 
             const burnoutTotals = burnoutChartModel?.summary || {
@@ -13467,7 +13487,7 @@ import {
                                     buildRadarPoints={buildRadarPoints}
                                     buildPriorityStatLink={buildPriorityStatLink}
                                     formatPercent={formatPercent}
-                                    resolveTeamColor={resolveTeamColor}
+                                    resolveTeamColor={resolveStatsTeamColor}
                                 />
 
                                 <BurnoutChart
@@ -13561,30 +13581,16 @@ import {
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="stats-control-group excluded-capacity-sprint-control excluded-capacity-start-sprint-control">
-                                            <label>Start Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityStartSprintId}
-                                                onChange={(event) => setExcludedCapacityStartSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group excluded-capacity-sprint-control excluded-capacity-end-sprint-control">
-                                            <label>End Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityEndSprintId}
-                                                onChange={(event) => setExcludedCapacityEndSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                        <StatsRangeControl
+                                            idPrefix="excluded-capacity-sprint"
+                                            kindLabel="Sprint"
+                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
+                                            startValue={excludedCapacityStartSprintId}
+                                            endValue={excludedCapacityEndSprintId}
+                                            onStartChange={setExcludedCapacityStartSprintId}
+                                            onEndChange={setExcludedCapacityEndSprintId}
+                                            active={statsView === 'excludedCapacity'}
+                                        />
                                     </div>
 
                                     <div className="excluded-capacity-actions">
@@ -13622,11 +13628,6 @@ import {
                                     </div>
 
                                     <div className="stats-summary excluded-capacity-summary">
-                                        <div className="stats-card">
-                                            <h4>Range</h4>
-                                            <div className="stat-value">{excludedCapacitySprintRange.length}</div>
-                                            <div className="stats-note">Selected Jira sprints</div>
-                                        </div>
                                         <div className="stats-card">
                                             <h4>Excluded SP</h4>
                                             <div className="stat-value">{formatExcludedPoints(effortSplitTotals.excludedCapacityPoints)}</div>
@@ -13711,7 +13712,7 @@ import {
                                                         isolatedSeriesId={excludedCapacityIsolatedTeam}
                                                         onSelectSeries={setExcludedCapacityIsolatedTeam}
                                                         onAnalyticsAction={trackStatsAnalyticsAction}
-                                                        resolveTeamColor={resolveTeamColor}
+                                                        resolveTeamColor={resolveStatsTeamColor}
                                                         formatExcludedPoints={formatExcludedPoints}
                                                         formatPercent={formatPercent}
                                                     />
@@ -13723,30 +13724,16 @@ import {
 
                                 <div className={`stats-view ${statsView === 'monoCrossShare' ? 'open' : ''}`}>
                                     <div className="stats-controls excluded-capacity-controls">
-                                        <div className="stats-control-group">
-                                            <label>Start Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityStartSprintId}
-                                                onChange={(event) => setExcludedCapacityStartSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <label>End Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityEndSprintId}
-                                                onChange={(event) => setExcludedCapacityEndSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                        <StatsRangeControl
+                                            idPrefix="mono-cross-sprint"
+                                            kindLabel="Sprint"
+                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
+                                            startValue={excludedCapacityStartSprintId}
+                                            endValue={excludedCapacityEndSprintId}
+                                            onStartChange={setExcludedCapacityStartSprintId}
+                                            onEndChange={setExcludedCapacityEndSprintId}
+                                            active={statsView === 'monoCrossShare'}
+                                        />
                                     </div>
 
                                     <div className="stats-summary excluded-capacity-summary">
@@ -13827,7 +13814,7 @@ import {
                                                     isolatedSeriesId={excludedCapacityIsolatedTeam}
                                                     onSelectSeries={setExcludedCapacityIsolatedTeam}
                                                     onAnalyticsAction={trackStatsAnalyticsAction}
-                                                    resolveTeamColor={resolveTeamColor}
+                                                    resolveTeamColor={resolveStatsTeamColor}
                                                     formatExcludedPoints={formatExcludedPoints}
                                                     formatPercent={formatPercent}
                                                     ariaLabel="Team cross share per sprint"
@@ -13839,30 +13826,16 @@ import {
 
                                 <div className={`stats-view ${statsView === 'projectTrack' ? 'open' : ''}`}>
                                     <div className="stats-controls project-track-controls">
-                                        <div className="stats-control-group">
-                                            <label>Start Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityStartSprintId}
-                                                onChange={(event) => setExcludedCapacityStartSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <label>End Sprint</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={excludedCapacityEndSprintId}
-                                                onChange={(event) => setExcludedCapacityEndSprintId(event.target.value)}
-                                            >
-                                                {excludedCapacitySprintOptions.map((sprint) => (
-                                                    <option key={sprint.id} value={String(sprint.id)}>{sprint.name || sprint.id}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                        <StatsRangeControl
+                                            idPrefix="project-track-sprint"
+                                            kindLabel="Sprint"
+                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
+                                            startValue={excludedCapacityStartSprintId}
+                                            endValue={excludedCapacityEndSprintId}
+                                            onStartChange={setExcludedCapacityStartSprintId}
+                                            onEndChange={setExcludedCapacityEndSprintId}
+                                            active={statsView === 'projectTrack'}
+                                        />
                                         <div className="stats-control-group">
                                             <label>Capacity side</label>
                                             <SegmentedControl
@@ -14012,39 +13985,39 @@ import {
 
                                 <div className={`stats-view ${statsView === 'cohort' ? 'open' : ''}`}>
                                     <div className="stats-controls cohort-controls">
+                                        <StatsRangeControl
+                                            idPrefix="lead-times-quarter"
+                                            kindLabel="Quarter"
+                                            options={cohortQuarterOptions.map((quarter) => ({ value: quarter, label: quarter }))}
+                                            startValue={cohortStartQuarter}
+                                            endValue={cohortEndQuarter}
+                                            onStartChange={(nextStart) => {
+                                                setCohortStartQuarter(nextStart);
+                                                if (compareQuarterLabels(nextStart, cohortEndQuarter) > 0) setCohortEndQuarter(nextStart);
+                                                setCohortSelectedRow(null);
+                                            }}
+                                            onEndChange={(nextEnd) => {
+                                                setCohortEndQuarter(nextEnd);
+                                                if (compareQuarterLabels(cohortStartQuarter, nextEnd) > 0) setCohortStartQuarter(nextEnd);
+                                                setCohortSelectedRow(null);
+                                            }}
+                                            active={statsView === 'cohort'}
+                                        />
                                         <div className="stats-control-group">
-                                            <label>Start Quarter</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={cohortStartQuarter}
-                                                onChange={(event) => {
-                                                    setCohortStartQuarter(event.target.value);
-                                                    setCohortSelectedRow(null);
-                                                }}
-                                            >
-                                                {cohortQuarterOptions.map((quarterLabel) => (
-                                                    <option key={quarterLabel} value={quarterLabel}>{quarterLabel}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <label>Group By</label>
-                                            <select
-                                                className="scenario-input"
+                                            <div className="controls-label">Group By</div>
+                                            <SegmentedControl
+                                                className="eng-mode-control"
+                                                ariaLabel="Group by"
                                                 value={cohortGroupBy}
-                                                onChange={(event) => {
-                                                    setCohortGroupBy(event.target.value === 'month' ? 'month' : 'quarter');
-                                                    setCohortSelectedRow(null);
-                                                }}
-                                            >
-                                                <option value="quarter">Quarter</option>
-                                                <option value="month">Month</option>
-                                            </select>
+                                                onChange={(next) => { setCohortGroupBy(next === 'month' ? 'month' : 'quarter'); setCohortSelectedRow(null); }}
+                                                options={[{ value: 'quarter', label: 'Quarter' }, { value: 'month', label: 'Month' }]}
+                                            />
                                         </div>
                                         <div className="stats-control-group">
-                                            <label>Project</label>
+                                            <div className="controls-label">Project</div>
                                             <select
                                                 className="scenario-input"
+                                                aria-label="Project"
                                                 value={cohortProjectFilter}
                                                 onChange={(event) => {
                                                     setCohortProjectFilter(event.target.value);
@@ -14057,9 +14030,10 @@ import {
                                             </select>
                                         </div>
                                         <div className="stats-control-group">
-                                            <label>Assignee</label>
+                                            <div className="controls-label">Assignee</div>
                                             <select
                                                 className="scenario-input"
+                                                aria-label="Assignee"
                                                 value={cohortAssigneeFilter}
                                                 onChange={(event) => {
                                                     setCohortAssigneeFilter(event.target.value);
@@ -14073,33 +14047,32 @@ import {
                                                 ))}
                                             </select>
                                         </div>
-                                        <div className="stats-control-group">
-                                            <label>Capacity</label>
-                                            <select
-                                                className="scenario-input"
-                                                value={cohortCapacityFilter}
-                                                onChange={(event) => {
-                                                    setCohortCapacityFilter(resolveCohortCapacityFilter(event.target.value));
-                                                    setCohortSelectedRow(null);
-                                                }}
-                                            >
-                                                <option value="all">All Capacity</option>
-                                                <option value="ad_hoc">Ad Hoc</option>
-                                            </select>
+                                        <div className="stats-control-group project-track-exclusions" data-stats-capacity-filters>
+                                            <div className="controls-label">Exclude</div>
+                                            <div className="cohort-exclusion-options">
+                                                <label className="project-track-checkbox">
+                                                    <input
+                                                        type="checkbox"
+                                                        aria-label="Exclude Ad Hoc"
+                                                        checked={cohortExcludeAdHoc}
+                                                        onChange={(e) => { setCohortExcludeAdHoc(e.target.checked); setCohortSelectedRow(null); }}
+                                                    />
+                                                    <span>Ad Hoc</span>
+                                                </label>
+                                                <label className="project-track-checkbox">
+                                                    <input
+                                                        type="checkbox"
+                                                        aria-label="Exclude Excluded Capacity"
+                                                        checked={cohortExcludeCapacity}
+                                                        onChange={(e) => { setCohortExcludeCapacity(e.target.checked); setCohortSelectedRow(null); }}
+                                                    />
+                                                    <span>Excluded Capacity</span>
+                                                </label>
+                                            </div>
                                         </div>
                                     </div>
 
                                     <div className="stats-actions cohort-status-actions">
-                                        <button
-                                            className={`stats-toggle ${cohortExcludeCapacity ? 'active' : ''}`}
-                                            onClick={() => {
-                                                setCohortExcludeCapacity((prev) => !prev);
-                                                setCohortSelectedRow(null);
-                                            }}
-                                            type="button"
-                                        >
-                                            Excluded Capacity
-                                        </button>
                                         {cohortStatusControls.map((item) => (
                                             <button
                                                 key={item.key}
@@ -14129,6 +14102,7 @@ import {
                                         <LeadTimesWorkflowStatusCard
                                             jiraUrl={jiraUrl}
                                             cohortStartQuarter={cohortStartQuarter}
+                                            cohortEndQuarter={cohortEndQuarter}
                                             cohortSummary={cohortSummary}
                                             cohortWorkflowStatusTotal={cohortWorkflowStatusTotal}
                                         />
@@ -14190,6 +14164,7 @@ import {
                                                 cohortSelectedRowLabel={cohortSelectedRowLabel}
                                                 jiraUrl={jiraUrl}
                                                 cohortStartQuarter={cohortStartQuarter}
+                                                cohortEndQuarter={cohortEndQuarter}
                                                 cohortGroupBy={cohortGroupBy}
                                                 cohortSelectedRow={cohortSelectedRow}
                                                 cohortProjectFilter={cohortProjectFilter}

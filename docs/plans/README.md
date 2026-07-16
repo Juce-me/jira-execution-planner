@@ -104,6 +104,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Active implementation plan for adding department/team-group Ad Hoc capacity epic configuration as included Product capacity, separate from excluded capacity.
    - Expected output: `teamGroups.groups[].adHocCapacityEpics` round-trips through shared group config, Settings exposes a separate epic selector, Ad Hoc stories remain included in Product Planning and reporting, excluded capacity behavior remains driven only by `excludedCapacityEpics`, and affected Planning, Stats, Burndown, Lead Times, Mono vs Cross, and Scenario paths have focused verification.
 
+2. `EXEC-statistics-consistency-bugfix.md`
+   - Implemented and verified on branch `bugfix/statistics-consistency-exec`, integrated into `bugfix/statistics-colors-capacity-lead-time` (commits `a42e7ca..c4fb36c`); kept as `EXEC-` pending user review/merge to `main`. Shared Statistics team colors, removal of the redundant Excluded Capacity Range card, and a bounded Lead Times creation cohort with inclusive End Quarter. Decisions recorded in `SUPPORT-statistics-consistency-bugfix-design.md`.
+   - Expected output: Priority, Burndown, Excluded Capacity, and Mono vs Cross consume one deterministic active-group color map; Excluded Capacity drops only its Range card; Lead Times adds an inclusive End Quarter with last-control-wins reconciliation, half-open Jira creation-date JQL, matching Jira links, and terminal dates preserved beyond the cohort boundary.
+
 ## Project Grade Security Hardening
 
 1. `DONE-project-grade-security-hardening.md`
@@ -304,6 +308,13 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented on branch `feature/stats-project-track-quarters`; pending merge. Rename to `DONE-*` after merge.
    - Expected output: a `Project Track` ENG stats sub-tab (after `Mono vs Cross`) with a filter bar (shared Start/End sprint range, Capacity side Product/Tech/Tech+Product, Exclude Ad Hoc, Exclude Excluded Capacity, Mode Epic/Team), a mode title, a range totals bar, a per-sprint chart (hidden for a single-sprint range), a By assignee/By team breakdown, and an Epic-mode-only time-in-phase section built from a new bounded, read-only `POST /api/stats/project-track-phase-durations` endpoint.
    - No Jira/Home writes, no auth-mode change; `GATE-05` unaffected. See the plan's `## Outcome` and `## Current Accuracy` sections for as-built divergences from the original endpoint-contract text (response field names, absence of `cached`/`generatedAt`, client-side signature caching).
+
+## Stats Controls Unification
+
+1. `EXEC-stats-controls-unification.md`
+   - Initial implementation completed on `improvement/stats-controls-unification` (2026-07-15, execution commits `331f3c9..2d5f0a7`; full JS/Python/Playwright regression green apart from 2 pre-existing `eng_alerts_panel_summary` failures inherited from the ancestor branch). The Lead Times control-row compaction follow-up was implemented in `8b3f32d` (`fix: compact lead times controls`) on 2026-07-16. Final-review fix `16ff875` (`fix: contain stats range panels`) constrains all mobile stats range groups/panels without changing the global Sprint and aligns the six actual Lead Times control surfaces. Fresh verification: source guards 15/15, focused Playwright 4/4 across all four range views and Task 7 exclusions/layout, frontend unit 519/519, structure budget 1/1, and build green. Inspected desktop and three 375px screenshots show aligned Lead Times controls and readable, normally clickable long sprint options contained within each narrow stats panel. The measured 966px stats container uses the approved 8.5rem select flex basis instead of the planned 12rem, which required 1067px and wrapped Exclude. The plan remains `EXEC-` pending acceptance/merge; not pushed. The implementation unifies Statistics Start/End ranges through one stats-owned component extracted from the existing `sprint-dropdown` pattern, reusing `ControlField`, `.controls-label`, `.view-filters`, `.sprint-dropdown*`, `SegmentedControl`, and the corrected Project Track checkbox treatment; per-task divergence notes live in the plan.
+   - Expected output: Excluded Capacity, Mono vs Cross, Project Track, and Lead Times share one accessible downward-opening range-control implementation; Lead Times Group By uses the existing segmented control; its capacity filters render as an `Exclude` group with `Ad Hoc` + `Excluded Capacity` checkboxes while retaining explicit accessible names; range/refetch/persistence semantics stay unchanged and receive pointer, keyboard, view-switch, reload, layer, and narrow-viewport verification.
+   - No backend route, auth/CSRF, Jira/Home credential, mutation, or new analytics-event contract; the global sticky Sprint control, Project select, and Assignee select remain out of scope.
 
 ## Legacy Unclassified Date-Only Plans
 

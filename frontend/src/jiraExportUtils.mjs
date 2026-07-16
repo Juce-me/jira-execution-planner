@@ -144,7 +144,7 @@ function nextMonthStartDate(label) {
     return `${year + 1}-01-01`;
 }
 
-function cohortDateClauses({ startQuarter, groupBy, rowKey } = {}) {
+function cohortDateClauses({ startQuarter, endQuarter, groupBy, rowKey } = {}) {
     if (rowKey && groupBy === 'month') {
         const startDate = startDateFromMonthLabel(rowKey);
         const endDate = nextMonthStartDate(rowKey);
@@ -156,7 +156,10 @@ function cohortDateClauses({ startQuarter, groupBy, rowKey } = {}) {
         if (startDate && endDate) return [`created >= "${startDate}"`, `created < "${endDate}"`];
     }
     const startDate = startDateFromQuarterLabel(startQuarter);
-    return startDate ? [`created >= "${startDate}"`] : [];
+    const endDate = nextQuarterStartDate(endQuarter);
+    return startDate && endDate
+        ? [`created >= "${startDate}"`, `created < "${endDate}"`]
+        : [];
 }
 
 function pushInClause(clauses, fieldName, values) {
@@ -168,6 +171,7 @@ function pushInClause(clauses, fieldName, values) {
 export function buildJiraCohortIssueSearchUrl({
     jiraUrl,
     startQuarter,
+    endQuarter,
     groupBy = 'quarter',
     rowKey = '',
     statuses = [],
@@ -178,7 +182,7 @@ export function buildJiraCohortIssueSearchUrl({
     teamFieldName = 'Team[Team]',
     assigneeKey = '',
 } = {}) {
-    const dateClauses = cohortDateClauses({ startQuarter, groupBy, rowKey });
+    const dateClauses = cohortDateClauses({ startQuarter, endQuarter, groupBy, rowKey });
     const normalizedStatuses = uniqueJqlValues(statuses);
     if (!dateClauses.length || !normalizedStatuses.length) return '';
 
@@ -203,12 +207,14 @@ export function buildJiraCohortIssueSearchUrl({
 export function buildJiraCohortStatusSearchUrl({
     jiraUrl,
     startQuarter,
+    endQuarter,
     statuses = [],
     issueType = 'Epic',
 } = {}) {
     return buildJiraCohortIssueSearchUrl({
         jiraUrl,
         startQuarter,
+        endQuarter,
         statuses,
         issueType
     });

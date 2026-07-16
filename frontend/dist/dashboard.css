@@ -582,6 +582,15 @@ h1 {
 .sprint-dropdown-option + .sprint-dropdown-option {
   border-top: 1px dashed var(--border);
 }
+@media (max-width: 760px) {
+  [data-stats-range] {
+    width: 100%;
+    max-width: 100%;
+  }
+  [data-stats-range] .sprint-dropdown {
+    --sprint-dropdown-max-width: calc(100vw - 4rem);
+  }
+}
 
 /* frontend/src/styles/base.css */
 
@@ -5999,6 +6008,10 @@ button.status-pill:focus-visible {
   align-items: end;
   margin-bottom: 0.8rem;
 }
+.stats-controls:has(.sprint-dropdown-panel) {
+  position: relative;
+  z-index: calc(var(--sticky-control-overlay-z) + 2);
+}
 .stats-control-group label {
   display: block;
   font-size: 0.65rem;
@@ -6367,7 +6380,34 @@ button.status-pill:focus-visible {
 
 /* frontend/src/styles/stats/excluded-capacity.css */
 .cohort-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.6rem 1rem;
   margin-bottom: 0.65rem;
+}
+.cohort-controls > .stats-control-group {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.cohort-controls > .stats-control-group:has(> .scenario-input) {
+  flex: 1 1 8.5rem;
+  max-width: 20rem;
+}
+.cohort-controls > .stats-control-group > .scenario-input {
+  box-sizing: border-box;
+  height: var(--control-height);
+  margin-top: 0.4rem;
+}
+.cohort-controls > .stats-control-group.project-track-exclusions {
+  display: block;
+}
+.cohort-exclusion-options {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: var(--control-height);
+  margin-top: 0.4rem;
 }
 .cohort-status-actions {
   margin-bottom: 0.75rem;
@@ -6410,19 +6450,10 @@ button.status-pill:focus-visible {
   grid-row: 1;
   min-width: 0;
 }
-.excluded-capacity-filter-controls .excluded-capacity-start-sprint-control {
-  grid-column: 2;
+.excluded-capacity-filter-controls [data-stats-range=excluded-capacity-sprint] {
+  grid-column: 2 / span 2;
   grid-row: 1;
-}
-.excluded-capacity-filter-controls .excluded-capacity-end-sprint-control {
-  grid-column: 3;
-  grid-row: 1;
-}
-.excluded-capacity-filter-controls .excluded-capacity-sprint-control {
   min-width: 0;
-}
-.excluded-capacity-filter-controls .scenario-input {
-  width: 100%;
 }
 .excluded-capacity-epic-dropdown {
   width: 100%;
@@ -6848,10 +6879,12 @@ button.status-pill:focus-visible {
     grid-template-columns: 1fr;
   }
   .excluded-capacity-filter-controls .excluded-capacity-epic-filter,
-  .excluded-capacity-filter-controls .excluded-capacity-start-sprint-control,
-  .excluded-capacity-filter-controls .excluded-capacity-end-sprint-control {
+  .excluded-capacity-filter-controls [data-stats-range=excluded-capacity-sprint] {
     grid-column: auto;
     grid-row: auto;
+  }
+  .cohort-exclusion-options {
+    flex-wrap: wrap;
   }
   .epic-mode-row {
     grid-template-columns: minmax(0, 1fr);
@@ -7613,10 +7646,7 @@ button.status-pill:focus-visible {
 .project-track-controls .eng-mode-control {
   margin-top: 0;
 }
-.project-track-controls select.scenario-input {
-  min-width: 150px;
-}
-.project-track-controls .stats-control-group.project-track-exclusions {
+.stats-control-group.project-track-exclusions {
   display: flex;
   flex-direction: column;
   gap: 0.22rem;

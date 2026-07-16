@@ -31,6 +31,19 @@ export function shiftQuarterLabel(label, delta) {
     return `${nextYear}Q${nextQuarter}`;
 }
 
+function quarterOrdinal(label) {
+    const match = String(label || '').trim().match(/^(\d{4})Q([1-4])$/i);
+    if (!match) return null;
+    return (Number(match[1]) * 4) + Number(match[2]) - 1;
+}
+
+export function compareQuarterLabels(left, right) {
+    const leftOrdinal = quarterOrdinal(left);
+    const rightOrdinal = quarterOrdinal(right);
+    if (leftOrdinal === null || rightOrdinal === null) return null;
+    return Math.sign(leftOrdinal - rightOrdinal);
+}
+
 export function buildQuarterOptions(endQuarter, total = 12) {
     const safeTotal = Math.max(1, Number(total) || 12);
     const anchor = String(endQuarter || '').trim() || getCurrentQuarterLabel();
@@ -121,7 +134,7 @@ export function filterCohortIssues(issues, filters = {}) {
     const source = Array.isArray(issues) ? issues : [];
     const projectFilter = String(filters.projectKey || 'all');
     const assigneeFilter = String(filters.assigneeKey || 'all');
-    const capacityFilter = String(filters.capacityType || 'all');
+    const excludeAdHoc = Boolean(filters.excludeAdHoc);
     const statusToggles = filters.statusToggles || {};
     const excludedKeys = filters.excludeEpicKeys instanceof Set
         ? filters.excludeEpicKeys
@@ -134,10 +147,7 @@ export function filterCohortIssues(issues, filters = {}) {
         if (projectFilter !== 'all' && String(issue?.projectKey || '') !== projectFilter) {
             return false;
         }
-        // A specific capacity selection (e.g. `ad_hoc`) narrows the cohort to
-        // records whose backend `capacityType` tag matches; untagged ordinary
-        // Product/Tech epics are dropped. `all` (default) skips this filter.
-        if (capacityFilter !== 'all' && String(issue?.capacityType || '') !== capacityFilter) {
+        if (excludeAdHoc && String(issue?.capacityType || '') === 'ad_hoc') {
             return false;
         }
         const assignee = issue?.assignee || {};

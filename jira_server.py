@@ -1163,7 +1163,26 @@ def compute_track_phase_durations(created_iso, current_value, transitions, now):
     return durations
 
 
-def _build_epic_cohort_cache_key(start_quarter, team_ids, projects, components=None, ad_hoc_epics=None):
+def resolve_epic_cohort_range(start_quarter, end_quarter, reference_date=None):
+    try:
+        start_date, _ = quarter_dates_from_label(start_quarter)
+        _, requested_end = quarter_dates_from_label(end_quarter)
+    except (TypeError, ValueError):
+        start_date, requested_end = None, None
+    if not start_date or not requested_end:
+        raise ValueError('startQuarter and endQuarter must use YYYYQ[1-4]')
+    if start_date > requested_end:
+        raise ValueError('startQuarter cannot be after endQuarter')
+
+    today = reference_date or date.today()
+    current_quarter = ((today.month - 1) // 3) + 1
+    _, current_quarter_end = quarter_dates_from_label(f'{today.year}Q{current_quarter}')
+    if requested_end > current_quarter_end:
+        raise ValueError('endQuarter cannot be after the current quarter')
+    return start_date, min(requested_end, today)
+
+
+def _build_epic_cohort_cache_key(start_quarter, end_quarter, team_ids, projects, components=None, ad_hoc_epics=None):
     normalized_teams = ','.join(normalize_team_ids(team_ids or []))
     normalized_projects = ','.join(sorted(str(project or '').strip() for project in (projects or []) if str(project or '').strip()))
     normalized_components = ','.join(
@@ -1176,6 +1195,7 @@ def _build_epic_cohort_cache_key(start_quarter, team_ids, projects, components=N
     normalized_ad_hoc = ','.join(sorted(normalize_epic_keys(ad_hoc_epics or [])))
     return (
         f'{str(start_quarter or "").strip().upper()}'
+        f'::{str(end_quarter or "").strip().upper()}'
         f'::{normalized_teams or "all"}'
         f'::{normalized_projects or "none"}'
         f'::{normalized_components or "no-components"}'
@@ -4896,23 +4916,11 @@ def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers
     return issue_key, resolved, None
 
 
-def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None, component_names=None, context=None, ad_hoc_capacity_epics=None):
-    start_date, _ = quarter_dates_from_label(start_quarter)
-    if not start_date:
-        return {
-            'range': {'startDate': None, 'endDate': None},
-            'issues': [],
-            'meta': {
-                'warnings': ['invalid startQuarter'],
-                'truncated': False,
-                'paginationMode': 'nextPageToken/isLast'
-            }
-        }, None
-
+def fetch_epic_cohort_data(start_date, end_date, headers, team_field_id, team_ids=None, component_names=None, context=None, ad_hoc_capacity_epics=None):
     scoped_projects = _cohort_project_scope()
     if not scoped_projects:
         return {
-            'range': {'startDate': start_date.isoformat(), 'endDate': start_date.isoformat()},
+            'range': {'startDate': start_date.isoformat(), 'endDate': end_date.isoformat()},
             'issues': [],
             'meta': {
                 'warnings': ['no projects configured for cohort query'],
@@ -4929,7 +4937,12 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
         match_clause = f'(project in ({escaped_projects}) OR key in ({escaped_ad_hoc}))'
     else:
         match_clause = f'project in ({escaped_projects})'
-    jql = f'issuetype = Epic AND {match_clause} AND created >= "{start_date.isoformat()}"'
+    end_exclusive = end_date + timedelta(days=1)
+    jql = (
+        f'issuetype = Epic AND {match_clause} '
+        f'AND created >= "{start_date.isoformat()}" '
+        f'AND created < "{end_exclusive.isoformat()}"'
+    )
 
     scoped_team_ids = normalize_team_ids(team_ids or [])
     scoped_components = [str(name or '').strip() for name in (component_names or []) if str(name or '').strip()]
@@ -5022,10 +5035,6 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
             warnings.append(f'changelog enrichment timed out for {len(timed_out)} issues')
 
     today = date.today()
-    current_quarter = ((today.month - 1) // 3) + 1
-    _, current_quarter_end = quarter_dates_from_label(f'{today.year}Q{current_quarter}')
-    range_end = current_quarter_end or today
-    latest_terminal_date = None
 
     normalized_issues = []
     for issue in all_issues:
@@ -5049,8 +5058,6 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
         lead_time_days = None
         if terminal_date:
             lead_time_days = max(0, (terminal_date - created_date).days)
-            if latest_terminal_date is None or terminal_date > latest_terminal_date:
-                latest_terminal_date = terminal_date
         elif status_name == 'open':
             lead_time_days = max(0, (today - created_date).days)
 
@@ -5078,13 +5085,10 @@ def fetch_epic_cohort_data(start_quarter, headers, team_field_id, team_ids=None,
             normalized_issue['capacityType'] = 'ad_hoc'
         normalized_issues.append(normalized_issue)
 
-    if latest_terminal_date and latest_terminal_date > range_end:
-        range_end = latest_terminal_date
-
     payload = {
         'range': {
             'startDate': start_date.isoformat(),
-            'endDate': range_end.isoformat()
+            'endDate': end_date.isoformat()
         },
         'issues': normalized_issues,
         'meta': {
@@ -5641,8 +5645,13 @@ def get_burnout_stats():
 def get_epic_cohort_stats():
     payload = request.get_json(silent=True) or {}
     start_quarter = str(payload.get('startQuarter') or '').strip()
-    if not start_quarter:
-        return jsonify({'error': 'startQuarter is required'}), 400
+    end_quarter = str(payload.get('endQuarter') or '').strip()
+    if not start_quarter or not end_quarter:
+        return jsonify({'error': 'startQuarter and endQuarter are required'}), 400
+    try:
+        start_date, end_date = resolve_epic_cohort_range(start_quarter, end_quarter)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
 
     raw_team_ids = payload.get('teamIds')
     team_ids = normalize_team_ids(raw_team_ids if isinstance(raw_team_ids, list) else [])
@@ -5652,7 +5661,7 @@ def get_epic_cohort_stats():
     ad_hoc_epics = normalize_epic_keys(raw_ad_hoc_epics if isinstance(raw_ad_hoc_epics, list) else [])[:EPIC_COHORT_ADHOC_MAX_EPICS]
     refresh = _cohort_parse_bool(payload.get('refresh'))
     scoped_projects = _cohort_project_scope()
-    cache_key = _build_epic_cohort_cache_key(start_quarter, team_ids, scoped_projects, component_names, ad_hoc_epics=ad_hoc_epics)
+    cache_key = _build_epic_cohort_cache_key(start_quarter, end_quarter, team_ids, scoped_projects, component_names, ad_hoc_epics=ad_hoc_epics)
     auth_context = current_request_auth_context()
     cache_enabled = jira_home_process_cache_enabled(auth_context)
 
@@ -5671,7 +5680,8 @@ def get_epic_cohort_stats():
     try:
         team_field_id = resolve_team_field_id(None, context=auth_context)
         cohort_payload, error_response = fetch_epic_cohort_data(
-            start_quarter,
+            start_date,
+            end_date,
             None,
             team_field_id,
             team_ids=team_ids,

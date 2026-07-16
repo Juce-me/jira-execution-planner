@@ -59,16 +59,35 @@ class TestEpicCohortHelpers(unittest.TestCase):
         self.assertTrue(jira_server.is_terminal_epic_status('Postponed'))
 
     def test_cache_key_includes_normalized_ad_hoc_signature(self):
-        base = jira_server._build_epic_cohort_cache_key('2025Q1', ['T1'], ['PRODUCT'])
+        base = jira_server._build_epic_cohort_cache_key('2025Q1', '2025Q2', ['T1'], ['PRODUCT'])
         with_ad_hoc = jira_server._build_epic_cohort_cache_key(
-            '2025Q1', ['T1'], ['PRODUCT'], ad_hoc_epics=['tech-9', 'TECH-9']
+            '2025Q1', '2025Q2', ['T1'], ['PRODUCT'], ad_hoc_epics=['tech-9', 'TECH-9']
         )
         self.assertNotEqual(base, with_ad_hoc)
         # Normalization is order- and case-insensitive after dedupe.
         reordered = jira_server._build_epic_cohort_cache_key(
-            '2025Q1', ['T1'], ['PRODUCT'], ad_hoc_epics=['TECH-9', 'tech-9']
+            '2025Q1', '2025Q2', ['T1'], ['PRODUCT'], ad_hoc_epics=['TECH-9', 'tech-9']
         )
         self.assertEqual(with_ad_hoc, reordered)
+
+    def test_cache_key_distinguishes_end_quarter(self):
+        q1 = jira_server._build_epic_cohort_cache_key('2025Q1', '2025Q1', ['T1'], ['PRODUCT'])
+        q2 = jira_server._build_epic_cohort_cache_key('2025Q1', '2025Q2', ['T1'], ['PRODUCT'])
+        self.assertNotEqual(q1, q2)
+
+    def test_resolve_epic_cohort_range_includes_historical_end_quarter(self):
+        start, end = jira_server.resolve_epic_cohort_range(
+            '2025Q1', '2025Q2', reference_date=date(2026, 7, 13)
+        )
+        self.assertEqual(start, date(2025, 1, 1))
+        self.assertEqual(end, date(2025, 6, 30))
+
+    def test_resolve_epic_cohort_range_caps_current_quarter_at_today(self):
+        start, end = jira_server.resolve_epic_cohort_range(
+            '2026Q1', '2026Q2', reference_date=date(2026, 5, 14)
+        )
+        self.assertEqual(start, date(2026, 1, 1))
+        self.assertEqual(end, date(2026, 5, 14))
 
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
@@ -105,7 +124,8 @@ class TestEpicCohortFetch(unittest.TestCase):
         mock_search.side_effect = [first_page, second_page]
 
         payload, error = jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 6, 30),
             headers={'Authorization': 'Basic test'},
             team_field_id='customfield_30101',
             team_ids=['T1']
@@ -140,7 +160,8 @@ class TestEpicCohortFetch(unittest.TestCase):
         })
 
         payload, error = jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 6, 30),
             headers={'Authorization': 'Basic test'},
             team_field_id='customfield_30101',
             team_ids=['T1']
@@ -161,7 +182,8 @@ class TestEpicCohortFetch(unittest.TestCase):
         })
 
         payload, error = jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 6, 30),
             headers={'Authorization': 'Basic test'},
             team_field_id='customfield_30101',
             team_ids=[]
@@ -181,7 +203,8 @@ class TestEpicCohortFetch(unittest.TestCase):
         })
 
         jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 6, 30),
             headers={'Authorization': 'Basic test'},
             team_field_id='customfield_30101',
             team_ids=[],
@@ -191,7 +214,7 @@ class TestEpicCohortFetch(unittest.TestCase):
         jql = mock_search.call_args_list[0].args[0]['jql']
         self.assertEqual(
             jql,
-            'issuetype = Epic AND project in ("PRODUCT") AND created >= "2025-01-01"'
+            'issuetype = Epic AND project in ("PRODUCT") AND created >= "2025-01-01" AND created < "2025-07-01"'
         )
         self.assertNotIn('OR key in', jql)
 
@@ -204,7 +227,8 @@ class TestEpicCohortFetch(unittest.TestCase):
         })
 
         jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 6, 30),
             headers={'Authorization': 'Basic test'},
             team_field_id='customfield_30101',
             team_ids=['T1'],
@@ -217,6 +241,8 @@ class TestEpicCohortFetch(unittest.TestCase):
         self.assertIn('(project in ("PRODUCT") OR key in ("TECH-9", "TECH-10"))', jql)
         self.assertIn('"Team[Team]" = "T1"', jql)
         self.assertTrue(jql.startswith('issuetype = Epic AND'))
+        self.assertIn('created >= "2025-01-01"', jql)
+        self.assertIn('created < "2025-07-01"', jql)
 
     @patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT'])
     @patch.object(jira_server, 'jira_search_request')
@@ -229,7 +255,8 @@ class TestEpicCohortFetch(unittest.TestCase):
         })
 
         payload, error = jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 6, 30),
             headers={'Authorization': 'Basic test'},
             team_field_id='customfield_30101',
             team_ids=[],
@@ -253,7 +280,8 @@ class TestEpicCohortFetch(unittest.TestCase):
         overflow = [f'TECH-{index}' for index in range(jira_server.EPIC_COHORT_ADHOC_MAX_EPICS + 25)]
 
         jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 6, 30),
             headers={'Authorization': 'Basic test'},
             team_field_id='customfield_30101',
             team_ids=[],
@@ -278,7 +306,8 @@ class TestEpicCohortFetch(unittest.TestCase):
         })
 
         payload, error = jira_server.fetch_epic_cohort_data(
-            start_quarter='2025Q1',
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 6, 30),
             headers={'Authorization': 'Basic test'},
             team_field_id='customfield_30101',
             team_ids=[]
@@ -290,6 +319,30 @@ class TestEpicCohortFetch(unittest.TestCase):
         self.assertEqual(issues['PRODUCT-5'].get('jiraStatus'), 'In Progress')
         self.assertEqual(issues['PRODUCT-6'].get('status'), 'open')
         self.assertEqual(issues['PRODUCT-6'].get('jiraStatus'), 'Awaiting Validation')
+
+    @patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT'])
+    @patch.object(jira_server, 'jira_search_request')
+    def test_terminal_date_after_end_quarter_is_not_truncated(self, mock_search, _mock_scope):
+        mock_search.return_value = DummyResponse({
+            'issues': [self._epic('PRODUCT-8', created='2025-01-10', status='Done', resolution='2025-08-15')],
+            'isLast': True
+        })
+
+        payload, error = jira_server.fetch_epic_cohort_data(
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 6, 30),
+            headers={'Authorization': 'Basic test'},
+            team_field_id='customfield_30101',
+            team_ids=[]
+        )
+
+        self.assertIsNone(error)
+        issue = (payload.get('issues') or [])[0]
+        self.assertEqual(issue.get('terminalDate'), '2025-08-15')
+        self.assertEqual(payload.get('range'), {
+            'startDate': '2025-01-01',
+            'endDate': '2025-06-30',
+        })
 
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
@@ -304,6 +357,23 @@ class TestEpicCohortEndpoint(unittest.TestCase):
         response = self.client.post('/api/stats/epic-cohort', json={})
         self.assertEqual(response.status_code, 400)
 
+    @patch.object(jira_server, 'resolve_team_field_id')
+    def test_invalid_quarter_ranges_fail_before_jira_access(self, mock_team_field):
+        cases = [
+            ({}, 'startQuarter and endQuarter are required'),
+            ({'startQuarter': '2025Q1'}, 'startQuarter and endQuarter are required'),
+            ({'startQuarter': 'bad', 'endQuarter': '2025Q2'}, 'startQuarter and endQuarter must use YYYYQ[1-4]'),
+            ({'startQuarter': '0000Q1', 'endQuarter': '2025Q2'}, 'startQuarter and endQuarter must use YYYYQ[1-4]'),
+            ({'startQuarter': '2025Q3', 'endQuarter': '2025Q2'}, 'startQuarter cannot be after endQuarter'),
+            ({'startQuarter': '2025Q1', 'endQuarter': '2999Q1'}, 'endQuarter cannot be after the current quarter'),
+        ]
+        for body, expected in cases:
+            with self.subTest(body=body):
+                response = self.client.post('/api/stats/epic-cohort', json=body)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual((response.get_json() or {}).get('error'), expected)
+        mock_team_field.assert_not_called()
+
     @patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101')
     @patch.object(jira_server, 'fetch_epic_cohort_data')
     def test_post_returns_data(self, mock_fetch, _mock_team):
@@ -313,7 +383,7 @@ class TestEpicCohortEndpoint(unittest.TestCase):
             'meta': {'warnings': [], 'truncated': False, 'paginationMode': 'nextPageToken/isLast'}
         }, None)
 
-        response = self.client.post('/api/stats/epic-cohort', json={'startQuarter': '2025Q1'})
+        response = self.client.post('/api/stats/epic-cohort', json={'startQuarter': '2025Q1', 'endQuarter': '2025Q2'})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json() or {}
         self.assertIn('data', payload)
@@ -330,6 +400,7 @@ class TestEpicCohortEndpoint(unittest.TestCase):
 
         response = self.client.post('/api/stats/epic-cohort', json={
             'startQuarter': '2025Q1',
+            'endQuarter': '2025Q2',
             'adHocCapacityEpics': ['tech-9', 'TECH-9', '', 'tech-10']
         })
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))

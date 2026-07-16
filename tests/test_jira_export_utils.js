@@ -42,19 +42,21 @@ test('collectJiraExportKeysFromTasks returns unique sorted epic and story keys f
 
     const statusUrl = buildJiraCohortStatusSearchUrl({
         jiraUrl: 'https://jira.example.com/',
-        startQuarter: '2026Q2',
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q2',
         statuses: ['In Progress', 'Postponed', 'Awaiting Validation'],
         issueType: 'Epic'
     });
     const decodedJql = decodeURIComponent(new URL(statusUrl).searchParams.get('jql'));
     assert.equal(
         decodedJql,
-        'issuetype = "Epic" AND created >= "2026-04-01" AND status in ("In Progress", "Postponed", "Awaiting Validation")'
+        'issuetype = "Epic" AND created >= "2026-01-01" AND created < "2026-07-01" AND status in ("In Progress", "Postponed", "Awaiting Validation")'
     );
 
     const cohortUrl = buildJiraCohortIssueSearchUrl({
         jiraUrl: 'https://jira.example.com/',
-        startQuarter: '2026Q2',
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q2',
         statuses: ['In Progress', 'Awaiting Validation', 'In Progress'],
         issueType: 'Epic',
         projectKey: 'PROD',
@@ -65,9 +67,26 @@ test('collectJiraExportKeysFromTasks returns unique sorted epic and story keys f
     const cohortJql = decodeURIComponent(new URL(cohortUrl).searchParams.get('jql'));
     assert.equal(
         cohortJql,
-        'issuetype = "Epic" AND created >= "2026-04-01" AND project = "PROD" AND status in ("In Progress", "Awaiting Validation") AND component in ("Backend API", "R&D \\"Data\\"") AND "Team[Team]" in ("team-alpha", "team-beta") AND assignee in ("alpha-lead")'
+        'issuetype = "Epic" AND created >= "2026-01-01" AND created < "2026-07-01" AND project = "PROD" AND status in ("In Progress", "Awaiting Validation") AND component in ("Backend API", "R&D \\"Data\\"") AND "Team[Team]" in ("team-alpha", "team-beta") AND assignee in ("alpha-lead")'
     );
     assert.equal(cohortJql.includes('key in'), false);
+
+    // A selected heatmap row uses its OWN month/quarter bounds only; it must not also
+    // append the overall start..end range (row 2025Q4 falls outside 2026Q1..2026Q2).
+    const rowScopedUrl = buildJiraCohortIssueSearchUrl({
+        jiraUrl: 'https://jira.example.com/',
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q2',
+        groupBy: 'quarter',
+        rowKey: '2025Q4',
+        statuses: ['Done'],
+        issueType: 'Epic'
+    });
+    const rowScopedJql = decodeURIComponent(new URL(rowScopedUrl).searchParams.get('jql'));
+    assert.equal(
+        rowScopedJql,
+        'issuetype = "Epic" AND created >= "2025-10-01" AND created < "2026-01-01" AND status in ("Done")'
+    );
 });
 
 test('collectJiraExportKeysFromEpmRollupBoards walks rendered rollup boards without duplicates', async () => {

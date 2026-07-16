@@ -9,6 +9,8 @@ const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
+const longSprintId = 34626;
+const longSprintName = '2026Q3 Sprint 43 — International Platform Reliability and Migration';
 const groupTeamIds = ['team-alpha', 'team-beta'];
 let dashboardJs;
 let statsUtils;
@@ -376,6 +378,13 @@ function createDeferred() {
 
 function callsFor(calls, pathname, method = 'GET') {
     return calls.filter(call => call.method === method && call.pathname === pathname);
+}
+
+// Independent ordinal check (not the app's own compareQuarterLabels) so the test does not
+// share a bug with the implementation it is verifying.
+function quarterLabelOrdinal(label) {
+    const match = String(label || '').match(/^(\d{4})Q([1-4])$/);
+    return match ? (Number(match[1]) * 4) + Number(match[2]) : null;
 }
 
 function requestBody(request) {
@@ -857,7 +866,9 @@ async function installApiMocks(page, calls, options = {}) {
                 await sprintGate.promise;
                 setTimeout(() => epmProjectsGate.resolve(), 50);
             }
-            return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+            return json({
+                sprints: options.sprints || [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+            });
         }
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
@@ -1082,7 +1093,8 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
         showScenario: false,
         showStats: true,
         statsView: 'teams',
-        cohortStartQuarter: '2026Q2',
+        cohortStartQuarter: '2026Q1',
+        cohortEndQuarter: '2026Q2',
         excludedCapacityStartSprintId: String(selectedSprintId),
         excludedCapacityEndSprintId: String(selectedSprintId),
     });
@@ -1091,6 +1103,9 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
     const statsPanel = page.locator('.stats-panel.open');
     const statsTabs = statsPanel.locator('.stats-view-toggle');
+    const legendColors = async (selector) => page.locator(selector).evaluateAll((items) => Object.fromEntries(
+        items.map((item) => [item.textContent.trim(), getComputedStyle(item.querySelector('i')).backgroundColor])
+    ));
     await expect(statsPanel).toBeVisible();
     await expect(statsTabs.getByRole('radio', { name: 'Teams' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator('.stats-view.open .stats-bars')).toBeVisible();
@@ -1101,6 +1116,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await expect(page.locator('.stats-view.open .priority-radar')).toBeVisible();
     await expect(page.locator('.stats-view.open .priority-legend')).toContainText('Alpha Team');
     await expect(page.locator('.stats-view.open .stats-table')).toContainText('Major');
+    const priorityLegendColors = await legendColors('.stats-view.open .priority-legend > span');
     await captureSmokeScreenshot(page, 'statistics-priority');
 
     await statsTabs.getByRole('radio', { name: 'Burndown' }).click();
@@ -1116,6 +1132,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
         includePostSprintClosures: false,
     });
     expect([...burnoutCall.body.issueKeys].sort()).toEqual(expectedStatsIssueKeys);
+    const burnoutLegendColors = await legendColors('.stats-view.open .burnout-legend > span');
     await captureSmokeScreenshot(page, 'statistics-burndown');
 
     await statsTabs.getByRole('radio', { name: 'Lead Times' }).click();
@@ -1126,18 +1143,19 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     const leadTimesJiraLink = cohortSummary.getByRole('link', { name: 'Open in progress, postponed, and awaiting validation epics in Jira' });
     await expect(leadTimesJiraLink).toBeVisible();
     const leadTimesJql = decodeURIComponent(new URL(await leadTimesJiraLink.getAttribute('href')).searchParams.get('jql'));
-    expect(leadTimesJql).toBe('issuetype = "Epic" AND created >= "2026-04-01" AND status in ("In Progress", "Postponed", "Awaiting Validation")');
+    expect(leadTimesJql).toBe('issuetype = "Epic" AND created >= "2026-01-01" AND created < "2026-07-01" AND status in ("In Progress", "Postponed", "Awaiting Validation")');
     await expect(page.locator('.stats-view.open')).toContainText('Cohort Heatmap');
     await expect(page.locator('.stats-view.open')).toContainText('In Progress');
     await expect(page.locator('.stats-view.open')).toContainText('Awaiting Validation');
-    await expect(page.locator('.stats-view.open')).toContainText('Created on or after the selected Lead Times start quarter and still non-terminal today.');
-    await expect(page.locator('.stats-view.open')).toContainText('Created on or after the selected Lead Times start quarter and reached a terminal status, with lead time shown.');
+    await expect(page.locator('.stats-view.open')).toContainText('Created within the selected Lead Times quarter range and still non-terminal today.');
+    await expect(page.locator('.stats-view.open')).toContainText('Created within the selected Lead Times quarter range and reached a terminal status, with lead time shown.');
     const openLeadTimesSection = page.locator('.cohort-section', { hasText: 'Open Epics (All Cohorts)' }).first();
     const openLeadTimesJiraLink = openLeadTimesSection.getByRole('link', { name: 'Open all open epics in Jira' });
     await expect(openLeadTimesJiraLink).toBeVisible();
     const openLeadTimesJql = decodeURIComponent(new URL(await openLeadTimesJiraLink.getAttribute('href')).searchParams.get('jql'));
     expect(openLeadTimesJql).toContain('issuetype = "Epic"');
-    expect(openLeadTimesJql).toContain('created >= "2026-04-01"');
+    expect(openLeadTimesJql).toContain('created >= "2026-01-01"');
+    expect(openLeadTimesJql).toContain('created < "2026-07-01"');
     expect(openLeadTimesJql).toContain('status in ("In Progress", "Awaiting Validation")');
     expect(openLeadTimesJql).toContain('"Team[Team]" in ("team-alpha", "team-beta")');
     expect(openLeadTimesJql).not.toContain('key in');
@@ -1145,6 +1163,8 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     const completedLeadTimesJiraLink = completedLeadTimesSection.getByRole('link', { name: 'Open all completed epics in Jira' });
     await expect(completedLeadTimesJiraLink).toBeVisible();
     const completedLeadTimesJql = decodeURIComponent(new URL(await completedLeadTimesJiraLink.getAttribute('href')).searchParams.get('jql'));
+    expect(completedLeadTimesJql).toContain('created >= "2026-01-01"');
+    expect(completedLeadTimesJql).toContain('created < "2026-07-01"');
     expect(completedLeadTimesJql).toContain('status in ("Done")');
     expect(completedLeadTimesJql).not.toContain('key in');
     const headingLayout = await openLeadTimesSection.locator('.cohort-open-heading').evaluate((heading) => {
@@ -1161,21 +1181,340 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     const cohortCall = callsFor(calls, '/api/stats/epic-cohort', 'POST')[0];
     expect(cohortCall.headers['x-requested-with']).toBe('jira-execution-planner');
     expect(cohortCall.body).toMatchObject({
-        startQuarter: '2026Q2',
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q2',
         teamIds: groupTeamIds,
         components: [],
         refresh: false,
     });
     await captureSmokeScreenshot(page, 'statistics-lead-times');
 
+    await page.setViewportSize({ width: 1964, height: 900 });
+    const cohortControls = page.locator('.stats-view.open .cohort-controls');
+    const desktopControlLayout = await cohortControls.evaluate((node) => {
+        const groups = Array.from(node.querySelectorAll(':scope > .stats-control-group'));
+        const headings = Array.from(node.querySelectorAll(':scope > .stats-control-group > .controls-label'));
+        const checkboxes = Array.from(node.querySelectorAll('[data-stats-capacity-filters] .project-track-checkbox'));
+        const controls = [
+            ...node.querySelectorAll('[data-stats-range="lead-times-quarter"] .sprint-dropdown-toggle'),
+            node.querySelector('.eng-mode-control'),
+            ...node.querySelectorAll(':scope > .stats-control-group > .scenario-input'),
+            node.querySelector('.cohort-exclusion-options'),
+        ].filter(Boolean);
+        return {
+            groupTops: groups.map((group) => Math.round(group.getBoundingClientRect().top)),
+            headingTops: headings.map((heading) => Math.round(heading.getBoundingClientRect().top)),
+            checkboxTops: checkboxes.map((checkbox) => Math.round(checkbox.getBoundingClientRect().top)),
+            controlTops: controls.map((control) => Math.round(control.getBoundingClientRect().top)),
+        };
+    });
+    expect(desktopControlLayout.groupTops).toHaveLength(5);
+    expect(new Set(desktopControlLayout.groupTops).size).toBe(1);
+    expect(desktopControlLayout.headingTops).toHaveLength(5);
+    expect(new Set(desktopControlLayout.headingTops).size).toBe(1);
+    expect(desktopControlLayout.checkboxTops).toHaveLength(2);
+    expect(new Set(desktopControlLayout.checkboxTops).size).toBe(1);
+    expect(desktopControlLayout.controlTops).toHaveLength(6);
+    expect(new Set(desktopControlLayout.controlTops).size).toBe(1);
+    await page.setViewportSize({ width: 1280, height: 760 });
+
+    // The merged quarter range group must lay Start/End out side by side (not stacked)
+    // with no clipped toggle text, and get enough width for both (MRT020).
+    const leadTimesQuarterRange = page.locator('[data-stats-range="lead-times-quarter"]');
+    const leadTimesQuarterGeometry = await leadTimesQuarterRange.evaluate((group) => {
+        const toggles = Array.from(group.querySelectorAll('.sprint-dropdown-toggle'));
+        return {
+            groupWidth: group.getBoundingClientRect().width,
+            tops: toggles.map((toggle) => toggle.getBoundingClientRect().top),
+            overflow: toggles.map((toggle) => {
+                const label = toggle.querySelector('span');
+                return { scrollWidth: label.scrollWidth, clientWidth: label.clientWidth };
+            }),
+        };
+    });
+    expect(leadTimesQuarterGeometry.tops).toHaveLength(2);
+    expect(leadTimesQuarterGeometry.tops[0]).toBe(leadTimesQuarterGeometry.tops[1]);
+    for (const { scrollWidth, clientWidth } of leadTimesQuarterGeometry.overflow) {
+        expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    }
+    expect(leadTimesQuarterGeometry.groupWidth).toBeGreaterThanOrEqual(240);
+
+    // End Quarter reconciliation: last-control-wins, one debounced request per change, and no
+    // request is ever sent with an inverted (start > end) pair.
+    const quarterRange = cohortControls.locator('[data-stats-range="lead-times-quarter"]');
+    const quarterButton = (end) => quarterRange.getByRole('button', { name: `${end} quarter` });
+    const pickQuarter = async (end, quarter) => {
+        const button = quarterButton(end);
+        await button.click();
+        await quarterRange.getByRole('listbox', { name: `${end} quarter` })
+            .getByRole('option', { name: quarter })
+            .click();
+    };
+    const quarterValue = async (end) => (await quarterButton(end).locator('span').innerText()).trim();
+    expect(await quarterValue('Start')).toBe('2026Q1');
+    expect(await quarterValue('End')).toBe('2026Q2');
+
+    await pickQuarter('Start', '2026Q3');
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 2);
+    expect(await quarterValue('Start')).toBe('2026Q3');
+    expect(await quarterValue('End')).toBe('2026Q3');
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[1].body).toMatchObject({
+        startQuarter: '2026Q3',
+        endQuarter: '2026Q3',
+    });
+
+    await pickQuarter('End', '2026Q1');
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 3);
+    expect(await quarterValue('Start')).toBe('2026Q1');
+    expect(await quarterValue('End')).toBe('2026Q1');
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[2].body).toMatchObject({
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q1',
+    });
+
+    callsFor(calls, '/api/stats/epic-cohort', 'POST').forEach((call) => {
+        expect(quarterLabelOrdinal(call.body.startQuarter)).toBeLessThanOrEqual(quarterLabelOrdinal(call.body.endQuarter));
+    });
+
+    // Keyboard support: ArrowDown opens the listbox on the selected option, arrows move focus,
+    // Escape closes and returns focus to the toggle.
+    const startQuarterButton = quarterButton('Start');
+    await startQuarterButton.press('ArrowDown');
+    const startListbox = quarterRange.getByRole('listbox', { name: 'Start quarter' });
+    await expect(startListbox).toBeVisible();
+    const selectedOption = startListbox.locator('[role="option"][aria-selected="true"]');
+    await expect(selectedOption).toBeFocused();
+    await selectedOption.press('ArrowDown');
+    await expect(startListbox.locator('[role="option"]:focus')).toHaveCount(1);
+    await startListbox.locator('[role="option"]:focus').press('Escape');
+    await expect(startQuarterButton).toHaveAttribute('aria-expanded', 'false');
+    await expect(startQuarterButton).toBeFocused();
+
+    // Responsive proof: at 375px the quarter range reflows without horizontal overflow.
+    // Overflow is asserted on the cohort controls row rather than the whole document:
+    // the dashboard shell has a pre-existing 4px document overflow at 375px from the
+    // header .eng-mode-control, unrelated to the stats controls under test here.
+    await page.setViewportSize({ width: 375, height: 760 });
+    const reflow = await quarterRange.evaluate((node) => {
+        const controls = node.closest('.cohort-controls');
+        const viewportWidth = document.documentElement.clientWidth;
+        return {
+            controlsOverflow: controls.scrollWidth > controls.clientWidth
+                || Math.round(controls.getBoundingClientRect().right) > viewportWidth,
+            controlsVisible: Array.from(node.querySelectorAll('.sprint-dropdown-toggle')).every((toggle) => {
+                const rect = toggle.getBoundingClientRect();
+                return rect.left >= 0 && rect.right <= viewportWidth;
+            }),
+        };
+    });
+    expect(reflow.controlsOverflow).toBeFalsy();
+    expect(reflow.controlsVisible).toBeTruthy();
+    await page.setViewportSize({ width: 1280, height: 760 });
+
+    // 2026Q3 (not 2026Q2) so this lands on a range never fetched before: the debounced
+    // cohort effect short-circuits on a cohortQueryKey cache hit (cohortCacheRef), and
+    // 2026Q1/2026Q2 was already cached from the very first load above.
+    await pickQuarter('End', '2026Q3');
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', 4);
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[3].body).toMatchObject({
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q3',
+    });
+    await captureSmokeScreenshot(page, 'statistics-lead-times-quarter-range');
+
+    // Per-group persistence: the reconciled pair round-trips through jira_dashboard_ui_prefs_v1.
+    await expect.poll(() => page.evaluate(() => {
+        const stored = JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}');
+        return { start: stored.cohortStartQuarter, end: stored.cohortEndQuarter };
+    })).toEqual({ start: '2026Q1', end: '2026Q3' });
+
+    // Re-seed the init script with the state actually persisted mid-test (rather than the
+    // original fixture values) so the reload below proves restoration of the user's
+    // interaction, not just of the test's initial seed.
+    const persistedPrefs = await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'));
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, persistedPrefs);
+    const cohortCallCountBeforeReload = callsFor(calls, '/api/stats/epic-cohort', 'POST').length;
+    await page.reload({ waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/epic-cohort', cohortCallCountBeforeReload + 1);
+    expect(await quarterValue('Start')).toBe('2026Q1');
+    expect(await quarterValue('End')).toBe('2026Q3');
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST')[cohortCallCountBeforeReload].body).toMatchObject({
+        startQuarter: '2026Q1',
+        endQuarter: '2026Q3',
+    });
+
+    // Client-side Group By stays client-side: toggling it never re-fetches the cohort.
+    const cohortRequestCountAfterReload = callsFor(calls, '/api/stats/epic-cohort', 'POST').length;
+    const groupBy = cohortControls.locator('.stats-control-group', { hasText: 'Group By' }).getByRole('radiogroup');
+    await expect(groupBy).toHaveClass(/eng-mode-control/);
+    await expect(groupBy).not.toHaveClass(/stats-view-toggle/);
+    await groupBy.getByRole('radio', { name: 'Month' }).click();
+    await groupBy.getByRole('radio', { name: 'Quarter' }).click();
+    await page.waitForTimeout(400);
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST').length).toBe(cohortRequestCountAfterReload);
+    const groupByLayout = await groupBy.evaluate((node) => ({
+        flexWrap: getComputedStyle(node).flexWrap,
+        height: Math.round(node.getBoundingClientRect().height),
+        buttonTops: Array.from(node.querySelectorAll('.segmented-control-button')).map((button) => Math.round(button.getBoundingClientRect().top)),
+    }));
+    expect(groupByLayout.flexWrap).toBe('nowrap');
+    expect(groupByLayout.height).toBeLessThanOrEqual(42);
+    expect(new Set(groupByLayout.buttonTops).size).toBe(1);
+
     await statsTabs.getByRole('radio', { name: 'Excluded Capacity' }).click();
     await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
     await expect(page.locator('.stats-view.open .effort-type-split-chart')).toBeVisible();
 
+    // Excluded Capacity shares the StatsRangeControl range group; no native Start/End select remains.
+    const excludedRange = page.locator('[data-stats-range="excluded-capacity-sprint"]');
+    await expect(excludedRange).toBeVisible();
+    await expect(excludedRange.locator('select')).toHaveCount(0);
+    const excludedEnd = excludedRange.getByRole('button', { name: 'End sprint' });
+    await excludedEnd.click();
+    await expect(excludedEnd).toHaveAttribute('aria-expanded', 'true');
+
     await statsTabs.getByRole('radio', { name: 'Mono vs Cross' }).click();
     await expect(page.locator('.stats-view.open')).toContainText('Team Cross Share');
     await expect(page.locator('.stats-view.open .excluded-capacity-line-chart')).toBeVisible();
+    const monoCrossRange = page.locator('[data-stats-range="mono-cross-sprint"]');
+    await expect(monoCrossRange).toBeVisible();
+    await expect(monoCrossRange.locator('select')).toHaveCount(0);
+    await captureSmokeScreenshot(page, 'statistics-mono-cross');
+    const monoCrossLegendColors = await legendColors('.stats-view.open .excluded-capacity-line-legend-item');
 
+    // View-switch menu leak: returning to Excluded Capacity must not leave its End menu open.
+    await statsTabs.getByRole('radio', { name: 'Excluded Capacity' }).click();
+    await expect(excludedEnd).toHaveAttribute('aria-expanded', 'false');
+
+    // Acceptance proof for the statistics color-consistency fix: Priority, Burndown, and
+    // Mono vs Cross must resolve the same team to the same color via resolveStatsTeamColor.
+    expect(burnoutLegendColors['Alpha Team']).toBe(priorityLegendColors['Alpha Team']);
+    expect(monoCrossLegendColors['Alpha Team']).toBe(priorityLegendColors['Alpha Team']);
+    expect(burnoutLegendColors['Beta Team']).toBe(priorityLegendColors['Beta Team']);
+    expect(monoCrossLegendColors['Beta Team']).toBe(priorityLegendColors['Beta Team']);
+
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('stats sprint range End panels keep long options inside the narrow viewport', async ({ page }) => {
+    test.setTimeout(90000);
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, {
+        excludedCapacityEpics: ['BAU-EPIC'],
+        sprints: [
+            { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+            { id: longSprintId, name: longSprintName, state: 'future' },
+        ],
+    });
+    await page.setViewportSize({ width: 375, height: 760 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true,
+        statsView: 'excludedCapacity', excludedCapacityStartSprintId: String(selectedSprintId),
+        excludedCapacityEndSprintId: String(selectedSprintId),
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+    const statsTabs = page.locator('.stats-panel.open .stats-view-toggle');
+    const views = [
+        { tab: 'Excluded Capacity', range: 'excluded-capacity-sprint', screenshot: 'statistics-excluded-capacity-range-375' },
+        { tab: 'Mono vs Cross', range: 'mono-cross-sprint', screenshot: 'statistics-mono-cross-range-375' },
+        { tab: 'Project Track', range: 'project-track-sprint', screenshot: 'statistics-project-track-range-375' },
+    ];
+    const panelResults = [];
+
+    for (const view of views) {
+        await page.setViewportSize({ width: 1280, height: 760 });
+        await statsTabs.getByRole('radio', { name: view.tab, exact: true }).click();
+        const range = page.locator(`.stats-view.open [data-stats-range="${view.range}"]`);
+        await expect(range).toBeVisible();
+        await page.setViewportSize({ width: 375, height: 760 });
+        const endToggle = range.getByRole('button', { name: 'End sprint' });
+        await endToggle.click();
+        const longOption = range.getByRole('listbox', { name: 'End sprint' })
+            .getByRole('option', { name: longSprintName });
+        await expect(longOption).toBeVisible();
+        const panelBounds = await longOption.evaluate((node) => {
+            const panel = node.closest('.sprint-dropdown-panel');
+            const rect = panel.getBoundingClientRect();
+            return {
+                left: Math.round(rect.left), right: Math.round(rect.right),
+                viewport: document.documentElement.clientWidth,
+            };
+        });
+        await captureSmokeScreenshot(page, view.screenshot);
+        await longOption.click();
+        panelResults.push({ tab: view.tab, ...panelBounds });
+        await expect(endToggle).toHaveAttribute('aria-expanded', 'false');
+    }
+
+    for (const panelBounds of panelResults) {
+        expect(panelBounds.left).toBeGreaterThanOrEqual(16);
+        expect(panelBounds.right).toBeLessThanOrEqual(panelBounds.viewport - 16);
+    }
+
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Lead Times capacity exclusions re-slice locally and replace the legacy inclusive filter', async ({ page }) => {
+    const calls = [];
+    const issues = [
+        { ...makeOpenCohortEpic(1), key: 'ADHOC-1', summary: 'Ad Hoc epic', capacityType: 'ad_hoc' },
+        { ...makeOpenCohortEpic(2), key: 'BAU-EPIC', summary: 'Excluded capacity epic' },
+        { ...makeOpenCohortEpic(3), key: 'PRODUCT-1', summary: 'Product epic', capacityType: 'product' },
+    ];
+    const apiMocks = await installApiMocks(page, calls, { cohortIssues: issues, excludedCapacityEpics: ['BAU-EPIC'] });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true, statsView: 'cohort',
+        cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q1', cohortCapacityFilter: 'ad_hoc',
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, (call) => call.pathname === '/api/stats/epic-cohort', 1);
+    const view = page.locator('.stats-view.open');
+    await expect(view.getByText('Exclude', { exact: true })).toBeVisible();
+    await expect(view.getByText('Ad Hoc', { exact: true })).toBeVisible();
+    await expect(view.getByText('Excluded Capacity', { exact: true })).toBeVisible();
+    await expect(view.getByText('Exclude Ad Hoc', { exact: true })).toHaveCount(0);
+    await expect(view.getByText('Exclude Excluded Capacity', { exact: true })).toHaveCount(0);
+    const excludeAdHoc = view.getByRole('checkbox', { name: 'Exclude Ad Hoc' });
+    const excludeExcluded = view.getByRole('checkbox', { name: 'Exclude Excluded Capacity' });
+    await expect(excludeAdHoc).not.toBeChecked();
+    await expect(excludeExcluded).toBeChecked();
+    await expect(view.getByText('ADHOC-1', { exact: true })).toBeVisible();
+    await expect(view.getByText('BAU-EPIC', { exact: true })).toHaveCount(0);
+    const requestCount = callsFor(calls, '/api/stats/epic-cohort', 'POST').length;
+    await excludeAdHoc.check();
+    await expect(view.getByText('ADHOC-1', { exact: true })).toHaveCount(0);
+    await excludeExcluded.uncheck();
+    await expect(view.getByText('BAU-EPIC', { exact: true })).toBeVisible();
+    expect(callsFor(calls, '/api/stats/epic-cohort', 'POST').length).toBe(requestCount);
+    await expect.poll(() => page.evaluate(() => {
+        const stored = JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}');
+        return {
+            excludeAdHoc: stored.cohortExcludeAdHoc,
+            excludeCapacity: stored.cohortExcludeCapacity,
+            hasLegacyKey: Object.prototype.hasOwnProperty.call(stored, 'cohortCapacityFilter'),
+        };
+    })).toEqual({ excludeAdHoc: true, excludeCapacity: false, hasLegacyKey: false });
+    const saved = await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'));
+    expect(saved).not.toHaveProperty('cohortCapacityFilter');
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, saved);
+    await page.reload({ waitUntil: 'networkidle' });
+    // Scoped to the open Lead Times panel: other stats subviews (e.g. Project Track)
+    // stay mounted in the DOM (hidden via opacity/max-height, not display:none) and
+    // expose their own identically-labeled "Exclude Ad Hoc" checkbox.
+    await expect(view.getByRole('checkbox', { name: 'Exclude Ad Hoc' })).toBeChecked();
+    await expect(view.getByRole('checkbox', { name: 'Exclude Excluded Capacity' })).not.toBeChecked();
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
@@ -1205,10 +1544,44 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     const statsView = page.locator('.stats-view.open');
     await expect(statsView).toBeVisible();
 
-    // Filter bar: shared sprint range selects + capacity-side / mode segmented controls + exclusion toggles.
+    // Filter bar: shared sprint range control + capacity-side / mode segmented controls + exclusion toggles.
     const controls = statsView.locator('.project-track-controls');
     await expect(controls).toBeVisible();
-    await expect(controls.locator('select')).toHaveCount(2);
+    const rangeGroup = controls.locator('[data-stats-range="project-track-sprint"]');
+    await expect(rangeGroup).toHaveAttribute('aria-label', 'Sprint range');
+    await expect(rangeGroup.locator('.controls-label')).toHaveText('Sprint');
+    const startToggle = rangeGroup.getByRole('button', { name: 'Start sprint' });
+    await expect(startToggle).toHaveAttribute('aria-haspopup', 'listbox');
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'false');
+    await startToggle.click();
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'true');
+    const listbox = rangeGroup.getByRole('listbox', { name: 'Start sprint' });
+    const option = listbox.getByRole('option', { name: selectedSprintName });
+    const geometry = await option.evaluate((node) => {
+        const panel = node.closest('.sprint-dropdown-panel').getBoundingClientRect();
+        const toggle = node.closest('.sprint-dropdown').querySelector('.sprint-dropdown-toggle').getBoundingClientRect();
+        const point = { x: panel.left + Math.min(12, panel.width / 2), y: panel.top + Math.min(12, panel.height / 2) };
+        return {
+            opensBelow: panel.top >= toggle.bottom,
+            topHitIsPanel: node.closest('.sprint-dropdown-panel').contains(document.elementFromPoint(point.x, point.y)),
+        };
+    });
+    expect(geometry.opensBelow).toBeTruthy();
+    expect(geometry.topHitIsPanel).toBeTruthy();
+    await option.click(); // normal, never force
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(startToggle).toBeFocused();
+    await startToggle.click();
+    await controls.getByRole('radio', { name: 'Epic' }).focus();
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'false');
+    await startToggle.click();
+    await controls.getByRole('radio', { name: 'Epic' }).click();
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'false');
+    await startToggle.press('Enter');
+    await expect(listbox).toBeVisible();
+    await listbox.getByRole('option', { name: selectedSprintName }).press('Escape');
+    await expect(startToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(startToggle).toBeFocused();
     // Filter-bar groups never overlap: each control group's layout box stays clear of neighbours.
     const controlBoxes = await controls.evaluate((node) => {
         return Array.from(node.querySelectorAll(':scope > .stats-control-group')).map((group) => {
@@ -1409,6 +1782,7 @@ test('Lead Times caps long epic lists with load more and keeps overflow scrollab
         showStats: true,
         statsView: 'cohort',
         cohortStartQuarter: '2026Q1',
+        cohortEndQuarter: '2026Q1',
     });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
@@ -1482,12 +1856,43 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
 
+    // Excluded Capacity renders exactly one StatsRangeControl range group with Start/End
+    // buttons and no leftover native Start/End select.
+    const rangeGroup = page.locator('[data-stats-range="excluded-capacity-sprint"]');
+    await expect(rangeGroup).toHaveCount(1);
+    await expect(rangeGroup.locator('select')).toHaveCount(0);
+    await expect(rangeGroup.getByRole('button', { name: 'Start sprint' })).toBeVisible();
+    await expect(rangeGroup.getByRole('button', { name: 'End sprint' })).toBeVisible();
+
+    // The merged range group must lay Start/End out side by side (not stacked)
+    // with no clipped toggle text, and get enough width for both (MRT020).
+    const rangeGeometry = await rangeGroup.evaluate((group) => {
+        const toggles = Array.from(group.querySelectorAll('.sprint-dropdown-toggle'));
+        return {
+            groupWidth: group.getBoundingClientRect().width,
+            tops: toggles.map((toggle) => toggle.getBoundingClientRect().top),
+            overflow: toggles.map((toggle) => {
+                const label = toggle.querySelector('span');
+                return { scrollWidth: label.scrollWidth, clientWidth: label.clientWidth };
+            }),
+        };
+    });
+    expect(rangeGeometry.tops).toHaveLength(2);
+    expect(rangeGeometry.tops[0]).toBe(rangeGeometry.tops[1]);
+    for (const { scrollWidth, clientWidth } of rangeGeometry.overflow) {
+        expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    }
+    expect(rangeGeometry.groupWidth).toBeGreaterThanOrEqual(240);
+
     const summary = page.locator('.stats-view.open .excluded-capacity-summary');
     await expect(summary).toBeVisible();
     await expect(summary.locator('.stats-card', { hasText: 'Excluded Share' })).toContainText('15.00%');
     await expect(summary.locator('.stats-card', { hasText: 'Ad Hoc Share' })).toContainText('0.00%');
     await expect(summary.locator('.stats-card', { hasText: 'Product total' })).toContainText('65.00%');
     await expect(summary.locator('.stats-card', { hasText: 'Tech Share' })).toContainText('20.00%');
+    // Excluded SP, Excluded Share, Ad Hoc Share, Product total, Tech Share; Range card removed.
+    await expect(summary.locator('.stats-card')).toHaveCount(5);
+    await expect(summary.locator('.stats-card', { hasText: 'Range' })).toHaveCount(0);
     await expect(summary.getByText('Source')).toHaveCount(0);
     await expect(summary.getByText('Planning config')).toHaveCount(0);
     await expect(summary.getByText('Excluded epic keys from team group settings')).toHaveCount(0);

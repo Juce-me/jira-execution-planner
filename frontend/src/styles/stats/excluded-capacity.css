@@ -1,5 +1,37 @@
         .cohort-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 0.6rem 1rem;
             margin-bottom: 0.65rem;
+        }
+
+        .cohort-controls > .stats-control-group {
+            flex: 0 0 auto;
+            min-width: 0;
+        }
+
+        .cohort-controls > .stats-control-group:has(> .scenario-input) {
+            flex: 1 1 8.5rem;
+            max-width: 20rem;
+        }
+
+        .cohort-controls > .stats-control-group > .scenario-input {
+            box-sizing: border-box;
+            height: var(--control-height);
+            margin-top: 0.4rem;
+        }
+
+        .cohort-controls > .stats-control-group.project-track-exclusions {
+            display: block;
+        }
+
+        .cohort-exclusion-options {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            min-height: var(--control-height);
+            margin-top: 0.4rem;
         }
 
         .cohort-status-actions {
@@ -52,22 +84,10 @@
             min-width: 0;
         }
 
-        .excluded-capacity-filter-controls .excluded-capacity-start-sprint-control {
-            grid-column: 2;
+        .excluded-capacity-filter-controls [data-stats-range="excluded-capacity-sprint"] {
+            grid-column: 2 / span 2;
             grid-row: 1;
-        }
-
-        .excluded-capacity-filter-controls .excluded-capacity-end-sprint-control {
-            grid-column: 3;
-            grid-row: 1;
-        }
-
-        .excluded-capacity-filter-controls .excluded-capacity-sprint-control {
             min-width: 0;
-        }
-
-        .excluded-capacity-filter-controls .scenario-input {
-            width: 100%;
         }
 
         .excluded-capacity-epic-dropdown {
@@ -566,10 +586,13 @@
             }
 
             .excluded-capacity-filter-controls .excluded-capacity-epic-filter,
-            .excluded-capacity-filter-controls .excluded-capacity-start-sprint-control,
-            .excluded-capacity-filter-controls .excluded-capacity-end-sprint-control {
+            .excluded-capacity-filter-controls [data-stats-range="excluded-capacity-sprint"] {
                 grid-column: auto;
                 grid-row: auto;
+            }
+
+            .cohort-exclusion-options {
+                flex-wrap: wrap;
             }
 
             .epic-mode-row {

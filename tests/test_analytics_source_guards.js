@@ -129,28 +129,21 @@ test('effort split chart_action sends only the safe series_type enum token, neve
     assert.equal(/['"]BAU['"]/.test(source), false, 'BAU must not appear as an analytics or code value');
 });
 
-test('Lead Times capacity cohort filter changes local state without an app-owned event', () => {
+test('Lead Times capacity exclusions change local state without an app-owned event', () => {
     const source = read('frontend/src/dashboard.jsx');
-    const capacityControl = source.match(/<label>Capacity<\/label>[\s\S]*?<\/select>/)?.[0] || '';
-    assert.ok(capacityControl, 'Expected to locate the Lead Times Capacity cohort selector');
-    assert.ok(
-        capacityControl.includes('setCohortCapacityFilter(resolveCohortCapacityFilter(event.target.value))'),
-        'Expected the Capacity selector to update cohort filter state'
-    );
-    assert.equal(
-        /onChange=\{[\s\S]*?(?:trackFilterChanged|trackStatsAnalyticsAction|trackEvent|onAnalyticsAction)[\s\S]*?<\/select>/.test(capacityControl),
-        false,
-        'Lead Times Capacity selector must not emit an app-owned analytics event'
-    );
-    assert.ok(
-        capacityControl.includes('value="ad_hoc"') && capacityControl.includes('value="all"'),
-        'Expected the Capacity selector to use the all / ad_hoc code values'
-    );
-    const analyticsDoc = read('docs/README_ANALYTICS.md');
-    assert.ok(
-        analyticsDoc.includes('Lead Times capacity cohort filter'),
-        'Expected the Lead Times capacity filter to be documented in the No-Event Allowlist'
-    );
+    const start = source.indexOf('data-stats-capacity-filters');
+    const end = source.indexOf('<div className="stats-actions cohort-status-actions">', start);
+    assert.ok(start >= 0 && end > start, 'Expected the Lead Times capacity checkbox block');
+    const capacityControls = source.slice(start, end);
+    assert.ok(capacityControls.includes('setCohortExcludeAdHoc'));
+    assert.ok(capacityControls.includes('setCohortExcludeCapacity'));
+    assert.ok(capacityControls.includes('aria-label="Exclude Ad Hoc"'));
+    assert.ok(capacityControls.includes('aria-label="Exclude Excluded Capacity"'));
+    assert.ok(capacityControls.includes('<span>Ad Hoc</span>'));
+    assert.ok(capacityControls.includes('<span>Excluded Capacity</span>'));
+    assert.equal(capacityControls.includes('setCohortCapacityFilter'), false);
+    assert.equal(/trackFilterChanged|trackStatsAnalyticsAction|trackEvent/.test(capacityControls), false);
+    assert.ok(read('docs/README_ANALYTICS.md').includes('Lead Times capacity cohort filter'));
 });
 
 test('Jira issue transition API module sends the eng_status_transitions surface for both endpoints', () => {

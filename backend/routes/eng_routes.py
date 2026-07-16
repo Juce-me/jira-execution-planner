@@ -20,6 +20,12 @@ from backend.services.jira_issue_priorities import (
     load_priority_options_for_issue,
     update_issue_priorities,
 )
+from backend.services.jira_issue_project_track import (
+    ProjectTrackInputError,
+    ProjectTrackServiceError,
+    load_project_track_options_for_issue,
+    update_issue_project_track,
+)
 from backend.services.jira_issue_transitions import (
     IssueTransitionInputError,
     IssueTransitionServiceError,
@@ -394,6 +400,81 @@ def post_issue_priorities():
 
     if result.get('succeeded', 0) > 0:
         clear_jira_issue_status_caches(reason='issue_priority_update')
+    return jsonify(result)
+
+
+_PROJECT_TRACK_CONFLICT_CODES = {
+    'issue_not_epic', 'project_track_not_editable', 'project_track_option_unavailable',
+}
+
+
+def _project_track_service_error_response(error, failure_code):
+    if error.code == 'issue_not_found':
+        return jsonify({'error': 'issue_not_found'}), 404
+    if error.code in _PROJECT_TRACK_CONFLICT_CODES:
+        return jsonify({'error': error.code}), 409
+    logger.exception('Issue project track Jira call failed')
+    return jsonify({'error': failure_code}), 502
+
+
+@bp.route('/api/issues/project-track/options', methods=['GET'])
+def get_issue_project_track_options():
+    """Canonical Project Track options from this issue's Jira editmeta."""
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'error': 'jira_oauth_required'}), 403
+    issue_key = (request.args.get('issueKey') or '').strip()
+    if not issue_key:
+        return jsonify({'error': 'invalid_issue_key'}), 400
+    try:
+        auth_context = current_request_auth_context()
+        result = load_project_track_options_for_issue(
+            issue_key,
+            jira_request=current_jira_request,
+            get_project_track_field_id=get_project_track_field_id,
+            context=auth_context,
+        )
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except ProjectTrackInputError as error:
+        return jsonify({'error': error.code}), 400
+    except ProjectTrackServiceError as error:
+        return _project_track_service_error_response(error, 'jira_project_track_options_failed')
+    except Exception:
+        logger.exception('Issue project track options endpoint error')
+        return jsonify({'error': 'jira_project_track_options_failed'}), 502
+    return jsonify(result)
+
+
+@bp.route('/api/issues/project-track', methods=['POST'])
+def post_issue_project_track():
+    """Set one real Epic's Project Track to Flexible or Committed."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_json'}), 400
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'error': 'jira_oauth_required'}), 403
+    try:
+        auth_context = current_request_auth_context()
+        if _missing_write_jira_work_scope(auth_context):
+            raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
+        result = update_issue_project_track(
+            payload.get('issueKey'),
+            payload.get('targetTrack'),
+            jira_request=current_jira_request,
+            get_project_track_field_id=get_project_track_field_id,
+            context=auth_context,
+        )
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except ProjectTrackInputError as error:
+        return jsonify({'error': error.code}), 400
+    except ProjectTrackServiceError as error:
+        return _project_track_service_error_response(error, 'jira_project_track_update_failed')
+    except Exception:
+        logger.exception('Issue project track write endpoint error')
+        return jsonify({'error': 'jira_project_track_update_failed'}), 502
+    if result.get('result') == 'success':
+        clear_jira_issue_status_caches(reason='issue_project_track_update')
     return jsonify(result)
 
 

@@ -20,12 +20,14 @@ SECURITY_SAMPLES = {
         ("GET", "/api/scenario/drafts"),
         ("GET", "/api/issues/priorities/options"),
         ("GET", "/api/issues/statuses/catalog"),
+        ("GET", "/api/issues/project-track/options"),
     ],
     "user_write": [
         ("POST", "/api/me/views"),
         ("POST", "/api/groups-preferences"),
         ("POST", "/api/export-excel"),
         ("POST", "/api/issues/priorities"),
+        ("POST", "/api/issues/project-track"),
     ],
     "workspace_write": [
         ("POST", "/api/scenario/drafts"),

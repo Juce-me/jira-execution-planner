@@ -492,7 +492,7 @@ Note: in `update_issue_project_track` the `already_in_track` result returns `fro
 - Consumes: Task 1 service functions/exceptions; `get_project_track_field_id` (bound from `jira_server` via `bind_server_globals`); `current_jira_request`, `current_request_auth_context`, `_missing_write_jira_work_scope`, `_eng_auth_error_response`, `clear_jira_issue_status_caches`.
 - Produces: `GET /api/issues/project-track/options` and `POST /api/issues/project-track` per the Endpoint Contracts table; policy names `jira-project-track-options` (`authenticated_read`) and `jira-project-track-write` (`user_write`).
 
-- [ ] **Step 2.1: Write failing route tests.** Add `IssueProjectTrackRouteTests` to `tests/test_oauth_eng_routes.py`, cloning the `IssuePriorityRouteTests` setUp/csrf helpers. Required tests (each mirrors its priority sibling's mocking style — patch `jira_server.JIRA_AUTH_MODE`, `jira_server.current_request_auth_context`, `jira_server.current_jira_request`, `eng_routes.load_project_track_options_for_issue`, `eng_routes.update_issue_project_track`, `eng_routes.clear_jira_issue_status_caches` as appropriate):
+- [x] **Step 2.1: Write failing route tests.** Add `IssueProjectTrackRouteTests` to `tests/test_oauth_eng_routes.py`, cloning the `IssuePriorityRouteTests` setUp/csrf helpers. Required tests (each mirrors its priority sibling's mocking style — patch `jira_server.JIRA_AUTH_MODE`, `jira_server.current_request_auth_context`, `jira_server.current_jira_request`, `eng_routes.load_project_track_options_for_issue`, `eng_routes.update_issue_project_track`, `eng_routes.clear_jira_issue_status_caches` as appropriate):
 
 ```python
 class IssueProjectTrackRouteTests(unittest.TestCase):
@@ -553,9 +553,9 @@ def test_project_track_write_route_has_user_write_policy(self):
 
 And add `("GET", "/api/issues/project-track/options")` to the `authenticated_read` sample list and `("POST", "/api/issues/project-track")` to the `user_write` sample list in the `SECURITY_SAMPLES` registry (`tests/test_endpoint_security_matrix.py` lines 9-38, plus `tests/endpoint_security_samples.py` if it lists these routes separately).
 
-- [ ] **Step 2.2: Run to confirm failures.** `.venv/bin/python -m unittest tests.test_oauth_eng_routes.IssueProjectTrackRouteTests tests.test_endpoint_policy_inventory -v` → FAIL (routes missing).
+- [x] **Step 2.2: Run to confirm failures.** `.venv/bin/python -m unittest tests.test_oauth_eng_routes.IssueProjectTrackRouteTests tests.test_endpoint_policy_inventory -v` → FAIL (routes missing).
 
-- [ ] **Step 2.3: Implement routes and policy.** In `backend/routes/eng_routes.py` extend the service import block and add after `post_issue_priorities`:
+- [x] **Step 2.3: Implement routes and policy.** In `backend/routes/eng_routes.py` extend the service import block and add after `post_issue_priorities`:
 
 ```python
 from backend.services.jira_issue_project_track import (
@@ -647,11 +647,11 @@ EndpointPolicy("jira-project-track-options", "/api/issues/project-track/options"
 EndpointPolicy("jira-project-track-write", "/api/issues/project-track", frozenset({"POST"}), "user_write"),
 ```
 
-- [ ] **Step 2.4: Run focused tests → PASS.** `.venv/bin/python -m unittest tests.test_oauth_eng_routes tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix -v`
+- [x] **Step 2.4: Run focused tests → PASS.** `.venv/bin/python -m unittest tests.test_oauth_eng_routes tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix -v`
 
-- [ ] **Step 2.5: Run full Python suite → PASS.** `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile .venv/bin/python -m unittest discover -s tests` (matches CI env; includes `test_initiative_extraction`, `test_codebase_structure_budgets`, security matrix, source guards).
+- [x] **Step 2.5: Run full Python suite → PASS.** `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile .venv/bin/python -m unittest discover -s tests` (matches CI env; includes `test_initiative_extraction`, `test_codebase_structure_budgets`, security matrix, source guards).
 
-- [ ] **Step 2.6: Commit.** `git add backend/routes/eng_routes.py backend/security/policy.py tests/ && git commit -m "feat(eng): add OAuth Project Track options and write routes"`
+- [x] **Step 2.6: Commit.** `git add backend/routes/eng_routes.py backend/security/policy.py tests/ && git commit -m "feat(eng): add OAuth Project Track options and write routes"`
 
 ---
 

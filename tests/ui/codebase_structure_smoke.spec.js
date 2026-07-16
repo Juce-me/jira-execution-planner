@@ -1885,6 +1885,35 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     }
     expect(rangeGeometry.groupWidth).toBeGreaterThanOrEqual(240);
 
+    const controlRowGeometry = await page.locator('.excluded-capacity-filter-controls').evaluate((row) => {
+        const range = row.querySelector(':scope > [data-stats-range="excluded-capacity-sprint"]')?.getBoundingClientRect();
+        const epic = row.querySelector(':scope > .excluded-capacity-epic-filter')?.getBoundingClientRect();
+        const actions = row.querySelector(':scope > .excluded-capacity-actions')?.getBoundingClientRect();
+        const segmentedControls = Array.from(row.querySelectorAll(':scope > .excluded-capacity-actions .segmented-control'));
+        const rangeToggle = row.querySelector(':scope > [data-stats-range="excluded-capacity-sprint"] .sprint-dropdown-toggle')?.getBoundingClientRect();
+        const epicToggle = row.querySelector(':scope > .excluded-capacity-epic-filter .team-dropdown-toggle')?.getBoundingClientRect();
+        return {
+            rowRight: row.getBoundingClientRect().right,
+            lefts: [range?.left, epic?.left, actions?.left],
+            actionsRight: actions?.right,
+            controlTops: [rangeToggle?.top, epicToggle?.top, ...segmentedControls.map((control) => control.getBoundingClientRect().top)],
+            clippedLabels: segmentedControls.flatMap((control) => Array.from(control.querySelectorAll('button')).map((button) => ({
+                scrollWidth: button.scrollWidth,
+                clientWidth: button.clientWidth,
+            }))),
+        };
+    });
+    expect(controlRowGeometry.lefts.every(Number.isFinite)).toBeTruthy();
+    expect(controlRowGeometry.lefts[0]).toBeLessThan(controlRowGeometry.lefts[1]);
+    expect(controlRowGeometry.lefts[1]).toBeLessThan(controlRowGeometry.lefts[2]);
+    expect(controlRowGeometry.actionsRight).toBeLessThanOrEqual(controlRowGeometry.rowRight);
+    expect(controlRowGeometry.controlTops).toHaveLength(4);
+    expect(controlRowGeometry.controlTops.every(Number.isFinite)).toBeTruthy();
+    expect(Math.max(...controlRowGeometry.controlTops) - Math.min(...controlRowGeometry.controlTops)).toBeLessThan(4);
+    for (const { scrollWidth, clientWidth } of controlRowGeometry.clippedLabels) {
+        expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    }
+
     const summary = page.locator('.stats-view.open .excluded-capacity-summary');
     await expect(summary).toBeVisible();
     await expect(summary.locator('.stats-card', { hasText: 'Excluded Share' })).toContainText('15.00%');

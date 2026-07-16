@@ -148,10 +148,10 @@ Explicitly unchanged: `jira-dashboard.html`, backend auth routes, endpoint secur
 - Modify: `tests/test_auth_entry_page.py`
 - Create: `tests/ui/auth_focus_refresh_counts.spec.js`
 
-- [ ] In `test_dashboard_auth_shell_refreshes_on_initial_load`, add an assertion that `jira-dashboard.html` contains exactly one `auth-focus-refresh.js` script include; replace the `refreshAuthOnFocus();` literal assertion with `installAuthFocusRefresh();` (which survives the rewrite); add `assertNotIn('location.reload', refresh_source)`.
-- [ ] Create the Playwright spec with a self-contained shell: fulfill the document from on-disk `jira-dashboard.html`, fulfill `**/frontend/dist/auth-focus-refresh.js` from an in-memory esbuild IIFE build of `frontend/src/api/authFocusRefresh.js` (build:auth flags, no minify/sourcemap) done once in `beforeAll`, stub `dashboard.js`/`dashboard.css` as empty, stub `POST **/api/auth/refresh` → 200 `{}`, count document requests, auth-script requests, and auth POSTs. Origin stays `http://127.0.0.1:5050` (route-fulfilled; the live server is never load-bearing for specs).
-- [ ] Baseline test: one `page.goto()` → exactly one document request, one auth-script request, one auth POST. Then dispatch a visible-state focus/visibilitychange burst → zero additional document/script requests and zero additional POSTs (60s throttle).
-- [ ] Run against the current unmodified module and record the result:
+- [x] In `test_dashboard_auth_shell_refreshes_on_initial_load`, add an assertion that `jira-dashboard.html` contains exactly one `auth-focus-refresh.js` script include; replace the `refreshAuthOnFocus();` literal assertion with `installAuthFocusRefresh();` (which survives the rewrite); add `assertNotIn('location.reload', refresh_source)`.
+- [x] Create the Playwright spec with a self-contained shell: fulfill the document from on-disk `jira-dashboard.html`, fulfill `**/frontend/dist/auth-focus-refresh.js` from an in-memory esbuild IIFE build of `frontend/src/api/authFocusRefresh.js` (build:auth flags, no minify/sourcemap) done once in `beforeAll`, stub `dashboard.js`/`dashboard.css` as empty, stub `POST **/api/auth/refresh` → 200 `{}`, count document requests, auth-script requests, and auth POSTs. Origin stays `http://127.0.0.1:5050` (route-fulfilled; the live server is never load-bearing for specs).
+- [x] Baseline test: one `page.goto()` → exactly one document request, one auth-script request, one auth POST. Then dispatch a visible-state focus/visibilitychange burst → zero additional document/script requests and zero additional POSTs (60s throttle).
+- [x] Run against the current unmodified module and record the result:
 
 ```bash
 fnm exec --using 20 npx playwright test tests/ui/auth_focus_refresh_counts.spec.js

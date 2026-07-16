@@ -207,3 +207,34 @@ test('trackIssuePriorityAction emits only the eng priority transition contract, 
         );
     }
 });
+
+test('Jira issue project track API module sends the jira_issue_project_track surface for both endpoints', () => {
+    const source = read('frontend/src/api/jiraIssueApi.js');
+    assert.ok(source.includes('/api/issues/project-track/options'), 'Expected the project track options endpoint literal');
+    assert.ok(source.includes('/api/issues/project-track'), 'Expected the project track write endpoint literal');
+    assert.ok(source.includes("trackedFetch('jira_issue_project_track'"), 'Expected both project track wrappers to use the jira_issue_project_track API surface');
+    assert.ok(source.includes("featureName: 'eng_project_track_changes'"), 'Expected both project track wrappers to tag the eng_project_track_changes feature');
+});
+
+test('trackIssueProjectTrackAction emits only the eng project track contract, never issue-level PII or raw track ids', () => {
+    const source = read('frontend/src/analytics/dashboardAnalytics.js');
+    const match = source.match(/const trackIssueProjectTrackAction = useCallback\(([\s\S]*?)\}, \[trackProductEvent\]\);/);
+    assert.ok(match, 'Expected to locate the trackIssueProjectTrackAction definition');
+
+    const body = match[1];
+    assert.ok(body.includes("'issue_project_track_action'"), 'Expected trackIssueProjectTrackAction to emit issue_project_track_action');
+    assert.ok(body.includes("feature_name: 'eng_project_track_changes'"), 'Expected trackIssueProjectTrackAction to tag the eng_project_track_changes feature');
+
+    const forbiddenSnippets = [
+        'issueKey', 'issue_key', 'summary', 'targetTrack', 'target_track',
+        'assignee', 'jql', 'JQL', 'accountId', 'account_id', 'email',
+        'apiToken', 'authToken', 'csrfToken', 'jiraUrl', 'jira_url'
+    ];
+    for (const snippet of forbiddenSnippets) {
+        assert.equal(
+            body.includes(snippet),
+            false,
+            `trackIssueProjectTrackAction must not reference ${snippet}`
+        );
+    }
+});

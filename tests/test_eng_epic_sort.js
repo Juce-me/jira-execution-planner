@@ -44,7 +44,8 @@ test('getProjectTrackEmoji maps values', async () => {
   const { getProjectTrackEmoji } = await import(modUrl);
   assert.equal(getProjectTrackEmoji('Committed'), '🔒');
   assert.equal(getProjectTrackEmoji('Flexible'), '🤷');
-  assert.equal(getProjectTrackEmoji(''), '');
+  assert.equal(getProjectTrackEmoji(''), '⚪');
+  assert.equal(getProjectTrackEmoji('Other'), '⚪');
 });
 
 test('normalizeEngEpicSort + label', async () => {

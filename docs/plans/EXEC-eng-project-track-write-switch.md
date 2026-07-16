@@ -671,7 +671,7 @@ EndpointPolicy("jira-project-track-write", "/api/issues/project-track", frozense
   - `jiraIssueApi.js`: `fetchIssueProjectTrackOptions(backendUrl, { issueKey, signal })` (GET, surface `jira_issue_project_track`, `featureName: 'eng_project_track_changes'`); `updateIssueProjectTrack(backendUrl, payload, { signal })` (CSRF via `fetchMutationCsrfToken`, POST body `{issueKey, targetTrack}`).
   - `dashboardAnalytics.js`: `trackIssueProjectTrackAction(workflowAction, params)` emitting `issue_project_track_action` with `feature_name: 'eng_project_track_changes'`.
 
-- [ ] **Step 3.1: Write failing unit tests.** `tests/test_eng_project_track_transition_utils.js` (Node `--test`, mirror `tests/test_eng_priority_transition_utils.js` style):
+- [x] **Step 3.1: Write failing unit tests.** `tests/test_eng_project_track_transition_utils.js` (Node `--test`, mirror `tests/test_eng_priority_transition_utils.js` style):
 
 ```js
 const test = require('node:test');
@@ -682,9 +682,9 @@ const assert = require('node:assert');
 
 Cover: `normalizeProjectTrackValue` ('committed '→'Committed', 'FLEXIBLE'→'Flexible', ''/null/'Other'→''); `filterProjectTrackOptions([{value:'Flexible'},{value:'Committed'}], 'Committed')` → only Flexible; unidentified current ('' or 'Other') → both options; missing/malformed options → []; `buildProjectTrackActionAnalyticsParams` with and without `targetTrack`/`result` — asserts exact keys, `issue_type_mix: 'epics'`, `selected_count_bucket: '1_5'`, `value_state: 'committed'`, and that no issue key or raw value can appear. In `tests/test_eng_epic_sort.js` update the emoji assertions: `getProjectTrackEmoji('')` → `'⚪'`, `getProjectTrackEmoji('Other')` → `'⚪'`, existing 🔒/🤷 unchanged. In `tests/test_analytics_events.js` add the `issue_project_track_action` trio mirroring the `issue_priority_action` tests (canonical userevent requiring feature_name; accepts enum params `project_track_options_open|project_track_change_submit|project_track_change_result`, `value_state` flexible|committed, rejects unsafe values; pushes contract through dataLayer) and `api_result accepts the jira_issue_project_track surface`. In `tests/test_analytics_source_guards.js` add: `'Jira issue project track API module sends the jira_issue_project_track surface for both endpoints'` and `'trackIssueProjectTrackAction emits only the eng project track contract, never issue-level PII or raw track ids'` (mirror the priority siblings).
 
-- [ ] **Step 3.2: Run to confirm failure.** `npm run test:frontend:unit` → new tests FAIL.
+- [x] **Step 3.2: Run to confirm failure.** `npm run test:frontend:unit` → new tests FAIL.
 
-- [ ] **Step 3.3: Implement.** `engTaskUtils.js`:
+- [x] **Step 3.3: Implement.** `engTaskUtils.js`:
 
 ```js
 export const PROJECT_TRACK_UNIDENTIFIED_EMOJI = '⚪';
@@ -780,9 +780,9 @@ export function trackIssueProjectTrackAction(workflowAction, params = {}) {
 
 (Copy the exact emit-helper call used by `trackIssuePriorityAction`.)
 
-- [ ] **Step 3.4: Run unit tests → PASS.** `npm run test:frontend:unit`
+- [x] **Step 3.4: Run unit tests → PASS.** `npm run test:frontend:unit`
 
-- [ ] **Step 3.5: Commit.** `git add frontend/src tests/ && git commit -m "feat(eng): add Project Track normalization, API wrappers, and analytics vocabulary"`
+- [x] **Step 3.5: Commit.** `git add frontend/src tests/ && git commit -m "feat(eng): add Project Track normalization, API wrappers, and analytics vocabulary"`
 
 ---
 

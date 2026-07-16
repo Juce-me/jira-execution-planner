@@ -15,6 +15,7 @@ const EVENT_NAMES = new Set([
     'epm_action',
     'issue_status_action',
     'issue_priority_action',
+    'issue_project_track_action',
     'external_link_opened',
     'api_result',
     'app_error_shown'

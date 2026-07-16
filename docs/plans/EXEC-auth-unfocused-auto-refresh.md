@@ -260,13 +260,13 @@ Expected: pass; no other route behavior changes.
 - Modify: `docs/plans/README.md`
 - Generated: `frontend/dist/*`
 
-- [ ] Add under `### No-Event Allowlist` (preserving all existing rows):
+- [x] Add under `### No-Event Allowlist` (preserving all existing rows):
 
 ```md
 | Auth long-absence refresh (no reload) | `frontend/src/api/authFocusRefresh.js`, `frontend/src/dashboard.jsx` | No separate `userevent`; automatic reliability recovery after >12 continuously unfocused/hidden minutes issues one throttled cross-tab-deduplicated `POST /api/auth/refresh` and re-runs the active view's existing scoped fetches, which are already covered by `api_result`. No document reload and no new client identifiers. | 2026-07-16 |
 ```
 
-- [ ] Update the `EXEC-auth-unfocused-auto-refresh.md` entry in `docs/plans/README.md` to describe the refresh-only behavior, cross-tab dedup, diagnostics, and the deferred cache-hardening scope.
+- [x] Update the `EXEC-auth-unfocused-auto-refresh.md` entry in `docs/plans/README.md` to describe the refresh-only behavior, cross-tab dedup, diagnostics, and the deferred cache-hardening scope.
 - [ ] Rebuild generated output (`fnm exec --using 20 npm run build`); commit dist changes; never hand-edit `frontend/dist`.
 - [ ] Full verification matrix:
 

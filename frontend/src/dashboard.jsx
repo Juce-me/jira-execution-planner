@@ -28,11 +28,13 @@ import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
 import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
+import { useEngProjectTrackTransitions } from './eng/useEngProjectTrackTransitions.js';
 import { applyLocalEpicDetailsFieldUpdate, applyLocalIssueFieldUpdate } from './eng/engIssueLocalUpdates.js';
 import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/engStatusTransitionUtils.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
-import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
+import ProjectTrackTransitionMenu from './issues/ProjectTrackTransitionMenu.jsx';
+import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
@@ -970,7 +972,7 @@ import {
             }, [refreshHomeTokenConnectionStatus]);
             const {
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
-                trackIssueStatusAction, trackIssuePriorityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
+                trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, serverConnectionError });
             const {
@@ -11065,6 +11067,33 @@ import {
             });
             const priorityTransitionActiveKey = activePriorityTarget?.key || null;
 
+            // ── ENG Project Track transitions (Catch Up single issue + Planning) ──
+            // Same ENG-only surface gate as priority. No success-refresh callback: a
+            // single-Epic Project Track change patches local state only and must not
+            // force a task-list refetch.
+            const projectTrackTransitionEnabled = priorityTransitionEnabled;
+            const {
+                activeProjectTrackTarget,
+                openProjectTrackControl,
+                closeProjectTrackControl,
+                projectTrackOptions,
+                projectTrackOptionsLoading,
+                projectTrackSubmitting,
+                projectTrackError,
+                projectTrackResult,
+                pendingProjectTrackIssueKeys,
+                submitProjectTrackChange,
+            } = useEngProjectTrackTransitions({
+                backendUrl: BACKEND_URL,
+                selectedSprint,
+                sourceSurface: statusTransitionSourceSurface,
+                mutationScopeKey: `${selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
+                trackIssueProjectTrackAction,
+                onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
+                onApplyLocalProjectTrack: (issueKey, value) => applyLocalEngIssueField(issueKey, 'projectTrack', value),
+            });
+            const projectTrackTransitionActiveKey = activeProjectTrackTarget?.key || null;
+
             // Planning composed target list (selected Stories + marked Epics + marked
             // Subtasks) drives the "Apply to selected targets (N)" count and the action
             // bar feedback. Catch Up acts on one explicit issue, so its count stays 0.
@@ -11086,7 +11115,8 @@ import {
                 clearNonStoryStatusTargets();
                 closeSingleIssueStatusControl();
                 closePriorityControl();
-            }, [activeGroupId, clearNonStoryStatusTargets, closeSingleIssueStatusControl, closePriorityControl]);
+                closeProjectTrackControl();
+            }, [activeGroupId, clearNonStoryStatusTargets, closeSingleIssueStatusControl, closePriorityControl, closeProjectTrackControl]);
 
             // The hook exposes no submitting flag; track it around the awaited submit so
             // the menu can disable its action and show an in-flight state.
@@ -12680,14 +12710,30 @@ import {
                                                     renderPriorityIcon(effectivePriority.name, epicGroup.key)
                                                 )
                                             )}
-                                            {projectTrackEmoji && (
-                                                <span
-                                                    className="epic-track-indicator"
-                                                    title={`Product Track: ${projectTrackValue}`}
-                                                    aria-label={`Product Track: ${projectTrackValue}`}
-                                                >
-                                                    {projectTrackEmoji}
-                                                </span>
+                                            {epicGroup.key !== 'NO_EPIC' && (
+                                                projectTrackTransitionEnabled ? (
+                                                    <ProjectTrackTransitionMenu
+                                                        epicKey={epicGroup.key}
+                                                        currentTrack={projectTrackValue}
+                                                        isOpen={projectTrackTransitionActiveKey === epicGroup.key}
+                                                        options={projectTrackOptions}
+                                                        optionsLoading={projectTrackOptionsLoading}
+                                                        submitting={projectTrackSubmitting || pendingProjectTrackIssueKeys.has(epicGroup.key)}
+                                                        error={projectTrackError}
+                                                        result={projectTrackResult}
+                                                        onOpen={openProjectTrackControl}
+                                                        onClose={closeProjectTrackControl}
+                                                        onSubmit={submitProjectTrackChange}
+                                                    />
+                                                ) : (
+                                                    <span
+                                                        className="epic-track-indicator"
+                                                        title={`Project Track: ${getProjectTrackLabel(projectTrackValue)}`}
+                                                        aria-label={`Project Track: ${getProjectTrackLabel(projectTrackValue)}`}
+                                                    >
+                                                        {projectTrackEmoji}
+                                                    </span>
+                                                )
                                             )}
                                             {epicGroup.key !== 'NO_EPIC' ? (
                                                 <a

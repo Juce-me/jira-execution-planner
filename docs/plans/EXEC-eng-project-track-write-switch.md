@@ -909,7 +909,7 @@ button.epic-track-indicator:focus-visible {
 - Consumes: Task 4 hook + menu; `applyLocalEngIssueField` (dashboard.jsx ~10968); `priorityTransitionEnabled` gate (~11036); `trackIssueProjectTrackAction`.
 - Produces: interactive ⚪/🔒/🤷 Epic-header control on ENG Catch Up/Planning; passive span elsewhere; `projectTrack` patched as a plain string through `applyLocalEngIssueField(epicKey, 'projectTrack', value)` so `epicDetails` (render + sort) and epicsInScope arrays react immediately.
 
-- [ ] **Step 5.1: Instantiate the hook** next to the priority hook, with the identical scope token:
+- [x] **Step 5.1: Instantiate the hook** next to the priority hook, with the identical scope token:
 
 ```js
 const {
@@ -938,7 +938,7 @@ const projectTrackTransitionEnabled = priorityTransitionEnabled;
 
 Add `closeProjectTrackControl()` to the existing `activeGroupId` cleanup effect. No success refresh callback — a single-Epic track change must not force a task-list refetch (design lines 167-170).
 
-- [ ] **Step 5.2: Replace the indicator in `renderEpicBlock`.** Replace the `{projectTrackEmoji && (<span ...>...)}` block (12683-12691) with an always-rendered indicator for real Epics:
+- [x] **Step 5.2: Replace the indicator in `renderEpicBlock`.** Replace the `{projectTrackEmoji && (<span ...>...)}` block (12683-12691) with an always-rendered indicator for real Epics:
 
 ```jsx
 {epicGroup.key !== 'NO_EPIC' && (
@@ -970,9 +970,9 @@ Add `closeProjectTrackControl()` to the existing `activeGroupId` cleanup effect.
 
 `projectTrackEmoji` is now always truthy (⚪ fallback), so both branches always render for real Epics; `NO_EPIC` renders nothing. The passive branch fixes the `Product Track` → `Project Track` tooltip. EPM/Statistics/Scenario render through their own components and receive no new props — verify with `rg -n 'ProjectTrackTransitionMenu|fetchIssueProjectTrackOptions' frontend/src/epm frontend/src/stats` returning nothing.
 
-- [ ] **Step 5.3: Unit + build + budget.** `npm run test:frontend:unit` → PASS. `npm run build` → PASS. `.venv/bin/python -m unittest tests.test_codebase_structure_budgets` — if dashboard.jsx exceeds 15965 lines, ratchet the budget to the new line count with a comment line documenting this feature's delta.
+- [x] **Step 5.3: Unit + build + budget.** `npm run test:frontend:unit` → PASS. `npm run build` → PASS. `.venv/bin/python -m unittest tests.test_codebase_structure_budgets` — if dashboard.jsx exceeds 15965 lines, ratchet the budget to the new line count with a comment line documenting this feature's delta.
 
-- [ ] **Step 5.4: Commit (including dist).** `git add frontend/src frontend/dist tests/test_codebase_structure_budgets.py && git commit -m "feat(eng): wire Project Track write control into ENG Epic headers"`
+- [x] **Step 5.4: Commit (including dist).** `git add frontend/src frontend/dist tests/test_codebase_structure_budgets.py && git commit -m "feat(eng): wire Project Track write control into ENG Epic headers"`
 
 ---
 

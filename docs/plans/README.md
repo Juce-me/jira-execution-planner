@@ -66,8 +66,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 ## Frontend Planning Workflow
 
 1. `EXEC-auth-unfocused-auto-refresh.md`
-   - Active, revalidated implementation plan for reloading JDP exactly once when the user returns after more than 12 minutes continuously unfocused or hidden.
-   - Expected output: a baseline proves one auth-script GET per document load, `auth-focus-refresh.js` records blur/hidden time without polling or browser storage, boundary and auth-recovery tests cover the state machine, the long-absence path creates exactly one intentional reload, and no unrelated static cache/path change is presented as a fix for an unproven navigation burst.
+   - Active implementation plan, amended 2026-07-16: the previously planned long-absence full-page reload is rejected and replaced with a refresh-only design. The superseded reload implementation remains unmerged on `feature/auth-unfocused-auto-refresh`.
+   - Expected output: a baseline proves one auth-script GET per document load; after more than 12 continuously unfocused/hidden minutes the auth shell issues one throttled cross-tab-deduplicated `POST /api/auth/refresh` and the dashboard refreshes only the active view's stale data in place; `401` recovery stays intact; request-count regression tests forbid document/asset reloads; temporary anonymized server diagnostics identify the real navigation owner; content-hashed/immutable asset serving is recorded as deferred scope, and no cache/path change is presented as the fix.
 
 2. `DONE-planning-default-selection-undo.md`
    - Completed and verified locally on 2026-06-09. Use for audit only; do not execute as active work.

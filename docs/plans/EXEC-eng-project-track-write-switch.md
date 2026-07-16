@@ -984,7 +984,7 @@ Add `closeProjectTrackControl()` to the existing `activeGroupId` cleanup effect.
 **Interfaces:**
 - Consumes: shipped Tasks 1-5 behavior; fixture helpers from `tests/ui/epm_home_token_fixture.js`.
 
-- [ ] **Step 6.1: Write the spec.** Required tests (normal `click()`, never `click({ force: true })`):
+- [x] **Step 6.1: Write the spec.** Required tests (normal `click()`, never `click({ force: true })`):
 
 1. `epic headers render 🔒 for Committed, 🤷 for Flexible, and ⚪ for unidentified tracks` — includes an Epic with null track; asserts the ⚪ button has `aria-label` `Project Track: Unidentified. Change Project Track`.
 2. `track indicator is a native button with menu semantics on Catch Up and options load only on open` — asserts zero `/api/issues/project-track/options` calls before click, one after; `aria-haspopup="menu"`, `aria-expanded` toggles; first option focused after load.
@@ -996,11 +996,11 @@ Add `closeProjectTrackControl()` to the existing `activeGroupId` cleanup effect.
 8. `menu options are clickable above sibling cards` — open a menu on a non-last epic header and click an option with a normal click (proves the `:has()` z-index lift; a force-click would mask layering bugs).
 9. `EPM, Statistics, Scenario, and Settings-open surfaces never call Project Track APIs and render no interactive track trigger` — navigate each surface, assert zero `/api/issues/project-track` requests and no `[data-project-track-transition-trigger]`; with Settings modal open on ENG, the indicator is passive.
 
-- [ ] **Step 6.2: Run → PASS.** `npx playwright test tests/ui/eng_project_track_transitions.spec.js` and re-run the sibling suites: `npx playwright test tests/ui/eng_priority_transitions.spec.js tests/ui/eng_status_transitions.spec.js tests/ui/eng_epic_sort_and_track.spec.js`.
+- [x] **Step 6.2: Run → PASS.** `npx playwright test tests/ui/eng_project_track_transitions.spec.js` and re-run the sibling suites: `npx playwright test tests/ui/eng_priority_transitions.spec.js tests/ui/eng_status_transitions.spec.js tests/ui/eng_epic_sort_and_track.spec.js`.
 
-- [ ] **Step 6.3: Visual verification.** Element-level screenshots (settle animations first, per repo rule): Committed, Flexible, and Unidentified indicators; open menu at desktop width and a narrow (~760px) viewport. Save under `test-results/` (gitignored) and reference in the PR notes later.
+- [x] **Step 6.3: Visual verification.** Element-level screenshots (settle animations first, per repo rule): Committed, Flexible, and Unidentified indicators; open menu at desktop width and a narrow (~760px) viewport. Save under `test-results/` (gitignored) and reference in the PR notes later.
 
-- [ ] **Step 6.4: Commit.** `git add tests/ui/eng_project_track_transitions.spec.js && git commit -m "test(eng): add Playwright coverage for Project Track write control"`
+- [x] **Step 6.4: Commit.** `git add tests/ui/eng_project_track_transitions.spec.js && git commit -m "test(eng): add Playwright coverage for Project Track write control"`
 
 ---
 

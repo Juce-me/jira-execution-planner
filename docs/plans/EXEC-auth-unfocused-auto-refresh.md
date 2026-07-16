@@ -242,8 +242,8 @@ Expected: pass; the only intentional extra requests anywhere are auth POSTs, nev
 - Modify: `jira_server.py`
 - Create: `tests/test_static_request_diagnostics.py`
 
-- [ ] Add an `after_request` hook that, only for paths `/`, `/jira-dashboard.html`, and `/frontend/dist/<...>`, emits one INFO line on logger `jep.static_diagnostics` with fields: short per-request id (uuid4 hex, 12 chars), method, path, response status, `Referer` with any query string stripped (`-` when absent), `Sec-Fetch-Dest` (`-` when absent), validator presence (`etag`, `modified-since`, or `none` from `If-None-Match`/`If-Modified-Since`), and anonymized client correlation: `sha256(Cookie header)[:12]` or `-` when no cookie. Never log raw cookie, token, or query-string values. Mark the hook with a one-line comment naming this plan and the removal criterion (navigation owner identified).
-- [ ] Tests: hook fires for `/frontend/dist/auth-focus-refresh.js` and `/` (including redirect statuses) and not for `/api/*`; validator field reflects `If-None-Match`; a request with a cookie logs the 12-hex hash and never the raw value; a `Referer` with a query string is logged without it.
+- [x] Add an `after_request` hook that, only for paths `/`, `/jira-dashboard.html`, and `/frontend/dist/<...>`, emits one INFO line on logger `jep.static_diagnostics` with fields: short per-request id (uuid4 hex, 12 chars), method, path, response status, `Referer` with any query string stripped (`-` when absent), `Sec-Fetch-Dest` (`-` when absent), validator presence (`etag`, `modified-since`, or `none` from `If-None-Match`/`If-Modified-Since`), and anonymized client correlation: `sha256(Cookie header)[:12]` or `-` when no cookie. Never log raw cookie, token, or query-string values. Mark the hook with a one-line comment naming this plan and the removal criterion (navigation owner identified).
+- [x] Tests: hook fires for `/frontend/dist/auth-focus-refresh.js` and `/` (including redirect statuses) and not for `/api/*`; validator field reflects `If-None-Match`; a request with a cookie logs the 12-hex hash and never the raw value; a `Referer` with a query string is logged without it.
 
 Run:
 

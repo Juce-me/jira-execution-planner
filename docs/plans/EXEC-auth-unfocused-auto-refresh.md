@@ -218,15 +218,15 @@ Expected: the dashboard wiring guard from Task 2 turns green; runtime proof land
 **Files:**
 - Modify: `tests/ui/auth_focus_refresh_counts.spec.js`
 
-- [ ] Keep the Task 1 baseline test unchanged.
-- [ ] Clock control: `addInitScript` offset shim over `Date.now` with an in-page `__advanceClock(ms)`; visibility control: `addInitScript` override of `document.visibilityState` with an in-page setter that also dispatches `visibilitychange`. Track long-absence events per page via an init-script `window` listener counter.
-- [ ] Under threshold: blur → advance 11 min → focus: zero additional document/script requests, exactly one additional POST (throttle window passed), zero long-absence events.
-- [ ] Exactly 12 minutes: same expectations as under threshold.
-- [ ] Over threshold (both blur→focus and hidden→visible variants): exactly one additional POST, exactly one long-absence event, zero additional document/script requests; then a focus/visibilitychange burst plus a short stability wait keeps all counts unchanged.
-- [ ] Multi-tab: two pages in one context (shared origin storage, same clock offsets). Page B loaded inside page A's throttle window skips its initial POST. Both go hidden, both clocks advance >12 min; page A returns → one POST + one event; page B returns within the throttle window → zero POSTs + one event. Total POSTs across the context: exactly 2.
-- [ ] 401 recovery: (a) initial POST → 401 with `loginUrl` navigates to the stubbed login page; (b) long-absence POST → 401 navigates to login, dispatches no long-absence event, and never re-requests the dashboard document.
-- [ ] Dashboard wiring: esbuild-bundle `frontend/src/dashboard.jsx` in `beforeAll` (existing `eng_priority_transitions.spec.js` self-host pattern) with `installDashboardFixture`; after initial data loads, record the API `calls` length, dispatch the long-absence `CustomEvent` on `window`, and assert the active view re-runs its scoped data fetches (new entries in `calls`) with zero document requests.
-- [ ] Assert no uncaught page errors in every test.
+- [x] Keep the Task 1 baseline test unchanged.
+- [x] Clock control: `addInitScript` offset shim over `Date.now` with an in-page `__advanceClock(ms)`; visibility control: `addInitScript` override of `document.visibilityState` with an in-page setter that also dispatches `visibilitychange`. Track long-absence events per page via an init-script `window` listener counter.
+- [x] Under threshold: blur → advance 11 min → focus: zero additional document/script requests, exactly one additional POST (throttle window passed), zero long-absence events.
+- [x] Exactly 12 minutes: same expectations as under threshold.
+- [x] Over threshold (both blur→focus and hidden→visible variants): exactly one additional POST, exactly one long-absence event, zero additional document/script requests; then a focus/visibilitychange burst plus a short stability wait keeps all counts unchanged.
+- [x] Multi-tab: two pages in one context (shared origin storage, same clock offsets). Page B loaded inside page A's throttle window skips its initial POST. Both go hidden, both clocks advance >12 min; page A returns → one POST + one event; page B returns within the throttle window → zero POSTs + one event. Total POSTs across the context: exactly 2.
+- [x] 401 recovery: (a) initial POST → 401 with `loginUrl` navigates to the stubbed login page; (b) long-absence POST → 401 navigates to login, dispatches no long-absence event, and never re-requests the dashboard document.
+- [x] Dashboard wiring: esbuild-bundle `frontend/src/dashboard.jsx` in `beforeAll` (existing `eng_priority_transitions.spec.js` self-host pattern) with `installDashboardFixture`; after initial data loads, record the API `calls` length, dispatch the long-absence `CustomEvent` on `window`, and assert the active view re-runs its scoped data fetches (new entries in `calls`) with zero document requests.
+- [x] Assert no uncaught page errors in every test.
 
 Run:
 

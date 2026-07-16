@@ -12,7 +12,7 @@
 
 ## Status
 
-Executed on branch `feature/eng-project-track-write-switch`: implementation commits `7ba5490..3bd3908` plus a docs close-out commit, verified 2026-07-16. Rename to `DONE-*` only after merge per `docs/plans/AGENTS.md`. Track per-task completion in the checkboxes below.
+Executed on branch `feature/eng-project-track-write-switch`: implementation commits `7ba5490..3bd3908`, a docs close-out commit, and one post-review fix (see Outcome divergence 6), verified 2026-07-16. Rename to `DONE-*` only after merge per `docs/plans/AGENTS.md`. Track per-task completion in the checkboxes below.
 
 ## Global Constraints
 

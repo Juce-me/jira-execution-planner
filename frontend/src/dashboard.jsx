@@ -12950,7 +12950,7 @@ import {
                                         className="refresh-icon"
                                         isLoading={selectedView === 'epm' && epmProjectsLoading}
                                         onClick={refreshActiveViewFromJira}
-                                        disabled={selectedView === 'eng' ? (loading || selectedSprint === null) : (epmProjectsLoading || epmRollupLoading)}
+                                        disabled={manualRefreshDisabled}
                                         title={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                         aria-label={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                     >

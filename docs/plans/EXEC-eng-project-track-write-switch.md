@@ -79,7 +79,7 @@ Cache invalidation: `clear_jira_issue_status_caches(reason='issue_project_track_
 - Consumes: `normalize_issue_keys`, `IssueTransitionInputError` from `backend.services.jira_issue_transitions`; injected `jira_request(method, path, *, params=None, json_body=None, context=None)` returning an object with `.status_code` and `.json()`; injected `get_project_track_field_id()` returning the configured field id string.
 - Produces: `ProjectTrackInputError(code)`, `ProjectTrackServiceError(code, status_code=None)`, `CANONICAL_TRACKS = ("Flexible", "Committed")`, `normalize_project_track_target(value) -> str`, `load_project_track_options_for_issue(issue_key, *, jira_request, get_project_track_field_id, context=None) -> {"options": [{"value": str}], "source": "jira"}`, `update_issue_project_track(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None) -> {"issueKey", "result", "fromTrack"[, "toTrack"]}`.
 
-- [ ] **Step 1.1: Write the failing tests.** Create `tests/test_jira_issue_project_track.py` mirroring `tests/test_jira_issue_priorities.py` fakes (`FakeResponse` with `status_code`/`json()`, a `RecordingJira` capturing `{method, path, params, json_body, context}`):
+- [x] **Step 1.1: Write the failing tests.** Create `tests/test_jira_issue_project_track.py` mirroring `tests/test_jira_issue_priorities.py` fakes (`FakeResponse` with `status_code`/`json()`, a `RecordingJira` capturing `{method, path, params, json_body, context}`):
 
 ```python
 import unittest
@@ -328,9 +328,9 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 1.2: Run to confirm failure.** `.venv/bin/python -m unittest tests.test_jira_issue_project_track -v` → FAIL (`ModuleNotFoundError: backend.services.jira_issue_project_track`).
+- [x] **Step 1.2: Run to confirm failure.** `.venv/bin/python -m unittest tests.test_jira_issue_project_track -v` → FAIL (`ModuleNotFoundError: backend.services.jira_issue_project_track`).
 
-- [ ] **Step 1.3: Implement the service.** Create `backend/services/jira_issue_project_track.py`:
+- [x] **Step 1.3: Implement the service.** Create `backend/services/jira_issue_project_track.py`:
 
 ```python
 """Pure, dependency-injected Jira Epic Project Track helpers.
@@ -472,11 +472,11 @@ def update_issue_project_track(issue_key, target_track, *, jira_request,
 
 Note: in `update_issue_project_track` the `already_in_track` result returns `fromTrack: target` in canonical casing (the current value matched case-insensitively).
 
-- [ ] **Step 1.4: Run focused tests → PASS.** `.venv/bin/python -m unittest tests.test_jira_issue_project_track -v`
+- [x] **Step 1.4: Run focused tests → PASS.** `.venv/bin/python -m unittest tests.test_jira_issue_project_track -v`
 
-- [ ] **Step 1.5: Run related suites → PASS.** `.venv/bin/python -m unittest tests.test_jira_issue_priorities tests.test_backend_service_extraction -v` (service-layer import rules still hold).
+- [x] **Step 1.5: Run related suites → PASS.** `.venv/bin/python -m unittest tests.test_jira_issue_priorities tests.test_backend_service_extraction -v` (service-layer import rules still hold).
 
-- [ ] **Step 1.6: Commit.** `git add backend/services/jira_issue_project_track.py tests/test_jira_issue_project_track.py && git commit -m "feat(eng): add dependency-injected Jira Project Track service"`
+- [x] **Step 1.6: Commit.** `git add backend/services/jira_issue_project_track.py tests/test_jira_issue_project_track.py && git commit -m "feat(eng): add dependency-injected Jira Project Track service"`
 
 ---
 

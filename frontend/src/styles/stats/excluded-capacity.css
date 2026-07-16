@@ -22,8 +22,8 @@
             margin-top: 0.4rem;
         }
 
-        .cohort-controls .project-track-exclusions {
-            gap: 0;
+        .cohort-controls > .stats-control-group.project-track-exclusions {
+            display: block;
         }
 
         .cohort-exclusion-options {

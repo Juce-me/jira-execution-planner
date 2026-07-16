@@ -582,6 +582,15 @@ h1 {
 .sprint-dropdown-option + .sprint-dropdown-option {
   border-top: 1px dashed var(--border);
 }
+@media (max-width: 760px) {
+  [data-stats-range] {
+    width: 100%;
+    max-width: 100%;
+  }
+  [data-stats-range] .sprint-dropdown {
+    --sprint-dropdown-max-width: calc(100vw - 4rem);
+  }
+}
 
 /* frontend/src/styles/base.css */
 
@@ -6390,8 +6399,8 @@ button.status-pill:focus-visible {
   height: var(--control-height);
   margin-top: 0.4rem;
 }
-.cohort-controls .project-track-exclusions {
-  gap: 0;
+.cohort-controls > .stats-control-group.project-track-exclusions {
+  display: block;
 }
 .cohort-exclusion-options {
   display: flex;

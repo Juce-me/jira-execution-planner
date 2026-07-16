@@ -9,6 +9,8 @@ const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
+const longSprintId = 34626;
+const longSprintName = '2026Q3 Sprint 43 — International Platform Reliability and Migration';
 const groupTeamIds = ['team-alpha', 'team-beta'];
 let dashboardJs;
 let statsUtils;
@@ -864,7 +866,9 @@ async function installApiMocks(page, calls, options = {}) {
                 await sprintGate.promise;
                 setTimeout(() => epmProjectsGate.resolve(), 50);
             }
-            return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+            return json({
+                sprints: options.sprints || [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+            });
         }
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
@@ -1191,10 +1195,17 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
         const groups = Array.from(node.querySelectorAll(':scope > .stats-control-group'));
         const headings = Array.from(node.querySelectorAll(':scope > .stats-control-group > .controls-label'));
         const checkboxes = Array.from(node.querySelectorAll('[data-stats-capacity-filters] .project-track-checkbox'));
+        const controls = [
+            ...node.querySelectorAll('[data-stats-range="lead-times-quarter"] .sprint-dropdown-toggle'),
+            node.querySelector('.eng-mode-control'),
+            ...node.querySelectorAll(':scope > .stats-control-group > .scenario-input'),
+            node.querySelector('.cohort-exclusion-options'),
+        ].filter(Boolean);
         return {
             groupTops: groups.map((group) => Math.round(group.getBoundingClientRect().top)),
             headingTops: headings.map((heading) => Math.round(heading.getBoundingClientRect().top)),
             checkboxTops: checkboxes.map((checkbox) => Math.round(checkbox.getBoundingClientRect().top)),
+            controlTops: controls.map((control) => Math.round(control.getBoundingClientRect().top)),
         };
     });
     expect(desktopControlLayout.groupTops).toHaveLength(5);
@@ -1203,6 +1214,8 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     expect(new Set(desktopControlLayout.headingTops).size).toBe(1);
     expect(desktopControlLayout.checkboxTops).toHaveLength(2);
     expect(new Set(desktopControlLayout.checkboxTops).size).toBe(1);
+    expect(desktopControlLayout.controlTops).toHaveLength(6);
+    expect(new Set(desktopControlLayout.controlTops).size).toBe(1);
     await page.setViewportSize({ width: 1280, height: 760 });
 
     // The merged quarter range group must lay Start/End out side by side (not stacked)
@@ -1381,6 +1394,69 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     expect(monoCrossLegendColors['Alpha Team']).toBe(priorityLegendColors['Alpha Team']);
     expect(burnoutLegendColors['Beta Team']).toBe(priorityLegendColors['Beta Team']);
     expect(monoCrossLegendColors['Beta Team']).toBe(priorityLegendColors['Beta Team']);
+
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('stats sprint range End panels keep long options inside the narrow viewport', async ({ page }) => {
+    test.setTimeout(90000);
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, {
+        excludedCapacityEpics: ['BAU-EPIC'],
+        sprints: [
+            { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+            { id: longSprintId, name: longSprintName, state: 'future' },
+        ],
+    });
+    await page.setViewportSize({ width: 375, height: 760 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true,
+        statsView: 'excludedCapacity', excludedCapacityStartSprintId: String(selectedSprintId),
+        excludedCapacityEndSprintId: String(selectedSprintId),
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+    const statsTabs = page.locator('.stats-panel.open .stats-view-toggle');
+    const views = [
+        { tab: 'Excluded Capacity', range: 'excluded-capacity-sprint', screenshot: 'statistics-excluded-capacity-range-375' },
+        { tab: 'Mono vs Cross', range: 'mono-cross-sprint', screenshot: 'statistics-mono-cross-range-375' },
+        { tab: 'Project Track', range: 'project-track-sprint', screenshot: 'statistics-project-track-range-375' },
+    ];
+    const panelResults = [];
+
+    for (const view of views) {
+        await page.setViewportSize({ width: 1280, height: 760 });
+        await statsTabs.getByRole('radio', { name: view.tab, exact: true }).click();
+        const range = page.locator(`.stats-view.open [data-stats-range="${view.range}"]`);
+        await expect(range).toBeVisible();
+        await page.setViewportSize({ width: 375, height: 760 });
+        const endToggle = range.getByRole('button', { name: 'End sprint' });
+        await endToggle.click();
+        const longOption = range.getByRole('listbox', { name: 'End sprint' })
+            .getByRole('option', { name: longSprintName });
+        await expect(longOption).toBeVisible();
+        const panelBounds = await longOption.evaluate((node) => {
+            const panel = node.closest('.sprint-dropdown-panel');
+            const rect = panel.getBoundingClientRect();
+            return {
+                left: Math.round(rect.left), right: Math.round(rect.right),
+                viewport: document.documentElement.clientWidth,
+            };
+        });
+        await captureSmokeScreenshot(page, view.screenshot);
+        await longOption.click();
+        panelResults.push({ tab: view.tab, ...panelBounds });
+        await expect(endToggle).toHaveAttribute('aria-expanded', 'false');
+    }
+
+    for (const panelBounds of panelResults) {
+        expect(panelBounds.left).toBeGreaterThanOrEqual(16);
+        expect(panelBounds.right).toBeLessThanOrEqual(panelBounds.viewport - 16);
+    }
 
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });

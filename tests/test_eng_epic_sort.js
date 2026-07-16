@@ -48,6 +48,13 @@ test('getProjectTrackEmoji maps values', async () => {
   assert.equal(getProjectTrackEmoji('Other'), '⚪');
 });
 
+test('getProjectTrackLabel maps recognized and unidentified values', async () => {
+  const { getProjectTrackLabel } = await import(modUrl);
+  assert.equal(getProjectTrackLabel('Committed'), 'Committed');
+  assert.equal(getProjectTrackLabel('Flexible'), 'Flexible');
+  assert.equal(getProjectTrackLabel(''), 'Unidentified');
+});
+
 test('normalizeEngEpicSort + label', async () => {
   const { normalizeEngEpicSort, getEngEpicSortLabel } = await import(modUrl);
   assert.equal(normalizeEngEpicSort('bogus'), 'priority');

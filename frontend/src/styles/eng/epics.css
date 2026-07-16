@@ -367,3 +367,27 @@
             align-items: center;
             cursor: default;
         }
+
+        /* The interactive Project Track indicator (ENG Catch Up / Planning Epic header) is a
+           native <button> that carries the same .epic-track-indicator class as the passive
+           <span>, so its geometry is preserved. Neutralize the aggressive global button rule
+           and add a hover/focus affordance mirroring button.task-priority-icon in issues.css. */
+        button.epic-track-indicator {
+            -webkit-appearance: none;
+            appearance: none;
+            padding: 0;
+            margin: 0;
+            border: 0;
+            background: transparent;
+            font: inherit;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+        }
+
+        button.epic-track-indicator:hover,
+        button.epic-track-indicator:focus-visible {
+            transform: none;
+            background: var(--bg-primary);
+            box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.22);
+        }

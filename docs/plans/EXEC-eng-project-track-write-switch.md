@@ -797,7 +797,7 @@ export function trackIssueProjectTrackAction(workflowAction, params = {}) {
 - Consumes: Task 3 wrappers/utils; `enqueueEngIssueMutation` from `frontend/src/eng/engIssueMutationQueue.js`; `authRecoveryLoginUrl`, `redirectToAuthRecovery` from `frontend/src/eng/useEngSprintData.js`; `IssueFieldOptionMenu`.
 - Produces: `useEngProjectTrackTransitions({ backendUrl, selectedSprint, sourceSurface, mutationScopeKey, trackIssueProjectTrackAction, onAuthRecoveryRequired, onApplyLocalProjectTrack })` returning `{ activeProjectTrackTarget, openProjectTrackControl, closeProjectTrackControl, projectTrackOptions, projectTrackOptionsLoading, projectTrackSubmitting, projectTrackError, projectTrackResult, pendingProjectTrackIssueKeys, submitProjectTrackChange }`; `ProjectTrackTransitionMenu` props `{ epicKey, currentTrack, isOpen, options, optionsLoading, submitting, error, result, onOpen, onClose, onSubmit }`.
 
-- [ ] **Step 4.1: Implement the hook** (mirror `useEngPriorityTransitions.js` structure; no module-level options cache — options come from per-issue editmeta and are fetched on every open; the write re-resolves server-side so staleness is safe):
+- [x] **Step 4.1: Implement the hook** (mirror `useEngPriorityTransitions.js` structure; no module-level options cache — options come from per-issue editmeta and are fetched on every open; the write re-resolves server-side so staleness is safe):
 
 Key behaviors to implement, copying the priority hook's exact mechanics:
 - State: `activeProjectTrackTarget` (`{ key, currentTrack }`), `projectTrackOptions`, `projectTrackOptionsLoading`, `projectTrackSubmitting`, `projectTrackError`/`projectTrackErrorCode`, `projectTrackResult`, `pendingIssueKeys` Set. Refs: `requestTokenRef`, `mutationScopeRef`, `pendingMutationKeysRef`.
@@ -805,7 +805,7 @@ Key behaviors to implement, copying the priority hook's exact mechanics:
 - `openProjectTrackControl(epicKey, currentTrack)`: toggles (close if already open for that key); sets target; fires `trackIssueProjectTrackAction('project_track_options_open', buildProjectTrackActionAnalyticsParams({ sourceSurface }))`; fetches `fetchIssueProjectTrackOptions`; staleness-guards via `requestTokenRef`; on error sets retryable `projectTrackError`; auth recovery via `authRecoveryLoginUrl(err)` → `onAuthRecoveryRequired?.()` + `redirectToAuthRecovery(err)` and clears active state.
 - `submitProjectTrackChange(targetTrack, epicKey)`: guards `pendingMutationKeysRef.current.has(key)`; captures `priorTrack = activeProjectTrackTarget.currentTrack`; captures `mutationScope = mutationScopeKey`; fires `project_track_change_submit` with `value_state`; optimistically calls `onApplyLocalProjectTrack?.(key, targetTrack)`; runs the write through `enqueueEngIssueMutation(key, () => updateIssueProjectTrack(backendUrl, { issueKey: key, targetTrack }))` on Catch Up, or directly with `setProjectTrackSubmitting(true)` on Planning (mirror the priority split); on success (scope current) reconciles with `response.toTrack ?? response.fromTrack` (server canonical; `already_in_track` responses carry only `fromTrack`) and fires `project_track_change_result` with `result: 'success'`; on failure (scope current) rolls back `onApplyLocalProjectTrack?.(key, priorTrack)`, keeps a visible retryable error in the open menu, fires `result: 'failure'`; auth recovery identical to open; stale scope (`mutationScopeRef.current !== mutationScope`) drops all patches.
 
-- [ ] **Step 4.2: Implement the menu component.** `ProjectTrackTransitionMenu.jsx` composes `IssueFieldOptionMenu`:
+- [x] **Step 4.2: Implement the menu component.** `ProjectTrackTransitionMenu.jsx` composes `IssueFieldOptionMenu`:
 
 ```jsx
 import React, { useRef } from 'react';
@@ -869,7 +869,7 @@ export default function ProjectTrackTransitionMenu({
 
 (Match `IssueFieldOptionMenu`'s actual prop names from the file — verify `showEmpty`/`optionKey`/`optionLabel` signatures before wiring.)
 
-- [ ] **Step 4.3: CSS.** In `status-transitions.css` extend every aliased selector group (`.status-transition, .priority-transition { ... }` → add `.project-track-transition`; same for `-menu`, `-menu-options`, `-option`, `-option-label`, `-menu-note`, `-menu-loading`, `-menu-error`, `-menu-result`) and the z-index lift: add `.task-item:has(.project-track-transition-menu), .epic-header:has(.project-track-transition-menu)` to the `z-index: 121` rule. In `epics.css` extend the indicator for the interactive case:
+- [x] **Step 4.3: CSS.** In `status-transitions.css` extend every aliased selector group (`.status-transition, .priority-transition { ... }` → add `.project-track-transition`; same for `-menu`, `-menu-options`, `-option`, `-option-label`, `-menu-note`, `-menu-loading`, `-menu-error`, `-menu-result`) and the z-index lift: add `.task-item:has(.project-track-transition-menu), .epic-header:has(.project-track-transition-menu)` to the `z-index: 121` rule. In `epics.css` extend the indicator for the interactive case:
 
 ```css
 button.epic-track-indicator {
@@ -892,9 +892,9 @@ button.epic-track-indicator:focus-visible {
 
 (Reuse the exact affordance pattern from `button.task-priority-icon` in `issues.css` lines 370-393 — copy its hover/focus rules rather than inventing new ones.)
 
-- [ ] **Step 4.4: Build check.** `npm run build` → succeeds (wiring lands in Task 5; this catches syntax errors early). Do not commit dist yet.
+- [x] **Step 4.4: Build check.** `npm run build` → succeeds (wiring lands in Task 5; this catches syntax errors early). Do not commit dist yet.
 
-- [ ] **Step 4.5: Commit.** `git add frontend/src && git commit -m "feat(eng): add Project Track transition hook, menu component, and styles"`
+- [x] **Step 4.5: Commit.** `git add frontend/src && git commit -m "feat(eng): add Project Track transition hook, menu component, and styles"`
 
 ---
 

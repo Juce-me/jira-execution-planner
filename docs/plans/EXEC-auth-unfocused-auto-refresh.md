@@ -185,7 +185,7 @@ Expected: new behavior tests and new guards fail (missing contract module, absen
 - Create: `frontend/src/api/authRefreshContract.js`
 - Modify: `frontend/src/api/authFocusRefresh.js`
 
-- [ ] Implement exactly the contract module and the auth-shell behavior specified above. Preserve the existing fetch call shape, throttle semantics, and 401 recovery. Keep the module self-installing (`installAuthFocusRefresh();` at the bottom) and idempotent.
+- [x] Implement exactly the contract module and the auth-shell behavior specified above. Preserve the existing fetch call shape, throttle semantics, and 401 recovery. Keep the module self-installing (`installAuthFocusRefresh();` at the bottom) and idempotent.
 
 Run:
 

@@ -363,6 +363,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - For Jira status changes, make the displayed status pill/text the click target; do not add separate Change Status buttons unless explicitly requested.
 - At session start, before the first commit, check `git branch --show-current`; if the branch is auto-generated or agent-branded (e.g. `claude/*`), rename it to `feature/`|`bugfix/`|`improvement/`|`docs/` + kebab-case summary (see docs/postmortem/MRT022-agent-branded-branch-names.md).
 - Run `npm ci` in a fresh git worktree before `npm run build`; a build that resolves node_modules from an ancestor checkout embeds wrong relative paths in `dashboard.js.map` and fails the CI dist check.
+- `group.teamLabels` values are Jira epic labels for Future Planning epic matching and JQL `labels =` clauses, never team display names; resolve team names through the team catalog lookup (`teamNameLookup`/`resolveTeamName`) or task-derived `getTeamInfo(task).name`, and note the catalog only loads when the settings modal opens.
 
 ---
 

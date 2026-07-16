@@ -214,7 +214,11 @@ import {
     resolvePlanningTeamSelection
 } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
-import { sanitizeSelectedTeamsForScope, selectedTeamSelectionsEqual } from './teamSelectionUtils.mjs';
+import {
+    buildTeamOptionsForScope,
+    sanitizeSelectedTeamsForScope,
+    selectedTeamSelectionsEqual
+} from './teamSelectionUtils.mjs';
 import {
     collectJiraExportKeysFromEpmRollupBoards,
     collectJiraExportKeysFromScenarioIssues,
@@ -6380,18 +6384,26 @@ import {
             const techTasksCount = techTasks.length;
             const productTasksCount = productTasks.length;
 
+            // Retain each team's last known task-derived display name for the session so a
+            // configured team keeps its name when a refresh drops its issues; the warmed team
+            // catalog lookup still wins when present.
+            const lastKnownTeamNamesRef = React.useRef({});
             const teamOptions = React.useMemo(() => {
-                const base = ['all', ...new Set(capacityTasks.map(t => getTeamInfo(t).id || 'unknown'))]
-                    .map(id => ({
-                        id,
-                        name: id === 'all' ? 'All Teams' : getTeamInfo(capacityTasks.find(t => getTeamInfo(t).id === id) || {}).name
-                    }))
-                    .filter((team, index, arr) => arr.findIndex(t => t.id === team.id) === index);
-                if (!activeGroupTeamIds.length) {
-                    return base.length ? base : [{ id: 'all', name: 'All Teams' }];
-                }
-                return base.filter(team => team.id === 'all' || activeGroupTeamSet.has(team.id));
-            }, [capacityTasks, activeGroupTeamIds, activeGroupTeamSet]);
+                const taskNames = {};
+                (capacityTasks || []).forEach((task) => {
+                    const team = getTeamInfo(task) || {};
+                    const id = String(team.id || '').trim();
+                    const name = String(team.name || '').trim();
+                    if (id && name) taskNames[id] = name;
+                });
+                lastKnownTeamNamesRef.current = { ...lastKnownTeamNamesRef.current, ...taskNames };
+                return buildTeamOptionsForScope({
+                    capacityTasks,
+                    activeGroupTeamIds,
+                    teamNameLookup: { ...lastKnownTeamNamesRef.current, ...teamNameLookup },
+                    getTeamInfo
+                });
+            }, [capacityTasks, activeGroupTeamIds, teamNameLookup]);
             const teamNameById = React.useMemo(() => {
                 const map = new Map();
                 teamOptions.forEach(team => {

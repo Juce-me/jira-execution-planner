@@ -53,13 +53,15 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # (+68 total over main's 15866).
     # feature/eng-targeted-task-updates replaces Catch Up scope refetches with one shared local
     # issue-field patch callback, per-key pending sets, and mutation scope key (+19).
-    # bugfix/statistics-consistency-exec adds the Lead Times End Quarter control: cohortEndQuarter
-    # state plus its four per-group persistence sites (buildDefaultGroupState,
-    # buildGroupStateSnapshot, applyGroupState, saveUiPrefs), the last-control-wins reconciliation
-    # handlers on both selectors, the End Quarter <select>, and endQuarter threading into the
-    # cohort query key/guard/body and both Lead Times components (+32, from a pre-existing
-    # 15957 baseline inherited from Tasks 1-2; Task 3 correctly left this entry untouched).
-    "frontend/src/dashboard.jsx": 15989,
+    # bugfix/priority-change-drops-single-team-filter extracts teamOptions construction into
+    # the pure buildTeamOptionsForScope helper in teamSelectionUtils.mjs (configured group
+    # teams stay authoritative across a Planning task refetch instead of being scanned from
+    # fetched capacityTasks), and adds in-session retention of task-derived team display
+    # names in the teamOptions memo so a configured team keeps its visible name when a
+    # refresh drops its issues without any new initial-load request (+14 over the 15951
+    # extraction result). The integrated Statistics controls extraction and Lead Times
+    # compaction remain below this existing ceiling.
+    "frontend/src/dashboard.jsx": 15965,
 }
 
 

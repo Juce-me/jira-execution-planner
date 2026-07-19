@@ -155,6 +155,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 1. `EXEC-application-hosting-readiness.md`
    - Active implementation plan for internal container-app hosting readiness.
    - Expected output: DB/OAuth works without local OAuth token files, hosted mode avoids local mutable JSON/cache state, frontend APIs default to same-origin behind ingress, Docker/Gunicorn packaging exists, and docs expose the runtime contract without secrets.
+   - Accuracy note: the Task 7 GitLab CI skeleton (`.gitlab-ci.yml`, `tests/test_gitlab_ci_contract.py`) was removed on 2026-07-19 because the repo's CI is GitHub Actions and GitLab hosting is no longer planned; the container packaging and pre-SRE checklist deliverables remain current.
 
 2. `DONE-codebase-operability-verification.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.

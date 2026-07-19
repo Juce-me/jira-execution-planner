@@ -1,5 +1,7 @@
 # Application Hosting Readiness Implementation Plan
 
+> **Current accuracy (2026-07-19):** The Task 7 GitLab CI skeleton (`.gitlab-ci.yml` and `tests/test_gitlab_ci_contract.py`) was removed because the repo's CI is GitHub Actions and GitLab hosting is no longer planned. Do not re-create those files from this plan. The Docker packaging, hosted env contract, and pre-SRE checklist deliverables remain current.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Jira Delivery Planner deployable as a prebuilt Docker image under the Internal Applications Hosting workflow: one HTTP container, DB-backed OAuth/config state, no required local mutable files, explicit secret/runtime config, and a production-capable WSGI runtime.

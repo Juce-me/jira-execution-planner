@@ -9,6 +9,7 @@ from unittest.mock import patch
 from backend.auth.cache_policy import build_jira_home_process_cache_key
 from backend.routes import eng_routes
 from backend.services.jira_issue_priorities import IssuePriorityServiceError
+from backend.services.jira_issue_project_track import ProjectTrackServiceError
 from backend.services.jira_issue_transitions import IssueTransitionServiceError
 import jira_server
 from tests.oauth_test_helpers import install_oauth_session
@@ -1015,6 +1016,356 @@ class IssuePriorityRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["error"], "jira_priority_update_failed")
+
+
+class IssueProjectTrackRouteTests(unittest.TestCase):
+    def setUp(self):
+        jira_server.app.config["TESTING"] = True
+        jira_server.app.secret_key = "test-secret"
+        self._env_patcher = patch.dict(os.environ, {
+            "CONFIG_STORAGE_BACKEND": "jsonfile",
+            "DATABASE_URL": "",
+            "TEST_DATABASE_URL": "",
+        }, clear=False)
+        self._env_patcher.start()
+        self.client = jira_server.app.test_client()
+        install_oauth_session(self.client)
+
+    def tearDown(self):
+        jira_server.OAUTH_TOKEN_STORE.clear()
+        jira_server.OAUTH_REFRESH_LOCKS.clear()
+        self._env_patcher.stop()
+
+    def _csrf_token(self):
+        # Mirrors IssuePriorityRouteTests._csrf_token: mint under oauth mode
+        # regardless of the process JIRA_AUTH_MODE (CI runs with basic mode).
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.get("/api/auth/csrf")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.get_json()["csrfToken"]
+
+    def test_options_route_requires_oauth_mode(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
+             patch.object(eng_routes, "load_project_track_options_for_issue", side_effect=AssertionError("must not reach Jira in basic mode")):
+            response = self.client.get("/api/issues/project-track/options?issueKey=PRODUCT-1")
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
+
+    def test_options_route_requires_issue_key(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "load_project_track_options_for_issue", side_effect=AssertionError("must not call service without issueKey")):
+            response = self.client.get("/api/issues/project-track/options?issueKey=")
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "invalid_issue_key")
+
+    def test_options_route_uses_current_auth_context(self):
+        sentinel_context = object()
+        captured = {}
+
+        def fake_load_options(issue_key, *, jira_request, get_project_track_field_id, context=None):
+            captured["context"] = context
+            captured["field_id_getter"] = get_project_track_field_id
+            return {"options": [{"value": "Flexible"}, {"value": "Committed"}], "source": "jira"}
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_request_auth_context", return_value=sentinel_context), \
+             patch.object(eng_routes, "load_project_track_options_for_issue", side_effect=fake_load_options):
+            response = self.client.get("/api/issues/project-track/options?issueKey=PRODUCT-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertIs(captured["context"], sentinel_context)
+        self.assertIs(captured["field_id_getter"], jira_server.get_project_track_field_id)
+        body = response.get_json()
+        self.assertEqual(body["source"], "jira")
+        self.assertEqual(body["options"], [{"value": "Flexible"}, {"value": "Committed"}])
+
+    def test_options_route_maps_issue_not_found_to_404(self):
+        def fake_load_options(issue_key, *, jira_request, get_project_track_field_id, context=None):
+            raise ProjectTrackServiceError("issue_not_found", 404)
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "load_project_track_options_for_issue", side_effect=fake_load_options):
+            response = self.client.get("/api/issues/project-track/options?issueKey=PRODUCT-1")
+
+        self.assertEqual(response.status_code, 404, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "issue_not_found")
+
+    def test_options_route_maps_not_editable_to_409(self):
+        def fake_load_options(issue_key, *, jira_request, get_project_track_field_id, context=None):
+            raise ProjectTrackServiceError("project_track_not_editable", 409)
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "load_project_track_options_for_issue", side_effect=fake_load_options):
+            response = self.client.get("/api/issues/project-track/options?issueKey=PRODUCT-1")
+
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "project_track_not_editable")
+
+    def test_options_route_service_error_returns_sanitized_502(self):
+        def fake_load_options(issue_key, *, jira_request, get_project_track_field_id, context=None):
+            raise ProjectTrackServiceError("project_track_options_fetch_failed", 503)
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "load_project_track_options_for_issue", side_effect=fake_load_options):
+            response = self.client.get("/api/issues/project-track/options?issueKey=PRODUCT-1")
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "jira_project_track_options_failed")
+
+    def test_options_route_does_not_call_build_jira_headers(self):
+        def fake_load_options(issue_key, *, jira_request, get_project_track_field_id, context=None):
+            return {"options": [{"value": "Flexible"}, {"value": "Committed"}], "source": "jira"}
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "load_project_track_options_for_issue", side_effect=fake_load_options), \
+             patch.object(jira_server, "build_jira_headers", side_effect=AssertionError("build_jira_headers must not be called")):
+            response = self.client.get("/api/issues/project-track/options?issueKey=PRODUCT-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["source"], "jira")
+
+    def test_write_rejects_missing_x_requested_with_before_route_code(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=AssertionError("route code reached")):
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+            )
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "csrf_required")
+        self.assertIn("X-Requested-With", response.get_json()["message"])
+
+    def test_write_rejects_missing_csrf_token_before_route_code(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=AssertionError("route code reached")):
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+                headers={"X-Requested-With": "jira-execution-planner"},
+            )
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "csrf_required")
+        self.assertIn("CSRF", response.get_json()["message"])
+
+    def test_write_invalid_json_body_returns_400(self):
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            response = self.client.post(
+                "/api/issues/project-track",
+                data="not-json",
+                content_type="application/json",
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "invalid_json")
+
+    def test_write_requires_oauth_mode(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=AssertionError("must not reach Jira in basic mode")):
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+            )
+
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
+
+    def test_write_returns_missing_scope_before_jira_call_when_write_scope_absent(self):
+        # Same rationale as the sibling priority/status-transition tests: a
+        # session/server pair that predates write:jira-work must still be
+        # caught by the route's own explicit scope check, not just the
+        # middleware's blanket check.
+        old_scope = (
+            "read:me read:jira-work read:jira-user read:board-scope:jira-software "
+            "read:sprint:jira-software read:project:jira offline_access"
+        )
+        install_oauth_session(self.client, scope=old_scope)
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "ATLASSIAN_SCOPES", old_scope):
+            csrf_token = self._csrf_token()
+            with patch.object(eng_routes, "update_issue_project_track", side_effect=AssertionError("must not resolve/post project track")), \
+                 patch.object(jira_server, "current_jira_request", side_effect=AssertionError("must not call Jira")):
+                response = self.client.post(
+                    "/api/issues/project-track",
+                    json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+                    headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+                )
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body["error"], "missing_oauth_scope")
+        self.assertEqual(body["recoveryUrl"], "/login?reason=missing_scope")
+
+    def test_write_maps_input_errors_to_400(self):
+        cases = [
+            ({"issueKey": "", "targetTrack": "Committed"}, "invalid_issue_key"),
+            ({"issueKey": "PRODUCT-1", "targetTrack": "Unknown"}, "invalid_project_track"),
+        ]
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            for payload, expected_error in cases:
+                with self.subTest(payload=payload):
+                    csrf_token = self._csrf_token()
+                    response = self.client.post(
+                        "/api/issues/project-track",
+                        json=payload,
+                        headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+                    )
+                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                    self.assertEqual(response.get_json()["error"], expected_error)
+
+    def test_write_maps_issue_not_epic_to_409(self):
+        def fake_update(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None):
+            raise ProjectTrackServiceError("issue_not_epic", 409)
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=fake_update):
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "issue_not_epic")
+
+    def test_write_maps_option_unavailable_to_409(self):
+        def fake_update(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None):
+            raise ProjectTrackServiceError("project_track_option_unavailable", 409)
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=fake_update):
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "project_track_option_unavailable")
+
+    def test_write_maps_not_editable_to_409(self):
+        def fake_update(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None):
+            raise ProjectTrackServiceError("project_track_not_editable", 409)
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=fake_update):
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "project_track_not_editable")
+
+    def test_write_maps_issue_not_found_to_404(self):
+        def fake_update(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None):
+            raise ProjectTrackServiceError("issue_not_found", 404)
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=fake_update):
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 404, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "issue_not_found")
+
+    def test_write_service_error_returns_sanitized_502(self):
+        def fake_update(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None):
+            raise ProjectTrackServiceError("project_track_update_failed", 503)
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=fake_update):
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "jira_project_track_update_failed")
+
+    def test_write_uses_oauth_context_and_clears_caches_on_success(self):
+        sentinel_context = object()
+        captured = {}
+
+        def fake_update(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None):
+            captured["context"] = context
+            captured["field_id_getter"] = get_project_track_field_id
+            return {"issueKey": "PRODUCT-1", "result": "success", "fromTrack": "Flexible", "toTrack": "Committed"}
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_request_auth_context", return_value=sentinel_context), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=fake_update), \
+             patch.object(eng_routes, "clear_jira_issue_status_caches") as mock_clear:
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertIs(captured["context"], sentinel_context)
+        self.assertIs(captured["field_id_getter"], jira_server.get_project_track_field_id)
+        body = response.get_json()
+        self.assertEqual(body, {
+            "issueKey": "PRODUCT-1",
+            "result": "success",
+            "fromTrack": "Flexible",
+            "toTrack": "Committed",
+        })
+        mock_clear.assert_called_once_with(reason="issue_project_track_update")
+
+    def test_write_does_not_clear_caches_for_already_in_track(self):
+        def fake_update(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None):
+            return {"issueKey": "PRODUCT-1", "result": "already_in_track", "fromTrack": "Committed"}
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=fake_update), \
+             patch.object(eng_routes, "clear_jira_issue_status_caches") as mock_clear:
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["result"], "already_in_track")
+        mock_clear.assert_not_called()
+
+    def test_write_does_not_call_build_jira_headers(self):
+        def fake_update(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None):
+            return {"issueKey": "PRODUCT-1", "result": "success", "fromTrack": "Flexible", "toTrack": "Committed"}
+
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(eng_routes, "update_issue_project_track", side_effect=fake_update), \
+             patch.object(jira_server, "build_jira_headers", side_effect=AssertionError("build_jira_headers must not be called")), \
+             patch.object(eng_routes, "clear_jira_issue_status_caches") as mock_clear:
+            response = self.client.post(
+                "/api/issues/project-track",
+                json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
+                headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf_token},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        mock_clear.assert_called_once_with(reason="issue_project_track_update")
 
 
 class IssueStatusCatalogRouteTests(unittest.TestCase):

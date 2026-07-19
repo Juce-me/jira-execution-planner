@@ -310,6 +310,16 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Expected output: each ENG epic header shows an effective-priority pill (highest-urgency child) and a Product Track emoji (🔒 Committed / 🤷 Flexible) read from the configurable `projectTrackField` Jira custom field (default `customfield_35024`); a single `sprint-dropdown`-styled Sort control orders epics by Priority, Status (built-in workflow-phase fallback), or Track (committed-first / flexible-first), each tie-broken by priority, with the choice persisted in localStorage UI prefs.
    - No new routes, no Jira writes, no auth-mode change; `GATE-05` unaffected. The board-imported per-group workflow source and group-by-kanban-column grouping are deferred to a separate future plan; the sort comparator already accepts an injected phase-rank map.
 
+2. `SUPPORT-eng-project-track-write-switch-design.md`
+   - User-approved design reference for the follow-up OAuth-backed ENG Project Track write plan.
+   - Expected output: every real ENG Epic header renders 🔒 Committed, 🤷 Flexible, or ⚪ Unidentified; clicking the indicator in Catch Up or Planning opens the existing compact issue-field option-menu behavior and writes only the configured Jira Project Track field through the signed-in user's OAuth context, with the same queue, optimistic update, rollback, stale-scope, auth-recovery, analytics, and surface-isolation contracts as status and priority changes.
+   - No Home/Townsquare or EPM mutation; `GATE-05` remains blocked. This support document feeds `EXEC-eng-project-track-write-switch.md`, which now exists.
+
+3. `EXEC-eng-project-track-write-switch.md`
+   - Implemented on branch `feature/eng-project-track-write-switch`, pending merge. Rename to `DONE-*` after merge.
+   - Expected output: every real ENG Epic header renders an always-visible 🔒/🤷/⚪ Project Track indicator that, on Catch Up/Planning with Settings closed, is a native button opening the shared compact option menu and writing only the configured Jira Project Track field between Flexible and Committed through the signed-in user's OAuth context, with the same queue/optimistic/rollback/stale-scope/auth-recovery/analytics contracts as status and priority changes.
+   - No Home/Townsquare or EPM mutation; `GATE-05` unaffected.
+
 ## Stats Project Track By Sprint
 
 1. `EXEC-stats-project-track-by-sprint.md`

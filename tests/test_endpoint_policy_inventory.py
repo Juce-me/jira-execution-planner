@@ -115,6 +115,22 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
         self.assertEqual([policy.name for policy in matches], ["jira-issue-priorities-write"])
         self.assertEqual(matches[0].policy_class, "user_write")
 
+    def test_project_track_options_route_has_authenticated_read_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies("/api/issues/project-track/options", ["GET"], "eng_routes.get_issue_project_track_options")
+
+        self.assertEqual([policy.name for policy in matches], ["jira-project-track-options"])
+        self.assertEqual(matches[0].policy_class, "authenticated_read")
+
+    def test_project_track_write_route_has_user_write_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies("/api/issues/project-track", ["POST"], "eng_routes.post_issue_project_track")
+
+        self.assertEqual([policy.name for policy in matches], ["jira-project-track-write"])
+        self.assertEqual(matches[0].policy_class, "user_write")
+
     def test_issue_status_catalog_route_has_authenticated_read_policy(self):
         from backend.security.policy import matching_policies
 

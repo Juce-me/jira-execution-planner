@@ -148,6 +148,8 @@ export const PROJECT_TRACK_EMOJI = Object.freeze({
     flexible: '🤷',
 });
 
+export const PROJECT_TRACK_UNIDENTIFIED_EMOJI = '⚪';
+
 export const DEFAULT_ENG_EPIC_SORT = 'priority';
 
 export const ENG_EPIC_SORT_OPTIONS = Object.freeze([
@@ -208,7 +210,14 @@ export function getProjectTrackRank(track, committedFirst = true) {
 
 export function getProjectTrackEmoji(track) {
     const t = String(track || '').trim().toLowerCase();
-    return PROJECT_TRACK_EMOJI[t] || '';
+    return PROJECT_TRACK_EMOJI[t] || PROJECT_TRACK_UNIDENTIFIED_EMOJI;
+}
+
+export function getProjectTrackLabel(track) {
+    const t = String(track || '').trim().toLowerCase();
+    if (t === 'committed') return 'Committed';
+    if (t === 'flexible') return 'Flexible';
+    return 'Unidentified';
 }
 
 export function compareEpicGroups(a, b, sortMode, opts = {}) {

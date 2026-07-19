@@ -65,7 +65,13 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # refresh drops its issues without any new initial-load request (+14 over the 15951
     # extraction result). The integrated Statistics controls extraction and Lead Times
     # compaction remain below this existing ceiling.
-    "frontend/src/dashboard.jsx": 15965,
+    # feature/eng-project-track-write-switch wires the Project Track write control into
+    # renderEpicBlock: imports ProjectTrackTransitionMenu + useEngProjectTrackTransitions +
+    # getProjectTrackLabel, instantiates the hook alongside useEngPriorityTransitions (no
+    # success-refresh callback by design), adds closeProjectTrackControl to the group-change
+    # cleanup effect, and replaces the passive indicator with the always-rendered
+    # interactive/passive branch for real Epics (+35 over the 15965 ceiling).
+    "frontend/src/dashboard.jsx": 16000,
 }
 
 

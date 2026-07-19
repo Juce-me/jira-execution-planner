@@ -568,6 +568,151 @@ test('issue_priority_action pushes the eng priority transition contract through 
     });
 });
 
+test('issue_project_track_action is a canonical userevent requiring feature_name', async () => {
+    const { validateAnalyticsPayload } = await loadEvents();
+
+    assert.throws(
+        () => validateAnalyticsPayload({ event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'issue_project_track_action' }),
+        /feature_name is required/
+    );
+
+    const payload = validateAnalyticsPayload({
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'issue_project_track_action',
+        feature_name: 'eng_project_track_changes',
+        workflow_action: 'project_track_change_submit',
+        source_surface: 'planning',
+        value_state: 'committed',
+        result: 'success'
+    });
+    assert.equal(payload.event_name, 'issue_project_track_action');
+});
+
+test('issue_project_track_action accepts the eng project track enum params and rejects unsafe value_state values', async () => {
+    const { sanitizeAnalyticsParams } = await loadEvents();
+
+    for (const workflowAction of ['project_track_options_open', 'project_track_change_submit', 'project_track_change_result']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'eng_project_track_changes',
+                workflow_action: workflowAction,
+                source_surface: 'catch_up'
+            }, 'issue_project_track_action'),
+            {
+                feature_name: 'eng_project_track_changes',
+                workflow_action: workflowAction,
+                source_surface: 'catch_up'
+            }
+        );
+    }
+
+    for (const valueState of ['flexible', 'committed']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'eng_project_track_changes',
+                workflow_action: 'project_track_change_submit',
+                source_surface: 'planning',
+                selected_count_bucket: '1_5',
+                issue_type_mix: 'epics',
+                value_state: valueState
+            }, 'issue_project_track_action'),
+            {
+                feature_name: 'eng_project_track_changes',
+                workflow_action: 'project_track_change_submit',
+                source_surface: 'planning',
+                selected_count_bucket: '1_5',
+                issue_type_mix: 'epics',
+                value_state: valueState
+            }
+        );
+    }
+
+    for (const result of ['success', 'partial', 'failure']) {
+        assert.deepEqual(
+            sanitizeAnalyticsParams({
+                feature_name: 'eng_project_track_changes',
+                workflow_action: 'project_track_change_result',
+                source_surface: 'planning',
+                result
+            }, 'issue_project_track_action'),
+            {
+                feature_name: 'eng_project_track_changes',
+                workflow_action: 'project_track_change_result',
+                source_surface: 'planning',
+                result
+            }
+        );
+    }
+
+    // value_state must never carry a raw Jira track id or an un-normalized string.
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'eng_project_track_changes', value_state: 'Committed' }, 'issue_project_track_action'),
+        /unsafe analytics value/
+    );
+    assert.throws(
+        () => sanitizeAnalyticsParams({ feature_name: 'eng_project_track_changes', value_state: 'PROD-1' }, 'issue_project_track_action'),
+        /unsafe analytics value/
+    );
+});
+
+test('api_result accepts the jira_issue_project_track surface', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    trackApiResult('jira_issue_project_track', {
+        featureName: 'eng_project_track_changes',
+        method: 'POST',
+        status: 200,
+        durationMs: 400
+    });
+
+    assert.equal(pushed.length, 1);
+    assert.equal(pushed[0].api_surface, 'jira_issue_project_track');
+    assert.equal(pushed[0].feature_name, 'eng_project_track_changes');
+});
+
+test('issue_project_track_action pushes the eng project track contract through the dataLayer', async () => {
+    const { initAnalytics, trackEvent } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    trackEvent('issue_project_track_action', {
+        feature_name: 'eng_project_track_changes',
+        workflow_action: 'project_track_change_result',
+        source_surface: 'planning',
+        selected_count_bucket: '1_5',
+        issue_type_mix: 'epics',
+        value_state: 'committed',
+        result: 'success'
+    });
+
+    assert.equal(pushed.length, 1);
+    assert.deepEqual(pushed[0], {
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'issue_project_track_action',
+        feature_name: 'eng_project_track_changes',
+        workflow_action: 'project_track_change_result',
+        source_surface: 'planning',
+        selected_count_bucket: '1_5',
+        issue_type_mix: 'epics',
+        value_state: 'committed',
+        result: 'success'
+    });
+});
+
 test('api_result accepts the jira_issue_transitions surface', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();

@@ -4379,6 +4379,27 @@ button.toggle.initiative-toggle.active {
   align-items: center;
   cursor: default;
 }
+button.epic-track-indicator {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  transition:
+    background-color 0.16s ease,
+    box-shadow 0.16s ease,
+    opacity 0.16s ease;
+}
+button.epic-track-indicator:hover,
+button.epic-track-indicator:focus-visible {
+  transform: none;
+  background: var(--bg-primary);
+  box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.22);
+}
 
 /* frontend/src/styles/eng/loading.css */
 .loading {
@@ -4538,7 +4559,8 @@ button.status-pill:focus-visible {
   outline-offset: 1px;
 }
 .status-transition,
-.priority-transition {
+.priority-transition,
+.project-track-transition {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -4547,11 +4569,14 @@ button.status-pill:focus-visible {
 .task-item:has(.status-transition-menu),
 .epic-header:has(.status-transition-menu),
 .task-item:has(.priority-transition-menu),
-.epic-header:has(.priority-transition-menu) {
+.epic-header:has(.priority-transition-menu),
+.task-item:has(.project-track-transition-menu),
+.epic-header:has(.project-track-transition-menu) {
   z-index: 121;
 }
 .status-transition-menu,
-.priority-transition-menu {
+.priority-transition-menu,
+.project-track-transition-menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
@@ -4572,13 +4597,15 @@ button.status-pill:focus-visible {
   box-sizing: border-box;
 }
 .status-transition-menu-options,
-.priority-transition-menu-options {
+.priority-transition-menu-options,
+.project-track-transition-menu-options {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 .status-transition-option,
-.priority-transition-option {
+.priority-transition-option,
+.project-track-transition-option {
   width: 100%;
   display: grid;
   grid-template-columns: 0.7rem minmax(0, 1fr);
@@ -4606,7 +4633,8 @@ button.status-pill:focus-visible {
     opacity 0.16s ease;
 }
 .status-transition-option + .status-transition-option,
-.priority-transition-option + .priority-transition-option {
+.priority-transition-option + .priority-transition-option,
+.project-track-transition-option + .project-track-transition-option {
   border-top: 1px dashed var(--border);
 }
 .priority-transition-option {
@@ -4618,18 +4646,22 @@ button.status-pill:focus-visible {
 .status-transition-option:hover:not(:disabled),
 .status-transition-option:focus-visible,
 .priority-transition-option:hover:not(:disabled),
-.priority-transition-option:focus-visible {
+.priority-transition-option:focus-visible,
+.project-track-transition-option:hover:not(:disabled),
+.project-track-transition-option:focus-visible {
   transform: none;
   background: var(--bg-primary);
   box-shadow: inset 0 0 0 1px rgba(47, 128, 237, 0.18);
 }
 .status-transition-option:focus-visible,
-.priority-transition-option:focus-visible {
+.priority-transition-option:focus-visible,
+.project-track-transition-option:focus-visible {
   outline: 2px solid rgba(47, 128, 237, 0.65);
   outline-offset: 1px;
 }
 .status-transition-option:disabled,
-.priority-transition-option:disabled {
+.priority-transition-option:disabled,
+.project-track-transition-option:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -4647,7 +4679,8 @@ button.status-pill:focus-visible {
   line-height: 0;
 }
 .status-transition-option-label,
-.priority-transition-option-label {
+.priority-transition-option-label,
+.project-track-transition-option-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4666,18 +4699,21 @@ button.status-pill:focus-visible {
   margin: 0;
 }
 .status-transition-menu-note,
-.priority-transition-menu-note {
+.priority-transition-menu-note,
+.project-track-transition-menu-note {
   font-size: 0.72rem;
   line-height: 1.35;
   text-transform: none;
   letter-spacing: 0;
 }
 .status-transition-menu-loading,
-.priority-transition-menu-loading {
+.priority-transition-menu-loading,
+.project-track-transition-menu-loading {
   color: var(--text-secondary);
 }
 .status-transition-menu-error,
-.priority-transition-menu-error {
+.priority-transition-menu-error,
+.project-track-transition-menu-error {
   color: #b42318;
 }
 .status-transition-menu-error.is-too-many,
@@ -4685,7 +4721,8 @@ button.status-pill:focus-visible {
   color: #a15c07;
 }
 .status-transition-menu-result,
-.priority-transition-menu-result {
+.priority-transition-menu-result,
+.project-track-transition-menu-result {
   font-size: 0.72rem;
   line-height: 1.35;
   color: var(--text-secondary);

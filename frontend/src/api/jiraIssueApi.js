@@ -65,6 +65,27 @@ export async function updateIssuePriorities(backendUrl, payload, { signal } = {}
     }, { featureName: 'eng_priority_changes' }).then(response => jsonOrStructuredError(response, 'Issue priority update'));
 }
 
+export function fetchIssueProjectTrackOptions(backendUrl, { issueKey, signal } = {}) {
+    const query = `?issueKey=${encodeURIComponent(issueKey || '')}`;
+    return trackedFetch('jira_issue_project_track', `${backendUrl}/api/issues/project-track/options${query}`, {
+        method: 'GET',
+        cache: 'no-cache',
+        signal,
+        headers: { 'X-Requested-With': 'jira-execution-planner' },
+    }, { featureName: 'eng_project_track_changes' }).then(response => jsonOrStructuredError(response, 'Issue project track options'));
+}
+
+export async function updateIssueProjectTrack(backendUrl, payload, { signal } = {}) {
+    const { csrfToken } = await fetchMutationCsrfToken(backendUrl);
+    return trackedFetch('jira_issue_project_track', `${backendUrl}/api/issues/project-track`, {
+        method: 'POST',
+        cache: 'no-cache',
+        signal,
+        headers: headers(csrfToken || ''),
+        body: JSON.stringify(payload),
+    }, { featureName: 'eng_project_track_changes' }).then(response => jsonOrStructuredError(response, 'Issue project track update'));
+}
+
 export function fetchIssueStatusCatalog(backendUrl, { signal } = {}) {
     return trackedFetch('jira_issue_transitions', `${backendUrl}/api/issues/statuses/catalog`, {
         method: 'GET',

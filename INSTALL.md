@@ -193,10 +193,10 @@ Do not seed a Home/Townsquare service integration for the DB/OAuth EPM read path
 
 ## 8. Internal Hosting Pre-SRE Checklist
 
-The repository provides a handoff skeleton for GitLab verification and container build. It deliberately does not ship production registry push, Helm values, Kubernetes manifests, or deployment jobs.
+The repository provides container packaging for verification and image build. It deliberately does not ship production registry push, Helm values, Kubernetes manifests, or deployment jobs.
 
 Can prepare now:
-- Build the image with `docker build -t "$IMAGE_NAME:$CI_COMMIT_SHA" .` or the GitLab `container` stage, using the committed `Dockerfile`.
+- Build the image with `docker build` and a commit-SHA tag, using the committed `Dockerfile`.
 - Run backend/frontend verification in CI: Python dependencies, editable install, `python -m unittest discover -s tests`, `npm ci`, `npm run build`, frontend unit tests, and the committed `frontend/dist` check.
 - Keep hosted env values owned by the runtime platform: app secrets, Atlassian OAuth settings, token encryption, DB URL, allowed origins, and optional GA4 values.
 
@@ -234,7 +234,7 @@ Use `RUN_DB_MIGRATIONS=true` only when a single app container is the agreed migr
 OAuth2 Proxy may protect the ingress perimeter, but it does not replace app-level Atlassian OAuth. The app still needs Atlassian OAuth 2.0 (3LO) for Jira REST reads and the per-user Home token connection for Home/Townsquare EPM metadata.
 
 Needs SRE ownership or confirmation:
-- GitLab group/repo path, registry/image path, runner build method, default branch/tag policy, and the exact point when image push may be enabled with `PUSH_IMAGE=true`.
+- CI project location, registry/image path, runner build method, default branch/tag policy, and the exact point when image push may be enabled.
 - Internal hostname, TLS/proxy termination, OAuth2 Proxy policy, Atlassian redirect/callback URL registration, secure cookie settings, and `APP_ALLOWED_ORIGINS`.
 - PostgreSQL provisioning, migration execution owner, durable persistence, log retention, backup/restore ownership, resource limits, and readiness/liveness probe policy.
 

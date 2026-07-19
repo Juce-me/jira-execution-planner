@@ -247,11 +247,11 @@ make verify
 
 ## Internal Hosting Pre-SRE Checklist
 
-This repo now ships a GitLab CI skeleton for verification and container image build only. It does not include production registry push, release, or deployment automation.
+This repo ships container packaging for verification and image build only. It does not include production registry push, release, or deployment automation.
 
 Can prepare now:
 - Build the container from `Dockerfile`, keep `frontend/dist` current, run startup preflight, and expose `/health` as shallow liveness.
-- Run GitLab verify/container stages that install backend/frontend dependencies, run tests/builds, and tag the image with `CI_COMMIT_SHA`.
+- Run CI verification that installs backend/frontend dependencies, runs tests/builds, and tags the image with the commit SHA.
 - Keep runtime env ownership explicit: app secrets, Atlassian OAuth settings, DB URL, token encryption, GA4 toggles, and local defaults remain outside the image.
 
 Container env contract:
@@ -288,7 +288,7 @@ For migrations, use `RUN_DB_MIGRATIONS=true` only for a single-instance internal
 OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads require the user's connected Home token stored encrypted in DB.
 
 Needs SRE ownership or confirmation:
-- GitLab project path, registry/image path, runner container-build method, branch/tag policy, and when `PUSH_IMAGE=true` may be enabled.
+- CI project location, registry/image path, runner container-build method, branch/tag policy, and when image push may be enabled.
 - Hosted HTTPS origin, Atlassian OAuth redirect/callback registration, OAuth2 Proxy boundary, TLS termination, secure cookie settings, and `APP_ALLOWED_ORIGINS`.
 - PostgreSQL provisioning, migration owner, persistence/backups, log retention, resource limits, and production readiness probe policy.
 

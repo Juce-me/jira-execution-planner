@@ -1,5 +1,7 @@
 # Planning Selection Card Grid Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #75](https://github.com/Juce-me/jira-execution-planner/pull/75). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Align ENG Planning story selection controls with story-point metadata, move the Jira key into the card meta row, and make selected Planning stories visibly distinct without changing non-Planning or EPM card layouts.

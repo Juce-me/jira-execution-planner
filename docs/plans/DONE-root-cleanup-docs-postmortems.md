@@ -1,6 +1,6 @@
 # Root Cleanup And Postmortem Relocation Implementation Plan
 
-> **Status:** Executed on branch `improvement/root-cleanup-docs-postmortems` (commits `05163ff..961df45`), full suite 932 OK at every step. Pending merge; rename to `DONE-*` after the PR is accepted.
+> **Status:** Done. Executed and merged in [PR #99](https://github.com/Juce-me/jira-execution-planner/pull/99). Kept for audit context only.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

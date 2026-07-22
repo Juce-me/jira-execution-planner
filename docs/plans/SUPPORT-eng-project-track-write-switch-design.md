@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | User-approved design; validated against current status/priority update paths; feeds `EXEC-eng-project-track-write-switch.md` |
+| Status | User-approved design; validated against current status/priority update paths; feeds `DONE-eng-project-track-write-switch.md` |
 | Branch | `docs/project-track-write-switch-plan` |
 | Type | OAuth-backed Jira Epic field update in ENG Catch Up and Planning |
 

@@ -1,5 +1,7 @@
 # CSS Feature-Owned Partials Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #75](https://github.com/Juce-me/jira-execution-planner/pull/75). Kept for audit context only.
+
 > **For implementers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Split the remaining large dashboard CSS partials into feature-owned source files so targeted UI changes can be investigated by feature area without changing shipped CSS behavior.
@@ -8,7 +10,7 @@
 
 **Tech Stack:** Plain CSS partials bundled by esbuild, React 19 JSX class names, existing source-guard tests, Playwright UI specs, generated `frontend/dist` output from `npm run build`.
 
-**Cross-Plan Order:** If this plan is executed with `EXEC-planning-selection-card-grid.md`, run the Planning card-grid plan first, commit and verify it, then execute this CSS split. That keeps the Planning plan's current `eng.css`/`planning.css` file map accurate and lets this plan move the new Planning selectors into feature-owned partials.
+**Cross-Plan Order:** If this plan is executed with `DONE-planning-selection-card-grid.md`, run the Planning card-grid plan first, commit and verify it, then execute this CSS split. That keeps the Planning plan's current `eng.css`/`planning.css` file map accurate and lets this plan move the new Planning selectors into feature-owned partials.
 
 ---
 
@@ -271,7 +273,7 @@ Expected:
 
 ## Implementation Notes
 
-- Execute this plan after `EXEC-planning-selection-card-grid.md` when both plans are in scope. The Planning card-grid plan intentionally modifies the current `eng.css` and `planning.css`; this plan should then move the resulting Planning selectors into their feature-owned files.
+- Execute this plan after `DONE-planning-selection-card-grid.md` when both plans are in scope. The Planning card-grid plan intentionally modifies the current `eng.css` and `planning.css`; this plan should then move the resulting Planning selectors into their feature-owned files.
 - This plan intentionally keeps one bundled CSS asset because the dashboard HTML, Flask asset route, Playwright fixtures, and source guards already depend on that contract.
 - This plan intentionally does not introduce CSS modules or CSS-in-JS because the current build separates JS and CSS bundles, with `.css` imports empty in the JS build.
 - This plan intentionally avoids selector cleanup. After ownership is clear, a later feature-specific plan can safely rename or tighten selectors with visual proof.

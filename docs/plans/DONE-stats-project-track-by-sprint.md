@@ -1,5 +1,7 @@
 # Stats: Project Track by Sprint Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #95](https://github.com/Juce-me/jira-execution-planner/pull/95). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL when available: use Superpowers `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Do not hand-edit `frontend/dist/*`; run `npm run build` after frontend source changes.
 
 **Goal:** Add a new ENG stats sub-tab, `Project Track`, that shows story points by Project Track. A filter bar sits on top of the whole tab, followed by a mode title (`EPIC MODE` default / `TEAM MODE`). Below that, in order: (1) a horizontal "totals" bar of SP split by track (Flexible / Committed / No track) aggregated over the selected sprint range, with value labels on each segment; (2) a per-sprint vertical stacked-bar chart of SP split by track across the range; (3) a per-assignee (Epic mode) / per-team (Team mode) horizontal stacked-bar breakdown split by track; (4) an Epic-mode-only time-in-phase section showing how long each in-scope epic spent in each Project Track state, from Jira changelog.

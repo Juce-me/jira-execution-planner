@@ -1,8 +1,8 @@
-# EXEC-epm-label-config-bugfixes
+# EPM Label Config Bugfixes
 
 | Field | Value |
 | --- | --- |
-| Status | executed (pending merge) |
+| Status | executed (merged in PR #90) |
 | Type | bugfix |
 | Created | 2026-06-23 |
 | Revised | 2026-06-23 (after 3-subagent review; see §12) |
@@ -10,9 +10,7 @@
 | Surface | EPM Settings → Projects (label config) |
 | Branch | `bugfix/epm-label-config` |
 
-> **Status:** Implemented and verified on branch `bugfix/epm-label-config`; not yet
-> merged. Per-task commits and verification are recorded in §10. Rename to
-> `DONE-*` only after the PR is merged/accepted.
+> **Status:** Done. Executed and merged in [PR #90](https://github.com/Juce-me/jira-execution-planner/pull/90). Per-task commits and verification are recorded in §10. Kept for audit context only.
 
 Fixes three defects in the EPM Settings **Projects** label-configuration UI. No new
 routes, no auth-mode changes, no Home/Townsquare or Jira writes. `GATE-05`

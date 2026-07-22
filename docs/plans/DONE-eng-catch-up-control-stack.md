@@ -1,5 +1,7 @@
 # ENG Catch Up Control Stack Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #75](https://github.com/Juce-me/jira-execution-planner/pull/75). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rework the ENG Catch Up upper controls so Alerts, Show only, and Display read as one compact, non-redundant control stack.

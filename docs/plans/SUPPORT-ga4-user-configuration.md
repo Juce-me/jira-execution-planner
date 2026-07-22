@@ -1,6 +1,6 @@
 # SUPPORT: GA4 User Configuration Runbook
 
-**Status:** Drafted on 2026-05-26 for GA4 web stream Measurement ID `G-6QERX19WB0`. Use this runbook alongside `docs/plans/EXEC-ga4-instrumentation.md`.
+**Status:** Drafted on 2026-05-26 for GA4 web stream Measurement ID `G-6QERX19WB0`. Use this runbook alongside `docs/plans/DONE-ga4-instrumentation.md`.
 
 **Revision notes:**
 - 2026-05-28: Re-verified the GA4/GTM configuration instructions against current Google docs and the latest `google-analytics-implementation-planner` MCP guidance. Added the custom MCP boundary, API-backed automation rules, and the dry-run desired-state spec at `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml`.
@@ -16,7 +16,7 @@
 
 - You have Editor or Administrator access to the GA4 property that owns web stream `G-6QERX19WB0`.
 - You have edit/publish access to the GTM web container used by this app.
-- The implementation from `docs/plans/EXEC-ga4-instrumentation.md` has shipped to the target environment.
+- The implementation from `docs/plans/DONE-ga4-instrumentation.md` has shipped to the target environment.
 - The deployment has set `GA4_ENABLED=true`, `GTM_CONTAINER_ID=<container id>`, `GA4_MEASUREMENT_ID=G-6QERX19WB0`, and a secret `GA4_USER_ID_PEPPER`.
 - The deployment is approved for internal employee product analytics. This app does not implement an in-app analytics consent control; `GA4_ENABLED=false` is the app-level off switch and must prevent GTM/GA4 requests.
 
@@ -491,7 +491,7 @@ Start with Explore reports or standard custom reports:
 
 ## Operating Rules
 
-- Review new analytics events during code review against `docs/plans/EXEC-ga4-instrumentation.md`.
+- Review new analytics events during code review against `docs/plans/DONE-ga4-instrumentation.md`.
 - If GA4/GTM configuration is applied with MCP, use `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` as the desired state and keep the run in dry-run/new-workspace mode until the publish gates pass. The official Google Analytics MCP server is read-only and is not sufficient for configuration writes.
 - Do not register a custom dimension just because an event parameter exists. Register only fields needed for reports.
 - Delete or archive unused custom definitions only after confirming no active report depends on them.

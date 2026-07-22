@@ -1,5 +1,7 @@
 # ENG Project Track Write Switch Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #112](https://github.com/Juce-me/jira-execution-planner/pull/112). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Do not hand-edit `frontend/dist/*`; run `npm run build` after frontend source changes.
 
 **Goal:** Let a signed-in ENG user change a real Epic's configured Jira `Project Track[Dropdown]` field between `Flexible` and `Committed` from the existing Epic-header indicator, with `⚪` rendered for unidentified tracks, mirroring the shipped ENG status/priority update contracts exactly.
@@ -12,7 +14,7 @@
 
 ## Status
 
-Executed on branch `feature/eng-project-track-write-switch`: implementation commits `7ba5490..3bd3908`, a docs close-out commit, and one post-review fix (see Outcome divergence 6), verified 2026-07-16. Rename to `DONE-*` only after merge per `docs/plans/AGENTS.md`. Track per-task completion in the checkboxes below.
+Executed on branch `feature/eng-project-track-write-switch`: implementation commits `7ba5490..3bd3908`, a docs close-out commit, and one post-review fix (see Outcome divergence 6), verified 2026-07-16. Merged in [PR #112](https://github.com/Juce-me/jira-execution-planner/pull/112). Track per-task completion in the checkboxes below.
 
 ## Global Constraints
 

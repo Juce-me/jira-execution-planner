@@ -1,5 +1,7 @@
 # Shared Department Groups Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #62](https://github.com/Juce-me/jira-execution-planner/pull/62). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. Do not hand-edit `frontend/dist/*`; run `npm run build` after frontend source changes.
 
 **Goal:** Make department/team-group definitions a workspace-shared configuration that any authenticated user can create or edit, while each user controls which shared groups appear in their dashboard controls.

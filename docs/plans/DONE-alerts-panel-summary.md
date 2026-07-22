@@ -1,5 +1,7 @@
 # Alerts Panel Summary Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #71](https://github.com/Juce-me/jira-execution-planner/pull/71). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a persistent alert summary next to the ENG alerts panel toggle that shows total alerts and every non-zero alert type.

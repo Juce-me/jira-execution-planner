@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** Implemented and verified locally on 2026-07-16; pending PR review/merge.
+> **Status:** Done. Executed and merged in [PR #110](https://github.com/Juce-me/jira-execution-planner/pull/110). Kept for audit context only.
 
 **Goal:** Render Sprint, Excluded Epics, Series mode, and Metric in one ordered Excluded Capacity desktop control row.
 

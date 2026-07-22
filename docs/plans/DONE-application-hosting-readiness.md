@@ -1,5 +1,7 @@
 # Application Hosting Readiness Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #64](https://github.com/Juce-me/jira-execution-planner/pull/64). Kept for audit context only.
+
 > **Current accuracy (2026-07-19):** The Task 7 GitLab CI skeleton (`.gitlab-ci.yml` and `tests/test_gitlab_ci_contract.py`) was removed because the repo's CI is GitHub Actions and GitLab hosting is no longer planned. Do not re-create those files from this plan. The Docker packaging, hosted env contract, and pre-SRE checklist deliverables remain current.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

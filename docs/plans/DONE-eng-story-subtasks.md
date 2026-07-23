@@ -1,5 +1,7 @@
 # ENG Story Subtasks Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #59](https://github.com/Juce-me/jira-execution-planner/pull/59). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add lightweight ENG story subtask visibility: stories with subtasks show a compact subtask count/progress control, and clicking it loads selected-sprint subtask rows on demand.

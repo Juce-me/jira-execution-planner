@@ -1,5 +1,7 @@
 # Ad Hoc Capacity Epic Configuration Plan
 
+> **Status:** Done. Executed and merged in [PR #88](https://github.com/Juce-me/jira-execution-planner/pull/88). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL when available: use Superpowers `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Do not hand-edit `frontend/dist/*`; run `npm run build` after frontend source changes.
 
 **Goal:** Add a department/team-group Ad Hoc capacity epic selector that is separate from excluded capacity. Configured Ad Hoc epics, including business-as-usual work, must remain included in Product capacity and reporting, while `excludedCapacityEpics` stays the only list that subtracts capacity, hides stories from included Planning totals, and creates Scenario capacity placeholders.
@@ -12,7 +14,7 @@
 
 ## Status
 
-Implemented (all 8 tasks complete and verified), pending review/merge — kept as `EXEC-*` until accepted/merged, then rename to `DONE-*` per `docs/plans/AGENTS.md`. All work is uncommitted on branch `feature/ad-hoc-capacity-epics`. Verification gate green: full Python suite (903 tests, 1 skipped), full Node unit suite (386 tests), `npm run build`, and the Playwright UI suite (115 passed, 2 skipped). Each task was executed with a spec-compliance + code-quality review pass; a final cross-branch adversarial review confirmed acceptance criteria 1–8 met.
+Implemented (all 8 tasks complete and verified) and merged in [PR #88](https://github.com/Juce-me/jira-execution-planner/pull/88) from branch `feature/ad-hoc-capacity-epics`. Verification gate green: full Python suite (903 tests, 1 skipped), full Node unit suite (386 tests), `npm run build`, and the Playwright UI suite (115 passed, 2 skipped). Each task was executed with a spec-compliance + code-quality review pass; a final cross-branch adversarial review confirmed acceptance criteria 1–8 met.
 
 Implementation notes / intentional nuances:
 - Plan-vs-reality divergence (Task 7): the legacy bare `GET /api/stats` route lives in `backend/routes/stats_routes.py`, not `jira_server.py`; it has no frontend caller, so it was left unchanged behind a source guard (7.1 path; 7.2 N/A).

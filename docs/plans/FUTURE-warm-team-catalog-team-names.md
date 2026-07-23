@@ -1,6 +1,6 @@
 # Warm Team Catalog For ENG Team-Option Names Implementation Plan
 
-> **Status:** Deferred follow-up. Severity: Minor. Spun out of `EXEC-priority-refresh-preserve-team-filter.md`, which deliberately excluded any new initial-load request. Do not execute without renaming to `EXEC-*` after review.
+> **Status:** Deferred follow-up. Severity: Minor. Spun out of `DONE-priority-refresh-preserve-team-filter.md`, which deliberately excluded any new initial-load request. Do not execute without renaming to `EXEC-*` after review.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -12,7 +12,7 @@
 
 ## Why This Is Minor
 
-The degradation is cosmetic only: the filter selection is already preserved by `EXEC-priority-refresh-preserve-team-filter.md`; the option merely shows its raw team id until tasks for that team arrive or Settings is opened. Pre-existing behavior was strictly worse (the team vanished and the filter reset).
+The degradation is cosmetic only: the filter selection is already preserved by `DONE-priority-refresh-preserve-team-filter.md`; the option merely shows its raw team id until tasks for that team arrive or Settings is opened. Pre-existing behavior was strictly worse (the team vanished and the filter reset).
 
 ## Global Constraints
 
@@ -204,7 +204,7 @@ npm run test:frontend:unit
 .venv/bin/python -m unittest discover -s tests
 ```
 
-Expected: every command passes (frontend-unit dist-parity guards require running after the dist rebuild is committed together with source, or re-running post-commit as documented in `EXEC-priority-refresh-preserve-team-filter.md`).
+Expected: every command passes (frontend-unit dist-parity guards require running after the dist rebuild is committed together with source, or re-running post-commit as documented in `DONE-priority-refresh-preserve-team-filter.md`).
 
 - [ ] **Step 3: Update the plan index and commit**
 

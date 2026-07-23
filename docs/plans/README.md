@@ -42,10 +42,9 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 7. `FUTURE-db-additional-features.md`
    - Execute only after the DB auth and user-configuration phases are complete and explicitly reopened.
 
-8. `EXEC-shared-department-groups.md`
-   - Active implementation plan for moving department/team-group definitions to workspace-shared configuration while keeping per-user visible-group preferences.
-   - Expected output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, shared saves are revision-conflict protected, and the existing default-group star remains shared.
-   - Status note: the plan file currently says it was implemented on 2026-06-04. Treat it as prerequisite evidence for capacity-reporting plans and reconcile the filename/status before editing the shared group contract.
+8. `DONE-shared-department-groups.md`
+   - Completed and merged in [PR #62](https://github.com/Juce-me/jira-execution-planner/pull/62). Moves department/team-group definitions to workspace-shared configuration while keeping per-user visible-group preferences. Use for audit and prerequisite evidence; do not execute as active work.
+   - Output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, shared saves are revision-conflict protected, and the existing default-group star remains shared.
 
 ## Completed Scenario Planner Workflow
 
@@ -65,37 +64,36 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Frontend Planning Workflow
 
-1. `EXEC-auth-unfocused-auto-refresh.md`
-   - Implemented pending merge. Amended 2026-07-16: the previously planned long-absence full-page reload was rejected and replaced with a refresh-only design. The superseded reload implementation remains unmerged on `feature/auth-unfocused-auto-refresh`.
+1. `DONE-auth-unfocused-auto-refresh.md`
+   - Completed and merged in [PR #111](https://github.com/Juce-me/jira-execution-planner/pull/111). Amended 2026-07-16: the previously planned long-absence full-page reload was rejected and replaced with a refresh-only design. The superseded reload implementation remains unmerged on `feature/auth-unfocused-auto-refresh`. Use for audit context only.
    - Output: `frontend/src/api/authRefreshContract.js` holds the shared throttle/absence constants and event name; `frontend/src/api/authFocusRefresh.js` tracks continuous unfocused/hidden time and, after more than 12 minutes, issues one throttled `POST /api/auth/refresh` deduplicated across tabs via a shared `localStorage` timestamp, dispatching a `jep:auth-long-absence-return` `CustomEvent` on success; `frontend/src/dashboard.jsx` listens for that event and re-runs the same manual-refresh path the refresh button uses, gated by the same disabled condition. No document reload anywhere. `401` recovery (with and without `loginUrl`) is unchanged on both the initial and long-absence paths. `jira_server.py` adds a temporary, anonymized `after_request` diagnostics log (`jep.static_diagnostics`) scoped to `/`, `/jira-dashboard.html`, and `/frontend/dist/*` to identify the real owner of the originally reported repeated document/asset requests; it is explicitly temporary and slated for removal once that owner is identified. Content-hashed/immutable asset serving via a CDN/proxy remains deferred scope, not implemented here. Unit (`tests/test_auth_focus_refresh.js`), source-guard, and Playwright request-count coverage (`tests/ui/auth_focus_refresh_counts.spec.js`) prove: one document load produces one auth-script GET; focus/visibility bursts never add document or asset requests; multi-tab returns produce exactly one auth POST per cooldown window; a long absence refreshes only the active view's data; `401` recovery is intact.
 
 2. `DONE-planning-default-selection-undo.md`
    - Completed and verified locally on 2026-06-09. Use for audit only; do not execute as active work.
    - Output: unseen future sprint/group scopes default to all visible Planning stories selected, Planning/Reporting epic Included/Excluded toggles persist to the selected group's shared `excludedCapacityEpics` config, manual checkbox edits persist until Select All, bulk status/select/clear actions can be undone to the loaded-page baseline, existing analytics events cover undo and shared excluded-capacity toggles, and focused Node/Python plus Playwright coverage verifies the behavior.
 
-3. `EXEC-planning-selection-card-grid.md`
-   - Active implementation plan for aligning Planning story selection controls with story-point metadata while keeping non-Planning and EPM card layouts unchanged.
-   - Expected output: ENG Planning cards render story points, the rounded checkbox, and Jira key as the final meta-row cluster; selected Planning stories get a subtle selected tint/ring; Playwright geometry and selected-state assertions guard against layout creep.
-   - Sequencing: when paired with `EXEC-css-feature-owned-partials.md`, execute this plan first, then move the resulting CSS into feature-owned partials.
+3. `DONE-planning-selection-card-grid.md`
+   - Completed and merged in [PR #75](https://github.com/Juce-me/jira-execution-planner/pull/75). Aligns Planning story selection controls with story-point metadata while keeping non-Planning and EPM card layouts unchanged. Use for audit context only.
+   - Output: ENG Planning cards render story points, the rounded checkbox, and Jira key as the final meta-row cluster; selected Planning stories get a subtle selected tint/ring; Playwright geometry and selected-state assertions guard against layout creep.
 
 4. `DONE-jira-oauth-planning-status-transitions.md`
    - Completed Jira OAuth-backed ENG Catch Up and Planning status changes across Epics, Stories, and Subtasks. Merged in [PR #100](https://github.com/Juce-me/jira-execution-planner/pull/100). Use for audit context only.
    - Output: Catch Up can transition one Epic, Story, or expanded Subtask at a time by clicking the displayed status; Planning can fetch transition options from clicked status pills/text and transition every selected status target through the signed-in user's Jira OAuth context; batch mode never silently truncates selected targets, rejects over-cap selections before mutation, preserves Story selection capacity math, and keeps EPM Jira/Home-backed issue surfaces view-only while `GATE-05` is blocked.
 
-5. `EXEC-eng-priority-edit-mode.md`
-   - Implemented and verified on branch `docs/eng-priority-edit-mode-plan` (commits `04be74a..8e4d764`), awaiting final review acceptance and user-confirmed merge; kept as `EXEC-` until merged. OAuth-backed ENG priority edits from the existing `task-priority-icon`, reusing the compact status dropdown UI/API pattern, and caching priority/status catalogs across app usage.
+5. `DONE-eng-priority-edit-mode.md`
+   - Completed and merged in [PR #103](https://github.com/Juce-me/jira-execution-planner/pull/103) (branch `docs/eng-priority-edit-mode-plan`, commits `04be74a..8e4d764`). OAuth-backed ENG priority edits from the existing `task-priority-icon`, reusing the compact status dropdown UI/API pattern, and caching priority/status catalogs across app usage.
    - Expected output: Story and Epic priority icons open a compact dropdown whose option rows show the app's own priority icons and are filtered per issue to that project/issue-type scheme (via editmeta), fetched once per project/issue-type per app session; the menu dismisses on any outside click; priority writes use signed-in user Jira OAuth only; status transition option caching is widened safely without treating every status as universally transitionable; EPM remains read-only.
 
-6. `EXEC-eng-targeted-task-updates.md`
-   - Implemented and verified locally on `feature/eng-targeted-task-updates` across the execution commits listed in the plan; kept as `EXEC-` pending user review/merge.
+6. `DONE-eng-targeted-task-updates.md`
+   - Completed and merged in [PR #105](https://github.com/Juce-me/jira-execution-planner/pull/105) (branch `feature/eng-targeted-task-updates`). Use for audit context only.
    - Expected output: ENG Catch Up status and priority writes optimistically patch only the selected Epic, Story, or expanded Subtask, reconcile in the background through a four-request shared queue with same-key serialization, roll back failed writes, ignore stale scope completions, and never refetch the Catch Up task lists; Planning and non-ENG surfaces retain their existing behavior.
 
-7. `EXEC-priority-refresh-preserve-team-filter.md`
-   - Implemented and verified locally on `bugfix/priority-change-drops-single-team-filter` across the execution commits listed in the plan; kept as `EXEC-` pending user review/merge. Corrected during execution: team display names come from the team catalog lookup plus in-session retained task names, never `teamLabels` (Jira epic labels).
+7. `DONE-priority-refresh-preserve-team-filter.md`
+   - Completed and merged in [PR #107](https://github.com/Juce-me/jira-execution-planner/pull/107) (branch `bugfix/priority-change-drops-single-team-filter`). Corrected during execution: team display names come from the team catalog lookup plus in-session retained task names, never `teamLabels` (Jira epic labels).
    - Expected output: configured group teams remain authoritative across Planning priority refreshes, true config removal still falls back to All Teams, behavioral Node and Playwright coverage passes, and generated dist is rebuilt.
 
 8. `FUTURE-warm-team-catalog-team-names.md`
-   - Deferred Minor follow-up to `EXEC-priority-refresh-preserve-team-filter.md`: warm the team catalog once per session, only when a configured team option is visibly degraded to its raw id, so cold loads show catalog display names without any unconditional initial-load request.
+   - Deferred Minor follow-up to `DONE-priority-refresh-preserve-team-filter.md`: warm the team catalog once per session, only when a configured team option is visibly degraded to its raw id, so cold loads show catalog display names without any unconditional initial-load request.
    - Expected output: degradation-triggered `GET /api/team-catalog` warm effect, Playwright proof of the rename plus a no-request guard when names already resolve, and no changes to selection behavior, `availableTeams`, or analytics events.
 
 ## Capacity Reporting Workflow
@@ -104,16 +102,16 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Approved design for compacting Excluded Capacity into one desktop control row: Sprint first, Excluded Epics flexible in the middle, and both segmented controls grouped on the right.
    - Presentation-only scope; existing state, analytics, requests, and calculations remain unchanged.
 
-2. `EXEC-excluded-capacity-control-row.md`
-   - Implemented and verified locally on 2026-07-16; pending PR review/merge.
+2. `DONE-excluded-capacity-control-row.md`
+   - Completed and merged in [PR #110](https://github.com/Juce-me/jira-execution-planner/pull/110).
    - Output: Sprint first, Excluded Epics flexible in the middle, and both segmented controls aligned on the right, with focused source and rendered-geometry verification.
 
-3. `EXEC-ad-hoc-capacity-epics.md`
-   - Active implementation plan for adding department/team-group Ad Hoc capacity epic configuration as included Product capacity, separate from excluded capacity.
-   - Expected output: `teamGroups.groups[].adHocCapacityEpics` round-trips through shared group config, Settings exposes a separate epic selector, Ad Hoc stories remain included in Product Planning and reporting, excluded capacity behavior remains driven only by `excludedCapacityEpics`, and affected Planning, Stats, Burndown, Lead Times, Mono vs Cross, and Scenario paths have focused verification.
+3. `DONE-ad-hoc-capacity-epics.md`
+   - Completed and merged in [PR #88](https://github.com/Juce-me/jira-execution-planner/pull/88). Adds department/team-group Ad Hoc capacity epic configuration as included Product capacity, separate from excluded capacity. Use for audit context only.
+   - Output: `teamGroups.groups[].adHocCapacityEpics` round-trips through shared group config, Settings exposes a separate epic selector, Ad Hoc stories remain included in Product Planning and reporting, excluded capacity behavior remains driven only by `excludedCapacityEpics`, and affected Planning, Stats, Burndown, Lead Times, Mono vs Cross, and Scenario paths have focused verification.
 
-4. `EXEC-statistics-consistency-bugfix.md`
-   - Implemented and verified on branch `bugfix/statistics-consistency-exec`, integrated into `bugfix/statistics-colors-capacity-lead-time` (commits `a42e7ca..c4fb36c`); kept as `EXEC-` pending user review/merge to `main`. Shared Statistics team colors, removal of the redundant Excluded Capacity Range card, and a bounded Lead Times creation cohort with inclusive End Quarter. Decisions recorded in `SUPPORT-statistics-consistency-bugfix-design.md`.
+4. `DONE-statistics-consistency-bugfix.md`
+   - Completed and merged in [PR #108](https://github.com/Juce-me/jira-execution-planner/pull/108) (branch `bugfix/statistics-consistency-exec`, integrated via `bugfix/statistics-colors-capacity-lead-time`, commits `a42e7ca..c4fb36c`). Shared Statistics team colors, removal of the redundant Excluded Capacity Range card, and a bounded Lead Times creation cohort with inclusive End Quarter. Decisions recorded in `SUPPORT-statistics-consistency-bugfix-design.md`.
    - Expected output: Priority, Burndown, Excluded Capacity, and Mono vs Cross consume one deterministic active-group color map; Excluded Capacity drops only its Range card; Lead Times adds an inclusive End Quarter with last-control-wins reconciliation, half-open Jira creation-date JQL, matching Jira links, and terminal dates preserved beyond the cohort boundary.
 
 ## Project Grade Security Hardening
@@ -125,20 +123,20 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Completed Frontend Structure
 
-1. `EXEC-eng-story-subtasks.md`
-   - Active implementation plan for lightweight ENG story subtask visibility.
+1. `DONE-eng-story-subtasks.md`
+   - Completed and merged in [PR #59](https://github.com/Juce-me/jira-execution-planner/pull/59). Lightweight ENG story subtask visibility. Use for audit context only.
    - Expected output: existing ENG task fetch includes a cheap embedded subtask summary, exact subtask rows load only after a user expands the story subtask control, no startup subtask fan-out is introduced, and count-based progress uses done/in-progress subtask counts rather than story points.
 
-2. `EXEC-eng-compact-filter-epic-layout.md`
-   - Active desktop-focused implementation plan for compacting ENG Catch Up filter cards and epic/story blocks with CSS-only scoped overrides.
+2. `DONE-eng-compact-filter-epic-layout.md`
+   - Completed and merged in [PR #65](https://github.com/Juce-me/jira-execution-planner/pull/65). Desktop-focused compaction of ENG Catch Up filter cards and epic/story blocks with CSS-only scoped overrides. Use for audit context only.
    - Expected output: ENG `Show only` filters render as compact readable desktop controls, ENG epic/story cards use denser spacing, source guards prevent unscoped `.stat-card`/`.task-list` changes, and EPM issue-board rollups remain visually compatible through `.task-list:not(.epm-issue-board)` scoping.
 
-3. `EXEC-alerts-panel-summary.md`
-   - Active implementation plan for adding a persistent ENG alerts toolbar summary next to the toggle.
+3. `DONE-alerts-panel-summary.md`
+   - Completed and merged in [PR #71](https://github.com/Juce-me/jira-execution-planner/pull/71). Persistent ENG alerts toolbar summary next to the toggle. Use for audit context only.
    - Expected output: `EngAlertsPanel` shows total alerts plus every non-zero alert category using existing alert colors/styles, stays visible open and collapsed, preserves existing toggle persistence, and includes source guards plus desktop/mobile Playwright visual proof.
 
-4. `EXEC-eng-catch-up-control-stack.md`
-   - Active implementation plan for unifying the ENG Catch Up alert summary, Show only stat filters, and Display toggles into a coherent, non-redundant control stack.
+4. `DONE-eng-catch-up-control-stack.md`
+   - Completed and merged in [PR #75](https://github.com/Juce-me/jira-execution-planner/pull/75). Unifies the ENG Catch Up alert summary, Show only stat filters, and Display toggles into a coherent, non-redundant control stack. Use for audit context only.
    - Expected output: upper ENG control rows share alignment, sizing, and visual hierarchy; stat filters use a compact content-aware treatment instead of distributed tiles; Killed is removed from Show only and owned only by the Display Killed toggle; focused Playwright/source guards prevent regressions and preserve EPM, Planning, Settings preview, and Scenario layouts.
 
 5. `DONE-statistics-module-extraction.md`
@@ -152,8 +150,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Codebase Structure And Operability
 
-1. `EXEC-application-hosting-readiness.md`
-   - Active implementation plan for internal container-app hosting readiness.
+1. `DONE-application-hosting-readiness.md`
+   - Completed and merged in [PR #64](https://github.com/Juce-me/jira-execution-planner/pull/64). Internal container-app hosting readiness. Use for audit context only.
    - Expected output: DB/OAuth works without local OAuth token files, hosted mode avoids local mutable JSON/cache state, frontend APIs default to same-origin behind ingress, Docker/Gunicorn packaging exists, and docs expose the runtime contract without secrets.
    - Accuracy note: the Task 7 GitLab CI skeleton (`.gitlab-ci.yml`, `tests/test_gitlab_ci_contract.py`) was removed on 2026-07-19 because the repo's CI is GitHub Actions and GitLab hosting is no longer planned; the container packaging and pre-SRE checklist deliverables remain current.
 
@@ -169,10 +167,9 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Deferred structural review and prioritized backlog for packaging, local verification, startup preflight, backend service extraction, frontend feature ownership, and source guards.
    - Do not execute directly. Convert each chosen slice into a separate `EXEC-*` plan before implementation.
 
-5. `EXEC-css-feature-owned-partials.md`
-   - Active implementation plan for splitting the remaining large dashboard CSS source files into feature-owned partials while preserving one bundled shipped stylesheet.
-   - Expected output: `dashboard.css` remains the root ordered import entrypoint, large top-level CSS files become thin maps, feature-owned CSS files mirror ENG, Planning, Settings, Stats, Scenario, and EPM ownership, and source guards prevent top-level CSS from growing back.
-   - Sequencing: when paired with `EXEC-planning-selection-card-grid.md`, execute the Planning card-grid plan first so this split can move the new Planning selectors after they exist.
+5. `DONE-css-feature-owned-partials.md`
+   - Completed and merged in [PR #75](https://github.com/Juce-me/jira-execution-planner/pull/75). Splits the remaining large dashboard CSS source files into feature-owned partials while preserving one bundled shipped stylesheet. Use for audit context only.
+   - Output: `dashboard.css` remains the root ordered import entrypoint, large top-level CSS files become thin maps, feature-owned CSS files mirror ENG, Planning, Settings, Stats, Scenario, and EPM ownership, and source guards prevent top-level CSS from growing back.
 
 6. `2026-05-01-codebase-structure-optimization.md`
    - Support/history context for earlier structure extraction work. Do not execute directly.
@@ -224,7 +221,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 18. `DONE-codebase-operability-css-split.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
    - Expected output: `frontend/src/styles/dashboard.css` becomes an ordered import entrypoint over top-level CSS partials while esbuild still produces one bundled `frontend/dist/dashboard.css`.
-   - Current accuracy: superseded for deeper CSS ownership by `EXEC-css-feature-owned-partials.md`.
+   - Current accuracy: superseded for deeper CSS ownership by `DONE-css-feature-owned-partials.md`.
 
 19. `DONE-codebase-operability-epm-payload-helpers.md`
    - Completed in PR #54 (`879ad59`) after local verification on 2026-05-28. Use for audit only; do not execute as active work.
@@ -292,10 +289,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## EPM Settings Bugfixes
 
-1. `EXEC-epm-label-config-bugfixes.md`
-   - Bugfix plan for the EPM Settings → Projects label configuration. Implemented and
-     verified on branch `bugfix/epm-label-config` (commits `2138ab1`, `b24a091`,
-     `b39e1f7`/`ac3dcaf`, `78a6b06`/`12af7da`); pending merge. Rename to `DONE-*` after merge.
+1. `DONE-epm-label-config-bugfixes.md`
+   - Bugfix plan for the EPM Settings → Projects label configuration. Completed and
+     merged in [PR #90](https://github.com/Juce-me/jira-execution-planner/pull/90) (branch `bugfix/epm-label-config`, commits `2138ab1`, `b24a091`,
+     `b39e1f7`/`ac3dcaf`, `78a6b06`/`12af7da`). Use for audit context only.
    - Expected output: the label-prefix mask `*` is stripped before the Jira
      `startswith` filter so prefix autocomplete returns results, the label dropdown
      opens reliably from "Choose label" (no anchor race), every project row has one
@@ -306,34 +303,40 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## ENG Epic Sort And Track
 
-1. `EXEC-eng-epic-sort-and-track.md`
-   - Active implementation plan for read-only epic header enrichment plus epic ordering in the ENG view.
+1. `DONE-eng-epic-sort-and-track.md`
+   - Completed and merged in [PR #92](https://github.com/Juce-me/jira-execution-planner/pull/92). Read-only epic header enrichment plus epic ordering in the ENG view. Use for audit context only.
    - Expected output: each ENG epic header shows an effective-priority pill (highest-urgency child) and a Product Track emoji (🔒 Committed / 🤷 Flexible) read from the configurable `projectTrackField` Jira custom field (default `customfield_35024`); a single `sprint-dropdown`-styled Sort control orders epics by Priority, Status (built-in workflow-phase fallback), or Track (committed-first / flexible-first), each tie-broken by priority, with the choice persisted in localStorage UI prefs.
    - No new routes, no Jira writes, no auth-mode change; `GATE-05` unaffected. The board-imported per-group workflow source and group-by-kanban-column grouping are deferred to a separate future plan; the sort comparator already accepts an injected phase-rank map.
 
 2. `SUPPORT-eng-project-track-write-switch-design.md`
    - User-approved design reference for the follow-up OAuth-backed ENG Project Track write plan.
    - Expected output: every real ENG Epic header renders 🔒 Committed, 🤷 Flexible, or ⚪ Unidentified; clicking the indicator in Catch Up or Planning opens the existing compact issue-field option-menu behavior and writes only the configured Jira Project Track field through the signed-in user's OAuth context, with the same queue, optimistic update, rollback, stale-scope, auth-recovery, analytics, and surface-isolation contracts as status and priority changes.
-   - No Home/Townsquare or EPM mutation; `GATE-05` remains blocked. This support document feeds `EXEC-eng-project-track-write-switch.md`, which now exists.
+   - No Home/Townsquare or EPM mutation; `GATE-05` remains blocked. This support document feeds `DONE-eng-project-track-write-switch.md`, which now exists.
 
-3. `EXEC-eng-project-track-write-switch.md`
-   - Implemented on branch `feature/eng-project-track-write-switch`, pending merge. Rename to `DONE-*` after merge.
+3. `DONE-eng-project-track-write-switch.md`
+   - Completed and merged in [PR #112](https://github.com/Juce-me/jira-execution-planner/pull/112) (branch `feature/eng-project-track-write-switch`). Use for audit context only.
    - Expected output: every real ENG Epic header renders an always-visible 🔒/🤷/⚪ Project Track indicator that, on Catch Up/Planning with Settings closed, is a native button opening the shared compact option menu and writing only the configured Jira Project Track field between Flexible and Committed through the signed-in user's OAuth context, with the same queue/optimistic/rollback/stale-scope/auth-recovery/analytics contracts as status and priority changes.
    - No Home/Townsquare or EPM mutation; `GATE-05` unaffected.
 
 ## Stats Project Track By Sprint
 
-1. `EXEC-stats-project-track-by-sprint.md`
-   - Implemented on branch `feature/stats-project-track-quarters`; pending merge. Rename to `DONE-*` after merge.
+1. `DONE-stats-project-track-by-sprint.md`
+   - Completed and merged in [PR #95](https://github.com/Juce-me/jira-execution-planner/pull/95) (branch `feature/stats-project-track-quarters`). Use for audit context only.
    - Expected output: a `Project Track` ENG stats sub-tab (after `Mono vs Cross`) with a filter bar (shared Start/End sprint range, Capacity side Product/Tech/Tech+Product, Exclude Ad Hoc, Exclude Excluded Capacity, Mode Epic/Team), a mode title, a range totals bar, a per-sprint chart (hidden for a single-sprint range), a By assignee/By team breakdown, and an Epic-mode-only time-in-phase section built from a new bounded, read-only `POST /api/stats/project-track-phase-durations` endpoint.
    - No Jira/Home writes, no auth-mode change; `GATE-05` unaffected. See the plan's `## Outcome` and `## Current Accuracy` sections for as-built divergences from the original endpoint-contract text (response field names, absence of `cached`/`generatedAt`, client-side signature caching).
 
 ## Stats Controls Unification
 
-1. `EXEC-stats-controls-unification.md`
-   - Initial implementation completed on `improvement/stats-controls-unification` (2026-07-15, execution commits `331f3c9..2d5f0a7`; full JS/Python/Playwright regression green apart from 2 pre-existing `eng_alerts_panel_summary` failures inherited from the ancestor branch). The Lead Times control-row compaction follow-up was implemented in `8b3f32d` (`fix: compact lead times controls`) on 2026-07-16. Final-review fix `16ff875` (`fix: contain stats range panels`) constrains all mobile stats range groups/panels without changing the global Sprint and aligns the six actual Lead Times control surfaces. Fresh verification: source guards 15/15, focused Playwright 4/4 across all four range views and Task 7 exclusions/layout, frontend unit 519/519, structure budget 1/1, and build green. Inspected desktop and three 375px screenshots show aligned Lead Times controls and readable, normally clickable long sprint options contained within each narrow stats panel. The measured 966px stats container uses the approved 8.5rem select flex basis instead of the planned 12rem, which required 1067px and wrapped Exclude. The plan remains `EXEC-` pending acceptance/merge; not pushed. The implementation unifies Statistics Start/End ranges through one stats-owned component extracted from the existing `sprint-dropdown` pattern, reusing `ControlField`, `.controls-label`, `.view-filters`, `.sprint-dropdown*`, `SegmentedControl`, and the corrected Project Track checkbox treatment; per-task divergence notes live in the plan.
+1. `DONE-stats-controls-unification.md`
+   - Initial implementation completed on `improvement/stats-controls-unification` (2026-07-15, execution commits `331f3c9..2d5f0a7`; full JS/Python/Playwright regression green apart from 2 pre-existing `eng_alerts_panel_summary` failures inherited from the ancestor branch). The Lead Times control-row compaction follow-up was implemented in `8b3f32d` (`fix: compact lead times controls`) on 2026-07-16. Final-review fix `16ff875` (`fix: contain stats range panels`) constrains all mobile stats range groups/panels without changing the global Sprint and aligns the six actual Lead Times control surfaces. Fresh verification: source guards 15/15, focused Playwright 4/4 across all four range views and Task 7 exclusions/layout, frontend unit 519/519, structure budget 1/1, and build green. Inspected desktop and three 375px screenshots show aligned Lead Times controls and readable, normally clickable long sprint options contained within each narrow stats panel. The measured 966px stats container uses the approved 8.5rem select flex basis instead of the planned 12rem, which required 1067px and wrapped Exclude. The plan was merged in [PR #108](https://github.com/Juce-me/jira-execution-planner/pull/108). The implementation unifies Statistics Start/End ranges through one stats-owned component extracted from the existing `sprint-dropdown` pattern, reusing `ControlField`, `.controls-label`, `.view-filters`, `.sprint-dropdown*`, `SegmentedControl`, and the corrected Project Track checkbox treatment; per-task divergence notes live in the plan.
    - Expected output: Excluded Capacity, Mono vs Cross, Project Track, and Lead Times share one accessible downward-opening range-control implementation; Lead Times Group By uses the existing segmented control; its capacity filters render as an `Exclude` group with `Ad Hoc` + `Excluded Capacity` checkboxes while retaining explicit accessible names; range/refetch/persistence semantics stay unchanged and receive pointer, keyboard, view-switch, reload, layer, and narrow-viewport verification.
    - No backend route, auth/CSRF, Jira/Home credential, mutation, or new analytics-event contract; the global sticky Sprint control, Project select, and Assignee select remain out of scope.
+
+## Analytics
+
+1. `DONE-ga4-instrumentation.md`
+   - Completed and merged in [PR #58](https://github.com/Juce-me/jira-execution-planner/pull/58). GA4/GTM dataLayer instrumentation implemented in app code on 2026-05-30. Use for audit context only.
+   - Output: two-trigger GTM dataLayer contract (`pageview`/`userevent`), `GA4_ENABLED` transport gate with no in-app consent UI, and typed event params per `docs/README_ANALYTICS.md`.
 
 ## Legacy Unclassified Date-Only Plans
 
@@ -391,5 +394,5 @@ Use this section to avoid treating missing historical artifacts as current work:
 
 ## Repo Hygiene
 
-- `EXEC-root-cleanup-docs-postmortems.md`
-  - Root-folder cleanup: icons to `assets/`, `install.sh` to `scripts/`, postmortems to `docs/postmortem/`, redundant root docs removed, AGENTS/README aligned.
+- `DONE-root-cleanup-docs-postmortems.md`
+  - Completed and merged in [PR #99](https://github.com/Juce-me/jira-execution-planner/pull/99). Root-folder cleanup: icons to `assets/`, `install.sh` to `scripts/`, postmortems to `docs/postmortem/`, redundant root docs removed, AGENTS/README aligned. Use for audit context only.

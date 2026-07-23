@@ -1,6 +1,6 @@
 # ENG Catch Up Targeted Task Updates Implementation Plan
 
-> **Status:** Implemented and verified locally across commits `33990e8`, `8155e18`, `8a179df`, `73926dc`, `5af4cea`, `90e73bf`, `6936685`, and `9c3a5af`; kept as `EXEC-*` pending user review/merge.
+> **Status:** Done. Executed and merged in [PR #105](https://github.com/Juce-me/jira-execution-planner/pull/105). Kept for audit context only.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

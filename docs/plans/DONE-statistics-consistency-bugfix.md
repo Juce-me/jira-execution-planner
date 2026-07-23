@@ -1,6 +1,6 @@
 # Statistics Consistency Bugfix Implementation Plan
 
-> **Status:** Implemented and verified on branch `bugfix/statistics-consistency-exec`, integrated into parent `bugfix/statistics-colors-capacity-lead-time` via fast-forward (not pushed; no PR to `main` yet). Kept as `EXEC-` pending user review and merge to `main`, per repo convention for implemented-but-unmerged plans. Execution commits: `a42e7ca` (Task 1 shared team colors), `90d3213` (Task 2 Range-card removal + cross-view color proof), `fd4435a` (Task 3 two-quarter backend contract), `d63d8db` (Task 4 End Quarter state/controls/links), `c4fb36c` (Task 5 generated bundle). Per-task reviews all passed (spec ✅ + quality Approved); final whole-branch review clean (0 Critical/Important). Suites: node 515/515, Python 1052/1052 (+1 Postgres skip), Playwright 153/157 (2 intentional skips + 2 pre-existing `eng_alerts_panel_summary` failures unrelated to this work — branch touches no alert code).
+> **Status:** Done. Executed and merged in [PR #108](https://github.com/Juce-me/jira-execution-planner/pull/108). Kept for audit context only.
 >
 > **Current accuracy note:** Task 2's "four Excluded Capacity cards" was corrected to FIVE during execution — a pre-existing `Excluded SP` card (present before this branch at base `4b0ce6b`) was omitted from the plan's enumeration. Removing only the redundant `Range` card is correct; the committed test asserts `toHaveCount(5)`. The card-count references below were updated to match reality.
 

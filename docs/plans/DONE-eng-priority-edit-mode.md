@@ -1,5 +1,7 @@
 # ENG Priority Edit Mode Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #103](https://github.com/Juce-me/jira-execution-planner/pull/103). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let ENG users change an issue priority by clicking the existing `task-priority-icon`, using the same compact popout menu UX and OAuth-bound Jira write pattern as ENG status changes.
@@ -8,7 +10,7 @@
 
 **Tech Stack:** Python 3.10+ Flask blueprints, Jira Cloud REST API v3 issue priorities and issue edit APIs, Atlassian OAuth 2.0 3LO, existing token-bound CSRF guards, React 19, existing `trackedFetch` API wrappers, Playwright UI assertions, Node source guards, Python `unittest`, GA4 dataLayer analytics contract.
 
-> **Implementation status (2026-07-09):** Implemented and verified on branch `docs/eng-priority-edit-mode-plan` across commits `04be74a..8e4d764` — the 7 plan tasks, the Epic current-field fix (`00aa79f`), and the product-review pivots/bugfixes (real priority icons, editmeta per-project option filtering, outside-click dismiss). Full Python suite 1046 OK (1 skip), Node 503/503, Playwright green, dist clean after fresh build. Awaiting final whole-branch review acceptance and user-confirmed merge; kept as `EXEC-` until merged. See "Amendments (2026-07-09 product review)" below.
+> **Implementation status (2026-07-09):** Implemented and verified on branch `docs/eng-priority-edit-mode-plan` across commits `04be74a..8e4d764` — the 7 plan tasks, the Epic current-field fix (`00aa79f`), and the product-review pivots/bugfixes (real priority icons, editmeta per-project option filtering, outside-click dismiss). Full Python suite 1046 OK (1 skip), Node 503/503, Playwright green, dist clean after fresh build. Merged in [PR #103](https://github.com/Juce-me/jira-execution-planner/pull/103). See "Amendments (2026-07-09 product review)" below.
 
 ---
 

@@ -1,5 +1,7 @@
 # ENG Epic Sort + Product Track Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #92](https://github.com/Juce-me/jira-execution-planner/pull/92). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a read-only "Product Track" indicator (🔒 Committed / 🤷 Flexible) and an effective-priority pill to each ENG epic header, plus a single "Sort" dropdown that orders epics by Priority, Status (workflow phase), or Product Track (committed-first / flexible-first), each tie-broken by priority.

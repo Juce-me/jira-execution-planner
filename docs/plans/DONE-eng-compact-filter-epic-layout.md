@@ -1,5 +1,7 @@
 # ENG Compact Filter And Epic Layout Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #65](https://github.com/Juce-me/jira-execution-planner/pull/65). Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the ENG Catch Up filter cards and epic/story blocks more compact while keeping all visible information readable and preserving EPM issue-board layout.

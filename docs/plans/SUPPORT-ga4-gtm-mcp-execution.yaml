@@ -16,7 +16,7 @@ target:
   gtm_web_container_id: "accounts/<GTM_ACCOUNT_ID>/containers/<GTM_WEB_CONTAINER_ID>"
 
 source_artifacts:
-  design_plan: "docs/plans/EXEC-ga4-instrumentation.md"
+  design_plan: "docs/plans/DONE-ga4-instrumentation.md"
   setup_runbook: "docs/plans/SUPPORT-ga4-user-configuration.md"
   analytics_contract: "docs/README_ANALYTICS.md"
 

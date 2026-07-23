@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]` / `- [x]`) syntax for tracking. Do not hand-edit `frontend/dist/*`; run `npm run build` after frontend source changes.
 
-**Status:** Implemented in app code on 2026-05-30 for GA4 Measurement ID `G-6QERX19WB0` and GTM container `GTM-NZJW2CFN`; keep as `EXEC-*` until PR review/acceptance decides whether to rename to `DONE-*`.
+> **Status:** Done. Executed and merged in [PR #58](https://github.com/Juce-me/jira-execution-planner/pull/58). Kept for audit context only.
 
 **Revision notes:**
 - 2026-05-26 review update: clarify that direct/ad hoc `page_view` sends are replaced by the controlled `pageview` dataLayer trigger, `user_id` is pseudonymous only and must not identify a specific person in GA4, Basic/local bootstrap does not emit repeated `login`, and durable analytics docs/agent rules are part of the deliverables.

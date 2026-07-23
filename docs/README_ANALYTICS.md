@@ -3,7 +3,7 @@
 Status: implemented in app code; GA4/GTM operator setup remains deployment-gated
 Type: product analytics contract
 
-This is the durable source of truth for Jira Delivery Planner analytics. While `docs/plans/EXEC-ga4-instrumentation.md` is still active, that plan owns implementation sequencing; this document owns the product contract future feature work must keep current.
+This is the durable source of truth for Jira Delivery Planner analytics. While `docs/plans/DONE-ga4-instrumentation.md` is still active, that plan owns implementation sequencing; this document owns the product contract future feature work must keep current.
 
 ## Scope
 
@@ -34,7 +34,7 @@ Do not add Universal Analytics fields (`event_category`, `event_action`, `event_
 
 ## Identity Rule
 
-GA4 must not identify a specific person. The only allowed GA4 User-ID is the server-derived pseudonymous value from `docs/plans/EXEC-ga4-instrumentation.md`.
+GA4 must not identify a specific person. The only allowed GA4 User-ID is the server-derived pseudonymous value from `docs/plans/DONE-ga4-instrumentation.md`.
 
 - Do not send raw Atlassian account ids, database user ids, emails, display names, workspace ids, auth connection ids, cloud ids, or token versions.
 - Do not register `user_id` as a custom dimension or event parameter.
@@ -213,7 +213,7 @@ CI or focused source-guard tests must fail when:
 
 ## Operations Links
 
-- Implementation plan: `docs/plans/EXEC-ga4-instrumentation.md`
+- Implementation plan: `docs/plans/DONE-ga4-instrumentation.md`
 - GA4 setup runbook: `docs/plans/SUPPORT-ga4-user-configuration.md`
 - GA4/GTM MCP dry-run spec: `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` (requires a custom write-capable MCP; the official Google Analytics MCP server is read-only)
 - GA4 web stream Measurement ID: `G-6QERX19WB0`

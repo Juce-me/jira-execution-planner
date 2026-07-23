@@ -1,6 +1,6 @@
 # Planning Priority Refresh Team-Filter Preservation Implementation Plan
 
-> **Status:** Implemented and verified locally on `bugfix/priority-change-drops-single-team-filter` (commits `0038c2a`, `e98fb23`, `4efbcb6`, `ff2962e`, `2842c39`); final whole-branch review verdict: ready to merge. Kept as `EXEC-` pending user review/merge.
+> **Status:** Done. Executed and merged in [PR #107](https://github.com/Juce-me/jira-execution-planner/pull/107). Kept for audit context only.
 
 > **Corrected during execution:** team display names come from the team catalog lookup (`teamNameLookup`) merged with in-session retained task-derived names, not `teamLabels` (which are Jira epic labels); found by final review. The `teamOptions` memo retains each team's last known task-derived name for the session, so names stay stable across refreshes without any new initial-load request. The only remaining degradation is a cold load where a configured team has had no tasks in the session AND the team catalog was never warmed (its option shows the raw team id; the filter selection is still preserved). Catalog warm-up on ENG load was deliberately NOT added, honoring the no-new-initial-load-request acceptance criterion; it is left as a user follow-up decision. The in-session retention glue grew `frontend/src/dashboard.jsx` to `15965` lines, superseding Task 1 Step 7's `15953` ceiling statement (which was met at the extraction commit); the structural budget is ratcheted to the exact value with an itemized comment.
 

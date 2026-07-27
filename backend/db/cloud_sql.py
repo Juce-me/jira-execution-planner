@@ -17,6 +17,7 @@ from sqlalchemy.exc import ArgumentError
 
 
 CLOUD_SQL_LOGIN_SCOPE = "https://www.googleapis.com/auth/sqlservice.login"
+CLOUD_SQL_CONNECT_TIMEOUT_SECONDS = 10
 ALLOWED_CLOUD_SQL_SSLMODES = frozenset({"require", "verify-ca", "verify-full"})
 ALLOWED_CLOUD_SQL_QUERY_KEYS = frozenset({
     "sslmode",
@@ -222,6 +223,7 @@ class CloudSqlIamConfig:
 
     def connect_kwargs(self) -> dict[str, object]:
         return {
+            "connect_timeout": CLOUD_SQL_CONNECT_TIMEOUT_SECONDS,
             "user": self.username,
             "host": self.host,
             "port": self.port,

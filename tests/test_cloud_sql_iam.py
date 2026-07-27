@@ -5,6 +5,7 @@ import traceback
 import unittest
 from unittest.mock import Mock, patch
 
+from backend.db import cloud_sql
 from backend.db.cloud_sql import (
     CLOUD_SQL_LOGIN_SCOPE,
     CloudSqlConfigurationError,
@@ -36,6 +37,7 @@ class CloudSqlIamConfigTests(unittest.TestCase):
         self.assertEqual(
             config.connect_kwargs(),
             {
+                "connect_timeout": 10,
                 "user": "service-account@project.iam",
                 "host": "private-db.internal.example",
                 "port": 5432,
@@ -44,6 +46,7 @@ class CloudSqlIamConfigTests(unittest.TestCase):
                 "sslrootcert": "/mounted-secrets/server-ca.pem",
             },
         )
+        self.assertEqual(cloud_sql.CLOUD_SQL_CONNECT_TIMEOUT_SECONDS, 10)
 
     def test_cache_key_contains_only_passwordless_stable_configuration(self):
         config = CloudSqlIamConfig.from_database_url(
@@ -146,6 +149,13 @@ class CloudSqlIamConfigTests(unittest.TestCase):
                     CloudSqlIamConfig.from_database_url(
                         f"postgresql+psycopg://iam-user@db:5432/planner?{query}"
                     )
+
+    def test_rejects_operator_supplied_connect_timeout(self):
+        with self.assertRaises(CloudSqlConfigurationError):
+            CloudSqlIamConfig.from_database_url(
+                "postgresql+psycopg://iam-user@db:5432/planner"
+                "?sslmode=require&connect_timeout=60"
+            )
 
     def test_login_scope_is_exact(self):
         self.assertEqual(
@@ -321,6 +331,24 @@ class CloudSqlPsycopgCreatorTests(unittest.TestCase):
             self.assertEqual(call.kwargs["host"], "private-db.internal.example")
             self.assertEqual(call.kwargs["dbname"], "planner")
             self.assertEqual(call.kwargs["sslmode"], "require")
+            self.assertEqual(call.kwargs["connect_timeout"], 10)
+
+    def test_token_provider_failure_propagates_without_calling_psycopg(self):
+        token_error = CloudSqlIamTokenError("synthetic token failure")
+        provider = Mock()
+        provider.current_token.side_effect = token_error
+        connect_fn = Mock()
+        creator = build_psycopg_creator(
+            self.config,
+            provider,
+            connect_fn=connect_fn,
+        )
+
+        with self.assertRaises(CloudSqlIamTokenError) as raised:
+            creator()
+
+        self.assertIs(raised.exception, token_error)
+        connect_fn.assert_not_called()
 
     def test_connection_failure_is_sanitized(self):
         token = "sensitive-login-token"

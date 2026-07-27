@@ -1,6 +1,7 @@
 import io
 import os
 import tempfile
+import traceback
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -113,10 +114,44 @@ class DbMigrationTests(unittest.TestCase):
         ), patch(
             "backend.db.cloud_sql.google.auth.default",
             side_effect=AssertionError("offline migrations must not load ADC"),
-        ):
+        ) as adc, patch(
+            "backend.db.cloud_sql.IamLoginTokenProvider.from_adc",
+            side_effect=AssertionError("offline migrations must not create a provider"),
+        ) as provider, patch(
+            "backend.db.cloud_sql.psycopg.connect",
+            side_effect=AssertionError("offline migrations must not connect"),
+        ) as connect:
             command.upgrade(config, "head", sql=True)
 
         self.assertIn("CREATE TABLE", output.getvalue())
+        adc.assert_not_called()
+        provider.assert_not_called()
+        connect.assert_not_called()
+
+    def test_offline_iam_migrations_reject_password_wrong_driver_and_unsafe_tls(self):
+        invalid_urls = (
+            "postgresql+psycopg://iam-user:secret@db:5432/planner?sslmode=require",
+            "postgresql+pg8000://iam-user@db:5432/planner?sslmode=require",
+            "postgresql+psycopg://iam-user@db:5432/planner",
+            "postgresql+psycopg://iam-user@db:5432/planner?sslmode=prefer",
+        )
+
+        for database_url in invalid_urls:
+            with self.subTest(database_url=database_url):
+                config = self._config(database_url)
+                config.output_buffer = io.StringIO()
+                with patch.dict(
+                    os.environ,
+                    {"DATABASE_CONNECTION_MODE": "cloud_sql_iam"},
+                    clear=False,
+                ):
+                    with self.assertRaises(db_engine.DatabaseConfigurationError) as raised:
+                        command.upgrade(config, "head", sql=True)
+
+                rendered = "".join(traceback.format_exception(raised.exception))
+                self.assertIsNone(raised.exception.__cause__)
+                self.assertIsNone(raised.exception.__context__)
+                self.assertNotIn("secret", rendered)
 
 
 if __name__ == '__main__':

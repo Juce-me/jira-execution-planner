@@ -110,6 +110,26 @@ class EnvConfigDocsTests(unittest.TestCase):
             with self.subTest(statement=statement):
                 self.assertIn(statement, env_example)
 
+    def test_cloud_sql_iam_prerequisites_and_fixed_timeout_are_documented(self):
+        docs = (
+            REPO_ROOT / ".env.example",
+            REPO_ROOT / "README.md",
+            REPO_ROOT / "INSTALL.md",
+        )
+
+        for path in docs:
+            text = path.read_text(encoding="utf8")
+            normalized = " ".join(text.split())
+            with self.subTest(path=path.relative_to(REPO_ROOT)):
+                self.assertIn("cloudsql.iam_authentication", normalized)
+                self.assertIn("Cloud SQL IAM database user", normalized)
+                self.assertIn("roles/cloudsql.instanceUser", normalized)
+                self.assertIn("cloudsql.instances.login", normalized)
+                self.assertIn("ADC identity", normalized)
+                self.assertIn("database, schema, and table privileges", normalized)
+                self.assertIn("fixed 10-second connection timeout", normalized)
+                self.assertIn("connect_timeout", normalized)
+
     def test_local_database_url_contract_remains_documented(self):
         env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf8")
         install = (REPO_ROOT / "INSTALL.md").read_text(encoding="utf8")

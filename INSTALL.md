@@ -228,6 +228,15 @@ RUN_DB_MIGRATIONS=false
 GA4_ENABLED=false
 ```
 
+### Cloud SQL IAM prerequisites
+
+Before enabling this mode, SRE must enable the Cloud SQL PostgreSQL
+`cloudsql.iam_authentication` database flag, add the workload's ADC principal as
+a Cloud SQL IAM database user, and grant `roles/cloudsql.instanceUser`, which
+supplies `cloudsql.instances.login`. The database username must match the ADC
+identity mapping, and the IAM database user must receive the required
+PostgreSQL database, schema, and table privileges.
+
 This is a direct synchronous psycopg TCP/TLS connection to the SRE-provided
 private IP or private DNS endpoint. The app does not use the Cloud SQL Python Connector, pg8000, asyncpg, a Cloud SQL Auth Proxy sidecar/binary, or another proxy process.
 
@@ -235,6 +244,9 @@ The IAM-mode DATABASE_URL must not contain a password. The application obtains
 a short-lived login token from Application Default Credentials using only
 https://www.googleapis.com/auth/sqlservice.login and passes it to psycopg only
 when a new physical connection is opened. There is no password-auth fallback.
+Every IAM psycopg connection uses a fixed 10-second connection timeout;
+operators cannot override it with a `connect_timeout` DATABASE_URL query
+parameter.
 
 SRE supplies the exact percent-encoded IAM database username, host, explicit
 port, database name, and TLS settings. sslmode must be require, verify-ca, or

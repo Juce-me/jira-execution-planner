@@ -1,11 +1,15 @@
+import io
 import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, pool
+
+from backend.db import engine as db_engine
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -73,6 +77,46 @@ class DbMigrationTests(unittest.TestCase):
 
             command.downgrade(config, 'base')
             self.assertFalse(self._has_auth_tables(database_url))
+
+    def test_online_migrations_use_shared_engine_factory_with_null_pool(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'shared.db')}"
+            config = self._config(database_url)
+
+            with patch.dict(
+                os.environ,
+                {"DATABASE_CONNECTION_MODE": "url"},
+                clear=False,
+            ), patch.object(
+                db_engine,
+                "create_database_engine",
+                wraps=db_engine.create_database_engine,
+            ) as factory:
+                command.upgrade(config, "head")
+
+            factory.assert_called()
+            self.assertEqual(factory.call_args.args[0], database_url)
+            self.assertIs(factory.call_args.kwargs["poolclass"], pool.NullPool)
+
+    def test_offline_migrations_do_not_discover_or_refresh_adc(self):
+        config = self._config(
+            "postgresql+psycopg://iam-user@private-db.internal.example:5432/planner"
+            "?sslmode=require"
+        )
+        output = io.StringIO()
+        config.output_buffer = output
+
+        with patch.dict(
+            os.environ,
+            {"DATABASE_CONNECTION_MODE": "cloud_sql_iam"},
+            clear=False,
+        ), patch(
+            "backend.db.cloud_sql.google.auth.default",
+            side_effect=AssertionError("offline migrations must not load ADC"),
+        ):
+            command.upgrade(config, "head", sql=True)
+
+        self.assertIn("CREATE TABLE", output.getvalue())
 
 
 if __name__ == '__main__':

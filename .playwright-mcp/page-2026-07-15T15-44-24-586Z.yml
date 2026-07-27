@@ -1,0 +1,11 @@
+- group "Sprint range" [ref=f1e3]:
+  - generic [ref=f1e4]: Sprint
+  - generic [ref=f1e5]:
+    - generic [ref=f1e6]:
+      - generic [ref=f1e7]: Start
+      - button "Start sprint" [ref=f1e9] [cursor=pointer]:
+        - generic [ref=f1e10]: 2026Q2 Sprint 40
+    - generic [ref=f1e11]:
+      - generic [ref=f1e12]: End
+      - button "End sprint" [ref=f1e14] [cursor=pointer]:
+        - generic [ref=f1e15]: 2026Q2 Sprint 42

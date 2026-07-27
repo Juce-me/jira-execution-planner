@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-07-16. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-07-27. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,7 +15,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-07-16 |
+| Checked on | 2026-07-27 |
 | Last result | FAIL insufficient_home_write_probe_input |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
@@ -127,6 +127,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-07-27: Startup sweep rechecked the gate while designing Cloud SQL IAM database connectivity. The required disposable-project probe inputs remain unavailable, and this database-connection-only work adds no Home/Townsquare route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-07-16: Startup sweep rechecked the gate while executing the ENG Project Track write switch plan. Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs remain unavailable. The executed feature writes only the Jira Project Track field via the signed-in user's OAuth issue-edit path and adds no Home/Townsquare or EPM mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-07-16: Startup sweep rechecked the gate while designing the ENG Project Track Jira write switch. Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs remain unavailable, and the design uses only the signed-in user's Jira OAuth issue-edit path. It adds no Home/Townsquare or EPM mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-07-16: Startup sweep rechecked the gate while amending and executing the auth unfocused auto-refresh plan (refresh-only amendment). Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs remain unavailable, and the amended plan adds no Home/Townsquare write route or mutation UI. Keep blocked with `FAIL insufficient_home_write_probe_input`.

@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import pool
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -13,6 +13,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from backend.db import engine as db_engine  # noqa: E402
+from backend.db.cloud_sql import (  # noqa: E402
+    CloudSqlConfigurationError,
+    CloudSqlIamConfig,
+)
 from backend.db.models import Base  # noqa: E402
 
 
@@ -31,8 +35,23 @@ def _database_url() -> str:
 
 
 def run_migrations_offline() -> None:
+    database_url = _database_url()
+    if (
+        db_engine.resolve_database_connection_mode()
+        == db_engine.DATABASE_CONNECTION_MODE_CLOUD_SQL_IAM
+    ):
+        cloud_sql_config = None
+        configuration_error = None
+        try:
+            cloud_sql_config = CloudSqlIamConfig.from_database_url(database_url)
+        except CloudSqlConfigurationError as error:
+            configuration_error = str(error)
+        if cloud_sql_config is None:
+            raise db_engine.DatabaseConfigurationError(configuration_error)
+        database_url = cloud_sql_config.safe_url
+
     context.configure(
-        url=_database_url(),
+        url=database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={'paramstyle': 'named'},
@@ -43,13 +62,9 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    section = config.get_section(config.config_ini_section, {})
-    section['sqlalchemy.url'] = _database_url()
-    connectable = engine_from_config(
-        section,
-        prefix='sqlalchemy.',
+    connectable = db_engine.create_database_engine(
+        _database_url(),
         poolclass=pool.NullPool,
-        future=True,
     )
 
     with connectable.connect() as connection:

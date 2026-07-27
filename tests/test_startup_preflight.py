@@ -2,11 +2,16 @@ import base64
 import io
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
+from backend.db import engine as db_engine
 from scripts.check_startup_preflight import run_preflight
 
 
 class StartupPreflightTests(unittest.TestCase):
+    def tearDown(self):
+        db_engine.dispose_engines()
+
     def _run(self, env):
         output = io.StringIO()
         with redirect_stdout(output):
@@ -36,6 +41,12 @@ class StartupPreflightTests(unittest.TestCase):
         if overrides:
             env.update(overrides)
         return env
+
+    def _cloud_sql_env(self, database_url):
+        return self._hosted_oauth_env({
+            "DATABASE_CONNECTION_MODE": "cloud_sql_iam",
+            "DATABASE_URL": database_url,
+        })
 
     def test_jsonfile_basic_preflight_passes_without_db_checks(self):
         code, output = self._run({
@@ -129,6 +140,83 @@ class StartupPreflightTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("FAIL oauth_local_token_store: DB/OAuth hosted mode must not enable OAUTH_LOCAL_TOKEN_STORE_ALLOWED.", output)
         self.assertIn("FAIL network_bind: Local OAuth token storage cannot be used with network bind.", output)
+
+    def test_cloud_sql_database_check_accepts_safe_passwordless_psycopg_url(self):
+        with patch(
+            "scripts.check_startup_preflight.validate_config_storage_startup",
+            return_value=None,
+        ):
+            code, output = self._run(self._cloud_sql_env(
+                "postgresql+psycopg://iam-user@private-db.internal.example:5432/planner"
+                "?sslmode=verify-full&sslrootcert=%2Fmounted-secrets%2Fserver-ca.pem"
+            ))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn(
+            "PASS database_url: configured for cloud_sql_iam with TLS",
+            output,
+        )
+        self.assertNotIn("iam-user", output)
+        self.assertNotIn("private-db.internal.example", output)
+        self.assertNotIn("planner", output)
+
+    def test_cloud_sql_preflight_rejects_missing_url_fields(self):
+        invalid_urls = (
+            "postgresql+psycopg://private-db.internal.example:5432/planner?sslmode=require",
+            "postgresql+psycopg://iam-user@:5432/planner?sslmode=require",
+            "postgresql+psycopg://iam-user@private-db.internal.example/planner?sslmode=require",
+            "postgresql+psycopg://iam-user@private-db.internal.example:5432/?sslmode=require",
+        )
+        for database_url in invalid_urls:
+            with self.subTest(database_url=database_url):
+                code, output = self._run(self._cloud_sql_env(database_url))
+                self.assertEqual(code, 1)
+                self.assertIn("FAIL database_url:", output)
+
+    def test_cloud_sql_preflight_rejects_password_and_wrong_driver(self):
+        invalid_urls = (
+            "postgresql+psycopg://iam-user:secret@db:5432/planner?sslmode=require",
+            "postgresql+pg8000://iam-user@db:5432/planner?sslmode=require",
+            "postgresql+asyncpg://iam-user@db:5432/planner?sslmode=require",
+        )
+        for database_url in invalid_urls:
+            with self.subTest(database_url=database_url):
+                code, output = self._run(self._cloud_sql_env(database_url))
+                self.assertEqual(code, 1)
+                self.assertIn("FAIL database_url:", output)
+                self.assertNotIn("secret", output)
+
+    def test_cloud_sql_preflight_rejects_missing_or_unsafe_tls(self):
+        for suffix in ("", "?sslmode=disable", "?sslmode=allow", "?sslmode=prefer"):
+            with self.subTest(suffix=suffix):
+                code, output = self._run(self._cloud_sql_env(
+                    "postgresql+psycopg://iam-user@db:5432/planner" + suffix
+                ))
+                self.assertEqual(code, 1)
+                self.assertIn("FAIL database_url:", output)
+                self.assertIn("TLS", output)
+
+    def test_unknown_database_connection_mode_fails_preflight(self):
+        code, output = self._run(self._hosted_oauth_env({
+            "DATABASE_CONNECTION_MODE": "automatic",
+        }))
+
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "FAIL database_url: DATABASE_CONNECTION_MODE must be url or cloud_sql_iam.",
+            output,
+        )
+
+    def test_preflight_never_prints_rejected_database_password(self):
+        password = "database-password-secret"
+        env = self._cloud_sql_env(
+            f"postgresql+psycopg://iam-user:{password}@db:5432/planner?sslmode=require"
+        )
+
+        code, output = self._run(env)
+
+        self.assertEqual(code, 1)
+        self.assertNotIn(password, output)
 
 
 if __name__ == "__main__":

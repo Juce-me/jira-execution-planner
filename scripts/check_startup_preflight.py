@@ -115,9 +115,11 @@ def _check_database_url(env: dict[str, str]) -> str:
     if not db_engine.database_storage_enabled(env):
         return "not required for jsonfile config storage"
     try:
-        db_engine.resolve_database_url(environ=env, required=True)
+        mode = db_engine.validate_startup_database_config(env)
     except db_engine.DatabaseConfigurationError as error:
         raise PreflightError(str(error)) from error
+    if mode == db_engine.DATABASE_CONNECTION_MODE_CLOUD_SQL_IAM:
+        return "configured for cloud_sql_iam with TLS"
     return "configured"
 
 

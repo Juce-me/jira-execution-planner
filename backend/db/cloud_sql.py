@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import threading
 from types import MappingProxyType
@@ -10,6 +11,7 @@ from typing import Mapping
 import google.auth
 from google.auth.credentials import Credentials
 from google.auth.transport.requests import Request
+import psycopg
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
 
@@ -226,3 +228,33 @@ class CloudSqlIamConfig:
             "dbname": self.database,
             **self.tls_options,
         }
+
+
+def build_psycopg_creator(
+    config: CloudSqlIamConfig,
+    token_provider: IamLoginTokenProvider,
+    *,
+    connect_fn: Callable[..., object] | None = None,
+) -> Callable[[], object]:
+    connect = psycopg.connect if connect_fn is None else connect_fn
+    stable_kwargs = config.connect_kwargs()
+
+    def connect_cloud_sql() -> object:
+        token = token_provider.current_token()
+        connection = None
+        connection_failed = False
+        try:
+            connection = connect(
+                **stable_kwargs,
+                password=token,
+            )
+        except Exception:
+            connection_failed = True
+        token = None
+        if connection_failed:
+            raise CloudSqlConnectionError(
+                "Cloud SQL IAM database connection failed."
+            )
+        return connection
+
+    return connect_cloud_sql

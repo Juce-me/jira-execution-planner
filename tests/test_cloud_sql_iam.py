@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import threading
 import traceback
@@ -7,9 +8,11 @@ from unittest.mock import Mock, patch
 from backend.db.cloud_sql import (
     CLOUD_SQL_LOGIN_SCOPE,
     CloudSqlConfigurationError,
+    CloudSqlConnectionError,
     CloudSqlIamConfig,
     CloudSqlIamTokenError,
     IamLoginTokenProvider,
+    build_psycopg_creator,
 )
 
 
@@ -278,3 +281,84 @@ class IamLoginTokenProviderTests(unittest.TestCase):
             "did not return a current login token",
         ):
             provider.current_token()
+
+
+class _SequencedTokenProvider:
+    def __init__(self, tokens):
+        self._tokens = iter(tokens)
+        self.calls = 0
+
+    def current_token(self):
+        self.calls += 1
+        return next(self._tokens)
+
+
+class CloudSqlPsycopgCreatorTests(unittest.TestCase):
+    def setUp(self):
+        self.config = CloudSqlIamConfig.from_database_url(
+            "postgresql+psycopg://iam-user@private-db.internal.example:5432/planner"
+            "?sslmode=require"
+        )
+
+    def test_every_creator_call_receives_the_current_token(self):
+        provider = _SequencedTokenProvider(["token-one", "token-two"])
+        connect_fn = Mock(side_effect=["connection-one", "connection-two"])
+        creator = build_psycopg_creator(
+            self.config,
+            provider,
+            connect_fn=connect_fn,
+        )
+
+        self.assertEqual(creator(), "connection-one")
+        self.assertEqual(creator(), "connection-two")
+        self.assertEqual(provider.calls, 2)
+        self.assertEqual(
+            [call.kwargs["password"] for call in connect_fn.call_args_list],
+            ["token-one", "token-two"],
+        )
+        for call in connect_fn.call_args_list:
+            self.assertEqual(call.kwargs["user"], "iam-user")
+            self.assertEqual(call.kwargs["host"], "private-db.internal.example")
+            self.assertEqual(call.kwargs["dbname"], "planner")
+            self.assertEqual(call.kwargs["sslmode"], "require")
+
+    def test_connection_failure_is_sanitized(self):
+        token = "sensitive-login-token"
+        secret = "libpq-secret-detail"
+        provider = _SequencedTokenProvider([token])
+        creator = build_psycopg_creator(
+            self.config,
+            provider,
+            connect_fn=Mock(side_effect=RuntimeError(f"{secret} {token}")),
+        )
+
+        with self.assertRaises(CloudSqlConnectionError) as raised:
+            creator()
+
+        rendered = "".join(traceback.format_exception(raised.exception))
+        self.assertEqual(
+            str(raised.exception),
+            "Cloud SQL IAM database connection failed.",
+        )
+        self.assertNotIn(token, rendered)
+        self.assertNotIn(secret, rendered)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    def test_creator_does_not_log_token_or_connection_arguments(self):
+        token = "sensitive-login-token"
+        provider = _SequencedTokenProvider([token])
+        connect_fn = Mock(return_value="connection")
+        creator = build_psycopg_creator(
+            self.config,
+            provider,
+            connect_fn=connect_fn,
+        )
+
+        with self.assertLogs(level=logging.DEBUG) as captured:
+            logging.getLogger().debug("creator test boundary")
+            creator()
+
+        output = "\n".join(captured.output)
+        self.assertNotIn(token, output)
+        self.assertNotIn("private-db.internal.example", output)

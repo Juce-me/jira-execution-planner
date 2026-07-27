@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import threading
 from types import MappingProxyType
 from typing import Mapping
 
+import google.auth
+from google.auth.credentials import Credentials
+from google.auth.transport.requests import Request
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
 
@@ -36,6 +40,78 @@ class CloudSqlIamTokenError(RuntimeError):
 
 class CloudSqlConnectionError(RuntimeError):
     """Raised when psycopg cannot establish a direct Cloud SQL connection."""
+
+
+class IamLoginTokenProvider:
+    def __init__(self, credentials: Credentials, request: Request):
+        self._credentials = credentials
+        self._request = request
+        self._refresh_lock = threading.Lock()
+
+    @classmethod
+    def from_adc(cls) -> "IamLoginTokenProvider":
+        credentials = None
+        request = None
+        discovery_failed = False
+        try:
+            credentials, _ = google.auth.default(
+                scopes=(CLOUD_SQL_LOGIN_SCOPE,),
+            )
+            request = Request()
+        except Exception:
+            discovery_failed = True
+        if discovery_failed or credentials is None or request is None:
+            raise CloudSqlIamTokenError(
+                "Cloud SQL IAM credentials are unavailable."
+            )
+        return cls(credentials, request)
+
+    def current_token(self) -> str:
+        validity_failed = False
+        needs_refresh = False
+        try:
+            needs_refresh = not self._credentials.valid
+        except Exception:
+            validity_failed = True
+        if validity_failed:
+            raise CloudSqlIamTokenError(
+                "Cloud SQL IAM credential state is unavailable."
+            )
+
+        if needs_refresh:
+            with self._refresh_lock:
+                refresh_failed = False
+                try:
+                    if not self._credentials.valid:
+                        self._credentials.refresh(self._request)
+                except Exception:
+                    refresh_failed = True
+                if refresh_failed:
+                    raise CloudSqlIamTokenError(
+                        "Cloud SQL IAM login token refresh failed."
+                    )
+
+        state_failed = False
+        is_current = False
+        token = None
+        try:
+            is_current = self._credentials.valid
+            token = self._credentials.token
+        except Exception:
+            state_failed = True
+        if state_failed:
+            raise CloudSqlIamTokenError(
+                "Cloud SQL IAM credential state is unavailable."
+            )
+        if not is_current:
+            raise CloudSqlIamTokenError(
+                "Cloud SQL IAM credential refresh did not return a current login token."
+            )
+        if not isinstance(token, str) or not token:
+            raise CloudSqlIamTokenError(
+                "Cloud SQL IAM credential refresh did not return a login token."
+            )
+        return token
 
 
 @dataclass(frozen=True)

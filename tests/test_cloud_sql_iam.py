@@ -1,10 +1,15 @@
 from pathlib import Path
+import threading
+import traceback
 import unittest
+from unittest.mock import Mock, patch
 
 from backend.db.cloud_sql import (
     CLOUD_SQL_LOGIN_SCOPE,
     CloudSqlConfigurationError,
     CloudSqlIamConfig,
+    CloudSqlIamTokenError,
+    IamLoginTokenProvider,
 )
 
 
@@ -149,3 +154,127 @@ class CloudSqlIamConfigTests(unittest.TestCase):
         requirements = (ROOT / "requirements.txt").read_text(encoding="utf8").splitlines()
         self.assertIn("google-auth==2.56.2", requirements)
         self.assertIn("psycopg[binary]==3.2.13", requirements)
+
+
+class _FakeCredentials:
+    def __init__(self, *, token=None, expired=True, refresh_error=None):
+        self.token = token
+        self.expired = expired
+        self.refresh_error = refresh_error
+        self.refresh_calls = 0
+
+    @property
+    def valid(self):
+        return bool(self.token) and not self.expired
+
+    def refresh(self, request):
+        self.refresh_calls += 1
+        if self.refresh_error:
+            raise self.refresh_error
+        self.token = f"fresh-token-{self.refresh_calls}"
+        self.expired = False
+
+
+class IamLoginTokenProviderTests(unittest.TestCase):
+    def test_from_adc_requests_only_sqlservice_login_scope(self):
+        credentials = _FakeCredentials(token="current-token", expired=False)
+        with patch(
+            "backend.db.cloud_sql.google.auth.default",
+            return_value=(credentials, "project-id"),
+        ) as default_credentials:
+            provider = IamLoginTokenProvider.from_adc()
+
+        self.assertEqual(provider.current_token(), "current-token")
+        default_credentials.assert_called_once_with(
+            scopes=("https://www.googleapis.com/auth/sqlservice.login",)
+        )
+
+    def test_valid_credentials_are_reused_without_refresh(self):
+        credentials = _FakeCredentials(token="current-token", expired=False)
+        provider = IamLoginTokenProvider(credentials, request=object())
+
+        self.assertEqual(provider.current_token(), "current-token")
+        self.assertEqual(provider.current_token(), "current-token")
+        self.assertEqual(credentials.refresh_calls, 0)
+
+    def test_expired_credentials_are_refreshed(self):
+        credentials = _FakeCredentials(token="expired-token", expired=True)
+        provider = IamLoginTokenProvider(credentials, request=object())
+
+        self.assertEqual(provider.current_token(), "fresh-token-1")
+        self.assertEqual(credentials.refresh_calls, 1)
+
+    def test_concurrent_requests_perform_one_refresh(self):
+        credentials = _FakeCredentials(token=None, expired=True)
+        provider = IamLoginTokenProvider(credentials, request=object())
+        barrier = threading.Barrier(8)
+        results = []
+        errors = []
+
+        def worker():
+            try:
+                barrier.wait()
+                results.append(provider.current_token())
+            except Exception as error:
+                errors.append(error)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=2)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(results, ["fresh-token-1"] * 8)
+        self.assertEqual(credentials.refresh_calls, 1)
+
+    def test_adc_discovery_failure_is_sanitized_without_exception_chain(self):
+        secret = "adc-secret-detail"
+        with patch(
+            "backend.db.cloud_sql.google.auth.default",
+            side_effect=RuntimeError(secret),
+        ):
+            with self.assertRaises(CloudSqlIamTokenError) as raised:
+                IamLoginTokenProvider.from_adc()
+
+        rendered = "".join(traceback.format_exception(raised.exception))
+        self.assertEqual(str(raised.exception), "Cloud SQL IAM credentials are unavailable.")
+        self.assertNotIn(secret, rendered)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    def test_refresh_failure_is_sanitized_without_token_or_exception_chain(self):
+        old_token = "expired-sensitive-token"
+        secret = "refresh-secret-detail"
+        credentials = _FakeCredentials(
+            token=old_token,
+            expired=True,
+            refresh_error=RuntimeError(secret),
+        )
+        provider = IamLoginTokenProvider(credentials, request=object())
+
+        with self.assertRaises(CloudSqlIamTokenError) as raised:
+            provider.current_token()
+
+        rendered = "".join(traceback.format_exception(raised.exception))
+        self.assertEqual(
+            str(raised.exception),
+            "Cloud SQL IAM login token refresh failed.",
+        )
+        self.assertNotIn(old_token, rendered)
+        self.assertNotIn(secret, rendered)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    def test_missing_refreshed_token_fails_safely(self):
+        credentials = Mock()
+        credentials.valid = False
+        credentials.token = None
+        credentials.refresh.return_value = None
+        provider = IamLoginTokenProvider(credentials, request=object())
+
+        with self.assertRaisesRegex(
+            CloudSqlIamTokenError,
+            "did not return a current login token",
+        ):
+            provider.current_token()

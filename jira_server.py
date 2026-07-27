@@ -298,6 +298,7 @@ def configure_logging():
     for handler in root_logger.handlers:
         handler.setFormatter(formatter)
     logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+    logging.getLogger('alembic').setLevel(logging.WARNING)
 
 
 def _format_log_parts(parts):
@@ -6205,28 +6206,18 @@ def main():
 
     # Only print on first startup, not on reload
     if not DEBUG_MODE or os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
-        # Calculate current quarter for examples
-        today = date.today()
-        current_quarter = f"{today.year}Q{(today.month - 1) // 3 + 1}"
-
-        display_host = 'localhost' if bind_host in {'127.0.0.1', '::1'} else bind_host
-        log_info(f'Jira Proxy Server starting on http://{display_host}:{SERVER_PORT}')
-        log_info(f'   Jira: {JIRA_URL}')
-        log_info(f'   Auth mode: {JIRA_AUTH_MODE}')
-        if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
-            log_info(f'   Email: {JIRA_EMAIL}')
-        effective_board_id = '' if config_storage_db_enabled() and not local_file_state_enabled() else get_effective_board_id(source='jsonfile')
+        database_enabled = config_storage_db_enabled()
+        summary_parts = []
+        if database_enabled:
+            summary_parts.append('Database=PostgreSQL')
+        summary_parts.extend([
+            f'Jira={JIRA_URL}',
+            f'Auth={JIRA_AUTH_MODE}',
+        ])
+        effective_board_id = '' if database_enabled and not local_file_state_enabled() else get_effective_board_id(source='jsonfile')
         if effective_board_id:
-            log_info(f'   Board: {effective_board_id}')
-        if GROUPS_CONFIG_PATH and os.path.exists(GROUPS_CONFIG_PATH):
-            log_info(f'   Groups: {GROUPS_CONFIG_PATH}')
-        log_info('Key Endpoints:')
-        log_info(f'   • http://localhost:{SERVER_PORT}/api/tasks?sprint={current_quarter}')
-        log_info(f'   • http://localhost:{SERVER_PORT}/api/teams?sprint={current_quarter}&all=true')
-        log_info(f'   • http://localhost:{SERVER_PORT}/api/teams/all?sprint={current_quarter}  (all teams with names)')
-        log_info(f'   • http://localhost:{SERVER_PORT}/api/sprints')
-        log_info(f'   • http://localhost:{SERVER_PORT}/api/groups-config')
-        log_info()
+            summary_parts.append(f'Board={effective_board_id}')
+        log_info(f'Startup: {" | ".join(summary_parts)}')
 
     app.run(host=bind_host, port=SERVER_PORT, debug=DEBUG_MODE)
     return 0

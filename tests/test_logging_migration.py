@@ -1,6 +1,8 @@
 import logging
 import os
 import re
+import subprocess
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -13,6 +15,43 @@ except ModuleNotFoundError as exc:  # pragma: no cover - depends on local test e
 
 
 class TestLoggingMigration(unittest.TestCase):
+    def test_alembic_config_suppresses_info_but_keeps_warnings(self):
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import logging, logging.config; "
+                    "logging.config.fileConfig('backend/db/alembic.ini'); "
+                    "logger = logging.getLogger('alembic.runtime.migration'); "
+                    "logger.info('routine migration detail'); "
+                    "logger.warning('migration warning')"
+                ),
+            ],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("routine migration detail", result.stderr)
+        self.assertIn("migration warning", result.stderr)
+
+    @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
+    def test_app_logging_suppresses_alembic_info_but_keeps_warnings(self):
+        alembic_logger = logging.getLogger('alembic')
+        original_level = alembic_logger.level
+        self.addCleanup(alembic_logger.setLevel, original_level)
+        alembic_logger.setLevel(logging.NOTSET)
+
+        jira_server.configure_logging()
+
+        migration_logger = logging.getLogger('alembic.runtime.migration')
+        self.assertFalse(migration_logger.isEnabledFor(logging.INFO))
+        self.assertTrue(migration_logger.isEnabledFor(logging.WARNING))
+
     def test_jira_server_has_no_raw_print_calls(self):
         path = os.path.join(os.path.dirname(__file__), '..', 'jira_server.py')
         with open(path, 'r', encoding='utf-8') as handle:

@@ -1,0 +1,15 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]: Excluded Epics
+    - button "All configured (3)" [ref=e6] [cursor=pointer]
+  - group "Sprint range" [ref=e7]:
+    - generic [ref=e8]: Sprint
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]: Start
+        - button "Start sprint" [ref=e13] [cursor=pointer]:
+          - generic [ref=e14]: 2026Q2 Sprint 40
+      - generic [ref=e15]:
+        - generic [ref=e16]: End
+        - button "End sprint" [ref=e18] [cursor=pointer]:
+          - generic [ref=e19]: 2026Q2 Sprint 42

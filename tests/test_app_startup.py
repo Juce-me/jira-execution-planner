@@ -56,7 +56,7 @@ class AppStartupTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "config_storage_invalid")
 
-    def test_main_startup_banner_uses_json_board_config_without_request_context(self):
+    def test_main_startup_summary_uses_json_board_config_without_request_context(self):
         import jira_server
 
         args = mock.Mock(
@@ -71,17 +71,26 @@ class AppStartupTests(unittest.TestCase):
              mock.patch.object(jira_server, "validate_startup_auth_config"), \
              mock.patch.object(jira_server, "default_bind_host", return_value="127.0.0.1"), \
              mock.patch.object(jira_server, "validate_network_bind", return_value="127.0.0.1"), \
+             mock.patch.object(jira_server, "JIRA_URL", "https://example.atlassian.net"), \
              mock.patch.object(jira_server, "JIRA_AUTH_MODE", jira_server.AUTH_MODE_ATLASSIAN_OAUTH), \
              mock.patch.object(jira_server, "load_dashboard_config", return_value={
                  "version": 1,
                  "board": {"boardId": "42", "boardName": "Planning"},
              }) as load_dashboard_config, \
-             mock.patch.object(jira_server.app, "run") as run:
+             mock.patch.object(jira_server.app, "run") as run, \
+             self.assertLogs(jira_server.logger.name, level="INFO") as captured:
             result = jira_server.main()
 
         self.assertEqual(result, 0)
         load_dashboard_config.assert_called_once_with(source="jsonfile")
         run.assert_called_once()
+        self.assertEqual(
+            [record.getMessage() for record in captured.records],
+            [
+                "Startup: Database=PostgreSQL | Jira=https://example.atlassian.net "
+                "| Auth=atlassian_oauth | Board=42"
+            ],
+        )
 
 
 if __name__ == "__main__":

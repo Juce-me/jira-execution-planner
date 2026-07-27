@@ -724,6 +724,9 @@ async function installApiMocks(page, calls, options = {}) {
                 needsReconnect: false,
             });
         }
+        if (url.pathname === '/api/analytics/context') {
+            return json(options.analyticsContext || { enabled: false });
+        }
         if (url.pathname === '/api/config') {
             if (configGate) {
                 await configGate.promise;
@@ -731,6 +734,7 @@ async function installApiMocks(page, calls, options = {}) {
             return json({
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
+                authMode: options.authMode || '',
                 groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
@@ -1098,24 +1102,44 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
         key: 'TECH-PLATFORM-EPIC-1',
         summary: 'Tech Platform Epic',
     };
-    const makeStory = (key, summary, epic) => ({
-        ...makeEngTask(epic.key.startsWith('TECH') ? 'tech' : 'product', 1),
-        id: key,
-        key,
-        fields: {
-            ...makeEngTask(epic.key.startsWith('TECH') ? 'tech' : 'product', 1).fields,
-            summary,
-            epicKey: epic.key,
-            parentSummary: epic.summary,
-        },
-    });
+    const makeStory = (key, summary, epic, fieldOverrides = {}) => {
+        const base = makeEngTask(epic.key.startsWith('TECH') ? 'tech' : 'product', 1);
+        return {
+            ...base,
+            id: key,
+            key,
+            fields: {
+                ...base.fields,
+                summary,
+                epicKey: epic.key,
+                parentSummary: epic.summary,
+                ...fieldOverrides,
+            },
+        };
+    };
     const paymentsApiStories = [
-        makeStory('PROD-PAY-1', 'Payments API Story 1', paymentsApiEpic),
-        makeStory('PROD-PAY-2', 'Payments API Story 2', paymentsApiEpic),
+        makeStory('PROD-PAY-1', 'Payments API Story 1', paymentsApiEpic, {
+            teamId: 'team-alpha',
+            teamName: 'Alpha Team',
+            status: { name: 'To Do' },
+        }),
+        makeStory('PROD-PAY-2', 'Payments API Story 2', paymentsApiEpic, {
+            teamId: 'team-alpha',
+            teamName: 'Alpha Team',
+            status: { name: 'Done' },
+        }),
     ];
     const paymentsLedgerStories = [
-        makeStory('PROD-PAY-3', 'Payments Ledger Story 1', paymentsLedgerEpic),
-        makeStory('PROD-PAY-4', 'Payments Ledger Story 2', paymentsLedgerEpic),
+        makeStory('PROD-PAY-3', 'Payments Ledger Story 1', paymentsLedgerEpic, {
+            teamId: 'team-beta',
+            teamName: 'Beta Team',
+            status: { name: 'To Do' },
+        }),
+        makeStory('PROD-PAY-4', 'Payments Ledger Story 2', paymentsLedgerEpic, {
+            teamId: 'team-alpha',
+            teamName: 'Alpha Team',
+            status: { name: 'In Progress' },
+        }),
     ];
     const techStories = [
         makeStory('TECH-PLATFORM-1', 'Tech Platform Story', techEpicFixture),
@@ -1133,6 +1157,9 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
             },
             tech: { [techEpicFixture.key]: techEpicFixture },
         },
+        useCommittedDist: true,
+        authMode: 'basic',
+        analyticsContext: { enabled: true },
     });
     await page.setViewportSize({ width: 1028, height: 720 });
     await page.addInitScript((prefs) => {
@@ -1154,6 +1181,13 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
     await expect(page.locator('.epic-block')).toHaveCount(3);
     await expect(page.locator('.task-item')).toHaveCount(5);
+    const initiativeToggle = page.locator('.initiative-toggle');
+    await expect(initiativeToggle).toBeVisible();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.initiative-group')).toHaveCount(1);
+    await expect.poll(() => page.evaluate(() => (
+        window.dataLayer?.some(entry => entry.event_name === 'page_view') || false
+    ))).toBe(true);
     await captureSmokeScreenshot(page, 'initiative-search-before');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 
@@ -1169,18 +1203,106 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await expect(page.getByText('Tech Platform Story', { exact: true })).toHaveCount(0);
     await expect(page.locator('.epic-block')).toHaveCount(2);
     await expect(page.locator('.task-item')).toHaveCount(4);
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.initiative-group')).toHaveCount(1);
     await captureSmokeScreenshot(page, 'initiative-search-results');
     expect(apiMocks.unexpectedCalls).toEqual([]);
+
+    await expect.poll(() => page.evaluate(() => (
+        window.dataLayer?.filter(entry => entry.event_name === 'app_search').length || 0
+    ))).toBeGreaterThan(0);
+    const appSearchEvent = await page.evaluate(() => (
+        window.dataLayer.filter(entry => entry.event_name === 'app_search').at(-1)
+    ));
+    expect(appSearchEvent).toEqual({
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'app_search',
+        feature_name: 'dashboard',
+        search_scope: 'eng',
+        source_surface: 'dashboard',
+        query_length_bucket: '11_25',
+        result_count_bucket: '1_5',
+        auth_mode: 'basic',
+    });
+    expect(Object.keys(appSearchEvent).sort()).toEqual([
+        'auth_mode',
+        'event',
+        'event_name',
+        'event_type',
+        'feature_name',
+        'query_length_bucket',
+        'result_count_bucket',
+        'search_scope',
+        'source_surface',
+        'trigger',
+    ]);
+    const serializedSearchEvent = JSON.stringify(appSearchEvent).toLowerCase();
+    [
+        paymentsInitiative.key,
+        paymentsInitiative.summary,
+        paymentsApiEpic.key,
+        paymentsApiEpic.summary,
+        paymentsApiStories[0].key,
+        paymentsApiStories[0].fields.summary,
+    ].forEach(rawValue => {
+        expect(serializedSearchEvent).not.toContain(String(rawValue).toLowerCase());
+    });
+
+    await searchInput.fill('No matching hierarchy');
+    await expect(page.locator('.task-item')).toHaveCount(0);
+    await expect(initiativeToggle).toBeVisible();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
 
     await searchInput.fill('INIT-42');
     await expect(page.locator('.epic-block')).toHaveCount(2);
     await expect(page.locator('.task-item')).toHaveCount(4);
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.initiative-group')).toHaveCount(1);
 
     await searchInput.fill(paymentsApiEpic.key);
     await expect(page.locator('.epic-block')).toHaveCount(1);
     await expect(page.locator('.task-item')).toHaveCount(2);
     await expect(page.getByText('Payments API Story 1', { exact: true })).toBeVisible();
     await expect(page.getByText('Payments API Story 2', { exact: true })).toBeVisible();
+
+    await searchInput.fill('Payments Initiative');
+    await initiativeToggle.click();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('.initiative-group')).toHaveCount(0);
+    await expect(page.locator('.initiative-header')).toHaveCount(0);
+
+    await searchInput.fill('No matching hierarchy');
+    await expect(page.locator('.task-item')).toHaveCount(0);
+    await expect(initiativeToggle).toBeVisible();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
+
+    await searchInput.fill('Payments Initiative');
+    await expect(page.locator('.epic-block')).toHaveCount(2);
+    await expect(page.locator('.task-item')).toHaveCount(4);
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('.initiative-group')).toHaveCount(0);
+
+    const teamControl = page.locator('.view-selector .team-dropdown').first();
+    await teamControl.locator('.team-dropdown-toggle').click();
+    await teamControl.locator('.team-dropdown-option', { hasText: 'Alpha Team' }).locator('input').check();
+    await page.mouse.click(8, 8);
+    await expect(teamControl.locator('.team-dropdown-selection-label')).toHaveText('Alpha Team');
+    await expect(page.locator('.task-item')).toHaveCount(3);
+
+    const doneToggle = page.getByRole('button', { name: 'Include Done and Incomplete tasks' }).first();
+    await expect(doneToggle).toHaveAttribute('aria-pressed', 'true');
+    await doneToggle.click();
+    await expect(doneToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('.epic-block')).toHaveCount(2);
+    await expect(page.locator('.task-item')).toHaveCount(2);
+    await expect(page.getByText('Payments API Story 1', { exact: true })).toBeVisible();
+    await expect(page.getByText('Payments Ledger Story 2', { exact: true })).toBeVisible();
+    await expect(page.getByText('Payments API Story 2', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Payments Ledger Story 1', { exact: true })).toHaveCount(0);
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
+    await captureSmokeScreenshot(page, 'initiative-search-filtered-flat');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

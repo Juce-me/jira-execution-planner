@@ -10472,8 +10472,11 @@ import {
             }, [visibleTasksForList, epicDetails, engEpicSort]);
 
             const hasInitiativeData = React.useMemo(() => {
-                return epicGroups.some(eg => epicDetails[eg.key]?.initiative);
-            }, [epicGroups, epicDetails]);
+                return capacityTasks.some(task => {
+                    const epicKey = task?.fields?.epicKey;
+                    return Boolean(epicKey && epicDetails[epicKey]?.initiative?.key);
+                });
+            }, [capacityTasks, epicDetails]);
 
             useEffect(() => {
                 setGroupByInitiative(hasInitiativeData);

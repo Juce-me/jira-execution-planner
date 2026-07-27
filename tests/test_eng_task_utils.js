@@ -73,7 +73,9 @@ test('ENG search expands Initiative and Epic matches to loaded descendant storie
     assert.deepEqual(matchingKeys('payments initiative'), ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4']);
     assert.deepEqual(matchingKeys('PROD-EPIC-A'), ['PROD-1', 'PROD-2']);
     assert.deepEqual(matchingKeys('payments api'), ['PROD-1', 'PROD-2']);
+    assert.deepEqual(matchingKeys('PROD-1'), ['PROD-1']);
     assert.deepEqual(matchingKeys('gateway story'), ['PROD-1']);
+    assert.deepEqual(matchingKeys('story owner'), ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4', 'TECH-1']);
     assert.deepEqual(matchingKeys('payments lead'), ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4']);
     assert.deepEqual(matchingKeys(''), ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4', 'TECH-1']);
     assert.equal(matchesEngTaskSearch({ key: 'SAFE-1', fields: {} }, 'missing', {}), false);

@@ -34,7 +34,7 @@ import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/e
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
 import ProjectTrackTransitionMenu from './issues/ProjectTrackTransitionMenu.jsx';
-import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
+import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
@@ -6422,18 +6422,8 @@ import {
             const scopedTasks = React.useMemo(() => {
                 const query = searchQuery.trim().toLowerCase();
                 return tasks.filter(task => {
-                    if (query !== '') {
-                        const summary = task.fields.summary?.toLowerCase() || '';
-                        const key = String(task.key || '').toLowerCase();
-                        const assignee = task.fields.assignee?.displayName?.toLowerCase() || '';
-                        const epicKey = String(task.fields.epicKey || '').toLowerCase();
-                        const epicSummary = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.summary?.toLowerCase() || '') : '';
-                        const epicAssignee = task.fields.epicKey ? (epicDetails[task.fields.epicKey]?.assignee?.displayName?.toLowerCase() || '') : '';
-
-                        if (!summary.includes(query) && !key.includes(query) && !assignee.includes(query) &&
-                            !epicAssignee.includes(query) && !epicKey.includes(query) && !epicSummary.includes(query)) {
-                            return false;
-                        }
+                    if (!matchesEngTaskSearch(task, query, epicDetails)) {
+                        return false;
                     }
 
                     if (!isAllTeamsSelected) {

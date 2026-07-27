@@ -1,0 +1,141 @@
+from pathlib import Path
+import unittest
+
+from backend.db.cloud_sql import (
+    CLOUD_SQL_LOGIN_SCOPE,
+    CloudSqlConfigurationError,
+    CloudSqlIamConfig,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class CloudSqlIamConfigTests(unittest.TestCase):
+    def test_parses_passwordless_psycopg_url_and_builds_safe_kwargs(self):
+        config = CloudSqlIamConfig.from_database_url(
+            "postgresql+psycopg://service-account%40project.iam@"
+            "private-db.internal.example:5432/planner"
+            "?sslmode=verify-full&sslrootcert=%2Fmounted-secrets%2Fserver-ca.pem"
+        )
+
+        self.assertEqual(config.safe_url.drivername, "postgresql+psycopg")
+        self.assertIsNone(config.safe_url.password)
+        self.assertEqual(config.username, "service-account@project.iam")
+        self.assertEqual(config.host, "private-db.internal.example")
+        self.assertEqual(config.port, 5432)
+        self.assertEqual(config.database, "planner")
+        self.assertEqual(
+            config.connect_kwargs(),
+            {
+                "user": "service-account@project.iam",
+                "host": "private-db.internal.example",
+                "port": 5432,
+                "dbname": "planner",
+                "sslmode": "verify-full",
+                "sslrootcert": "/mounted-secrets/server-ca.pem",
+            },
+        )
+
+    def test_cache_key_contains_only_passwordless_stable_configuration(self):
+        config = CloudSqlIamConfig.from_database_url(
+            "postgresql+psycopg://iam-user@10.20.30.40:5432/planner"
+            "?sslmode=require"
+        )
+
+        self.assertNotIn("password", config.cache_key.lower())
+        self.assertNotIn("token", config.cache_key.lower())
+        self.assertEqual(config.cache_key, config.safe_url.render_as_string(hide_password=False))
+
+    def test_requires_exact_psycopg_driver(self):
+        for url in (
+            "postgresql://iam-user@db:5432/planner?sslmode=require",
+            "postgresql+psycopg2://iam-user@db:5432/planner?sslmode=require",
+            "postgresql+pg8000://iam-user@db:5432/planner?sslmode=require",
+            "postgresql+asyncpg://iam-user@db:5432/planner?sslmode=require",
+        ):
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(
+                    CloudSqlConfigurationError,
+                    "postgresql\\+psycopg",
+                ):
+                    CloudSqlIamConfig.from_database_url(url)
+
+    def test_rejects_password_in_url_without_fallback(self):
+        for url in (
+            "postgresql+psycopg://iam-user:secret@db:5432/planner?sslmode=require",
+            "postgresql+psycopg://iam-user:@db:5432/planner?sslmode=require",
+        ):
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(
+                    CloudSqlConfigurationError,
+                    "must not contain a password",
+                ):
+                    CloudSqlIamConfig.from_database_url(url)
+
+    def test_requires_host_user_port_and_database(self):
+        invalid_urls = (
+            "postgresql+psycopg://db:5432/planner?sslmode=require",
+            "postgresql+psycopg://iam-user@:5432/planner?sslmode=require",
+            "postgresql+psycopg://iam-user@db/planner?sslmode=require",
+            "postgresql+psycopg://iam-user@db:not-a-port/planner?sslmode=require",
+            "postgresql+psycopg://iam-user@db:5432/?sslmode=require",
+        )
+        for url in invalid_urls:
+            with self.subTest(url=url):
+                with self.assertRaises(CloudSqlConfigurationError):
+                    CloudSqlIamConfig.from_database_url(url)
+
+    def test_rejects_missing_or_unsafe_tls(self):
+        for suffix in ("", "?sslmode=disable", "?sslmode=allow", "?sslmode=prefer"):
+            with self.subTest(suffix=suffix):
+                with self.assertRaisesRegex(CloudSqlConfigurationError, "TLS"):
+                    CloudSqlIamConfig.from_database_url(
+                        f"postgresql+psycopg://iam-user@db:5432/planner{suffix}"
+                    )
+
+    def test_verify_modes_require_explicit_root_certificate(self):
+        for sslmode in ("verify-ca", "verify-full"):
+            with self.subTest(sslmode=sslmode):
+                with self.assertRaisesRegex(CloudSqlConfigurationError, "sslrootcert"):
+                    CloudSqlIamConfig.from_database_url(
+                        "postgresql+psycopg://iam-user@db:5432/planner"
+                        f"?sslmode={sslmode}"
+                    )
+
+    def test_client_certificate_and_key_must_be_paired(self):
+        for option in (
+            "sslcert=%2Fmounted%2Fclient.pem",
+            "sslkey=%2Fmounted%2Fclient-key.pem",
+        ):
+            with self.subTest(option=option):
+                with self.assertRaisesRegex(CloudSqlConfigurationError, "sslcert and sslkey"):
+                    CloudSqlIamConfig.from_database_url(
+                        "postgresql+psycopg://iam-user@db:5432/planner"
+                        f"?sslmode=require&{option}"
+                    )
+
+    def test_rejects_unapproved_or_repeated_query_options(self):
+        for query in (
+            "sslmode=require&password=secret",
+            "sslmode=require&passfile=%2Fmounted%2Fpgpass",
+            "sslmode=require&service=cloud-sql",
+            "sslmode=require&options=-csearch_path%3Dpublic",
+            "sslmode=require&sslmode=verify-full",
+        ):
+            with self.subTest(query=query):
+                with self.assertRaises(CloudSqlConfigurationError):
+                    CloudSqlIamConfig.from_database_url(
+                        f"postgresql+psycopg://iam-user@db:5432/planner?{query}"
+                    )
+
+    def test_login_scope_is_exact(self):
+        self.assertEqual(
+            CLOUD_SQL_LOGIN_SCOPE,
+            "https://www.googleapis.com/auth/sqlservice.login",
+        )
+
+    def test_requirements_pin_google_auth_and_retain_psycopg(self):
+        requirements = (ROOT / "requirements.txt").read_text(encoding="utf8").splitlines()
+        self.assertIn("google-auth==2.56.2", requirements)
+        self.assertIn("psycopg[binary]==3.2.13", requirements)

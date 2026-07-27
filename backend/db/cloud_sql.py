@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Mapping
 
 from sqlalchemy.engine import URL, make_url
@@ -134,7 +135,7 @@ class CloudSqlIamConfig:
             host=url.host,
             port=port,
             database=url.database,
-            tls_options=tls_options,
+            tls_options=MappingProxyType(tls_options),
         )
 
     @property

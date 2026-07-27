@@ -47,6 +47,16 @@ class CloudSqlIamConfigTests(unittest.TestCase):
         self.assertNotIn("token", config.cache_key.lower())
         self.assertEqual(config.cache_key, config.safe_url.render_as_string(hide_password=False))
 
+    def test_tls_options_cannot_be_mutated_to_inject_connection_parameters(self):
+        config = CloudSqlIamConfig.from_database_url(
+            "postgresql+psycopg://iam-user@db:5432/planner?sslmode=require"
+        )
+
+        with self.assertRaises(TypeError):
+            config.tls_options["password"] = "injected"
+
+        self.assertNotIn("password", config.connect_kwargs())
+
     def test_requires_exact_psycopg_driver(self):
         for url in (
             "postgresql://iam-user@db:5432/planner?sslmode=require",

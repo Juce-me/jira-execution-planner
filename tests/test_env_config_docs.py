@@ -13,6 +13,10 @@ HOSTED_ENV_TERMS = (
     "ATLASSIAN_REDIRECT_URI",
     "RUN_DB_MIGRATIONS",
     "JIRA_URL",
+    "DATABASE_CONNECTION_MODE=cloud_sql_iam",
+    "postgresql+psycopg://",
+    "sslmode=verify-full",
+    "https://www.googleapis.com/auth/sqlservice.login",
 )
 
 FORBIDDEN_DB_OAUTH_EPM_ENV_NAMES = (
@@ -71,6 +75,36 @@ class EnvConfigDocsTests(unittest.TestCase):
             for env_term in HOSTED_ENV_TERMS:
                 with self.subTest(path=path.relative_to(REPO_ROOT), env_term=env_term):
                     self.assertIn(env_term, text)
+
+    def test_cloud_sql_iam_contract_is_consistent_and_passwordless(self):
+        docs = (
+            REPO_ROOT / ".env.example",
+            REPO_ROOT / "README.md",
+            REPO_ROOT / "INSTALL.md",
+        )
+        for path in docs:
+            text = path.read_text(encoding="utf8")
+            with self.subTest(path=path.relative_to(REPO_ROOT)):
+                self.assertIn("DATABASE_CONNECTION_MODE=cloud_sql_iam", text)
+                self.assertIn("postgresql+psycopg://", text)
+                self.assertIn("sslmode=verify-full", text)
+                self.assertIn(
+                    "https://www.googleapis.com/auth/sqlservice.login",
+                    text,
+                )
+                self.assertIn("Cloud SQL Python Connector", text)
+                self.assertIn("must not contain a password", text)
+                self.assertIn("Application Default Credentials", text)
+                self.assertIn("private IP or private DNS", text)
+
+    def test_local_database_url_contract_remains_documented(self):
+        env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf8")
+        install = (REPO_ROOT / "INSTALL.md").read_text(encoding="utf8")
+        for text in (env_example, install):
+            self.assertIn(
+                "DATABASE_URL=postgresql+psycopg://jep:",
+                text,
+            )
 
     def test_hosted_db_oauth_sections_do_not_tell_users_to_set_basic_credentials(self):
         section_by_path = {

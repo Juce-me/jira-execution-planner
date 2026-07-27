@@ -264,7 +264,8 @@ ALLOW_NETWORK_BIND=true
 JIRA_URL=https://your-company.atlassian.net
 JIRA_AUTH_MODE=atlassian_oauth
 CONFIG_STORAGE_BACKEND=db
-DATABASE_URL=<postgresql-url-from-secret>
+DATABASE_CONNECTION_MODE=cloud_sql_iam
+DATABASE_URL=postgresql+psycopg://<percent-encoded-iam-database-user>@<private-host>:5432/<database>?sslmode=verify-full&sslrootcert=<percent-encoded-mounted-ca-path>
 ATLASSIAN_CLIENT_ID=<from-secret>
 ATLASSIAN_CLIENT_SECRET=<from-secret>
 ATLASSIAN_REDIRECT_URI=<https-origin>/api/auth/atlassian/callback
@@ -280,6 +281,30 @@ SCENARIO_DRAFT_LEGACY_IMPORT_ENABLED=false
 RUN_DB_MIGRATIONS=false
 GA4_ENABLED=false
 ```
+
+This is a direct synchronous psycopg TCP/TLS connection to the SRE-provided
+private IP or private DNS endpoint. The app does not use the Cloud SQL Python Connector, pg8000, asyncpg, a Cloud SQL Auth Proxy sidecar/binary, or another proxy process.
+
+The IAM-mode DATABASE_URL must not contain a password. The application obtains
+a short-lived login token from Application Default Credentials using only
+https://www.googleapis.com/auth/sqlservice.login and passes it to psycopg only
+when a new physical connection is opened. There is no password-auth fallback.
+
+SRE supplies the exact percent-encoded IAM database username, host, explicit
+port, database name, and TLS settings. sslmode must be require, verify-ca, or
+verify-full; verify-ca and verify-full require sslrootcert. sslcert and sslkey
+must be provided together when client certificates are required.
+
+Online Alembic uses the same IAM path with NullPool. Offline Alembic SQL
+generation does not need Google credentials. Normal web processes retain
+SQLAlchemy pooling.
+
+Local development and CI omit cloud_sql_iam mode and keep their existing
+DATABASE_URL/TEST_DATABASE_URL behavior.
+
+No live Cloud SQL verification is claimed by the unit test suite. A live claim
+requires a separately approved instance, identity, private network path, and TLS
+configuration.
 
 `PORT=5050` is the container/Gunicorn listener port. `SERVER_PORT` remains a local Flask compatibility setting for source-checkout runs. The Docker image defaults to `APP_BIND_HOST=0.0.0.0` and `ALLOW_NETWORK_BIND=true` so GCP service networking can reach Gunicorn; startup preflight still fails closed unless hosted OAuth sets `SESSION_COOKIE_SECURE=true`, a real `FLASK_SECRET_KEY`, and an explicit `APP_ALLOWED_ORIGINS` value matching the HTTPS origin.
 

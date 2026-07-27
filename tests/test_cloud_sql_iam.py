@@ -362,3 +362,40 @@ class CloudSqlPsycopgCreatorTests(unittest.TestCase):
         output = "\n".join(captured.output)
         self.assertNotIn(token, output)
         self.assertNotIn("private-db.internal.example", output)
+
+
+class CloudSqlScopeGuardTests(unittest.TestCase):
+    def test_runtime_dependencies_exclude_connector_and_alternate_drivers(self):
+        requirements = (ROOT / "requirements.txt").read_text(encoding="utf8").lower()
+        self.assertNotIn("cloud-sql-python-connector", requirements)
+        self.assertNotIn("pg8000", requirements)
+        self.assertNotIn("asyncpg", requirements)
+        self.assertIn("psycopg[binary]==3.2.13", requirements)
+
+    def test_database_runtime_has_no_connector_or_proxy_imports(self):
+        source = "\n".join(
+            path.read_text(encoding="utf8")
+            for path in sorted((ROOT / "backend" / "db").rglob("*.py"))
+        ).lower()
+        for forbidden in (
+            "google.cloud.sql.connector",
+            "cloud_sql_python_connector",
+            "import pg8000",
+            "import asyncpg",
+            "cloud-sql-proxy",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+
+    def test_container_entrypoints_have_no_proxy_process_integration(self):
+        runtime_files = (
+            ROOT / "Dockerfile",
+            ROOT / "scripts" / "docker-entrypoint.sh",
+        )
+        source = "\n".join(
+            path.read_text(encoding="utf8")
+            for path in runtime_files
+        ).lower()
+        for forbidden in ("cloud-sql-proxy", "cloud_sql_proxy"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)

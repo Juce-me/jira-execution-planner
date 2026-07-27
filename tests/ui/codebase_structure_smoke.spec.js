@@ -873,13 +873,18 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
-            const taskSource = project === 'tech' ? techTasks : productTasks;
-            const epic = project === 'tech' ? techEpic : productEpic;
+            const defaultTasksByProject = { product: productTasks, tech: techTasks };
+            const defaultEpicsByProject = {
+                product: { [productEpic.key]: productEpic },
+                tech: { [techEpic.key]: techEpic },
+            };
+            const taskSource = options.tasksByProject?.[project] || defaultTasksByProject[project] || [];
+            const epics = options.epicsByProject?.[project] || defaultEpicsByProject[project] || {};
             const issues = purpose === 'ready-to-close' ? [] : taskSource;
             return json({
                 issues,
-                epics: { [epic.key]: epic },
-                epicsInScope: [epic],
+                epics,
+                epicsInScope: Object.values(epics),
                 names: {},
             });
         }
@@ -1071,6 +1076,111 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await expectJiraExportMenu(page);
     await captureSmokeScreenshot(page, 'scenario');
     await expectContainerSticky(page, '.scenario-axis', '.scenario-timeline');
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Initiative and Epic search reveal loaded descendants', async ({ page }) => {
+    const paymentsInitiative = { key: 'INIT-42', summary: 'Payments Initiative' };
+    const paymentsApiEpic = {
+        ...makeEpic('product'),
+        key: 'PROD-PAY-EPIC-1',
+        summary: 'Payments API Epic',
+        initiative: paymentsInitiative,
+    };
+    const paymentsLedgerEpic = {
+        ...makeEpic('product'),
+        key: 'PROD-PAY-EPIC-2',
+        summary: 'Payments Ledger Epic',
+        initiative: paymentsInitiative,
+    };
+    const techEpicFixture = {
+        ...makeEpic('tech'),
+        key: 'TECH-PLATFORM-EPIC-1',
+        summary: 'Tech Platform Epic',
+    };
+    const makeStory = (key, summary, epic) => ({
+        ...makeEngTask(epic.key.startsWith('TECH') ? 'tech' : 'product', 1),
+        id: key,
+        key,
+        fields: {
+            ...makeEngTask(epic.key.startsWith('TECH') ? 'tech' : 'product', 1).fields,
+            summary,
+            epicKey: epic.key,
+            parentSummary: epic.summary,
+        },
+    });
+    const paymentsApiStories = [
+        makeStory('PROD-PAY-1', 'Payments API Story 1', paymentsApiEpic),
+        makeStory('PROD-PAY-2', 'Payments API Story 2', paymentsApiEpic),
+    ];
+    const paymentsLedgerStories = [
+        makeStory('PROD-PAY-3', 'Payments Ledger Story 1', paymentsLedgerEpic),
+        makeStory('PROD-PAY-4', 'Payments Ledger Story 2', paymentsLedgerEpic),
+    ];
+    const techStories = [
+        makeStory('TECH-PLATFORM-1', 'Tech Platform Story', techEpicFixture),
+    ];
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, {
+        tasksByProject: {
+            product: [...paymentsApiStories, ...paymentsLedgerStories],
+            tech: techStories,
+        },
+        epicsByProject: {
+            product: {
+                [paymentsApiEpic.key]: paymentsApiEpic,
+                [paymentsLedgerEpic.key]: paymentsLedgerEpic,
+            },
+            tech: { [techEpicFixture.key]: techEpicFixture },
+        },
+    });
+    await page.setViewportSize({ width: 1028, height: 720 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        selectedTeams: ['all'],
+        showPlanning: false,
+        showScenario: false,
+        showDone: true,
+        showKilled: false,
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.getByText('Catch Up')).toBeVisible();
+    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
+    await expect(page.locator('.epic-block')).toHaveCount(3);
+    await expect(page.locator('.task-item')).toHaveCount(5);
+    await captureSmokeScreenshot(page, 'initiative-search-before');
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+
+    const searchInput = page.getByPlaceholder('Search tickets...').first();
+    await searchInput.fill('Payments Initiative');
+    await expect(page.locator('.epic-block', { hasText: 'Payments API Epic' })).toBeVisible();
+    await expect(page.locator('.epic-block', { hasText: 'Payments Ledger Epic' })).toBeVisible();
+    await expect(page.getByText('Payments API Story 1', { exact: true })).toBeVisible();
+    await expect(page.getByText('Payments API Story 2', { exact: true })).toBeVisible();
+    await expect(page.getByText('Payments Ledger Story 1', { exact: true })).toBeVisible();
+    await expect(page.getByText('Payments Ledger Story 2', { exact: true })).toBeVisible();
+    await expect(page.locator('.epic-block', { hasText: 'Tech Platform Epic' })).toHaveCount(0);
+    await expect(page.getByText('Tech Platform Story', { exact: true })).toHaveCount(0);
+    await expect(page.locator('.epic-block')).toHaveCount(2);
+    await expect(page.locator('.task-item')).toHaveCount(4);
+    await captureSmokeScreenshot(page, 'initiative-search-results');
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+
+    await searchInput.fill('INIT-42');
+    await expect(page.locator('.epic-block')).toHaveCount(2);
+    await expect(page.locator('.task-item')).toHaveCount(4);
+
+    await searchInput.fill(paymentsApiEpic.key);
+    await expect(page.locator('.epic-block')).toHaveCount(1);
+    await expect(page.locator('.task-item')).toHaveCount(2);
+    await expect(page.getByText('Payments API Story 1', { exact: true })).toBeVisible();
+    await expect(page.getByText('Payments API Story 2', { exact: true })).toBeVisible();
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

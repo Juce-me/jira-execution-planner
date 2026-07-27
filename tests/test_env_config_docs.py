@@ -97,6 +97,19 @@ class EnvConfigDocsTests(unittest.TestCase):
                 self.assertIn("Application Default Credentials", text)
                 self.assertIn("private IP or private DNS", text)
 
+    def test_env_example_states_the_complete_cloud_sql_iam_operator_contract(self):
+        env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf8")
+
+        for statement in (
+            "direct synchronous psycopg TCP/TLS",
+            "There is no password-auth fallback.",
+            "sslmode must be require, verify-ca, or verify-full",
+            "verify-ca and verify-full require sslrootcert",
+            "sslcert and sslkey must be provided together",
+        ):
+            with self.subTest(statement=statement):
+                self.assertIn(statement, env_example)
+
     def test_local_database_url_contract_remains_documented(self):
         env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf8")
         install = (REPO_ROOT / "INSTALL.md").read_text(encoding="utf8")

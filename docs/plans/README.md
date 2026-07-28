@@ -101,6 +101,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Deferred Minor follow-up to `DONE-priority-refresh-preserve-team-filter.md`: warm the team catalog once per session, only when a configured team option is visibly degraded to its raw id, so cold loads show catalog display names without any unconditional initial-load request.
    - Expected output: degradation-triggered `GET /api/team-catalog` warm effect, Playwright proof of the rename plus a no-request guard when names already resolve, and no changes to selection behavior, `availableTeams`, or analytics events.
 
+9. `DONE-initiative-search.md`
+   - Completed and accepted on 2026-07-28 in commits `a7cacf6..5d3b136`. Use for audit context only.
+   - Output: Initiative key/summary matches render every loaded descendant Epic and Story, Epic matching retains its descendant behavior, active ENG filters remain authoritative, the Initiative grouping choice survives search transitions, existing bucketed `app_search` analytics remain canonical, and focused unit plus committed-dist Playwright screenshot coverage proves the result.
+
 ## Capacity Reporting Workflow
 
 1. `SUPPORT-excluded-capacity-control-row-design.md`

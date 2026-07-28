@@ -18,6 +18,31 @@ export function getTaskTeamInfo(task) {
     return { id: teamId, name: teamName };
 }
 
+export function matchesEngTaskSearch(task, query, epicDetails = {}) {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (!normalizedQuery) return true;
+
+    const fields = task?.fields || {};
+    const epicKey = String(fields.epicKey || '');
+    const epic = epicKey ? (epicDetails?.[epicKey] || {}) : {};
+    const initiative = epic?.initiative || {};
+    const candidates = [
+        task?.key,
+        fields.summary,
+        fields.assignee?.displayName,
+        epicKey,
+        epic.summary,
+        epic.assignee?.displayName,
+        initiative.key,
+        initiative.summary,
+    ];
+
+    return candidates.some(value => (
+        value != null
+        && String(value).toLowerCase().includes(normalizedQuery)
+    ));
+}
+
 export function getEpicTeamInfo(epic) {
     const teamName = epic?.teamName || epic?.team?.name || epic?.team?.displayName || 'Unknown Team';
     const teamId = epic?.teamId || epic?.team?.id || teamName;

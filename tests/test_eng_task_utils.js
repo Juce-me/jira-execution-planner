@@ -31,3 +31,52 @@ test('epics in scope can match active group by configured team label', async () 
         ['PRODUCT-1']
     );
 });
+
+test('ENG search expands Initiative and Epic matches to loaded descendant stories', async () => {
+    const { matchesEngTaskSearch } = await import('../frontend/src/eng/engTaskUtils.js');
+    const task = (key, epicKey, summary, assignee = 'Story Owner') => ({
+        key,
+        fields: {
+            summary,
+            epicKey,
+            assignee: { displayName: assignee },
+        },
+    });
+    const tasks = [
+        task('PROD-1', 'PROD-EPIC-A', 'Gateway story'),
+        task('PROD-2', 'PROD-EPIC-A', 'Checkout story'),
+        task('PROD-3', 'PROD-EPIC-B', 'Invoice story'),
+        task('PROD-4', 'PROD-EPIC-B', 'Refund story'),
+        task('TECH-1', 'TECH-EPIC-X', 'Unrelated platform story'),
+    ];
+    const epicDetails = {
+        'PROD-EPIC-A': {
+            summary: 'Payments API',
+            assignee: { displayName: 'Payments Lead' },
+            initiative: { key: 'INIT-42', summary: 'Payments Initiative' },
+        },
+        'PROD-EPIC-B': {
+            summary: 'Payments Experience',
+            assignee: { displayName: 'Payments Lead' },
+            initiative: { key: 'INIT-42', summary: 'Payments Initiative' },
+        },
+        'TECH-EPIC-X': {
+            summary: 'Platform Maintenance',
+            initiative: { key: 'INIT-99', summary: 'Platform Initiative' },
+        },
+    };
+    const matchingKeys = (query) => tasks
+        .filter(item => matchesEngTaskSearch(item, query, epicDetails))
+        .map(item => item.key);
+
+    assert.deepEqual(matchingKeys('INIT-42'), ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4']);
+    assert.deepEqual(matchingKeys('payments initiative'), ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4']);
+    assert.deepEqual(matchingKeys('PROD-EPIC-A'), ['PROD-1', 'PROD-2']);
+    assert.deepEqual(matchingKeys('payments api'), ['PROD-1', 'PROD-2']);
+    assert.deepEqual(matchingKeys('PROD-1'), ['PROD-1']);
+    assert.deepEqual(matchingKeys('gateway story'), ['PROD-1']);
+    assert.deepEqual(matchingKeys('story owner'), ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4', 'TECH-1']);
+    assert.deepEqual(matchingKeys('payments lead'), ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4']);
+    assert.deepEqual(matchingKeys(''), ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4', 'TECH-1']);
+    assert.equal(matchesEngTaskSearch({ key: 'SAFE-1', fields: {} }, 'missing', {}), false);
+});

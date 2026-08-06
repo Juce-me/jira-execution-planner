@@ -63,6 +63,20 @@ class EnvConfigDocsTests(unittest.TestCase):
                 self.assertIn("OpenSSL 1.1.1+", text)
                 self.assertIn("LibreSSL", text)
 
+    def test_requirements_pin_security_fixed_cryptography(self):
+        requirements = (REPO_ROOT / "requirements.txt").read_text(encoding="utf8").splitlines()
+        cryptography_pins = [
+            line.strip()
+            for line in requirements
+            if line.strip().lower().startswith("cryptography==")
+        ]
+
+        self.assertEqual(len(cryptography_pins), 1)
+        match = re.fullmatch(r"cryptography==(\d+)\.(\d+)\.(\d+)", cryptography_pins[0], re.IGNORECASE)
+        self.assertIsNotNone(match)
+        version = tuple(int(part) for part in match.groups())
+        self.assertGreaterEqual(version, (50, 0, 0))
+
     def test_hosted_container_env_contract_is_documented(self):
         docs = (
             REPO_ROOT / ".env.example",

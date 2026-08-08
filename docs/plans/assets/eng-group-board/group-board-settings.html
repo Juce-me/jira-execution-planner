@@ -1,0 +1,930 @@
+<meta charset="utf-8">
+<title>Group Board settings — Settings › Departments › Boards</title>
+
+<style>
+/* ============================================================
+   Tokens — frontend/src/styles/shared/shell.css, verbatim.
+   ============================================================ */
+:root {
+  color-scheme: light;
+  --bg-primary: #f8f7f4;
+  --bg-secondary: #ffffff;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --accent: #d4380d;
+  --good: #389e0d;
+  --warn: #cf1322;
+  --muted: #bfbfbf;
+  --border: #e0ddd7;
+  --control-height: 38px;
+
+  --st-todo: #8c8c8c;
+  --st-blocked: #ff4d4f;
+  --st-postponed: #fa8c16;
+  --st-progress: #69c0ff;
+  --st-release: #13c2c2;
+  --st-done: #52c41a;
+
+  --serif: 'Crimson Pro', Georgia, 'Iowan Old Style', serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: #efece6; color: var(--text-primary);
+  font-family: var(--serif); line-height: 1.6; -webkit-font-smoothing: antialiased;
+  min-height: 100vh; display: grid; place-items: start center; padding: 2vh 1rem;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ============================================================
+   EXISTING APP CLASSES — copied from the real stylesheets so the
+   configuration inherits the app's design instead of a new one.
+   settings/modal-shell.css · team-groups.css · group-editor.css ·
+   team-selector.css · eng/epics.css
+   ============================================================ */
+.group-modal {
+  width: min(1400px, 100%); background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.16); overflow: hidden;
+  display: flex; flex-direction: column; max-height: 96vh;
+}
+.group-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1.1rem 1.35rem 0.9rem; flex: none; }
+.group-modal-title { font-size: 1.3rem; font-weight: 400; line-height: 1.25; }
+.group-modal-subtitle { font-size: 0.92rem; color: var(--text-secondary); max-width: 68ch; }
+.group-modal-dirty {
+  flex: none; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 0.55rem; color: var(--accent);
+  background: #fff2e8; border: 1px solid #ffbb96; border-radius: 999px; padding: 0.3rem 0.6rem;
+}
+.group-modal-tabs { display: flex; gap: 0.1rem; padding: 0 1.35rem; border-bottom: 1px solid var(--border); flex: none; }
+.group-modal-tab {
+  border: 0; background: none; cursor: pointer; padding: 0.55rem 0.9rem;
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.1em;
+  font-size: 0.68rem; color: var(--text-secondary);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.group-modal-tab:hover { color: var(--text-primary); }
+.group-modal-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.group-modal-tabs.sub .group-modal-tab { font-size: 0.62rem; padding: 0.45rem 0.75rem; }
+.group-modal-content { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+.group-modal-validation {
+  margin: 0.85rem 1.35rem 0; padding: 0.55rem 0.7rem; border-radius: 8px;
+  background: #fff1f0; border: 1px solid #ffccc7; font-size: 0.8rem; color: #a8071a;
+  display: grid; gap: 0.2rem;
+}
+.group-modal-validation[hidden] { display: none; }   /* display:grid beats [hidden] */
+.group-modal-footer {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.8rem 1.35rem; border-top: 1px solid var(--border); flex: none; background: var(--bg-primary);
+}
+/* group-editor.css:391 */
+.group-modal-meta { font-size: 0.7rem; color: var(--text-secondary); }
+/* group-editor.css:396 */
+.group-modal-warning {
+  padding: 0.5rem 0.7rem; border: 1px dashed #f59e0b; background: #fff6df;
+  color: #8a5a00; font-size: 0.7rem;
+}
+.group-modal-footer .spacer { flex: 1 1 auto; }
+
+button.secondary {
+  height: 32px; padding: 0 0.85rem; cursor: pointer; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.58rem;
+}
+button.secondary:hover { box-shadow: 0 4px 10px rgba(22,22,22,0.10); }
+button.secondary.compact { height: 28px; padding: 0 0.6rem; font-size: 0.54rem; }
+button.primary {
+  height: 32px; padding: 0 1rem; cursor: pointer; background: var(--text-primary);
+  color: var(--bg-primary); border: 0; border-radius: 8px;
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.58rem;
+}
+button.primary[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+/* team-selector.css — split panes */
+.group-modal-split { display: grid; grid-template-columns: 268px minmax(0, 1fr); min-height: 0; }
+.group-modal-split[hidden] { display: none; }        /* display:grid beats [hidden] */
+.group-pane-left { border-right: 1px solid var(--border); background: var(--bg-primary); }
+.group-pane-header { padding: 0.85rem 1rem; display: grid; gap: 0.5rem; border-bottom: 1px solid var(--border); }
+.group-pane-header-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.group-pane-title { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.62rem; color: var(--text-secondary); }
+.group-add-button {
+  border: 1px solid var(--border); background: var(--bg-secondary); cursor: pointer;
+  border-radius: 8px; padding: 0.28rem 0.55rem;
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.54rem;
+}
+.group-add-button:hover { border-color: var(--accent); color: var(--accent); }
+.group-filter-input, .team-search-input, .component-search-input {
+  width: 100%; height: 32px; padding: 0 0.6rem; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg-secondary); font-family: var(--serif); font-size: 0.9rem;
+}
+.group-pane-count { font-size: 0.7rem; color: var(--text-secondary); }
+.group-pane-list { padding: 0.5rem; display: grid; gap: 0.2rem; }
+.group-list-item {
+  border: 1px solid transparent; background: none; cursor: pointer; border-radius: 8px;
+  padding: 0.5rem 0.6rem; text-align: left; width: 100%; display: grid; gap: 0.15rem;
+}
+.group-list-item:hover { background: var(--bg-secondary); }
+.group-list-item.active { background: var(--bg-secondary); border-color: var(--border); box-shadow: 0 2px 8px rgba(22,22,22,0.06); }
+.group-list-line { display: flex; align-items: center; gap: 0.4rem; }
+.group-list-name { font-size: 0.98rem; }
+.group-list-star { margin-left: auto; color: var(--accent); font-size: 0.7rem; }
+.group-list-meta { font-size: 0.7rem; color: var(--text-secondary); }
+.group-pane-right { min-width: 0; }
+.group-pane-tools { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding: 0.75rem 1.35rem; border-bottom: 1px solid var(--border); }
+.group-pane-tools .spacer { flex: 1 1 auto; }
+
+/* group-editor.css — the editor itself */
+.group-editor { padding: 1rem 1.35rem 1.5rem; }
+.group-editor-header { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.group-name-input {
+  height: var(--control-height); flex: 1 1 240px; min-width: 180px; padding: 0 0.7rem;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary);
+  font-family: var(--serif); font-size: 1.05rem;
+}
+.group-star-button {
+  width: var(--control-height); height: var(--control-height); flex: none; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary);
+  color: var(--muted); font-size: 0.9rem;
+}
+.group-star-button.active { color: var(--accent); border-color: var(--accent); }
+.group-visible-control {
+  display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 0.6rem; color: var(--text-secondary);
+}
+
+/* group-editor.css:265 — the section pattern every config block uses */
+.component-selector { margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+/* group-editor.css:271 */
+.component-selector-label { display: block; font-size: 0.7rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.4rem; }
+/* group-editor.css:279 */
+.selected-components-list { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.4rem; }
+/* group-editor.css:286 — the chip every selector uses */
+.component-chip {
+  display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border); border-radius: 999px; background: #f8f9fa; font-size: 0.8rem;
+}
+.component-chip .component-name { white-space: nowrap; }
+/* group-editor.css:301 */
+.component-chip .remove-btn {
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+  color: var(--text-secondary); font-size: 0.9rem; line-height: 1;
+}
+.component-chip .remove-btn:hover { color: var(--accent); }
+.component-search-wrapper { position: relative; max-width: 340px; }
+
+/* team-groups.css:153 */
+.group-projects-subsection { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0; }
+
+details.group-advanced { margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+details.group-advanced summary { cursor: pointer; font-size: 0.7rem; font-weight: 600; color: var(--text-secondary); }
+.group-danger-zone { margin-top: 0.8rem; padding: 0.7rem 0.8rem; border: 1px solid #ffccc7; background: #fff8f7; border-radius: 10px; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.group-danger-title { font-size: 0.7rem; font-weight: 600; color: #a8071a; }
+.group-danger-zone .spacer { flex: 1 1 auto; }
+button.danger {
+  height: 30px; padding: 0 0.75rem; cursor: pointer; background: var(--bg-secondary);
+  border: 1px solid #ffccc7; color: #a8071a; border-radius: 8px;
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.56rem;
+}
+button.danger:hover { background: #fff1f0; }
+
+/* eng/epics.css — status pills, unchanged */
+.status-pill {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 0.45rem; border-radius: 8px;
+  color: #fff; font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.04em;
+  text-transform: uppercase; font-weight: 500; flex: none;
+}
+.task-status.to-do, .task-status.pending, .task-status.awaiting-validation { background: var(--st-todo); }
+.task-status.analysis, .task-status.accepted, .task-status.in-progress { background: var(--st-progress); }
+.task-status.release { background: var(--st-release); }
+.task-status.blocked { background: var(--st-blocked); }
+.task-status.postponed { background: var(--st-postponed); }
+.task-status.done, .task-status.killed, .task-status.incomplete { background: var(--st-done); }
+
+/* ============================================================
+   NEW — only the side-by-side column arrangement. Nothing in the
+   app lays config out in columns, so this layout is genuinely new;
+   every control inside it is an existing class above.
+   ============================================================ */
+.board-columns { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.7rem; align-items: flex-start; }
+.board-column {
+  flex: 0 0 168px; border: 1px solid var(--border); border-top: 4px solid var(--c);
+  border-radius: 10px; padding: 0.6rem; background: var(--bg-primary);
+}
+.board-column.is-empty { border-color: #ffccc7; background: #fff8f7; }
+/* Min/Max are thresholds, not limits: nothing is blocked, the column glows. */
+.board-column.is-breach {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 1px var(--warn), 0 0 12px rgba(207,19,34,0.38);
+  animation: breach-glow 2.2s ease-in-out infinite;
+}
+@keyframes breach-glow {
+  0%, 100% { box-shadow: 0 0 0 1px var(--warn), 0 0 8px rgba(207,19,34,0.30); }
+  50%      { box-shadow: 0 0 0 1px var(--warn), 0 0 16px rgba(207,19,34,0.55); }
+}
+@media (prefers-reduced-motion: reduce) { .board-column.is-breach { animation: none; } }
+
+.board-column-top { display: flex; align-items: center; gap: 0.3rem; margin-bottom: 0.45rem; }
+.board-column-drag { font-family: var(--mono); font-size: 0.68rem; color: var(--text-secondary); cursor: grab; }
+.board-column-colour { width: 11px; height: 11px; border-radius: 3px; border: 0; padding: 0; cursor: pointer; background: var(--c); box-shadow: 0 0 0 1px rgba(0,0,0,0.12); flex: none; }
+.board-column-name {
+  min-width: 0; flex: 1 1 auto; border: 1px solid transparent; background: none;
+  border-radius: 6px; padding: 0.1rem 0.2rem; font-size: 0.85rem; font-family: var(--serif);
+}
+.board-column-name:hover { border-color: var(--border); background: var(--bg-secondary); }
+.board-column-name:focus { border-color: var(--accent); background: var(--bg-secondary); outline: none; }
+.board-column-star { border: 0; background: none; cursor: pointer; padding: 0; font-size: 0.78rem; color: var(--muted); flex: none; }
+.board-column-star:hover { color: #e8b339; }
+.board-column-star[aria-pressed="true"] { color: #e8a11d; }
+
+.board-column-limits { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; margin-bottom: 0.4rem; }
+.board-column-limits label { display: grid; gap: 0.15rem; font-size: 0.65rem; color: var(--text-secondary); }
+.board-column-limits input {
+  height: 26px; width: 100%; padding: 0 0.35rem; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg-secondary); font-family: var(--serif); font-size: 0.85rem;
+}
+.board-column-limits input.hot { border-color: var(--warn); color: var(--warn); }
+
+/* status chips reuse .component-chip; stacked because a column is narrow */
+.board-column .selected-components-list { flex-direction: column; align-items: stretch; }
+.board-column .component-chip { justify-content: space-between; background: var(--bg-secondary); }
+/* every status chip, wherever it renders: column, leftover pool, picker */
+.board-column .component-chip .component-name,
+.board-unmapped .component-chip .component-name,
+.board-pick .component-chip .component-name { display: flex; align-items: center; gap: 0.4rem; font-size: 0.7rem; color: var(--text-secondary); }
+.board-drop {
+  display: none; border: 1px dashed var(--accent); border-radius: 999px; padding: 0.3rem;
+  text-align: center; font-size: 0.65rem; color: var(--accent);
+}
+body.is-dragging .board-drop { display: block; }
+.board-column.is-drop, .board-unmapped.is-drop { border-color: var(--accent); background: #fff8f0; }
+
+/* A chip that can be dragged has to look like one. Without the grip and the
+   grab cursor the only cue was the drag itself, which nobody discovers. */
+.component-chip[draggable="true"] { cursor: grab; }
+.component-chip[draggable="true"]:active { cursor: grabbing; }
+.chip-grip { color: var(--muted); font-size: 0.7rem; line-height: 1; letter-spacing: -0.1em; flex: none; }
+.component-chip[draggable="true"]:hover .chip-grip { color: var(--accent); }
+
+/* Drag is an accelerator, never the only way in: this is the keyboard path,
+   and it is what makes the mapping discoverable at all. */
+.board-add-status {
+  width: 100%; margin-top: 0.15rem; padding: 0.28rem; cursor: pointer;
+  border: 1px dashed var(--border); border-radius: 999px; background: none;
+  font-size: 0.65rem; color: var(--text-secondary);
+}
+.board-add-status:hover { border-color: var(--accent); color: var(--accent); }
+.board-add-status[aria-expanded="true"] { border-style: solid; border-color: var(--accent); color: var(--accent); }
+.board-pick-from { margin-left: auto; padding-left: 0.4rem; font-size: 0.6rem; color: var(--text-secondary); white-space: nowrap; }
+/* eleven rows would double the column's height and stretch the whole row;
+   it scrolls inside itself instead */
+.board-pick { display: grid; gap: 0.25rem; margin-top: 0.3rem; padding: 0.3rem; max-height: 190px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
+.board-pick .component-chip { width: 100%; justify-content: flex-start; cursor: pointer; background: var(--bg-primary); }
+.board-pick .component-chip:hover { border-color: var(--accent); }
+.board-pick-empty { font-size: 0.65rem; color: var(--text-secondary); padding: 0.1rem 0.2rem; }
+.board-add-column {
+  flex: 0 0 104px; align-self: stretch; min-height: 150px; border: 1px dashed var(--border);
+  border-radius: 10px; background: none; cursor: pointer; font-size: 0.75rem; color: var(--text-secondary);
+}
+.board-add-column:hover { border-color: var(--accent); color: var(--accent); }
+
+/* preview reuses the BOARD's own column classes, so it cannot drift from it */
+.board-preview { display: flex; gap: 0.5rem; align-items: flex-start; margin-top: 0.45rem; }
+.col { --c: var(--st-todo); flex: 0 0 36px; }
+.col.is-focused { flex: 0 0 190px; }
+.col-strip {
+  position: relative; width: 100%; height: 118px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg-secondary); overflow: hidden;
+}
+.col.is-focused .col-strip { background: color-mix(in srgb, var(--c) 7%, var(--bg-secondary)); border-color: color-mix(in srgb, var(--c) 40%, var(--border)); }
+.col-strip .fill { position: absolute; left: 0; right: 0; top: 0; background: color-mix(in srgb, var(--c) 40%, var(--bg-secondary)); border-bottom: 2px solid var(--c); }
+.col-strip .n { position: absolute; top: 4px; left: 0; right: 0; text-align: center; font-family: var(--mono); font-size: 0.62rem; font-weight: 500; }
+.col-strip .vert {
+  position: absolute; inset: 1.3rem 0 0.3rem; display: grid; place-items: center;
+  writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
+  font-family: var(--mono); font-size: 0.55rem; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; white-space: nowrap; overflow: hidden;
+}
+.col.is-focused .col-strip .vert { writing-mode: horizontal-tb; transform: none; inset: 1.6rem 0.4rem auto; place-items: start; }
+.col.is-breach .col-strip { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn), 0 0 10px rgba(207,19,34,0.40); }
+
+.notes-btn {
+  height: 32px; padding: 0 0.85rem; cursor: pointer; background: var(--text-primary);
+  color: var(--bg-primary); border: 0; border-radius: 8px; font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.58rem;
+}
+.notes {
+  position: fixed; right: 0; top: 0; bottom: 0; width: min(430px, 92vw);
+  background: var(--bg-secondary); border-left: 1px solid var(--border);
+  box-shadow: -12px 0 34px rgba(0,0,0,0.14); z-index: 8500;
+  transform: translateX(100%); transition: transform 0.22s ease; overflow-y: auto;
+  padding: 1.25rem 1.35rem 3rem;
+}
+.notes.open { transform: none; }
+.notes h2 { font-size: 1.2rem; font-weight: 400; margin: 0 0 0.2rem; }
+.notes h3 { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.56rem; color: var(--text-secondary); margin: 1.4rem 0 0.4rem; padding-top: 0.85rem; border-top: 1px solid var(--border); }
+.notes p, .notes li { font-size: 0.92rem; }
+.notes p { margin: 0 0 0.55rem; }
+.notes ul { margin: 0 0 0.55rem; padding-left: 1.1rem; }
+.notes li { margin-bottom: 0.28rem; }
+.notes code { font-family: var(--mono); font-size: 0.78em; background: var(--bg-primary); padding: 0.1em 0.3em; border-radius: 4px; }
+.notes .close { position: absolute; right: 1rem; top: 1rem; border: 0; background: none; cursor: pointer; font-size: 1.1rem; color: var(--text-secondary); }
+
+@media (max-width: 900px) {
+  .group-modal-split { grid-template-columns: 1fr; }
+  .group-pane-left { border-right: 0; border-bottom: 1px solid var(--border); }
+}
+</style>
+
+<div class="group-modal" role="dialog" aria-modal="true" aria-label="Dashboard Settings">
+
+  <div class="group-modal-header">
+    <div>
+      <div class="group-modal-title">Dashboard Settings</div>
+      <div class="group-modal-subtitle">Configure data sources and field mapping so planning metrics are
+        calculated correctly.</div>
+    </div>
+    <div class="group-modal-dirty">Unsaved changes · 1</div>
+  </div>
+
+  <div class="group-modal-tabs" role="tablist" aria-label="Settings sections">
+    <button class="group-modal-tab" role="tab" aria-selected="false">Admin</button>
+    <button class="group-modal-tab active" role="tab" aria-selected="true">Departments</button>
+    <button class="group-modal-tab" role="tab" aria-selected="false">Connections</button>
+    <button class="group-modal-tab" role="tab" aria-selected="false">EPM</button>
+  </div>
+  <div class="group-modal-tabs sub" role="tablist" aria-label="Department settings">
+    <button class="group-modal-tab active" role="tab" aria-selected="true" data-tab="teams" id="department-settings-teams-tab">Team groups</button>
+    <button class="group-modal-tab" role="tab" aria-selected="false" data-tab="labels" id="department-settings-labels-tab">Group labels</button>
+    <button class="group-modal-tab" role="tab" aria-selected="false" data-tab="boards" id="department-settings-boards-tab">Boards</button>
+  </div>
+
+  <div class="group-modal-validation" id="validation" hidden></div>
+
+  <div class="group-modal-content">
+
+    <!-- ── TEAM GROUPS ────────────────────────────────────── -->
+    <div class="group-modal-split" data-panel="teams">
+      <div class="group-pane group-pane-left">
+        <div class="group-pane-header">
+          <div class="group-pane-header-row">
+            <span class="group-pane-title">Groups</span>
+            <button class="group-add-button">+ Add group</button>
+          </div>
+          <input class="group-filter-input" placeholder="Search groups or teams…" aria-label="Search groups or teams">
+          <span class="group-pane-count">1 group</span>
+        </div>
+        <div class="group-pane-list">
+          <button class="group-list-item active">
+            <span class="group-list-line">
+              <span class="group-list-name">Northwind</span>
+              <span class="group-list-star" title="Shared default group">★</span>
+            </span>
+            <span class="group-list-meta">7 teams · 2 components</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="group-pane group-pane-right">
+        <div class="group-pane-tools">
+          <button class="secondary">Refresh teams</button>
+          <span class="group-modal-meta">Teams: cached · 201 available · updated 6/16/2026, 1:55:49 PM</span>
+        </div>
+
+        <div class="group-editor">
+          <div class="group-editor-header">
+            <input class="group-name-input" value="Northwind" aria-label="Group name">
+            <button class="group-star-button active" aria-pressed="true" title="Shared default group">★</button>
+            <label class="group-visible-control"><input type="checkbox" checked> Show in my controls</label>
+            <button class="secondary">Duplicate</button>
+          </div>
+
+          <!-- real selector pattern, real chips -->
+          <div class="component-selector">
+            <label class="component-selector-label">Teams 7 / 12</label>
+            <div class="selected-components-list">
+              <span class="component-chip"><span class="component-name">Team Alpha</span><button class="remove-btn" aria-label="Remove Team Alpha">×</button></span>
+              <span class="component-chip"><span class="component-name">Team Bravo</span><button class="remove-btn" aria-label="Remove Team Bravo">×</button></span>
+              <span class="component-chip"><span class="component-name">Team Charlie</span><button class="remove-btn" aria-label="Remove Team Charlie">×</button></span>
+              <span class="component-chip"><span class="component-name">Team Delta</span><button class="remove-btn" aria-label="Remove Team Delta">×</button></span>
+            </div>
+            <div class="component-search-wrapper">
+              <input class="team-search-input" placeholder="Search teams…" aria-label="Search teams">
+            </div>
+          </div>
+
+          <div class="component-selector">
+            <label class="component-selector-label">Components for missing info</label>
+            <div class="selected-components-list">
+              <span class="component-chip"><span class="component-name">alpha-api</span><button class="remove-btn" aria-label="Remove alpha-api">×</button></span>
+              <span class="component-chip"><span class="component-name">delta-service</span><button class="remove-btn" aria-label="Remove delta-service">×</button></span>
+            </div>
+            <div class="component-search-wrapper">
+              <input class="component-search-input" placeholder="Search components…" aria-label="Search components">
+            </div>
+          </div>
+
+          <div class="component-selector">
+            <label class="component-selector-label">Epics for excluded capacity</label>
+            <div class="selected-components-list">
+              <span class="component-chip"><span class="component-name">CORE-20114</span><button class="remove-btn" aria-label="Remove CORE-20114">×</button></span>
+              <span class="component-chip"><span class="component-name">CORE-20115</span><button class="remove-btn" aria-label="Remove CORE-20115">×</button></span>
+            </div>
+          </div>
+
+          <div class="component-selector">
+            <label class="component-selector-label">Epics for Ad Hoc capacity</label>
+            <span class="group-modal-meta">None selected.</span>
+          </div>
+
+          <!-- the way in to Boards: label + summary + button, all existing classes -->
+          <div class="component-selector">
+            <label class="component-selector-label">Board</label>
+            <div class="group-projects-subsection">
+              <span class="group-modal-meta" id="boardSummary">7 columns</span>
+              <div><button class="secondary compact" data-goto="boards">Configure board</button></div>
+            </div>
+          </div>
+
+          <details class="group-advanced">
+            <summary>Advanced — export / import group JSON</summary>
+          </details>
+
+          <div class="group-danger-zone">
+            <span class="group-danger-title">Danger zone</span>
+            <span class="spacer"></span>
+            <button class="danger">Delete group</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── GROUP LABELS ───────────────────────────────────── -->
+    <div class="group-modal-split" data-panel="labels" hidden>
+      <div class="group-pane group-pane-left">
+        <div class="group-pane-header">
+          <div class="group-pane-header-row"><span class="group-pane-title">Groups</span></div>
+          <span class="group-pane-count">1 group</span>
+        </div>
+        <div class="group-pane-list">
+          <button class="group-list-item active">
+            <span class="group-list-line"><span class="group-list-name">Northwind</span></span>
+            <span class="group-list-meta">7 teams · 7 labels mapped</span>
+          </button>
+        </div>
+      </div>
+      <div class="group-pane group-pane-right">
+        <div class="group-editor">
+          <span class="group-modal-meta">One Jira epic label per team, for Future Planning epic matching
+            and <code>labels =</code> JQL. Unchanged by this design — shown so the tab is not a dead end.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── BOARDS ─────────────────────────────────────────── -->
+    <div class="group-modal-split" data-panel="boards" hidden>
+      <div class="group-pane group-pane-left">
+        <div class="group-pane-header">
+          <div class="group-pane-header-row"><span class="group-pane-title">Groups</span></div>
+          <input class="group-filter-input" placeholder="Search groups…" aria-label="Search groups">
+          <span class="group-pane-count">1 group</span>
+        </div>
+        <div class="group-pane-list">
+          <button class="group-list-item active">
+            <span class="group-list-line">
+              <span class="group-list-name">Northwind</span>
+              <span class="group-list-star" title="Shared default group">★</span>
+            </span>
+            <span class="group-list-meta" id="boardsListMeta">7 columns</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="group-pane group-pane-right">
+        <div class="group-pane-tools">
+          <span class="group-modal-meta">12 statuses available · shared with Northwind</span>
+          <span class="spacer"></span>
+          <button class="secondary compact" id="btnDefault">Reset to default columns</button>
+          <button class="secondary compact" data-goto="teams">Back to Team groups</button>
+        </div>
+
+        <div class="group-editor">
+          <div class="component-selector" style="margin-top:0;border-top:0;padding-top:0">
+            <label class="component-selector-label">Board columns — Northwind</label>
+            <span class="group-modal-meta">Put a status in a column with <b>+ Add status</b>, or drag its
+              chip by the grip. Every status belongs to exactly one column; anything left over is collected
+              into an <b>Unmapped</b> column so no epic disappears. Min and Max only warn — they never block
+              a transition or a save.</span>
+            <div class="board-columns" id="boardColumns" style="margin-top:0.6rem"></div>
+          </div>
+
+          <div class="component-selector">
+            <label class="component-selector-label">Not in a column</label>
+            <span class="group-modal-meta">These render in <b>Unmapped</b> until you place them. Drag one onto
+              a column, or use that column's <b>+ Add status</b>. Dragging a chip back here removes it from its
+              column.</span>
+            <div class="selected-components-list board-unmapped" id="unmapped" style="margin-top:0.4rem"></div>
+          </div>
+
+          <div class="component-selector">
+            <label class="component-selector-label">How the board will read</label>
+            <div class="board-preview" id="preview"></div>
+          </div>
+
+          <div class="component-selector">
+            <div id="boardState"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="group-modal-footer">
+    <button class="notes-btn" id="notesBtn">Design notes</button>
+    <span class="group-modal-meta" id="footMeta">Group Board changed</span>
+    <span class="spacer"></span>
+    <button class="secondary">Cancel</button>
+    <button class="primary" id="btnSave">Save</button>
+  </div>
+</div>
+
+<aside class="notes" id="notes" aria-label="Design notes">
+  <button class="close" id="notesClose" aria-label="Close notes">×</button>
+  <h2>Group Board settings</h2>
+  <p class="group-modal-meta">Mockup. Every class here is an existing app class, copied from the real
+    stylesheets — the one exception is noted below.</p>
+
+  <h3>Inherited, not invented</h3>
+  <p>The configuration reuses the app's own settings vocabulary rather than a new one:</p>
+  <ul>
+    <li><code>.group-modal</code>, <code>.group-modal-tabs</code>, <code>.group-modal-validation</code>,
+      <code>.group-modal-footer</code> — the real settings shell. Not a popup of its own: this
+      <em>is</em> the settings modal.</li>
+    <li><code>.component-selector</code> + <code>.component-selector-label</code> for every block, the same
+      pattern Teams, Components and the epic selectors already use.</li>
+    <li><code>.component-chip</code> + <code>.component-name</code> + <code>.remove-btn</code> for each
+      status — the same chip as everywhere else in settings, carrying a
+      <code>.status-pill.task-status</code> inside.</li>
+    <li><code>.group-modal-meta</code> for counts and helper text, <code>.group-modal-warning</code> for
+      warnings, <code>.group-projects-subsection</code> for the stacked summary + action.</li>
+    <li><code>.selected-components-list</code> for chip rows, <code>secondary compact</code> buttons,
+      <code>.group-danger-zone</code>, <code>details.group-advanced</code>.</li>
+  </ul>
+  <p><b>The one new thing</b> is the side-by-side column arrangement (<code>.board-columns</code>).
+    Nothing in the app lays configuration out in columns, so that layout has to be new — but every
+    control inside it is an existing class. The <em>preview</em> is not new either: it reuses the board's
+    own <code>.col</code> / <code>.col-strip</code> / <code>.fill</code> / <code>.vert</code>, so it
+    cannot drift from what the board actually renders.</p>
+
+  <h3>Where it lives</h3>
+  <p>Settings → <b>Departments</b> → <b>Boards</b>, a third sub-tab beside Team groups and Group labels,
+    with the same group list on the left so the group is always the scope. Team groups keeps a
+    <b>Board</b> section whose only content is a summary and a <em>Configure board</em> button — so the
+    group editor stays scannable.</p>
+  <p>Saved in the group payload on <code>/api/groups-config</code>, not the global admin-only
+    <code>/api/board-config</code>. Save is the modal's footer Save, which persists every dirty section
+    together; Group Board gets no save button of its own.</p>
+
+  <h3>Two ways to put a status in a column</h3>
+  <p><b>+ Add status</b> under each column opens a list in place and assigns on click. Drag by the
+    <code>⠿</code> grip does the same thing faster. The <code>×</code> on a chip, or dragging it onto
+    <b>Not in a column</b>, sends it back to the leftover pool.</p>
+  <p>The earlier version had drag and nothing else — and the chips carried <code>draggable</code> with no
+    grip, no grab cursor, and a drop target that only appeared once a drag was already under way. The one
+    affordance was invisible until after you had guessed it existed, and keyboard users had no path at all.</p>
+  <p>The picker lists <b>every status this column does not already hold</b> — orphans first as
+    <em>not in a column</em>, then the rest as <em>from &lt;column&gt;</em> — because assigning moves a status
+    rather than copying it. Restricting it to orphans would leave the control dead in this configuration,
+    where all twelve statuses are already mapped, and force a drag for the most common edit. Eleven rows
+    would double a column's height, so the list scrolls inside itself.</p>
+
+  <h3>Min / Max warn, they never block</h3>
+  <p>They control nothing. A column whose epic count falls outside its range glows red here, in the
+    preview, and on the board, and states the breach in words. It does <b>not</b> block Save — the work is
+    already in that state in Jira.</p>
+  <p>An <em>empty</em> column is different: that is invalid config, since the column would render nothing,
+    so it does block Save through the existing validation banner.</p>
+
+  <h3>Open question</h3>
+  <p><code>/api/groups-config</code> is <code>user_write</code>, so as specified any signed-in user can
+    rewrite these columns for everyone in the group. If editing should be admin-only it needs an explicit
+    server guard, not a hidden button.</p>
+</aside>
+
+<script>
+const STATUS_COUNTS = {
+  'To Do': 36, 'Analysis': 22, 'Awaiting Validation': 13, 'Postponed': 6, 'Pending': 0,
+  'Accepted': 9, 'Blocked': 2, 'In Progress': 48, 'Release': 1,
+  'Done': 260, 'Killed': 83, 'Incomplete': 4
+};
+const ALL_STATUSES = Object.keys(STATUS_COUNTS);
+const CONFIGURED = [
+  { id: 'to-do',    name: 'To do',          colour: '#8c8c8c', star: false, epics: 18, min: null, max: null, statuses: ['To Do'] },
+  { id: 'analysis', name: 'Analysis',       colour: '#b37feb', star: false, epics: 11, min: 15,   max: null, statuses: ['Analysis'] },
+  { id: 'ready',    name: 'Ready to start', colour: '#597ef7', star: false, epics: 9,  min: null, max: null, statuses: ['Awaiting Validation', 'Postponed', 'Pending'] },
+  { id: 'accepted', name: 'Accepted in Q',  colour: '#13c2c2', star: false, epics: 7,  min: null, max: 12,   statuses: ['Accepted'] },
+  { id: 'blocked',  name: 'External block', colour: '#ff4d4f', star: false, epics: 2,  min: null, max: 5,    statuses: ['Blocked'] },
+  { id: 'doing',    name: 'In progress',    colour: '#2f80ed', star: true,  epics: 26, min: null, max: 20,   statuses: ['In Progress', 'Release'] },
+  { id: 'done',     name: 'Done',           colour: '#52c41a', star: false, epics: 14, min: null, max: null, statuses: ['Done', 'Killed', 'Incomplete'] }
+];
+const DEFAULTS = [
+  { id: 'todo',  name: 'To Do',       colour: '#8c8c8c', star: false, epics: 48, statuses: ['To Do', 'Analysis', 'Awaiting Validation', 'Postponed', 'Pending', 'Accepted', 'Blocked', 'Release'] },
+  { id: 'doing', name: 'In Progress', colour: '#2f80ed', star: true,  epics: 25, statuses: ['In Progress'] },
+  { id: 'done',  name: 'Done',        colour: '#52c41a', star: false, epics: 14, statuses: ['Done', 'Killed', 'Incomplete'] }
+];
+
+let columns = CONFIGURED.map(c => ({ ...c, statuses: c.statuses.slice() }));
+const slug = s => s.toLowerCase().replace(/\s+/g, '-');
+
+function breach(col) {
+  if (!col.statuses.length) return null;
+  if (col.max != null && col.epics > col.max) return { dir: 'over', by: col.epics - col.max, limit: col.max };
+  if (col.min != null && col.epics < col.min) return { dir: 'under', by: col.min - col.epics, limit: col.min };
+  return null;
+}
+
+const host = document.getElementById('boardColumns');
+
+function render() {
+  host.innerHTML = '';
+  columns.forEach(col => {
+    const br = breach(col);
+    const el = document.createElement('div');
+    el.className = 'board-column' + (col.statuses.length ? '' : ' is-empty') + (br ? ' is-breach' : '');
+    el.style.setProperty('--c', col.colour);
+    el.dataset.id = col.id;
+    el.innerHTML =
+      '<div class="board-column-top">' +
+        '<span class="board-column-drag" title="Reorder column">⠿</span>' +
+        '<button class="board-column-colour" aria-label="Colour for ' + col.name + '" title="Column colour"></button>' +
+        '<input class="board-column-name" value="' + col.name + '" aria-label="Name of column ' + col.name + '">' +
+        '<button class="board-column-star" aria-pressed="' + col.star + '" data-star="' + col.id + '" ' +
+          'title="' + (col.star ? 'Opens focused and never folds — click to release' : 'Keep this column open on the board') + '">★</button>' +
+        '<button class="remove-btn" data-del="' + col.id + '" aria-label="Delete column ' + col.name + '" title="Delete column">×</button>' +
+      '</div>' +
+      '<div class="board-column-limits">' +
+        '<label>Min<input data-lim="min" class="' + (br && br.dir === 'under' ? 'hot' : '') + '" ' +
+          'placeholder="None" value="' + (col.min == null ? '' : col.min) + '" aria-label="' + col.name + ' minimum epics"></label>' +
+        '<label>Max<input data-lim="max" class="' + (br && br.dir === 'over' ? 'hot' : '') + '" ' +
+          'placeholder="None" value="' + (col.max == null ? '' : col.max) + '" aria-label="' + col.name + ' maximum epics"></label>' +
+      '</div>' +
+      (br
+        ? '<div class="group-modal-warning" style="margin-bottom:0.4rem">' + col.epics + ' epics · ' +
+            br.by + ' ' + (br.dir === 'over' ? 'over max ' : 'under min ') + br.limit + '</div>'
+        : '<span class="group-modal-meta" style="display:block;margin-bottom:0.4rem">' + col.epics + ' epics now</span>') +
+      '<div class="selected-components-list">' +
+        col.statuses.map(s =>
+          '<span class="component-chip" draggable="true" data-status="' + s + '">' +
+            '<span class="chip-grip" aria-hidden="true">⠿</span>' +
+            '<span class="component-name">' +
+              '<span class="status-pill task-status ' + slug(s) + '">' + s + '</span>' +
+              STATUS_COUNTS[s] + '</span>' +
+            '<button class="remove-btn" data-remove="' + s + '" aria-label="Move ' + s + ' out of ' +
+              col.name + '" title="Move out of this column">×</button>' +
+          '</span>').join('') +
+        '<div class="board-drop">Drop here</div>' +
+      '</div>' +
+      '<button class="board-add-status" data-add="' + col.id + '" aria-expanded="' +
+        (picking === col.id) + '">+ Add status</button>' +
+      (picking === col.id ? pickList(col.id) : '') +
+      (col.statuses.length ? '' : '<div class="group-modal-warning">No statuses — will not render</div>');
+    host.appendChild(el);
+  });
+
+  const add = document.createElement('button');
+  add.className = 'board-add-column';
+  add.type = 'button';
+  add.textContent = '+ Add column';
+  add.addEventListener('click', () => {
+    columns.push({ id: 'col-' + (columns.length + 1), name: 'New column', colour: '#8c8c8c', star: false, epics: 0, min: null, max: null, statuses: [] });
+    render();
+  });
+  host.appendChild(add);
+
+  renderUnmapped(); renderPreview(); renderState();
+}
+
+const mapped = () => new Set(columns.flatMap(c => c.statuses));
+const leftover = () => ALL_STATUSES.filter(s => !mapped().has(s));
+
+/* Which column has its picker open, if any. Drag is the accelerator; this is
+   the discoverable, keyboard-reachable way to put a status in a column. */
+let picking = null;
+
+/* Every status the target column does not already hold: the orphans first, then
+   the ones sitting in another column. Assigning moves it, so restricting the list
+   to orphans would leave the control dead in the default configuration — where
+   all twelve statuses are already mapped — and force a drag to move one. */
+function pickList(colId) {
+  const row = (st, from) =>
+    '<button class="component-chip" type="button" data-pick="' + st + '">' +
+      '<span class="component-name"><span class="status-pill task-status ' + slug(st) + '">' + st +
+      '</span>' + STATUS_COUNTS[st] + '</span>' +
+      '<span class="board-pick-from">' + (from ? 'from ' + from : 'not in a column') + '</span>' +
+    '</button>';
+  const elsewhere = columns.filter(c => c.id !== colId)
+    .flatMap(c => c.statuses.map(st => row(st, c.name)));
+  return '<div class="board-pick">' + leftover().map(st => row(st, null)).join('') +
+    elsewhere.join('') + '</div>';
+}
+
+function assign(status, colId) {
+  columns.forEach(c => { c.statuses = c.statuses.filter(x => x !== status); });
+  columns.find(c => c.id === colId).statuses.push(status);
+}
+
+function renderUnmapped() {
+  const used = mapped();
+  const left = ALL_STATUSES.filter(s => !used.has(s));
+  const el = document.getElementById('unmapped');
+  el.innerHTML = left.length
+    ? left.map(s => '<span class="component-chip" draggable="true" data-status="' + s + '">' +
+        '<span class="chip-grip" aria-hidden="true">⠿</span>' +
+        '<span class="component-name"><span class="status-pill task-status ' + slug(s) + '">' + s +
+        '</span>' + STATUS_COUNTS[s] + '</span></span>').join('')
+    : '<span class="group-modal-meta">Nothing left over — every status is in a column.</span>';
+}
+
+function renderPreview() {
+  const live = columns.filter(c => c.statuses.length);
+  const max = Math.max(1, ...live.map(c => c.epics));
+  document.getElementById('preview').innerHTML = live.map(c => {
+    const br = breach(c);
+    return '<div class="col' + (c.star ? ' is-focused' : '') + (br ? ' is-breach' : '') +
+        '" style="--c:' + c.colour + '" title="' + c.name + (br ? ' — ' + br.by +
+        (br.dir === 'over' ? ' over max' : ' under min') : '') + '">' +
+      '<div class="col-strip">' +
+        (c.star ? '' : '<span class="fill" style="height:' + Math.round(c.epics / max * 100) + '%"></span>') +
+        '<span class="n">' + c.epics + '</span>' +
+        '<span class="vert">' + c.name + (c.star ? ' ★' : '') + '</span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderState() {
+  const used = mapped();
+  const empties = columns.filter(c => !c.statuses.length);
+  const left = ALL_STATUSES.filter(s => !used.has(s));
+  const stars = columns.filter(c => c.star).length;
+  const breaches = columns.filter(c => breach(c));
+  const blocking = empties.length || stars > 1;
+
+  const lines = [];
+  if (empties.length) lines.push(empties.map(c => '“' + c.name + '”').join(', ') + ' ' +
+    (empties.length === 1 ? 'has' : 'have') + ' no statuses. Add a status or delete the column.');
+  if (stars > 1) lines.push('Only one column can be kept open.');
+
+  const banner = document.getElementById('validation');
+  banner.hidden = !blocking;
+  banner.innerHTML = lines.map(l => '<span>Group Board: ' + l + '</span>').join('');
+
+  const notes = [];
+  if (left.length) notes.push(left.length + ' status' + (left.length === 1 ? '' : 'es') +
+    ' unmapped — collected into an Unmapped column.');
+  if (breaches.length) notes.push(breaches.length + ' column' + (breaches.length === 1 ? '' : 's') +
+    ' outside Min/Max. Reported only; saving is not blocked.');
+  document.getElementById('boardState').innerHTML = notes.length
+    ? notes.map(n => '<div class="group-modal-warning" style="margin-bottom:0.35rem">' + n + '</div>').join('')
+    : '<span class="group-modal-meta">All 12 statuses mapped, every column within range.</span>';
+
+  document.getElementById('btnSave').disabled = !!blocking;
+  document.getElementById('footMeta').textContent = blocking
+    ? 'Fix Group Board before saving' : 'Group Board changed';
+
+  const live = columns.filter(c => c.statuses.length).length;
+  document.getElementById('boardSummary').textContent =
+    live + ' column' + (live === 1 ? '' : 's');
+  document.getElementById('boardsListMeta').textContent =
+    live + ' column' + (live === 1 ? '' : 's');
+}
+
+host.addEventListener('click', e => {
+  const star = e.target.closest('[data-star]');
+  if (star) {
+    const id = star.dataset.star;
+    const was = columns.find(c => c.id === id).star;
+    columns.forEach(c => { c.star = false; });
+    columns.find(c => c.id === id).star = !was;
+    return render();
+  }
+  const del = e.target.closest('[data-del]');
+  if (del) { columns = columns.filter(c => c.id !== del.dataset.del); return render(); }
+  const rm = e.target.closest('[data-remove]');
+  if (rm) {
+    columns.forEach(c => { c.statuses = c.statuses.filter(x => x !== rm.dataset.remove); });
+    return render();
+  }
+  const add = e.target.closest('[data-add]');
+  if (add) { picking = picking === add.dataset.add ? null : add.dataset.add; return render(); }
+  const pick = e.target.closest('[data-pick]');
+  if (pick) { assign(pick.dataset.pick, picking); picking = null; return render(); }
+});
+
+host.addEventListener('input', e => {
+  const wrap = e.target.closest('.board-column');
+  if (!wrap) return;
+  const model = columns.find(c => c.id === wrap.dataset.id);
+  const name = e.target.closest('.board-column-name');
+  if (name) { model.name = name.value; renderPreview(); renderState(); return; }
+  const lim = e.target.closest('[data-lim]');
+  if (lim) {
+    const raw = lim.value.trim();
+    model[lim.dataset.lim] = raw === '' ? null : Math.max(0, parseInt(raw, 10) || 0);
+    render();
+    const again = document.querySelector('.board-column[data-id="' + model.id + '"] [data-lim="' + lim.dataset.lim + '"]');
+    if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+  }
+});
+
+document.getElementById('btnDefault').addEventListener('click', () => {
+  columns = DEFAULTS.map(d => ({
+    id: d.id, name: d.name, colour: d.colour, star: d.star, epics: d.epics,
+    min: null, max: null, statuses: d.statuses.slice()
+  }));
+  render();
+});
+
+let dragged = null;
+document.addEventListener('dragstart', e => {
+  const chip = e.target.closest('.component-chip[data-status]');
+  if (!chip) return;
+  dragged = chip.dataset.status;
+  document.body.classList.add('is-dragging');
+  chip.style.opacity = '0.4';
+  e.dataTransfer.effectAllowed = 'move';
+});
+document.addEventListener('dragend', e => {
+  document.body.classList.remove('is-dragging');
+  document.querySelectorAll('.is-drop').forEach(n => n.classList.remove('is-drop'));
+  const chip = e.target.closest('.component-chip');
+  if (chip) chip.style.opacity = '';
+  dragged = null;
+});
+host.addEventListener('dragover', e => {
+  const col = e.target.closest('.board-column');
+  if (!dragged || !col) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  host.querySelectorAll('.board-column.is-drop').forEach(c => { if (c !== col) c.classList.remove('is-drop'); });
+  col.classList.add('is-drop');
+});
+host.addEventListener('dragleave', e => {
+  const col = e.target.closest('.board-column');
+  if (col && !col.contains(e.relatedTarget)) col.classList.remove('is-drop');
+});
+host.addEventListener('drop', e => {
+  const col = e.target.closest('.board-column');
+  if (!dragged || !col) return;
+  e.preventDefault();
+  assign(dragged, col.dataset.id);
+  dragged = null;
+  picking = null;
+  render();
+});
+
+/* the leftover pool is a drop target too, so a status can be dragged back out
+   of a column and not only removed with its × */
+const pool = document.getElementById('unmapped');
+pool.addEventListener('dragover', e => {
+  if (!dragged) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  pool.classList.add('is-drop');
+});
+pool.addEventListener('dragleave', () => pool.classList.remove('is-drop'));
+pool.addEventListener('drop', e => {
+  if (!dragged) return;
+  e.preventDefault();
+  pool.classList.remove('is-drop');
+  columns.forEach(c => { c.statuses = c.statuses.filter(s => s !== dragged); });
+  dragged = null;
+  render();
+});
+
+function showTab(name) {
+  document.querySelectorAll('.group-modal-tabs.sub .group-modal-tab').forEach(t => {
+    const on = t.dataset.tab === name;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', String(on));
+  });
+  document.querySelectorAll('[data-panel]').forEach(p => { p.hidden = p.dataset.panel !== name; });
+  document.querySelector('.group-modal-content').scrollTop = 0;
+}
+document.querySelectorAll('.group-modal-tabs.sub .group-modal-tab')
+  .forEach(t => t.addEventListener('click', () => showTab(t.dataset.tab)));
+document.addEventListener('click', e => {
+  const go = e.target.closest('[data-goto]');
+  if (go) showTab(go.dataset.goto);
+});
+
+const notes = document.getElementById('notes');
+document.getElementById('notesBtn').addEventListener('click', () => notes.classList.toggle('open'));
+document.getElementById('notesClose').addEventListener('click', () => notes.classList.remove('open'));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') notes.classList.remove('open'); });
+
+render();
+</script>

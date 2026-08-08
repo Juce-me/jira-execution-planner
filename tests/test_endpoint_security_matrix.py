@@ -21,6 +21,9 @@ SECURITY_SAMPLES = {
         ("GET", "/api/issues/priorities/options"),
         ("GET", "/api/issues/statuses/catalog"),
         ("GET", "/api/issues/project-track/options"),
+        ("GET", "/api/delivery-owner-field/config"),
+        ("GET", "/api/issues/description"),
+        ("GET", "/api/board-config/statuses"),
     ],
     "user_write": [
         ("POST", "/api/me/views"),
@@ -34,7 +37,7 @@ SECURITY_SAMPLES = {
         ("POST", "/api/scenario/drafts/draft-1/rollback"),
         ("POST", "/api/scenario/drafts/draft-1/writeback"),
     ],
-    "shared_admin_write": [("POST", "/api/board-config"), ("POST", "/api/epm/config")],
+    "shared_admin_write": [("POST", "/api/board-config"), ("POST", "/api/epm/config"), ("POST", "/api/delivery-owner-field/config")],
     "tool_admin": [("GET", "/api/admin/users"), ("PATCH", "/api/admin/users/user-1/status")],
     "dev_local": [("GET", "/api/debug-fields"), ("GET", "/api/tasks-fields")],
 }

@@ -580,3 +580,64 @@ for (const viewport of [
         await page.screenshot({ path: `/tmp/epm-portfolio-header-qa/${viewport.name}.png`, fullPage: true });
     });
 }
+
+test('a wide ADF table in an EPM Home update scrolls locally without widening the page', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await loadHeaderFixture(page);
+
+    const board = page.locator('.epm-project-board').first();
+    const update = board.locator('.epm-project-board-update');
+    const copy = update.locator('.epm-project-board-update-copy');
+    await copy.evaluate((node) => {
+        node.innerHTML = `
+            <h3>Delivery milestones</h3>
+            <div class="adf-table-scroll" role="region" aria-label="Description table" tabindex="0">
+                <table><tbody>
+                    <tr><th scope="col">Milestone</th><th scope="col">Owner</th><th scope="col">Dependency</th><th scope="col">Outcome</th></tr>
+                    <tr><td>Private beta</td><td>Platform</td><td>DeterministicGatewayCompatibilityBoundary</td><td>Ready for a synthetic narrow-screen review</td></tr>
+                </tbody></table>
+            </div>`;
+    });
+
+    const heading = copy.getByRole('heading', { name: 'Delivery milestones', level: 3 });
+    const scroller = copy.locator('.adf-table-scroll');
+    await expect(heading).toBeVisible();
+    await expect(copy.getByRole('table')).toBeVisible();
+    await expect(copy.getByRole('columnheader', { name: 'Dependency' })).toBeVisible();
+    const geometry = await scroller.evaluate((node) => ({
+        clientWidth: node.clientWidth,
+        scrollWidth: node.scrollWidth,
+        overflowX: getComputedStyle(node).overflowX,
+    }));
+    expect(geometry.overflowX).toBe('auto');
+    expect(geometry.scrollWidth).toBeGreaterThan(geometry.clientWidth + 1);
+
+    await scroller.focus();
+    await expect(scroller).toBeFocused();
+    await scroller.evaluate((node) => { node.scrollLeft = node.scrollWidth; });
+    expect(await scroller.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+
+    const containment = await page.evaluate(() => {
+        const overflow = (selector) => {
+            const node = document.querySelector(selector);
+            return node.scrollWidth - node.clientWidth;
+        };
+        return {
+            document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            board: overflow('.epm-project-board'),
+            update: overflow('.epm-project-board-update'),
+            copy: overflow('.epm-project-board-update-copy'),
+        };
+    });
+    Object.entries(containment).forEach(([surface, overflow]) => {
+        expect(overflow, `${surface} owns no table overflow`).toBeLessThanOrEqual(1);
+    });
+
+    const headingStyle = await heading.evaluate((node) => ({
+        textTransform: getComputedStyle(node).textTransform,
+        fontSize: parseFloat(getComputedStyle(node).fontSize),
+    }));
+    expect(headingStyle.textTransform).toBe('none');
+    expect(headingStyle.fontSize).toBeGreaterThanOrEqual(14);
+    await page.screenshot({ path: '/tmp/epm-portfolio-header-qa/update-table-narrow.png', fullPage: true });
+});

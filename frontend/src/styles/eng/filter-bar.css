@@ -1,0 +1,449 @@
+/* Compact ENG filter bar. Shared by Catch Up and the Board: one bar, one chip grammar,
+   two facet sets. Geometry lifted from docs/plans/assets/eng-group-board/board.html:145-206,
+   643-655. Its dedicated tier sits between Planning and epic headers; Dashboard publishes the
+   ordered top after the compact header and, when open, the Planning panel. */
+
+        /* The app paints every bare <button> as a solid dark CTA — dark background,
+           --bg-primary text, a 1rem right margin and a hover lift (eng/controls.css:176). The
+           bar's buttons are chrome, not calls to action: without this the Filters trigger and
+           every popover option render near-white text on the bar's white surface, and each one
+           carries a stray 16px gap. :where() holds the selector at zero specificity, so it
+           beats the global rule on order alone (eng.css imports controls.css first) and still
+           loses to each control's own rule below. */
+        :where(.filterbar, .popover) button {
+            margin-right: 0;
+            color: var(--text-primary);
+            background: none;
+            transition: none;
+        }
+
+        :where(.filterbar, .popover) button:hover {
+            background: none;
+            color: var(--text-primary);
+            transform: none;
+            box-shadow: none;
+        }
+
+        .filterbar-wrap {
+            position: sticky;
+            top: var(--filterbar-sticky-top, 0px);
+            z-index: var(--sticky-filterbar-z);
+            padding-block: 0 0.85rem;
+        }
+
+        .filterbar-wrap:has(.popover),
+        .filterbar-wrap:has(.eng-epic-sort-dropdown .sprint-dropdown-panel) {
+            z-index: calc(var(--sticky-control-overlay-z) + 2);
+        }
+
+        /* full-bleed backdrop across the container's horizontal padding */
+        .filterbar-wrap::before {
+            content: '';
+            position: absolute;
+            inset: 0 -1.5rem;
+            background: var(--bg-primary);
+            z-index: -1;
+        }
+
+        /* One row, content-width, fixed height. It sits in the layout like the controls row
+           above it rather than as a full-bleed band, it never wraps, and it never grows
+           taller: the chips lane is the only elastic part and it collapses to "+n more"
+           instead of pushing the bar onto a second row. */
+        .filterbar {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: nowrap;
+            height: 42px;
+            width: max-content;
+            max-width: 100%;
+            padding: 0.3rem 0.55rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+
+        .filterbar > .pop-host,
+        .filterbar > .fb-readout,
+        .filterbar > .fb-view-controls {
+            flex: none;
+        }
+
+        .fb-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            height: 30px;
+            padding: 0 0.65rem;
+            cursor: pointer;
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: 'IBM Plex Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.6rem;
+        }
+
+        .fb-trigger:hover {
+            box-shadow: 0 4px 10px rgba(22, 22, 22, 0.10);
+        }
+
+        .fb-trigger .badge {
+            min-width: 15px;
+            height: 15px;
+            padding: 0 3px;
+            border-radius: 999px;
+            background: var(--accent);
+            color: #fff;
+            font-size: 0.52rem;
+            display: grid;
+            place-items: center;
+            letter-spacing: 0;
+        }
+
+        .fb-readout {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.68rem;
+            letter-spacing: 0.04em;
+            font-variant-numeric: tabular-nums;
+            display: flex;
+            align-items: baseline;
+            gap: 0.45rem;
+        }
+
+        .fb-readout b {
+            font-weight: 500;
+        }
+
+        .fb-readout .dim {
+            color: var(--text-secondary);
+            font-size: 0.58rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .fb-chips {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            flex-wrap: nowrap;
+            flex: 0 1 auto;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            height: 26px;
+            max-width: 19rem;
+            padding: 0 0.3rem 0 0.55rem;
+            border-radius: 999px;
+            background: var(--bg-primary);
+            border: 1px solid #e8b339;
+            font-family: 'IBM Plex Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-size: 0.56rem;
+            white-space: nowrap;
+            flex: none;
+        }
+
+        /* display: inline-flex above beats the hidden attribute's UA display: none, so the
+           attribute alone would leave collapsed chips on screen. */
+        .chip[hidden] {
+            display: none;
+        }
+
+        .chip .facet {
+            color: var(--text-secondary);
+        }
+
+        /* The verb carries the inversion: "hidden" means the named options are the ones being
+           excluded. Accent-coloured so it cannot be skim-read as part of the list. */
+        .chip .verb {
+            color: var(--accent);
+        }
+
+        .chip .names {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .chip-more {
+            cursor: pointer;
+            border-style: dashed;
+            border-color: var(--border);
+            color: var(--text-secondary);
+            padding: 0 0.55rem;
+        }
+
+        .chip-more:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .chip .x {
+            flex: 0 0 16px;
+            width: 16px;
+            height: 16px;
+            padding: 0;
+            margin: 0;
+            border: 0;
+            background: none;
+            cursor: pointer;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            line-height: 1;
+            letter-spacing: 0;
+            text-transform: none;
+        }
+
+        .chip .x:hover {
+            background: none;
+            color: var(--accent);
+        }
+
+        .chip-clear {
+            border: 0;
+            background: none;
+            cursor: pointer;
+            font-family: 'IBM Plex Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.56rem;
+            color: var(--accent);
+            padding: 0 0.3rem;
+            white-space: nowrap;
+            flex: none;
+        }
+
+        .chip-clear:hover {
+            text-decoration: underline;
+        }
+
+        .pop-host {
+            position: relative;
+        }
+
+        /* Width and max-height are set at open time from the viewport and the trigger's rect,
+           because 100vw counts the scrollbar and the trigger sits in a sticky bar, so the room
+           below it changes with scroll. The panel scrolls internally. */
+        .popover {
+            position: absolute;
+            top: calc(100% + 0.4rem);
+            left: 0;
+            width: 348px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 12px 28px rgba(22, 22, 22, 0.16);
+            padding: 0.8rem;
+            z-index: calc(var(--sticky-control-overlay-z) + 3);
+        }
+
+        .pop-subject {
+            margin: -0.15rem 0 0.6rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.5rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        .pop-group + .pop-group {
+            margin-top: 0.85rem;
+            padding-top: 0.85rem;
+            border-top: 1px dashed var(--border);
+        }
+
+        .pop-head {
+            display: flex;
+            align-items: baseline;
+            gap: 0.4rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .pop-head .pop-facet {
+            font-family: 'IBM Plex Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.6rem;
+            color: var(--text-secondary);
+        }
+
+        /* the facet's admitted total, beside its heading */
+        .pop-total {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-primary);
+        }
+
+        .pop-head .pop-all {
+            margin-left: auto;
+            border: 0;
+            background: none;
+            cursor: pointer;
+            padding: 0;
+            font-family: 'IBM Plex Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.5rem;
+            color: var(--accent);
+        }
+
+        .pop-head .pop-all:hover {
+            text-decoration: underline;
+        }
+
+        .pop-list {
+            display: grid;
+            gap: 1px;
+        }
+
+        .pop-opt {
+            display: grid;
+            grid-template-columns: 13px 1fr auto;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.3rem 0.35rem;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 0;
+            background: none;
+            text-align: left;
+            width: 100%;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+        }
+
+        .pop-opt:hover {
+            background: var(--bg-primary);
+        }
+
+        .pop-opt .box {
+            width: 12px;
+            height: 12px;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            display: grid;
+            place-items: center;
+            font-size: 0.55rem;
+            color: #fff;
+            line-height: 1;
+        }
+
+        .pop-opt[aria-checked="true"] .box,
+        .pop-opt[aria-pressed="true"] .box {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .pop-opt[aria-checked="true"] .box::after,
+        .pop-opt[aria-pressed="true"] .box::after {
+            content: '✓';
+        }
+
+        .pop-opt.radio .box {
+            border-radius: 50%;
+        }
+
+        .pop-opt .n {
+            font-variant-numeric: tabular-nums;
+            color: var(--text-secondary);
+            font-size: 0.58rem;
+        }
+
+        .pop-opt.is-locked {
+            cursor: not-allowed;
+        }
+
+        .pop-opt.is-locked span:nth-child(2) {
+            color: var(--text-secondary);
+        }
+
+        .pop-neutral {
+            margin-top: 0.35rem;
+            padding: 0.3rem 0.4rem;
+            border-radius: 6px;
+            background: var(--bg-primary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.5rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        /* order and structure, not filtering — the consumer's own controls, slotted in */
+        .fb-view-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+        }
+
+        /* The sort control is the app's own sprint-dropdown, reused rather than reinvented, in
+           the compact form the design asset renders inside the bar (board.html:579-583). The bar
+           opts into that size with the control's own .sprint-dropdown-compact modifier
+           (shared/controls.css) and adds no geometry of its own here: a consumer stylesheet must
+           never set a shared control's height (MRT021). */
+
+        /* The eyebrow that says which control this is — now in shared/controls.css beside the
+           control it belongs to, because the Board's epic panel uses the same cap-plus-value
+           idiom and a second copy scoped to that surface would be the local variant this repo
+           forbids. Same declarations, so the bar renders identically. */
+
+        .fb-view-controls .group-visible-control {
+            gap: 0.4rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.56rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        @media (max-width: 720px) {
+            /* The bar may take a second row here, never a third: the chips lane still
+               collapses internally, so what wraps is the view controls as a unit. It cannot
+               scroll horizontally like .view-filters does — an overflow container would clip
+               the facet popover anchored inside it. */
+            .filterbar {
+                flex-wrap: wrap;
+                height: auto;
+                width: 100%;
+            }
+
+            .filterbar > .fb-view-controls {
+                flex: 1 0 100%;
+            }
+
+            /* zero basis, not auto: with an auto basis the lane's content width pushes it onto
+               a line of its own and the bar becomes three rows again. The floor keeps
+               "+n more" readable once everything has collapsed. */
+            .fb-chips {
+                flex: 1 1 0;
+                min-width: 3.5rem;
+            }
+
+            /* At 360 the lane is 95px and "+n more" plus "Clear all" need 130, so one of them
+               is clipped by the lane's own overflow: hidden — measured in the design asset
+               too, where Clear all is the one that loses 21px. §7.6 is explicit that Clear all
+               never collapses, because with every chip hidden it is the only control still
+               acting on all of them, while "+n more" only reopens the popover the trigger and
+               its badge already offer. So at this width Clear all comes first and the clipping
+               falls on "+n more" instead. Wide widths keep the asset's order untouched. */
+            .fb-chips .chip-clear {
+                order: -1;
+            }
+        }

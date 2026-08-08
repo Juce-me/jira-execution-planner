@@ -488,8 +488,11 @@ test('outside-card click dismisses the priority menu; Escape, trigger toggle, an
     // outside-card click missed it and the menu hung around.
     await trigger.click();
     await expect(menu).toBeVisible();
+    await expect(menu.locator('.priority-transition-option').first()).toBeFocused();
     await page.locator('.subtitle-secondary').click();
     await expect(menu).toHaveCount(0);
+    // Pointer dismissal must NOT yank focus back to the trigger.
+    await expect(trigger).not.toBeFocused();
 
     // The trigger still toggles the menu closed (an in-wrapper click must not be treated as
     // "outside" and must not close-then-reopen).
@@ -498,11 +501,13 @@ test('outside-card click dismisses the priority menu; Escape, trigger toggle, an
     await trigger.click();
     await expect(menu).toHaveCount(0);
 
-    // Escape still closes.
+    // Escape still closes — and returns focus to the priority icon that opened the menu.
     await trigger.click();
     await expect(menu).toBeVisible();
+    await expect(menu.locator('.priority-transition-option').first()).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
+    await expect(trigger).toBeFocused();
 
     // A click INSIDE the menu (an option) is not treated as outside: it still submits.
     await trigger.click();

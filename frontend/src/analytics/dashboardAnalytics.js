@@ -62,6 +62,7 @@ export function useDashboardAnalytics(React, {
     showPlanning,
     showStats,
     showScenario,
+    showBoard,
     serverConnectionError,
 }) {
     const { useCallback, useEffect, useRef, useState } = React;
@@ -83,7 +84,7 @@ export function useDashboardAnalytics(React, {
 
     useEffect(() => {
         if (!analyticsReady || !authMode) return;
-        const engMode = showScenario ? 'scenario' : showStats ? 'statistics' : showPlanning ? 'planning' : 'catch_up';
+        const engMode = showScenario ? 'scenario' : showStats ? 'statistics' : showPlanning ? 'planning' : showBoard ? 'board' : 'catch_up';
         const pageParams = {
             dashboard_view: currentDashboardView(),
             auth_mode: analyticsToken(authMode),
@@ -94,7 +95,7 @@ export function useDashboardAnalytics(React, {
         if (analyticsPageviewRef.current === signature) return;
         analyticsPageviewRef.current = signature;
         JepAnalytics.trackPageview('dashboard', pageParams);
-    }, [analyticsReady, authMode, selectedView, showPlanning, showStats, showScenario, currentDashboardView]);
+    }, [analyticsReady, authMode, selectedView, showPlanning, showStats, showScenario, showBoard, currentDashboardView]);
 
     const trackProductEvent = useCallback(safeTrackEvent, []);
     const trackApiResult = useCallback(safeTrackApiResult, []);

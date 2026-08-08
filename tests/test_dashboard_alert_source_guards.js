@@ -10,6 +10,7 @@ const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngVie
 const engSprintDataPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
 const engTaskUtilsPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engTaskUtils.js');
 const engAlertsPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngAlertsPanel.jsx');
+const planPath = path.join(__dirname, '..', 'docs', 'plans', 'EXEC-defer-eng-alert-loading.md');
 const stylesDir = path.join(__dirname, '..', 'frontend', 'src', 'styles');
 const cssImportPattern = /@import\s+["'](.+?)["'];/;
 
@@ -40,6 +41,103 @@ test('dashboard alert logic does not redeclare epicMatchesSelectedSprint locally
         source.includes('const epicMatchesSelectedSprint = (epic, epicStories) => {'),
         false
     );
+});
+
+test('ENG alert loading is deferred until visible tasks finish and gated to Catch Up', () => {
+    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+    const sprintDataSource = fs.readFileSync(engSprintDataPath, 'utf8');
+
+    assert.match(
+        sprintDataSource,
+        /const loadAlertEpics = async[\s\S]*purpose: 'alerts'[\s\S]*useLoading: false[\s\S]*setErrorOnFailure: false/
+    );
+    assert.match(
+        dashboardSource,
+        /const isCatchUpMode = selectedView === 'eng'\s*&& !showPlanning\s*&& !showStats\s*&& !showScenario\s*&& !showBoard;/
+    );
+
+    const primaryLoadEffect = dashboardSource.slice(
+        dashboardSource.indexOf('// Load tasks when sprint changes (team is filtered client-side)'),
+        dashboardSource.indexOf('const fetchMissingPlanningInfo = async')
+    );
+    assert.doesNotMatch(primaryLoadEffect, /fetchMissingPlanningInfo\(/);
+
+    const alertLoadEffectStart = dashboardSource.indexOf('const alertLoadSignature =');
+    assert.notEqual(alertLoadEffectStart, -1, 'Expected a dedicated Catch Up alert loading effect');
+    const alertLoadEffect = dashboardSource.slice(
+        dashboardSource.lastIndexOf('useEffect(() => {', alertLoadEffectStart),
+        dashboardSource.indexOf('}, [', alertLoadEffectStart)
+    );
+    assert.match(alertLoadEffect, /if \(!isCatchUpMode\) return;/);
+    assert.match(alertLoadEffect, /if \(!selectedSprintInfo\) return;/);
+    assert.match(alertLoadEffect, /if \(productTasksLoading \|\| techTasksLoading\) return;/);
+    assert.match(alertLoadEffect, /const alertController = new AbortController\(\)/);
+    assert.match(alertLoadEffect, /const shouldApplyAlertResult = \(\) => catchUpAlertVersionRef\.current === alertCohortVersion;/);
+    assert.match(alertLoadEffect, /loadAlertEpics\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
+    assert.match(alertLoadEffect, /fetchMissingPlanningInfo\(selectedSprint, \{ shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
+    assert.match(alertLoadEffect, /loadReadyToCloseProductTasks\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
+    assert.match(alertLoadEffect, /loadReadyToCloseTechTasks\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
+    assert.match(alertLoadEffect, /fetchBacklogEpics\('product', \{ signal: alertController\.signal \}\)/);
+    assert.match(alertLoadEffect, /fetchBacklogEpics\('tech', \{ signal: alertController\.signal \}\)/);
+    assert.match(alertLoadEffect, /if \(cancelled \|\| !shouldApplyAlertResult\(\)\) return;/);
+    assert.match(alertLoadEffect, /alertController\.abort\(\)/);
+    assert.match(
+        dashboardSource,
+        /const alertLoadSignature = `\$\{activeGroupId\}::\$\{activeGroupTeamIds\.join\('\|'\)\}::\$\{selectedSprint\}::\$\{selectedSprintInfo\.name\}::\$\{selectedSprintInfo\.state \|\| ''\}`;/
+    );
+    assert.match(
+        dashboardSource,
+        /\}, \[isCatchUpMode,[^\]]*selectedSprintInfo\?\.name,[^\]]*selectedSprintInfo\?\.state,[^\]]*catchUpAlertRefreshNonce[^\]]*\]\);/
+    );
+    assert.match(
+        alertLoadEffect,
+        /catchUpAlertVersionRef\.current === alertCohortVersion[\s\S]*catchUpAlertLoadRef\.current === alertLoadSignature[\s\S]*catchUpAlertLoadRef\.current = '';/,
+        'Effect cleanup must clear only its own matching signature so Catch Up re-entry can replace the invalidated cohort'
+    );
+
+    assert.match(
+        dashboardSource,
+        /alertsPanel=\{isCatchUpMode \? \([\s\S]*<EngAlertsPanel[\s\S]*\) : null\}/
+    );
+    assert.equal(
+        (dashboardSource.match(/loadReadyToCloseProductTasks\(\{/g) || []).length,
+        1,
+        'Ready-to-close refreshes must start only from the deferred Catch Up alert effect'
+    );
+    assert.match(
+        dashboardSource,
+        /const rearmCatchUpAlerts = \(\) => \{\s*catchUpAlertLoadRef\.current = '';\s*catchUpAlertForceRefreshRef\.current = true;\s*catchUpAlertVersionRef\.current \+= 1;\s*setCatchUpAlertRefreshNonce\(value => value \+ 1\);\s*\};/
+    );
+    assert.equal((dashboardSource.match(/rearmCatchUpAlerts\(\);/g) || []).length, 1);
+    assert.equal((dashboardSource.match(/onAlertDataInvalidated: rearmCatchUpAlerts/g) || []).length, 2);
+    assert.doesNotMatch(
+        dashboardSource,
+        /if \(isCatchUpMode\)[^\n]*(?:catchUpAlert(?:Load|ForceRefresh|Version)Ref|rearmCatchUpAlerts)/,
+        'Refresh and mutation paths must invalidate alerts even outside Catch Up'
+    );
+    assert.match(
+        sprintDataSource,
+        /if \(options\.shouldApplyResult\?\.\(\) === false\) return \[\];[\s\S]*if \(options\.updateEpics !== false\)/
+    );
+    assert.match(sprintDataSource, /const loadAlertEpics = async \(\{ forceRefresh = false, shouldApplyResult, signal \} = \{\}\)/);
+    assert.match(sprintDataSource, /purpose: 'alerts',[\s\S]*shouldApplyResult/);
+    assert.match(sprintDataSource, /const loadReadyToCloseProductTasks = async \(\{ forceRefresh = false, shouldApplyResult, signal \} = \{\}\)/);
+    assert.match(sprintDataSource, /const loadReadyToCloseTechTasks = async \(\{ forceRefresh = false, shouldApplyResult, signal \} = \{\}\)/);
+    assert.match(sprintDataSource, /AbortSignal\.any\(\[controller\.signal, options\.signal\]\)/);
+    assert.match(sprintDataSource, /requestBacklogEpics\(backendUrl, \{ project, teamIds: activeGroupTeamIds, signal \}\)/);
+    assert.match(dashboardSource, /const fetchMissingPlanningInfo = async \(sprintId, \{ shouldApplyResult, signal \} = \{\}\)/);
+    assert.match(dashboardSource, /requestSignal = signal \? AbortSignal\.any\(\[controller\.signal, signal\]\) : controller\.signal/);
+    assert.match(dashboardSource, /requestMissingPlanningInfo\([\s\S]*signal: requestSignal/);
+    assert.equal(
+        (sprintDataSource.match(/if \(shouldApplyResult\?\.\(\) === false\) return;/g) || []).length,
+        2,
+        'Both ready-to-close loaders must reject stale task results before committing them'
+    );
+});
+
+test('deferred alert execution plan contains no agent or tool-branded worker boilerplate', () => {
+    const source = fs.readFileSync(planPath, 'utf8');
+    assert.doesNotMatch(source, /agentic workers|superpowers:/i);
 });
 
 test('ready-to-close alert treats only done killed and incomplete stories as closed', () => {
@@ -280,7 +378,7 @@ test('dashboard delegates ENG data loading and view rendering to ENG modules', (
     assert.match(engAlertsSource, /className=\{`alert-card missing/);
     assert.match(engAlertsSource, /className=\{`alert-card blocked/);
     assert.match(engAlertsSource, /className=\{`alert-card done-epic/);
-    assert.match(engViewSource, /className="filters-strip"/);
+    assert.match(engViewSource, /<EngFilterBar[\s>]/);
     assert.match(engViewSource, /className=\{`task-list /);
     assert.match(engViewSource, /<EmptyState title="No tasks found" className="eng-empty-results">/);
     assert.match(source, /const clearEngFilters = React\.useCallback\(\(\) => resetEngFilters\(/);
@@ -288,7 +386,7 @@ test('dashboard delegates ENG data loading and view rendering to ENG modules', (
     assert.match(engTaskUtilsSource, /setSearchInput\(''\);[\s\S]*setSearchQuery\(''\);[\s\S]*setSelectedTeams\(\['all'\]\);/);
     assert.match(engTaskUtilsSource, /trackFilterChanged\('clear_all'/);
     assert.match(engViewSource, /Clear all filters/);
-    assert.match(engViewSource, /appliedFilterClass\(!showProduct\)/);
+    assert.match(engViewSource, /onChange=\{onFacetChange\}/);
     assert.doesNotMatch(source, /fetchEngTasks,\s*$/m);
     assert.doesNotMatch(source, /fetchBacklogEpics as requestBacklogEpics/);
 });
@@ -306,7 +404,7 @@ test('ENG sprint data hook preserves startup request sequencing markers', () => 
     assert.match(source, /const data = await fetchTasks\('product', \{ forceRefresh \}\);/);
     assert.match(source, /const data = await fetchTasks\('tech', \{ forceRefresh \}\);/);
     assert.match(source, /sprintOverride: '',\s*purpose: 'ready-to-close'/);
-    assert.match(source, /fetchBacklogEpics = async \(project\) =>/);
+    assert.match(source, /fetchBacklogEpics = async \(project, \{ signal \} = \{\}\) =>/);
     assert.match(source, /activeGroupId && activeGroupTeamIds\.length === 0/);
 });
 

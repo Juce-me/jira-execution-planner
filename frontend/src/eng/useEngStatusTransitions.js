@@ -74,6 +74,7 @@ export function useEngStatusTransitions({
     trackIssueStatusAction,
     onAuthRecoveryRequired,
     onApplyLocalStatus,
+    onAlertDataInvalidated,
     onTransitionSuccessRefresh,
 }) {
     const [selectedEpicStatusTargets, setSelectedEpicStatusTargets] = React.useState(() => new Set());
@@ -293,15 +294,21 @@ export function useEngStatusTransitions({
         setTransitionError('');
         setTransitionErrorCode('');
 
-        const isCatchUp = sourceSurface === 'catch_up';
-        const catchUpTarget = isCatchUp ? targets[0] : null;
-        const catchUpKey = catchUpTarget?.key || '';
-        if (isCatchUp && pendingMutationKeysRef.current.has(catchUpKey)) return null;
+        // The hook's real invariant: Planning is the BATCH surface; every other surface acts on
+        // one explicit issue and therefore takes the optimistic local patch + per-key pending set
+        // rather than a full scope refetch. Widened from `sourceSurface === 'catch_up'` for Board
+        // (§13): on a dragged card, waiting for a refetch reads as a failed drop, and a
+        // board-local patch would be the parallel write path §9.5 forbids. Catch Up and Planning
+        // both evaluate exactly as before, so their behaviour is unchanged.
+        const isSingleIssueSurface = sourceSurface !== 'planning';
+        const singleIssueTarget = isSingleIssueSurface ? targets[0] : null;
+        const singleIssueKey = singleIssueTarget?.key || '';
+        if (isSingleIssueSurface && pendingMutationKeysRef.current.has(singleIssueKey)) return null;
         const mutationScope = mutationScopeKey;
-        if (isCatchUp) {
-            pendingMutationKeysRef.current.add(catchUpKey);
-            onApplyLocalStatus?.(catchUpKey, status);
-            setPendingIssueKeys((prev) => new Set(prev).add(catchUpKey));
+        if (isSingleIssueSurface) {
+            pendingMutationKeysRef.current.add(singleIssueKey);
+            onApplyLocalStatus?.(singleIssueKey, status);
+            setPendingIssueKeys((prev) => new Set(prev).add(singleIssueKey));
         }
 
         try {
@@ -309,24 +316,24 @@ export function useEngStatusTransitions({
                 issueKeys: targets.map((target) => target.key),
                 targetStatus: status,
             });
-            const response = await (isCatchUp
-                ? enqueueEngIssueMutation(catchUpKey, runMutation)
+            const response = await (isSingleIssueSurface
+                ? enqueueEngIssueMutation(singleIssueKey, runMutation)
                 : runMutation());
             const summary = summarizeTransitionResults(response?.results);
-            const isCurrentMutation = !isCatchUp || mutationScopeRef.current === mutationScope;
-            if (isCurrentMutation && (!isCatchUp || activeSingleIssueTargetRef.current?.key === catchUpKey)) {
+            const isCurrentMutation = !isSingleIssueSurface || mutationScopeRef.current === mutationScope;
+            if (isCurrentMutation && (!isSingleIssueSurface || activeSingleIssueTargetRef.current?.key === singleIssueKey)) {
                 setTransitionResult({ ...summary, targetStatus: status });
             }
             trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: summary.result });
-            if (isCatchUp) {
-                const issueResult = (response?.results || []).find(entry => entry?.key === catchUpKey);
+            if (isSingleIssueSurface) {
+                const issueResult = (response?.results || []).find(entry => entry?.key === singleIssueKey);
                 const succeeded = issueResult?.result === 'success' || issueResult?.result === 'already_in_status';
                 if (isCurrentMutation) {
                     onApplyLocalStatus?.(
-                        catchUpKey,
+                        singleIssueKey,
                         succeeded
                             ? (issueResult?.toStatus || response?.targetStatus || status)
-                            : (issueResult?.currentStatus || catchUpTarget?.currentStatus || ''),
+                            : (issueResult?.currentStatus || singleIssueTarget?.currentStatus || ''),
                     );
                 }
             }
@@ -367,7 +374,8 @@ export function useEngStatusTransitions({
                     }
                 }
                 const affectedSubtaskStoryKeys = resolveSubtaskParentStoryKeys(succeededKeys, storySubtasksByKey);
-                if (!isCatchUp) {
+                if (isCurrentMutation) onAlertDataInvalidated?.();
+                if (!isSingleIssueSurface) {
                     onTransitionSuccessRefresh?.({ affectedSubtaskStoryKeys });
                 }
             }
@@ -378,22 +386,22 @@ export function useEngStatusTransitions({
                 clearTransitionOptionsCache();
                 redirectToAuthRecovery(err);
             }
-            if (isCatchUp && mutationScopeRef.current === mutationScope) {
-                onApplyLocalStatus?.(catchUpKey, catchUpTarget?.currentStatus || '');
+            if (isSingleIssueSurface && mutationScopeRef.current === mutationScope) {
+                onApplyLocalStatus?.(singleIssueKey, singleIssueTarget?.currentStatus || '');
             }
-            if ((!isCatchUp || mutationScopeRef.current === mutationScope) && (!isCatchUp || activeSingleIssueTargetRef.current?.key === catchUpKey)) {
+            if ((!isSingleIssueSurface || mutationScopeRef.current === mutationScope) && (!isSingleIssueSurface || activeSingleIssueTargetRef.current?.key === singleIssueKey)) {
                 setTransitionError(err?.message || 'Failed to change status.');
                 setTransitionErrorCode(err?.code || '');
             }
             trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: 'failure' });
             return null;
         } finally {
-            if (isCatchUp) {
+            if (isSingleIssueSurface) {
                 if (mutationScopeRef.current === mutationScope) {
-                    pendingMutationKeysRef.current.delete(catchUpKey);
+                    pendingMutationKeysRef.current.delete(singleIssueKey);
                     setPendingIssueKeys((prev) => {
                         const next = new Set(prev);
-                        next.delete(catchUpKey);
+                        next.delete(singleIssueKey);
                         return next;
                     });
                 }
@@ -411,6 +419,7 @@ export function useEngStatusTransitions({
         trackIssueStatusAction,
         backendUrl,
         onApplyLocalStatus,
+        onAlertDataInvalidated,
         onTransitionSuccessRefresh,
         onAuthRecoveryRequired,
     ]);

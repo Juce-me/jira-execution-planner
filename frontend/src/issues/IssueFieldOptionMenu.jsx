@@ -5,8 +5,8 @@ import * as React from 'react';
 // and the position:relative wrapper live in the field-specific menu component. Class names are
 // namespaced by `blockClass` ('status-transition' | 'priority-transition') so the status menu
 // keeps its exact DOM/test hooks while the CSS aliases the priority selectors onto the same
-// declarations. Owns first-option focus, Escape handling, and outside-click dismissal so both
-// fields share identical keyboard/pointer behavior.
+// declarations. Owns first-option focus, Escape handling (including returning focus to the
+// trigger), and outside-click dismissal so both fields share identical keyboard/pointer behavior.
 export default function IssueFieldOptionMenu({
     blockClass,
     issueKey,
@@ -73,9 +73,22 @@ export default function IssueFieldOptionMenu({
         };
     }, [dismissRef]);
 
+    // Escape closes the menu, so focus must go back to the trigger that opened it. Without this
+    // the focused option simply unmounts and focus falls to <body>: the keyboard user loses their
+    // place on every surface, and inside a focus trap (the board's epic panel binds Escape/Tab to
+    // the panel element) the next Escape reaches nothing and the dialog becomes undismissable.
+    // The trigger is resolved from the dismissRef wrapper, which holds both the trigger and this
+    // menu; every consumer marks it with data-<blockClass>-trigger.
+    const focusTrigger = () => {
+        const wrapper = dismissRef && dismissRef.current;
+        wrapper?.querySelector(`[data-${blockClass}-trigger]`)?.focus();
+    };
+
     const handleMenuKeyDown = (event) => {
         if (event.key === 'Escape') {
             event.stopPropagation();
+            // Restore before closing, so focus never passes through <body> at all.
+            focusTrigger();
             onEscape?.();
         }
     };

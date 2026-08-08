@@ -803,12 +803,30 @@ def _safe_adf_href(value: Any) -> str:
     return ""
 
 
+def _adf_node_attrs(node: Any) -> dict:
+    if not isinstance(node, dict):
+        return {}
+    attrs = node.get("attrs")
+    return attrs if isinstance(attrs, dict) else {}
+
+
+def _adf_node_content(node: Any) -> list:
+    if not isinstance(node, dict):
+        return []
+    content = node.get("content")
+    return content if isinstance(content, list) else []
+
+
 def _render_adf_html_nodes(nodes: list) -> str:
+    if not isinstance(nodes, list):
+        return ""
     parts: list[str] = []
-    for node in nodes or []:
+    for node in nodes:
         if not isinstance(node, dict):
             continue
         node_type = node.get("type", "")
+        content = _adf_node_content(node)
+        attrs = _adf_node_attrs(node)
         if node_type == "text":
             text = html_module.escape(str(node.get("text", "")))
             marks = node.get("marks", [])
@@ -825,35 +843,78 @@ def _render_adf_html_nodes(nodes: list) -> str:
             for mark in marks:
                 if not isinstance(mark, dict) or mark.get("type") != "link":
                     continue
-                href = _safe_adf_href((mark.get("attrs") or {}).get("href"))
+                href = _safe_adf_href(_adf_node_attrs(mark).get("href"))
                 if href:
                     safe_href = html_module.escape(href, quote=True)
                     text = f'<a href="{safe_href}" target="_blank" rel="noopener noreferrer">{text}</a>'
                 break
             parts.append(text)
             continue
-        if node_type in {"paragraph", "heading"}:
-            inner = _render_adf_html_nodes(node.get("content", []))
+        if node_type in {"inlineCard", "blockCard"}:
+            href = _safe_adf_href(attrs.get("url"))
+            if href:
+                safe_href = html_module.escape(href, quote=True)
+                safe_label = html_module.escape(href)
+                parts.append(
+                    f'<a href="{safe_href}" target="_blank" rel="noopener noreferrer">{safe_label}</a>'
+                )
+            continue
+        if node_type == "paragraph":
+            inner = _render_adf_html_nodes(content)
             if inner:
                 parts.append(f"<p>{inner}</p>")
+            continue
+        if node_type == "heading":
+            inner = _render_adf_html_nodes(content)
+            if inner:
+                level = attrs.get("level")
+                tag = f"h{level}" if type(level) is int and 1 <= level <= 6 else "p"
+                parts.append(f"<{tag}>{inner}</{tag}>")
+            continue
+        if node_type == "table":
+            rows = [
+                child for child in content
+                if isinstance(child, dict) and child.get("type") == "tableRow"
+            ]
+            inner = _render_adf_html_nodes(rows)
+            if inner:
+                parts.append(
+                    '<div class="adf-table-scroll" role="region" '
+                    'aria-label="Description table" tabindex="0">'
+                    f"<table><tbody>{inner}</tbody></table></div>"
+                )
+            continue
+        if node_type == "tableRow":
+            cells = [
+                child for child in content
+                if isinstance(child, dict) and child.get("type") in {"tableHeader", "tableCell"}
+            ]
+            if cells:
+                parts.append(f"<tr>{_render_adf_html_nodes(cells)}</tr>")
+            continue
+        if node_type in {"tableHeader", "tableCell"}:
+            tag = "th" if node_type == "tableHeader" else "td"
+            scope = ' scope="col"' if tag == "th" else ""
+            inner = _render_adf_html_nodes(content)
+            parts.append(f"<{tag}{scope}>{inner}</{tag}>")
             continue
         if node_type == "hardBreak":
             parts.append("<br>")
             continue
         if node_type in {"bulletList", "orderedList"}:
             tag = "ul" if node_type == "bulletList" else "ol"
-            items = _render_adf_html_nodes(node.get("content", []))
+            items = _render_adf_html_nodes(content)
             if items:
                 parts.append(f"<{tag}>{items}</{tag}>")
             continue
         if node_type == "listItem":
-            inner = _render_adf_html_nodes(node.get("content", []))
+            inner = _render_adf_html_nodes(content)
             inner = re.sub(r"^<p>(.*)</p>$", r"\1", inner)
             if inner:
                 parts.append(f"<li>{inner}</li>")
             continue
-        if node.get("content"):
-            parts.append(_render_adf_html_nodes(node.get("content", [])))
+        if content:
+            parts.append(_render_adf_html_nodes(content))
     return "".join(parts)
 
 

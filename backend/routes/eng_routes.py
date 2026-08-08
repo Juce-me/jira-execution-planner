@@ -1,10 +1,12 @@
 """ENG task, team, and dependency route blueprint."""
 
+import re
 import time
 
 from flask import Blueprint
 
 from backend.auth.cache_policy import build_jira_home_process_cache_key, jira_home_partitioned_process_cache_enabled
+from backend.epm.home import adf_to_html
 from backend.services.eng_subtasks import (
     SUBTASK_FIELDS,
     SubtasksFetchError,
@@ -40,6 +42,14 @@ from . import bind_server_globals
 bp = Blueprint("eng_routes", __name__)
 SUBTASKS_CACHE = {}
 SUBTASKS_CACHE_TTL_SECONDS = 300
+
+# One project key, letters/digits/underscore, then a numeric suffix, e.g. PROD-1, TECH_2-22.
+_ISSUE_KEY_RE = re.compile(r'^[A-Z][A-Z0-9_]+-\d+$')
+
+
+def _adf_html_is_blank(html):
+    """True when rendered ADF HTML carries no visible text (empty or tags-only)."""
+    return not re.sub(r'<[^>]+>', '', html or '').strip()
 
 
 @bp.before_request
@@ -261,6 +271,46 @@ def get_story_subtasks():
     except Exception:
         logger.exception('Story subtasks endpoint error')
         return jsonify({'error': 'subtasks_fetch_failed', 'message': 'Failed to fetch subtasks from Jira.'}), 502
+
+
+@bp.route('/api/issues/description', methods=['GET'])
+def get_issue_description():
+    """Fetch and render one issue's Jira description for the epic detail panel.
+
+    `description` is deliberately absent from every other fields list in this
+    app (fetch_epic_details_bulk included) because its ADF body is large and is
+    only needed once a panel opens. This route fetches it for exactly one issue,
+    on demand, and renders it server-side with the shared ADF renderer so the
+    client never has to parse ADF.
+    """
+    key = (request.args.get('key') or '').strip().upper()
+    if not key or not _ISSUE_KEY_RE.match(key):
+        return jsonify({'error': 'invalid_issue_key'}), 400
+
+    try:
+        auth_context = current_request_auth_context()
+        response = current_jira_get(
+            f'/rest/api/3/issue/{key}',
+            params={'fields': 'description'},
+            context=auth_context,
+        )
+        if response.status_code in (404, 403):
+            # Jira returns 404 for "no such issue" and 403 for "issue exists
+            # but you cannot see it" -- folding both into the same 404 body
+            # keeps the two cases byte-identical so the response never leaks
+            # which one occurred.
+            return jsonify({'error': 'issue_not_found'}), 404
+        if response.status_code != 200:
+            raise RuntimeError(f'Jira returned status {response.status_code}')
+        data = response.json() or {}
+        html = adf_to_html((data.get('fields') or {}).get('description'))
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except Exception as e:
+        logger.exception('Issue description Jira fetch failed')
+        return jsonify({'error': 'issue_description_fetch_failed', 'message': str(e)}), 502
+
+    return jsonify({'key': key, 'html': html, 'isEmpty': _adf_html_is_blank(html)})
 
 
 @bp.route('/api/issues/transitions/options', methods=['POST'])

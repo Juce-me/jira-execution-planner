@@ -170,6 +170,11 @@
             border-left: 3px solid rgba(82, 196, 26, 0.72);
         }
 
+        .mapping-config-grid .selected-team-chip.mapping-delivery-owner-chip {
+            background: rgba(20, 184, 166, 0.07);
+            border-left: 3px solid rgba(20, 184, 166, 0.72);
+        }
+
         .mapping-config-grid .group-config-card.is-linked-hover,
         .mapping-config-grid .group-projects-subsection.is-linked-hover {
             border-color: rgba(59, 130, 246, 0.45);

@@ -1,5 +1,6 @@
 import * as React from 'react';
 import GroupEpicSelector from './GroupEpicSelector.jsx';
+import { formatGroupBoardSummary } from './groupConfigUtils.js';
 
 export default function TeamGroupsSettings(props) {
     const {
@@ -86,6 +87,7 @@ export default function TeamGroupsSettings(props) {
         setGroupImportText,
         importGroupsConfig,
         removeGroupDraft,
+        selectDepartmentSettingsTab,
     } = props;
 
     return (
@@ -399,6 +401,23 @@ export default function TeamGroupsSettings(props) {
                                                     onRemoveEpic={(epicKey) => removeGroupAdHocCapacityEpic(activeGroupDraft.id, epicKey)}
                                                     chipLastRef={adHocEpicChipLastRef}
                                                 />
+                                                <div className="component-selector">
+                                                    <span className="component-selector-label">Board</span>
+                                                    <div className="group-projects-subsection">
+                                                        <span className="group-modal-meta">
+                                                            {formatGroupBoardSummary(activeGroupDraft?.board)}
+                                                        </span>
+                                                        <div>
+                                                            <button
+                                                                className="secondary compact"
+                                                                onClick={() => selectDepartmentSettingsTab('boards')}
+                                                                type="button"
+                                                            >
+                                                                Configure board →
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <details className="group-advanced" open={showGroupAdvanced}>
                                                     <summary onClick={(event) => {
                                                         event.preventDefault();

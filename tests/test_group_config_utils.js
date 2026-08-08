@@ -86,6 +86,73 @@ test('normalizeGroupsConfig preserves normalized Ad Hoc capacity epics', async (
     assert.deepEqual(normalized.groups[0].adHocCapacityEpics, ['ADHOC-1', 'ADHOC-2']);
 });
 
+test('normalizeGroupsConfig preserves the board field instead of silently dropping it', async () => {
+    const {
+        normalizeGroupsConfig
+    } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const board = {
+        columns: [
+            { id: 'col-00000001', name: 'To do', statuses: ['To Do'], colour: '#8c8c8c', star: false, min: null, max: null },
+        ],
+    };
+    const normalized = normalizeGroupsConfig({
+        version: 1,
+        groups: [{ id: 'alpha', name: 'Alpha', teamIds: ['team-a'], board }],
+        defaultGroupId: 'alpha'
+    });
+
+    assert.deepEqual(normalized.groups[0].board, board);
+});
+
+test('normalizeGroupsConfig copies the board columns array instead of aliasing it', async () => {
+    const {
+        normalizeGroupsConfig
+    } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const columns = [
+        { id: 'col-00000001', name: 'To do', statuses: ['To Do'], colour: '#8c8c8c', star: false, min: null, max: null },
+    ];
+    const normalized = normalizeGroupsConfig({
+        version: 1,
+        groups: [{ id: 'alpha', name: 'Alpha', teamIds: ['team-a'], board: { columns } }],
+        defaultGroupId: 'alpha'
+    });
+
+    assert.notEqual(normalized.groups[0].board.columns, columns, 'output columns array must not be the same reference as the input');
+
+    normalized.groups[0].board.columns.push({ id: 'col-00000002', name: 'Done', statuses: ['Done'], colour: '#8c8c8c', star: false, min: null, max: null });
+    assert.equal(columns.length, 1, 'mutating the normalized output must not mutate the source config it was derived from');
+});
+
+test('normalizeGroupsConfig omits board (not an empty column list) when the group has none', async () => {
+    const {
+        normalizeGroupsConfig
+    } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const normalized = normalizeGroupsConfig({
+        version: 1,
+        groups: [{ id: 'alpha', name: 'Alpha', teamIds: ['team-a'] }],
+        defaultGroupId: 'alpha'
+    });
+
+    // Must be omitted, not defaulted to { columns: [] }: the backend
+    // validator treats a present board with zero columns as invalid, so a
+    // group that never configured a board must not send that key at all.
+    assert.equal(normalized.groups[0].board, undefined);
+    assert.equal(JSON.stringify(normalized.groups[0]).includes('"board"'), false);
+});
+
+test('formatGroupBoardSummary reports only group board configuration', async () => {
+    const { formatGroupBoardSummary } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    assert.equal(formatGroupBoardSummary(null), 'No board configured');
+    assert.equal(formatGroupBoardSummary({ columns: [] }), 'No board configured');
+    assert.equal(formatGroupBoardSummary({ columns: [{}] }), '1 column');
+    assert.equal(formatGroupBoardSummary({ columns: [{}, {}] }), '2 columns');
+    assert.equal(formatGroupBoardSummary({ columns: [{}] }, '1042'), '1 column');
+});
+
 test('buildGroupsConfigWithExcludedCapacityToggle blocks Ad Hoc overlap without mutation', async () => {
     const {
         buildGroupsConfigWithExcludedCapacityToggle

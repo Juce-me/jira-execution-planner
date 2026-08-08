@@ -101,7 +101,7 @@ test('dashboard source wires EPM rollup loading and metadata-only rendering', ()
     assert.ok(epmViewSource.includes('<EpmRollupPanel'), 'Expected EpmView to render EpmRollupPanel');
     assert.ok(epmRollupPanelSource.includes('Open in Jira Home'), 'Expected Jira Home CTA copy in EpmRollupPanel.jsx');
     assert.ok(epmRollupPanelSource.includes('Open Settings'), 'Expected settings CTA helper copy in EpmRollupPanel.jsx');
-    assert.ok(dashboardSource.includes("selectedView === 'eng' && !isCompletedSprintSelected"), 'Expected capacity shell to stay ENG-only');
+    assert.ok(dashboardSource.includes("selectedView === 'eng' && !showBoard && !isCompletedSprintSelected"), 'Expected capacity shell to stay ENG-only and off the board');
     assert.ok(dashboardSource.includes("selectedView === 'eng' ? ("), 'Expected compact sticky controls to branch by view');
 });
 

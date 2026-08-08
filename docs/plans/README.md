@@ -69,6 +69,9 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Frontend Planning Workflow
 
+0. `EXEC-defer-eng-alert-loading.md`
+   - Implemented and verified locally on 2026-08-08; pending acceptance or merge. Separates first-screen Product/Tech data from alert enrichment, then starts missing-info and every other alert source only after visible data and only in Catch Up.
+
 1. `DONE-auth-unfocused-auto-refresh.md`
    - Completed and merged in [PR #111](https://github.com/Juce-me/jira-execution-planner/pull/111). Amended 2026-07-16: the previously planned long-absence full-page reload was rejected and replaced with a refresh-only design. The superseded reload implementation remains unmerged on `feature/auth-unfocused-auto-refresh`. Use for audit context only.
    - Output: `frontend/src/api/authRefreshContract.js` holds the shared throttle/absence constants and event name; `frontend/src/api/authFocusRefresh.js` tracks continuous unfocused/hidden time and, after more than 12 minutes, issues one throttled `POST /api/auth/refresh` deduplicated across tabs via a shared `localStorage` timestamp, dispatching a `jep:auth-long-absence-return` `CustomEvent` on success; `frontend/src/dashboard.jsx` listens for that event and re-runs the same manual-refresh path the refresh button uses, gated by the same disabled condition. No document reload anywhere. `401` recovery (with and without `loginUrl`) is unchanged on both the initial and long-absence paths. `jira_server.py` adds a temporary, anonymized `after_request` diagnostics log (`jep.static_diagnostics`) scoped to `/`, `/jira-dashboard.html`, and `/frontend/dist/*` to identify the real owner of the originally reported repeated document/asset requests; it is explicitly temporary and slated for removal once that owner is identified. Content-hashed/immutable asset serving via a CDN/proxy remains deferred scope, not implemented here. Unit (`tests/test_auth_focus_refresh.js`), source-guard, and Playwright request-count coverage (`tests/ui/auth_focus_refresh_counts.spec.js`) prove: one document load produces one auth-script GET; focus/visibility bursts never add document or asset requests; multi-tab returns produce exactly one auth POST per cooldown window; a long absence refreshes only the active view's data; `401` recovery is intact.
@@ -326,6 +329,57 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed and merged in [PR #112](https://github.com/Juce-me/jira-execution-planner/pull/112) (branch `feature/eng-project-track-write-switch`). Use for audit context only.
    - Expected output: every real ENG Epic header renders an always-visible 🔒/🤷/⚪ Project Track indicator that, on Catch Up/Planning with Settings closed, is a native button opening the shared compact option menu and writing only the configured Jira Project Track field between Flexible and Committed through the signed-in user's OAuth context, with the same queue/optimistic/rollback/stale-scope/auth-recovery/analytics contracts as status and priority changes.
    - No Home/Townsquare or EPM mutation; `GATE-05` unaffected.
+
+4. `EXEC-eng-group-board.md`
+   - Design agreed with the requester; implementation not started. **Open the two approved design
+     assets in `docs/plans/assets/eng-group-board/` before executing** — self-contained HTML using
+     the app's real classes and geometry. They are authoritative for appearance and interaction;
+     the plan is authoritative for data, routes and constraints. This is the "separate future plan"
+     that `DONE-eng-epic-sort-and-track.md` deferred the board-imported per-group workflow source and
+     group-by-kanban-column grouping to. The existing sort comparator's injected phase-rank map is the
+     intended seam.
+   - Expected output: a new ENG `BOARD` mode showing epics in columns composed per team group,
+     configured at Settings → Departments → **Boards** (a dedicated third sub-tab beside Team groups
+     and Group labels, reached from a one-line *Configure board* pointer in Team groups); one focused
+     column always centred with at most one starred column that never folds; folded columns act as the
+     epic-count bar chart; epics sorted by `PRIORITY_AXIS` with assignee and Delivery Owner
+     (`customfield_11147`) both shown; an epic detail panel reusing the existing priority/track/status
+     controls and `.story-subtask-row` unchanged; and a single sticky filter bar with orthogonal facets
+     that cannot reach an empty set. Catch Up keeps its existing status filters.
+   - Board config is stored in the shared group payload on `/api/groups-config` (`user_write`), not
+     `/api/board-config`. Read §4.3 first: epic `description`, `customfield_11147`, and a board-status
+     source do not exist in the current payload and must be added before UI work. Open decisions are
+     listed in §11 (ten items, one superseded); whether Group Board editing should be admin-guarded is
+     resolved there (O1: no).
+
+5. `DONE-board-epic-description-smart-links.md`
+   - Accepted by the requester and executed in `3770d2b`; use for audit context only.
+   - Jira ADF `inlineCard` and `blockCard` nodes in Board Epic descriptions render as escaped,
+     allowlisted links using the URL as fallback text. Unsafe or missing URLs render nothing; the
+     existing lazy description fetch, sanitization boundary, clamp, cache, and analytics privacy
+     contract remain unchanged.
+
+6. `EXEC-sticky-board-column-chrome.md`
+   - Implementation complete and uncommitted; retain as `EXEC-*` pending acceptance or merge.
+     The focused Board regression and analytics allowlist are verified. The matrix retains the
+     unrelated drag-gate failure, an alert-toolbar setup failure, and an environment-blocked full
+     Python suite.
+   - Expected output: the existing semantic column chrome is promoted without duplicate controls
+     or column trees, remains horizontally aligned and interactive, preserves layout, and releases
+     at the board bottom.
+
+7. `EXEC-board-help-title-adf-tables.md`
+   - Implementation complete and uncommitted; retain as `EXEC-*` pending acceptance or merge.
+     The executed record is
+     `docs/agents/features/2026-08-08-executed-board-help-title-and-adf-tables.md`.
+   - Expected output: configured Boards replace the instruction wallpaper with closed-by-default
+     filter-bar help, long epic titles remain fixed-height ellipses, and safe semantic Jira ADF
+     tables scroll horizontally inside each table only.
+   - Verification: feature-specific checks, 55 Node guards, 12 description-route tests, five stale
+     contract corrections, the compact sticky check, two deterministic builds, the 903-test
+     frontend unit suite, and the final 113-test Board/EPM matrix pass; the full Python suite ran
+     1,219 tests with 1,218 passed and 1 skipped. Finalization corrected a stale drag-fixture route
+     without changing product drag or transition behavior.
 
 ## Stats Project Track By Sprint
 

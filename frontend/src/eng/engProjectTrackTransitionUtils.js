@@ -19,6 +19,8 @@ export function filterProjectTrackOptions(options, currentTrack) {
         .filter(option => option.value && option.value !== current);
 }
 
+const PROJECT_TRACK_SOURCE_SURFACES = new Set(['catch_up', 'planning', 'board']);
+
 // Builds the shared issue_project_track_action params for project_track_options_open,
 // project_track_change_submit, and project_track_change_result. targetTrack is omitted for
 // project_track_options_open, where no target track has been chosen yet, so no value_state
@@ -27,7 +29,10 @@ export function filterProjectTrackOptions(options, currentTrack) {
 // priority/status siblings' bucketing conventions without duplicating them for a fixed count.
 export function buildProjectTrackActionAnalyticsParams({ sourceSurface, targetTrack, result } = {}) {
     const params = {
-        source_surface: sourceSurface === 'planning' ? 'planning' : 'catch_up',
+        // Allowlisted rather than passed through, so an unknown surface can never become a new
+        // GA4 value. Board is the third: the epic detail panel edits Project Track (§6.5.4), and
+        // the earlier planning-or-catch_up collapse reported every Board change as Catch Up.
+        source_surface: PROJECT_TRACK_SOURCE_SURFACES.has(sourceSurface) ? sourceSurface : 'catch_up',
         issue_type_mix: 'epics',
         selected_count_bucket: '1_5',
     };

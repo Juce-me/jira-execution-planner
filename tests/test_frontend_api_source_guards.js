@@ -473,6 +473,7 @@ test('ENG API wrappers preserve task, backlog, dependency, and alert request det
         const backlogPayload = await engApi.fetchBacklogEpics('http://backend', {
             project: 'tech',
             teamIds: ['team-1'],
+            signal,
         });
         await engApi.fetchExcludedCapacityStatsSource('http://backend', {
             sprintIds: ['101', '102'],
@@ -522,6 +523,7 @@ test('ENG API wrappers preserve task, backlog, dependency, and alert request det
         assert.ok(backlogUrl.searchParams.get('t'), 'Expected backlog cache-busting timestamp');
         assert.equal(calls[3].options.method, 'GET');
         assert.equal(calls[3].options.cache, 'no-cache');
+        assert.equal(calls[3].options.signal, signal);
         assertJsonHeader(calls[3].options);
         assert.deepEqual(backlogPayload, { ok: true });
 
@@ -1317,6 +1319,113 @@ test('fetchIssueStatusCatalog sends X-Requested-With and tracks the jira_issue_t
     assert.equal(new Headers(calls[0].options.headers).has('X-CSRF-Token'), false);
 });
 
+test('board config API module owns board statuses and epic description endpoint construction', () => {
+    const boardConfigApiPath = path.join(frontendSrcPath, 'api', 'boardConfigApi.js');
+    assert.ok(fs.existsSync(boardConfigApiPath), 'Expected frontend/src/api/boardConfigApi.js to exist');
+
+    const boardConfigApiSource = readSource(boardConfigApiPath);
+
+    assert.ok(boardConfigApiSource.includes("from './http.js'"), 'Expected board config API module to use shared HTTP helpers');
+    assert.ok(boardConfigApiSource.includes('/api/issues/description'), 'Expected epic description URL construction in boardConfigApi.js');
+    assert.ok(boardConfigApiSource.includes('/api/board-config/statuses'), 'Expected board statuses URL construction in boardConfigApi.js');
+});
+
+test('fetchEpicDescription builds a query string key and tracks the eng_issue_description surface', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const calls = [];
+    const boardConfigApi = loadApiModule('boardConfigApi.js', [
+        'fetchEpicDescription',
+    ], {
+        jsonOrStructuredError,
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            calls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ key: 'PROD-1', html: '<p>Hi</p>', isEmpty: false });
+        },
+    });
+    const signal = new AbortController().signal;
+
+    const payload = await boardConfigApi.fetchEpicDescription('http://backend', { key: 'PROD-1', signal });
+
+    assert.deepEqual(payload, { key: 'PROD-1', html: '<p>Hi</p>', isEmpty: false });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].apiSurface, 'eng_issue_description');
+    assert.deepEqual(calls[0].analyticsParams, { featureName: 'eng_epic_description' });
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, '/api/issues/description');
+    assert.equal(url.searchParams.get('key'), 'PROD-1');
+    assert.equal(calls[0].options.method, 'GET');
+    assert.equal(calls[0].options.cache, 'no-cache');
+    assert.equal(calls[0].options.signal, signal);
+    assert.equal(new Headers(calls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+    assert.equal(new Headers(calls[0].options.headers).has('X-CSRF-Token'), false);
+});
+
+test('fetchBoardStatuses takes no parameters beyond the signal and tracks the board_config_statuses surface', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const calls = [];
+    const boardConfigApi = loadApiModule('boardConfigApi.js', [
+        'fetchBoardStatuses',
+    ], {
+        jsonOrStructuredError,
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            calls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ boardId: '7', projectKey: 'PROJ', statuses: [{ id: '1', name: 'To Do' }] });
+        },
+    });
+    const signal = new AbortController().signal;
+
+    const payload = await boardConfigApi.fetchBoardStatuses('http://backend', { signal });
+
+    assert.deepEqual(payload, { boardId: '7', projectKey: 'PROJ', statuses: [{ id: '1', name: 'To Do' }] });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].apiSurface, 'board_config_statuses');
+    assert.deepEqual(calls[0].analyticsParams, { featureName: 'group_board_composer' });
+    assert.equal(calls[0].url, 'http://backend/api/board-config/statuses');
+    assert.equal(calls[0].options.method, 'GET');
+    assert.equal(calls[0].options.cache, 'no-cache');
+    assert.equal(calls[0].options.signal, signal);
+    assert.equal(new Headers(calls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+    assert.equal(new Headers(calls[0].options.headers).has('X-CSRF-Token'), false);
+});
+
+test('board config API wrappers reject structured errors with status/code', async () => {
+    const { jsonOrStructuredError } = loadHttpHelpers();
+    const boardConfigApi = loadApiModule('boardConfigApi.js', [
+        'fetchEpicDescription',
+        'fetchBoardStatuses',
+    ], {
+        jsonOrStructuredError,
+        trackedFetch: async () => ({
+            ok: false,
+            status: 404,
+            json: async () => ({ error: 'issue_not_found' }),
+        }),
+    });
+
+    await assert.rejects(
+        () => boardConfigApi.fetchEpicDescription('http://backend', { key: 'PROD-404' }),
+        (err) => {
+            assert.equal(err.status, 404);
+            assert.equal(err.code, 'issue_not_found');
+            return true;
+        }
+    );
+    await assert.rejects(
+        () => boardConfigApi.fetchBoardStatuses('http://backend'),
+        (err) => {
+            assert.equal(err.status, 404);
+            return true;
+        }
+    );
+});
+
+test('Board drag resolution gets category metadata from the issue-status catalog, not the composer catalog', () => {
+    const source = readSource(path.join(frontendSrcPath, 'eng', 'EngBoardView.jsx'));
+    assert.ok(source.includes("import { fetchIssueStatusCatalog } from '../api/jiraIssueApi.js';"));
+    assert.ok(source.includes('fetchIssueStatusCatalog(backendUrl)'));
+    assert.ok(!source.includes('loadBoardStatusCatalog'));
+});
+
 test('auth refresh contract module defines exactly the shared refresh constants and stays side-effect-free', () => {
     const contractPath = path.join(frontendSrcPath, 'api', 'authRefreshContract.js');
     assert.ok(fs.existsSync(contractPath), 'Expected frontend/src/api/authRefreshContract.js to exist');
@@ -1327,8 +1436,10 @@ test('auth refresh contract module defines exactly the shared refresh constants 
     assert.ok(source.includes('LONG_ABSENCE_MS'), 'Expected LONG_ABSENCE_MS constant');
     assert.ok(source.includes('AUTH_REFRESH_SHARED_STORAGE_KEY'), 'Expected AUTH_REFRESH_SHARED_STORAGE_KEY constant');
     assert.ok(source.includes('AUTH_LONG_ABSENCE_EVENT'), 'Expected AUTH_LONG_ABSENCE_EVENT constant');
+    assert.ok(source.includes('AUTH_SESSION_REFRESH_EVENT'), 'Expected AUTH_SESSION_REFRESH_EVENT constant');
     assert.ok(source.includes("'jep.auth.lastRefreshAt'"), 'Expected the exact shared storage key literal');
     assert.ok(source.includes("'jep:auth-long-absence-return'"), 'Expected the exact long-absence event name literal');
+    assert.ok(source.includes("'jep:auth-session-refreshed'"), 'Expected the exact auth-session refresh event name literal');
 
     ['fetch', 'addEventListener', 'localStorage'].forEach((token) => {
         assert.ok(!source.includes(token), `Expected authRefreshContract.js to stay side-effect-free (found "${token}")`);

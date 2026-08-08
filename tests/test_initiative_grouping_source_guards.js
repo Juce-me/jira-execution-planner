@@ -26,33 +26,44 @@ test('dashboard defines groupEpicsByInitiative function', () => {
     );
 });
 
-test('dashboard renders initiative-toggle button', () => {
+test('grouping reuses the shared checkbox control', () => {
     assert.ok(
-        engViewSource.includes('initiative-toggle'),
-        'Expected initiative-toggle class in EngView.jsx'
+        engViewSource.includes('className="group-visible-control"'),
+        'Expected grouping to reuse the existing checkbox-label control, not a new one'
+    );
+    assert.ok(
+        engViewSource.includes('Group by initiative'),
+        'Expected the grouping control to say what it groups by'
     );
 });
 
-test('initiative toggle belongs to the View controls, not Display filters', () => {
+test('grouping is a view control in the filter bar, not a filter', () => {
     assert.ok(
-        engViewSource.includes('display-view-row'),
-        'Expected Display and View controls to share an inline row'
+        /viewControls=\{[\s\S]*group-visible-control/.test(engViewSource),
+        'Expected grouping to sit in the bar\'s view-control slot (D30: order and structure, not membership)'
     );
     assert.ok(
-        engViewSource.includes('view-control-grid'),
-        'Expected a dedicated View controls grid in EngView.jsx'
+        !engViewSource.includes('display-view-row'),
+        'Expected the Display/View card row to be gone'
     );
     assert.ok(
-        engViewSource.includes('view-toggle-card initiative-toggle'),
-        'Expected the initiative toggle to use the View toggle card styling'
+        !engViewSource.includes('view-control-grid'),
+        'Expected the View card grid to be gone'
     );
     assert.ok(
-        !engViewSource.includes('display-view-divider'),
-        'Expected Display and View labels without a divider glyph'
+        !engViewSource.includes('view-toggle-card'),
+        'Expected the initiative toggle card to be gone'
+    );
+});
+
+test('an explicit grouping choice is persisted, not recomputed from the data', () => {
+    assert.ok(
+        dashboardSource.includes('groupByInitiativeChoice'),
+        'Expected an explicit-choice state distinct from the data-driven default'
     );
     assert.ok(
-        !engViewSource.includes('display-filter-card display-initiative'),
-        'Expected initiative grouping not to be styled as a Display filter'
+        !dashboardSource.includes('setGroupByInitiative(hasInitiativeData)'),
+        'Expected initiative data to stop overwriting the user choice'
     );
 });
 

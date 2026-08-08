@@ -61,7 +61,9 @@ function issueStatusName(statusValue) {
 export function isStatusTransitionSurfaceEnabled({ selectedView, showPlanning, showStats, showScenario } = {}) {
     if (selectedView !== 'eng') return false;
     if (showStats || showScenario) return false;
-    // showPlanning true or false: both ENG Catch Up and ENG Planning are enabled surfaces.
+    // Whatever remains is Catch Up, Planning or Board: all three are enabled surfaces.
+    // Board is deliberately included — its epic cards carry the same status pills, and a
+    // card drag is a trigger for this same transition (plan §6.4).
     return true;
 }
 
@@ -232,9 +234,11 @@ export function buildSelectedSpBucket(storyPoints) {
 // Up reporting Planning's selected_sp_bucket) cannot recur by duplicating this
 // assembly at each call site. `status` is omitted so no status_bucket key is
 // sent for status_options_open, where no target status has been chosen yet.
-// selected_sp_bucket reflects Planning's selected Story points; Catch Up acts on
-// one explicit issue unrelated to Planning selection, so it omits
-// selected_sp_bucket entirely rather than reporting an unrelated bucket.
+// selected_sp_bucket reflects Planning's selected Story points, so ONLY Planning
+// sends it; Catch Up and Board both act on one explicit issue unrelated to the
+// Planning selection and omit it rather than reporting an unrelated bucket. The
+// earlier `!== 'catch_up'` form made that a Catch-Up exemption rather than a
+// Planning property, so the Board surface (§9.5) inherited Planning's bucket.
 export function buildStatusActionAnalyticsParams({
     sourceSurface,
     targets = [],
@@ -248,6 +252,6 @@ export function buildStatusActionAnalyticsParams({
         ...(status === undefined ? {} : { status_bucket: buildStatusBucket(status) }),
         issue_type_mix: summarizeIssueTypeMix(list),
         selected_count_bucket: buildSelectedCountBucket(uniqueKeyCount),
-        ...(sourceSurface === 'catch_up' ? {} : { selected_sp_bucket: buildSelectedSpBucket(sumPlanningStoryPoints(selectedStories || [])) }),
+        ...(sourceSurface === 'planning' ? { selected_sp_bucket: buildSelectedSpBucket(sumPlanningStoryPoints(selectedStories || [])) } : {}),
     };
 }

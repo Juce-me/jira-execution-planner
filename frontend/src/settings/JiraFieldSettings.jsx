@@ -21,6 +21,7 @@ export default function JiraFieldSettings(props) {
         jiraFields,
         sprintFieldSearchOpen,
         sprintFieldSearchResults,
+        sprintFieldSearchHidden,
         sprintFieldSearchIndex,
         boardIdDraft,
         boardSearchRemoteLoading,
@@ -59,9 +60,11 @@ export default function JiraFieldSettings(props) {
         parentNameFieldNameDraft,
         storyPointsFieldNameDraft,
         teamFieldNameDraft,
+        deliveryOwnerFieldNameDraft,
         parentNameFieldIdDraft,
         storyPointsFieldIdDraft,
         teamFieldIdDraft,
+        deliveryOwnerFieldIdDraft,
         issueTypeSearchQuery,
         setIssueTypeSearchQuery,
         setIssueTypeSearchOpen,
@@ -83,6 +86,7 @@ export default function JiraFieldSettings(props) {
         parentNameFieldSearchInputRef,
         parentNameFieldSearchOpen,
         parentNameFieldSearchResults,
+        parentNameFieldSearchHidden,
         parentNameFieldSearchIndex,
         setStoryPointsFieldIdDraft,
         setStoryPointsFieldNameDraft,
@@ -94,6 +98,7 @@ export default function JiraFieldSettings(props) {
         storyPointsFieldSearchInputRef,
         storyPointsFieldSearchOpen,
         storyPointsFieldSearchResults,
+        storyPointsFieldSearchHidden,
         storyPointsFieldSearchIndex,
         teamFieldSearchQuery,
         setTeamFieldSearchQuery,
@@ -103,9 +108,22 @@ export default function JiraFieldSettings(props) {
         teamFieldSearchInputRef,
         teamFieldSearchOpen,
         teamFieldSearchResults,
+        teamFieldSearchHidden,
         teamFieldSearchIndex,
         setTeamFieldIdDraft,
         setTeamFieldNameDraft,
+        deliveryOwnerFieldSearchQuery,
+        setDeliveryOwnerFieldSearchQuery,
+        setDeliveryOwnerFieldSearchOpen,
+        setDeliveryOwnerFieldSearchIndex,
+        handleDeliveryOwnerFieldSearchKeyDown,
+        deliveryOwnerFieldSearchInputRef,
+        deliveryOwnerFieldSearchOpen,
+        deliveryOwnerFieldSearchResults,
+        deliveryOwnerFieldSearchHidden,
+        deliveryOwnerFieldSearchIndex,
+        setDeliveryOwnerFieldIdDraft,
+        setDeliveryOwnerFieldNameDraft,
         capacityProjectDraft,
         resolveCapacityProjectName,
         setCapacityProjectDraft,
@@ -130,6 +148,7 @@ export default function JiraFieldSettings(props) {
         capacityFieldSearchInputRef,
         capacityFieldSearchOpen,
         capacityFieldSearchResults,
+        capacityFieldSearchHidden,
         capacityFieldSearchIndex,
         priorityWeightsSource,
         priorityWeightsDraft,
@@ -180,6 +199,9 @@ export default function JiraFieldSettings(props) {
                                                                             <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
                                                                         </div>
                                                                     ))}
+                                                                    {sprintFieldSearchHidden > 0 && (
+                                                                        <div className="team-search-more">+{sprintFieldSearchHidden} more match{sprintFieldSearchHidden === 1 ? '' : 'es'} — keep typing to narrow.</div>
+                                                                    )}
                                                                 </div>
                                                             )}
                                                         </div>
@@ -560,6 +582,9 @@ export default function JiraFieldSettings(props) {
                                                                         <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
                                                                     </div>
                                                                 ))}
+                                                                {parentNameFieldSearchHidden > 0 && (
+                                                                    <div className="team-search-more">+{parentNameFieldSearchHidden} more match{parentNameFieldSearchHidden === 1 ? '' : 'es'} — keep typing to narrow.</div>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>
@@ -590,6 +615,9 @@ export default function JiraFieldSettings(props) {
                                                                         <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
                                                                     </div>
                                                                 ))}
+                                                                {storyPointsFieldSearchHidden > 0 && (
+                                                                    <div className="team-search-more">+{storyPointsFieldSearchHidden} more match{storyPointsFieldSearchHidden === 1 ? '' : 'es'} — keep typing to narrow.</div>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>
@@ -620,6 +648,40 @@ export default function JiraFieldSettings(props) {
                                                                         <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
                                                                     </div>
                                                                 ))}
+                                                                {teamFieldSearchHidden > 0 && (
+                                                                    <div className="team-search-more">+{teamFieldSearchHidden} more match{teamFieldSearchHidden === 1 ? '' : 'es'} — keep typing to narrow.</div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div
+                                                className="group-projects-subsection"
+                                                data-map-key="deliveryOwner"
+                                            >
+                                                <div className="team-selector-label">Delivery Owner Field</div>
+                                                <div className="group-field-helper">Field naming the person accountable for delivering an epic.</div>
+                                                <div className="capacity-inline-row">
+                                                    {deliveryOwnerFieldNameDraft ? (
+                                                        <div className="selected-team-chip mapping-delivery-owner-chip" title={deliveryOwnerFieldIdDraft || ''}>
+                                                            <span className="team-name"><strong>{deliveryOwnerFieldNameDraft}</strong>{showTechnicalFieldIds && deliveryOwnerFieldIdDraft && <span className="field-id-hint">({deliveryOwnerFieldIdDraft})</span>}</span>
+                                                            <button className="remove-btn" onClick={() => { setDeliveryOwnerFieldIdDraft(''); setDeliveryOwnerFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove delivery owner field">&times;</button>
+                                                        </div>
+                                                    ) : (
+                                                    <div className="team-search-wrapper capacity-inline-search">
+                                                        <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={deliveryOwnerFieldSearchQuery} onChange={(e) => { setDeliveryOwnerFieldSearchQuery(e.target.value); setDeliveryOwnerFieldSearchOpen(true); setDeliveryOwnerFieldSearchIndex(0); }} onFocus={() => setDeliveryOwnerFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setDeliveryOwnerFieldSearchOpen(false), 120); }} onKeyDown={handleDeliveryOwnerFieldSearchKeyDown} ref={deliveryOwnerFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
+                                                        {deliveryOwnerFieldSearchOpen && deliveryOwnerFieldSearchResults.length > 0 && (
+                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
+                                                                {deliveryOwnerFieldSearchResults.map((f, index) => (
+                                                                    <div key={f.id} className={`team-search-result-item ${index === deliveryOwnerFieldSearchIndex ? 'active' : ''}`} onClick={() => { setDeliveryOwnerFieldIdDraft(f.id); setDeliveryOwnerFieldNameDraft(f.name); setDeliveryOwnerFieldSearchQuery(''); setDeliveryOwnerFieldSearchOpen(false); }}>
+                                                                        <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
+                                                                    </div>
+                                                                ))}
+                                                                {deliveryOwnerFieldSearchHidden > 0 && (
+                                                                    <div className="team-search-more">+{deliveryOwnerFieldSearchHidden} more match{deliveryOwnerFieldSearchHidden === 1 ? '' : 'es'} — keep typing to narrow.</div>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>
@@ -706,6 +768,9 @@ export default function JiraFieldSettings(props) {
                                                                             <strong>{f.name}</strong> <span style={{opacity: 0.5}}>({f.id})</span>
                                                                         </div>
                                                                     ))}
+                                                                    {capacityFieldSearchHidden > 0 && (
+                                                                        <div className="team-search-more">+{capacityFieldSearchHidden} more match{capacityFieldSearchHidden === 1 ? '' : 'es'} — keep typing to narrow.</div>
+                                                                    )}
                                                                 </div>
                                                             )}
                                                         </div>

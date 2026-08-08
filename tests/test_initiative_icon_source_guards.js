@@ -31,10 +31,6 @@ test('dashboard renders Jira-aligned initiative icon hooks', () => {
         'Expected initiative header icon class in EngView.jsx'
     );
     assert.ok(
-        engViewSource.includes('initiative-toggle-icon'),
-        'Expected initiative toggle icon class in EngView.jsx'
-    );
-    assert.ok(
         engViewSource.includes('initiative-body'),
         'Expected initiative body wrapper in EngView.jsx'
     );

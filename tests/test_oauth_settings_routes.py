@@ -258,6 +258,146 @@ class OAuthSettingsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["fields"][0]["id"], "customfield_10004")
         mock_get.assert_called_once_with("/rest/api/3/field", timeout=15)
 
+    def test_board_statuses_route_reads_epic_workflows_from_selected_projects(self):
+        sentinel_context = object()
+        calls = []
+        responses = [
+            FakeResponse(200, [
+                {"id": "100", "name": "Epic", "statuses": [
+                    {"id": "1", "name": "To Do"},
+                    {"id": "2", "name": "In Progress"},
+                ]},
+                {"id": "101", "name": "Story", "statuses": [
+                    {"id": "3", "name": "Story Review"},
+                ]},
+            ]),
+            FakeResponse(200, [
+                {"id": "200", "name": "Epic", "statuses": [
+                    {"id": "2", "name": "In Progress"},
+                    {"id": "4", "name": "Done"},
+                ]},
+            ]),
+        ]
+
+        def fake_get(path, **kwargs):
+            calls.append((path, kwargs.get("context")))
+            return responses[len(calls) - 1]
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={"boardId": "7", "boardName": "Delivery", "source": "config"}), \
+             patch.object(jira_server, "get_selected_projects", return_value=["PROJ", "TECH"]), \
+             patch.object(jira_server, "current_request_auth_context", return_value=sentinel_context), \
+             patch.object(jira_server, "current_jira_get", side_effect=fake_get), \
+             patch.object(jira_server, "current_jira_request", side_effect=AssertionError("must not load the global status catalog")):
+            response = self.client.get("/api/board-config/statuses?boardId=999")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(calls, [
+            ("/rest/api/3/project/PROJ/statuses", sentinel_context),
+            ("/rest/api/3/project/TECH/statuses", sentinel_context),
+        ])
+        self.assertEqual(response.get_json(), {
+            "boardId": "7",
+            "projectKeys": ["PROJ", "TECH"],
+            "statuses": [
+                {"id": "1", "name": "To Do"},
+                {"id": "2", "name": "In Progress"},
+                {"id": "4", "name": "Done"},
+            ],
+        })
+
+    def test_board_statuses_route_does_not_require_board_project_location(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={"boardId": "7"}), \
+             patch.object(jira_server, "get_selected_projects", return_value=["PROJ"]), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, [
+                 {"id": "100", "name": "Epic", "statuses": [{"id": "1", "name": "To Do"}]},
+             ])):
+            response = self.client.get("/api/board-config/statuses")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["statuses"], [{"id": "1", "name": "To Do"}])
+
+    def test_board_statuses_route_distinguishes_board_without_a_project(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={"boardId": "7"}), \
+             patch.object(jira_server, "get_selected_projects", return_value=[]), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {"id": 7, "location": {}})):
+            response = self.client.get("/api/board-config/statuses")
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "board_project_unavailable")
+
+    def test_board_statuses_route_distinguishes_forbidden_board_read(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={"boardId": "7"}), \
+             patch.object(jira_server, "get_selected_projects", return_value=[]), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(403, {})):
+            response = self.client.get("/api/board-config/statuses")
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "board_statuses_forbidden")
+        self.assertNotIn("configuration", response.get_json()["message"].lower())
+
+    def test_board_statuses_route_distinguishes_forbidden_project_status_read(self):
+        responses = [
+            FakeResponse(200, {"location": {"projectKey": "PROJ"}}),
+            FakeResponse(403, {}),
+        ]
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={"boardId": "7"}), \
+             patch.object(jira_server, "get_selected_projects", return_value=[]), \
+             patch.object(jira_server, "current_jira_get", side_effect=responses):
+            response = self.client.get("/api/board-config/statuses")
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "board_statuses_forbidden")
+        self.assertNotIn("configuration", response.get_json()["message"].lower())
+
+    def test_board_statuses_route_distinguishes_other_upstream_failure(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={"boardId": "7"}), \
+             patch.object(jira_server, "get_selected_projects", return_value=[]), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(503, {})):
+            response = self.client.get("/api/board-config/statuses")
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "board_statuses_fetch_failed")
+
+    def test_board_statuses_route_distinguishes_empty_project_statuses(self):
+        responses = [
+            FakeResponse(200, {"location": {"projectKey": "PROJ"}}),
+            FakeResponse(200, [{"id": "100", "name": "Story", "statuses": []}]),
+        ]
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={"boardId": "7"}), \
+             patch.object(jira_server, "get_selected_projects", return_value=[]), \
+             patch.object(jira_server, "current_jira_get", side_effect=responses):
+            response = self.client.get("/api/board-config/statuses")
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "board_statuses_unavailable")
+        self.assertNotIn("statuses", response.get_json())
+
+    def test_board_statuses_route_preserves_auth_error_handling(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={"boardId": "7"}), \
+             patch.object(jira_server, "get_selected_projects", return_value=[]), \
+             patch.object(jira_server, "current_jira_get", side_effect=jira_server.AuthError("auth_required", "Atlassian authentication is required.")):
+            response = self.client.get("/api/board-config/statuses")
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["loginUrl"], "/login?reason=session_expired")
+
+    def test_board_statuses_route_requires_configured_board(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_board_config", return_value={"boardId": "", "boardName": "", "source": "default"}), \
+             patch.object(jira_server, "current_jira_get", side_effect=AssertionError("must not call Jira without a configured board")):
+            response = self.client.get("/api/board-config/statuses")
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "no_board_configured")
+
     def test_local_config_post_requires_csrf_header_in_oauth_mode(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
             response = self.client.post("/api/board-config", json={"boardId": "7"})

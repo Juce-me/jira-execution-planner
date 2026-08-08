@@ -746,7 +746,7 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/groups-config') {
             return json({
                 version: 1,
-                groups: [{
+                groups: options.groups || [{
                     id: 'grp-default',
                     name: 'Default',
                     teamIds: groupTeamIds,
@@ -1083,6 +1083,228 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
+// Catch Up is the all-false fallthrough of the ENG mode booleans, so every one of these
+// assertions is about Board being a mode of its own rather than a Catch Up variant.
+function seedEngPrefs(page, extraPrefs = {}) {
+    return page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        showPlanning: false,
+        showScenario: false,
+        ...extraPrefs,
+    });
+}
+
+// One row, no per-button clipping — .eng-mode-control is the control MRT020 and MRT021 were
+// both about, and it now carries five options. Below 760px the five options are wider than the
+// controls row, so the control scrolls internally (controls.css); what must never happen is the
+// control spilling past its row, which is what made the document scroll sideways.
+async function readEngModeGeometry(page, selector) {
+    return page.locator(selector).evaluate((node) => {
+        const styles = window.getComputedStyle(node);
+        const buttons = Array.from(node.querySelectorAll('.segmented-control-button'));
+        const rect = node.getBoundingClientRect();
+        const rowRect = node.parentElement.getBoundingClientRect();
+        return {
+            flexWrap: styles.flexWrap,
+            overflowX: styles.overflowX,
+            height: Math.round(rect.height),
+            width: Math.round(rect.width),
+            scrollWidth: node.scrollWidth,
+            clientWidth: node.clientWidth,
+            rowWidth: Math.round(rowRect.width),
+            spillsRight: Math.round(rect.right - rowRect.right),
+            spillsLeft: Math.round(rowRect.left - rect.left),
+            docOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            buttonTops: buttons.map((button) => Math.round(button.getBoundingClientRect().top)),
+            labels: buttons.map((button) => button.textContent),
+            clipped: buttons.filter((button) => button.scrollWidth > button.clientWidth + 1).map((button) => button.textContent),
+            buttonWidths: buttons.map((button) => Math.round(button.getBoundingClientRect().width)),
+        };
+    });
+}
+
+async function expectEngModeControlSingleRow(page, selector) {
+    const geometry = await readEngModeGeometry(page, selector);
+    expect(geometry.labels).toEqual(['Catch Up', 'Planning', 'Board', 'Statistics', 'Scenario']);
+    expect(geometry.flexWrap, `${selector} must stay a single-row segmented control`).toBe('nowrap');
+    expect(new Set(geometry.buttonTops).size, `${selector} buttons must stay on one row`).toBe(1);
+    expect(geometry.clipped, `${selector} buttons must not clip their labels`).toEqual([]);
+    expect(geometry.width, `${selector} must stay no wider than its controls row`).toBeLessThanOrEqual(geometry.rowWidth + 1);
+    expect(geometry.docOverflowX, `${selector} must not make the document scroll sideways`).toBeLessThanOrEqual(1);
+    // When the five options do not fit, the control itself scrolls rather than the page.
+    if (geometry.scrollWidth > geometry.clientWidth + 1) {
+        expect(geometry.overflowX, `${selector} must scroll internally when its options overflow`).toBe('auto');
+    }
+    return geometry;
+}
+
+test('ENG Board is a fifth mode that replaces the Catch Up surface', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, { analyticsContext: { enabled: false } });
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await seedEngPrefs(page);
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
+    const mainModes = page.locator('.view-selector .eng-mode-control');
+    await expect(mainModes.getByRole('radio', { name: 'Catch Up' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.task-list .task-item').first()).toBeVisible();
+    const catchUpTaskItems = await page.locator('.task-list .task-item').count();
+    expect(catchUpTaskItems).toBeGreaterThan(0);
+    const catchUpCalls = calls.length;
+
+    await mainModes.getByRole('radio', { name: 'Board' }).click();
+    await expect(mainModes.getByRole('radio', { name: 'Board' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.eng-board')).toHaveCount(1);
+    // The single most valuable assertion in this task: no Catch Up list under the board.
+    await expect(page.locator('.task-list')).toHaveCount(0);
+    await expect(page.locator('.task-list .task-item')).toHaveCount(0);
+    await expect(page.locator('.capacity-panel')).toHaveCount(0);
+    await expect(page.locator('.planning-panel')).toHaveCount(0);
+    await expect(page.locator('.stats-panel')).toHaveCount(0);
+    // Entering Board is a pure re-render: no new fetch.
+    expect(calls.length).toBe(catchUpCalls);
+    await captureSmokeScreenshot(page, 'board-mode');
+
+    const desktopButtonWidths = (await readEngModeGeometry(page, '.view-selector .eng-mode-control')).buttonWidths;
+    for (const width of [1280, 1028, 760, 390, 375]) {
+        await page.setViewportSize({ width, height: 760 });
+        const geometry = await expectEngModeControlSingleRow(page, '.view-selector .eng-mode-control');
+        expect(geometry.height, 'the mode control keeps the shared control height at every width').toBe(38);
+        // The narrow-width scroll belongs to the container: the buttons keep their own metrics.
+        expect(geometry.buttonWidths, `button widths must not change at ${width}px`).toEqual(desktopButtonWidths);
+        expect(geometry.spillsRight, `the mode control must not overhang its row at ${width}px`).toBeLessThanOrEqual(1);
+        expect(geometry.spillsLeft, `the mode control must not overhang its row at ${width}px`).toBeLessThanOrEqual(1);
+    }
+    await page.setViewportSize({ width: 1280, height: 760 });
+
+    // Board -> Statistics -> Board restores the board.
+    await mainModes.getByRole('radio', { name: 'Statistics' }).click();
+    await expect(page.locator('.stats-panel.open')).toBeVisible();
+    await expect(page.locator('.eng-board')).toHaveCount(0);
+    await mainModes.getByRole('radio', { name: 'Board' }).click();
+    await expect(page.locator('.eng-board')).toHaveCount(1);
+    await expect(page.locator('.task-list')).toHaveCount(0);
+
+    // Back to Catch Up restores the task list the board replaced.
+    await mainModes.getByRole('radio', { name: 'Catch Up' }).click();
+    await expect(page.locator('.eng-board')).toHaveCount(0);
+    await expect(page.locator('.task-list .task-item')).toHaveCount(catchUpTaskItems);
+
+    // The compact sticky header carries the same control. Board is entered from Catch Up here
+    // because the board container itself is short enough that the page stops scrolling.
+    await expectWindowSticky(page, '.epic-header');
+    const stickyModes = page.locator('.compact-sticky-header .eng-mode-control');
+    await expect(stickyModes).toBeVisible();
+    // Same sweep as above: the compact header seats the control in its own flex context
+    // (header.css gives it flex: 0 0 auto and its buttons a tighter min-width), so the
+    // narrow-viewport behaviour has to be proven here too, not inferred from .view-selector.
+    const compactButtonWidths = (await readEngModeGeometry(page, '.compact-sticky-header .eng-mode-control')).buttonWidths;
+    for (const width of [1280, 1028, 760, 390, 375]) {
+        await page.setViewportSize({ width, height: 760 });
+        await page.evaluate(() => window.scrollTo(0, 600));
+        await expect(stickyModes).toBeVisible();
+        const geometry = await expectEngModeControlSingleRow(page, '.compact-sticky-header .eng-mode-control');
+        expect(geometry.height, 'the compact mode control keeps the shared control height').toBe(38);
+        expect(geometry.buttonWidths, `compact button widths must not change at ${width}px`).toEqual(compactButtonWidths);
+        // The compact row seats the control 11px in from its own left edge, and has done since
+        // before the fifth mode; clamped to the row's width the control therefore ends that same
+        // 11px past its right edge. Assert the clamp, which is the part this stylesheet owns:
+        // before it the control was its full 347px in a 182px row, 176px past the edge.
+        expect(geometry.spillsRight, `compact control must be clamped to its row at ${width}px`)
+            .toBeLessThanOrEqual(Math.max(0, -geometry.spillsLeft) + 1);
+    }
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await page.evaluate(() => window.scrollTo(0, 600));
+    await expect(stickyModes).toBeVisible();
+    await stickyModes.getByRole('radio', { name: 'Board' }).click();
+    await expect(mainModes.getByRole('radio', { name: 'Board' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.eng-board')).toHaveCount(1);
+    await expect(page.locator('.task-list')).toHaveCount(0);
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('ENG Board persists in ui prefs and survives a group switch', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, {
+        authMode: 'basic',
+        analyticsContext: { enabled: true },
+        groups: [
+            { id: 'grp-default', name: 'Default', teamIds: groupTeamIds, teamLabels: { 'team-alpha': 'alpha_label', 'team-beta': 'beta_label' }, excludedCapacityEpics: [] },
+            { id: 'grp-second', name: 'Second', teamIds: groupTeamIds, teamLabels: { 'team-alpha': 'alpha_label', 'team-beta': 'beta_label' }, excludedCapacityEpics: [] },
+        ],
+    });
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await seedEngPrefs(page, { showBoard: true });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    const mainModes = page.locator('.view-selector .eng-mode-control');
+    await expect(mainModes.getByRole('radio', { name: 'Board' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.eng-board')).toHaveCount(1);
+    await expect(page.locator('.task-list')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => (
+        window.dataLayer?.filter(entry => entry.event_name === 'page_view').at(-1)?.eng_mode || ''
+    ))).toBe('board');
+
+    // Board joins the per-group in-memory state: default -> second -> default stays in Board.
+    const switchGroup = async (name) => {
+        await page.locator('.view-selector .group-dropdown-toggle').click();
+        await page.locator('.view-selector .group-dropdown-option', { hasText: name }).click();
+    };
+    await switchGroup('Second');
+    await expect(page.locator('.view-selector .group-dropdown-toggle')).toContainText('Second');
+    await expect(mainModes.getByRole('radio', { name: 'Board' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.eng-board')).toHaveCount(1);
+    await switchGroup('Default');
+    await expect(page.locator('.view-selector .group-dropdown-toggle')).toContainText('Default');
+    await expect(mainModes.getByRole('radio', { name: 'Board' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.eng-board')).toHaveCount(1);
+
+    expect(await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1')).showBoard)).toBe(true);
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('ENG prefs without showBoard land in Catch Up', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls);
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await seedEngPrefs(page);
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }))
+        .toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.eng-board')).toHaveCount(0);
+    await expect(page.locator('.task-list .task-item').first()).toBeVisible();
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('ENG Board stays available on a closed sprint that disables Planning and Scenario', async ({ page }) => {
+    const calls = [];
+    const closedSprintId = 34627;
+    const apiMocks = await installApiMocks(page, calls, {
+        sprints: [{ id: closedSprintId, name: '2026Q1 Sprint 41', state: 'closed' }],
+    });
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await seedEngPrefs(page, { selectedSprint: closedSprintId, sprintName: '2026Q1 Sprint 41' });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    const mainModes = page.locator('.view-selector .eng-mode-control');
+    await expect(mainModes.getByRole('radio', { name: 'Planning' })).toBeDisabled();
+    await expect(mainModes.getByRole('radio', { name: 'Scenario' })).toBeDisabled();
+    await expect(mainModes.getByRole('radio', { name: 'Board' })).toBeEnabled();
+
+    await mainModes.getByRole('radio', { name: 'Board' }).click();
+    await expect(mainModes.getByRole('radio', { name: 'Board' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.eng-board')).toHaveCount(1);
+    await expect(page.locator('.task-list')).toHaveCount(0);
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
 test('Initiative and Epic search reveal loaded descendants', async ({ page }) => {
     const paymentsInitiative = { key: 'INIT-42', summary: 'Payments Initiative' };
     const paymentsApiEpic = {
@@ -1181,9 +1403,10 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
     await expect(page.locator('.epic-block')).toHaveCount(3);
     await expect(page.locator('.task-item')).toHaveCount(5);
-    const initiativeToggle = page.locator('.initiative-toggle');
+    // Grouping now lives in the compact filter bar as the shared checkbox control.
+    const initiativeToggle = page.locator('.filterbar .group-visible-control input[type="checkbox"]');
     await expect(initiativeToggle).toBeVisible();
-    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(initiativeToggle).toBeChecked();
     await expect(page.locator('.initiative-group')).toHaveCount(1);
     await expect.poll(() => page.evaluate(() => (
         window.dataLayer?.some(entry => entry.event_name === 'page_view') || false
@@ -1203,7 +1426,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await expect(page.getByText('Tech Platform Story', { exact: true })).toHaveCount(0);
     await expect(page.locator('.epic-block')).toHaveCount(2);
     await expect(page.locator('.task-item')).toHaveCount(4);
-    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(initiativeToggle).toBeChecked();
     await expect(page.locator('.initiative-group')).toHaveCount(1);
     await captureSmokeScreenshot(page, 'initiative-search-results');
     expect(apiMocks.unexpectedCalls).toEqual([]);
@@ -1253,12 +1476,12 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await searchInput.fill('No matching hierarchy');
     await expect(page.locator('.task-item')).toHaveCount(0);
     await expect(initiativeToggle).toBeVisible();
-    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(initiativeToggle).toBeChecked();
 
     await searchInput.fill('INIT-42');
     await expect(page.locator('.epic-block')).toHaveCount(2);
     await expect(page.locator('.task-item')).toHaveCount(4);
-    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(initiativeToggle).toBeChecked();
     await expect(page.locator('.initiative-group')).toHaveCount(1);
 
     await searchInput.fill(paymentsApiEpic.key);
@@ -1269,19 +1492,19 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
 
     await searchInput.fill('Payments Initiative');
     await initiativeToggle.click();
-    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(initiativeToggle).not.toBeChecked();
     await expect(page.locator('.initiative-group')).toHaveCount(0);
     await expect(page.locator('.initiative-header')).toHaveCount(0);
 
     await searchInput.fill('No matching hierarchy');
     await expect(page.locator('.task-item')).toHaveCount(0);
     await expect(initiativeToggle).toBeVisible();
-    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(initiativeToggle).not.toBeChecked();
 
     await searchInput.fill('Payments Initiative');
     await expect(page.locator('.epic-block')).toHaveCount(2);
     await expect(page.locator('.task-item')).toHaveCount(4);
-    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(initiativeToggle).not.toBeChecked();
     await expect(page.locator('.initiative-group')).toHaveCount(0);
 
     const teamControl = page.locator('.view-selector .team-dropdown').first();
@@ -1291,17 +1514,20 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await expect(teamControl.locator('.team-dropdown-selection-label')).toHaveText('Alpha Team');
     await expect(page.locator('.task-item')).toHaveCount(3);
 
-    const doneToggle = page.getByRole('button', { name: 'Include Done and Incomplete tasks' }).first();
-    await expect(doneToggle).toHaveAttribute('aria-pressed', 'true');
-    await doneToggle.click();
-    await expect(doneToggle).toHaveAttribute('aria-pressed', 'false');
+    // The Done Display toggle is subsumed by the Status facet: hiding Done is unticking it.
+    const doneOption = page.locator('.popover .pop-group[data-facet="status"] .pop-opt[data-option="Done"]');
+    await page.locator('.fb-trigger').click();
+    await expect(doneOption).toHaveAttribute('aria-pressed', 'true');
+    await doneOption.click();
+    await expect(doneOption).toHaveAttribute('aria-pressed', 'false');
+    await page.keyboard.press('Escape');
     await expect(page.locator('.epic-block')).toHaveCount(2);
     await expect(page.locator('.task-item')).toHaveCount(2);
     await expect(page.getByText('Payments API Story 1', { exact: true })).toBeVisible();
     await expect(page.getByText('Payments Ledger Story 2', { exact: true })).toBeVisible();
     await expect(page.getByText('Payments API Story 2', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Payments Ledger Story 1', { exact: true })).toHaveCount(0);
-    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(initiativeToggle).not.toBeChecked();
     await captureSmokeScreenshot(page, 'initiative-search-filtered-flat');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
@@ -1882,6 +2108,19 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
         expect(check.height, `${check.ariaLabel} must keep the shared segmented control height`).toBeLessThanOrEqual(42);
         expect(new Set(check.buttonTops).size, `${check.ariaLabel} buttons must stay on one row`).toBe(1);
     }
+    // Scope lock: .eng-mode-control is the shared SegmentedControl hook, not the ENG mode
+    // switch's private class. controls.css scrolls that switch internally below 760px, scoped to
+    // .view-selector and .compact-sticky-header; these two controls sit outside both and must
+    // keep the default overflow at the same width. (The Statistics view toggle is not a witness
+    // here — stats/shell.css already gives it overflow-x: auto at every width.)
+    await page.setViewportSize({ width: 390, height: 900 });
+    for (const label of ['Capacity side', 'Mode']) {
+        expect(
+            await controls.getByRole('radiogroup', { name: label }).evaluate(node => window.getComputedStyle(node).overflowX),
+            `${label} must not inherit the ENG mode control narrow-viewport scroll rule`
+        ).toBe('visible');
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
     await expect(controls.getByText('Exclude Ad Hoc')).toBeVisible();
     await expect(controls.getByText('Exclude Excluded Capacity')).toBeVisible();
     // Mode label is "Mode", never "Metric".

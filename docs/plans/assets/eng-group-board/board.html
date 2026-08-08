@@ -1,0 +1,2209 @@
+<meta charset="utf-8">
+<title>ENG Board — filter + kanban UX mockup</title>
+
+<style>
+/* ============================================================
+   Tokens — from frontend/src/styles/shared/shell.css. Light only.
+   --text-muted is referenced by .story-subtask-assignee in the app
+   but never defined there; given a value here so the row renders.
+   ============================================================ */
+:root {
+  color-scheme: light;
+
+  --bg-primary: #f8f7f4;
+  --bg-secondary: #ffffff;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --text-muted: #8c8880;
+  --accent: #d4380d;
+  --good: #389e0d;
+  --warn: #cf1322;   /* real shell.css token; needed by the Min/Max breach glow */
+  --border: #e0ddd7;
+  --control-height: 38px;
+
+  --st-todo: #8c8c8c;
+  --st-blocked: #ff4d4f;
+  --st-postponed: #fa8c16;
+  --st-progress: #69c0ff;
+  --st-release: #13c2c2;
+  --st-done: #52c41a;
+
+  --serif: 'Crimson Pro', Georgia, 'Iowan Old Style', serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --strip-w: 36px;
+  --strip-h: 340px;
+  /* ONE fixed width for every open column, focused or starred. Two different
+     open widths meant two different card renderings, which caused the bleed.
+     It is deliberately NOT a fit-two formula: the chosen panel keeps its full
+     reading width and other columns run off the frame, which is scrollable. */
+  --open-w: min(660px, 92vw);
+  --container-max: 1040px;      /* shared/shell.css:46 — the app's only container */
+  /* shell.css sticky layers, verbatim: epic < controls < compact < overlay.
+     The filter bar is the control strip, so it takes the planning layer (60);
+     at 40 it sat UNDER the sticky epic header and the header painted over it. */
+  --sticky-epic-z: 50;
+  --sticky-controls-z: 60;
+  --sticky-compact-z: 70;
+  --sticky-control-overlay-z: 80;
+  --compact-h: 0px;   /* set from JS when the compact header is showing */
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg-primary); color: var(--text-primary); font-family: var(--serif); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+.chrome { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.6rem; color: var(--text-secondary); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* ============================================================
+   Shell
+   ============================================================ */
+/* shared/shell.css:45 verbatim. The app has ONE container and it is 1040px;
+   there is no wider shell. The board is the only thing that bleeds past it. */
+.container { max-width: var(--container-max); margin: 0 auto; padding: 0.9rem 1.5rem 3rem; }
+
+/* ============================================================
+   Compact sticky header — mirrors the app's .compact-sticky-header
+   (shared/header.css, --sticky-compact-z: 70). Carries every control
+   Catch Up carries, search included, so nothing is lost on scroll.
+   ============================================================ */
+/* shared/header.css:7 verbatim. It sits INSIDE .container and is bounded by it —
+   the earlier -1.5rem bleed was the mockup's invention and pushed 10px of
+   document overflow at 360px, the same scrollbar-arithmetic trap as D29. */
+.compact-sticky-header {
+  position: sticky; top: 0; z-index: var(--sticky-compact-z); display: none;
+  align-items: flex-end; gap: 0.65rem; flex-wrap: nowrap; min-width: 0;
+  background: var(--bg-primary); border-bottom: 1px solid var(--border);
+  padding: 0 0 0.45rem; margin-bottom: 0.85rem;
+}
+.compact-sticky-header.is-visible { display: flex; }
+/* shared/header.css:32 */
+.compact-sticky-header-controls {
+  display: flex; align-items: flex-end; gap: 0.35rem; flex: 1 1 auto;
+  flex-wrap: nowrap; min-width: 0; overflow-x: auto; scrollbar-width: none;
+}
+.compact-sticky-header-controls::-webkit-scrollbar { display: none; }
+.compact-sticky-header-controls > * { flex: none; }
+.compact-sticky-header .control-field { min-width: 0; padding-top: 0; }
+.compact-sticky-header .control-field .sprint-dropdown-toggle { height: 30px; font-size: 0.6rem; max-width: 170px; }
+.compact-sticky-header .control-field .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* header.css:49,53 — the only permitted adjustments are flex sizing and the
+   button's own padding/font. The control's display/height are never touched. */
+.compact-sticky-header .eng-mode-control { flex: 0 0 auto; }
+.compact-sticky-header .eng-mode-control .segmented-control-button { padding: 0 0.52rem; font-size: 0.62rem; min-width: 2.4rem; }
+.compact-sticky-header .compact-search { margin-left: auto; flex: 0 1 200px; min-width: 130px; }
+.head-actions .control-field { flex: 0 0 210px; }   /* header.css:45 — max-width: 210px */
+.app-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 0.6rem; }
+.brand-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); flex: none; }
+.brand-name { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.86rem; font-weight: 500; }
+.brand-sub { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.5rem; color: var(--text-secondary); }
+.head-actions { display: flex; align-items: center; gap: 0.5rem; }
+
+/* shared/controls.css:204 verbatim. This is SegmentedControl's own CSS, not a
+   look-alike: the ENG mode row is the control MRT020 and MRT021 were both about,
+   so the mockup must not ship a second one. .eng-mode-control is the documented
+   class hook (controls.css:221) and the ONLY thing a consumer may pass — never
+   local CSS that changes its display, flex-wrap or height. */
+.segmented-control {
+  display: inline-flex; align-items: center; gap: 2px; height: var(--control-height);
+  margin-left: 0.4rem; margin-top: 0.4rem; margin-bottom: 0; padding: 3px;
+  background: #ece9e1; border: 1px solid var(--border); border-radius: 12px;
+  align-self: flex-start; box-shadow: inset 0 1px 0 rgba(255,255,255,0.75);
+}
+.view-mode-control, .eng-mode-control, .epm-state-control { margin-left: 0; }
+.segmented-control-button {
+  padding: 0 0.75rem; font-size: 0.7rem; font-family: var(--mono); letter-spacing: 0.04em;
+  text-transform: uppercase; background: transparent; border: 0; border-radius: 9px;
+  cursor: pointer; color: var(--text-secondary); white-space: nowrap; height: 100%;
+}
+.segmented-control-button.active { background: var(--text-primary); color: var(--bg-primary); }
+
+/* shared/controls.css:172 — a label stacked over one dropdown toggle */
+.control-field { position: relative; display: inline-flex; flex-direction: column; gap: 0.2rem; padding-top: 0.4rem; }
+.control-label {
+  position: absolute; top: 0.55rem; left: 0.75rem; font-size: 0.5rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--text-secondary); background: var(--bg-primary);
+  padding: 0 0.3rem; font-family: var(--mono); line-height: 1; z-index: 2; transform: translateY(-50%);
+}
+.control-field .sprint-dropdown-toggle { height: var(--control-height); font-size: 0.68rem; padding: 0 0.7rem; }
+/* shared/controls.css:1 — search is an input, never a dropdown toggle */
+.search-input {
+  font-family: var(--mono); font-size: 0.8rem; padding: 0.55rem 0.7rem 0.45rem;
+  border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary);
+  text-transform: none; letter-spacing: normal; width: 100%; border-radius: 10px;
+  height: var(--control-height); box-sizing: border-box;
+}
+/* shared/controls.css:164 — the controls row */
+.view-filters { display: flex; align-items: flex-end; gap: 0.5rem; flex-wrap: wrap; width: 100%; margin-top: 1rem; }
+
+/* ============================================================
+   Filter bar
+   ============================================================ */
+/* sticks below the compact header, never under it */
+.filterbar-wrap { position: sticky; top: var(--compact-h); z-index: var(--sticky-controls-z); padding-top: 0.85rem; }
+.filterbar-wrap::before { content: ''; position: absolute; inset: 0 -1.5rem; background: var(--bg-primary); z-index: -1; }
+/* One row, content-width, fixed height. It sits in the layout like the controls
+   row above it rather than as a full-bleed band, it never wraps, and it never
+   grows taller: the chips lane is the only elastic part and it collapses to
+   "+n more" instead of pushing the bar onto a second row. A three-row filter
+   block is precisely what this design exists to replace. */
+.filterbar { display: inline-flex; align-items: center; gap: 0.55rem; flex-wrap: nowrap; height: 42px; width: max-content; max-width: 100%; padding: 0.3rem 0.55rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; }
+.filterbar > .pop-host, .filterbar > .fb-readout, .filterbar > .view-controls { flex: none; }
+.fb-trigger { display: inline-flex; align-items: center; gap: 0.4rem; height: 30px; padding: 0 0.65rem; cursor: pointer; background: none; border: 1px solid var(--border); border-radius: 8px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.6rem; }
+.fb-trigger:hover { box-shadow: 0 4px 10px rgba(22,22,22,0.10); }
+.fb-trigger .badge { min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 0.52rem; display: grid; place-items: center; letter-spacing: 0; }
+.fb-readout { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 0.45rem; }
+.fb-readout b { font-weight: 500; }
+.fb-readout .dim { color: var(--text-secondary); font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.fb-chips { display: flex; align-items: center; gap: 0.3rem; flex-wrap: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; }
+
+.chip { display: inline-flex; align-items: center; gap: 0.35rem; height: 26px; max-width: 19rem; padding: 0 0.3rem 0 0.55rem; border-radius: 999px; background: var(--bg-primary); border: 1px solid #e8b339; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.56rem; white-space: nowrap; flex: none; }
+.chip[hidden] { display: none; }
+.chip .facet { color: var(--text-secondary); }
+/* The verb carries the inversion: "hidden" means the named options are the ones
+   being excluded. Accent-coloured so it cannot be skim-read as part of the list. */
+.chip .verb { color: var(--accent); }
+.chip .names { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chip-more { cursor: pointer; border-style: dashed; border-color: var(--border); color: var(--text-secondary); padding: 0 0.55rem; }
+.chip-more:hover { border-color: var(--accent); color: var(--accent); }
+.chip .x { width: 16px; height: 16px; border: 0; background: none; cursor: pointer; border-radius: 50%; display: grid; place-items: center; color: var(--text-secondary); font-size: 0.7rem; line-height: 1; }
+.chip .x:hover { background: var(--border); color: var(--text-primary); }
+.chip-clear { border: 0; background: none; cursor: pointer; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.56rem; color: var(--accent); padding: 0 0.3rem; white-space: nowrap; flex: none; }
+.chip-clear:hover { text-decoration: underline; }
+
+.pop-host { position: relative; }
+/* clamped and scrollable: at 375x667 this was 709px tall with overflow visible,
+   leaving the last facet at y=901 and unreachable — the bar is pinned, so page
+   scroll could not reveal it either. */
+.popover { position: absolute; top: calc(100% + 0.4rem); left: 0;
+  width: 348px; overflow-y: auto; overscroll-behavior: contain; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 28px rgba(22,22,22,0.16); padding: 0.8rem; z-index: calc(var(--sticky-control-overlay-z) + 3); display: none; }
+.popover.open { display: block; }
+.pop-group + .pop-group { margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px dashed var(--border); }
+.pop-head { display: flex; align-items: baseline; gap: 0.4rem; margin-bottom: 0.4rem; }
+.pop-head .all { margin-left: auto; font-size: 0.5rem; }
+/* the facet's admitted total, beside its heading */
+.pop-total {
+  font-family: var(--mono); font-size: 0.6rem; font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.pop-list { display: grid; gap: 1px; }
+.pop-opt { display: grid; grid-template-columns: 13px 1fr auto; align-items: center; gap: 0.55rem; padding: 0.3rem 0.35rem; border-radius: 6px; cursor: pointer; border: 0; background: none; text-align: left; width: 100%; font-family: var(--mono); font-size: 0.62rem; }
+.pop-opt:hover { background: var(--bg-primary); }
+/* `display: grid` above beats the hidden attribute's UA display:none, so the
+   attribute alone would leave zero-count options on screen. */
+.pop-opt[hidden] { display: none; }
+.pop-opt .box { width: 12px; height: 12px; border: 1px solid var(--border); border-radius: 3px; display: grid; place-items: center; font-size: 0.55rem; color: #fff; line-height: 1; }
+.pop-opt[aria-checked="true"] .box, .pop-opt[aria-pressed="true"] .box { background: var(--accent); border-color: var(--accent); }
+.pop-opt[aria-checked="true"] .box::after, .pop-opt[aria-pressed="true"] .box::after { content: '✓'; }
+.pop-opt.radio .box { border-radius: 50%; }
+.pop-opt .n { font-variant-numeric: tabular-nums; color: var(--text-secondary); font-size: 0.58rem; }
+.pop-opt.is-locked { cursor: not-allowed; }
+.pop-opt.is-locked span:nth-child(2) { color: var(--text-secondary); }
+.pop-subject {
+  margin: -0.15rem 0 0.6rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--text-secondary);
+}
+.pop-neutral { margin-top: 0.35rem; padding: 0.3rem 0.4rem; border-radius: 6px; background: var(--bg-primary); font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); }
+
+
+
+/* ============================================================
+   Board — one focused column, centred. Always horizontal scroll,
+   never stacked: the focus model is the same at every width.
+   ============================================================ */
+/* At the app's real 1040px container this must not wrap the action onto its own
+   line: the text column flexes and the link stays on the first baseline. */
+.board-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: nowrap; margin: 1.4rem 0 0.6rem; }
+.board-head > div { min-width: 0; }
+.board-head .linkish { flex: none; }
+.board-head .sub { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); }
+.linkish { border: 0; background: none; cursor: pointer; padding: 0; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.58rem; color: var(--accent); }
+.linkish:hover { text-decoration: underline; }
+
+/* the board is a full-bleed scroller; the hints live in this wrapper */
+.board-scroll { position: relative; }
+.board {
+  display: flex; gap: 0.5rem; align-items: flex-start;
+  overflow-x: auto; overflow-y: hidden; scroll-behavior: smooth;
+  scrollbar-width: thin; padding-bottom: 0.85rem;
+}
+
+/* Something is off-frame — say so, and offer a way there. */
+.board-hint {
+  position: absolute; top: 0; bottom: 0.85rem; width: 74px; z-index: 5;
+  display: none; align-items: center; border: 0; cursor: pointer; padding: 0;
+  font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-secondary);
+}
+.board-hint.is-on { display: flex; }
+/* transparent: the rails behind stay fully visible. The strip itself takes no
+   clicks, so only the pip is a target and nothing under it is blocked. */
+.board-hint { background: none; pointer-events: none; }
+.board-hint .pip { pointer-events: auto; }
+.board-hint.left { left: 0; justify-content: flex-start; }
+.board-hint.right { right: 0; justify-content: flex-end; }
+.board-hint .pip {
+  display: inline-grid; place-items: center; gap: 0.1rem;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.3rem 0.15rem; min-width: 1.4rem;
+  box-shadow: 0 2px 8px rgba(22,22,22,0.10);
+  animation: hint-nudge 2.4s ease-in-out infinite;
+}
+.board-hint:hover .pip { border-color: var(--accent); color: var(--accent); }
+.board-hint .pip b { font-weight: 500; font-size: 0.58rem; color: var(--text-primary); }
+.board-hint.left .pip { margin-left: 0.15rem; }
+.board-hint.right .pip { margin-right: 0.15rem; }
+@keyframes hint-nudge {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(var(--nudge, 3px)); }
+}
+.board-hint.left .pip { --nudge: -3px; }
+@media (prefers-reduced-motion: reduce) { .board-hint .pip { animation: none; } }
+.col { --c: var(--st-todo); flex: 0 0 var(--strip-w); min-width: 0; }
+.col.is-open, .col.is-focused { flex: 0 0 var(--open-w); }
+
+.col-head { display: flex; align-items: baseline; gap: 0.45rem; width: 100%; padding: 0 0.15rem 0.4rem; margin-bottom: 0.5rem; background: none; text-align: left; border: 0; border-bottom: 2px solid var(--c); cursor: pointer; }
+/* the whole header is the fold target; a starred column has no fold action */
+.col.is-starred .col-head { cursor: default; }
+.col-head:not(.is-starred *):hover .fold { color: var(--accent); }
+.col-head .nm { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.64rem; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-head .ct { font-family: var(--mono); font-size: 0.62rem; font-variant-numeric: tabular-nums; color: var(--c); }
+.col-head .sp { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); }
+.col-head .fold { margin-left: auto; border: 0; background: none; cursor: pointer; padding: 0 0.2rem; font-family: var(--mono); font-size: 0.48rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); }
+.col-head .fold:hover { color: var(--accent); }
+
+/* Min/Max from Group Board are thresholds, not limits — nothing is blocked, the
+   column glows so a breach is visible while you work. */
+.col.is-breach .col-head { border-bottom-color: var(--warn); }
+.col.is-breach .col-strip,
+.col.is-breach .col-body {
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--warn), 0 0 12px rgba(207,19,34,0.34);
+  animation: breach-glow 2.2s ease-in-out infinite;
+}
+@keyframes breach-glow {
+  0%, 100% { box-shadow: 0 0 0 1px var(--warn), 0 0 8px rgba(207,19,34,0.26); }
+  50%      { box-shadow: 0 0 0 1px var(--warn), 0 0 16px rgba(207,19,34,0.50); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .col.is-breach .col-strip, .col.is-breach .col-body { animation: none; }
+}
+.col-breach {
+  font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--warn);
+}
+.col:not(.is-breach) .col-breach { display: none; }
+
+/* favourite: the starred column never folds. Only one column can be starred. */
+.col-star {
+  border: 0; background: none; cursor: pointer; padding: 0; flex: none; align-self: center;
+  font-size: 0.78rem; line-height: 1; color: #c9c4bb;
+}
+.col-star:hover { color: #e8b339; }
+.col-star[aria-pressed="true"] { color: #e8a11d; }
+
+.col:not(.is-open):not(.is-focused) .col-head { display: none; }
+
+/* slim bar; the label carries the weight */
+.col-strip { display: none; }
+.col:not(.is-open):not(.is-focused) .col-strip {
+  display: block; position: relative; width: 100%; height: var(--strip-h); cursor: pointer;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary);
+  overflow: hidden; padding: 0;
+}
+.col-strip .fill { position: absolute; left: 0; right: 0; top: 0; height: var(--fill, 30%); background: color-mix(in srgb, var(--c) 40%, var(--bg-secondary)); border-bottom: 2px solid var(--c); }
+.col:not(.is-open):not(.is-focused) .col-strip:hover .fill { background: color-mix(in srgb, var(--c) 58%, var(--bg-secondary)); }
+.col-strip .cap { position: absolute; inset: 0; display: grid; grid-template-rows: auto 1fr; justify-items: center; gap: 0.3rem; padding: 0.4rem 0; z-index: 1; }
+.col-strip .n { font-family: var(--mono); font-size: 0.82rem; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+/* Rotated whole words read bottom-to-top. vertical-rl alone runs top-to-bottom,
+   so rotate 180deg. (sideways-lr does this natively but is not in Safari yet.) */
+.col-strip .vert {
+  writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
+  align-self: center;
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 0.74rem; font-weight: 600; color: var(--text-primary); white-space: nowrap;
+}
+
+/* minmax(0,1fr) or the cards size to max-content and burst the column */
+.col-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.45rem; }
+.col:not(.is-open):not(.is-focused) .col-body { display: none; }
+
+/* ============================================================
+   App controls, reused: .task-priority-icon / .epic-track-indicator
+   / .status-pill.task-status
+   ============================================================ */
+.task-priority-icon, .epic-track-indicator { border: 0; background: none; padding: 0; cursor: pointer; line-height: 1; flex: none; display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 4px; }
+.task-priority-icon { font-size: 0.68rem; }
+.epic-track-indicator { font-size: 0.64rem; }
+.task-priority-icon:hover, .epic-track-indicator:hover { background: var(--bg-primary); box-shadow: inset 0 0 0 1px var(--border); }
+
+.status-pill { display: inline-flex; align-items: center; height: 18px; padding: 0 0.45rem; border-radius: 8px; color: #fff; font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 500; flex: none; }
+button.status-pill { border: 0; cursor: pointer; }
+button.status-pill:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-primary) 22%, transparent); }
+.task-status.to-do, .task-status.pending, .task-status.awaiting-validation { background: var(--st-todo); }
+.task-status.analysis, .task-status.accepted, .task-status.in-progress { background: var(--st-progress); }
+.task-status.release { background: var(--st-release); }
+.task-status.blocked { background: var(--st-blocked); }
+.task-status.postponed { background: var(--st-postponed); }
+.task-status.done, .task-status.killed, .task-status.incomplete { background: var(--st-done); }
+
+.ecard { display: grid; gap: 0.35rem; padding: 0.6rem 0.7rem; width: 100%; text-align: left; cursor: pointer; background: var(--bg-secondary); border: 1px solid var(--border); border-left: 3px solid var(--c); border-radius: 10px; }
+.ecard:hover { box-shadow: 0 6px 14px rgba(22,22,22,0.10); cursor: grab; }
+.ecard:active { cursor: grabbing; }
+.ecard.is-dragging { opacity: 0.4; }
+/* the card is still a button: click opens the epic, drag moves it. Both work. */
+.ecard.is-rejected { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
+.col.is-drop { outline: 2px dashed var(--c); outline-offset: 2px; }
+.col.is-drop .col-strip, .col.is-drop .col-body { background: color-mix(in srgb, var(--c) 8%, var(--bg-secondary)); }
+.board-say { display: block; margin-top: 0.3rem; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); min-height: 0.9rem; }
+.board-say.is-error { color: var(--warn); }
+.erow1 { display: flex; align-items: center; gap: 0.4rem; }
+.etitle { font-family: var(--serif); font-size: 0.98rem; line-height: 1.25; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ekey { font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.06em; color: var(--text-secondary); margin-left: auto; flex: none; }
+.erow2, .erow3 { display: flex; align-items: center; gap: 0.55rem; padding-left: 1.65rem; font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); }
+.erow3 { gap: 0.9rem; flex-wrap: wrap; }
+.eprog-track { flex: 0 0 110px; height: 4px; border-radius: 999px; overflow: hidden; display: flex; background: #eceae5; }
+.eprog-track i { display: block; height: 100%; }
+.erow2 .push { margin-left: auto; }
+.erow2 time { font-variant-numeric: tabular-nums; }
+
+/* two people on the card, so each is labelled. Delivery Owner is empty on 61%
+   of epics, so the empty state is explicit rather than an omitted field. */
+.eperson { display: inline-flex; align-items: baseline; gap: 0.3rem; min-width: 0; }
+.eperson b { font-weight: 400; color: var(--text-primary); text-transform: none; letter-spacing: 0.02em; font-size: 0.58rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eperson .lbl { font-size: 0.46rem; letter-spacing: 0.1em; color: var(--text-muted); flex: none; }
+.eperson b.is-empty { color: var(--text-muted); }
+.col-more { border: 1px dashed var(--border); background: none; cursor: pointer; border-radius: 8px; padding: 0.4rem; width: 100%; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.54rem; color: var(--text-secondary); }
+.col-more:hover { border-color: var(--c); color: var(--text-primary); }
+
+/* ============================================================
+   Modal
+   ============================================================ */
+.backdrop { position: fixed; inset: 0; background: rgba(26,24,22,0.42); display: none; place-items: center; padding: 4vh 1rem; z-index: 9000; }
+.backdrop.open { display: grid; }
+.modal { width: min(700px, 100%); max-height: 92vh; display: flex; flex-direction: column; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 18px 40px rgba(0,0,0,0.22); }
+.m-head { padding: 1.1rem 1.25rem 1rem; border-bottom: 1px solid var(--border); flex: none; }
+.m-eyebrow { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); flex-wrap: wrap; }
+.m-eyebrow a { color: var(--accent); text-decoration: none; }
+.m-eyebrow a:hover { text-decoration: underline; }
+.m-close { margin-left: auto; border: 0; background: none; cursor: pointer; font-size: 1.05rem; line-height: 1; color: var(--text-secondary); width: 24px; height: 24px; border-radius: 6px; }
+.m-close:hover { background: var(--bg-primary); color: var(--text-primary); }
+.m-controls { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.5rem; position: relative; }
+.m-controls .m-sp { margin-left: auto; font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); }
+.m-title { font-size: 1.36rem; font-weight: 400; line-height: 1.28; margin: 0; text-wrap: balance; }
+
+.status-transition-menu { position: absolute; top: calc(100% + 0.3rem); left: 0; min-width: 168px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 28px rgba(22,22,22,0.16); padding: 0.35rem; z-index: calc(var(--sticky-control-overlay-z) + 3); display: none; }
+.status-transition-menu.open { display: block; }
+.status-transition-option { display: flex; align-items: center; gap: 0.45rem; width: 100%; border: 0; background: none; cursor: pointer; padding: 0.3rem 0.35rem; border-radius: 6px; font-family: var(--mono); font-size: 0.6rem; text-align: left; }
+.status-transition-option:hover { background: var(--bg-primary); }
+.status-transition-option-marker { width: 0.45rem; height: 0.45rem; border-radius: 50%; flex: none; }
+.stm-warn { padding: 0.35rem 0.4rem 0.4rem; font-family: var(--mono); font-size: 0.56rem; line-height: 1.4; color: var(--warn); border-bottom: 1px dashed var(--border); margin-bottom: 0.3rem; }
+
+.m-body { padding: 1.05rem 1.25rem 1.25rem; overflow-y: auto; flex: 1 1 auto; }
+
+/* Jira description — real ticket bodies run long, so it clamps by default */
+.m-desc { position: relative; font-size: 0.95rem; max-width: 68ch; }
+.m-desc.is-clamped .m-desc-body { max-height: 11.5rem; overflow: hidden; }
+.m-desc.is-clamped .m-desc-body::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3.2rem; background: linear-gradient(to bottom, transparent, var(--bg-secondary)); pointer-events: none; }
+.m-desc-body { position: relative; }
+.m-desc-body h4 { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.58rem; color: var(--text-secondary); margin: 1rem 0 0.3rem; font-weight: 500; }
+.m-desc-body h4:first-child { margin-top: 0; }
+.m-desc-body p { margin: 0 0 0.5rem; }
+.m-desc-body ul { margin: 0 0 0.5rem; padding-left: 1.1rem; }
+.m-desc-body ul ul { margin: 0.2rem 0 0.3rem; }
+.m-desc-body li { margin-bottom: 0.2rem; }
+.m-desc-body a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+.m-desc-body a:hover { text-decoration: underline; }
+.m-desc-more { margin: 0.4rem 0 0; border: 0; background: none; padding: 0; cursor: pointer; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.55rem; color: var(--accent); }
+.m-desc-more:hover { text-decoration: underline; }
+
+.m-sec { margin-top: 1.35rem; }
+.m-sec-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; flex-wrap: wrap; }
+.m-sec-head .spacer { flex: 1 1 auto; }
+
+.sort-host { position: relative; }
+.sort-toggle { height: 26px; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0 0.5rem; cursor: pointer; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; font-family: var(--mono); font-size: 0.56rem; }
+.sort-toggle:hover { box-shadow: 0 4px 10px rgba(22,22,22,0.10); }
+.sort-toggle .cap { font-size: 0.46rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-secondary); }
+.sort-panel { position: absolute; top: calc(100% + 0.3rem); right: 0; min-width: 214px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 28px rgba(22,22,22,0.16); padding: 0.35rem; z-index: calc(var(--sticky-control-overlay-z) + 3); display: none; }
+.sort-panel.open { display: block; }
+.sort-opt { display: grid; grid-template-columns: 12px 1fr; gap: 0.45rem; align-items: center; width: 100%; border: 0; background: none; cursor: pointer; padding: 0.32rem 0.35rem; border-radius: 6px; font-family: var(--mono); font-size: 0.6rem; text-align: left; }
+.sort-opt:hover { background: var(--bg-primary); }
+.sort-opt .tick { color: var(--accent); opacity: 0; }
+.sort-opt[aria-checked="true"] .tick { opacity: 1; }
+.sort-note { padding: 0.35rem 0.4rem 0.15rem; font-family: var(--mono); font-size: 0.46rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); border-top: 1px dashed var(--border); margin-top: 0.3rem; }
+
+/* ── the app's own story list row, reused verbatim ──────────
+   frontend/src/styles/eng/subtasks.css + IssueCard.jsx:331
+   Four table-aligned cells: name | status | assignee | updated.
+   Sorting changes the order of these rows and nothing else.      */
+.story-subtasks-panel { margin-top: 0.45rem; padding-top: 0.35rem; border-top: 1px solid rgba(224,221,215,0.45); width: 100%; min-width: 0; font-family: var(--mono); overflow: hidden; }
+.story-subtasks-rows { display: grid; gap: 0; }
+.story-subtask-row {
+  display: grid; grid-template-columns: 5.8rem minmax(0, 1fr);
+  grid-template-areas: "name name" "status updated";
+  align-items: center; gap: 0.2rem 0.45rem; min-height: 2.25rem; padding: 0.26rem 0;
+  border-bottom: 1px solid rgba(224,221,215,0.38); font-size: 0.6rem; line-height: 1.25;
+  color: var(--text-secondary);
+}
+/* Priority is an ADDITIVE modifier, never a change to the base row. Without
+   .has-priority the row is exactly the app's existing 4-cell layout, so Catch Up's
+   subtask panel renders byte-identically to today (§7.5). The control is the app's
+   own .task-priority-icon button — same visual, same editability. Its fixed-width
+   box keeps the column's left edge straight; the glyphs differ in width, so
+   centring a content-sized span would not. */
+.story-subtask-row.has-priority {
+  grid-template-columns: 1.1rem 4.7rem minmax(0, 1fr);
+  grid-template-areas: "pri name name" "status status updated";
+}
+.story-subtask-row .task-priority-icon { grid-area: pri; }
+.story-subtask-row:last-child { border-bottom: 0; }
+.story-subtask-name { grid-area: name; min-width: 0; color: var(--text-secondary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.story-subtask-name:hover { text-decoration: underline; text-underline-offset: 2px; }
+.story-subtask-row .task-status { grid-area: status; display: inline-flex; align-items: center; justify-content: center; width: 5.8rem; box-sizing: border-box; padding: 0.14rem 0.38rem; font-size: 0.56rem; line-height: 1.1; white-space: nowrap; height: auto; }
+.story-subtask-assignee, .story-subtask-updated { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.story-subtask-assignee { grid-area: assignee; display: none; color: var(--text-muted); }
+.story-subtask-updated { grid-area: updated; justify-self: end; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+@media (min-width: 761px) {
+  .story-subtasks-panel { width: min(100%, 48rem); }
+  .story-subtask-row {
+    grid-template-columns: minmax(12rem, 1fr) 5.8rem minmax(7rem, 9rem) 5.3rem;
+    grid-template-areas: "name status assignee updated";
+    gap: 0.55rem; min-height: 1.7rem; padding: 0.18rem 0;
+  }
+  .story-subtask-row.has-priority {
+    grid-template-columns: 1.1rem minmax(12rem, 1fr) 5.8rem minmax(7rem, 9rem) 5.3rem;
+    grid-template-areas: "pri name status assignee updated";
+  }
+  .story-subtask-assignee { display: block; }
+}
+
+/* ============================================================
+   CATCH UP list — the app's own classes and values.
+   eng/epics.css (.epic-header) · eng/issues.css (.task-item, .task-meta)
+   Compact ENG overrides from issues.css:554-581 are folded in.
+   ============================================================ */
+.task-list { display: block; }
+.epic-block { margin-bottom: 1.15rem; }
+.epic-header {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  min-width: 0; border-bottom: 1px solid var(--border); padding: 0.5rem 0;
+  margin-bottom: 0.75rem; position: sticky; top: calc(var(--compact-h) + 56px);
+  background: var(--bg-secondary); z-index: var(--sticky-epic-z); box-shadow: 0 1px 0 var(--border);
+}
+.epic-title { min-width: 0; }
+.epic-title-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.epic-icon { font-size: 0.72rem; line-height: 1; color: #bf63f3; }
+.epic-link { color: inherit; text-decoration: none; min-width: 0; display: flex; align-items: baseline; gap: 0.45rem; }
+.epic-link:hover .epic-name { color: var(--accent); }
+.epic-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.epic-key { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.06em; color: var(--text-secondary); flex: none; }
+.epic-header-right {
+  flex: none; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-secondary); white-space: nowrap;
+}
+
+.task-item {
+  background: var(--bg-secondary); border-left: 3px solid rgba(224, 221, 215, 0.7);
+  padding: 0.72rem 0.95rem; margin-bottom: 0.55rem; border-radius: 8px; position: relative;
+  transition: box-shadow 0.2s ease, border-left-color 0.2s ease;
+}
+.task-item:hover { border-left-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent), -6px 0 18px rgba(0,0,0,0.04); }
+.task-item.priority-blocker  { border-left-color: rgba(168, 7, 26, 0.7); }
+.task-item.priority-critical { border-left-color: rgba(212, 56, 13, 0.7); }
+.task-item.priority-major    { border-left-color: rgba(250, 173, 20, 0.7); }
+.task-item.priority-minor    { border-left-color: rgba(191, 191, 191, 0.7); }
+.task-item.priority-low, .task-item.priority-trivial { border-left-color: rgba(217, 217, 217, 0.7); }
+
+.task-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; margin-bottom: 0.32rem; min-width: 0; }
+.task-headline { display: flex; align-items: center; gap: 0.42rem; min-width: 0; flex: 1 1 auto; }
+.story-icon { font-size: 0.66rem; line-height: 1; color: #55A630; flex: none; }
+.task-title {
+  display: flex; align-items: baseline; gap: 0.3rem; flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.98rem; font-weight: 400; line-height: 1.23; margin: 0;
+}
+.task-title a { color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-title a:hover { color: var(--accent); }
+.task-header-right { flex: 0 0 auto; }
+.task-inline-meta {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 0.68rem; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.08em; display: inline-flex; align-items: center;
+  gap: 0.5rem; white-space: nowrap;
+}
+.task-key-link { color: inherit; text-decoration: none; border-bottom: 1px solid transparent; }
+.task-key-link:hover { border-bottom-color: var(--border); }
+.task-inline-sp { color: #d48806; font-weight: 600; }
+
+.task-detail-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
+.task-meta {
+  display: flex; align-items: center; gap: 0.42rem 0.7rem; font-family: var(--mono);
+  font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase;
+  letter-spacing: 0.1em; flex-wrap: wrap;
+}
+.task-assignee { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-secondary); }
+.task-item .status-pill { height: 19px; }
+.story-subtasks-toggle {
+  display: inline-flex; align-items: center; gap: 0.35rem; min-height: 24px; margin: 0;
+  padding: 0.15rem 0.38rem; border: 1px solid rgba(89, 126, 247, 0.22); border-radius: 8px;
+  background: #f7f9ff; color: var(--text-secondary); font-family: var(--mono);
+  font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+}
+.story-subtasks-toggle:hover { border-color: rgba(89, 126, 247, 0.5); color: var(--text-primary); }
+
+.dependency-pill-stack { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.dependency-pill {
+  display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1rem 0.35rem;
+  border-radius: 6px; background: #f4f5f7; font-family: var(--mono); font-size: 0.55rem;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary);
+}
+.dependency-pill.blocked { background: #fff1f0; color: #a8071a; }
+.dependency-pill.blocker { background: #e6f4ff; color: #0958d9; }
+
+.catchup-empty {
+  padding: 2.5rem 1rem; text-align: center; font-family: var(--mono); font-size: 0.65rem;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);
+  border: 1px dashed var(--border); border-radius: 10px;
+}
+[data-view][hidden] { display: none; }
+
+/* ── Catch Up view controls: sort + grouping. Not filters — they change
+   order and structure, so they sit outside the chip grammar. Sort reuses
+   the sprint-dropdown grammar; grouping reuses .group-visible-control. ── */
+.view-controls { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
+.view-controls[hidden] { display: none; }
+.sprint-dropdown { position: relative; }
+.sprint-dropdown-toggle {
+  height: 30px; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0 0.55rem;
+  cursor: pointer; background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 10px; font-family: var(--mono); font-size: 0.6rem;
+  text-transform: none; letter-spacing: normal;
+}
+.sprint-dropdown-toggle:hover, .sprint-dropdown-toggle.open { box-shadow: 0 6px 14px rgba(22,22,22,0.12); }
+.sprint-dropdown-toggle .cap {
+  font-size: 0.46rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-secondary);
+}
+.sprint-dropdown-toggle svg { width: 0.55rem; opacity: 0.55; }
+.sprint-dropdown-panel {
+  position: absolute; top: calc(100% + 0.35rem); right: 0; min-width: 190px;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(22,22,22,0.12); padding: 0.5rem 0.6rem;
+  z-index: calc(var(--sticky-control-overlay-z) + 3); display: none;
+}
+.sprint-dropdown-panel.open { display: block; }
+.sprint-dropdown-option {
+  display: block; width: 100%; text-align: left; border: 0; background: none; cursor: pointer;
+  padding: 0.3rem 0.35rem; border-radius: 6px; font-family: var(--mono); font-size: 0.62rem;
+  text-transform: none; letter-spacing: normal;
+}
+.sprint-dropdown-option + .sprint-dropdown-option { border-top: 1px dashed var(--border); }
+.sprint-dropdown-option:hover { background: var(--bg-primary); }
+.sprint-dropdown-option.selected { font-weight: 600; color: var(--accent); }
+.group-visible-control {
+  display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 0.56rem; color: var(--text-secondary); white-space: nowrap;
+}
+
+/* initiative grouping — eng/epics.css:163-205, values verbatim */
+.initiative-group { margin-bottom: 1.2rem; }
+.initiative-header {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center;
+  column-gap: 12px; margin-bottom: 10px; min-height: 18px;
+}
+.initiative-header-icon { justify-self: center; align-self: start; margin-top: 1px; color: #ffab00; font-size: 0.7rem; line-height: 1; }
+.initiative-label { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 600; font-size: 0.95rem; }
+.initiative-label .count { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); font-weight: 400; }
+.initiative-body { position: relative; padding-left: 28px; padding-bottom: 10px; }
+.initiative-body::before {
+  content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; border-radius: 999px;
+  background: linear-gradient(to bottom, #ffab00 0%, #ffab00 78%, rgba(255,171,0,0.38) 92%, rgba(255,171,0,0.1) 100%);
+}
+
+/* notes */
+.notes-btn { position: fixed; right: 1rem; bottom: 1rem; z-index: 8000; height: 34px; padding: 0 0.8rem; cursor: pointer; background: var(--text-primary); color: var(--bg-primary); border: 0; border-radius: 999px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.56rem; box-shadow: 0 6px 18px rgba(0,0,0,0.2); }
+.notes { position: fixed; right: 0; top: 0; bottom: 0; width: min(430px, 92vw); background: var(--bg-secondary); border-left: 1px solid var(--border); box-shadow: -12px 0 34px rgba(0,0,0,0.14); z-index: 8500; transform: translateX(100%); transition: transform 0.22s ease; overflow-y: auto; padding: 1.25rem 1.35rem 3rem; }
+.notes.open { transform: none; }
+.notes h2 { font-size: 1.25rem; font-weight: 400; margin: 0 0 0.2rem; }
+.notes h3 { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.58rem; color: var(--text-secondary); margin: 1.5rem 0 0.4rem; padding-top: 0.9rem; border-top: 1px solid var(--border); }
+.notes p, .notes li { font-size: 0.94rem; }
+.notes p { margin: 0 0 0.6rem; }
+.notes ul { margin: 0 0 0.6rem; padding-left: 1.1rem; }
+.notes li { margin-bottom: 0.3rem; }
+.notes code { font-family: var(--mono); font-size: 0.78em; background: var(--bg-primary); padding: 0.1em 0.3em; border-radius: 4px; }
+.notes .close { position: absolute; right: 1rem; top: 1rem; border: 0; background: none; cursor: pointer; font-size: 1.1rem; color: var(--text-secondary); }
+
+/* Narrow screens tighten the chrome only. The board keeps the identical
+   focus-and-scroll model at every width — it is never stacked. */
+@media (max-width: 720px) {
+  .container { padding: 1rem 0.85rem 4rem; }
+  .filterbar-wrap::before { inset: 0 -0.85rem; }
+  .view-filters, .head-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 0.3rem; }
+  .view-filters::-webkit-scrollbar, .head-actions::-webkit-scrollbar { display: none; }
+  .view-filters > *, .head-actions > * { flex: none; }
+  /* The bar may take a second row here, never a third: the chips lane still
+     collapses internally, so what wraps is the view controls as a unit.
+     It cannot scroll horizontally like .view-filters does — an overflow
+     container would clip the facet popover anchored inside it. */
+  .filterbar { flex-wrap: wrap; height: auto; width: 100%; }
+  .filterbar > .view-controls { flex: 1 0 100%; }
+  /* zero basis, not auto: with an auto basis the lane's content width pushes it
+     onto a line of its own and the bar becomes three rows again. A floor keeps
+     "+n more" readable once everything has collapsed. */
+  .fb-chips { flex: 1 1 0; min-width: 3.5rem; }
+}
+</style>
+
+<div class="container">
+
+  <!-- appears on scroll; every Catch Up control, search included -->
+  <div class="compact-sticky-header" id="compactHeader">
+    <div class="compact-sticky-header-controls">
+      <span class="control-field"><span class="control-label">Sprint</span><span class="sprint-dropdown-toggle" role="button" tabindex="0"><span class="val">2026Q3</span><svg viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></span></span>
+      <span class="control-field"><span class="control-label">Group</span><span class="sprint-dropdown-toggle" role="button" tabindex="0"><span class="val">Northwind</span><svg viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></span></span>
+      <span class="control-field"><span class="control-label">Teams</span><span class="sprint-dropdown-toggle" role="button" tabindex="0"><span class="val">All teams</span><svg viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></span></span>
+      <div class="segmented-control eng-mode-control" role="radiogroup" aria-label="ENG view mode"><button class="segmented-control-button" role="radio" aria-checked="false" type="button">Catch Up</button><button class="segmented-control-button" role="radio" aria-checked="false" type="button">Planning</button><button class="segmented-control-button active" role="radio" aria-checked="true" type="button">Board</button><button class="segmented-control-button" role="radio" aria-checked="false" type="button">Statistics</button><button class="segmented-control-button" role="radio" aria-checked="false" type="button">Scenario</button></div>
+      <span class="control-field compact-search"><span class="control-label">Search</span><input class="search-input" type="search" placeholder="Search epics, owners…" aria-label="Search epics"></span>
+    </div>
+  </div>
+
+  <header class="app-head">
+    <div class="brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <span class="brand-name">Jira Delivery Planner</span>
+      <span class="brand-sub">Product &amp; Tech projects</span>
+    </div>
+    <div class="head-actions">
+      <div class="segmented-control view-mode-control" role="radiogroup" aria-label="Surface"><button class="segmented-control-button active" role="radio" aria-checked="true" type="button">ENG</button><button class="segmented-control-button" role="radio" aria-checked="false" type="button">EPM</button></div>
+      <span class="control-field"><span class="control-label">Search</span><input class="search-input" type="search" placeholder="Search epics, owners…" aria-label="Search epics"></span>
+    </div>
+  </header>
+
+  <div class="view-filters">
+    <span class="control-field"><span class="control-label">Sprint</span><span class="sprint-dropdown-toggle" role="button" tabindex="0"><span class="val">2026Q3</span><svg viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></span></span>
+    <span class="control-field"><span class="control-label">Group</span><span class="sprint-dropdown-toggle" role="button" tabindex="0"><span class="val">Northwind</span><svg viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></span></span>
+    <span class="control-field"><span class="control-label">Teams</span><span class="sprint-dropdown-toggle" role="button" tabindex="0"><span class="val">All teams</span><svg viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></span></span>
+    <div class="segmented-control eng-mode-control" role="radiogroup" aria-label="ENG view mode"><button class="segmented-control-button" role="radio" aria-checked="false" type="button">Catch Up</button><button class="segmented-control-button" role="radio" aria-checked="false" type="button">Planning</button><button class="segmented-control-button active" role="radio" aria-checked="true" type="button">Board</button><button class="segmented-control-button" role="radio" aria-checked="false" type="button">Statistics</button><button class="segmented-control-button" role="radio" aria-checked="false" type="button">Scenario</button></div>
+  </div>
+
+  <div class="filterbar-wrap">
+    <div class="filterbar">
+      <div class="pop-host">
+        <button class="fb-trigger" id="fbTrigger" aria-expanded="false" aria-haspopup="dialog">
+          Filters <span class="badge" id="fbBadge">1</span>
+        </button>
+        <!-- One bar, one chip grammar, two facet sets. The Board filters EPICS and
+             has no status facet because status is the column; Catch Up filters
+             STORIES and keeps status. Rendered from FACETS per mode. -->
+        <div class="popover" id="fbPop" role="dialog" aria-label="Filters">
+          <div class="pop-subject" id="fbSubject">Filtering epics</div>
+          <div id="fbFacets"></div>
+        </div>
+      </div>
+
+      <div class="fb-readout"><b id="fbCount">28</b> <span class="dim" id="fbUnit">of 87 epics</span></div>
+      <div class="fb-chips" id="fbChips"></div>
+
+      <!-- order and structure, not filtering — so not chips -->
+      <div class="view-controls" id="viewControls" hidden>
+        <div class="sprint-dropdown eng-epic-sort-dropdown">
+          <button class="sprint-dropdown-toggle" id="sortToggleCU" aria-haspopup="listbox" aria-expanded="false">
+            <span class="cap">Sort</span><span id="sortLabelCU">Priority</span>
+            <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M6 9L1 4h10z"/></svg>
+          </button>
+          <div class="sprint-dropdown-panel" id="sortPanelCU" role="listbox" aria-label="Sort epics"></div>
+        </div>
+        <label class="group-visible-control">
+          <input type="checkbox" id="groupByInitiative"> Group by initiative
+        </label>
+      </div>
+    </div>
+
+  </div>
+
+  <div data-view="board">
+  <div class="board-head">
+    <div>
+      <span class="chrome" style="font-size:0.6rem">Epics by column</span>
+      <div class="sub">One column in focus, always centred. Click any bar to centre it. Star a column to
+        keep it open. Highest priority first. Full bar = <span id="scaleMax">26</span> epics.
+        Drag a card to another column to move the epic there.</div>
+      <span class="board-say" id="boardSay" role="status" aria-live="polite"></span>
+    </div>
+    <a class="linkish" href="#" id="cmpOpen" title="Opens Settings → Departments → Boards">Configure Group Board ↗</a>
+  </div>
+
+  <div class="board-scroll">
+    <button class="board-hint left" id="hintLeft" aria-label="Scroll to earlier columns">
+      <span class="pip"><b id="hintLeftN">0</b>◀</span>
+    </button>
+    <div class="board" id="board"></div>
+    <button class="board-hint right" id="hintRight" aria-label="Scroll to later columns">
+      <span class="pip"><b id="hintRightN">0</b>▶</span>
+    </button>
+    </div>
+  </div>
+
+  <!-- CATCH UP — same bar, same chips; facets filter STORIES and keep status -->
+  <div data-view="catchup" hidden>
+    <div class="board-head">
+      <div>
+        <span class="chrome" style="font-size:0.6rem">Stories by epic</span>
+        <div class="sub">Same compact bar. Its facets filter stories, and status stays a facet here
+          because this is a list, not a board.</div>
+      </div>
+      <span class="chrome" id="catchupSummary" style="font-size:0.58rem"></span>
+    </div>
+    <div class="task-list" id="taskList"></div>
+  </div>
+</div>
+
+<!-- epic detail — synthetic placeholder body of the target shape, to test the fit -->
+<div class="backdrop" id="epicBack">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="m-head">
+      <div class="m-eyebrow">
+        <span>DEMO-1001</span><span aria-hidden="true">·</span>
+        <span>Initiative: Partner execution layer</span>
+        <a href="#">Open in Jira ↗</a>
+        <button class="m-close" id="mClose" aria-label="Close">×</button>
+      </div>
+      <div class="m-controls">
+        <button class="task-priority-icon" data-priority="High" title="High — change priority"
+                aria-haspopup="listbox" style="color:#c2410c">▲</button>
+        <button class="epic-track-indicator" title="Committed — change delivery track" aria-haspopup="listbox">🔒</button>
+        <button class="status-pill task-status in-progress" id="mStatus" aria-haspopup="listbox"
+                aria-expanded="false" title="In Progress — change status">In Progress</button>
+        <span class="m-sp">18 sp · 7 of 12 stories done</span>
+        <div class="status-transition-menu" id="mStatusMenu" role="listbox" aria-label="Move to status">
+          <button class="status-transition-option" role="option"><span class="status-transition-option-marker" style="background:var(--st-todo)"></span>To Do</button>
+          <button class="status-transition-option" role="option"><span class="status-transition-option-marker" style="background:var(--st-progress)"></span>Analysis</button>
+          <button class="status-transition-option" role="option"><span class="status-transition-option-marker" style="background:var(--st-blocked)"></span>Blocked</button>
+          <button class="status-transition-option" role="option"><span class="status-transition-option-marker" style="background:var(--st-release)"></span>Release</button>
+          <button class="status-transition-option" role="option"><span class="status-transition-option-marker" style="background:var(--st-done)"></span>Done</button>
+        </div>
+      </div>
+      <h2 class="m-title" id="mTitle">POC: run customer-provided partner-execution deal curation logic inside the platform</h2>
+    </div>
+
+    <div class="m-body">
+      <div class="m-desc is-clamped" id="mDesc">
+        <div class="m-desc-body">
+          <h4>Lorem ipsum dolor sit amet</h4>
+          <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor
+            incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud
+            exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+
+          <h4>Duis aute irure dolor</h4>
+          <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat
+            nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia
+            deserunt mollit anim id est laborum.</p>
+          <p>Design detail: <a href="#">Lorem ipsum reference — placeholder plan</a></p>
+
+          <h4>Sed ut perspiciatis unde</h4>
+          <ul>
+            <li>Primary items:
+              <ul>
+                <li>Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur,
+                  adipisci velit.</li>
+                <li>Sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam
+                  aliquam quaerat voluptatem.</li>
+                <li>Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit
+                  laboriosam.</li>
+                <li>Nisi ut aliquid ex ea commodi consequatur, quis autem vel eum iure reprehenderit.</li>
+                <li>Qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui
+                  dolorem eum fugiat.</li>
+              </ul>
+            </li>
+            <li>Secondary items:
+              <ul>
+                <li>At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis.</li>
+                <li>Praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias.</li>
+                <li>Excepturi sint occaecati cupiditate non provident, similique sunt in culpa.</li>
+              </ul>
+            </li>
+          </ul>
+
+          <h4>Neque porro quisquam est</h4>
+          <ul>
+            <li>Mollitia animi, id est laborum et dolorum fuga, et harum quidem rerum facilis est et
+              expedita distinctio.</li>
+            <li>Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit quo
+              minus id quod maxime placeat.</li>
+            <li>Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe
+              eveniet.</li>
+            <li>Sint et molestiae non recusandae, itaque earum rerum hic tenetur a sapiente
+              delectus, ut aut reiciendis voluptatibus.</li>
+            <li>Maiores alias consequatur aut perferendis doloribus asperiores repellat.</li>
+            <li>Debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et
+              molestiae non recusandae.</li>
+          </ul>
+
+          <h4>Itaque earum rerum hic</h4>
+          <ul>
+            <li>Consectetur: adipisci velit, sed quia non numquam eius modi tempora incidunt ut
+              labore et dolore magnam aliquam.</li>
+            <li>Voluptatem: quaerat ut enim ad minima veniam, quis nostrum exercitationem ullam
+              corporis suscipit laboriosam.</li>
+            <li>Dependency: nisi ut aliquid ex ea commodi consequatur, in a compatible, stated
+              format.</li>
+            <li>Molestiae: excepturi sint occaecati, referencing the <a href="#">lorem ipsum
+              placeholder standard</a>.</li>
+          </ul>
+
+          <h4>Consectetur adipiscing elit</h4>
+          <p>At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium
+            voluptatum deleniti atque corrupti quos dolores et quas molestias excepturi sint
+            occaecati cupiditate non provident, similique sunt in culpa qui officia deserunt
+            mollitia animi.</p>
+        </div>
+        <button class="m-desc-more" id="mDescMore" aria-expanded="false">Show full description</button>
+      </div>
+
+      <div class="m-sec">
+        <div class="m-sec-head">
+          <span class="chrome">Stories in 2026Q3</span>
+          <span class="chrome" style="font-size:0.52rem">12 stories · 18 sp</span>
+          <span class="spacer"></span>
+          <div class="sort-host">
+            <button class="sort-toggle" id="sortToggle" aria-haspopup="listbox" aria-expanded="false">
+              <span class="cap">Sort</span> <span id="sortLabel">Assignee, then status</span>
+              <svg viewBox="0 0 10 6" width="8" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg>
+            </button>
+            <div class="sort-panel" id="sortPanel" role="listbox" aria-label="Sort stories">
+              <button class="sort-opt" role="option" aria-checked="true"  data-sort="assignee-status"><span class="tick">✓</span><span>Assignee, then status</span></button>
+              <button class="sort-opt" role="option" aria-checked="false" data-sort="status"><span class="tick">✓</span><span>Status</span></button>
+              <button class="sort-opt" role="option" aria-checked="false" data-sort="assignee"><span class="tick">✓</span><span>Assignee</span></button>
+              <div class="sort-note">Status follows the board, left to right — Done last</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="story-subtasks-panel">
+          <div class="story-subtasks-rows" id="mStories"></div>
+        </div>
+        <button class="col-more" style="margin-top:0.6rem;max-width:48rem">Show 4 more</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<button class="notes-btn" id="notesBtn">Design notes</button>
+<aside class="notes" id="notes" aria-label="Design notes">
+  <button class="close" id="notesClose" aria-label="Close notes">×</button>
+  <h2>What changed and why</h2>
+  <p class="chrome" style="font-size:0.55rem">Mockup. Board epics are synthetic; the epic body is lorem-ipsum
+    placeholder prose of the target length, to test how a long description behaves.</p>
+
+  <h3>The story list is the app's story list</h3>
+  <p>Built on <code>.story-subtask-row</code> from <code>eng/subtasks.css</code>. The rule: whatever is
+    editable on a story in Catch Up is editable here, with the same classes and the same visual design —
+    only placement may differ. So priority is
+    <code>button.task-priority-icon</code> and status is <code>button.status-pill.task-status</code>, both
+    real buttons opening the existing transition menus. Assignee and updated stay read-only.</p>
+  <p>Cells are table-aligned <code>pri · name · status · assignee · updated</code>. The priority control's
+    fixed-width box matters: the glyphs differ in width, so a content-sized element would break the
+    column's left edge. Measurement caught that, not the eye.</p>
+  <p>Sorting changes the order and nothing else — no group headers, no layout variant.</p>
+  <p><b>Consequence:</b> adding the priority cell changes the shared row, so the ENG subtask panel must
+    render that cell too or its grid misaligns. Subtasks have priority in Jira, so showing it there is the
+    recommended route. Story points stay off the row — priority was asked for, story points weren't.</p>
+
+  <h3>One focused column, centred</h3>
+  <p>In progress is the default focus and sits in the middle of the screen. Every other column is a slim
+    bar; clicking one brings it to the centre and releases the previous. The board never stacks, so the
+    focus model is identical on a phone and a monitor.</p>
+  <p><b>Favourite (★)</b> keeps one column open permanently — it can never fold, and its Fold control is
+    withdrawn. Only one column can be starred; starring another releases the first. Star and focus are
+    separate: when you focus a different column the starred one stays open beside it, and the focused one
+    is still the centred one. In progress is starred by default.</p>
+
+  <h3>The chrome is the app's, not a look-alike</h3>
+  <p>Everything above the board is production: <code>.container</code> at its real
+    <b>1040px</b> (<code>shared/shell.css:45</code>), <code>.view-filters</code>, the sprint /
+    group / teams pickers as <code>.control-field</code> + <code>.control-label</code> +
+    <code>.sprint-dropdown-toggle</code>, search as <code>input.search-input</code>, and the mode
+    switch as the real <code>SegmentedControl</code> — <code>.segmented-control.eng-mode-control</code>
+    with <code>.segmented-control-button.active</code>.</p>
+  <p>An earlier revision of this page invented <code>.shell</code> at 1560px plus
+    <code>.seg</code>, <code>.field</code> and <code>.compact-inner</code>. None existed in any
+    stylesheet, and the mode switch is the one control two postmortems were already written about,
+    so a look-alike here was the most likely thing to get copied back into the app. The invented
+    shell also hid a bug: bleeding the compact header by <code>-1.5rem</code> pushed 10px of
+    document overflow at 360px. Production bleeds nothing — the header sits inside the container.</p>
+  <p><b>The board is the only thing that bleeds past 1040px</b>, measured against the viewport, so
+    an open column is still 660px and the rails still run edge to edge. What changed with the real
+    width is the chrome above it: the filter bar has less room, so it collapses a chip into
+    <code>+n more</code> sooner. That is the design working, not a regression.</p>
+
+  <h3>Sticky header and widths</h3>
+  <p>Scroll down: the compact header carries the <em>whole</em> Catch Up control set — sprint, group,
+    teams, mode and search — and its controls land on the same left edge as the unstuck row, so nothing
+    shifts when it appears. It publishes its height to <code>--compact-h</code>, which the filter bar uses
+    as its <code>top</code>, so the bar can never slide under it.</p>
+  <p>Controls and the filter bar stay at shell width and centred, exactly as Catch Up. Only the board is
+    full-bleed, because it is a scroller.</p>
+
+  <h3>The chosen panel keeps its width</h3>
+  <p>Open columns share <b>one fixed width</b>, not a fit-two formula. Opening a second column no longer
+    squeezes the one you are reading — the extra column runs off the frame instead, which is fine because
+    the board scrolls. When something is off-frame, the edge shows how many columns are out there and
+    clicking it brings the next one to the centre.</p>
+
+  <h3>Horizontal scroll, measured</h3>
+  <p>The board bleeds to the full viewport rather than the shell's 1560px cap, so a wide display actually
+    buys you columns. Padding is computed per focus so the centre is reachable without over-scroll.
+    Centring is exact — 0px off for every column at every width tested.</p>
+  <ul>
+    <li><b>2560px</b> — no scroll at all; all seven columns fit.</li>
+    <li><b>1920px</b> — scroll only for To do, Analysis, Ready to start and Done.</li>
+    <li><b>1440px</b> — scroll for everything except the default focus.</li>
+    <li><b>420px</b> — scrolls, still one row, still centred.</li>
+  </ul>
+
+  <h3>Epic ordering and people</h3>
+  <p>Cards sort by <code>PRIORITY_AXIS</code> index, so Blocker is at the top of every column and Trivial
+    at the bottom. Story points stay. <b>Assignee</b> and <b>Delivery Owner</b>
+    (<code>customfield_11147</code>, type user) are both labelled on the card: the field is set on 39% of
+    epics and, where set, names someone other than the assignee 90% of the time — so it is not a duplicate,
+    and the unset case reads <em>Not set</em> rather than vanishing.</p>
+
+  <h3>Catch Up: same bar, different subject</h3>
+  <p>Switch the mode control to <b>Catch Up</b>. The bar, the chips and the popover are the same
+    component; only the facet set and the subject change. Board filters <b>epics</b> and has no status
+    facet because status is the column. Catch Up filters <b>stories</b> and keeps status, because a list
+    has no columns.</p>
+  <p>Today Catch Up's <code>statusFilter</code> is one select spanning status, priority and totals, so
+    <em>"In Progress and high priority"</em> cannot be expressed. Splitting it into two orthogonal
+    multi-selects makes it expressible — try Status = In Progress + Blocked with Priority = Blocker,
+    Critical, Major.</p>
+  <p>The four Display toggles are <b>subsumed, not ported</b>: with Status a real multi-select,
+    "hide done" is unticking Done. Four controls disappear rather than getting restyled.</p>
+  <p>Status options read in board-column order, so the facet follows the workflow. Statuses with no
+    story in scope are absent, not shown at zero — three are missing here for that reason. An epic
+    group with no matching story is hidden entirely, and the count is the real filtered result rather
+    than a sum of facet counts.</p>
+
+  <h3>Dragging a card moves the epic</h3>
+  <p>Drag a card onto another column — open or folded — and the epic's status changes. It is a second
+    <em>trigger</em> for the transition the app already performs, not a second mechanism: same options call,
+    same write route, same <code>StatusTransitionMenu</code>, same optimistic patch and refresh.</p>
+  <p><b>A column is a set of statuses, so the drop has to resolve which one.</b> One status transitions
+    straight away; several open the menu scoped to that column — drop on Done here and you are offered
+    Done, Killed, Incomplete and nothing else. Only transitions Jira actually offers are eligible, so the
+    menu can never propose a move Jira would reject. Drag <code>CORE-27499</code> onto Done to see the
+    refusal: nothing moves, the card flags, and the reason is announced.</p>
+  <p>The card does not move on drop — it moves when the write succeeds. The source column is not a drop
+    target and is never highlighted, because dropping an epic where it already is would be a no-op. Counts,
+    story points, bar heights, the shared scale and Min/Max breach all re-derive afterwards.</p>
+  <p><b>Drag is never the only path.</b> The status pill in the epic panel stays the click target and the
+    keyboard route; a pointer-only status change would be an accessibility regression.</p>
+
+  <h3>Min / Max warn, they never block</h3>
+  <p>Thresholds are set per column in <b>Group Board</b> settings. They control nothing: no transition is
+    prevented and no save is blocked. When a column's epic count falls outside its range the column
+    <b>glows red</b> and its header states the breach — here In progress is <em>6 over max 20</em>. A folded
+    column glows too, so a breach is visible without opening it.</p>
+  <p>Deliberately not a limit: the work is already in that state in Jira, so refusing to show it would only
+    hide the problem. The glow is the signal, and the count stays truthful.</p>
+
+  <h3>Slimmer bars, louder labels</h3>
+  <p>Bars went 58 → 36 px and the vertical label went 0.55 → 0.74 rem at weight 600. The bar hangs from the
+    top by epic count; the full track equals the largest column, stated above the board.</p>
+  <p>Rotated labels read <b>bottom-to-top</b>. <code>writing-mode: vertical-rl</code> on its own runs
+    top-to-bottom, so the label is rotated 180°. Top-to-bottom would only be right for stacked upright
+    letters, which is a different treatment.</p>
+
+  <h3>Long descriptions clamp</h3>
+  <p>The synthetic placeholder body is about 2,600 characters with six headings and nested lists — roughly 40 lines
+    unclamped, which would bury the story list. The placeholder above matches that shape. It renders as
+    structured text, clamped to about 11 rem with a fade and <em>Show full description</em>. The panel caps
+    at 92vh and scrolls internally, so the story list stays reachable at any description length.</p>
+  <p>This needs a data change: <code>fetch_epic_details_bulk</code> doesn't return
+    <code>description</code> today, and Jira serves it as ADF, not HTML — so it needs adding to the payload
+    plus an ADF-to-text render, or a lazy fetch when the panel opens.</p>
+
+  <h3>Filters</h3>
+  <p>Delivery track is <b>multi-select with two options, both ticked</b>: Committed and Flexible. Both ticked
+    is the neutral state and admits everything, including the epics with no track at all — of 3000 sampled,
+    2258 have none, so a state that only admitted the two real values would hide three quarters of the board.
+    That is why its heading total reads the full scope rather than 8 + 14: no option represents untracked
+    work, so summing the options would under-report by 65 epics. Every facet heading shows what it admits.
+    Priority and Projects stay multi-select with the last option locked.</p>
+  <p><b>A chip states the shorter truth.</b> The first version listed everything ticked, which for Status
+    meant eight names in a 565px chip, and the bar wrapped onto three rows — the thing this design replaces.
+    Now: fewer excluded than included reads <code>Status hidden Killed</code>, otherwise
+    <code>Status only In Progress</code>, capped at two names plus <code>+n</code>. The full list is in the
+    chip's tooltip and in the popover.</p>
+  <p><b>The bar is one row and sized to its content.</b> It never wraps and never grows taller: the chips
+    lane clips and collapses trailing chips into one <code>+n more</code> that opens the popover. Measured at
+    1440 / 960 / 360: 42px, 42px, 80px. Below 720px the view controls may take a second row, never a third —
+    and the bar deliberately does not scroll horizontally like the controls row above it, because an overflow
+    container would clip the popover anchored inside it.</p>
+  <p><b>No status facet on the Board</b>, because status is the column. <b>Catch Up keeps its existing
+    status filters unchanged</b> — it is a list, not a board, so filtering by status is meaningful there.</p>
+  <p><b>The subject differs, and that matters more than the facet set.</b> Board filters resolve against
+    <b>epics</b>; Catch Up filters resolve against <b>stories</b>. Search is the only one whose subject
+    doesn't change. So counts are not comparable between the two surfaces and no facet state should carry
+    across when you switch modes. The popover says which it is.</p>
+  <p>Facet order puts <b>Delivery track last</b> — coarsest cut, most often left alone. And an option with
+    <b>zero items in scope is hidden, not shown at zero</b>: Trivial is absent here because no epic in scope
+    has it. That makes counts functional rather than cosmetic — a wrong count would hide a real filter.</p>
+
+  <h3>Field provenance</h3>
+  <p>This page is meant to define filtering and workflow, so every value below is either a real Jira field
+    or a stated derivation. Nothing else is present.</p>
+  <ul>
+    <li><b>Epic / story</b> — <code>key</code>, <code>summary</code>, <code>status.name</code>,
+      <code>priority.name</code>, <code>assignee.displayName</code>, <code>updated</code> (raw ISO 8601).</li>
+    <li><b>storyPoints</b> — <code>customfield_10004</code>. <b>track</b> — <code>customfield_35024</code>,
+      values <code>Committed</code> / <code>Flexible</code> / <code>null</code>.</li>
+    <li><b>deliveryOwner</b> — <code>customfield_11147</code> "Delivery Owner", type user,
+      <code>.displayName</code>. Unambiguous: it is the only field with that name, unlike "R&amp;D Owner"
+      and "Rnd Owner", which have four duplicates each.</li>
+    <li><b>Updated display</b> — <code>formatSubtaskUpdatedDate</code>
+      (<code>subtaskProgressUtils.js:26</code>) renders <code>YYYY-MM-DD</code>. Not a relative day count.</li>
+    <li><b>Priority vocabulary</b> — <code>PRIORITY_AXIS</code> verbatim: Blocker, Critical, Major, Minor,
+      Low, Trivial. Jira's highest/high/medium/lowest are aliases and do not occur on epics; probing 2000
+      epics returned only those six. <b>There is no Medium.</b></li>
+    <li><b>progress</b> — derived client-side from the epic's own stories, in
+      <code>buildStorySubtaskProgress</code>'s shape <code>{ total, done, inProgress }</code>.</li>
+    <li><b>Column counts</b> — derived: epics and summed story points per column, for the selected sprint
+      and group.</li>
+    <li><b>Composer per-status counts</b> — work items on board 1042, the figures from your own config
+      screen.</li>
+    <li><b>Priority glyph and tint</b> — placeholders for the app's real SVG marks
+      (<code>renderPriorityIcon</code>); tints are the existing
+      <code>.task-priority-icon[data-priority]</code> colours.</li>
+    <li><b>Facet counts</b> — illustrative, scaled to 87 epics from the real distributions probed
+      (priority split, 4 unassigned, 75% untracked). The facets and their vocabularies are real; the
+      integers are placeholders.</li>
+  </ul>
+  <p><b>Removed as invented</b>, so no one builds against them: a <code>days</code> integer on stories
+    (there is only <code>updated</code>); a numeric priority rank; a <code>stale</code> flag on epics
+    (staleness belongs to the alerts panel, not the card); per-assignee avatar colours (the app renders
+    assignee as plain text); a Medium priority bucket; and the sort options <em>Priority</em> and
+    <em>Last updated</em>, which you did not ask for. Sorting is Assignee-then-status, Status, Assignee.</p>
+</aside>
+
+<script>
+/* The §5.5 reference configuration, identical to the one group-board-settings.html
+   edits — same columns, colours, star, Min/Max and statuses. Analysis carries
+   min 15 against 11 epics and In progress max 20 against 26, so the board shows a
+   breach in each direction; External block is red WITHOUT breaching, which is what
+   keeps "red accent" and "breach" distinguishable. */
+const COLUMNS = [
+  { name: 'To do',          c: '#8c8c8c', epics: 18, sp: 54, focusDefault: false, min: null, max: null, statuses: [['To Do', 36]] },
+  { name: 'Analysis',       c: '#b37feb', epics: 11, sp: 33, focusDefault: false, min: 15,   max: null, statuses: [['Analysis', 22]] },
+  { name: 'Ready to start', c: '#597ef7', epics: 9,  sp: 31, focusDefault: false, min: null, max: null, statuses: [['Awaiting Validation', 13], ['Postponed', 6], ['Pending', 0]] },
+  { name: 'Accepted in Q',  c: '#13c2c2', epics: 7,  sp: 24, focusDefault: false, min: null, max: 12,   statuses: [['Accepted', 9]] },
+  { name: 'External block', c: '#ff4d4f', epics: 2,  sp: 9,  focusDefault: false, min: null, max: 5,    statuses: [['Blocked', 2]] },
+  { name: 'In progress',    c: '#2f80ed', epics: 26, sp: 88, focusDefault: true,  min: null, max: 20,   statuses: [['In Progress', 48], ['Release', 1]] },
+  { name: 'Done',           c: '#52c41a', epics: 14, sp: 47, focusDefault: false, min: null, max: null, statuses: [['Done', 260], ['Killed', 83], ['Incomplete', 4]] }
+];
+
+const slug = s => s.toLowerCase().replace(/\s+/g, '-');
+
+/* frontend/src/stats/statsConstants.js:1 — verbatim, highest first */
+const PRIORITY_AXIS = ['Blocker', 'Critical', 'Major', 'Minor', 'Low', 'Trivial'];
+
+const PAGE_SIZE = 5;   /* epics revealed per "Show more" */
+
+/* status → column index, so "sort by status" follows the board left to right */
+const STATUS_RANK = {};
+COLUMNS.forEach((col, i) => col.statuses.forEach(([n]) => { STATUS_RANK[n] = i; }));
+
+/* Epic fields, all Jira-backed:
+   key, summary, status.name, priority.name (one of PRIORITY_AXIS),
+   track = customfield_35024 (Committed | Flexible | null),
+   storyPoints = customfield_10004,
+   assignee.displayName,
+   deliveryOwner = customfield_11147 "Delivery Owner", type user, .displayName
+     — populated on 39% of epics, and where set it differs from the assignee
+       90% of the time, so both are shown and the empty case is explicit,
+   updated (raw ISO 8601).
+   progress is DERIVED client-side from the epic's own stories, in
+   buildStorySubtaskProgress's shape: { total, done, inProgress }. */
+const EPICS = {
+  'In progress': [
+    { key: 'DEMO-1001', summary: 'POC: run partner logic inside the platform', priority: 'Critical', track: 'Committed', status: 'In Progress', storyPoints: 18, progress: { total: 12, done: 7, inProgress: 3 }, assignee: 'N. Perez', deliveryOwner: 'R. Okafor', updated: '2026-08-04T15:30:13.284+0000' },
+    { key: 'CORE-27601', summary: 'Split the delivery planner bundle', priority: 'Minor', track: 'Committed', status: 'In Progress', storyPoints: 8, progress: { total: 8, done: 3, inProgress: 2 }, assignee: 'M. Kaur', deliveryOwner: null, updated: '2026-08-03T09:41:20.115+0000' },
+    { key: 'CORE-27588', summary: 'Ship the status transition audit log', priority: 'Major', track: 'Committed', status: 'Release', storyPoints: 5, progress: { total: 7, done: 6, inProgress: 1 }, assignee: 'A. Silva', deliveryOwner: 'R. Okafor', updated: '2026-08-04T08:12:55.900+0000' },
+    { key: 'PLAT-41190', summary: 'Partner onboarding checklist', priority: 'Minor', track: null, status: 'In Progress', storyPoints: 13, progress: { total: 14, done: 5, inProgress: 4 }, assignee: 'D. Lang', deliveryOwner: null, updated: '2026-08-02T13:27:44.208+0000' },
+    { key: 'CORE-27712', summary: 'Retire the legacy sprint cache writer', priority: 'Low', track: null, status: 'In Progress', storyPoints: 5, progress: { total: 6, done: 1, inProgress: 2 }, assignee: 'Unassigned', deliveryOwner: null, updated: '2026-07-31T11:03:18.442+0000' },
+    { key: 'PLAT-41402', summary: 'Suppression audit trail for partners', priority: 'Blocker', track: 'Committed', status: 'In Progress', storyPoints: 13, progress: { total: 10, done: 2, inProgress: 5 }, assignee: 'S. Haddad', deliveryOwner: 'R. Okafor', updated: '2026-08-04T12:05:41.226+0000' },
+    { key: 'CORE-27744', summary: 'Move sprint rollups off the request thread', priority: 'Critical', track: 'Committed', status: 'Analysis', storyPoints: 8, progress: { total: 5, done: 0, inProgress: 2 }, assignee: 'M. Kaur', deliveryOwner: null, updated: '2026-08-03T16:48:02.913+0000' },
+    { key: 'PLAT-41418', summary: 'Threshold overrides per surface', priority: 'Major', track: 'Flexible', status: 'Accepted', storyPoints: 5, progress: { total: 4, done: 1, inProgress: 1 }, assignee: 'D. Lang', deliveryOwner: 'S. Haddad', updated: '2026-08-02T09:21:37.548+0000' },
+    { key: 'CORE-27751', summary: 'Backfill story points on migrated epics', priority: 'Trivial', track: null, status: 'Release', storyPoints: 2, progress: { total: 3, done: 3, inProgress: 0 }, assignee: 'A. Silva', deliveryOwner: null, updated: '2026-08-01T10:12:19.084+0000' }
+  ],
+  'To do': [
+    { key: 'PLAT-41377', summary: 'Self-serve budget alerts for partners', priority: 'Major', track: 'Committed', status: 'To Do', storyPoints: 13, progress: { total: 9, done: 0, inProgress: 1 }, assignee: 'D. Lang', deliveryOwner: 'S. Haddad', updated: '2026-08-01T15:50:07.663+0000' },
+    { key: 'CORE-27655', summary: 'Backfill missing team labels on old epics', priority: 'Trivial', track: null, status: 'To Do', storyPoints: 2, progress: { total: 2, done: 0, inProgress: 0 }, assignee: 'A. Silva', deliveryOwner: null, updated: '2026-07-26T10:14:39.881+0000' }
+  ],
+  'Analysis': [
+    { key: 'PLAT-41209', summary: 'Unify preview rendering across surfaces', priority: 'Critical', track: null, status: 'Analysis', storyPoints: 8, progress: { total: 6, done: 0, inProgress: 2 }, assignee: 'N. Perez', deliveryOwner: 'S. Haddad', updated: '2026-08-02T17:36:12.507+0000' },
+    { key: 'CORE-27690', summary: 'Decide on the reporting rollup storage', priority: 'Minor', track: null, status: 'Analysis', storyPoints: 3, progress: { total: 3, done: 1, inProgress: 1 }, assignee: 'M. Kaur', deliveryOwner: null, updated: '2026-08-03T14:22:01.330+0000' }
+  ],
+  'Ready to start': [
+    { key: 'CORE-27502', summary: 'Move segment sync off the shared queue', priority: 'Blocker', track: 'Committed', status: 'Awaiting Validation', storyPoints: 8, progress: { total: 7, done: 2, inProgress: 1 }, assignee: 'A. Silva', deliveryOwner: 'R. Okafor', updated: '2026-07-29T12:45:33.076+0000' },
+    { key: 'PLAT-41288', summary: 'Deprecate the old segment picker', priority: 'Low', track: null, status: 'Postponed', storyPoints: 5, progress: { total: 4, done: 0, inProgress: 0 }, assignee: 'Unassigned', deliveryOwner: null, updated: '2026-07-21T09:19:48.221+0000' }
+  ],
+  'Accepted in Q': [
+    { key: 'PLAT-41255', summary: 'Bulk edit from the list view', priority: 'Major', track: 'Committed', status: 'Accepted', storyPoints: 13, progress: { total: 11, done: 0, inProgress: 0 }, assignee: 'D. Lang', deliveryOwner: 'S. Haddad', updated: '2026-07-31T16:58:22.994+0000' }
+  ],
+  'External block': [
+    { key: 'CORE-27499', summary: 'Await vendor fix for the reporting export', priority: 'Critical', track: 'Committed', status: 'Blocked', storyPoints: 5, progress: { total: 5, done: 1, inProgress: 0 }, assignee: 'M. Kaur', deliveryOwner: 'R. Okafor', updated: '2026-07-23T11:07:16.550+0000' }
+  ],
+  'Done': [
+    { key: 'PLAT-41102', summary: 'Sprint capacity warnings for planners', priority: 'Major', track: 'Committed', status: 'Done', storyPoints: 21, progress: { total: 15, done: 15, inProgress: 0 }, assignee: 'N. Perez', deliveryOwner: null, updated: '2026-07-30T10:31:59.104+0000' },
+    { key: 'CORE-27430', summary: 'Cache the team catalog lookup', priority: 'Minor', track: null, status: 'Done', storyPoints: 3, progress: { total: 3, done: 3, inProgress: 0 }, assignee: 'M. Kaur', deliveryOwner: null, updated: '2026-07-27T08:44:12.700+0000' }
+  ]
+};
+
+/* PRIORITY_AXIS index = sort rank, so Blocker sits at the top of every column */
+const PRIORITY_RANK = Object.fromEntries(PRIORITY_AXIS.map((p, i) => [p, i]));
+const byPriorityDesc = (a, b) =>
+  (PRIORITY_RANK[a.priority] ?? 99) - (PRIORITY_RANK[b.priority] ?? 99);
+
+/* Priority glyph + tint stand in for the app's real SVG marks
+   (renderPriorityIcon, dashboard.jsx:11355). Tints are the existing
+   .task-priority-icon[data-priority] colours from eng/issues.css. */
+const PRIORITY_GLYPH = {
+  Blocker:  { g: '⬆', c: '#b91c1c' },
+  Critical: { g: '▲', c: '#c2410c' },
+  Major:    { g: '▲', c: '#c2410c' },
+  Minor:    { g: '▼', c: '#0e7490' },
+  Low:      { g: '▼', c: '#475569' },
+  Trivial:  { g: '▽', c: '#94a3b8' }
+};
+/* .epic-track-indicator already uses these two glyphs in the app */
+const TRACK_GLYPH = { Committed: '🔒', Flexible: '🤷' };
+
+/* Stories carry exactly the four fields the app's row renders, and nothing else.
+   key/summary/status.name/assignee.displayName/updated are Jira fields as-is;
+   `updated` is the raw ISO 8601 string Jira returns. */
+const STORIES = [
+  { key: 'PLAT-37401', summary: 'Provision the execution environment for the container', priority: 'Critical', status: 'Done',        assignee: 'M. Kaur',    updated: '2026-07-29T09:12:04.118+0000' },
+  { key: 'PLAT-37402', summary: 'Deliver the configuration file from object storage to the environment', priority: 'Major',    status: 'In Progress', assignee: 'N. Perez',   updated: '2026-08-04T15:30:13.284+0000' },
+  { key: 'PLAT-37403', summary: 'Route container-enabled entries to the partner container',             priority: 'Critical', status: 'In Progress', assignee: 'M. Kaur',    updated: '2026-08-03T17:44:51.002+0000' },
+  { key: 'PLAT-37404', summary: 'Apply remove operations from the container response',    priority: 'Minor',    status: 'Analysis',    assignee: 'A. Silva',   updated: '2026-08-02T11:08:22.640+0000' },
+  { key: 'PLAT-37405', summary: 'Ownership validation for entry removal',                           priority: 'Blocker',  status: 'Blocked',     assignee: 'Unassigned', updated: '2026-07-24T08:31:09.775+0000' },
+  { key: 'PLAT-37406', summary: 'Throughput budget enforcement on capacity exhaustion',                   priority: 'Major',    status: 'Done',        assignee: 'N. Perez',   updated: '2026-07-31T14:02:47.311+0000' },
+  { key: 'PLAT-37407', summary: 'Ship request and delivery logs to the partner bucket',             priority: 'Low',      status: 'To Do',       assignee: 'A. Silva',   updated: '2026-07-27T10:55:38.409+0000' },
+  { key: 'PLAT-37408', summary: 'Container isolation review with security',                        priority: 'Minor',    status: 'Accepted',    assignee: 'M. Kaur',    updated: '2026-08-01T16:19:55.860+0000' }
+];
+
+/* frontend/src/issues/subtaskProgressUtils.js:26 — the app renders YYYY-MM-DD */
+function formatSubtaskUpdatedDate(value) {
+  if (!value) return '';
+  const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})(?:T|$)/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+}
+
+/* ── board: one focused column, centred ──────────────────── */
+let maxEpics = Math.max(...COLUMNS.map(c => c.epics));   /* re-derived after a card moves */
+const board = document.getElementById('board');
+const colEls = [];
+
+function epicCard(e) {
+  const p = e.progress;
+  const pct = n => p.total ? (n / p.total * 100) : 0;
+  const pri = PRIORITY_GLYPH[e.priority];
+  const b = document.createElement('button');
+  b.className = 'ecard';
+  b.type = 'button';
+  b.draggable = true;              /* click opens the epic, drag moves it */
+  b.dataset.key = e.key;
+  b.innerHTML =
+    '<span class="erow1">' +
+      '<span class="task-priority-icon" style="color:' + pri.c + '" title="' + e.priority + '">' + pri.g + '</span>' +
+      (e.track ? '<span class="epic-track-indicator" title="' + e.track + '">' + TRACK_GLYPH[e.track] + '</span>' : '') +
+      '<span class="status-pill task-status ' + slug(e.status) + '">' + e.status + '</span>' +
+      '<span class="etitle">' + e.summary + '</span>' +
+      '<span class="ekey">' + e.key + '</span>' +
+    '</span>' +
+    '<span class="erow2">' +
+      '<span class="eprog-track"><i style="width:' + pct(p.done) + '%;background:var(--st-done)"></i>' +
+        '<i style="width:' + pct(p.inProgress) + '%;background:var(--st-progress)"></i></span>' +
+      '<span>' + p.done + ' of ' + p.total + ' stories</span>' +
+      '<span class="push">' + e.storyPoints + ' sp</span>' +
+      '<time datetime="' + e.updated + '">' + formatSubtaskUpdatedDate(e.updated) + '</time>' +
+    '</span>' +
+    '<span class="erow3">' +
+      '<span class="eperson"><span class="lbl">Assignee</span><b>' + e.assignee + '</b></span>' +
+      '<span class="eperson"><span class="lbl">Delivery owner</span>' +
+        '<b' + (e.deliveryOwner ? '' : ' class="is-empty"') + '>' +
+        (e.deliveryOwner || 'Not set') + '</b></span>' +
+    '</span>';
+  b.addEventListener('click', () => openModal('epicBack'));
+  return b;
+}
+
+const COL_API = {};
+
+COLUMNS.forEach(col => {
+  /* Min/Max come from Group Board settings; a breach only warns */
+  const over = col.max != null && col.epics > col.max;
+  const under = col.min != null && col.epics < col.min;
+  const breachText = over ? (col.epics - col.max) + ' over max ' + col.max
+                    : under ? (col.min - col.epics) + ' under min ' + col.min : '';
+
+  const el = document.createElement('section');
+  el.className = 'col' + (over || under ? ' is-breach' : '');
+  el.style.setProperty('--c', col.c);
+  el.dataset.name = col.name;
+
+  const head = document.createElement('div');
+  head.className = 'col-head';
+  head.innerHTML =
+    '<button class="col-star" aria-pressed="false" title="Keep this column open">★</button>' +
+    '<span class="nm">' + col.name + '</span>' +
+    '<span class="ct">' + col.epics + '</span>' +
+    '<span class="sp">epics · ' + col.sp + ' sp</span>' +
+    '<span class="col-breach" title="Min/Max is set in Group Board settings">⚠ ' + breachText + '</span>' +
+    '<button class="fold">Fold</button>';
+
+  const strip = document.createElement('button');
+  strip.className = 'col-strip';
+  strip.type = 'button';
+  strip.setAttribute('aria-label', 'Focus ' + col.name + ', ' + col.epics + ' epics, ' + col.sp + ' story points');
+  strip.innerHTML =
+    '<span class="fill" style="height:' + Math.round(col.epics / maxEpics * 100) + '%"></span>' +
+    '<span class="cap"><span class="n">' + col.epics + '</span>' +
+      '<span class="vert">' + col.name + '</span></span>';
+
+  /* Progressive reveal, PAGE_SIZE at a time, highest priority first.
+     The mockup carries fewer epics than the column count, so once the sample is
+     exhausted the control says so instead of pretending to load more. */
+  const body = document.createElement('div');
+  body.className = 'col-body';
+  /* the live array, not a copy: a card moved between columns has to mutate the
+     same list the column renders from, or the two would drift apart */
+  if (!EPICS[col.name]) EPICS[col.name] = [];
+  const all = EPICS[col.name];
+  all.sort(byPriorityDesc);
+  let shown = Math.min(PAGE_SIZE, all.length);
+
+  const more = document.createElement('button');
+  more.className = 'col-more';
+  more.type = 'button';
+
+  const paint = () => {
+    body.querySelectorAll('.ecard').forEach(n => n.remove());
+    /* the exhausted branch below detaches `more`; a repaint after a card moves in
+       would then insertBefore a node that is no longer a child */
+    if (!more.isConnected) body.appendChild(more);
+    all.slice(0, shown).forEach(e => body.insertBefore(epicCard(e), more));
+    const remainingInSample = all.length - shown;
+    const beyondSample = col.epics - all.length;
+    if (remainingInSample > 0) {
+      more.disabled = false;
+      more.textContent = 'Show ' + Math.min(PAGE_SIZE, remainingInSample) + ' more';
+      more.title = '';
+    } else if (beyondSample > 0) {
+      more.disabled = true;
+      more.textContent = '+' + beyondSample + ' more not in this sample';
+      more.title = 'The mockup carries ' + all.length + ' of this column’s ' + col.epics + ' epics';
+    } else {
+      more.remove();
+    }
+  };
+  more.addEventListener('click', () => {
+    shown = Math.min(shown + PAGE_SIZE, all.length);
+    paint();
+    applyBoardState(false);
+  });
+  body.appendChild(more);
+  paint();
+
+  el.append(head, strip, body);
+  board.appendChild(el);
+  colEls.push(el);
+  COL_API[col.name] = {
+    col, el, head, strip, body, paint, all,
+    /* keep the arriving card on screen even if it sorts past the reveal cursor */
+    reveal: epic => { shown = Math.max(shown, all.indexOf(epic) + 1); },
+    clamp: () => { shown = Math.min(shown, all.length); }
+  };
+
+  strip.addEventListener('click', () => setFocus(col.name));
+  strip.title = (breachText ? col.name + ' — ' + breachText + '. ' : '') +
+    'Click to centre this column';
+  /* the whole header folds the column, not just the Fold label. A starred column
+     has no fold action at all, so the header is inert for it. */
+  head.addEventListener('click', e => {
+    if (e.target.closest('.col-star')) return;        /* the star is its own control */
+    if (starred === col.name) return;                 /* starred never folds */
+    if (focused === col.name) return foldFocused(col.name);   /* transfer, never clear */
+    applyBoardState(true);
+  });
+  head.querySelector('.col-star').addEventListener('click', () => {
+    starred = starred === col.name ? null : col.name;  /* only ever one */
+    focused = resolveFocus(focused);                   /* re-assert the invariant */
+    applyBoardState(true);
+  });
+});
+
+/* ── moving an epic by dragging its card ─────────────────────
+   A column is a set of statuses, so a drop is not always a single
+   answer: with one status it transitions straight away, with several
+   it opens the app's own StatusTransitionMenu scoped to that column.
+   Drag is an accelerator only — the keyboard path is the status pill
+   inside the epic panel, which is a real button and already exists. */
+
+/* Jira decides per issue which transitions exist (GET /issue/{key}/transitions).
+   The mockup allows every move except this one, so the rejection path is
+   demonstrable instead of theoretical. */
+const TRANSITION_DENIED = { 'CORE-27499': ['Done'] };
+
+/* Resolution statuses, per §5.5: Done = done | killed | incomplete. Moving an
+   epic here while its stories are still open is a real mistake, but Jira is the
+   authority on what is ALLOWED — so this warns and confirms, it never blocks
+   (D24's rule, applied to the same board). */
+const RESOLVED_STATUSES = new Set(['Done', 'Killed', 'Incomplete']);
+const openStories = epic => Math.max(0, epic.progress.total - epic.progress.done);
+
+const say = document.getElementById('boardSay');
+let sayTimer = null;
+function announce(text, isError) {
+  say.textContent = text;
+  say.classList.toggle('is-error', !!isError);
+  clearTimeout(sayTimer);
+  sayTimer = setTimeout(() => { say.textContent = ''; say.classList.remove('is-error'); }, 6000);
+}
+
+function columnOf(key) {
+  return Object.keys(COL_API).find(n => COL_API[n].all.some(e => e.key === key));
+}
+
+function refreshColumn(name) {
+  const api = COL_API[name];
+  const col = api.col;
+  const over = col.max != null && col.epics > col.max;
+  const under = col.min != null && col.epics < col.min;
+  const breachText = over ? (col.epics - col.max) + ' over max ' + col.max
+                    : under ? (col.min - col.epics) + ' under min ' + col.min : '';
+  api.el.classList.toggle('is-breach', over || under);
+  api.head.querySelector('.ct').textContent = col.epics;
+  api.head.querySelector('.sp').textContent = 'epics · ' + col.sp + ' sp';
+  api.head.querySelector('.col-breach').textContent = '⚠ ' + breachText;
+  api.strip.querySelector('.fill').style.height = Math.round(col.epics / maxEpics * 100) + '%';
+  api.strip.querySelector('.cap .n').textContent = col.epics;
+  api.strip.setAttribute('aria-label',
+    'Focus ' + col.name + ', ' + col.epics + ' epics, ' + col.sp + ' story points');
+  api.strip.title = (breachText ? col.name + ' — ' + breachText + '. ' : '') + 'Click to centre this column';
+  api.clamp();
+  api.paint();
+}
+
+function moveEpic(key, toName, status, confirmed) {
+  const fromName = columnOf(key);
+  if (!fromName || fromName === toName) return;
+  const from = COL_API[fromName], to = COL_API[toName];
+  const epic = from.all.find(e => e.key === key);
+
+  const denied = TRANSITION_DENIED[key] || [];
+  if (denied.includes(status)) {
+    const card = from.body.querySelector('.ecard[data-key="' + key + '"]');
+    if (card) { card.classList.add('is-rejected'); setTimeout(() => card.classList.remove('is-rejected'), 2600); }
+    announce(key + ' — Jira has no transition to ' + status + '. Nothing moved.', true);
+    return;
+  }
+
+  /* unresolved-story guard: one confirmation, only when it can actually bite */
+  const open = openStories(epic);
+  if (RESOLVED_STATUSES.has(status) && open > 0 && !confirmed) {
+    askConfirm(key, toName, status, open);
+    return;
+  }
+
+  from.all.splice(from.all.indexOf(epic), 1);
+  epic.status = status;
+  to.all.push(epic);
+  to.all.sort(byPriorityDesc);
+
+  from.col.epics -= 1; from.col.sp -= epic.storyPoints;
+  to.col.epics += 1;   to.col.sp += epic.storyPoints;
+
+  /* the tallest column may have changed, so every bar is rescaled, not just these two */
+  maxEpics = Math.max(...COLUMNS.map(c => c.epics));
+  document.getElementById('scaleMax').textContent = maxEpics;
+  to.reveal(epic);
+  COLUMNS.forEach(c => refreshColumn(c.name));
+
+  announce(key + ' → ' + status + ' · ' + fromName + ' → ' + toName);
+}
+
+/* the column's own statuses, in board order */
+const colStatuses = name => COL_API[name].col.statuses.map(([n]) => n);
+
+const dropMenu = document.createElement('div');
+dropMenu.className = 'status-transition-menu';
+dropMenu.setAttribute('role', 'listbox');
+dropMenu.setAttribute('aria-label', 'Move to status');
+dropMenu.style.position = 'fixed';
+dropMenu.style.top = '0';
+document.body.appendChild(dropMenu);
+
+function askStatus(key, toName, x, y) {
+  const c = COL_API[toName].col;
+  dropMenu.innerHTML = colStatuses(toName).map(n =>
+    '<button class="status-transition-option" role="option" data-status="' + n + '">' +
+      '<span class="status-transition-option-marker" style="background:' + c.c + '"></span>' + n +
+    '</button>').join('');
+  dropMenu.dataset.key = key;
+  dropMenu.dataset.col = toName;
+  dropMenu.classList.add('open');
+  const w = dropMenu.getBoundingClientRect().width;
+  dropMenu.style.left = Math.max(8, Math.min(x, document.documentElement.clientWidth - w - 8)) + 'px';
+  dropMenu.style.top = Math.min(y, window.innerHeight - dropMenu.getBoundingClientRect().height - 8) + 'px';
+}
+/* Same menu, one step further in — no second popup, no browser confirm(). */
+function askConfirm(key, toName, status, open) {
+  dropMenu.innerHTML =
+    '<div class="stm-warn">' + key + ' has <b>' + open + '</b> open ' +
+      (open === 1 ? 'story' : 'stories') + '</div>' +
+    '<button class="status-transition-option" data-status="' + status + '" data-confirm="1">' +
+      '<span class="status-transition-option-marker" style="background:var(--warn)"></span>' +
+      'Move to ' + status + ' anyway</button>' +
+    '<button class="status-transition-option" data-cancel="1">' +
+      '<span class="status-transition-option-marker" style="background:var(--border)"></span>' +
+      'Keep it where it is</button>';
+  dropMenu.dataset.key = key;
+  dropMenu.dataset.col = toName;
+  dropMenu.classList.add('open');
+}
+
+dropMenu.addEventListener('click', e => {
+  const opt = e.target.closest('.status-transition-option');
+  if (!opt) return;
+  e.stopPropagation();
+  if (opt.dataset.cancel) { dropMenu.classList.remove('open'); return; }
+  dropMenu.classList.remove('open');
+  moveEpic(dropMenu.dataset.key, dropMenu.dataset.col, opt.dataset.status, !!opt.dataset.confirm);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') dropMenu.classList.remove('open'); });
+
+let draggedKey = null;
+board.addEventListener('dragstart', e => {
+  const card = e.target.closest('.ecard');
+  if (!card) return;
+  draggedKey = card.dataset.key;
+  card.classList.add('is-dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', draggedKey);   /* Firefox needs a payload */
+});
+board.addEventListener('dragend', e => {
+  const card = e.target.closest('.ecard');
+  if (card) card.classList.remove('is-dragging');
+  board.querySelectorAll('.col.is-drop').forEach(c => c.classList.remove('is-drop'));
+  draggedKey = null;
+});
+board.addEventListener('dragover', e => {
+  const col = e.target.closest('.col');
+  if (!draggedKey || !col) return;
+  /* the source column is not a target: dropping an epic where it already is
+     is a no-op, and highlighting it would promise otherwise */
+  const same = col.dataset.name === columnOf(draggedKey);
+  board.querySelectorAll('.col.is-drop').forEach(c => { if (c !== col) c.classList.remove('is-drop'); });
+  col.classList.toggle('is-drop', !same);
+  if (same) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+});
+board.addEventListener('drop', e => {
+  const col = e.target.closest('.col');
+  if (!draggedKey || !col) return;
+  e.preventDefault();
+  const toName = col.dataset.name;
+  const key = draggedKey;
+  board.querySelectorAll('.col.is-drop').forEach(c => c.classList.remove('is-drop'));
+  const statuses = colStatuses(toName);
+  if (statuses.length === 1) moveEpic(key, toName, statuses[0]);   /* still gated inside */
+  else askStatus(key, toName, e.clientX, e.clientY);   /* a column is a set — ask which */
+});
+
+/* One focused column (centred) and at most one starred column (never folds).
+   They are usually the same column; when they differ, both stay open.
+
+   INVARIANT: exactly one column is focused, always. D7 says the board is one
+   focused column centred — a board with everything folded contradicts it and
+   renders as bare rails with no content. That state was reachable: unstar the
+   starred column, then fold the focused one, and `focused` became null.
+   resolveFocus() is the single place that may choose a focus, and it can never
+   return nothing while at least one column exists. */
+function resolveFocus(preferred) {
+  const names = COLUMNS.map(c => c.name);
+  if (preferred && names.includes(preferred)) return preferred;
+  if (starred && names.includes(starred)) return starred;          /* the star wins */
+  const withWork = COLUMNS.find(c => c.epics > 0);                 /* then the first column holding anything */
+  return (withWork || COLUMNS[0] || {}).name || null;              /* then simply the first */
+}
+
+/* focusDefault is a hint, not a guarantee: a group may configure zero starred
+   columns, in which case resolveFocus falls through to the first with work. */
+let starred = (COLUMNS.find(c => c.focusDefault) || {}).name || null;
+let focused = resolveFocus((COLUMNS.find(c => c.focusDefault) || {}).name);
+
+function setFocus(name) { focused = resolveFocus(name); applyBoardState(true); }
+
+/* Folding the focused column TRANSFERS focus, never clears it: the star if there
+   is one, otherwise the nearest neighbour left, otherwise right. */
+function foldFocused(name) {
+  const i = COLUMNS.findIndex(c => c.name === name);
+  const neighbour = (starred && starred !== name) ? starred
+    : (COLUMNS[i - 1] || COLUMNS[i + 1] || {}).name || name;
+  focused = resolveFocus(neighbour);
+  applyBoardState(true);
+}
+
+/* Pad only as much as the focused column needs to reach the centre, so a wide
+   display centres by padding alone and never shows a pointless scrollbar;
+   a narrow one pads to 0 and the remainder is reachable by scrolling. */
+function applyBoardState(smooth) {
+  colEls.forEach(el => {
+    const isFocused = el.dataset.name === focused;
+    const isStarred = el.dataset.name === starred;
+    el.classList.toggle('is-focused', isFocused);
+    el.classList.toggle('is-open', !isFocused && isStarred);
+    el.classList.toggle('is-starred', isStarred);
+    const star = el.querySelector('.col-star');
+    star.setAttribute('aria-pressed', String(isStarred));
+    star.title = isStarred ? 'Kept open — click to release' : 'Keep this column open';
+    el.querySelector('.fold').style.visibility = isStarred ? 'hidden' : 'visible';
+  });
+
+  /* The shell caps at 1560px, which would make a wider display scroll for no
+     reason. Bleed the board to the real viewport width instead — measured from
+     documentElement.clientWidth so the vertical scrollbar is excluded. */
+  board.style.paddingLeft = '0px';
+  board.style.paddingRight = '0px';
+  board.style.marginLeft = '0px';
+  board.style.width = 'auto';
+  const docW = document.documentElement.clientWidth;
+  const naturalLeft = board.getBoundingClientRect().left;   /* shell content edge */
+  board.style.marginLeft = (-naturalLeft) + 'px';
+  board.style.width = docW + 'px';
+
+  const gap = parseFloat(getComputedStyle(board).columnGap) || 8;
+  const widths = colEls.map(el => el.getBoundingClientRect().width);
+  const i = colEls.findIndex(el => el.dataset.name === focused);
+  const before = widths.slice(0, i).reduce((a, b) => a + b, 0) + gap * i;
+  const centre = before + widths[i] / 2;
+  const contentW = widths.reduce((a, b) => a + b, 0) + gap * (widths.length - 1);
+  const view = board.clientWidth;
+
+  const padLeft = Math.max(0, view / 2 - centre);
+  const padRight = Math.max(0, view / 2 - (contentW - centre));
+  board.style.paddingLeft = padLeft + 'px';
+  board.style.paddingRight = padRight + 'px';
+  board.scrollTo({ left: Math.max(0, centre + padLeft - view / 2), behavior: smooth ? 'smooth' : 'auto' });
+  requestAnimationFrame(syncHints);
+  setTimeout(syncHints, smooth ? 520 : 0);
+}
+
+/* ── stories: the app's row, order is the only thing sort changes ── */
+let sortMode = 'assignee-status';
+const mStories = document.getElementById('mStories');
+
+function sortStories(mode) {
+  const byAssignee = (a, b) => a.assignee.localeCompare(b.assignee);
+  const byStatus = (a, b) => (STATUS_RANK[a.status] ?? 99) - (STATUS_RANK[b.status] ?? 99);
+  const rows = STORIES.slice();
+  if (mode === 'assignee-status') rows.sort((a, b) => byAssignee(a, b) || byStatus(a, b));
+  else if (mode === 'status') rows.sort((a, b) => byStatus(a, b) || byAssignee(a, b));
+  else if (mode === 'assignee') rows.sort(byAssignee);
+  return rows;
+}
+
+function renderStories() {
+  mStories.innerHTML = '';
+  sortStories(sortMode).forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'story-subtask-row has-priority';
+    const pri = PRIORITY_GLYPH[s.priority];
+    row.innerHTML =
+      '<button class="task-priority-icon" data-priority="' + s.priority + '" aria-haspopup="listbox"' +
+        ' style="color:' + pri.c + '" title="' + s.priority + ' — change priority">' + pri.g + '</button>' +
+      '<a class="story-subtask-name" href="#">' + s.summary + '</a>' +
+      '<button class="status-pill task-status ' + slug(s.status) + '" aria-haspopup="listbox" ' +
+        'title="' + s.status + ' — change status">' + s.status + '</button>' +
+      '<span class="story-subtask-assignee">' + s.assignee + '</span>' +
+      '<time class="story-subtask-updated" datetime="' + s.updated + '">' +
+        formatSubtaskUpdatedDate(s.updated) + '</time>';
+    mStories.appendChild(row);
+  });
+}
+
+const sortPanel = document.getElementById('sortPanel');
+const sortToggle = document.getElementById('sortToggle');
+sortToggle.addEventListener('click', e => {
+  e.stopPropagation();
+  const open = sortPanel.classList.toggle('open');
+  sortToggle.setAttribute('aria-expanded', String(open));
+});
+sortPanel.addEventListener('click', e => {
+  e.stopPropagation();
+  const opt = e.target.closest('.sort-opt');
+  if (!opt) return;
+  sortPanel.querySelectorAll('.sort-opt').forEach(o => o.setAttribute('aria-checked', String(o === opt)));
+  sortMode = opt.dataset.sort;
+  document.getElementById('sortLabel').textContent = opt.querySelector('span:last-child').textContent;
+  sortPanel.classList.remove('open');
+  sortToggle.setAttribute('aria-expanded', 'false');
+  renderStories();
+});
+
+const mStatus = document.getElementById('mStatus');
+const mStatusMenu = document.getElementById('mStatusMenu');
+mStatus.addEventListener('click', e => {
+  e.stopPropagation();
+  const open = mStatusMenu.classList.toggle('open');
+  mStatus.setAttribute('aria-expanded', String(open));
+});
+
+const mDesc = document.getElementById('mDesc');
+const mDescMore = document.getElementById('mDescMore');
+mDescMore.addEventListener('click', () => {
+  const clamped = mDesc.classList.toggle('is-clamped');
+  mDescMore.textContent = clamped ? 'Show full description' : 'Show less';
+  mDescMore.setAttribute('aria-expanded', String(!clamped));
+});
+
+/* ============================================================
+   CATCH UP — stories grouped by epic. Same filter bar, different
+   subject: these facets filter STORIES and status stays a facet,
+   because Catch Up is a list and status is not a column here.
+   ============================================================ */
+const CATCH_UP = [
+  { key: 'DEMO-1001', name: 'POC: run partner logic inside the platform', priority: 'Critical', track: 'Committed', project: 'Product', initiative: 'Partner execution layer', stories: [
+      { key: 'PLAT-37402', summary: 'Deliver the configuration file from object storage', priority: 'Major',    status: 'In Progress', sp: 3, assignee: 'N. Perez',   updated: '2026-08-04', subtasks: '2 of 5' },
+      { key: 'PLAT-37405', summary: 'Ownership validation for entry removal',              priority: 'Blocker',  status: 'Blocked',     sp: 3, assignee: 'Unassigned', updated: '2026-07-24', blockedBy: 'CORE-27499' },
+      { key: 'PLAT-37401', summary: 'Provision the execution environment for the container', priority: 'Critical', status: 'Done',      sp: 5, assignee: 'M. Kaur',    updated: '2026-07-29', subtasks: '4 of 4' },
+      { key: 'PLAT-37407', summary: 'Ship request and delivery logs to the partner bucket', priority: 'Low',     status: 'To Do',       sp: 1, assignee: 'A. Silva',   updated: '2026-07-27' }
+  ]},
+  { key: 'CORE-27601', name: 'Split the delivery planner bundle', priority: 'Minor', track: 'Flexible', project: 'Tech', initiative: 'Planner performance', stories: [
+      { key: 'CORE-27612', summary: 'Extract the stats view into its own chunk',   priority: 'Minor',    status: 'In Progress', sp: 3, assignee: 'M. Kaur',  updated: '2026-08-03', subtasks: '1 of 3' },
+      { key: 'CORE-27613', summary: 'Measure the bundle before and after',         priority: 'Trivial',  status: 'To Do',       sp: 1, assignee: 'M. Kaur',  updated: '2026-07-30' },
+      { key: 'CORE-27614', summary: 'Drop the legacy polyfill bundle',             priority: 'Minor',    status: 'Killed',      sp: 2, assignee: 'A. Silva', updated: '2026-07-18' }
+  ]},
+  { key: 'PLAT-41190', name: 'Partner onboarding checklist', priority: 'Minor', track: null, project: 'Product', initiative: 'Partner execution layer', stories: [
+      { key: 'PLAT-41201', summary: 'Checklist state machine',                     priority: 'Major',    status: 'In Progress', sp: 5, assignee: 'D. Lang',  updated: '2026-08-02', subtasks: '3 of 6', blocks: 'PLAT-41205' },
+      { key: 'PLAT-41205', summary: 'Onboarding progress email',                   priority: 'Minor',    status: 'Pending',     sp: 2, assignee: 'D. Lang',  updated: '2026-07-31', blockedBy: 'PLAT-41201' },
+      { key: 'PLAT-41206', summary: 'Analytics for checklist completion',          priority: 'Low',      status: 'Accepted',    sp: 2, assignee: 'Unassigned', updated: '2026-07-25' }
+  ]},
+  { key: 'CORE-27588', name: 'Ship the status transition audit log', priority: 'Major', track: 'Committed', project: 'Tech', initiative: 'Planner performance', stories: [
+      { key: 'CORE-27591', summary: 'Persist transition events',                   priority: 'Critical', status: 'Release',     sp: 3, assignee: 'A. Silva', updated: '2026-08-04', subtasks: '4 of 4' },
+      { key: 'CORE-27592', summary: 'Expose the audit read route',                priority: 'Major',    status: 'Done',        sp: 2, assignee: 'A. Silva', updated: '2026-08-01', subtasks: '2 of 2' },
+      { key: 'CORE-27593', summary: 'Retain events for 90 days',                  priority: 'Minor',    status: 'Awaiting Validation', sp: 1, assignee: 'M. Kaur', updated: '2026-07-28' }
+  ]}
+];
+
+const ALL_STORIES = CATCH_UP.flatMap(e => e.stories.map(st => ({ ...st, epic: e })));
+const BOARD_STATUS_ORDER = COLUMNS.flatMap(c => c.statuses.map(([n]) => n));
+const countBy = (list, fn) => list.reduce((m, x) => { const k = fn(x); m[k] = (m[k] || 0) + 1; return m; }, {});
+
+/* Facet sets. The Board's are epic-scoped and carry no status (status is the
+   column). Catch Up's are story-scoped and keep status, with counts computed
+   from the data so the hide-at-zero rule is genuinely driven. */
+function catchUpFacets() {
+  const byStatus = countBy(ALL_STORIES, s => s.status);
+  const byPriority = countBy(ALL_STORIES, s => s.priority);
+  const byProject = countBy(ALL_STORIES, s => s.epic.project);
+  return [
+    { facet: 'Status', kind: 'multi', neutralTotal: ALL_STORIES.length, options:
+        BOARD_STATUS_ORDER.map(n => ({ label: n, n: byStatus[n] || 0, on: true })) },
+    { facet: 'Priority', kind: 'multi', neutralTotal: ALL_STORIES.length, options:
+        PRIORITY_AXIS.map(n => ({ label: n, n: byPriority[n] || 0, on: true })) },
+    { facet: 'Projects', kind: 'multi', neutralTotal: ALL_STORIES.length, options:
+        ['Tech', 'Product'].map(n => ({ label: n, n: byProject[n] || 0, on: true })) }
+  ];
+}
+
+const FACETS = {
+  board: {
+    subject: 'Filtering epics', unit: 'epics', total: 87, groups: [
+      { facet: 'Priority', kind: 'multi', neutralTotal: 87, options: [
+          { label: 'Blocker', n: 4, on: true }, { label: 'Critical', n: 25, on: true },
+          { label: 'Major', n: 25, on: false }, { label: 'Minor', n: 32, on: false },
+          { label: 'Low', n: 1, on: false }, { label: 'Trivial', n: 0, on: false } ] },
+      { facet: 'Projects', kind: 'multi', neutralTotal: 87, options: [
+          { label: 'Tech', n: 48, on: true }, { label: 'Product', n: 39, on: true } ] },
+      { facet: 'Assignee', kind: 'radio', options: [
+          { label: 'Anyone', n: 87, on: true }, { label: 'Unassigned only', n: 4, on: false } ] },
+      /* Multi, both on by default. Both ticked means "not filtering by track", which
+         is what admits the 65 epics that have no track at all — they match no option,
+         so an option-sum would wrongly report 22. Hence neutralTotal. */
+      { facet: 'Track', kind: 'multi', neutralTotal: 87, options: [
+          { label: 'Committed', n: 8, on: true }, { label: 'Flexible', n: 14, on: true } ] }
+    ]
+  },
+  catchup: { subject: 'Filtering stories', unit: 'stories', total: ALL_STORIES.length, groups: null }
+};
+
+let mode = 'board';
+
+function renderFacets() {
+  const spec = FACETS[mode];
+  const groups = spec.groups || catchUpFacets();
+  document.getElementById('fbSubject').textContent = spec.subject;
+  document.getElementById('fbFacets').innerHTML = groups.map(g => {
+    const radio = g.kind === 'radio';
+    return '<div class="pop-group" data-facet="' + g.facet + '" data-kind="' + g.kind + '">' +
+      '<div class="pop-head"><span class="chrome">' +
+        (g.facet === 'Track' ? 'Delivery track' : g.facet) +
+        '</span><span class="pop-total" data-neutral="' + (g.neutralTotal || 0) + '"></span>' +
+        (radio ? '' : '<button class="linkish all">Select all</button>') + '</div>' +
+      '<div class="pop-list"' + (radio ? ' role="radiogroup" aria-label="' + g.facet + '"' : '') + '>' +
+        g.options.map(o =>
+          '<button class="pop-opt' + (radio ? ' radio' : '') + '"' +
+          (radio ? ' role="radio" aria-checked="' + o.on + '" data-radio' : ' aria-pressed="' + o.on + '"') +
+          ' data-label="' + o.label + '"><span class="box"></span><span>' + o.label +
+          '</span><span class="n">' + o.n + '</span></button>').join('') +
+      '</div></div>';
+  }).join('');
+  hideEmptyOptions();
+}
+
+/* ── Catch Up render, filtered by the live facet state ────── */
+function activeSet(facet) {
+  const g = document.querySelector('.pop-group[data-facet="' + facet + '"]');
+  if (!g) return null;
+  const s = facetState(g);
+  return new Set(s.on.map(o => o.dataset.label));
+}
+
+function renderCatchUp() {
+  const statuses = activeSet('Status');
+  const priorities = activeSet('Priority');
+  const projects = activeSet('Projects');
+  /* epic is passed in: raw epic.stories entries carry no back-reference */
+  const keep = (st, epic) =>
+    (!statuses || statuses.has(st.status)) &&
+    (!priorities || priorities.has(st.priority)) &&
+    (!projects || projects.has(epic.project));
+
+  const host = document.getElementById('taskList');
+  let shown = 0;
+  const epicBlock = epic => {
+    const stories = epic.stories.filter(st => keep(st, epic));
+    if (!stories.length) return '';
+    shown += stories.length;
+    const pri = PRIORITY_GLYPH[epic.priority];
+    return '<div class="epic-block">' +
+      '<div class="epic-header">' +
+        '<div class="epic-title"><div class="epic-title-row">' +
+          '<span class="epic-icon" aria-hidden="true" title="EPIC">◆</span>' +
+          '<button class="task-priority-icon" data-priority="' + epic.priority + '" aria-haspopup="menu"' +
+            ' style="color:' + pri.c + '" title="' + epic.priority + ' — change priority">' + pri.g + '</button>' +
+          (epic.track ? '<button class="epic-track-indicator" aria-haspopup="menu" title="' + epic.track +
+            ' — change delivery track">' + TRACK_GLYPH[epic.track] + '</button>' : '') +
+          '<a class="epic-link" href="#"><span class="epic-name">' + epic.name +
+            '</span><span class="epic-key">' + epic.key + '</span></a>' +
+        '</div></div>' +
+        '<span class="epic-header-right">' + stories.length + ' of ' + epic.stories.length + ' stories</span>' +
+      '</div>' +
+      stories.map(st => {
+        const p = PRIORITY_GLYPH[st.priority];
+        return '<div class="task-item priority-' + st.priority.toLowerCase() + '" data-task-key="' + st.key + '">' +
+          '<div class="task-header">' +
+            '<div class="task-headline">' +
+              '<span class="story-icon" aria-hidden="true" title="STORY">▪</span>' +
+              '<button class="task-priority-icon" data-priority="' + st.priority + '" aria-haspopup="menu"' +
+                ' style="color:' + p.c + '" title="' + st.priority + ' — change priority">' + p.g + '</button>' +
+              '<h3 class="task-title"><a href="#">' + st.summary + '</a></h3>' +
+            '</div>' +
+            '<div class="task-header-right"><span class="task-inline-meta">' +
+              '<a class="task-key-link" href="#">' + st.key + '</a>' +
+              '<span class="task-inline-sp">' + st.sp + ' SP</span>' +
+            '</span></div>' +
+          '</div>' +
+          '<div class="task-detail-row"><div class="task-meta">' +
+            '<button class="status-pill task-status ' + slug(st.status) + '" aria-haspopup="listbox"' +
+              ' title="' + st.status + ' — change status">' + st.status + '</button>' +
+            '<span class="task-assignee">' + st.assignee + '</span>' +
+            '<span class="task-updated">Last update: ' + st.updated + '</span>' +
+            (st.subtasks ? '<span class="task-subtask-meta"><button class="story-subtasks-toggle">' +
+              'Subtasks ' + st.subtasks + '</button></span>' : '') +
+          '</div>' +
+          ((st.blockedBy || st.blocks) ? '<div class="dependency-pill-stack">' +
+            (st.blockedBy ? '<span class="dependency-pill blocked">Blocked by ' + st.blockedBy + '</span>' : '') +
+            (st.blocks ? '<span class="dependency-pill blocker">Blocks ' + st.blocks + '</span>' : '') +
+          '</div>' : '') +
+          '</div>' +
+        '</div>';
+      }).join('') +
+    '</div>';
+  };
+
+  const ordered = sortEpics(CATCH_UP);
+  let blocks;
+  if (groupByInitiative) {
+    const names = [...new Set(ordered.map(e => e.initiative))];
+    blocks = names.map(nm => {
+      const inner = ordered.filter(e => e.initiative === nm).map(epicBlock).join('');
+      if (!inner) return '';
+      const n = ordered.filter(e => e.initiative === nm && e.stories.some(st => keep(st, e))).length;
+      return '<div class="initiative-group"><div class="initiative-header">' +
+        '<span class="initiative-header-icon" aria-hidden="true">◈</span>' +
+        '<span class="initiative-label">' + nm + '<span class="count">' + n + ' epics</span></span>' +
+        '</div><div class="initiative-body">' + inner + '</div></div>';
+    }).join('');
+  } else {
+    blocks = ordered.map(epicBlock).join('');
+  }
+
+  host.innerHTML = blocks || '<div class="catchup-empty">No story matches these filters</div>';
+  document.getElementById('catchupSummary').textContent =
+    shown + ' of ' + ALL_STORIES.length + ' stories · ' +
+    CATCH_UP.filter(e => e.stories.some(st => keep(st, e))).length + ' of ' + CATCH_UP.length + ' epics';
+  return shown;
+}
+
+/* ── Catch Up view controls: sort + initiative grouping ──────
+   ENG_EPIC_SORT_OPTIONS verbatim (engTaskUtils.js:180) — four options, two of
+   them track directions. These order/structure the list; they are not filters,
+   so they never appear as chips. */
+const ENG_EPIC_SORT_OPTIONS = [
+  { value: 'priority',        label: 'Priority' },
+  { value: 'status',          label: 'Status' },
+  { value: 'track-committed', label: 'Committed ⬇' },
+  { value: 'track-flexible',  label: 'Flexible ⬇' }
+];
+let engEpicSort = 'priority';          /* DEFAULT_ENG_EPIC_SORT */
+let groupByInitiative = false;
+
+/* every sort is tie-broken by priority, as the app does */
+function sortEpics(list) {
+  const pri = e => PRIORITY_AXIS.indexOf(e.priority);
+  const statusRank = e => {
+    const ranks = e.stories.map(st => BOARD_STATUS_ORDER.indexOf(st.status)).filter(i => i >= 0);
+    return ranks.length ? Math.min(...ranks) : 99;
+  };
+  const trackRank = (e, first) => (e.track === first ? 0 : e.track ? 1 : 2);
+  const out = list.slice();
+  if (engEpicSort === 'status') out.sort((a, b) => statusRank(a) - statusRank(b) || pri(a) - pri(b));
+  else if (engEpicSort === 'track-committed') out.sort((a, b) => trackRank(a, 'Committed') - trackRank(b, 'Committed') || pri(a) - pri(b));
+  else if (engEpicSort === 'track-flexible') out.sort((a, b) => trackRank(a, 'Flexible') - trackRank(b, 'Flexible') || pri(a) - pri(b));
+  else out.sort((a, b) => pri(a) - pri(b));
+  return out;
+}
+
+function renderSortPanel() {
+  document.getElementById('sortPanelCU').innerHTML = ENG_EPIC_SORT_OPTIONS.map(o =>
+    '<button class="sprint-dropdown-option' + (o.value === engEpicSort ? ' selected' : '') +
+    '" role="option" aria-selected="' + (o.value === engEpicSort) + '" data-sort="' + o.value + '">' +
+    o.label + '</button>').join('');
+  document.getElementById('sortLabelCU').textContent =
+    ENG_EPIC_SORT_OPTIONS.find(o => o.value === engEpicSort).label;
+}
+
+const sortToggleCU = document.getElementById('sortToggleCU');
+const sortPanelCU = document.getElementById('sortPanelCU');
+sortToggleCU.addEventListener('click', e => {
+  e.stopPropagation();
+  const open = sortPanelCU.classList.toggle('open');
+  sortToggleCU.classList.toggle('open', open);
+  sortToggleCU.setAttribute('aria-expanded', String(open));
+});
+sortPanelCU.addEventListener('click', e => {
+  e.stopPropagation();
+  const opt = e.target.closest('[data-sort]');
+  if (!opt) return;
+  engEpicSort = opt.dataset.sort;
+  renderSortPanel();
+  sortPanelCU.classList.remove('open');
+  sortToggleCU.classList.remove('open');
+  sortToggleCU.setAttribute('aria-expanded', 'false');
+  renderCatchUp();
+});
+document.getElementById('groupByInitiative').addEventListener('change', e => {
+  groupByInitiative = e.target.checked;
+  renderCatchUp();
+});
+renderSortPanel();
+
+/* ── mode switching ──────────────────────────────────────── */
+function setMode(next) {
+  mode = next;
+  document.querySelectorAll('[data-view]').forEach(v => { v.hidden = v.dataset.view !== next; });
+  document.querySelectorAll('.view-filters .eng-mode-control .segmented-control-button, .compact-sticky-header-controls .eng-mode-control .segmented-control-button').forEach(b => {
+    const on = (b.textContent.trim().toLowerCase() === (next === 'catchup' ? 'catch up' : 'board'));
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+  document.getElementById('viewControls').hidden = next !== 'catchup';
+  renderFacets();
+  renderChips();
+  if (next === 'board') applyBoardState(false);
+}
+
+document.querySelectorAll('.view-filters .eng-mode-control .segmented-control-button, .compact-sticky-header-controls .eng-mode-control .segmented-control-button').forEach(b => {
+  const label = b.textContent.trim().toLowerCase();
+  if (label !== 'catch up' && label !== 'board') return;
+  b.addEventListener('click', () => setMode(label === 'catch up' ? 'catchup' : 'board'));
+});
+
+/* ── filters ─────────────────────────────────────────────── */
+const pop = document.getElementById('fbPop');
+const popTrigger = document.getElementById('fbTrigger');
+const chipsEl = document.getElementById('fbChips');
+
+/* A value nothing in scope has is not a filter — drop it rather than offering a
+   control that can only ever empty the board. Recomputed whenever scope changes. */
+function hideEmptyOptions() {
+  document.querySelectorAll('.pop-group[data-kind="multi"] .pop-opt').forEach(o => {
+    const n = Number(o.querySelector('.n').textContent || 0);
+    if (n === 0) { o.hidden = true; o.setAttribute('aria-pressed', 'false'); }
+    else o.hidden = false;
+  });
+}
+
+function facetState(group) {
+  const radio = group.dataset.kind === 'radio';
+  const opts = [...group.querySelectorAll('.pop-opt:not([hidden])')];
+  const attr = radio ? 'aria-checked' : 'aria-pressed';
+  const on = opts.filter(o => o.getAttribute(attr) === 'true');
+  const neutral = radio ? on.length === 1 && on[0] === opts[0] : on.length === opts.length;
+  return { facet: group.dataset.facet, radio, opts, on, neutral };
+}
+
+/* A chip states the SHORTER truth about its facet. Enumerating everything that
+   is ticked produced a 565px Status chip that wrapped the bar onto three rows —
+   the exact failure this design replaces — while naming the one option that is
+   NOT ticked is a dozen characters. So: fewer excluded than included reads
+   "hidden Killed"; otherwise it reads "only In Progress". Neutral renders
+   nothing at all, and the full list is always in the title and the popover. */
+const CHIP_MAX_NAMES = 2;
+
+function chipCopy(s) {
+  if (s.radio) return { verb: '', names: s.on.map(o => o.dataset.label) };
+  const off = s.opts.filter(o => !s.on.includes(o));
+  return off.length < s.on.length
+    ? { verb: 'hidden', names: off.map(o => o.dataset.label) }
+    : { verb: 'only', names: s.on.map(o => o.dataset.label) };
+}
+
+function chipNames(names) {
+  return names.length > CHIP_MAX_NAMES
+    ? names.slice(0, CHIP_MAX_NAMES).join(', ') + ' +' + (names.length - CHIP_MAX_NAMES)
+    : names.join(', ');
+}
+
+/* Last line of defence: even short chips can outrun a narrow bar, and the bar is
+   not allowed to grow a row. Hide chips from the end until the lane fits and
+   account for them in one "+n more" that opens the popover. */
+function collapseChips() {
+  const chips = [...chipsEl.querySelectorAll('.chip:not(.chip-more)')];
+  chips.forEach(c => { c.hidden = false; });
+  const stale = chipsEl.querySelector('.chip-more');
+  if (stale) stale.remove();
+  const fits = () => chipsEl.scrollWidth <= chipsEl.clientWidth + 1;
+  if (fits() || !chips.length) return;
+
+  const more = document.createElement('button');
+  more.className = 'chip chip-more';
+  more.type = 'button';
+  more.title = 'Open Filters to see every active facet';
+  chipsEl.insertBefore(more, chipsEl.querySelector('.chip-clear'));
+  for (let i = chips.length - 1, n = 0; i >= 0; i--) {
+    chips[i].hidden = true;
+    more.textContent = '+' + (++n) + ' more';
+    if (fits()) break;
+  }
+}
+
+function renderChips() {
+  const groups = [...pop.querySelectorAll('.pop-group')];
+  const active = groups.map(facetState).filter(s => !s.neutral && s.on.length);
+  chipsEl.innerHTML = active.map(s => {
+    const c = chipCopy(s);
+    return '<span class="chip" data-facet="' + s.facet + '" title="' + s.facet + ' — ' +
+      (c.verb ? c.verb + ' ' : '') + c.names.join(', ') + '">' +
+      '<span class="facet">' + s.facet + '</span>' +
+      (c.verb ? '<span class="verb">' + c.verb + '</span>' : '') +
+      '<span class="names">' + chipNames(c.names) + '</span>' +
+      '<button class="x" aria-label="Clear ' + s.facet + ' filter">×</button></span>';
+  }).join('') + (active.length ? '<button class="chip-clear">Clear all</button>' : '');
+
+  const badge = document.getElementById('fbBadge');
+  badge.textContent = active.length;
+  badge.style.display = active.length ? 'grid' : 'none';
+
+  const spec = FACETS[mode];
+  document.getElementById('fbUnit').textContent = 'of ' + spec.total + ' ' + spec.unit;
+  if (mode === 'catchup') {
+    /* the count is the real filtered result, not an estimate from facet counts */
+    document.getElementById('fbCount').textContent = renderCatchUp();
+  } else {
+    const counts = active.map(s => s.on.reduce((n, o) => n + Number(o.querySelector('.n').textContent || 0), 0));
+    document.getElementById('fbCount').textContent = counts.length ? Math.min(...counts) : spec.total;
+  }
+
+  groups.forEach(g => {
+    const s = facetState(g);
+    /* Heading total = what this facet currently admits. When everything is ticked
+       that is the facet's neutral total, NOT the sum of its options — for Delivery
+       track the sum would omit every epic that has no track. */
+    const totalEl = g.querySelector('.pop-total');
+    if (totalEl) {
+      const neutral = Number(totalEl.dataset.neutral || 0);
+      const summed = s.on.reduce((n, o) => n + Number(o.querySelector('.n').textContent || 0), 0);
+      totalEl.textContent = (s.neutral && neutral) ? neutral : summed;
+    }
+    if (!s.radio) {
+      s.opts.forEach(o => {
+        const locked = s.on.length === 1 && o === s.on[0];
+        o.classList.toggle('is-locked', locked);
+        o.title = locked ? 'Keep at least one — an empty filter would blank the board' : '';
+      });
+    }
+    let note = g.querySelector('.pop-neutral');
+    if (s.neutral && !s.radio) {
+      if (!note) { note = document.createElement('div'); note.className = 'pop-neutral'; g.appendChild(note); }
+      note.textContent = 'Everything ticked — not filtering by ' + s.facet.toLowerCase();
+    } else if (note) { note.remove(); }
+  });
+
+  collapseChips();
+}
+
+/* Sized here, not in CSS: 100vw counts the scrollbar (375 vs 360 usable, which
+   pushed 11px of document overflow), and the trigger sits in a sticky bar so its
+   viewport y — and therefore the room below it — changes with scroll. */
+function fitPopover() {
+  const docW = document.documentElement.clientWidth;
+  const gutter = 12;
+  const host = popTrigger.getBoundingClientRect();
+  pop.style.width = Math.min(348, docW - gutter * 2) + 'px';
+  pop.style.maxHeight = Math.max(180, window.innerHeight - host.bottom - gutter * 2) + 'px';
+  /* keep it inside the right edge without leaving its anchor */
+  pop.style.left = '0px';
+  const over = pop.getBoundingClientRect().right - (docW - gutter);
+  if (over > 0) pop.style.left = (-over) + 'px';
+}
+popTrigger.addEventListener('click', e => {
+  e.stopPropagation();
+  const open = pop.classList.toggle('open');
+  popTrigger.setAttribute('aria-expanded', String(open));
+  if (open) fitPopover();
+});
+window.addEventListener('resize', () => {
+  if (pop.classList.contains('open')) fitPopover();
+  collapseChips();   /* the lane's width changed, so what fits changed with it */
+});
+pop.addEventListener('click', e => {
+  e.stopPropagation();
+  if (e.target.closest('.all')) {
+    e.target.closest('.pop-group').querySelectorAll('.pop-opt:not([hidden])')
+      .forEach(o => o.setAttribute('aria-pressed', 'true'));
+    return renderChips();
+  }
+  const opt = e.target.closest('.pop-opt');
+  if (!opt) return;
+  const s = facetState(opt.closest('.pop-group'));
+  if (s.radio) s.opts.forEach(o => o.setAttribute('aria-checked', String(o === opt)));
+  else {
+    if (opt.classList.contains('is-locked')) return;
+    opt.setAttribute('aria-pressed', opt.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+  }
+  renderChips();
+});
+chipsEl.addEventListener('click', e => {
+  /* stop first: the document-level handler would close the popover we just opened */
+  if (e.target.closest('.chip-more')) { e.stopPropagation(); return popTrigger.click(); }
+  const reset = group => {
+    const s = facetState(group);
+    s.opts.forEach((o, i) => s.radio ? o.setAttribute('aria-checked', String(i === 0))
+                                     : o.setAttribute('aria-pressed', 'true'));
+  };
+  if (e.target.closest('.chip-clear')) pop.querySelectorAll('.pop-group').forEach(reset);
+  else {
+    const chip = e.target.closest('.chip');
+    if (chip) reset(pop.querySelector('.pop-group[data-facet="' + chip.dataset.facet + '"]'));
+  }
+  renderChips();
+});
+
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(el) { el.classList.remove('open'); }
+document.querySelectorAll('.backdrop').forEach(bd => {
+  bd.addEventListener('click', e => { if (e.target === bd) closeModal(bd); });
+});
+document.getElementById('mClose').addEventListener('click', () => closeModal(document.getElementById('epicBack')));
+
+const notes = document.getElementById('notes');
+document.getElementById('notesBtn').addEventListener('click', () => notes.classList.toggle('open'));
+document.getElementById('notesClose').addEventListener('click', () => notes.classList.remove('open'));
+
+document.addEventListener('click', () => {
+  pop.classList.remove('open'); popTrigger.setAttribute('aria-expanded', 'false');
+  sortPanel.classList.remove('open'); sortToggle.setAttribute('aria-expanded', 'false');
+  sortPanelCU.classList.remove('open'); sortToggleCU.classList.remove('open');
+  sortToggleCU.setAttribute('aria-expanded', 'false');
+  mStatusMenu.classList.remove('open'); mStatus.setAttribute('aria-expanded', 'false');
+  dropMenu.classList.remove('open');
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  pop.classList.remove('open'); popTrigger.setAttribute('aria-expanded', 'false');
+  sortPanel.classList.remove('open');
+  mStatusMenu.classList.remove('open');
+  document.querySelectorAll('.backdrop.open').forEach(closeModal);
+  notes.classList.remove('open');
+});
+/* ── off-frame hints ─────────────────────────────────────── */
+const hintL = document.getElementById('hintLeft');
+const hintR = document.getElementById('hintRight');
+
+function syncHints() {
+  const br = board.getBoundingClientRect();
+  let left = 0, right = 0;
+  colEls.forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (r.right < br.left + 4) left++;
+    else if (r.left > br.right - 4) right++;
+  });
+  hintL.classList.toggle('is-on', left > 0);
+  hintR.classList.toggle('is-on', right > 0);
+  document.getElementById('hintLeftN').textContent = left;
+  document.getElementById('hintRightN').textContent = right;
+  hintL.title = left + ' column' + (left === 1 ? '' : 's') + ' to the left';
+  hintR.title = right + ' column' + (right === 1 ? '' : 's') + ' to the right';
+}
+board.addEventListener('scroll', syncHints, { passive: true });
+
+/* clicking a hint focuses the nearest column in that direction, which also
+   centres it — so the hint is a control, not just decoration */
+function stepFocus(dir) {
+  const i = colEls.findIndex(el => el.dataset.name === focused);
+  const next = colEls[i + dir];
+  if (next) setFocus(next.dataset.name);
+}
+hintL.addEventListener('click', () => stepFocus(-1));
+hintR.addEventListener('click', () => stepFocus(1));
+
+/* ── compact sticky header ───────────────────────────────── */
+const compact = document.getElementById('compactHeader');
+const controlsRow = document.querySelector('.controls-row');
+function syncCompact() {
+  const show = controlsRow.getBoundingClientRect().bottom < 0;
+  compact.classList.toggle('is-visible', show);
+  document.documentElement.style.setProperty('--compact-h',
+    show ? Math.round(compact.getBoundingClientRect().height) + 'px' : '0px');
+}
+window.addEventListener('scroll', syncCompact, { passive: true });
+
+window.addEventListener('resize', () => { applyBoardState(false); syncCompact(); });
+
+document.getElementById('scaleMax').textContent = maxEpics;
+renderFacets();
+renderChips();
+renderStories();
+applyBoardState(false);
+syncCompact();
+</script>

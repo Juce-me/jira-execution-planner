@@ -310,6 +310,18 @@
             text-overflow: ellipsis;
         }
 
+        /* The optional eyebrow naming the control ("Sort"), used by the ENG filter bar and the
+           Board's epic detail panel. It lives here, with the control, so both consumers share one
+           rule: `flex: none` in particular is load-bearing, because the `flex: 1` above would
+           otherwise let the eyebrow claim half the toggle and ellipsise the value beside it. */
+        .sprint-dropdown-toggle .cap {
+            flex: none;
+            font-size: 0.46rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
         .sprint-dropdown-toggle svg {
             width: 0.55rem;
             height: 0.55rem;
@@ -332,6 +344,24 @@
 
         .sprint-dropdown-toggle.open svg {
             transform: rotate(180deg);
+        }
+
+        /* Compact modifier, for a host row shorter than --control-height: the ENG filter bar's
+           42px row cannot seat a 38px control, and its 8.5rem min-width is a reservation that bar
+           has no room for. It lives here, with the control it sizes, so that no consumer
+           stylesheet redefines a shared control's height (MRT021). A consumer opts in by adding
+           .sprint-dropdown-compact beside .sprint-dropdown, the way SegmentedControl takes the
+           eng-mode-control hook. */
+        .sprint-dropdown-compact {
+            --sprint-dropdown-min-width: 0;
+        }
+
+        .sprint-dropdown-compact .sprint-dropdown-toggle {
+            height: 30px;
+            padding: 0 0.55rem;
+            gap: 0.35rem;
+            font-size: 0.6rem;
+            border-radius: 8px;
         }
 
         .sprint-dropdown-panel {
@@ -409,5 +439,58 @@
 
             [data-stats-range] .sprint-dropdown {
                 --sprint-dropdown-max-width: calc(100vw - 4rem);
+            }
+
+            /* The ENG mode switch carries five options at 416px and its controls row is 342px at
+               a 390px viewport, so without this the document itself scrolls sideways (MRT020's
+               guard, at eng_compact_layout_visual.spec.js "ENG epic rows stay readable on narrow
+               screens"). The control scrolls internally instead — the app's own narrow-screen
+               idiom, and the reason it is allowed here:
+
+               - §7.6 bans horizontal scroll for the *filter bar* because an overflow-x ancestor
+                 clips the facet popover anchored inside it. The mode control anchors no popover,
+                 so that prohibition does not transfer. Do not read it across.
+               - This is not a min-width reservation, not a flex-wrap and not a height override,
+                 so D39/MRT021 are untouched: the buttons keep their metrics and the control keeps
+                 one row at var(--control-height). Only the container clips and scrolls.
+               - min-width: 0 is the flex-shrink unlock, the opposite of a width reservation:
+                 without it min-width:auto pins the item at its 416px min-content width and the
+                 overflow never engages.
+               - §13's file map marks this stylesheet "not touched". That is knowingly overridden
+                 here: the alternative remedy §14 names, shortening a label, needs three renames
+                 including Catch Up, which the plan protects as the production label.
+
+               SCOPE: .eng-mode-control is the shared SegmentedControl class hook, not the ENG mode
+               switch's private class. Four Statistics controls also carry it — the view toggle and
+               the Capacity side, Project Track Mode and Cohort Group By selectors. None of them
+               has five options or this overflow, so the three selectors keep today's
+               padding-squeeze behaviour, and the view toggle keeps the overflow-x it already
+               declares for itself in stats/shell.css. Hence the two ancestors: the ENG mode switch
+               renders only inside .view-selector and .compact-sticky-header. Anything added to
+               these rules changes those two controls and nothing else. */
+            .view-selector .eng-mode-control,
+            .compact-sticky-header .eng-mode-control {
+                min-width: 0;
+                max-width: 100%;
+                overflow-x: auto;
+                /* The scrollbar is suppressed so the control's height is var(--control-height) on
+                   every platform, not only the ones with overlay scrollbars: a classic horizontal
+                   bar would eat into the shared control height (MRT021). */
+                scrollbar-width: none;
+            }
+
+            .view-selector .eng-mode-control::-webkit-scrollbar,
+            .compact-sticky-header .eng-mode-control::-webkit-scrollbar {
+                display: none;
+            }
+
+            /* flex-shrink: 0 makes the overflow real. Without it the row squeezes each button's
+               padding instead, which fits five options at 375px with 1px to spare and puts the
+               labels one narrower viewport away from overflowing their boxes — MRT020 again, and
+               invisible to a scrollWidth check because a centred nowrap label spills both ways.
+               The buttons keep their own metrics; only the container clips. */
+            .view-selector .eng-mode-control .segmented-control-button,
+            .compact-sticky-header .eng-mode-control .segmented-control-button {
+                flex-shrink: 0;
             }
         }

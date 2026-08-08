@@ -32,6 +32,12 @@ export function normalizeGroupsConfig(config) {
                     .map(([teamId, label]) => [String(teamId || '').trim(), String(label || '').trim()])
                     .filter(([teamId, label]) => teamId && label)
             ),
+            // Omitted rather than assigned `undefined`: Dashboard distinguishes an absent board
+            // with hasOwnProperty, while an explicit empty columns array must remain present and
+            // invalid so the unified Save gate blocks it.
+            ...(Array.isArray(group?.board?.columns)
+                ? { board: { columns: [...group.board.columns] } }
+                : {}),
         }))
         .filter(group => group.id && group.name);
     return {
@@ -131,6 +137,14 @@ export function buildGroupsConfigWithExcludedCapacityToggle(config, groupId, epi
         changed,
         nextExcluded
     };
+}
+
+// The one-line Board summary shared by the Team groups pointer entry and the Boards tab's own
+// group list rows, so the two surfaces can never drift into different wording for the same group.
+export function formatGroupBoardSummary(board) {
+    const columnCount = Array.isArray(board?.columns) ? board.columns.length : 0;
+    if (!columnCount) return 'No board configured';
+    return `${columnCount} column${columnCount === 1 ? '' : 's'}`;
 }
 
 export function buildGroupId(name, existingIds) {

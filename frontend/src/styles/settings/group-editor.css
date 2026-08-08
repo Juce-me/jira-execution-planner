@@ -197,6 +197,20 @@
             border-bottom: none;
         }
 
+        /* The truncation notice: a quiet non-selectable row of the same list, so the cap reads as
+           a note rather than another pickable field. Sticky at the foot of the scroll container —
+           a notice you only see after scrolling past 20 results is still a silent truncation. */
+        .team-search-more {
+            position: sticky;
+            bottom: 0;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            background: #f8f9fa;
+            border-top: 1px solid #f0f0f0;
+            cursor: default;
+        }
+
         .selected-teams-list {
             display: flex;
             flex-wrap: wrap;
@@ -411,6 +425,11 @@
             display: flex;
             flex-direction: column;
             gap: 0.2rem;
+        }
+
+        /* Conflict exits (Discard mine / Keep mine) sit in the same banner as the messages. */
+        .group-modal-validation .group-modal-button-row {
+            margin-top: 0.3rem;
         }
 
         .group-modal-footer {

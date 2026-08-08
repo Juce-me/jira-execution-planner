@@ -557,6 +557,79 @@
 
         .epm-project-board-update-copy {
             min-width: 0;
+            max-width: 100%;
+        }
+
+        .epm-project-board-update-copy h1,
+        .epm-project-board-update-copy h2,
+        .epm-project-board-update-copy h3,
+        .epm-project-board-update-copy h4,
+        .epm-project-board-update-copy h5,
+        .epm-project-board-update-copy h6 {
+            margin: 0.7rem 0 0.35rem;
+            font-family: inherit;
+            color: var(--text-primary);
+            text-transform: none;
+            letter-spacing: normal;
+            line-height: 1.3;
+        }
+
+        .epm-project-board-update-copy h1,
+        .epm-project-board-update-copy h2 { font-size: 1rem; }
+        .epm-project-board-update-copy h3,
+        .epm-project-board-update-copy h4,
+        .epm-project-board-update-copy h5,
+        .epm-project-board-update-copy h6 { font-size: 0.9rem; }
+
+        .epm-project-board-update-copy .adf-table-scroll {
+            width: 100%;
+            max-width: 100%;
+            margin: 0.45rem 0 0.65rem;
+            overflow-x: auto;
+            overscroll-behavior-inline: contain;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+
+        .epm-project-board-update-copy .adf-table-scroll:focus-visible {
+            outline: 2px solid var(--epm-project-accent);
+            outline-offset: 2px;
+        }
+
+        .epm-project-board-update-copy table {
+            width: 100%;
+            min-width: 32rem;
+            border-collapse: collapse;
+            table-layout: auto;
+            font-size: 0.78rem;
+            line-height: 1.35;
+        }
+
+        .epm-project-board-update-copy th,
+        .epm-project-board-update-copy td {
+            min-width: 7rem;
+            padding: 0.4rem 0.5rem;
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            vertical-align: top;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .epm-project-board-update-copy th {
+            background: var(--bg-primary);
+            font-weight: 600;
+        }
+
+        .epm-project-board-update-copy th:last-child,
+        .epm-project-board-update-copy td:last-child { border-right: 0; }
+        .epm-project-board-update-copy tr:last-child > * { border-bottom: 0; }
+        .epm-project-board-update-copy th > :last-child,
+        .epm-project-board-update-copy td > :last-child { margin-bottom: 0; }
+
+        .epm-project-board-update-copy > :first-child {
+            margin-top: 0;
         }
 
         .epm-project-board-update-copy p {

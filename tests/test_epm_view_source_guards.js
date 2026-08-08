@@ -269,12 +269,9 @@ test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
         'Expected EPM selected-project rollup wrapper to keep epm-issue-board'
     );
 
+    // The Catch Up filter cards and their .filters-strip scoping are gone with the compact bar;
+    // what still needs scoping away from EPM boards is the task list itself.
     [
-        '.filters-strip .stats',
-        '.filters-strip .stat-card',
-        '.filters-strip .stat-value',
-        '.filters-strip .stat-label',
-        '.filters-strip .stat-card .stats-note',
         '.task-list:not(.epm-issue-board) > .epic-block',
         '.task-list:not(.epm-issue-board) > .epic-block > .epic-header',
         '.task-list:not(.epm-issue-board) > .epic-block > .task-item',
@@ -296,21 +293,11 @@ test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
         'Do not use descendant :not() for EPM exclusion; scope :not() on the task-list itself'
     );
 
-    assertRuleIncludes('.filters-strip .stats', 'display: grid;');
-    assertRuleIncludes('.filters-strip .stats', 'justify-content: start;');
-    assertRuleIncludes('.filters-strip .stats', 'width: 100%;');
-    assertRuleExcludes('.filters-strip .stats', 'justify-content: space-between;');
-    assertRuleIncludes('.filters-strip .stat-card', 'min-height: var(--filter-card-height);');
-    assertRuleIncludes('.filters-strip .stat-card', 'block-size: var(--filter-card-height);');
-    assertRuleIncludes('.filters-strip .stat-card', 'width: var(--filter-card-width);');
-    assertRuleIncludes('.filters-strip .stat-card', 'inline-size: var(--filter-card-width);');
-    assertRuleIncludes('.filters-strip .stat-card', 'max-width: var(--filter-card-width);');
-    assertRuleIncludes('.filters-strip .stat-card', 'grid-template-columns: var(--filter-card-value-width) minmax(0, 1fr);');
-    assertRuleIncludes('.filters-strip .stat-card', 'padding: 0.34rem 0.55rem;');
-    assertRuleIncludes('.filters-strip .stat-card', 'justify-content: start;');
-    assertRuleExcludes('.filters-strip .stat-card', 'width: 100%;');
-    assertRuleIncludes('.filters-strip .stat-label', 'font-size: 0.62rem;');
-    assertRuleIncludes('.filters-strip .stat-card .stats-note', 'font-size: 0.58rem;');
+    assert.equal(
+        dashboardCssSource.includes('.filters-strip'),
+        false,
+        'The filter-card strip no longer renders, so no stylesheet should still scope to it'
+    );
     assert.equal(
         dashboardCssSource.includes('.stat-card.killed'),
         false,
@@ -320,10 +307,6 @@ test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
     assertRuleIncludes('.task-list:not(.epm-issue-board) > .epic-block > .task-item', 'margin-bottom: 0.55rem;');
     assertRuleIncludes('.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-title', 'font-size: 0.98rem;');
 
-    assertRuleExcludes('.stat-card', 'min-height: 0;');
-    assertRuleExcludes('.stat-card', 'width: max-content;');
-    assertRuleExcludes('.stat-card', 'padding: 0.34rem 0.5rem;');
-    assertRuleExcludes('.stat-card', 'grid-template-columns: max-content max-content;');
     assertRuleExcludes('.task-item', 'padding: 0.72rem 0.95rem;');
     assertRuleExcludes('.task-item', 'margin-bottom: 0.55rem;');
     assertRuleExcludes('.task-title', 'font-size: 0.98rem;');
@@ -414,7 +397,7 @@ test('compact sticky header keeps search available for every dashboard view', ()
     const compactHeader = getSnippetBetween(
         dashboardSource,
         'className={`compact-sticky-header ${compactStickyVisible ?',
-        "{selectedView === 'eng' && !isCompletedSprintSelected && ("
+        "{selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && ("
     );
     assert.ok(compactHeader.includes('compact-sticky-header-search'), 'Expected compact header to render its search container');
     assert.ok(compactHeader.includes("{renderSearchControl('compact', 'compact-sticky-header-search-field')}"), 'Expected compact header search to use the shared search control');

@@ -89,6 +89,39 @@
             color: var(--text-secondary);
         }
 
+        /* Priority is an ADDITIVE modifier, never a change to the base row above (D32, §7.5).
+           Without .has-priority the row is exactly the app's existing four-cell layout, so Catch
+           Up's subtask panel — the other consumer, explicitly out of scope — renders as it does
+           today. Only the Board's epic detail panel applies the modifier, and both templates live
+           here rather than behind a Board-scoped `.col-body .story-subtask-row` override, which
+           stays forbidden.
+
+           The control is the app's own .task-priority-icon, so PriorityTransitionMenu's
+           `span.priority-transition` wrapper is what the grid actually places (the passive form
+           places the icon itself). Its fixed-width box is load-bearing: the glyphs differ in
+           width, so a content-sized element with justify-self would break the column's left
+           edge. */
+        .story-subtask-row.has-priority {
+            grid-template-columns: 1.1rem 4.7rem minmax(0, 1fr);
+            grid-template-areas:
+                "pri name name"
+                "status status updated";
+        }
+
+        .story-subtask-row.has-priority > .priority-transition,
+        .story-subtask-row.has-priority > .task-priority-icon {
+            grid-area: pri;
+        }
+
+        /* StatusTransitionMenu's `span.status-transition` wrapper carries no area of its own — the
+           base rule places the PILL, which is one level down. In the four-cell row auto-placement
+           lands the wrapper in the status cell anyway; with the priority column ahead of it, it
+           lands in `pri` instead and the pill overflows a 1.1rem cell. Named explicitly here so
+           the modifier does not depend on auto-placement luck. */
+        .story-subtask-row.has-priority > .status-transition {
+            grid-area: status;
+        }
+
         .story-subtask-row:last-child {
             border-bottom: 0;
         }
@@ -155,13 +188,19 @@
                 padding: 0.18rem 0;
             }
 
+            /* The same additive modifier at the table width: one extra fixed column ahead of the
+               four the base rule already lays out, so both consumers stay column-aligned. */
+            .story-subtask-row.has-priority {
+                grid-template-columns: 1.1rem minmax(12rem, 1fr) 5.8rem minmax(7rem, 9rem) 5.3rem;
+                grid-template-areas: "pri name status assignee updated";
+            }
+
             .story-subtask-assignee {
                 display: block;
             }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .filters-strip,
             .task-item.is-removing,
             .story-subtasks-panel,
             .story-subtasks-panel.is-closing {

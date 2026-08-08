@@ -10,6 +10,7 @@ export default function SettingsModal(props) {
         unsavedSectionsCount = 0,
         onRequestClose,
         validationMessages = [],
+        validationActions = null,
         showTestConfiguration = false,
         onTestConfiguration,
         testConfigurationDisabled = false,
@@ -29,6 +30,15 @@ export default function SettingsModal(props) {
     } = props;
 
     const handleCancel = onCancel || onRequestClose;
+
+    // Interactive exits (Keep mine / Discard mine) render inside this alert, ahead of the footer
+    // in DOM order — without a focus target here they announce but never become reachable by a
+    // forward Tab, so focusing the alert when its actions first appear puts Tab on a path into them.
+    const validationRef = React.useRef(null);
+    const hasValidationActions = Boolean(validationActions);
+    React.useEffect(() => {
+        if (hasValidationActions) validationRef.current?.focus();
+    }, [hasValidationActions]);
 
     return (
         <div
@@ -64,11 +74,12 @@ export default function SettingsModal(props) {
                 <div className="group-modal-content">
                     {children}
                 </div>
-                {validationMessages.length > 0 && (
-                    <div className="group-modal-validation" role="alert" aria-live="polite">
+                {(validationMessages.length > 0 || validationActions) && (
+                    <div className="group-modal-validation" role="alert" aria-live="polite" tabIndex={-1} ref={validationRef}>
                         {validationMessages.map((message) => (
                             <div key={message}>&bull; {message}</div>
                         ))}
+                        {validationActions}
                     </div>
                 )}
                 <div className="group-modal-footer">

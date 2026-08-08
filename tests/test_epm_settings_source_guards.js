@@ -8,6 +8,8 @@ const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.j
 const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
 const settingsModalPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'SettingsModal.jsx');
 const teamGroupsSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx');
+const groupBoardSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'GroupBoardSettings.jsx');
+const groupBoardsTabPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'GroupBoardsTab.jsx');
 const groupVisibilityHookPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'useGroupVisibilityPreferences.js');
 const jiraFieldSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'JiraFieldSettings.jsx');
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
@@ -23,6 +25,8 @@ const dashboardCssSource = readDashboardCssSource(path.join(__dirname, '..'));
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const settingsModalSource = fs.existsSync(settingsModalPath) ? fs.readFileSync(settingsModalPath, 'utf8') : '';
 const teamGroupsSettingsSource = fs.existsSync(teamGroupsSettingsPath) ? fs.readFileSync(teamGroupsSettingsPath, 'utf8') : '';
+const groupBoardSettingsSource = fs.existsSync(groupBoardSettingsPath) ? fs.readFileSync(groupBoardSettingsPath, 'utf8') : '';
+const groupBoardsTabSource = fs.existsSync(groupBoardsTabPath) ? fs.readFileSync(groupBoardsTabPath, 'utf8') : '';
 const groupVisibilityHookSource = fs.existsSync(groupVisibilityHookPath) ? fs.readFileSync(groupVisibilityHookPath, 'utf8') : '';
 const jiraFieldSettingsSource = fs.existsSync(jiraFieldSettingsPath) ? fs.readFileSync(jiraFieldSettingsPath, 'utf8') : '';
 const epmSettingsUiSource = epmSettingsSource || dashboardSource;
@@ -57,6 +61,10 @@ function extractDestructuredProps(source) {
         .map((line) => line.trim())
         .filter(Boolean)
         .map((line) => line.replace(/,$/, ''))
+        // Strip a default value (`propName = expr`) so destructuring styles that lean on
+        // in-signature defaults (e.g. GroupBoardSettings) compare on the prop name alone,
+        // the same as the no-default style TeamGroupsSettings/JiraFieldSettings already use.
+        .map((line) => line.split('=')[0].trim())
         .filter((line) => /^[A-Za-z_$][\w$]*$/.test(line))
         .sort();
 }
@@ -107,7 +115,8 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(settingsModalCallSource.includes('onDiscard={discardGroupDraftChanges}'), 'Expected discard action to stay owned by dashboard');
     assert.ok(settingsModalCallSource.includes('saveDisabled={settingsSaveDisabled}'), 'Expected dashboard to own save disabled state');
     assert.ok(settingsModalCallSource.includes('saveTitle={settingsSaveTitle}'), 'Expected dashboard to own save title state');
-    assert.ok(settingsModalCallSource.includes("validationMessages={groupManageTab !== 'connections' ? groupConfigValidationErrors : []}"), 'Expected validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes("validationMessages={groupManageTab !== 'connections' ? [...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...groupConfigValidationErrors] : []}"), 'Expected validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes('validationActions={'), 'Expected the conflict exits to render in the shell validation slot');
     assert.ok(settingsModalCallSource.includes('onCancel={requestCloseGroupManage}'), 'Expected dashboard to wire cancel through the shared close handler');
     assert.ok(settingsModalCallSource.includes('onSave={settingsSaveHandler}'), 'Expected dashboard to wire save through the tab-aware save handler');
     assert.ok(settingsModalCallSource.includes('onKeepEditing={() => setShowGroupDiscardConfirm(false)}'), 'Expected dashboard to hide discard confirmation from the shell');
@@ -132,8 +141,10 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(settingsModalChildrenSource.includes('DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<TeamGroupsSettings'), 'Expected dashboard to delegate department tab content');
     assert.ok(settingsModalChildrenSource.includes('ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate admin tab content');
     assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'labels'"), 'Expected group label tab content to stay in dashboard');
+    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'boards'") && settingsModalChildrenSource.includes('<GroupBoardsTab'), 'Expected dashboard to delegate the Boards tab content');
     assert.ok(!teamGroupsSettingsSource.includes('useState('), 'TeamGroupsSettings must not own settings state');
     assert.ok(!jiraFieldSettingsSource.includes('useState('), 'JiraFieldSettings must not own settings state');
+    assert.ok(!groupBoardsTabSource.includes('useState('), 'GroupBoardsTab must not own settings state');
     assert.ok(dashboardSource.includes("const [teamSearchQuery, setTeamSearchQuery] = useState({});"), 'Expected dashboard to keep team search state ownership');
     assert.ok(dashboardSource.includes('const handleTeamSearchChange = (groupId, value) => {'), 'Expected dashboard to keep team search handler ownership');
     assert.ok(dashboardSource.includes("const [projectSearchQuery, setProjectSearchQuery] = useState('');"), 'Expected dashboard to keep project search state ownership');
@@ -232,7 +243,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const showEpmSubGoalResults = epmSubGoalOpen &&') && dashboardSource.includes('Boolean(epmSubGoalsError)') && dashboardSource.includes('epmSubGoals.length === 0'), 'Expected sub-goal result panel gating to include error-only and empty-catalog states');
     assert.ok(dashboardSource.includes('const handleEpmRootGoalSearchKeyDown = (event) => {'), 'Expected root goal keyboard handler');
     assert.ok(dashboardSource.includes('const handleEpmSubGoalSearchKeyDown = (event) => {'), 'Expected sub-goal keyboard handler');
-    assert.ok(dashboardSource.includes('const saveAllSettings = async () => {'), 'Expected modal-wide settings save handler');
+    assert.ok(dashboardSource.includes('const saveAllSettings = async ({ rebaseOnto = null } = {}) => {'), 'Expected modal-wide settings save handler');
     assert.ok(dashboardSource.includes('const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;'), 'Expected unified save to detect dirty EPM settings');
     assert.ok(dashboardSource.includes('await saveEpmConfig();'), 'Expected unified settings save to persist dirty EPM settings');
     assert.ok(dashboardSource.includes('const settingsSaveHandler = () => { void saveAllSettings(); };'), 'Expected footer Save to use the modal-wide settings handler');
@@ -497,7 +508,7 @@ test('dashboard source separates EPM scope and project mapping tabs', () => {
 test('settings hotkey effect is declared after the save handlers it depends on', () => {
     const hotkeyEffectIndex = dashboardSource.indexOf("window.addEventListener('keydown', handleKey);");
     const saveEpmConfigIndex = dashboardSource.indexOf('const saveEpmConfig = async () => {');
-    const saveGroupsConfigIndex = dashboardSource.indexOf('const saveGroupsConfig = async ({ closeOnSuccess = true } = {}) => {');
+    const saveGroupsConfigIndex = dashboardSource.indexOf('const saveGroupsConfig = async ({ closeOnSuccess = true, rebaseOnto = null } = {}) => {');
 
     assert.ok(hotkeyEffectIndex !== -1, 'Expected settings hotkey effect in dashboard.jsx');
     assert.ok(saveEpmConfigIndex !== -1, 'Expected saveEpmConfig in dashboard.jsx');
@@ -548,6 +559,50 @@ test('settings modal groups department and admin leaves behind local sub-tabs', 
     assert.ok(dashboardSource.includes('aria-label="Admin settings sections"'), 'Expected accessible Admin sub-tab list');
     assert.ok(dashboardSource.includes('const handleDepartmentSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Departments sub-tabs');
     assert.ok(dashboardSource.includes('const handleAdminSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Admin sub-tabs');
+});
+
+test('Boards is a Departments leaf tab that mounts GroupBoardsTab, which mounts GroupBoardSettings, with matching props at each hop', () => {
+    assert.ok(dashboardSource.includes("new Set(['teams', 'labels', 'boards'])"), 'Expected boards added to DEPARTMENT_SETTINGS_TAB_IDS');
+    assert.ok(dashboardSource.includes('id="department-settings-boards-tab"'), 'Expected Boards local tab DOM id');
+
+    const tabsStart = dashboardSource.indexOf('const settingsModalAllTabs = [');
+    const tabsEnd = dashboardSource.indexOf('];', tabsStart);
+    assert.notStrictEqual(tabsStart, -1, 'Expected settings tab descriptors');
+    assert.notStrictEqual(tabsEnd, -1, 'Expected settings tab descriptors end');
+    const tabsSource = dashboardSource.slice(tabsStart, tabsEnd);
+    assert.ok(!tabsSource.includes("id: 'boards'"), 'Boards must live under Departments instead of the top-level tab list');
+
+    // Hop 1: dashboard.jsx (which keeps settings state ownership) mounts the extracted tab body.
+    assert.ok(fs.existsSync(groupBoardsTabPath), 'Expected extracted GroupBoardsTab component');
+    assert.ok(groupBoardsTabSource.includes('export default function GroupBoardsTab'), 'Expected GroupBoardsTab default component export');
+    assert.ok(dashboardSource.includes("import GroupBoardsTab from './settings/GroupBoardsTab.jsx';"), 'Expected dashboard to import GroupBoardsTab');
+
+    const groupBoardsTabCallStart = dashboardSource.indexOf('<GroupBoardsTab');
+    const groupBoardsTabCallEnd = dashboardSource.indexOf('/>', groupBoardsTabCallStart);
+    const groupBoardsTabCallSource = groupBoardsTabCallStart === -1 || groupBoardsTabCallEnd === -1
+        ? ''
+        : dashboardSource.slice(groupBoardsTabCallStart, groupBoardsTabCallEnd);
+    assert.deepStrictEqual(
+        extractShorthandSpreadProps(groupBoardsTabCallSource),
+        extractDestructuredProps(groupBoardsTabSource),
+        'Expected GroupBoardsTab passed props to match received props exactly'
+    );
+
+    // Hop 2: GroupBoardsTab mounts the Task 7 composer with the same shorthand-spread convention.
+    assert.ok(fs.existsSync(groupBoardSettingsPath), 'Expected GroupBoardSettings component');
+    assert.ok(groupBoardSettingsSource.includes('export default function GroupBoardSettings'), 'Expected GroupBoardSettings default component export');
+    assert.ok(groupBoardsTabSource.includes("import GroupBoardSettings from './GroupBoardSettings.jsx';"), 'Expected GroupBoardsTab to import GroupBoardSettings');
+
+    const groupBoardSettingsCallStart = groupBoardsTabSource.indexOf('<GroupBoardSettings');
+    const groupBoardSettingsCallEnd = groupBoardsTabSource.indexOf('/>', groupBoardSettingsCallStart);
+    const groupBoardSettingsCallSource = groupBoardSettingsCallStart === -1 || groupBoardSettingsCallEnd === -1
+        ? ''
+        : groupBoardsTabSource.slice(groupBoardSettingsCallStart, groupBoardSettingsCallEnd);
+    assert.deepStrictEqual(
+        extractShorthandSpreadProps(groupBoardSettingsCallSource),
+        extractDestructuredProps(groupBoardSettingsSource),
+        'Expected GroupBoardSettings passed props to match received props exactly'
+    );
 });
 
 test('normal users do not receive admin-only settings tabs as disabled edit surfaces', () => {
@@ -605,12 +660,12 @@ test('shared configuration permission fails closed while user config is missing 
 });
 
 test('unified settings save gates admin writes while saving dirty config sections', () => {
-    const saveStart = dashboardSource.indexOf('const saveGroupsConfig = async ({ closeOnSuccess = true } = {}) => {');
-    const saveEnd = dashboardSource.indexOf('const saveAllSettings = async () => {', saveStart);
+    const saveStart = dashboardSource.indexOf('const saveGroupsConfig = async ({ closeOnSuccess = true, rebaseOnto = null } = {}) => {');
+    const saveEnd = dashboardSource.indexOf('const saveAllSettings = async ({ rebaseOnto = null } = {}) => {', saveStart);
     assert.notStrictEqual(saveStart, -1, 'Expected saveGroupsConfig implementation');
     assert.notStrictEqual(saveEnd, -1, 'Expected saveGroupsConfig implementation end');
     const saveSource = dashboardSource.slice(saveStart, saveEnd);
-    const unifiedStart = dashboardSource.indexOf('const saveAllSettings = async () => {');
+    const unifiedStart = dashboardSource.indexOf('const saveAllSettings = async ({ rebaseOnto = null } = {}) => {');
     const unifiedEnd = dashboardSource.indexOf('useEffect(() => {', unifiedStart);
     assert.notStrictEqual(unifiedStart, -1, 'Expected saveAllSettings implementation');
     assert.notStrictEqual(unifiedEnd, -1, 'Expected saveAllSettings implementation end');
@@ -624,7 +679,7 @@ test('unified settings save gates admin writes while saving dirty config section
     assert.ok(unifiedSource.includes('const hasSharedSettingsChanges = canEditSharedConfiguration && isSharedConfigurationDraftDirty;'), 'Expected unified save to include dirty shared admin settings');
     assert.ok(unifiedSource.includes('const hasDepartmentSettingsChanges = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current) || isGroupVisibilityDraftDirty;'), 'Expected unified save to include dirty Department settings');
     assert.ok(unifiedSource.includes('const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;'), 'Expected unified save to include dirty EPM settings');
-    assert.ok(unifiedSource.includes('await saveGroupsConfig({ closeOnSuccess: false });'), 'Expected unified save to persist shared and Department settings before closing once');
+    assert.ok(unifiedSource.includes('await saveGroupsConfig({ closeOnSuccess: false, rebaseOnto });'), 'Expected unified save to persist shared and Department settings before closing once');
     assert.ok(unifiedSource.includes('await saveEpmConfig();'), 'Expected unified save to persist EPM settings before closing once');
     assert.ok(saveSource.includes('await persistGroupPreferences(normalized);'), 'Expected Department visibility preferences to save separately from shared catalog');
     assert.ok(dashboardSource.includes("useBackendPreferences: groupsConfig.source === 'workspace_db'"), 'Expected JSON/basic Department visibility to stay browser-local');

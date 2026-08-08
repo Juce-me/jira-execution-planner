@@ -1463,6 +1463,388 @@ class IssueStatusCatalogRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "jira_status_catalog_failed")
 
 
+class IssueDescriptionRouteTests(unittest.TestCase):
+    def setUp(self):
+        jira_server.app.config["TESTING"] = True
+        jira_server.app.secret_key = "test-secret"
+        self._env_patcher = patch.dict(os.environ, {
+            "CONFIG_STORAGE_BACKEND": "jsonfile",
+            "DATABASE_URL": "",
+            "TEST_DATABASE_URL": "",
+        }, clear=False)
+        self._env_patcher.start()
+        self.client = jira_server.app.test_client()
+        install_oauth_session(self.client)
+
+    def tearDown(self):
+        jira_server.OAUTH_TOKEN_STORE.clear()
+        jira_server.OAUTH_REFRESH_LOCKS.clear()
+        self._env_patcher.stop()
+
+    def test_description_route_renders_adf_to_html(self):
+        description = {
+            "type": "doc",
+            "content": [{
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": "Ships "},
+                    {"type": "text", "text": "fast", "marks": [{"type": "strong"}]},
+                    {"type": "text", "text": "."},
+                ],
+            }],
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "fields": {"description": description},
+             })) as mock_get:
+            response = self.client.get("/api/issues/description?key=PROD-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body["key"], "PROD-1")
+        self.assertEqual(body["html"], "<p>Ships <strong>fast</strong>.</p>")
+        self.assertFalse(body["isEmpty"])
+        mock_get.assert_called_once()
+        self.assertEqual(mock_get.call_args.args[0], "/rest/api/3/issue/PROD-1")
+        self.assertEqual(mock_get.call_args.kwargs.get("params"), {"fields": "description"})
+
+    def test_description_route_renders_safe_semantic_heading_and_table(self):
+        description = {
+            "type": "doc",
+            "content": [
+                {
+                    "type": "heading",
+                    "attrs": {"level": 3, "onclick": "alert(1)"},
+                    "content": [{"type": "text", "text": "Scope <Stories>"}],
+                },
+                {
+                    "type": "table",
+                    "attrs": {"layout": "wide", "width": 9999, "style": "position:fixed"},
+                    "content": [
+                        {
+                            "type": "tableRow",
+                            "content": [
+                                {"type": "tableHeader", "attrs": {"background": "red"},
+                                 "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Key"}]}]},
+                                {"type": "tableHeader",
+                                 "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Summary"}]}]},
+                            ],
+                        },
+                        {
+                            "type": "tableRow",
+                            "content": [
+                                {"type": "tableCell", "attrs": {"colspan": 2},
+                                 "content": [{"type": "paragraph", "content": [{"type": "text", "text": "SYNTH-1"}]}]},
+                                {"type": "tableCell",
+                                 "content": [{"type": "paragraph", "content": [
+                                     {"type": "text", "text": "<script>safe text</script> ",
+                                      "marks": [{"type": "link", "attrs": {"href": "javascript:alert(1)"}}]},
+                                     {"type": "text", "text": "spec", "marks": [{"type": "link", "attrs": {
+                                         "href": "https://docs.example.test/spec?mode=review&section=table"
+                                     }}]},
+                                 ]}]},
+                            ],
+                        },
+                        {
+                            "type": "tableRow",
+                            "content": [
+                                {"type": "tableCell", "content": []},
+                                {"type": "tableCell", "content": [{"type": "paragraph", "content": []}]},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "fields": {"description": description},
+             })):
+            response = self.client.get("/api/issues/description?key=SYNTH-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        html = response.get_json()["html"]
+        self.assertIn("<h3>Scope &lt;Stories&gt;</h3>", html)
+        self.assertIn(
+            '<div class="adf-table-scroll" role="region" aria-label="Description table" tabindex="0">'
+            "<table><tbody>",
+            html,
+        )
+        self.assertIn('<th scope="col"><p>Key</p></th>', html)
+        self.assertIn('<th scope="col"><p>Summary</p></th>', html)
+        self.assertIn('<td><p>SYNTH-1</p></td>', html)
+        self.assertIn('&lt;script&gt;safe text&lt;/script&gt;', html)
+        self.assertIn('<td></td><td></td>', html)
+        self.assertNotIn("onclick", html)
+        self.assertNotIn("layout", html)
+        self.assertNotIn("width", html)
+        self.assertNotIn("background", html)
+        self.assertNotIn("style=", html)
+        self.assertNotIn("colspan", html)
+        self.assertNotIn("javascript:", html)
+
+    def test_description_route_renders_invalid_heading_levels_as_paragraphs(self):
+        description = {
+            "type": "doc",
+            "content": [
+                {"type": "heading", "content": [{"type": "text", "text": "Missing"}]},
+                {"type": "heading", "attrs": {"level": "3"},
+                 "content": [{"type": "text", "text": "String"}]},
+                {"type": "heading", "attrs": {"level": 0},
+                 "content": [{"type": "text", "text": "Zero"}]},
+                {"type": "heading", "attrs": {"level": 7},
+                 "content": [{"type": "text", "text": "Seven"}]},
+            ],
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "fields": {"description": description},
+             })):
+            response = self.client.get("/api/issues/description?key=SYNTH-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(
+            response.get_json()["html"],
+            "<p>Missing</p><p>String</p><p>Zero</p><p>Seven</p>",
+        )
+
+    def test_description_route_tolerates_malformed_heading_and_table_shapes(self):
+        cases = [
+            (
+                "heading attrs are not a mapping",
+                [{
+                    "type": "heading",
+                    "attrs": "invalid",
+                    "content": [{"type": "text", "text": "Fallback heading"}],
+                }],
+                "<p>Fallback heading</p>",
+            ),
+            (
+                "heading content is not a list",
+                [{"type": "heading", "attrs": {"level": 2}, "content": 7}],
+                "",
+            ),
+            (
+                "table content is not a list",
+                [{"type": "table", "content": 7}],
+                "",
+            ),
+            (
+                "table content is null",
+                [{"type": "table", "content": None}],
+                "",
+            ),
+            (
+                "row content is not a list",
+                [{"type": "table", "content": [{"type": "tableRow", "content": 7}]}],
+                "",
+            ),
+            (
+                "cell content is not a list",
+                [{
+                    "type": "table",
+                    "content": [{
+                        "type": "tableRow",
+                        "content": [{"type": "tableCell", "content": 7}],
+                    }],
+                }],
+                (
+                    '<div class="adf-table-scroll" role="region" aria-label="Description table" tabindex="0">'
+                    "<table><tbody><tr><td></td></tr></tbody></table></div>"
+                ),
+            ),
+        ]
+
+        for label, content, expected_html in cases:
+            with self.subTest(label=label):
+                with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+                     patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                         "fields": {"description": {"type": "doc", "content": content}},
+                     })):
+                    response = self.client.get("/api/issues/description?key=SYNTH-1")
+
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                self.assertEqual(response.get_json()["html"], expected_html)
+
+    def test_description_route_renders_safe_inline_and_block_smart_links(self):
+        inline_url = 'https://docs.example.test/spec?mode="review"&section=quality'
+        block_url = 'mailto:owner@example.test?subject=Quality & review'
+        description = {
+            "type": "doc",
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {"type": "text", "text": "Tech design: "},
+                        {"type": "inlineCard", "attrs": {"url": inline_url}},
+                        {"type": "inlineCard", "attrs": {"url": "javascript:alert(1)"}},
+                        {"type": "inlineCard", "attrs": {}},
+                    ],
+                },
+                {"type": "blockCard", "attrs": {"url": block_url}},
+            ],
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "fields": {"description": description},
+             })):
+            response = self.client.get("/api/issues/description?key=PROD-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        html = response.get_json()["html"]
+        self.assertEqual(html.count("<a href"), 2, html)
+        self.assertIn(
+            '<a href="https://docs.example.test/spec?mode=&quot;review&quot;&amp;section=quality" '
+            'target="_blank" rel="noopener noreferrer">'
+            'https://docs.example.test/spec?mode=&quot;review&quot;&amp;section=quality</a>',
+            html,
+        )
+        self.assertIn(
+            '<a href="mailto:owner@example.test?subject=Quality &amp; review" '
+            'target="_blank" rel="noopener noreferrer">'
+            'mailto:owner@example.test?subject=Quality &amp; review</a>',
+            html,
+        )
+        self.assertNotIn("javascript:", html)
+        self.assertFalse(response.get_json()["isEmpty"])
+
+    def test_description_route_null_description_is_empty(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "fields": {"description": None},
+             })):
+            response = self.client.get("/api/issues/description?key=PROD-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body["html"], "")
+        self.assertTrue(body["isEmpty"])
+
+    def test_description_route_whitespace_only_description_is_empty(self):
+        description = {
+            "type": "doc",
+            "content": [{"type": "paragraph", "content": [{"type": "text", "text": "   "}]}],
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "fields": {"description": description},
+             })):
+            response = self.client.get("/api/issues/description?key=PROD-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertTrue(body["isEmpty"], body)
+
+    def test_description_route_xss_guard_strips_unsafe_href_but_keeps_safe_one(self):
+        description = {
+            "type": "doc",
+            "content": [{
+                "type": "paragraph",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "unsafe",
+                        "marks": [{"type": "link", "attrs": {"href": "javascript:alert(1)"}}],
+                    },
+                    {"type": "text", "text": " "},
+                    {
+                        "type": "text",
+                        "text": "safe",
+                        "marks": [{"type": "link", "attrs": {"href": "https://example.test"}}],
+                    },
+                ],
+            }],
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "fields": {"description": description},
+             })):
+            response = self.client.get("/api/issues/description?key=PROD-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        html = response.get_json()["html"]
+        self.assertNotIn("javascript:", html)
+        # Exactly one anchor may appear: the unsafe-href link mark must render
+        # with no <a> at all, so a count of 1 (not 2) proves _safe_adf_href is
+        # actually gating the javascript: href rather than passing it through.
+        self.assertEqual(html.count("<a href"), 1, html)
+        self.assertIn('<a href="https://example.test"', html)
+
+    def test_description_route_missing_key_returns_400(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", side_effect=AssertionError("must not call Jira without a key")):
+            response = self.client.get("/api/issues/description")
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "invalid_issue_key")
+
+    def test_description_route_malformed_key_returns_400(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", side_effect=AssertionError("must not call Jira with a malformed key")):
+            response = self.client.get("/api/issues/description?key=not-a-key")
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "invalid_issue_key")
+
+    def test_description_route_unknown_and_forbidden_keys_return_identical_404(self):
+        # Three distinct upstream causes -- a genuinely nonexistent key, a
+        # Jira 404 whose body carries content, and a Jira 403 ("cannot see
+        # it") -- must all normalize to the byte-identical issue_not_found
+        # body. Comparing them against each other (not just individually)
+        # is what proves the 403 fold-in from Fix 3 doesn't leak.
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(404, {})):
+            unknown_key_response = self.client.get("/api/issues/description?key=PROD-404")
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(404, {"errorMessages": ["Issue does not exist"]})):
+            jira_404_response = self.client.get("/api/issues/description?key=PROD-405")
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(403, {"errorMessages": ["You do not have permission to view this issue"]})):
+            jira_403_response = self.client.get("/api/issues/description?key=PROD-403")
+
+        responses = {
+            "unknown_key": unknown_key_response,
+            "jira_404": jira_404_response,
+            "jira_403": jira_403_response,
+        }
+        for label, response in responses.items():
+            self.assertEqual(response.status_code, 404, f"{label}: {response.get_data(as_text=True)}")
+            self.assertEqual(response.get_json(), {"error": "issue_not_found"}, label)
+
+        self.assertEqual(responses["unknown_key"].get_data(), responses["jira_404"].get_data())
+        self.assertEqual(responses["jira_404"].get_data(), responses["jira_403"].get_data())
+
+    def test_description_route_service_error_returns_upstream_message_verbatim(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(503, {})):
+            response = self.client.get("/api/issues/description?key=PROD-1")
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body["error"], "issue_description_fetch_failed")
+        self.assertEqual(body["message"], "Jira returned status 503")
+
+    def test_description_route_uses_current_auth_context(self):
+        sentinel_context = object()
+        captured = {}
+
+        def fake_get(path, *, params=None, timeout=30, context=None):
+            captured["context"] = context
+            captured["path"] = path
+            captured["params"] = params
+            return FakeResponse(200, {"fields": {"description": None}})
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_request_auth_context", return_value=sentinel_context), \
+             patch.object(jira_server, "current_jira_get", side_effect=fake_get):
+            response = self.client.get("/api/issues/description?key=prod-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertIs(captured["context"], sentinel_context)
+        self.assertEqual(captured["path"], "/rest/api/3/issue/PROD-1")
+        self.assertEqual(captured["params"], {"fields": "description"})
+
+
 class MissingWriteJiraWorkScopeHelperTests(unittest.TestCase):
     """Direct coverage of the route-level defense-in-depth scope check.
 

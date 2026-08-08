@@ -1,6 +1,7 @@
 @import "./eng/controls.css";
 @import "./eng/export.css";
-@import "./eng/filters.css";
+@import "./eng/filter-bar.css";
+@import "./eng/board.css";
 @import "./eng/alerts.css";
 @import "./eng/issues.css";
 @import "./eng/dependencies.css";

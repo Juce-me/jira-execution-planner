@@ -1,0 +1,543 @@
+        /* ── Group Board composer (Settings → Departments → Boards) ──
+           D25: the composer inherits the settings design. Every control inside it is an existing
+           class — .component-selector, .selected-components-list, .component-chip, .component-name,
+           .remove-btn, .group-modal-meta, .group-modal-warning, .status-pill.task-status. What is
+           genuinely new is only the side-by-side column arrangement (nothing in the app lays
+           configuration out in columns) plus D38's affordance layer: the chip grip, the drop-target
+           state, "+ Add status" and the picker's scroll box.
+
+           --board-column-accent is always set inline by the component, on the element that reads
+           it, so no declaration here can be dropped by an undefined custom property. */
+
+        .board-columns {
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+            padding-bottom: 0.7rem;
+            align-items: flex-start;
+        }
+
+        /* 200px, not the mockup's 168px. The mockup was drawn in a 1400px shell; the real pane is
+           70% of min(980px, 94vw), so the row scrolls at either width and the narrower column buys
+           nothing — while at 168px a picker row's "from <column>" is squeezed to zero width, and a
+           row that cannot state its provenance is the one thing the picker exists for. */
+        .board-column {
+            flex: 0 0 200px;
+            display: grid;
+            gap: 0.4rem;
+            align-content: start;
+            border: 1px solid var(--border);
+            border-top: 4px solid var(--board-column-accent);
+            border-radius: 10px;
+            padding: 0.6rem;
+            background: var(--bg-primary);
+        }
+
+        .board-column.is-empty {
+            border-color: #ffccc7;
+            background: #fff8f7;
+        }
+
+        /* Min/Max are thresholds, not limits: nothing is blocked, the column glows (D24). */
+        .board-column.is-breach {
+            border-color: var(--warn);
+            box-shadow: 0 0 0 1px var(--warn), 0 0 12px rgba(207, 19, 34, 0.38);
+            animation: board-breach-glow 2.2s ease-in-out infinite;
+        }
+
+        @keyframes board-breach-glow {
+            0%,
+            100% {
+                box-shadow: 0 0 0 1px var(--warn), 0 0 8px rgba(207, 19, 34, 0.30);
+            }
+
+            50% {
+                box-shadow: 0 0 0 1px var(--warn), 0 0 16px rgba(207, 19, 34, 0.55);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .board-column.is-breach {
+                animation: none;
+            }
+        }
+
+        /* The column being reordered follows the pointer; the rest shift to show the gap. */
+        .board-column.is-reordering {
+            opacity: 0.45;
+        }
+
+        .board-column-top {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        /* Reorder is initiated only from this handle, never from the column body, or the two
+           drag gestures collide (D46). It is a real button so Alt+←/Alt+→ has somewhere to land. */
+        .board-column-drag {
+            flex: none;
+            border: 0;
+            background: none;
+            margin: 0;
+            padding: 0;
+            border-radius: 4px;
+            cursor: grab;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.68rem;
+            text-transform: none;
+            letter-spacing: normal;
+            color: var(--text-secondary);
+            transition: color 0.15s ease;
+        }
+
+        .board-column-drag:hover {
+            background: none;
+            transform: none;
+            box-shadow: none;
+            color: var(--accent);
+        }
+
+        .board-column-drag:active {
+            cursor: grabbing;
+        }
+
+        .board-column-colour {
+            flex: none;
+            width: 11px;
+            height: 11px;
+            border: 0;
+            margin: 0;
+            padding: 0;
+            border-radius: 3px;
+            cursor: pointer;
+            background: var(--board-column-accent);
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+            transition: box-shadow 0.15s ease;
+        }
+
+        .board-column-colour:hover {
+            background: var(--board-column-accent);
+            transform: none;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+        }
+
+        /* Not .group-name-input (group-editor.css:88): that class assumes the row-header layout of
+           a group's own name field, and this input's job here is only to disappear into a 200px
+           column header until it is hovered or focused. A shared class would buy nothing and this
+           one is not used anywhere else. */
+        .board-column-name {
+            min-width: 0;
+            flex: 1 1 auto;
+            border: 1px solid transparent;
+            background: none;
+            border-radius: 6px;
+            padding: 0.1rem 0.2rem;
+            font-family: 'Crimson Pro', serif;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+
+        .board-column-name:hover {
+            border-color: var(--border);
+            background: var(--bg-secondary);
+        }
+
+        .board-column-name:focus {
+            border-color: var(--accent);
+            background: var(--bg-secondary);
+        }
+
+        /* Not .group-star-button (group-editor.css:481): that class is a fixed 26px square button,
+           which does not fit in this column header's tight top row — reusing it would mean
+           overriding its height, the exact MRT021 violation this task must not repeat. This is a
+           smaller, borderless variant for the same star affordance. */
+        .board-column-star {
+            flex: none;
+            border: 0;
+            background: none;
+            margin: 0;
+            padding: 0;
+            cursor: pointer;
+            font-size: 0.78rem;
+            text-transform: none;
+            letter-spacing: normal;
+            color: var(--muted);
+            transition: color 0.15s ease;
+        }
+
+        .board-column-star:hover {
+            background: none;
+            transform: none;
+            box-shadow: none;
+            color: #e8b339;
+        }
+
+        .board-column-star[aria-pressed="true"] {
+            color: #e8a11d;
+        }
+
+        .board-column-star:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        /* `.remove-btn` carries no styling of its own: every consumer scopes it to its own
+           container (`.component-chip .remove-btn`, `.epm-scope-chip .remove-btn`), and without a
+           rule here the aggressive global `button` in eng/controls.css wins — a 2rem-padded black
+           block in the column header. Same declarations as group-editor.css:301, same class. */
+        .board-column-top .remove-btn {
+            flex: none;
+            background: none;
+            border: none;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-family: 'Crimson Pro', serif;
+            font-size: 0.9rem;
+            line-height: 1;
+            text-transform: none;
+            letter-spacing: normal;
+            color: var(--text-secondary);
+        }
+
+        .board-column-top .remove-btn:hover {
+            background: none;
+            transform: none;
+            box-shadow: none;
+            color: var(--accent);
+        }
+
+        .board-column-limits {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.35rem;
+        }
+
+        .board-column-limits label {
+            display: grid;
+            gap: 0.15rem;
+            margin-bottom: 0;
+            font-size: 0.65rem;
+        }
+
+        .board-column-limits input {
+            height: 26px;
+            width: 100%;
+            padding: 0 0.35rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-secondary);
+            font-family: 'Crimson Pro', serif;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+
+        /* Rejected input, a breach on that bound, or min above max — all three read the same. */
+        .board-column-limits input.hot {
+            border-color: var(--warn);
+            color: var(--warn);
+        }
+
+        /* Status chips reuse .component-chip; stacked because a column is narrow. */
+        .board-column .selected-components-list {
+            flex-direction: column;
+            align-items: stretch;
+            margin-bottom: 0;
+        }
+
+        .board-column .component-chip {
+            justify-content: space-between;
+            background: var(--bg-secondary);
+        }
+
+        .board-column .component-chip.is-stale {
+            border-style: dashed;
+            border-color: #f59e0b;
+        }
+
+        /* Every status chip, wherever it renders: column, leftover pool, picker. */
+        .board-column .component-chip .component-name,
+        .board-unmapped .component-chip .component-name,
+        .board-pick .component-chip .component-name {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        /* A chip that can be dragged has to look like one. Without the grip and the grab cursor
+           the only cue was the drag itself, which nobody discovers (D38). The grip is the only
+           place the gesture starts, so it is the only place that says "grab" — a grab cursor on
+           the chip body would promise a drag the body does not start. */
+        .chip-grip {
+            flex: none;
+            cursor: grab;
+            -webkit-user-select: none;
+            user-select: none;
+            color: var(--muted);
+            font-size: 0.7rem;
+            line-height: 1;
+            letter-spacing: -0.1em;
+            transition: color 0.15s ease;
+        }
+
+        .chip-grip:hover {
+            color: var(--accent);
+        }
+
+        .chip-grip:active {
+            cursor: grabbing;
+        }
+
+        .board-drop {
+            display: none;
+            border: 1px dashed var(--accent);
+            border-radius: 999px;
+            padding: 0.3rem;
+            text-align: center;
+            font-size: 0.65rem;
+            color: var(--accent);
+        }
+
+        .group-board-composer.is-dragging-status .board-drop {
+            display: block;
+        }
+
+        .board-column.is-drop,
+        .board-unmapped.is-drop {
+            border-color: var(--accent);
+            background: #fff8f0;
+        }
+
+        .board-unmapped {
+            border: 1px solid transparent;
+            border-radius: 10px;
+            padding: 0.3rem;
+        }
+
+        /* Drag is an accelerator, never the only way in: this is the click and keyboard path,
+           and it is what makes the mapping discoverable at all (D38). */
+        .board-add-status {
+            width: 100%;
+            padding: 0.28rem;
+            margin: 0;
+            cursor: pointer;
+            border: 1px dashed var(--border);
+            border-radius: 999px;
+            background: none;
+            font-family: 'Crimson Pro', serif;
+            font-size: 0.65rem;
+            text-transform: none;
+            letter-spacing: normal;
+            color: var(--text-secondary);
+            transition: border-color 0.15s ease, color 0.15s ease;
+        }
+
+        .board-add-status:hover {
+            background: none;
+            transform: none;
+            box-shadow: none;
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .board-add-status[aria-expanded="true"] {
+            border-style: solid;
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Eleven rows would double the column's height and stretch the whole row; the list
+           scrolls inside itself instead. */
+        .board-pick {
+            display: grid;
+            gap: 0.25rem;
+            padding: 0.3rem;
+            max-height: 190px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-secondary);
+        }
+
+        /* A column is 200px wide and a status pill does not shrink, so "from Ready to start" is
+           the part that has to give. min-width: 0 is what lets this flex child shrink at all; it
+           truncates rather than running the row out of the chip, and the whole provenance stays in
+           the row's title, the way chip copy does elsewhere in the app. */
+        .board-pick .component-chip {
+            width: 100%;
+            min-width: 0;
+            justify-content: flex-start;
+            cursor: pointer;
+            background: var(--bg-primary);
+            margin: 0;
+            font-family: 'Crimson Pro', serif;
+            text-transform: none;
+            letter-spacing: normal;
+            color: var(--text-primary);
+        }
+
+        .board-pick .component-chip:hover {
+            background: var(--bg-primary);
+            transform: none;
+            box-shadow: none;
+            border-color: var(--accent);
+        }
+
+        /* The status itself never gives up space — a clipped status name is unreadable — so the
+           provenance is the only shrinkable part of the row. */
+        .board-pick .component-chip .component-name {
+            flex: none;
+        }
+
+        .board-pick-from {
+            flex: 0 1 auto;
+            min-width: 0;
+            margin-left: auto;
+            padding-left: 0.4rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 0.6rem;
+            color: var(--text-secondary);
+        }
+
+        .board-pick-empty {
+            padding: 0.1rem 0.2rem;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+        }
+
+        /* The colour grid is the same in-place box as the status picker — no second popup (D46). */
+        .board-pick-colours {
+            grid-template-columns: repeat(7, auto);
+            justify-content: start;
+            gap: 0.35rem;
+            max-height: none;
+            overflow: visible;
+        }
+
+        .board-pick-colours .board-column-colour {
+            width: 18px;
+            height: 18px;
+            border-radius: 5px;
+        }
+
+        .board-pick-colours .board-column-colour[aria-checked="true"] {
+            box-shadow: 0 0 0 1px var(--bg-secondary), 0 0 0 3px var(--text-primary);
+        }
+
+        .board-add-column {
+            flex: 0 0 104px;
+            align-self: stretch;
+            min-height: 150px;
+            margin: 0;
+            padding: 0.6rem;
+            border: 1px dashed var(--border);
+            border-radius: 10px;
+            background: none;
+            cursor: pointer;
+            font-family: 'Crimson Pro', serif;
+            font-size: 0.75rem;
+            text-transform: none;
+            letter-spacing: normal;
+            color: var(--text-secondary);
+            transition: border-color 0.15s ease, color 0.15s ease;
+        }
+
+        .board-add-column:hover {
+            background: none;
+            transform: none;
+            box-shadow: none;
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* The preview reuses the board's own column classes so it cannot drift from what the
+           board renders; only the scale is preview-sized, and that scale is scoped here so the
+           board's own rules (a later task, frontend/src/styles/eng/board.css) stay authoritative. */
+        .board-preview {
+            display: flex;
+            gap: 0.5rem;
+            align-items: flex-start;
+        }
+
+        /* min-width: 0 so a long name cannot push a strip past its flex-basis (a flex item's
+           automatic minimum is its content, and the focused strip lays its label out horizontally). */
+        .board-preview .col {
+            flex: 0 0 36px;
+            min-width: 0;
+        }
+
+        .board-preview .col.is-focused {
+            flex: 0 0 190px;
+        }
+
+        .board-preview .col-strip {
+            position: relative;
+            width: 100%;
+            height: 118px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-secondary);
+            overflow: hidden;
+        }
+
+        .board-preview .col.is-focused .col-strip {
+            background: color-mix(in srgb, var(--board-column-accent) 7%, var(--bg-secondary));
+            border-color: color-mix(in srgb, var(--board-column-accent) 40%, var(--border));
+        }
+
+        .board-preview .col-strip .fill {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            background: color-mix(in srgb, var(--board-column-accent) 40%, var(--bg-secondary));
+            border-bottom: 2px solid var(--board-column-accent);
+        }
+
+        .board-preview .col-strip .n {
+            position: absolute;
+            top: 4px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+            font-weight: 500;
+        }
+
+        /* D18: vertical-rl alone runs top-to-bottom, so the label is rotated 180°. */
+        .board-preview .col-strip .vert {
+            position: absolute;
+            inset: 1.3rem 0 0.3rem;
+            display: grid;
+            place-items: center;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            transform: rotate(180deg);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.55rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .board-preview .col.is-focused .col-strip .vert {
+            writing-mode: horizontal-tb;
+            transform: none;
+            inset: 1.6rem 0.4rem auto;
+            place-items: start;
+        }
+
+        .board-preview .col.is-breach .col-strip {
+            border-color: var(--warn);
+            box-shadow: 0 0 0 1px var(--warn), 0 0 10px rgba(207, 19, 34, 0.40);
+        }

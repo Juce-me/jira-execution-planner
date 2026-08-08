@@ -104,7 +104,7 @@ export const fetchStorySubtasks = (backendUrl, { parentKey, sprint, refresh = fa
     }, { featureName: 'eng' });
 };
 
-export const fetchBacklogEpics = (backendUrl, { project, teamIds = [] } = {}) => {
+export const fetchBacklogEpics = (backendUrl, { project, teamIds = [], signal } = {}) => {
     const params = new URLSearchParams({
         t: Date.now().toString(),
         project: project || 'all'
@@ -115,7 +115,8 @@ export const fetchBacklogEpics = (backendUrl, { project, teamIds = [] } = {}) =>
     return getJson(`${backendUrl}/api/backlog-epics?${params.toString()}`, 'Backlog epics', {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        cache: 'no-cache'
+        cache: 'no-cache',
+        signal
     });
 };
 

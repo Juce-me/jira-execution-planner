@@ -99,3 +99,20 @@ test('buildProjectTrackActionAnalyticsParams never leaks a raw issue key or the 
     assert.equal('issue_key' in params, false);
     assert.notEqual(params.value_state, '  FLEXIBLE  ');
 });
+
+// §9.5 / §10.3: the Board's epic detail panel edits Project Track too, so a board change must
+// report itself as `board`. The previous `sourceSurface === 'planning' ? 'planning' : 'catch_up'`
+// collapse reported every Board track change as Catch Up.
+test('buildProjectTrackActionAnalyticsParams reports the board surface', async () => {
+    const { buildProjectTrackActionAnalyticsParams } = await loadUtils();
+
+    const params = buildProjectTrackActionAnalyticsParams({ sourceSurface: 'board', targetTrack: 'Flexible' });
+    assert.equal(params.source_surface, 'board');
+});
+
+test('buildProjectTrackActionAnalyticsParams still collapses an unknown surface to catch_up', async () => {
+    const { buildProjectTrackActionAnalyticsParams } = await loadUtils();
+
+    assert.equal(buildProjectTrackActionAnalyticsParams({ sourceSurface: 'epm' }).source_surface, 'catch_up');
+    assert.equal(buildProjectTrackActionAnalyticsParams({}).source_surface, 'catch_up');
+});

@@ -6,7 +6,6 @@ from backend.auth.db_context import is_db_auth_context
 from backend.config.db_repository import ViewConfigNotFound
 from backend.config.repository import config_storage_db_enabled, db_repository
 from backend.services import shared_group_config
-
 from . import bind_server_globals
 
 
@@ -943,6 +942,104 @@ def save_board_config_endpoint():
     return jsonify({'boardId': board_id, 'boardName': board_name, 'source': 'config'})
 
 
+@bp.route('/api/board-config/statuses', methods=['GET'])
+def get_board_config_statuses():
+    """Fetch Epic workflow statuses for the projects rendered by Group Board."""
+    try:
+        board_id = get_board_config().get('boardId', '').strip()
+        if not board_id:
+            return jsonify({'error': 'no_board_configured'}), 400
+        auth_context = current_request_auth_context()
+        project_keys = []
+        seen_project_keys = set()
+        for raw_project_key in get_selected_projects():
+            project_key = str(raw_project_key or '').strip()
+            normalized_key = project_key.upper()
+            if not project_key or normalized_key in seen_project_keys:
+                continue
+            seen_project_keys.add(normalized_key)
+            project_keys.append(project_key)
+
+        # Older/local configurations can have a saved board before selected projects
+        # were introduced. Preserve that path as a fallback, but do not make a board's
+        # optional location the source of truth for the workflows of ENG Epics.
+        if not project_keys:
+            board_response = current_jira_get(
+                f'/rest/agile/1.0/board/{board_id}',
+                context=auth_context,
+            )
+            if board_response.status_code in (401, 403):
+                return jsonify({
+                    'error': 'board_statuses_forbidden',
+                    'message': f'Jira refused the saved board read (status {board_response.status_code})',
+                }), 502
+            if board_response.status_code != 200:
+                raise RuntimeError(f'Jira returned status {board_response.status_code} for the saved board read')
+
+            board_data = board_response.json() or {}
+            project_key = str((board_data.get('location') or {}).get('projectKey') or '').strip()
+            if not project_key:
+                return jsonify({
+                    'error': 'board_project_unavailable',
+                    'message': f'The saved board {board_id} does not identify a Jira project',
+                }), 502
+            project_keys.append(project_key)
+
+        project_issue_types = []
+        for project_key in project_keys:
+            statuses_response = current_jira_get(
+                f'/rest/api/3/project/{project_key}/statuses',
+                context=auth_context,
+            )
+            if statuses_response.status_code in (401, 403):
+                return jsonify({
+                    'error': 'board_statuses_forbidden',
+                    'message': f'Jira refused the project statuses read for {project_key} '
+                        f'(status {statuses_response.status_code})',
+                }), 502
+            if statuses_response.status_code != 200:
+                raise RuntimeError(
+                    f'Jira returned status {statuses_response.status_code} for the project statuses read'
+                )
+            project_issue_types.append((project_key, statuses_response.json() or []))
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
+    except Exception as e:
+        logger.exception('Board statuses Jira fetch failed')
+        return jsonify({'error': 'board_statuses_fetch_failed', 'message': str(e)}), 502
+
+    statuses = []
+    seen_status_ids = set()
+    for _, issue_types in project_issue_types:
+        for issue_type in issue_types if isinstance(issue_types, list) else []:
+            if not isinstance(issue_type, dict) or str(issue_type.get('name') or '').strip().lower() != 'epic':
+                continue
+            for status in issue_type.get('statuses') or []:
+                if not isinstance(status, dict):
+                    continue
+                status_id = str(status.get('id') or '').strip()
+                name = str(status.get('name') or '').strip()
+                if not status_id or not name or status_id in seen_status_ids:
+                    continue
+                seen_status_ids.add(status_id)
+                statuses.append({'id': status_id, 'name': name})
+
+    if not statuses:
+        message = f'Jira returned no usable Epic statuses for projects {", ".join(project_keys)}'
+        logger.warning('Board statuses unavailable: %s', message)
+        return jsonify({'error': 'board_statuses_unavailable', 'message': message}), 502
+
+    payload = {
+        'boardId': board_id,
+        'projectKeys': project_keys,
+        'statuses': statuses,
+    }
+    if len(project_keys) == 1:
+        payload['projectKey'] = project_keys[0]
+    return jsonify(payload)
+
+
 @bp.route('/api/capacity/config', methods=['POST'])
 def save_capacity_config_endpoint():
     """Save capacity project and field configuration."""
@@ -1008,6 +1105,16 @@ def get_team_field_config_endpoint():
 @bp.route('/api/team-field/config', methods=['POST'])
 def save_team_field_config_endpoint():
     return _save_field_config('teamField', 'TEAM_FIELD_CACHE')
+
+
+@bp.route('/api/delivery-owner-field/config', methods=['GET'])
+def get_delivery_owner_field_config_endpoint():
+    return jsonify(get_delivery_owner_field_config())
+
+
+@bp.route('/api/delivery-owner-field/config', methods=['POST'])
+def save_delivery_owner_field_config_endpoint():
+    return _save_field_config('deliveryOwnerField')
 
 
 @bp.route('/api/stats/priority-weights-config', methods=['GET'])

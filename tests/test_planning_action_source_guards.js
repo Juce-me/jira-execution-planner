@@ -277,7 +277,27 @@ test('ENG status transition hook refreshes only after at least one issue succeed
     // guard block.
     const guardBody = hookSource.slice(guardIndex, guardIndex + 3000);
     assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
-    assert.match(guardBody, /if \(!isCatchUp\) \{\s*onTransitionSuccessRefresh/, 'Catch Up must reconcile locally instead of starting scope refreshes');
+    // The flag widened from `sourceSurface === 'catch_up'` to `sourceSurface !== 'planning'` and was
+    // renamed with it (EXEC-eng-group-board §13's one permitted hook generalization): PLANNING is
+    // the batch surface, and every single-issue surface — Catch Up and Board — reconciles locally
+    // instead of starting a scope refresh. Catch Up evaluates identically either way.
+    assert.match(guardBody, /if \(!isSingleIssueSurface\) \{\s*onTransitionSuccessRefresh/, 'Single-issue surfaces must reconcile locally instead of starting scope refreshes');
+});
+
+test('ENG status and priority hooks invalidate alert data after successful mutations on every surface', () => {
+    const statusSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js'), 'utf8');
+    const prioritySource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/useEngPriorityTransitions.js'), 'utf8');
+    const statusSuccessStart = statusSource.indexOf('if (summary.succeeded > 0) {');
+    const prioritySuccessStart = prioritySource.indexOf("trackIssuePriorityAction('priority_change_result'");
+    const statusSuccess = statusSource.slice(statusSuccessStart, statusSource.indexOf('return response;', statusSuccessStart));
+    const prioritySuccess = prioritySource.slice(prioritySuccessStart, prioritySource.indexOf('return response;', prioritySuccessStart));
+
+    assert.match(statusSource, /onAlertDataInvalidated,/);
+    assert.match(statusSuccess, /if \(isCurrentMutation\) onAlertDataInvalidated\?\.\(\);/);
+    assert.match(prioritySource, /onAlertDataInvalidated,/);
+    assert.match(prioritySuccess, /if \(summary\.succeeded > 0 && isCurrentMutation\) onAlertDataInvalidated\?\.\(\);/);
+    assert.doesNotMatch(statusSuccess, /if \(!isSingleIssueSurface\) \{\s*onAlertDataInvalidated/);
+    assert.doesNotMatch(prioritySuccess, /else if \(summary\.succeeded > 0\) \{[\s\S]*onAlertDataInvalidated/);
 });
 
 test('ENG status transition hook never mutates Planning selectedTasks for Epics or Subtasks', () => {
@@ -394,7 +414,9 @@ test('ENG targeted mutations guard same-key duplicates and stale scope completio
     assert.match(statusSource, /mutationScopeKey/);
     assert.match(statusSource, /mutationScopeRef/);
     assert.match(statusSource, /pendingMutationKeysRef/);
-    assert.match(statusSource, /pendingMutationKeysRef\.current\.has\(catchUpKey\)/);
+    // Renamed with the flag it is gated by: the per-key in-flight guard now serves every
+    // single-issue surface (Catch Up and Board), not Catch Up alone. Same guard, same behaviour.
+    assert.match(statusSource, /pendingMutationKeysRef\.current\.has\(singleIssueKey\)/);
     assert.match(prioritySource, /mutationScopeKey/);
     assert.match(prioritySource, /mutationScopeRef/);
     assert.match(prioritySource, /pendingMutationKeysRef/);
@@ -481,7 +503,10 @@ test('dashboard wires the priority hook and menu without owning their catalog/me
     // dashboard.jsx imports the hook and the presentational menu, and calls the hook once.
     assert.match(source, /import \{ useEngPriorityTransitions \} from '\.\/eng\/useEngPriorityTransitions\.js';/);
     assert.match(source, /import PriorityTransitionMenu from '\.\/issues\/PriorityTransitionMenu\.jsx';/);
-    assert.match(source, /\} = useEngPriorityTransitions\(\{/);
+    // Called exactly once. The assertion is on the CALL, not on the destructuring form that used
+    // to follow it: the Board's epic panel takes the hook result as one object, so dashboard.jsx
+    // now assigns it before destructuring.
+    assert.equal((source.match(/useEngPriorityTransitions\(\{/g) || []).length, 1);
 
     // Menu/catalog/submit logic lives in the hook + PriorityTransitionMenu; dashboard.jsx
     // must only wire props, never inline the priority API, a second module-level catalog
@@ -492,4 +517,26 @@ test('dashboard wires the priority hook and menu without owning their catalog/me
     assert.doesNotMatch(source, /IssueFieldOptionMenu/, 'dashboard.jsx must not import the shared option-menu renderer directly');
     assert.doesNotMatch(source, /priorityOptionsCache/, 'dashboard.jsx must not own a second priority catalog cache');
     assert.doesNotMatch(source, /data-priority-transition-trigger/, 'dashboard.jsx must not hand-roll the priority trigger attribute');
+});
+
+test('every IssueFieldOptionMenu consumer emits the trigger attribute its focus restore resolves', () => {
+    const issuesDir = path.resolve(__dirname, '../frontend/src/issues');
+    const menuSource = fs.readFileSync(path.join(issuesDir, 'IssueFieldOptionMenu.jsx'), 'utf8');
+
+    // On Escape the shared menu hands focus back to its trigger, resolved inside dismissRef by
+    // this attribute. A consumer that names its trigger differently would turn the restore into
+    // a silent no-op and strand keyboard users on <body> — which breaks any surrounding focus
+    // trap (the board's epic panel binds Escape/Tab to the panel element).
+    assert.match(menuSource, /\[data-\$\{blockClass\}-trigger\]/, 'IssueFieldOptionMenu must resolve its trigger from data-<blockClass>-trigger');
+
+    [
+        ['StatusTransitionMenu.jsx', 'status-transition'],
+        ['PriorityTransitionMenu.jsx', 'priority-transition'],
+        ['ProjectTrackTransitionMenu.jsx', 'project-track-transition'],
+    ].forEach(([file, blockClass]) => {
+        const source = fs.readFileSync(path.join(issuesDir, file), 'utf8');
+        assert.match(source, new RegExp(`blockClass="${blockClass}"`), `${file} must pass blockClass="${blockClass}"`);
+        assert.match(source, new RegExp(`data-${blockClass}-trigger`), `${file}'s trigger must carry data-${blockClass}-trigger`);
+        assert.match(source, /dismissRef=\{fieldRef\}/, `${file} must pass the trigger+menu wrapper as dismissRef`);
+    });
 });

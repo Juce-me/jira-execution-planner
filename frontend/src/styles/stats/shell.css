@@ -63,6 +63,7 @@
             font-size: 0.95rem;
             font-weight: 600;
             color: var(--text-primary);
+            line-height: 1;
         }
 
         .stats-note {

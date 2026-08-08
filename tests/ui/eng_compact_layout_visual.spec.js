@@ -1,12 +1,21 @@
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
+const { collectStickySnapshots } = require('./eng_sticky_stack_helpers');
 
 const screenshotDir = 'test-results/eng-compact-layout-qa';
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
 const groupTeamIds = ['team-alpha', 'team-beta'];
+
+// The bar's fixed single-row height (styles/eng/filter-bar.css). D36 and §12.6 make this a
+// number, not an impression: the first version of this bar stood 146px over three rows.
+const BAR_ROW_HEIGHT = 42;
+const BAR_TWO_ROW_HEIGHT = 80;
+// Captured from the pre-change shared wrapper: the fixed 42px bar plus the existing 0.85rem
+// spacer. Keeping this stable proves moving the spacer does not move the downstream sticky stack.
+const FILTERBAR_WRAP_HEIGHT = 55.6;
 
 test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
@@ -51,6 +60,8 @@ function makeEpic(project, overrides = {}) {
     };
 }
 
+// Deliberately spans several statuses and priorities so the Status facet has real workflow
+// order, D20 has zero-count options to hide, and Status x Priority can compose.
 const productTasks = [
     makeIssue({
         key: 'PRODUCT-1',
@@ -61,41 +72,19 @@ const productTasks = [
         points: 8,
         summary: 'Compact layout story with a readable but long title for filter visual QA',
     }),
-    makeIssue({
-        key: 'PRODUCT-2',
-        project: 'PRODUCT',
-        index: 2,
-        status: 'Done',
-        priority: 'High',
-        points: 3,
-        summary: 'Completed product story',
-    }),
-    makeIssue({
-        key: 'PRODUCT-3',
-        project: 'PRODUCT',
-        index: 3,
-        status: 'To Do',
-        priority: 'Minor',
-        points: 2,
-        summary: 'Pending product story',
-    }),
+    makeIssue({ key: 'PRODUCT-2', project: 'PRODUCT', index: 2, status: 'Done', priority: 'High', points: 3, summary: 'Completed product story' }),
+    makeIssue({ key: 'PRODUCT-3', project: 'PRODUCT', index: 3, status: 'To Do', priority: 'Minor', points: 2, summary: 'Pending product story' }),
+    makeIssue({ key: 'PRODUCT-4', project: 'PRODUCT', index: 4, status: 'Blocked', priority: 'Blocker', points: 5, summary: 'Blocked product story' }),
+    makeIssue({ key: 'PRODUCT-5', project: 'PRODUCT', index: 5, status: 'Killed', priority: 'Low', points: 1, summary: 'Killed product story' }),
 ];
 const techTasks = [
-    makeIssue({
-        key: 'TECH-1',
-        project: 'TECH',
-        index: 1,
-        status: 'Accepted',
-        priority: 'Medium',
-        points: 5,
-        summary: 'Accepted tech story',
-    }),
+    makeIssue({ key: 'TECH-1', project: 'TECH', index: 1, status: 'Accepted', priority: 'Medium', points: 5, summary: 'Accepted tech story' }),
     makeIssue({
         key: 'TECH-2',
         project: 'TECH',
         index: 2,
         status: 'In Progress',
-        priority: 'High',
+        priority: 'Critical',
         points: 5,
         summary: 'Compact tech story with enough text to exercise title wrapping',
     }),
@@ -103,36 +92,9 @@ const techTasks = [
 const productEpic = makeEpic('PRODUCT');
 const techEpic = makeEpic('TECH');
 const closedSprintProductTasks = [
-    makeIssue({
-        key: 'PRODUCT-10',
-        project: 'PRODUCT',
-        index: 2,
-        status: 'Done',
-        priority: 'High',
-        points: 5,
-        summary: 'Closed sprint done story',
-        sprintState: 'closed',
-    }),
-    makeIssue({
-        key: 'PRODUCT-11',
-        project: 'PRODUCT',
-        index: 4,
-        status: 'Killed',
-        priority: 'Minor',
-        points: 3,
-        summary: 'Closed sprint killed story',
-        sprintState: 'closed',
-    }),
-    makeIssue({
-        key: 'PRODUCT-12',
-        project: 'PRODUCT',
-        index: 6,
-        status: 'In Progress',
-        priority: 'Major',
-        points: 2,
-        summary: 'Closed sprint stale in progress story',
-        sprintState: 'closed',
-    }),
+    makeIssue({ key: 'PRODUCT-10', project: 'PRODUCT', index: 2, status: 'Done', priority: 'High', points: 5, summary: 'Closed sprint done story', sprintState: 'closed' }),
+    makeIssue({ key: 'PRODUCT-11', project: 'PRODUCT', index: 4, status: 'Killed', priority: 'Minor', points: 3, summary: 'Closed sprint killed story', sprintState: 'closed' }),
+    makeIssue({ key: 'PRODUCT-12', project: 'PRODUCT', index: 6, status: 'In Progress', priority: 'Major', points: 2, summary: 'Closed sprint stale in progress story', sprintState: 'closed' }),
 ];
 const alertMissingInfoTasks = [
     makeIssue({
@@ -159,6 +121,24 @@ async function waitForVisualSettled(page) {
             ]);
         }
         await new Promise(requestAnimationFrame);
+    });
+}
+
+async function measureFilterbarWrapper(page) {
+    return page.locator('.filterbar-wrap').evaluate((wrap) => {
+        const bar = wrap.querySelector(':scope > .filterbar');
+        const wrapRect = wrap.getBoundingClientRect();
+        const barRect = bar.getBoundingClientRect();
+        const styles = getComputedStyle(wrap);
+        return {
+            topInset: barRect.top - wrapRect.top,
+            bottomInset: wrapRect.bottom - barRect.bottom,
+            paddingBottom: parseFloat(styles.paddingBottom) || 0,
+            heightIdentity: wrapRect.height - barRect.height
+                - (barRect.top - wrapRect.top)
+                - (wrapRect.bottom - barRect.bottom),
+            wrapperHeight: wrapRect.height,
+        };
     });
 }
 
@@ -259,142 +239,165 @@ async function openEngCatchUp(page, viewport, options = {}) {
         ...(options.prefs || {}),
     });
 
+    if (options.planningSelection) {
+        await page.addInitScript(({ scopeKey, keys }) => {
+            window.localStorage.setItem('jira_dashboard_planning_state_v1', JSON.stringify({
+                [scopeKey]: { selectedTaskKeys: keys, selectedTeams: ['all'], selectionMode: 'manual' },
+            }));
+        }, { scopeKey: planningScopeKey, keys: options.planningSelection });
+    }
+
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
-    await expect(page.locator('.filters-strip .status-filter-grid .stat-card')).toHaveCount(options.expectedStatCardCount || 6);
-    await expect(page.locator('.task-list:not(.epm-issue-board) .epic-block').first()).toBeVisible();
+    await expect(page.locator('.filterbar')).toBeVisible();
+    if (!options.expectEmptyList) {
+        await expect(page.locator('.task-list:not(.epm-issue-board) .epic-block').first()).toBeVisible();
+    }
     await waitForVisualSettled(page);
 }
 
-async function expectCompactLayout(page, screenshotName, { expectedCardRows = 1 } = {}) {
-    await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
+const planningScopeKey = `planning::${selectedSprintId}::grp-default`;
+
+function persistedPlanningKeys(page) {
+    return page.evaluate((scopeKey) => {
+        const raw = window.localStorage.getItem('jira_dashboard_planning_state_v1');
+        const scoped = raw ? (JSON.parse(raw)[scopeKey] || {}) : {};
+        return (scoped.selectedTaskKeys || []).slice().sort();
+    }, planningScopeKey);
+}
+
+const popover = (page) => page.locator('.popover');
+const facetGroup = (page, facetId) => popover(page).locator(`.pop-group[data-facet="${facetId}"]`);
+const facetOption = (page, facetId, optionId) => facetGroup(page, facetId).locator(`.pop-opt[data-option="${optionId}"]`);
+
+async function openFilters(page) {
+    if (await popover(page).count() === 0) {
+        await page.locator('.fb-trigger').click();
+    }
+    await expect(popover(page)).toBeVisible();
+}
+
+async function closeFilters(page) {
+    if (await popover(page).count() > 0) {
+        await page.keyboard.press('Escape');
+        await expect(popover(page)).toHaveCount(0);
+    }
+}
+
+// A plain click, never click({ force: true }): forcing is exactly what masks the layering bug
+// D28's hit-test exists to catch (§10.2).
+async function tickOption(page, facetId, optionId) {
+    await openFilters(page);
+    await facetOption(page, facetId, optionId).click();
+}
+
+// Sorted: these assertions are about which stories survive the facets, not about the epic
+// ordering, which the Sort control owns and eng_epic_sort_and_track.spec.js covers.
+function storyKeys(page) {
+    return page.locator('.task-list:not(.epm-issue-board) .task-item').evaluateAll(
+        items => items.map(item => item.getAttribute('data-task-key')).sort()
+    );
+}
+
+// Every text-bearing element in the bar, measured on itself. A container's bounding box cannot
+// see overflowing nowrap text, which is how a filter-bar layout bug passed review before
+// (MRT020).
+async function measureBar(page, baselineOverflow = 1) {
     const metrics = await page.evaluate(() => {
-        const parsePx = (value) => Number.parseFloat(value) || 0;
-        const lineCount = (node) => {
-            const style = getComputedStyle(node);
-            const lineHeight = parsePx(style.lineHeight) || (parsePx(style.fontSize) * 1.2);
-            return Math.round(node.getBoundingClientRect().height / lineHeight);
-        };
-        const maxAdjacentGap = (rects) => {
-            const rows = new Map();
-            rects.forEach((rect) => {
-                const key = Math.round(rect.top);
-                rows.set(key, [...(rows.get(key) || []), rect]);
-            });
-            return Math.max(0, ...Array.from(rows.values()).flatMap((row) => {
-                const sorted = row.slice().sort((a, b) => a.left - b.left);
-                return sorted.slice(1).map((rect, index) => rect.left - sorted[index].right);
-            }));
-        };
-        const filterStrip = document.querySelector('.filters-strip');
-        const stats = document.querySelector('.filters-strip .status-filter-grid');
-        const cards = Array.from(document.querySelectorAll('.filters-strip .status-filter-grid .stat-card'));
-        const displayControls = document.querySelector('.display-filter-grid');
-        const alertToolbar = document.querySelector('.alerts-panel-toolbar');
-        const longLabel = document.querySelector('.filters-strip .todo-accepted .stat-label');
-        const labelLines = cards.map(card => lineCount(card.querySelector('.stat-label')));
-        const labelOverflows = cards.map(card => {
-            const label = card.querySelector('.stat-label');
-            return label.scrollWidth - label.clientWidth;
-        });
-        const cardAlignments = cards.map(card => {
-            const cardRect = card.getBoundingClientRect();
-            const valueRect = card.querySelector('.stat-value').getBoundingClientRect();
-            const labelRect = card.querySelector('.stat-label').getBoundingClientRect();
-            const noteRect = card.querySelector('.stats-note').getBoundingClientRect();
-            return {
-                valueLeft: valueRect.left - cardRect.left,
-                valueWidth: valueRect.width,
-                valueTopOffset: Math.abs((valueRect.top + valueRect.height / 2) - (cardRect.top + cardRect.height / 2)),
-                labelNoteOffset: Math.abs((labelRect.left + labelRect.width / 2) - (noteRect.left + noteRect.width / 2)),
-                labelLeftOfValue: (labelRect.left + labelRect.width / 2) - (valueRect.left + valueRect.width / 2),
-                valueLabelGap: labelRect.left - valueRect.right,
-            };
-        });
-        const firstStory = document.querySelector('.task-list:not(.epm-issue-board) > .epic-block > .task-item');
-        const storyStyle = getComputedStyle(firstStory);
-        const title = firstStory.querySelector('.task-title');
-        const titleStyle = getComputedStyle(title);
-        const epicBlock = document.querySelector('.task-list:not(.epm-issue-board) > .epic-block');
-        const epicStyle = getComputedStyle(epicBlock);
-        const epicName = epicBlock.querySelector('.epic-name');
-        const activeModeButton = document.querySelector('.eng-mode-control .segmented-control-button.active');
-        const activeModeButtonStyle = getComputedStyle(activeModeButton);
-        const cardRows = new Set(cards.map(card => Math.round(card.getBoundingClientRect().top))).size;
-        const statsRect = stats.getBoundingClientRect();
-        const cardRects = cards.map(card => card.getBoundingClientRect());
-        const firstCardRect = cardRects[0];
+        const bar = document.querySelector('.filterbar');
+        const barRect = bar.getBoundingClientRect();
+        // Rows by clustering the children's vertical centres: align-items: center gives each
+        // child a different `top`, so distinct tops would count four rows on a single line.
+        const centres = [...bar.children]
+            .map(child => child.getBoundingClientRect())
+            .filter(rect => rect.height > 0)
+            .map(rect => rect.top + rect.height / 2)
+            .sort((a, b) => a - b);
+        const rows = centres.reduce((lines, centre) => (
+            lines.length && centre - lines[lines.length - 1] < 12 ? lines : [...lines, centre]
+        ), []);
+        const labelSelectors = [
+            '.fb-trigger',
+            '.fb-trigger .badge',
+            '.fb-readout b',
+            '.fb-readout .dim',
+            '.chip:not([hidden]) .facet',
+            '.chip:not([hidden]) .verb',
+            '.chip:not([hidden]) .names',
+            '.chip-more:not([hidden])',
+            '.chip-clear',
+            '.sprint-dropdown-toggle .cap',
+            '.sprint-dropdown-toggle span:not(.cap)',
+            '.group-visible-control',
+        ];
+        const labels = labelSelectors.flatMap(selector => [...bar.querySelectorAll(selector)].map(node => ({
+            selector,
+            text: node.textContent.trim().slice(0, 40),
+            clipped: node.scrollWidth - node.clientWidth,
+            right: node.getBoundingClientRect().right,
+            groupRight: node.closest('.pop-host, .fb-readout, .chip, .chip-clear, .fb-view-controls, .sprint-dropdown, .group-visible-control')
+                .getBoundingClientRect().right,
+        })));
+        const lane = bar.querySelector('.fb-chips');
+        const more = bar.querySelector('.chip-more');
         return {
-            statsDisplay: getComputedStyle(stats).display,
-            statsColumnGap: parsePx(getComputedStyle(stats).columnGap),
-            maxStatGap: maxAdjacentGap(cardRects),
-            cardRows,
-            firstCardLeftGap: firstCardRect.left - statsRect.left,
-            cardWidths: cards.map(card => card.getBoundingClientRect().width),
-            cardHeights: cards.map(card => card.getBoundingClientRect().height),
-            labelFontSize: parsePx(getComputedStyle(longLabel).fontSize),
-            noteFontSize: parsePx(getComputedStyle(document.querySelector('.filters-strip .todo-accepted .stats-note')).fontSize),
-            labelLines,
-            labelOverflows,
-            maxLabelLines: Math.max(...labelLines),
-            maxLabelOverflow: Math.max(...labelOverflows),
-            cardAlignments,
-            filterOverflowX: filterStrip.scrollWidth - filterStrip.clientWidth,
-            displayOverflowX: displayControls.scrollWidth - displayControls.clientWidth,
-            alertOverflowX: alertToolbar.scrollWidth - alertToolbar.clientWidth,
-            storyPaddingTop: parsePx(storyStyle.paddingTop),
-            storyPaddingLeft: parsePx(storyStyle.paddingLeft),
-            storyTitleFontSize: parsePx(titleStyle.fontSize),
-            titleRight: title.getBoundingClientRect().right,
-            storyRight: firstStory.getBoundingClientRect().right,
-            epicNameWidth: epicName.getBoundingClientRect().width,
-            epicPaddingTop: parsePx(epicStyle.paddingTop),
-            activeModeButtonWhiteSpace: activeModeButtonStyle.whiteSpace,
-            activeModeButtonOverflow: activeModeButton.scrollWidth - activeModeButton.clientWidth,
-            overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            height: barRect.height,
+            width: barRect.width,
+            containerWidth: bar.closest('.container').getBoundingClientRect().width,
+            rows: rows.length,
+            labels,
+            chipsTotal: bar.querySelectorAll('.chip:not(.chip-more)').length,
+            chipsVisible: bar.querySelectorAll('.chip:not(.chip-more):not([hidden])').length,
+            chipsHidden: bar.querySelectorAll('.chip:not(.chip-more)[hidden]').length,
+            moreHidden: more ? more.hidden : null,
+            moreText: more && !more.hidden ? more.textContent.trim() : '',
+            laneOverflow: lane.scrollWidth - lane.clientWidth,
+            moreClippedByLane: (() => {
+                const node = bar.querySelector('.chip-more');
+                if (!node || node.hidden) return 0;
+                const rect = node.getBoundingClientRect();
+                return Math.round(Math.max(0, rect.right - lane.getBoundingClientRect().right));
+            })(),
+            clear: (() => {
+                const node = bar.querySelector('.chip-clear');
+                if (!node) return null;
+                const rect = node.getBoundingClientRect();
+                const laneRect = lane.getBoundingClientRect();
+                return {
+                    width: Math.round(rect.width),
+                    clippedByLane: Math.round(Math.max(0, rect.right - laneRect.right, laneRect.left - rect.left)),
+                };
+            })(),
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
     });
+    return { ...metrics, baselineOverflow: Math.max(1, baselineOverflow) };
+}
 
-    expect(metrics.statsDisplay).toBe('grid');
-    expect(metrics.statsColumnGap).toBeLessThanOrEqual(12);
-    expect(metrics.maxStatGap).toBeLessThanOrEqual(12);
-    expect(metrics.cardRows).toBe(expectedCardRows);
-    expect(metrics.firstCardLeftGap).toBeLessThanOrEqual(1);
-    expect(Math.max(...metrics.cardWidths)).toBeLessThanOrEqual(208);
-    expect(Math.min(...metrics.cardWidths)).toBeGreaterThanOrEqual(110);
-    expect(Math.max(...metrics.cardHeights)).toBeLessThanOrEqual(58);
-    expect(metrics.labelFontSize).toBeGreaterThanOrEqual(9);
-    expect(metrics.noteFontSize).toBeGreaterThanOrEqual(9);
-    expect(metrics.filterOverflowX).toBeLessThanOrEqual(1);
-    expect(metrics.displayOverflowX).toBeLessThanOrEqual(1);
-    expect(metrics.alertOverflowX).toBeLessThanOrEqual(1);
-    expect(metrics.maxLabelLines).toBe(1);
-    expect(metrics.maxLabelOverflow).toBeLessThanOrEqual(1);
-    metrics.cardAlignments.forEach(alignment => {
-        expect(alignment.valueLeft).toBeGreaterThanOrEqual(8);
-        expect(alignment.valueLeft).toBeLessThanOrEqual(28);
-        expect(alignment.valueWidth).toBeLessThanOrEqual(30);
-        expect(alignment.valueTopOffset).toBeLessThanOrEqual(2);
-        expect(alignment.labelNoteOffset).toBeLessThanOrEqual(2);
-        expect(alignment.labelLeftOfValue).toBeGreaterThan(38);
-        expect(alignment.valueLabelGap).toBeGreaterThanOrEqual(6);
-        expect(alignment.valueLabelGap).toBeLessThanOrEqual(14);
+function expectNoClipping(metrics, { laneMayClip = false } = {}) {
+    metrics.labels.forEach(label => {
+        expect(label.clipped, `${label.selector} ("${label.text}") is clipped`).toBeLessThanOrEqual(1);
+        expect(label.right, `${label.selector} ("${label.text}") overflows its group`)
+            .toBeLessThanOrEqual(label.groupRight + 1);
     });
-    expect(metrics.storyPaddingTop).toBeGreaterThanOrEqual(11);
-    expect(metrics.storyPaddingTop).toBeLessThanOrEqual(12);
-    expect(metrics.storyPaddingLeft).toBeGreaterThanOrEqual(15);
-    expect(metrics.storyPaddingLeft).toBeLessThanOrEqual(16);
-    expect(metrics.storyTitleFontSize).toBeGreaterThanOrEqual(15);
-    expect(metrics.storyTitleFontSize).toBeLessThanOrEqual(16);
-    expect(metrics.epicPaddingTop).toBeGreaterThanOrEqual(8);
-    expect(metrics.epicPaddingTop).toBeLessThanOrEqual(9);
-    expect(metrics.epicNameWidth).toBeGreaterThanOrEqual(110);
-    expect(metrics.activeModeButtonWhiteSpace).toBe('nowrap');
-    expect(metrics.activeModeButtonOverflow).toBeLessThanOrEqual(1);
-    expect(metrics.titleRight).toBeLessThanOrEqual(metrics.storyRight + 1);
-    expect(metrics.overflowX).toBeLessThanOrEqual(1);
+    // Clear all is the one control that never collapses (§7.6), so it must sit wholly inside
+    // the lane's clip at every width — including the two where the lane does clip.
+    expect(metrics.clear.clippedByLane, 'Clear all is clipped by the chips lane').toBe(0);
+    if (!laneMayClip) {
+        expect(metrics.laneOverflow).toBeLessThanOrEqual(1);
+    }
+    expect(metrics.documentOverflow).toBeLessThanOrEqual(metrics.baselineOverflow);
+}
 
-    await page.screenshot({ path: `${screenshotDir}/${screenshotName}.png`, fullPage: true });
+// Status, Priority and Projects all narrowed: the three-facet state §7.6 measures.
+async function activateThreeFacets(page) {
+    await tickOption(page, 'status', 'Done');
+    await tickOption(page, 'priority', 'Minor');
+    await tickOption(page, 'projects', 'tech');
+    await closeFilters(page);
+    await waitForVisualSettled(page);
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toHaveCount(3);
+    await expect(page.locator('.fb-trigger .badge')).toHaveText('3');
 }
 
 async function expectAlertPanelToggleStates(page) {
@@ -440,212 +443,630 @@ async function expectSprintOptionsStaySingleLine(page) {
     await page.screenshot({ path: `${screenshotDir}/desktop-sticky-sprint-dropdown.png`, fullPage: false });
 }
 
-test('ENG compact filters and epic rows stay readable on desktop', async ({ page }) => {
-    await openEngCatchUp(page, { width: 1440, height: 760 });
+test('the filter bar holds one row at desktop widths with every facet active', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 });
     await expectAlertPanelToggleStates(page);
-    await expectCompactLayout(page, 'desktop');
-    await expectSprintOptionsStaySingleLine(page);
+    await activateThreeFacets(page);
+
+    const wide = await measureBar(page);
+    expect(wide.height).toBe(BAR_ROW_HEIGHT);
+    expect(wide.rows).toBe(1);
+    // The clear controls use their intended 16px icon slots, so the three-facet state fits at
+    // 1440 without collapsing. The numbers are pinned rather than bounded: this is the row that
+    // regressed to three rows once, and a `>= 1` here proves nothing.
+    expect(wide.chipsTotal).toBe(3);
+    expect(wide.chipsVisible).toBe(3);
+    expect(wide.chipsHidden).toBe(0);
+    expect(wide.moreText).toBe('');
+    // Content-width, not full-bleed: the bar sits in the layout like the controls row above it.
+    expect(wide.width).toBeLessThan(wide.containerWidth);
+    expectNoClipping(wide);
+    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-1440.png` });
+
+    for (const width of [1280, 960, 800]) {
+        await page.setViewportSize({ width, height: 900 });
+        await waitForVisualSettled(page);
+        const metrics = await measureBar(page);
+        expect(metrics.height, `bar height at ${width}`).toBe(BAR_ROW_HEIGHT);
+        expect(metrics.rows, `bar rows at ${width}`).toBe(1);
+        expect(metrics.chipsVisible + metrics.chipsHidden).toBe(3);
+        expect(metrics.clear.width, `Clear all collapsed at ${width}`).toBeGreaterThan(0);
+        expectNoClipping(metrics);
+    }
+
+    // D36: the lane collapses rather than the bar wrapping, and the count is the truth.
+    await page.setViewportSize({ width: 960, height: 900 });
+    await waitForVisualSettled(page);
+    const narrow = await measureBar(page);
+    expect(narrow.chipsHidden).toBeGreaterThan(0);
+    // The width has to buy chips: 960 must show strictly fewer than 1440 did, which is the
+    // part of §7.6's table the app's content-width bar can actually be held to.
+    expect(narrow.chipsVisible).toBeLessThan(wide.chipsVisible);
+    expect(narrow.moreText).toBe(`+${narrow.chipsHidden} more`);
+    expect(narrow.height).toBe(BAR_ROW_HEIGHT);
+    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-960.png` });
 });
 
-test('ENG compact filters and epic rows stay readable on narrow screens', async ({ page }) => {
-    await openEngCatchUp(page, { width: 390, height: 760 });
-    await expectCompactLayout(page, 'mobile', { expectedCardRows: 3 });
+test('the filter bar takes at most two rows below 720px', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 });
+    await activateThreeFacets(page);
+
+    for (const width of [375, 360]) {
+        await page.setViewportSize({ width, height: 760 });
+        await waitForVisualSettled(page);
+        const baseline = await page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+        );
+        const metrics = await measureBar(page, baseline);
+        expect(metrics.rows, `bar rows at ${width}`).toBe(2);
+        expect(Math.round(metrics.height), `bar height at ${width}`).toBeLessThanOrEqual(BAR_TWO_ROW_HEIGHT);
+        expect(metrics.clear.width, `Clear all collapsed at ${width}`).toBeGreaterThan(0);
+        // At this width the lane cannot hold both "+n more" and Clear all; Clear all wins and
+        // the residue falls on "+n more", whose only job is reopening the popover.
+        expect(metrics.chipsHidden, `chips collapsed at ${width}`).toBe(3);
+        expect(metrics.moreClippedByLane, `"+n more" clipping at ${width}`).toBeLessThanOrEqual(40);
+        expectNoClipping(metrics, { laneMayClip: true });
+    }
+    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-360.png` });
+
+    await page.setViewportSize({ width: 375, height: 600 });
+    await waitForVisualSettled(page);
+    const narrowSnapshots = await collectStickySnapshots(page, waitForVisualSettled);
+    const narrowPinned = narrowSnapshots.find(result => result.compactVisible && result.filterbarPinned && result.pinnedEpic);
+    expect(narrowPinned, 'expected a narrow two-row pinned epic witness').toBeTruthy();
+    expect(narrowPinned.filterbarWrap.height).toBeGreaterThan(narrowPinned.filterbar.height);
+    expect(Math.abs(narrowPinned.epic.top - narrowPinned.filterbarWrap.bottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(
+        (narrowPinned.epicStickyTop - narrowPinned.filterbarStickyTop) - narrowPinned.filterbarWrap.height
+    )).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: `${screenshotDir}/catch-up-sticky-stack-375.png`, fullPage: false });
 });
 
-test('Initiative grouping is a View control beside Display controls', async ({ page }) => {
-    await openEngCatchUp(page, { width: 1440, height: 760 }, { withInitiativeData: true });
+test('Catch Up exposes the compact, filter-bar, and pinned-epic sticky stack', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 600 });
+    const filterbarGeometry = await measureFilterbarWrapper(page);
+    expect(filterbarGeometry.topInset, `Catch Up filter-bar geometry: ${JSON.stringify(filterbarGeometry)}`).toBeLessThanOrEqual(1);
+    expect(filterbarGeometry.bottomInset, `Catch Up filter-bar geometry: ${JSON.stringify(filterbarGeometry)}`).toBeGreaterThan(1);
+    expect(Math.abs(filterbarGeometry.bottomInset - filterbarGeometry.paddingBottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(filterbarGeometry.heightIdentity)).toBeLessThanOrEqual(1);
+    expect(Math.abs(filterbarGeometry.wrapperHeight - FILTERBAR_WRAP_HEIGHT)).toBeLessThanOrEqual(1);
+    const snapshots = await collectStickySnapshots(page, waitForVisualSettled);
+    const stickyWitnesses = snapshots.filter(result => result.compactVisible && result.filterbarPinned);
+    expect(stickyWitnesses.length, 'expected the compact header and filter bar to pin').toBeGreaterThan(0);
+    stickyWitnesses.forEach((result) => {
+        expect(Math.abs(result.filterbarWrap.top - result.compact.bottom)).toBeLessThanOrEqual(1);
+        expect(result.filterbarOwnsPoint, `filter bar lost its band at scroll ${result.scrollY}`).toBe(true);
+    });
+    const pinned = stickyWitnesses.filter(result => result.pinnedEpic);
+    expect(pinned.length, 'expected at least one pinned epic-header witness').toBeGreaterThan(0);
+    pinned.forEach((result) => {
+        expect(result.filterbarWrap.bottom).toBeLessThanOrEqual(result.epic.top + 1);
+        expect(Math.abs(result.epic.top - result.filterbarWrap.bottom)).toBeLessThanOrEqual(1);
+        expect(Math.abs((result.epicStickyTop - result.filterbarStickyTop) - result.filterbarWrap.height)).toBeLessThanOrEqual(1);
+        expect(result.epicOwnsPoint, `epic header lost its band at scroll ${result.scrollY}`).toBe(true);
+    });
+    await page.screenshot({ path: `${screenshotDir}/catch-up-sticky-stack.png`, fullPage: false });
+});
 
-    const displayViewRow = page.locator('.filters-strip .display-view-row');
-    await expect(displayViewRow.locator('.display-controls-section .filters-label')).toHaveText('Display');
-    await expect(displayViewRow.locator('.display-view-divider')).toHaveCount(0);
-    await expect(displayViewRow.locator('.view-controls-section .filters-label')).toHaveText('View');
+test('Planning orders compact, planning, filter bar, and pinned epic without overlap', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 600 }, {
+        prefs: { showPlanning: true },
+        planningSelection: ['PRODUCT-1', 'TECH-2'],
+    });
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    const snapshots = await collectStickySnapshots(page, waitForVisualSettled);
+    const witnesses = snapshots.filter(result => (
+        result.compactVisible && result.planning && result.filterbarPinned && result.pinnedEpic
+    ));
+    expect(witnesses.length, 'expected a pinned four-layer Planning witness').toBeGreaterThan(0);
+    witnesses.forEach((result) => {
+        expect(Math.abs(result.planning.top - result.compact.bottom)).toBeLessThanOrEqual(1);
+        expect(Math.abs(result.filterbarWrap.top - result.planning.bottom)).toBeLessThanOrEqual(1);
+        expect(result.filterbarWrap.bottom).toBeLessThanOrEqual(result.epic.top + 1);
+        expect(Math.abs(result.epic.top - result.filterbarWrap.bottom)).toBeLessThanOrEqual(1);
+        expect(result.filterbarOwnsPoint).toBe(true);
+        expect(result.epicOwnsPoint).toBe(true);
+    });
+    await page.screenshot({ path: `${screenshotDir}/planning-sticky-stack.png`, fullPage: false });
 
-    const initiativeToggle = displayViewRow.locator('.view-control-grid .initiative-toggle');
-    await expect(initiativeToggle).toBeVisible();
-    await expect(initiativeToggle).toHaveClass(/view-toggle-card/);
-    await expect(initiativeToggle).not.toHaveClass(/display-filter-card/);
-    await expect(page.locator('.display-filter-grid .initiative-toggle')).toHaveCount(0);
-    const initiativeIconColor = await initiativeToggle.locator('.initiative-toggle-icon').evaluate((icon) => {
-        return getComputedStyle(icon).color;
+    await openFilters(page);
+    const option = facetOption(page, 'status', 'Done');
+    const optionOwnsPoint = await option.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        return Boolean(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest('.popover'));
     });
-    expect(initiativeIconColor).toBe('rgb(255, 171, 0)');
-    const displayCardRows = await page.locator('.display-view-row .display-filter-grid .display-filter-card').evaluateAll((cards) => {
-        return new Set(cards.map(card => Math.round(card.getBoundingClientRect().top))).size;
-    });
-    expect(displayCardRows).toBe(1);
-    const controlGaps = await page.evaluate(() => {
-        const rowGaps = (selector) => {
-            const rects = Array.from(document.querySelectorAll(selector))
-                .map(card => card.getBoundingClientRect())
-                .filter(rect => rect.width > 0 && rect.height > 0);
-            const firstRowTop = Math.round(rects[0].top);
-            const row = rects
-                .filter(rect => Math.abs(Math.round(rect.top) - firstRowTop) <= 1)
-                .sort((a, b) => a.left - b.left);
-            return row.slice(1).map((rect, index) => rect.left - row[index].right);
-        };
-        return {
-            status: rowGaps('.status-filter-grid .stat-card'),
-            display: rowGaps('.display-filter-grid .display-filter-card'),
-        };
-    });
-    const statusGap = controlGaps.status[0];
-    expect(controlGaps.display.length).toBeGreaterThan(0);
-    controlGaps.display.forEach(gap => {
-        expect(Math.abs(gap - statusGap)).toBeLessThanOrEqual(1);
-    });
-    await expect(displayViewRow.locator('.display-closed-work .stat-label')).toHaveText('Done');
-    const cardGeometry = await page.locator('.filters-strip .stat-card').evaluateAll((cards) => {
-        return cards.map(card => {
-            const cardRect = card.getBoundingClientRect();
-            const valueRect = card.querySelector('.stat-value').getBoundingClientRect();
-            const labelRect = card.querySelector('.stat-label').getBoundingClientRect();
-            const noteRect = card.querySelector('.stats-note').getBoundingClientRect();
-            return {
-                width: cardRect.width,
-                height: cardRect.height,
-                valueLeft: valueRect.left - cardRect.left,
-                valueWidth: valueRect.width,
-                labelLeft: labelRect.left - cardRect.left,
-                noteLeft: noteRect.left - cardRect.left,
-                labelWidth: labelRect.width,
-                noteWidth: noteRect.width,
-            };
-        });
-    });
-    const maxDelta = (values) => Math.max(...values) - Math.min(...values);
-    expect(maxDelta(cardGeometry.map(card => card.width))).toBeLessThanOrEqual(1);
-    expect(maxDelta(cardGeometry.map(card => card.height))).toBeLessThanOrEqual(1);
-    expect(maxDelta(cardGeometry.map(card => card.valueLeft))).toBeLessThanOrEqual(1);
-    expect(maxDelta(cardGeometry.map(card => card.valueWidth))).toBeLessThanOrEqual(1);
-    expect(maxDelta(cardGeometry.map(card => card.labelLeft))).toBeLessThanOrEqual(1);
-    expect(maxDelta(cardGeometry.map(card => card.noteLeft))).toBeLessThanOrEqual(1);
-    expect(maxDelta(cardGeometry.map(card => card.labelWidth))).toBeLessThanOrEqual(1);
-    expect(maxDelta(cardGeometry.map(card => card.noteWidth))).toBeLessThanOrEqual(1);
+    expect(optionOwnsPoint).toBe(true);
+    await option.click();
+    await closeFilters(page);
 
-    const layoutBeforeToggle = await page.locator('.filters-strip .stat-card').evaluateAll((cards) => {
-        return cards.map(card => {
-            const cardRect = card.getBoundingClientRect();
-            const valueRect = card.querySelector('.stat-value').getBoundingClientRect();
-            const labelRect = card.querySelector('.stat-label').getBoundingClientRect();
-            const noteRect = card.querySelector('.stats-note').getBoundingClientRect();
-            return {
-                left: cardRect.left,
-                width: cardRect.width,
-                height: cardRect.height,
-                valueLeft: valueRect.left - cardRect.left,
-                labelLeft: labelRect.left - cardRect.left,
-                noteLeft: noteRect.left - cardRect.left,
-            };
-        });
+    const sort = page.locator('.eng-epic-sort-dropdown .sprint-dropdown-toggle');
+    await sort.click();
+    const sortOption = page.locator('.eng-epic-sort-dropdown .sprint-dropdown-option:not(.selected)').first();
+    const sortOwnsPoint = await sortOption.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        return Boolean(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest('.sprint-dropdown-panel'));
     });
-    const techToggle = displayViewRow.locator('.display-tech');
-    await techToggle.click();
+    expect(sortOwnsPoint).toBe(true);
+    await sortOption.click();
+});
+
+test('the popover opens over the list and its options take a plain click', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 });
+    await page.evaluate(() => window.scrollTo(0, 360));
     await waitForVisualSettled(page);
-    const layoutAfterToggle = await page.locator('.filters-strip .stat-card').evaluateAll((cards) => {
-        return cards.map(card => {
-            const cardRect = card.getBoundingClientRect();
-            const valueRect = card.querySelector('.stat-value').getBoundingClientRect();
-            const labelRect = card.querySelector('.stat-label').getBoundingClientRect();
-            const noteRect = card.querySelector('.stats-note').getBoundingClientRect();
-            return {
-                left: cardRect.left,
-                width: cardRect.width,
-                height: cardRect.height,
-                valueLeft: valueRect.left - cardRect.left,
-                labelLeft: labelRect.left - cardRect.left,
-                noteLeft: noteRect.left - cardRect.left,
-            };
-        });
+    await openFilters(page);
+
+    // §12.3: the bar states its subject, and the facet set is Catch Up's.
+    await expect(popover(page).locator('.pop-subject')).toHaveText('Filtering stories');
+    await expect(popover(page).locator('.pop-group')).toHaveCount(3);
+    await expect(popover(page).locator('.pop-facet')).toHaveText(['Status', 'Priority', 'Projects']);
+    await expect(facetGroup(page, 'track')).toHaveCount(0);
+    await expect(facetGroup(page, 'assignee')).toHaveCount(0);
+
+    const option = facetOption(page, 'status', 'Done');
+    const reachable = await option.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return Boolean(hit && node.contains(hit));
     });
-    expect(layoutAfterToggle).toHaveLength(layoutBeforeToggle.length);
-    layoutBeforeToggle.forEach((before, index) => {
-        const after = layoutAfterToggle[index];
-        expect(Math.abs(after.left - before.left)).toBeLessThanOrEqual(1);
-        expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(1);
-        expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
-        expect(Math.abs(after.valueLeft - before.valueLeft)).toBeLessThanOrEqual(1);
-        expect(Math.abs(after.labelLeft - before.labelLeft)).toBeLessThanOrEqual(1);
-        expect(Math.abs(after.noteLeft - before.noteLeft)).toBeLessThanOrEqual(1);
-    });
-    const displayToggleStyles = await page.evaluate(() => {
-        const hiddenTech = document.querySelector('.display-tech');
-        const shownProduct = document.querySelector('.display-product');
-        const hiddenTechStyle = getComputedStyle(hiddenTech);
-        const shownProductStyle = getComputedStyle(shownProduct);
+    expect(reachable, 'a popover option was covered by the list below it').toBe(true);
+    await option.click();
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toHaveCount(1);
+});
+
+test('the popover fits a short viewport and its last facet stays reachable', async ({ page }) => {
+    await openEngCatchUp(page, { width: 375, height: 667 });
+    // Baseline: this page already overflows 375 by a few px through the capacity grid and the
+    // mode control, neither of which this change touches. The popover must add nothing.
+    const baselineOverflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    );
+    await openFilters(page);
+    const fit = await popover(page).evaluate((node) => {
+        const rect = node.getBoundingClientRect();
         return {
-            hiddenTechBackground: hiddenTechStyle.backgroundColor,
-            hiddenTechBoxShadow: hiddenTechStyle.boxShadow,
-            shownProductBackground: shownProductStyle.backgroundColor,
+            withinViewport: rect.bottom <= window.innerHeight + 1 && rect.right <= document.documentElement.clientWidth + 1,
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
     });
-    expect(displayToggleStyles.hiddenTechBackground).toBe(displayToggleStyles.shownProductBackground);
-    expect(displayToggleStyles.hiddenTechBoxShadow).toBe('none');
-    await techToggle.click();
-    await waitForVisualSettled(page);
-    await expect(initiativeToggle).toContainText('Grouped');
+    expect(fit.withinViewport).toBe(true);
+    expect(fit.documentOverflow).toBeLessThanOrEqual(baselineOverflow);
+
+    const last = facetGroup(page, 'projects').locator('.pop-opt').last();
+    await last.scrollIntoViewIfNeeded();
+    const reachable = await last.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return Boolean(hit && node.contains(hit));
+    });
+    expect(reachable, 'the last facet option is off screen at 375x667').toBe(true);
+});
+
+test('Status and Priority compose, which the old single select could not do', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 });
+    const everything = await storyKeys(page);
+    expect(everything).toEqual(['PRODUCT-1', 'PRODUCT-2', 'PRODUCT-3', 'PRODUCT-4', 'TECH-1', 'TECH-2']);
+
+    // Status = {In Progress, Blocked}: untick everything else.
+    await openFilters(page);
+    for (const status of ['To Do', 'Accepted', 'Done']) {
+        await facetOption(page, 'status', status).click();
+    }
+    await closeFilters(page);
+    const statusOnly = await storyKeys(page);
+    expect(statusOnly).toEqual(['PRODUCT-1', 'PRODUCT-4', 'TECH-2']);
+
+    // Priority = {Blocker, Major}: untick Critical, Minor and Low. TECH-2 is In Progress and
+    // Critical, so it passes Status but not Priority — the combination has to be strictly
+    // narrower than Status alone, not merely no wider.
+    await openFilters(page);
+    for (const priority of ['Critical', 'Minor', 'Low']) {
+        await facetOption(page, 'priority', priority).click();
+    }
+    await closeFilters(page);
+    const both = await storyKeys(page);
+    expect(both).toEqual(['PRODUCT-1', 'PRODUCT-4']);
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toHaveCount(2);
+    await expect(page.locator('.fb-trigger .badge')).toHaveText('2');
+
+    // Re-tick the statuses to leave Priority filtering alone: PRODUCT-2 is Done and Major, so
+    // it passes Priority but not Status. The pair is strictly narrower than either facet.
+    await openFilters(page);
+    for (const status of ['To Do', 'Accepted', 'Done']) {
+        await facetOption(page, 'status', status).click();
+    }
+    await closeFilters(page);
+    const priorityOnly = await storyKeys(page);
+    expect(priorityOnly).toEqual(['PRODUCT-1', 'PRODUCT-2', 'PRODUCT-4']);
+    expect(both.length).toBeLessThan(statusOnly.length);
+    expect(both.length).toBeLessThan(priorityOnly.length);
+    // Status is back at its default Killed exclusion, which is a chip of its own.
+    await expect(page.locator('.filterbar .chip .facet')).toHaveText(['Status', 'Priority']);
+    await expect(page.locator('.filterbar .chip .names').first()).toHaveText('Killed');
+
+    // Narrowing priority further proves the two dimensions really are independent.
+    await openFilters(page);
+    await facetOption(page, 'priority', 'Major').click();
+    await closeFilters(page);
+    expect(await storyKeys(page)).toEqual(['PRODUCT-4']);
+    await expect(page.locator('.fb-readout b')).toHaveText('1');
+});
+
+test('a Status narrowing leaves the saved planning selection alone', async ({ page }) => {
+    // Only the Done and Killed Display toggles ever reached baseFilteredTasks, and both were
+    // exclusions. An `{ only: [...] }` narrowing must not prune — and then persist — a saved
+    // planning selection, which is a user artifact no status filter could touch before.
+    await openEngCatchUp(page, { width: 1440, height: 900 }, {
+        planningSelection: ['PRODUCT-1', 'PRODUCT-2'],
+    });
+    expect(await persistedPlanningKeys(page)).toEqual(['PRODUCT-1', 'PRODUCT-2']);
+
+    // Status = {In Progress}: PRODUCT-2 is Done, so it leaves the list.
+    await openFilters(page);
+    for (const status of ['To Do', 'Accepted', 'Blocked', 'Done']) {
+        await facetOption(page, 'status', status).click();
+    }
+    await closeFilters(page);
+    expect(await storyKeys(page)).toEqual(['PRODUCT-1', 'TECH-2']);
+    expect(await persistedPlanningKeys(page)).toEqual(['PRODUCT-1', 'PRODUCT-2']);
+});
+
+test('the readout is the real filtered count and an empty result says so', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 });
+    await expect(page.locator('.fb-readout b')).toHaveText('6');
+    await expect(page.locator('.fb-readout .dim')).toHaveText('of 7 stories');
+
+    // Killed is hidden by default but still counted in scope, so it can be ticked back on.
+    await openFilters(page);
+    await expect(facetOption(page, 'status', 'Killed')).toHaveCount(1);
+    await facetOption(page, 'status', 'Killed').click();
+    await closeFilters(page);
+    await expect(page.locator('.fb-readout b')).toHaveText('7');
+    await expect(page.locator('.task-list:not(.epm-issue-board)')).toContainText('Killed product story');
+
+    // An epic with no matching story renders no header at all.
+    await openFilters(page);
+    await facetOption(page, 'projects', 'tech').click();
+    await closeFilters(page);
+    await expect(page.locator('.task-list:not(.epm-issue-board) .epic-block')).toHaveCount(1);
+    await expect(page.locator('.epic-key')).toHaveText(/PRODUCT-EPIC/);
+});
+
+test('a status with no story in scope is absent from the facet', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 }, {
+        productTasks: [productTasks[0]],
+        techTasks: [],
+    });
+    await openFilters(page);
+    const statuses = await facetGroup(page, 'status').locator('.pop-opt').evaluateAll(
+        options => options.map(option => option.getAttribute('data-option'))
+    );
+    expect(statuses).toEqual(['In Progress']);
+    // The one remaining option locks rather than emptying the facet (§7.3).
+    await expect(facetOption(page, 'status', 'In Progress')).toHaveClass(/is-locked/);
+    await expect(facetOption(page, 'status', 'In Progress')).toHaveAttribute('aria-disabled', 'true');
+    await expect(facetOption(page, 'status', 'In Progress')).toHaveAttribute('title', /Keep at least one/);
+    await expect(page.locator('.task-list:not(.epm-issue-board) .task-item')).toHaveCount(1);
+});
+
+test('Status options read in workflow order, not alphabetically', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 });
+    await openFilters(page);
+    const statuses = await facetGroup(page, 'status').locator('.pop-opt').evaluateAll(
+        options => options.map(option => option.getAttribute('data-option'))
+    );
+    expect(statuses).toEqual(['To Do', 'Accepted', 'Blocked', 'In Progress', 'Done', 'Killed']);
+});
+
+test('sort and grouping are view controls in the bar and render no chip', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 }, { withInitiativeData: true });
+
+    const viewControls = page.locator('.filterbar .fb-view-controls');
+    await expect(viewControls.locator('.eng-epic-sort-dropdown')).toHaveCount(1);
+    await expect(viewControls.locator('.group-visible-control')).toHaveCount(1);
+
+    // Only the default "Status hidden Killed" chip is present; neither view control adds one.
+    const chips = page.locator('.filterbar .chip:not(.chip-more)');
+    await expect(chips).toHaveCount(1);
+    await expect(page.locator('.fb-trigger .badge')).toHaveText('1');
+
+    const grouping = viewControls.locator('.group-visible-control input[type="checkbox"]');
+    await expect(grouping).toBeChecked();
     await expect(page.locator('.initiative-header')).toBeVisible();
-
-    await initiativeToggle.click();
-    await expect(initiativeToggle).toContainText('Flat');
+    await grouping.click();
     await expect(page.locator('.initiative-header')).toHaveCount(0);
-    await page.screenshot({ path: `${screenshotDir}/desktop-display-view-controls.png`, fullPage: true });
+    await expect(chips).toHaveCount(1);
+    await expect(page.locator('.fb-trigger .badge')).toHaveText('1');
+
+    // A plain click on the sort option: no force, so this also proves the panel is not
+    // painted under the task list from inside the sticky bar.
+    await viewControls.locator('.sprint-dropdown-toggle').click();
+    await viewControls.locator('.sprint-dropdown-option', { hasText: 'Committed ⬇' }).click();
+    await expect(viewControls.locator('.sprint-dropdown-toggle')).toContainText('Committed');
+    await expect(chips).toHaveCount(1);
+    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-view-controls.png` });
 });
 
-test('Killed Display toggle includes killed work without a Show only card', async ({ page }) => {
+test('an explicit grouping choice is stored and survives initiative data arriving', async ({ page }) => {
+    // §2: today a useEffect recomputed groupByInitiative from hasInitiativeData and threw the
+    // user's choice away every time initiative data landed.
+    await openEngCatchUp(page, { width: 1440, height: 900 }, { withInitiativeData: true });
+    const grouping = page.locator('.filterbar .group-visible-control input[type="checkbox"]');
+    await expect(grouping).toBeChecked();
+    const initial = await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1')));
+    expect(initial.groupByInitiativeChoice).toBeNull();
+
+    await grouping.click();
+    await expect(page.locator('.initiative-header')).toHaveCount(0);
+    await expect.poll(async () => page.evaluate(
+        () => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1')).groupByInitiativeChoice
+    )).toBe(false);
+
+    // Refetching re-derives hasInitiativeData; the explicit choice must outlive it.
+    await page.locator('button[title="Refresh tasks and sprints from Jira"]').click();
+    await expect(page.locator('.task-list:not(.epm-issue-board) .epic-block').first()).toBeVisible();
+    await waitForVisualSettled(page);
+    await expect(page.locator('.filterbar .group-visible-control input[type="checkbox"]')).not.toBeChecked();
+    await expect(page.locator('.initiative-header')).toHaveCount(0);
+});
+
+test('Clear all returns every facet to its default and keeps the list', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 });
+    await activateThreeFacets(page);
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toHaveCount(3);
+
+    await page.locator('.filterbar .chip-clear').click();
+    await waitForVisualSettled(page);
+    // Back to the default, which is Killed hidden — the same state as showKilled: false today.
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toHaveCount(1);
+    await expect(page.locator('.filterbar .chip .names')).toHaveText('Killed');
+    await expect(page.locator('.fb-readout b')).toHaveText('6');
+    expect(await storyKeys(page)).toEqual(['PRODUCT-1', 'PRODUCT-2', 'PRODUCT-3', 'PRODUCT-4', 'TECH-1', 'TECH-2']);
+});
+
+test('killed work is hidden by default and ticking Killed brings it back', async ({ page }) => {
     await openEngCatchUp(page, { width: 1792, height: 900 }, {
         sprintState: 'closed',
         productTasks: closedSprintProductTasks,
         techTasks: [],
-        expectedStatCardCount: 6,
     });
-    await expectCompactLayout(page, 'closed-sprint-filter-stats', { expectedCardRows: 1 });
-
-    await expect(page.locator('.filters-strip .status-filter-grid .stat-card.killed')).toHaveCount(0);
-
-    const killedToggle = page.locator('.display-filter-grid .display-killed');
-    await expect(killedToggle).toBeVisible();
-    await expect(killedToggle).not.toHaveClass(/applied-filter/);
 
     const taskList = page.locator('.task-list:not(.epm-issue-board)');
     await expect(taskList).toContainText('Closed sprint done story');
     await expect(taskList).toContainText('Closed sprint stale in progress story');
     await expect(taskList).not.toContainText('Closed sprint killed story');
+    await expect(page.locator('.filterbar .chip .names')).toHaveText('Killed');
+    await expect(page.locator('.filterbar .chip .verb')).toHaveText('hidden');
 
-    await killedToggle.click();
-
-    await expect(killedToggle).toHaveClass(/applied-filter/);
-    await expect(killedToggle).toHaveClass(/is-visible/);
+    await tickOption(page, 'status', 'Killed');
+    await closeFilters(page);
     await expect(taskList).toContainText('Closed sprint killed story');
-    await expect(taskList).toContainText('Closed sprint done story');
-    await expect(taskList).toContainText('Closed sprint stale in progress story');
-    await page.screenshot({ path: `${screenshotDir}/closed-sprint-display-killed.png`, fullPage: true });
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toHaveCount(0);
 });
 
-test('legacy Killed status filter migrates to the Display Killed toggle', async ({ page }) => {
+test('a legacy killed statusFilter still shows every story after upgrading', async ({ page }) => {
     await openEngCatchUp(page, { width: 1792, height: 900 }, {
         sprintState: 'closed',
         productTasks: closedSprintProductTasks,
         techTasks: [],
-        expectedStatCardCount: 6,
-        prefs: {
-            statusFilter: 'killed',
-            showKilled: false,
-        },
+        prefs: { statusFilter: 'killed', showKilled: false },
     });
-
-    await expect(page.locator('.filters-strip .status-filter-grid .stat-card.killed')).toHaveCount(0);
-
-    const killedToggle = page.locator('.display-filter-grid .display-killed');
-    await expect(killedToggle).toHaveClass(/applied-filter/);
-    await expect(killedToggle).toHaveClass(/is-visible/);
 
     const taskList = page.locator('.task-list:not(.epm-issue-board)');
     await expect(taskList).toContainText('Closed sprint killed story');
     await expect(taskList).toContainText('Closed sprint done story');
     await expect(taskList).toContainText('Closed sprint stale in progress story');
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toHaveCount(0);
 
     const prefs = await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1')));
-    expect(prefs.statusFilter).toBeNull();
-    expect(prefs.showKilled).toBe(true);
+    expect(prefs.engStatusFilter).toBeNull();
+    expect(prefs.engPriorityFilter).toBeNull();
+});
+
+test('a legacy high-priority statusFilter lands on the Priority facet', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 }, {
+        prefs: { statusFilter: 'high-priority', showKilled: false },
+    });
+
+    // Blocker, Critical and Major only — the same stories the old single select showed.
+    expect(await storyKeys(page)).toEqual(['PRODUCT-1', 'PRODUCT-2', 'PRODUCT-4', 'TECH-2']);
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toHaveCount(2);
+    const prefs = await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1')));
+    expect(prefs.engPriorityFilter).toEqual({ only: ['Blocker', 'Critical', 'Major'] });
+    expect(prefs.engStatusFilter).toEqual({ hidden: ['Killed'] });
+});
+
+test('a legacy showDone false pref keeps Done and Incomplete hidden', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 }, {
+        prefs: { showDone: false, showKilled: false },
+    });
+    expect(await storyKeys(page)).toEqual(['PRODUCT-1', 'PRODUCT-3', 'PRODUCT-4', 'TECH-1', 'TECH-2']);
+    const prefs = await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1')));
+    expect(prefs.engStatusFilter).toEqual({ hidden: ['Killed', 'Done', 'Incomplete'] });
+});
+
+test('a selection made in one scope does not strand the bar when the scope changes', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 });
+    await openFilters(page);
+    for (const status of ['To Do', 'Accepted', 'In Progress', 'Blocked']) {
+        await facetOption(page, 'status', status).click();
+    }
+    await closeFilters(page);
+    expect(await storyKeys(page)).toEqual(['PRODUCT-2']);
+
+    // Search narrows the scope to stories whose only status is In Progress, so the stored
+    // Done selection has nothing left to name. It must reconcile to neutral, not blank the list.
+    await page.locator('.search-input').first().fill('Compact tech story');
+    await expect(page.locator('.task-list:not(.epm-issue-board)')).toContainText('Compact tech story');
+    await expect(page.locator('.task-list:not(.epm-issue-board) .task-item')).toHaveCount(1);
+    expect(await storyKeys(page)).toEqual(['TECH-2']);
+    await expect(page.locator('.fb-trigger .badge')).toHaveCount(0);
+});
+
+test('the inherited Catch Up rows are untouched by the new chrome', async ({ page }) => {
+    // §12.5: the filtered result feeding the list is the only thing that changed.
+    await openEngCatchUp(page, { width: 1440, height: 900 });
+    const first = page.locator('.task-list:not(.epm-issue-board) .task-item').first();
+    await expect(first.locator('.task-header .task-headline .task-title')).toHaveCount(1);
+    await expect(first.locator('.task-meta .status-pill.task-status')).toHaveCount(1);
+    await expect(first.locator('.task-meta .task-assignee')).toHaveCount(1);
+    await expect(first.locator('.task-meta .task-updated')).toHaveCount(1);
+    await expect(first.locator('.task-inline-meta')).toHaveCount(1);
+    await expect(page.locator('.task-list:not(.epm-issue-board) .epic-block .epic-header').first()).toBeVisible();
+    const rowTemplate = await page.locator('.task-item').first().evaluate((node) => {
+        const row = document.createElement('div');
+        row.className = 'story-subtask-row';
+        node.appendChild(row);
+        const areas = getComputedStyle(row).gridTemplateAreas;
+        row.remove();
+        return areas;
+    });
+    // A bare .story-subtask-row keeps its four cells: the priority cell is a .has-priority
+    // modifier the Board adds, never a change to this base rule.
+    expect(rowTemplate).not.toContain('pri');
+    await expect(page.locator('.filterbar-wrap')).toBeVisible();
+});
+
+test('ENG epic rows stay readable on narrow screens', async ({ page }) => {
+    await openEngCatchUp(page, { width: 390, height: 760 });
+    const metrics = await page.evaluate(() => {
+        const parsePx = (value) => Number.parseFloat(value) || 0;
+        const firstStory = document.querySelector('.task-list:not(.epm-issue-board) > .epic-block > .task-item');
+        const storyStyle = getComputedStyle(firstStory);
+        const title = firstStory.querySelector('.task-title');
+        const epicBlock = document.querySelector('.task-list:not(.epm-issue-board) > .epic-block');
+        const activeModeButton = document.querySelector('.eng-mode-control .segmented-control-button.active');
+        return {
+            storyPaddingTop: parsePx(storyStyle.paddingTop),
+            storyPaddingLeft: parsePx(storyStyle.paddingLeft),
+            storyTitleFontSize: parsePx(getComputedStyle(title).fontSize),
+            titleRight: title.getBoundingClientRect().right,
+            storyRight: firstStory.getBoundingClientRect().right,
+            epicPaddingTop: parsePx(getComputedStyle(epicBlock).paddingTop),
+            epicNameWidth: epicBlock.querySelector('.epic-name').getBoundingClientRect().width,
+            activeModeButtonWhiteSpace: getComputedStyle(activeModeButton).whiteSpace,
+            activeModeButtonOverflow: activeModeButton.scrollWidth - activeModeButton.clientWidth,
+            modeControl: (() => {
+                const control = document.querySelector('.eng-mode-control');
+                const row = control.parentElement;
+                return {
+                    overflowX: getComputedStyle(control).overflowX,
+                    scrolls: control.scrollWidth - control.clientWidth,
+                    spillsRight: control.getBoundingClientRect().right - row.getBoundingClientRect().right,
+                    height: Math.round(control.getBoundingClientRect().height),
+                };
+            })(),
+            alertOverflowX: (() => {
+                const toolbar = document.querySelector('.alerts-panel-toolbar');
+                return toolbar.scrollWidth - toolbar.clientWidth;
+            })(),
+            overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+    });
+    expect(metrics.storyPaddingTop).toBeGreaterThanOrEqual(11);
+    expect(metrics.storyPaddingTop).toBeLessThanOrEqual(12);
+    expect(metrics.storyPaddingLeft).toBeGreaterThanOrEqual(15);
+    expect(metrics.storyPaddingLeft).toBeLessThanOrEqual(16);
+    expect(metrics.storyTitleFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.storyTitleFontSize).toBeLessThanOrEqual(16);
+    expect(metrics.epicPaddingTop).toBeGreaterThanOrEqual(8);
+    expect(metrics.epicPaddingTop).toBeLessThanOrEqual(9);
+    expect(metrics.epicNameWidth).toBeGreaterThanOrEqual(110);
+    expect(metrics.activeModeButtonWhiteSpace).toBe('nowrap');
+    expect(metrics.activeModeButtonOverflow).toBeLessThanOrEqual(1);
+    expect(metrics.alertOverflowX).toBeLessThanOrEqual(1);
+    expect(metrics.titleRight).toBeLessThanOrEqual(metrics.storyRight + 1);
+    expect(metrics.overflowX).toBeLessThanOrEqual(1);
+    // Five ENG modes are wider than this row, so the control scrolls internally instead of
+    // pushing the document sideways — the overflowX assertion above is what that protects.
+    expect(metrics.modeControl.overflowX).toBe('auto');
+    expect(metrics.modeControl.scrolls).toBeGreaterThan(0);
+    expect(metrics.modeControl.spillsRight).toBeLessThanOrEqual(1);
+    expect(metrics.modeControl.height).toBe(38);
+    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-mobile.png` });
+});
+
+test('the compact sticky header keeps its sprint options on one line', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 760 });
+    await expectSprintOptionsStaySingleLine(page);
+});
+
+test('every control in the bar is legible and free of the global button styling', async ({ page }) => {
+    // The app paints bare buttons as solid dark CTAs (eng/controls.css:176). A control that
+    // inherits it renders --bg-primary text on the bar's white surface and carries a stray
+    // 1rem right margin. Asserted per control, because a reported bug is a class of bug.
+    await openEngCatchUp(page, { width: 1440, height: 900 });
+    await activateThreeFacets(page);
+    await openFilters(page);
+    const controls = await page.evaluate(() => {
+        const selectors = ['.fb-trigger', '.chip .x', '.chip-more', '.chip-clear', '.pop-opt', '.pop-all'];
+        return selectors.flatMap(selector => [...document.querySelectorAll(selector)].slice(0, 2).map(node => {
+            const style = getComputedStyle(node);
+            return {
+                selector,
+                color: style.color,
+                marginRight: style.marginRight,
+                clipped: node.scrollWidth - node.clientWidth,
+            };
+        }));
+    });
+    expect(controls.length).toBeGreaterThan(0);
+    controls.forEach(control => {
+        // --bg-primary is the page background; text in it is invisible on the bar.
+        expect(control.color, `${control.selector} uses the CTA text colour`).not.toBe('rgb(248, 247, 244)');
+        expect(Number.parseFloat(control.marginRight), `${control.selector} keeps the CTA margin`).toBeLessThanOrEqual(0);
+        expect(control.clipped, `${control.selector} is clipped`).toBeLessThanOrEqual(1);
+    });
+});
+
+test('every facet clear control stays compact, centered, and bubble-free on hover', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 });
+    await activateThreeFacets(page);
+
+    const clearControls = page.locator('.filterbar .chip .x');
+    await expect(clearControls).toHaveCount(3);
+
+    const geometry = await clearControls.evaluateAll(nodes => nodes.map(node => {
+        const style = getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const glyph = range.getBoundingClientRect();
+        return {
+            label: node.getAttribute('aria-label'),
+            width: rect.width,
+            height: rect.height,
+            paddingInline: Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight),
+            letterSpacing: style.letterSpacing === 'normal' ? 0 : Number.parseFloat(style.letterSpacing),
+            glyphCenterOffsetX: Math.abs((glyph.left + glyph.width / 2) - (rect.left + rect.width / 2)),
+            glyphCenterOffsetY: Math.abs((glyph.top + glyph.height / 2) - (rect.top + rect.height / 2)),
+        };
+    }));
+
+    geometry.forEach(control => {
+        expect(control.width, `${control.label} is wider than its icon slot`).toBe(16);
+        expect(control.height, `${control.label} is taller than its icon slot`).toBe(16);
+        expect(control.paddingInline, `${control.label} keeps global button padding`).toBe(0);
+        expect(control.letterSpacing, `${control.label} keeps global button letter spacing`).toBe(0);
+        expect(control.glyphCenterOffsetX, `${control.label} glyph is horizontally offset`).toBeLessThanOrEqual(1);
+        expect(control.glyphCenterOffsetY, `${control.label} glyph is vertically offset`).toBeLessThanOrEqual(1);
+    });
+
+    for (const control of await clearControls.all()) {
+        await control.hover();
+        const hoverStyle = await control.evaluate(node => {
+            const style = getComputedStyle(node);
+            return {
+                backgroundColor: style.backgroundColor,
+                boxShadow: style.boxShadow,
+                transform: style.transform,
+            };
+        });
+        expect(hoverStyle.backgroundColor, 'facet clear hover paints a bubble').toBe('rgba(0, 0, 0, 0)');
+        expect(hoverStyle.boxShadow, 'facet clear hover keeps the global CTA shadow').toBe('none');
+        expect(hoverStyle.transform, 'facet clear hover keeps the global CTA lift').toBe('none');
+    }
+
+    await clearControls.first().hover();
+    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-clear-controls-hover.png` });
 });

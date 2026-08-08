@@ -23,6 +23,7 @@
             --modal-popup-z: 9100;
             --sticky-compact-z: 70;
             --sticky-planning-z: 60;
+            --sticky-filterbar-z: 55;
             --sticky-stats-z: 55;
             --sticky-epic-z: 50;
             --sticky-scenario-z: 60;
@@ -30,6 +31,7 @@
             --sticky-gap: 0px;
             --compact-header-offset: 0px;
             --planning-sticky-top: 0px;
+            --filterbar-sticky-top: 0px;
             --epic-sticky-top: 0px;
             --scenario-sticky-top: 0px;
         }

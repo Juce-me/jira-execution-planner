@@ -550,25 +550,29 @@ test('ENG loaded filters and story subtask panel use compact motion', async ({ p
     });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await expect(page.locator('.filters-strip')).toBeVisible();
+    await expect(page.locator('.filterbar')).toBeVisible();
     await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
     await expect(page.locator('.dependency-strip')).toBeVisible();
 
+    // The filter chrome is sticky: it must not animate on load at all, and none of its
+    // controls may stagger in one at a time.
     const loadedMotion = await page.evaluate(() => {
-        const filterStrip = document.querySelector('.filters-strip');
-        const firstFilterGroup = document.querySelector('.filters-group');
-        const firstStatCard = document.querySelector('.filters-strip .stat-card');
+        const bar = document.querySelector('.filterbar');
+        const trigger = bar.querySelector('.fb-trigger');
+        const readout = bar.querySelector('.fb-readout');
         return {
-            filterStripAnimation: getComputedStyle(filterStrip).animationName,
-            filterGroupAnimation: getComputedStyle(firstFilterGroup).animationName,
-            statCardAnimation: getComputedStyle(firstStatCard).animationName,
-            statCardDelay: getComputedStyle(firstStatCard).animationDelay,
+            barAnimation: getComputedStyle(bar).animationName,
+            wrapAnimation: getComputedStyle(bar.closest('.filterbar-wrap')).animationName,
+            triggerAnimation: getComputedStyle(trigger).animationName,
+            triggerDelay: getComputedStyle(trigger).animationDelay,
+            readoutAnimation: getComputedStyle(readout).animationName,
         };
     });
-    expect(loadedMotion.filterStripAnimation).toBe('task-appear');
-    expect(loadedMotion.filterGroupAnimation).toBe('none');
-    expect(loadedMotion.statCardAnimation).toBe('none');
-    expect(loadedMotion.statCardDelay).toBe('0s');
+    expect(loadedMotion.barAnimation).toBe('none');
+    expect(loadedMotion.wrapAnimation).toBe('none');
+    expect(loadedMotion.triggerAnimation).toBe('none');
+    expect(loadedMotion.triggerDelay).toBe('0s');
+    expect(loadedMotion.readoutAnimation).toBe('none');
 
     const toggle = page.locator('.story-subtasks-toggle').first();
     await toggle.click();

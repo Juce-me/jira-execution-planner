@@ -586,8 +586,12 @@ test('outside-card click dismisses the status menu; Escape and trigger toggle un
     // outside-card click missed it (same shared IssueFieldOptionMenu as the priority menu).
     await storyTrigger.click();
     await expect(storyMenu).toBeVisible();
+    await expect(storyMenu.locator('.status-transition-option').first()).toBeFocused();
     await page.locator('.subtitle-secondary').click();
     await expect(storyMenu).toHaveCount(0);
+    // Pointer dismissal must NOT yank focus back to the trigger: the user pointed somewhere
+    // else, and the browser's own focus outcome for that click is the right answer.
+    await expect(storyTrigger).not.toBeFocused();
 
     // The trigger still toggles the menu closed.
     await storyTrigger.click();
@@ -595,11 +599,14 @@ test('outside-card click dismisses the status menu; Escape and trigger toggle un
     await storyTrigger.click();
     await expect(storyMenu).toHaveCount(0);
 
-    // Escape still closes.
+    // Escape still closes — and hands focus back to the pill that opened the menu, so the
+    // keyboard user is never stranded on <body>.
     await storyTrigger.click();
     await expect(storyMenu).toBeVisible();
+    await expect(storyMenu.locator('.status-transition-option').first()).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(storyMenu).toHaveCount(0);
+    await expect(storyTrigger).toBeFocused();
 });
 
 test('Planning action bar shows target count feedback and adds no status-change button', async ({ page }) => {
@@ -622,10 +629,14 @@ test('Planning batch status change sends all selected Story, Epic, and Subtask k
     await openPlanning(page);
 
     // Mark the Epic into the batch via its menu (must not toggle excluded capacity).
-    await trigger(page, 'epic', 'PROD-EPIC').click();
+    const epicTrigger = trigger(page, 'epic', 'PROD-EPIC');
+    await epicTrigger.click();
     await menu(page, 'PROD-EPIC').locator('.status-transition-target-toggle').check();
     await page.keyboard.press('Escape');
     await expect(menu(page, 'PROD-EPIC')).toHaveCount(0);
+    // Planning shares IssueFieldOptionMenu: Escape from inside the menu (here from the batch
+    // checkbox) must return focus to the pill, not to <body>.
+    await expect(epicTrigger).toBeFocused();
 
     // Expand subtasks and mark a Subtask into the batch via its menu.
     await page.locator('.task-item[data-task-key="PROD-1"] .story-subtasks-toggle').click();

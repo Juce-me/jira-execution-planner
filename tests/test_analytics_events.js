@@ -922,6 +922,40 @@ test('api result helper emits eng_subtasks surface for story subtask loads', asy
     });
 });
 
+test('api result helper emits eng_issue_description and board_config_statuses surfaces', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    // Mirrors boardConfigApi.fetchEpicDescription/fetchBoardStatuses. Guards the
+    // allowlist entries the same way the eng_subtasks case above does: a missing
+    // API_SURFACES entry loses the event without any visible failure.
+    trackApiResult('eng_issue_description', {
+        featureName: 'eng_epic_description',
+        method: 'GET',
+        status: 200,
+        durationMs: 400,
+        cacheState: 'miss'
+    });
+    trackApiResult('board_config_statuses', {
+        featureName: 'group_board_composer',
+        method: 'GET',
+        status: 200,
+        durationMs: 150,
+        cacheState: 'miss'
+    });
+
+    assert.equal(pushed.length, 2);
+    assert.equal(pushed[0].api_surface, 'eng_issue_description');
+    assert.equal(pushed[0].feature_name, 'eng_epic_description');
+    assert.equal(pushed[1].api_surface, 'board_config_statuses');
+    assert.equal(pushed[1].feature_name, 'group_board_composer');
+});
+
 test('tracked fetch does not let analytics validation failures affect API fetch', async () => {
     const { trackedFetch } = await loadHttp();
     resetDom();

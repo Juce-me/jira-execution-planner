@@ -96,6 +96,7 @@ from backend.services import update_check as _update_check_service
 from backend.services import priority_weights as _priority_weights_service
 from backend.services import team_catalog as _team_catalog_service
 from backend.services import group_config as _group_config_service
+from backend.services import group_board as _group_board_service
 from backend.services.eng_subtasks import build_embedded_subtask_summary
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
@@ -2303,6 +2304,7 @@ STORY_POINTS_FIELD_DEFAULT = 'customfield_10004'
 PARENT_NAME_FIELD_DEFAULT = 'customfield_10011'
 TEAM_FIELD_DEFAULT = 'customfield_30101'
 PROJECT_TRACK_FIELD_DEFAULT = 'customfield_35024'
+# Delivery Owner has no default (O11): the id is per-instance, so it stays unset until an admin picks it.
 
 
 def get_sprint_field_config():
@@ -2367,6 +2369,21 @@ def get_project_track_field_config():
 
 def get_project_track_field_id():
     return get_project_track_field_config()['fieldId'] or PROJECT_TRACK_FIELD_DEFAULT
+
+
+def get_delivery_owner_field_config():
+    try:
+        config = load_dashboard_config()
+    except ConfigStorageError:
+        config = None
+    if config and 'deliveryOwnerField' in config:
+        do = config['deliveryOwnerField']
+        return {'fieldId': do.get('fieldId', ''), 'fieldName': do.get('fieldName', '')}
+    return {'fieldId': '', 'fieldName': ''}
+
+
+def get_delivery_owner_field_id():
+    return get_delivery_owner_field_config()['fieldId'] or ''
 
 
 def get_configured_issue_types():
@@ -2472,6 +2489,10 @@ def normalize_group_team_labels(raw, team_ids):
     )
 
 
+def normalize_group_board(raw):
+    return _group_board_service.normalize_group_board(raw)
+
+
 def validate_groups_config(payload, allow_empty=False):
     return _group_config_service.validate_groups_config(
         payload,
@@ -2481,6 +2502,7 @@ def validate_groups_config(payload, allow_empty=False):
         normalize_team_ids_fn=normalize_team_ids,
         normalize_epic_keys_fn=normalize_epic_keys,
         normalize_group_team_labels_fn=normalize_group_team_labels,
+        normalize_group_board_fn=normalize_group_board,
     )
 
 
@@ -2576,17 +2598,16 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
 
     epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
     project_track_field = get_project_track_field_id()
+    delivery_owner_field = get_delivery_owner_field_id()
     keys_list = list(epic_keys)
     batch_size = 40  # keep JQL length reasonable for GET
 
     for start in range(0, len(keys_list), batch_size):
         batch_keys = keys_list[start:start + batch_size]
         jql = f'issueKey in ({",".join(batch_keys)})'
-        payload = {
-            'jql': jql,
-            'maxResults': len(batch_keys),
-            'fields': ['summary', 'status', 'priority', 'reporter', 'assignee', 'parent', epic_field, project_track_field]
-        }
+        fields = ['summary', 'status', 'priority', 'reporter', 'assignee', 'parent', epic_field, project_track_field, 'updated']
+        # Delivery Owner is only requested once an admin has configured a field id (O11).
+        payload = {'jql': jql, 'maxResults': len(batch_keys), 'fields': fields + ([delivery_owner_field] if delivery_owner_field else [])}
 
         try:
             resp = jira_search_request(payload)
@@ -2606,7 +2627,11 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
                     'reporter': (fields.get('reporter') or {}).get('displayName'),
                     'assignee': {'displayName': (fields.get('assignee') or {}).get('displayName')} if fields.get('assignee') else None,
                     'projectTrack': (fields.get(project_track_field) or {}).get('value') if fields.get(project_track_field) else None,
+                    'updated': fields.get('updated'),
                 }
+                # Omitted while unconfigured: "no field is set up" must not read as "no owner".
+                if delivery_owner_field:
+                    epic_details[key]['deliveryOwner'] = {'displayName': (fields.get(delivery_owner_field) or {}).get('displayName')} if fields.get(delivery_owner_field) else None
                 # Extract initiative from parent if present
                 parent = fields.get('parent')
                 if parent and parent.get('key'):
@@ -3113,9 +3138,13 @@ def fetch_tasks(include_team_name=False):
         tasks_jql = '' if (lightweight_ready_to_close and epic_keys_filter) else jql
         if lightweight_ready_to_close:
             tasks_jql = add_clause_to_jql(tasks_jql, 'issuetype != Epic')
+        tasks_jqls = [tasks_jql]
         if epic_keys_filter:
-            quoted_epics = ', '.join(f'"{key}"' for key in epic_keys_filter)
-            tasks_jql = add_clause_to_jql(tasks_jql, f'("Epic Link" in ({quoted_epics}) OR parent in ({quoted_epics}))')
+            epic_key_batch_size = 40 if lightweight_ready_to_close else len(epic_keys_filter)
+            tasks_jqls = []
+            for start in range(0, len(epic_keys_filter), epic_key_batch_size):
+                quoted_epics = ', '.join(f'"{key}"' for key in epic_keys_filter[start:start + epic_key_batch_size])
+                tasks_jqls.append(add_clause_to_jql(tasks_jql, f'("Epic Link" in ({quoted_epics}) OR parent in ({quoted_epics}))'))
         record_timing('build_jql', jql_started)
 
         team_field_id = resolve_team_field_id(headers, context=auth_context)
@@ -3151,7 +3180,6 @@ def fetch_tasks(include_team_name=False):
 
         max_results = 250
         page_size = 100
-        next_page_token = None
         collected_issues = []
         names_map = {}
         total_issues = None
@@ -3162,53 +3190,55 @@ def fetch_tasks(include_team_name=False):
         )
 
         jira_fetch_started = time.perf_counter()
-        while len(collected_issues) < max_results:
-            remaining = max_results - len(collected_issues)
-            page_limit = min(page_size, remaining)
-            payload = {
-                'jql': tasks_jql,
-                'maxResults': page_limit,
-                'fields': fields_list
-            }
-            if next_page_token:
-                payload['nextPageToken'] = next_page_token
+        for tasks_jql in tasks_jqls:
+            next_page_token = None
+            while len(collected_issues) < max_results:
+                remaining = max_results - len(collected_issues)
+                page_limit = min(page_size, remaining)
+                payload = {
+                    'jql': tasks_jql,
+                    'maxResults': page_limit,
+                    'fields': fields_list
+                }
+                if next_page_token:
+                    payload['nextPageToken'] = next_page_token
 
-            response = jira_search_request(payload)
-            log_debug(f'Jira search page response status={response.status_code}')
+                response = jira_search_request(payload)
+                log_debug(f'Jira search page response status={response.status_code}')
 
-            if response.status_code != 200:
-                error_text = response.text
-                log_error(f'Jira search failed: status={response.status_code}')
+                if response.status_code != 200:
+                    error_text = response.text
+                    log_error(f'Jira search failed: status={response.status_code}')
 
-                try:
-                    error_json = response.json()
-                    log_debug(f'Jira error payload keys={sorted((error_json or {}).keys()) if isinstance(error_json, dict) else "non-dict"}')
-                except Exception:
-                    pass
+                    try:
+                        error_json = response.json()
+                        log_debug(f'Jira error payload keys={sorted((error_json or {}).keys()) if isinstance(error_json, dict) else "non-dict"}')
+                    except Exception:
+                        pass
 
-                error_response = jsonify({
-                    'error': f'Jira API error: {response.status_code}',
-                    'details': error_text,
-                    'jql_used': tasks_jql
-                })
-                error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-                error_response.headers['Pragma'] = 'no-cache'
-                error_response.headers['Expires'] = '0'
-                return error_response, response.status_code
+                    error_response = jsonify({
+                        'error': f'Jira API error: {response.status_code}',
+                        'details': error_text,
+                        'jql_used': tasks_jql
+                    })
+                    error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+                    error_response.headers['Pragma'] = 'no-cache'
+                    error_response.headers['Expires'] = '0'
+                    return error_response, response.status_code
 
-            data = response.json()
-            if not names_map:
-                names_map = data.get('names', {}) or {}
-            total_issues = data.get('total', total_issues)
+                data = response.json()
+                if not names_map:
+                    names_map = data.get('names', {}) or {}
+                total_issues = data.get('total', total_issues)
 
-            issues = data.get('issues', [])
-            if not issues:
-                break
+                issues = data.get('issues', [])
+                if not issues:
+                    break
 
-            collected_issues.extend(issues)
-            next_page_token = data.get('nextPageToken')
-            if data.get('isLast', not next_page_token) or not next_page_token:
-                break
+                collected_issues.extend(issues)
+                next_page_token = data.get('nextPageToken')
+                if data.get('isLast', not next_page_token) or not next_page_token:
+                    break
         record_timing('jira_search', jira_fetch_started)
 
         data = {
@@ -3307,7 +3337,7 @@ def fetch_tasks(include_team_name=False):
         if epic_keys_filter:
             epic_filter_set = set(epic_keys_filter)
             epics_in_scope = [epic for epic in epics_in_scope if epic.get('key') in epic_filter_set]
-        if not lightweight_ready_to_close:
+        if request_purpose == 'alerts':
             enrich_counts_started = time.perf_counter()
             epic_scope_keys = [e.get('key') for e in epics_in_scope]
             if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:

@@ -9,11 +9,12 @@ function task(key, fields = {}) {
     return { key, fields };
 }
 
-test('isStatusTransitionSurfaceEnabled is true only for ENG Catch Up and ENG Planning', async () => {
+test('isStatusTransitionSurfaceEnabled is true only for ENG Catch Up, Planning and Board', async () => {
     const { isStatusTransitionSurfaceEnabled } = await loadUtils();
 
     assert.equal(isStatusTransitionSurfaceEnabled({ selectedView: 'eng', showPlanning: false, showStats: false, showScenario: false }), true, 'Catch Up');
     assert.equal(isStatusTransitionSurfaceEnabled({ selectedView: 'eng', showPlanning: true, showStats: false, showScenario: false }), true, 'Planning');
+    assert.equal(isStatusTransitionSurfaceEnabled({ selectedView: 'eng', showPlanning: false, showStats: false, showScenario: false, showBoard: true }), true, 'Board');
 
     assert.equal(isStatusTransitionSurfaceEnabled({ selectedView: 'epm', showPlanning: false, showStats: false, showScenario: false }), false, 'EPM');
     assert.equal(isStatusTransitionSurfaceEnabled({ selectedView: 'eng', showPlanning: false, showStats: true, showScenario: false }), false, 'Stats');
@@ -312,4 +313,26 @@ test('resolveSubtaskParentStoryKeys returns only stories whose subtask list cont
     );
     assert.deepEqual(resolveSubtaskParentStoryKeys(['PROD-1'], storySubtasksByKey), []);
     assert.deepEqual(resolveSubtaskParentStoryKeys([], storySubtasksByKey), []);
+});
+
+// §9.5 / §10.3: Board is the third status-transition surface. Like Catch Up it acts on ONE
+// explicit issue, unrelated to the Planning selection, so it must omit selected_sp_bucket for the
+// same reason Catch Up does — the `!== 'catch_up'` form silently reported Planning's story points
+// against a Board transition.
+test('buildStatusActionAnalyticsParams reports board and omits Planning-selection story points', async () => {
+    const { buildStatusActionAnalyticsParams } = await loadUtils();
+
+    const params = buildStatusActionAnalyticsParams({
+        sourceSurface: 'board',
+        targets: [{ key: 'PROD-1', issueType: 'Epic', currentStatus: 'To Do', summary: 'Epic' }],
+        selectedStories: [task('PROD-9', { customfield_10004: '8' })],
+        status: 'Done',
+    });
+    assert.deepEqual(params, {
+        source_surface: 'board',
+        status_bucket: 'done',
+        issue_type_mix: 'epics',
+        selected_count_bucket: '1_5',
+    });
+    assert.equal('selected_sp_bucket' in params, false, 'Board acts on one epic, not the Planning selection');
 });

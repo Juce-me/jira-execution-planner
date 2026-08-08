@@ -27,6 +27,7 @@ def validate_groups_config(
     normalize_team_ids_fn,
     normalize_epic_keys_fn,
     normalize_group_team_labels_fn,
+    normalize_group_board_fn,
 ):
     errors = []
     warnings = []
@@ -97,15 +98,23 @@ def validate_groups_config(
                 f'{", ".join(overlapping_epics)}.'
             )
         team_labels = normalize_group_team_labels_fn(group.get('teamLabels') or {}, team_ids)
-        normalized_groups.append({
+        board, board_errors, board_warnings = normalize_group_board_fn(group.get('board'))
+        for board_error in board_errors:
+            errors.append(f'Group "{name}" {board_error}')
+        for board_warning in board_warnings:
+            warnings.append(f'Group "{name}" {board_warning}')
+        normalized_group = {
             'id': group_id,
             'name': name,
             'teamIds': team_ids,
             'missingInfoComponents': missing_info_components,
             'excludedCapacityEpics': excluded_capacity_epics,
             'adHocCapacityEpics': ad_hoc_capacity_epics,
-            'teamLabels': team_labels
-        })
+            'teamLabels': team_labels,
+        }
+        if board is not None:
+            normalized_group['board'] = board
+        normalized_groups.append(normalized_group)
 
     default_group_id = str(payload.get('defaultGroupId') or '').strip()
     if default_group_id:
@@ -146,6 +155,8 @@ def build_default_groups_config(
             'missingInfoComponents': [missing_info_component] if missing_info_component else [],
             'excludedCapacityEpics': [],
             'adHocCapacityEpics': []
+            # No 'board' key: matches normalize_group_board_fn's None (no
+            # configured board), not {'columns': []} (see group_board.py).
         }],
         'defaultGroupId': 'default',
     }

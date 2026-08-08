@@ -39,6 +39,7 @@ Postmortems serve to:
 | [MRT020](./MRT020-project-track-filter-bar-bespoke-controls.md) | Project Track Filter Bar Reinvented Existing Controls | 2026-07-01 | Medium | Resolved | New tab's Exclusions group used bespoke CSS/markup instead of existing control patterns; clipped heading + label overflow overlapped MODE; a bounding-box-only Playwright check passed while the render was broken. Fixed by reusing shell.css control typography + element-level render assertions |
 | [MRT021](./MRT021-project-track-segmented-control-override.md) | Project Track Segmented Controls Overridden Instead of Reused | 2026-07-02 | Medium | Resolved | Recurrence of MRT020 on the sibling controls: Capacity/Mode reused SegmentedControl but a local CSS override forced wrap/auto-height and they missed the `eng-mode-control` class; shipped through a "READY TO MERGE" sign-off. Introduced by Claude, fixed by Codex (`c3fe99c`) with `eng-mode-control` reuse + single-row/fixed-height Playwright assertions |
 | [MRT022](./MRT022-agent-branded-branch-names.md) | Agent-Branded Branch Names Ignored Git Conventions | 2026-07-08 | Low | Resolved | Sessions repeatedly started on auto-generated `claude/*` branches despite AGENTS.md forbidding tool branding and requiring typed branch prefixes; fixed with a session-start rename rule in AGENTS.md section 11 |
+| [MRT023](./MRT023-alert-enrichment-blocked-first-screen.md) | Alert Enrichment Blocked the First Screen | 2026-08-08 | High | Resolved | Alert-only Epic distribution work consumed 10.367 seconds on the primary ENG task response and alert sources ran outside Catch Up |
 
 ## Postmortem Template
 
@@ -92,8 +93,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 22
-- **Metadata complete (Date/Severity/Status)**: 22 (MRT001-MRT022)
+- **Total postmortems**: 23
+- **Metadata complete (Date/Severity/Status)**: 23 (MRT001-MRT023)
 
 ## Common Themes
 
@@ -151,5 +152,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-07-08*
-*Total Postmortems: 22*
+*Last Updated: 2026-08-08*
+*Total Postmortems: 23*

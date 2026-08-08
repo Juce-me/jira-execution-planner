@@ -5,9 +5,14 @@ The dashboard uses alert panels to highlight work that needs attention in the cu
 ## General Behavior
 
 - Alerts are scoped to the currently selected sprint and active team group.
+- Alerts load only in Catch Up. Board, Planning, Statistics, and Scenario do not request or render them.
+- Catch Up renders Product and Tech tasks first. After both visible task requests finish, alert enrichment, missing-info, ready-to-close, and future-backlog sources load progressively in the background without blocking the task list.
+- Task refreshes and status or priority changes invalidate any pending alert cohort in every ENG mode; stale responses are ignored, and the alerts reload after returning to Catch Up.
 - Each panel can be collapsed.
 - Dismissed alert items stay hidden in the browser until the local alert state is reset.
 - Postponed work is routed separately so it does not also appear in ordinary hygiene panels.
+
+Analytics allowlist reason: no analytics event is added because this changes automatic request scheduling, not a user interaction or reportable product action.
 
 ## Current Alert Panels
 

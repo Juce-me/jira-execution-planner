@@ -22,6 +22,7 @@ export default function EngModeControl({
                     disabled: !selectedSprint || isCompletedSprintSelected,
                     title: 'Show sprint planning panel'
                 },
+                { value: 'board', label: 'Board', title: 'Show the group board' },
                 {
                     value: 'statistics',
                     label: 'Statistics',

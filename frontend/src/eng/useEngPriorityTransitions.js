@@ -63,6 +63,7 @@ export function useEngPriorityTransitions({
     trackIssuePriorityAction,
     onAuthRecoveryRequired,
     onApplyLocalPriority,
+    onAlertDataInvalidated,
     onPrioritySuccessRefresh,
 }) {
     const [activePriorityTarget, setActivePriorityTarget] = React.useState(null);
@@ -205,6 +206,7 @@ export function useEngPriorityTransitions({
                 setPriorityResult({ ...summary, targetPriorityId });
             }
             trackIssuePriorityAction('priority_change_result', { ...analyticsBaseParams, result: summary.result });
+            if (summary.succeeded > 0 && isCurrentMutation) onAlertDataInvalidated?.();
             if (isCatchUp) {
                 const issueResult = (response?.results || []).find(entry => entry?.key === key);
                 const succeeded = issueResult?.result === 'success' || issueResult?.result === 'already_in_priority';
@@ -258,7 +260,7 @@ export function useEngPriorityTransitions({
                 setPrioritySubmitting(false);
             }
         }
-    }, [activePriorityTarget, priorityOptions, sourceSurface, mutationScopeKey, backendUrl, trackIssuePriorityAction, onApplyLocalPriority, onPrioritySuccessRefresh, onAuthRecoveryRequired]);
+    }, [activePriorityTarget, priorityOptions, sourceSurface, mutationScopeKey, backendUrl, trackIssuePriorityAction, onApplyLocalPriority, onAlertDataInvalidated, onPrioritySuccessRefresh, onAuthRecoveryRequired]);
 
     return {
         activePriorityTarget,

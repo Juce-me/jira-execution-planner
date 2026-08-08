@@ -109,6 +109,19 @@ test('ENG story subtask expand does not add a separate app-owned event', () => {
     assert.ok(!analyticsDoc.includes('eng_action'));
 });
 
+test('ENG Board high-frequency view and draft interactions stay on the no-event allowlist', () => {
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    for (const action of [
+        'ENG Board column focus/fold/star',
+        'ENG Board/Catch Up filter facet ticks, chip clears, and +n more',
+        'ENG Board epic detail panel open',
+        'Group Board composer draft edits',
+    ]) {
+        assert.ok(analyticsDoc.includes(action), `Expected no-event allowlist row for ${action}`);
+    }
+    assert.ok(analyticsDoc.includes('ENG Board card drag: cancelled or refused'));
+});
+
 test('effort split chart_action sends only the safe series_type enum token, never raw epic keys', () => {
     const source = read('frontend/src/stats/EffortTypeSplitChart.jsx');
     // The bucket keys are camelCase identifiers; analytics must travel through the snake_case token map.

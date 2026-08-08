@@ -107,17 +107,29 @@ export function filterEpicsByTaskEpicKeys(epics, tasks) {
     return filteredEpics;
 }
 
+export function resetEngFacetFilters({
+    setEngStatusFilter,
+    setEngPriorityFilter,
+    defaultEngStatusFilter,
+    setShowTech,
+    setShowProduct,
+}) {
+    setEngStatusFilter(defaultEngStatusFilter);
+    setEngPriorityFilter(null);
+    setShowTech(true);
+    setShowProduct(true);
+}
+
 export function resetEngFilters({
     setSearchInput,
     setSearchQuery,
     setSelectedTeams,
-    setStatusFilter,
+    setEngStatusFilter,
+    setEngPriorityFilter,
+    defaultEngStatusFilter,
     setShowTech,
     setShowProduct,
-    setShowDone,
-    setShowKilled,
-    setGroupByInitiative,
-    hasInitiativeData,
+    setGroupByInitiativeChoice,
     setBurnoutTaskFilter,
     setShowTeamDropdown,
     setShowGroupDropdown,
@@ -125,15 +137,18 @@ export function resetEngFilters({
     trackFilterChanged,
     visibleCountBucket
 }) {
+    resetEngFacetFilters({
+        setEngStatusFilter,
+        setEngPriorityFilter,
+        defaultEngStatusFilter,
+        setShowTech,
+        setShowProduct,
+    });
     setSearchInput('');
     setSearchQuery('');
     setSelectedTeams(['all']);
-    setStatusFilter(null);
-    setShowTech(true);
-    setShowProduct(true);
-    setShowDone(true);
-    setShowKilled(false);
-    setGroupByInitiative(hasInitiativeData);
+    // null = no explicit choice, so grouping falls back to the data-driven default again.
+    setGroupByInitiativeChoice(null);
     setBurnoutTaskFilter(null);
     setShowTeamDropdown(false);
     setShowGroupDropdown(false);
@@ -213,7 +228,10 @@ export function getEpicEffectivePriority(epicGroup, priorityOrder = PRIORITY_ORD
     return { name: bestName, rank: bestName === null ? 999 : bestRank };
 }
 
-function epicStatusName(epic) {
+// Exported because two differently-shaped epic payloads are live: `data.epics` carries a flat
+// `status` string, `epicsInScope` carries `{ name }`. Board code must call this rather than read
+// `.status` directly (§4.1).
+export function epicStatusName(epic) {
     const status = epic && epic.status;
     if (!status) return '';
     return typeof status === 'string' ? status : (status.name || '');

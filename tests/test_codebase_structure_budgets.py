@@ -29,7 +29,17 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # diagnostics hook (jep.static_diagnostics) scoped to document/frontend-dist requests,
     # to identify the real owner of a reported repeated-request burst (+37 lines); remove
     # once the navigation owner is identified, per the hook's own removal-criterion comment.
-    "jira_server.py": 6236,
+    # feature/eng-group-board-design adds the Delivery Owner custom-field getters
+    # (DELIVERY_OWNER_FIELD_DEFAULT, get_delivery_owner_field_config/get_delivery_owner_field_id,
+    # mirroring the Project Track getters including the ConfigStorageError fallback guard) and
+    # threads the field id + the epic 'updated' field into fetch_epic_details_bulk's fields
+    # list and parsed payload (+19 lines).
+    # feature/eng-group-board-design Task 6 imports backend.services.group_board, adds the
+    # normalize_group_board wrapper, and threads normalize_group_board_fn through the
+    # validate_groups_config wrapper, mirroring normalize_group_team_labels (+6 lines).
+    # bugfix/ready-to-close-jql-414 batches the GET-backed child scan at 40 epic keys
+    # while retaining its existing global result cap and pagination behavior (+5 lines).
+    "jira_server.py": 6257,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.

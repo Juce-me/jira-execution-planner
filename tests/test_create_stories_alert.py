@@ -48,6 +48,68 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
     def setUp(self):
         force_basic_auth_mode(self, jira_server)
 
+    def test_task_alert_enrichment_requires_alerts_purpose(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+
+        jira_payload = {
+            'issues': [],
+            'names': {
+                'customfield_team': 'Team[Team]',
+                'customfield_epic_link': 'Epic Link',
+                'customfield_sprint': 'Sprint',
+            },
+            'total': 0,
+            'isLast': True,
+        }
+        epics_in_scope = [{
+            'key': 'EPIC-1',
+            'summary': 'Epic one',
+            'status': {'name': 'To Do'},
+            'labels': ['2026Q3', 'team_alpha_label'],
+            'teamId': 'team-a',
+            'teamName': 'Team Alpha',
+        }]
+        story_counts_mock = Mock(return_value={'EPIC-1': 3})
+        story_distribution_mock = Mock(return_value={
+            'EPIC-1': {
+                'selectedStories': 2,
+                'selectedActionableStories': 1,
+                'futureOpenStories': 1,
+                'openStoriesOutsideSelected': 1,
+                'selectedActionableByTeam': {'team-a': 1},
+            }
+        })
+
+        with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+             patch.object(jira_server, 'get_selected_projects_typed', return_value=[]), \
+             patch.object(jira_server, 'get_configured_issue_types', return_value=['Story']), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+             patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_story_points'), \
+             patch.object(jira_server, 'fetch_epic_details_bulk', return_value={}), \
+             patch.object(jira_server, 'fetch_epics_for_empty_alert', return_value=epics_in_scope), \
+             patch.object(jira_server, 'fetch_story_counts_for_epics', story_counts_mock), \
+             patch.object(jira_server, 'fetch_story_distribution_for_epics', story_distribution_mock), \
+             patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, jira_payload)):
+            dashboard_response = client.get('/api/tasks-with-team-name?sprint=123&sprintName=2026Q3&team=all&refresh=true')
+
+            self.assertEqual(dashboard_response.status_code, 200, dashboard_response.get_data(as_text=True))
+            self.assertNotIn('totalStories', (dashboard_response.get_json() or {}).get('epicsInScope', [{}])[0])
+            story_counts_mock.assert_not_called()
+            story_distribution_mock.assert_not_called()
+
+            alerts_response = client.get('/api/tasks-with-team-name?sprint=123&sprintName=2026Q3&team=all&purpose=alerts&refresh=true')
+
+        self.assertEqual(alerts_response.status_code, 200, alerts_response.get_data(as_text=True))
+        alert_epic = (alerts_response.get_json() or {}).get('epicsInScope', [{}])[0]
+        self.assertEqual(alert_epic.get('totalStories'), 3)
+        self.assertEqual(alert_epic.get('selectedActionableByTeam'), {'team-a': 1})
+        story_counts_mock.assert_called_once()
+        story_distribution_mock.assert_called_once()
+
     def test_fetch_tasks_preserves_sprint_fields_for_story_matching(self):
         app = jira_server.app
         app.testing = True
@@ -144,7 +206,7 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
                  }
              }), \
              patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, jira_payload)):
-            response = client.get('/api/tasks-with-team-name?sprint=123&sprintName=2026Q3&team=all')
+            response = client.get('/api/tasks-with-team-name?sprint=123&sprintName=2026Q3&team=all&purpose=alerts')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json() or {}
@@ -234,7 +296,7 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
              patch.object(jira_server, 'fetch_story_counts_for_epics', return_value={'EPIC-1': 2}), \
              patch.object(jira_server, 'fetch_story_distribution_for_epics', distribution_mock), \
              patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, jira_payload)):
-            response = client.get('/api/tasks-with-team-name?sprint=789&sprintName=2026Q4&team=all')
+            response = client.get('/api/tasks-with-team-name?sprint=789&sprintName=2026Q4&team=all&purpose=alerts')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         epics = (response.get_json() or {}).get('epicsInScope') or []
@@ -379,6 +441,70 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         task_jql = search_mock.call_args_list[0].args[0].get('jql', '')
         self.assertIn('issuetype != Epic', task_jql)
+
+    def test_ready_to_close_batches_epic_key_jql_at_40(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+        epic_keys = [f'EPIC-{index:03d}' for index in range(1, 42)]
+        task_jqls = []
+
+        def search_tasks(payload):
+            task_jqls.append(payload.get('jql', ''))
+            child_index = len(task_jqls)
+            return _mock_response(200, {
+                'issues': [{
+                    'key': f'CHILD-{child_index}',
+                    'fields': {
+                        'status': {'name': 'Done'},
+                        'parent': {
+                            'key': 'EPIC-001' if child_index == 1 else 'EPIC-041',
+                            'fields': {'issuetype': {'name': 'Epic'}},
+                        },
+                    },
+                }],
+                'names': {
+                    'customfield_team': 'Team[Team]',
+                    'customfield_epic_link': 'Epic Link',
+                    'customfield_sprint': 'Sprint',
+                },
+                'total': 1,
+                'isLast': True,
+            })
+
+        epics_in_scope = [{'key': key} for key in epic_keys]
+        open_child_distribution = {
+            key: {'openStoriesOutsideSelected': 0} for key in epic_keys
+        }
+
+        with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+             patch.object(jira_server, 'get_selected_projects_typed', return_value=[]), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+             patch.object(jira_server, 'fetch_epics_by_keys_for_alert_service', return_value=epics_in_scope), \
+             patch.object(jira_server, 'fetch_story_distribution_for_epics', return_value=open_child_distribution), \
+             patch.object(jira_server, 'jira_search_request', side_effect=search_tasks):
+            response = client.get(
+                '/api/tasks-with-team-name?project=product&purpose=ready-to-close'
+                f'&epicKeys={",".join(epic_keys)}&refresh=true'
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        response_payload = response.get_json() or {}
+        self.assertEqual(len(response_payload.get('issues') or []), 2)
+        self.assertEqual(len(response_payload.get('epicsInScope') or []), 41)
+        self.assertEqual(len(task_jqls), 2)
+        self.assertEqual(task_jqls[0].count('"EPIC-'), 80)
+        self.assertEqual(task_jqls[1].count('"EPIC-'), 2)
+        self.assertIn('"EPIC-040"', task_jqls[0])
+        self.assertNotIn('"EPIC-041"', task_jqls[0])
+        self.assertIn('"EPIC-041"', task_jqls[1])
+        for task_jql in task_jqls:
+            self.assertIn('issuetype != Epic', task_jql)
+            self.assertIn('"Epic Link" in (', task_jql)
+            self.assertIn('OR parent in (', task_jql)
+            self.assertNotIn('Sprint =', task_jql)
 
     def test_ready_to_close_attaches_open_child_count_from_distribution(self):
         """Ready-to-close epics carry an authoritative open-child count so the

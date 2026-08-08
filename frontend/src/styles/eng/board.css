@@ -1,0 +1,1081 @@
+        /* ── ENG Group Board — columns, folded rails, focus and star ──
+           §6.1 / §6.1.2 and D7, D9, D10, D17, D18, D24, D26. Geometry lifted from the approved
+           asset, docs/plans/assets/eng-group-board/board.html: 36px strip, 340px track, the bar
+           hanging from the top, one open width, the 180deg label rotation, the centring maths
+           (that part lives in EngBoardView.jsx, which measures against documentElement).
+
+           The mockup's four stand-ins are NOT here, deliberately: --mono (the app has no mono
+           token, so the literal 'IBM Plex Mono' stack is repeated exactly as
+           settings/group-board.css already does), --container-max (the app has one .container),
+           --compact-h (the app derives the ordered sticky tops at runtime) and
+           --sticky-controls-z (the app's filter bar has --sticky-filterbar-z).
+           tests/test_eng_board_styles.js fails if any reappears, and also
+           if this file reads a custom property nothing defines — an undefined var() drops the
+           whole declaration silently, which this design has already been bitten by.
+
+           .col / .col-head / .col-strip / .fill / .vert are shared with the composer's board
+           preview (settings/group-board.css) on purpose: the two surfaces render one
+           configuration and must not drift. That also makes the names collidable, since one
+           dashboard.css holds both — so the preview scopes under .board-preview and the board
+           scopes every rule below under .eng-board. */
+
+        .eng-board {
+            --board-strip-w: 36px;
+            --board-strip-h: 340px;
+            /* ONE fixed width for every open column, focused or starred (D10, D17). Deliberately
+               not a fit-two formula: the chosen panel keeps its full reading width and additional
+               columns run off the frame, which scrolls and is hinted. */
+            --board-open-w: min(660px, 92vw);
+            margin-top: 0;
+        }
+
+        .filterbar-wrap:has(.board-help-popover) {
+            z-index: calc(var(--sticky-control-overlay-z) + 2);
+        }
+
+        .board-help-host {
+            position: relative;
+        }
+
+        .board-help-trigger {
+            width: 30px;
+            height: 30px;
+            display: grid;
+            place-items: center;
+            padding: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.9rem;
+            line-height: 1;
+        }
+
+        .board-help-popover {
+            position: absolute;
+            top: calc(100% + 0.4rem);
+            left: 0;
+            max-width: calc(100vw - 24px);
+            padding: 0.85rem 0.95rem;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-secondary);
+            box-shadow: 0 12px 28px rgba(22, 22, 22, 0.16);
+            color: var(--text-primary);
+            text-align: left;
+            text-transform: none;
+            letter-spacing: normal;
+            z-index: calc(var(--sticky-control-overlay-z) + 3);
+        }
+
+        .board-help-popover h2 {
+            margin: 0 0 0.55rem;
+            font-size: 0.95rem;
+            line-height: 1.25;
+        }
+
+        .board-help-copy {
+            margin: 0.45rem 0 0;
+            font-family: inherit;
+            font-size: 0.82rem;
+            line-height: 1.45;
+            text-transform: none;
+            letter-spacing: normal;
+        }
+
+        .board-help-popover ul {
+            padding-left: 1.1rem;
+        }
+
+        .eng-board .board-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: nowrap;
+            margin: 0 0 0.6rem;
+        }
+
+        .eng-board .board-head > div {
+            min-width: 0;
+        }
+
+        .eng-board .board-head-title {
+            font-family: 'IBM Plex Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.6rem;
+            color: var(--text-secondary);
+        }
+
+        /* D9: the folded columns ARE the chart, so the scale the bars are drawn against is stated
+           once, here, instead of in a separate widget. */
+        .eng-board .board-head-sub {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.55rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        .eng-board .board-scale {
+            font-variant-numeric: tabular-nums;
+            color: var(--text-primary);
+        }
+
+        /* §6.4: drag-and-drop outcomes render without reflowing the columns. */
+        .eng-board .board-say {
+            display: block;
+            margin-top: 0.3rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.58rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        .eng-board .board-say:not(.has-message) {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .eng-board .board-say.has-message {
+            display: block;
+            min-height: 0;
+            margin: 0 0 0.45rem;
+        }
+
+        .eng-board .board-say.is-error {
+            color: var(--warn);
+        }
+
+        /* The hints live in this wrapper, which stays at container width. */
+        .eng-board .board-scroll {
+            position: relative;
+        }
+
+        /* The board is a full-bleed scroller (D16), and the bleed is CSS rather than JS on
+           purpose: an explicit pixel width written by a resize handler is *wider than the new
+           viewport* until that handler runs, and the document scrolls sideways in the gap —
+           measured at 132px going 1280 -> 1028, and a ResizeObserver only moved the lag by one
+           step. CSS cannot be stale.
+
+           `50%` is half of .board-scroll, which is the centred .container, so it is the viewport
+           centre; subtracting half the board width pins the left edge to the viewport edge.
+           --board-scrollbar-width (published by EngBoardView, 0 until it is) takes the vertical
+           scrollbar back out of `100vw`, which is the arithmetic D16 and D29 are both about:
+           `100vw` counts the scrollbar and documentElement.clientWidth does not. */
+        .eng-board .board {
+            display: flex;
+            gap: 0.5rem;
+            align-items: flex-start;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scroll-behavior: smooth;
+            scrollbar-width: thin;
+            padding-bottom: 0.85rem;
+            width: calc(100vw - var(--board-scrollbar-width, 0px));
+            margin-left: calc(50% - (100vw - var(--board-scrollbar-width, 0px)) / 2);
+        }
+
+        .eng-board .board.is-chrome-pinned .col::before {
+            content: '';
+            display: block;
+            height: var(--board-chrome-space);
+            pointer-events: none;
+        }
+
+        .eng-board .board.is-chrome-pinned .col-head,
+        .eng-board .board.is-chrome-pinned .col-strip {
+            position: fixed;
+            top: var(--epic-sticky-top, 0px);
+            left: var(--board-chrome-left);
+            width: var(--board-chrome-width);
+            z-index: calc(var(--sticky-epic-z) + 1);
+            transform: translateY(var(--board-chrome-shift-y));
+            transition: none;
+        }
+
+        .eng-board .board.is-chrome-pinned .col-head {
+            background: var(--bg-primary);
+        }
+
+        /* The normal folded-rail selector carries two :not() states, so its position and width
+           need this equally scoped pinned-state override without resorting to !important. */
+        .eng-board .board.is-chrome-pinned .col:not(.is-open):not(.is-focused) .col-strip {
+            position: fixed;
+            width: var(--board-chrome-width);
+        }
+
+        /* Something is off-frame — say how much, and offer a way there. The hint is a control. */
+        .eng-board .board-hint {
+            position: absolute;
+            top: 0;
+            bottom: 0.85rem;
+            width: 74px;
+            z-index: 5;
+            display: none;
+            align-items: center;
+            border: 0;
+            cursor: pointer;
+            padding: 0;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.5rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            /* transparent, and inert apart from the pip: the rails behind stay visible and
+               clickable, so the hint never covers a column it is pointing at. */
+            background: none;
+            pointer-events: none;
+        }
+
+        .eng-board .board-hint.is-on {
+            display: flex;
+        }
+
+        .eng-board .board-hint.left {
+            left: 0;
+            justify-content: flex-start;
+        }
+
+        .eng-board .board-hint.right {
+            right: 0;
+            justify-content: flex-end;
+        }
+
+        .eng-board .board-hint .pip {
+            pointer-events: auto;
+            display: inline-grid;
+            place-items: center;
+            gap: 0.1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 0.3rem 0.15rem;
+            min-width: 1.4rem;
+            box-shadow: 0 2px 8px rgba(22, 22, 22, 0.10);
+            animation: board-hint-nudge 2.4s ease-in-out infinite;
+        }
+
+        .eng-board .board-hint:hover .pip {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .eng-board .board-hint .pip b {
+            font-weight: 500;
+            font-size: 0.58rem;
+            color: var(--text-primary);
+        }
+
+        .eng-board .board-hint.left .pip {
+            margin-left: 0.15rem;
+            --board-hint-nudge: -3px;
+        }
+
+        .eng-board .board-hint.right .pip {
+            margin-right: 0.15rem;
+            --board-hint-nudge: 3px;
+        }
+
+        @keyframes board-hint-nudge {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(var(--board-hint-nudge, 3px)); }
+        }
+
+        /* §6.1's first-run state. The button is the app's shared .secondary.compact — the asset's
+           `.linkish` exists in no production stylesheet — so this rule only keeps it off the
+           flexible text column beside it. */
+        .eng-board .board-configure {
+            flex: none;
+            align-self: center;
+        }
+
+        /* ── Columns ── */
+
+        .eng-board .col {
+            flex: 0 0 var(--board-strip-w);
+            min-width: 0;
+        }
+
+        /* Exactly one column is focused; the starred one stays open beside it when they differ
+           (D7, D8). Both take the SAME width — two open widths produced two card renderings. */
+        .eng-board .col.is-open,
+        .eng-board .col.is-focused {
+            flex: 0 0 var(--board-open-w);
+        }
+
+        /* D26: the entire header is the fold target, not only the Fold label. */
+        .eng-board .col-head {
+            display: flex;
+            align-items: baseline;
+            gap: 0.45rem;
+            width: 100%;
+            padding: 0 0.15rem 0.4rem;
+            margin-bottom: 0.5rem;
+            background: none;
+            text-align: left;
+            border: 0;
+            border-bottom: 2px solid var(--board-column-accent);
+            cursor: pointer;
+        }
+
+        /* A starred column has no fold action at all, so its header is inert. */
+        .eng-board .col.is-starred .col-head {
+            cursor: default;
+        }
+
+        .eng-board .col:not(.is-open):not(.is-focused) .col-head {
+            display: none;
+        }
+
+        .eng-board .col-head .nm {
+            font-family: 'IBM Plex Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.64rem;
+            font-weight: 500;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .eng-board .col-head .ct {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+            font-variant-numeric: tabular-nums;
+            color: var(--board-column-accent);
+        }
+
+        .eng-board .col-head .sp {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.5rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        .eng-board .col-head .fold {
+            margin-left: auto;
+            border: 0;
+            background: none;
+            cursor: pointer;
+            padding: 0 0.2rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.48rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        .eng-board .col-head .fold:hover {
+            color: var(--accent);
+        }
+
+        /* visibility, not display: the control keeps its slot so a starred header does not
+           reflow, and hidden visibility also takes it out of the tab order (§10.1). */
+        .eng-board .col.is-starred .col-head .fold {
+            visibility: hidden;
+        }
+
+        /* The star is its own control and must never fold the column (D26). */
+        .eng-board .col-star {
+            border: 0;
+            background: none;
+            cursor: pointer;
+            padding: 0;
+            flex: none;
+            align-self: center;
+            font-size: 0.78rem;
+            line-height: 1;
+            color: var(--muted);
+        }
+
+        .eng-board .col-star:hover {
+            color: #e8b339;
+        }
+
+        .eng-board .col-star[aria-pressed="true"] {
+            color: #e8a11d;
+        }
+
+        /* ── Min/Max breach (D24) — a border plus an animated glow, so it stays distinguishable
+           from a column whose ACCENT is red (the reference configuration has both side by side).
+           It warns; it never blocks anything. ── */
+        .eng-board .col.is-breach .col-head {
+            border-bottom-color: var(--warn);
+        }
+
+        .eng-board .col.is-breach .col-strip,
+        .eng-board .col.is-breach .col-body {
+            border-radius: 10px;
+            box-shadow: 0 0 0 1px var(--warn), 0 0 12px rgba(207, 19, 34, 0.34);
+            animation: board-breach-glow 2.2s ease-in-out infinite;
+        }
+
+        @keyframes board-breach-glow {
+            0%, 100% { box-shadow: 0 0 0 1px var(--warn), 0 0 8px rgba(207, 19, 34, 0.26); }
+            50% { box-shadow: 0 0 0 1px var(--warn), 0 0 16px rgba(207, 19, 34, 0.50); }
+        }
+
+        .eng-board .col-breach {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.5rem;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: var(--warn);
+        }
+
+        .eng-board .col:not(.is-breach) .col-breach {
+            display: none;
+        }
+
+        /* ── The folded rail: a fixed-height track with the bar hanging from the TOP, length =
+           this column's epics over the largest column's (D9). The rails are the chart. ── */
+        .eng-board .col-strip {
+            display: none;
+        }
+
+        .eng-board .col:not(.is-open):not(.is-focused) .col-strip {
+            display: block;
+            position: relative;
+            width: 100%;
+            height: var(--board-strip-h);
+            cursor: pointer;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-secondary);
+            overflow: hidden;
+            padding: 0;
+        }
+
+        .eng-board .col-strip .fill {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            background: color-mix(in srgb, var(--board-column-accent) 40%, var(--bg-secondary));
+            border-bottom: 2px solid var(--board-column-accent);
+        }
+
+        .eng-board .col:not(.is-open):not(.is-focused) .col-strip:hover .fill {
+            background: color-mix(in srgb, var(--board-column-accent) 58%, var(--bg-secondary));
+        }
+
+        .eng-board .col-strip .cap {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            justify-items: center;
+            gap: 0.3rem;
+            padding: 0.4rem 0;
+            z-index: 1;
+        }
+
+        .eng-board .col-strip .n {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.82rem;
+            font-weight: 500;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* D18: rotated whole words read bottom-to-top. `writing-mode: vertical-rl` alone runs
+           top-to-bottom, so the label is rotated 180deg on top of it. (`sideways-lr` does this
+           natively but is not in Safari yet.) */
+        .eng-board .col-strip .vert {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            transform: rotate(180deg);
+            align-self: center;
+            font-family: 'IBM Plex Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 0.74rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        /* minmax(0, 1fr), or cards size to max-content and burst the column. */
+        .eng-board .col-body {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            align-content: start;
+            gap: 0.45rem;
+            /* The open column matches a rail's height so focusing one does not jump the page. */
+            min-height: var(--board-strip-h);
+        }
+
+        .eng-board .col:not(.is-open):not(.is-focused) .col-body {
+            display: none;
+        }
+
+        /* ── Epic card (§6.2) — layout lifted from the asset's .ecard/.erow1-3/.etitle/.ekey/
+           .eperson; new classes, since no compact epic-summary card existed in the app before.
+           The inner controls do NOT use the asset's styling: the priority icon, track glyph and
+           status pill are the app's own .task-priority-icon/.epic-track-indicator/.status-pill
+           (EngBoardEpicCard.jsx), already styled by issues.css/epics.css/status-transitions.css,
+           and the progress bar reuses .story-subtasks-progress-track (issues.css) rather than the
+           asset's --st-done/--st-progress, which — like --serif and --text-muted, also read here
+           in the asset but defined in no real stylesheet — are additional mockup stand-ins beyond
+           the four test_eng_board_styles.js already checks for; none of the five appear below. ── */
+        /* A real <button> (§10.1): Enter opens the detail panel, which is the keyboard equivalent
+           of the pointer-only drag. That means undoing the app's global button styling
+           (eng/controls.css) rather than inheriting a dark uppercase pill. */
+        .eng-board .ecard {
+            display: grid;
+            gap: 0.35rem;
+            width: 100%;
+            margin: 0;
+            text-align: left;
+            font-family: inherit;
+            font-size: 1rem;
+            text-transform: none;
+            letter-spacing: normal;
+            color: var(--text-primary);
+            padding: 0.6rem 0.7rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--board-column-accent);
+            border-radius: 10px;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .eng-board .ecard:hover {
+            background: var(--bg-secondary);
+            border-color: var(--board-column-accent);
+            box-shadow: 0 4px 12px var(--shadow);
+            transform: none;
+        }
+
+        .eng-board .ecard:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        /* ── The drag gesture (§6.4). The card stays a button — click opens the epic, drag moves
+           it — so the affordance is the cursor, not a second control. ── */
+        .eng-board .ecard:hover {
+            cursor: grab;
+        }
+
+        .eng-board .ecard:active {
+            cursor: grabbing;
+        }
+
+        .eng-board .ecard.is-dragging {
+            opacity: 0.4;
+        }
+
+        /* A refused drop, and a write that did not go through: the card says so for a moment, next
+           to the reason in the live region. */
+        .eng-board .ecard.is-rejected {
+            border-color: var(--warn);
+            box-shadow: 0 0 0 1px var(--warn);
+        }
+
+        /* The hovered target outlines in ITS OWN column colour. The source column never gets this
+           class, so it can never promise a move that would be a no-op. */
+        .eng-board .col.is-drop {
+            outline: 2px dashed var(--board-column-accent);
+            outline-offset: 2px;
+        }
+
+        .eng-board .col.is-drop .col-strip,
+        .eng-board .col.is-drop .col-body {
+            background: color-mix(in srgb, var(--board-column-accent) 8%, var(--bg-secondary));
+        }
+
+        .eng-board .erow1 {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            min-width: 0;
+        }
+
+        .eng-board .erow1 > .task-priority-icon,
+        .eng-board .erow1 > .epic-track-indicator,
+        .eng-board .erow1 > .status-pill,
+        .eng-board .ekey {
+            flex: none;
+        }
+
+        .eng-board .etitle {
+            flex: 1 1 0%;
+            font-size: 0.98rem;
+            line-height: 1.25;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .eng-board .ekey {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.52rem;
+            letter-spacing: 0.06em;
+            color: var(--text-secondary);
+            margin-left: 0;
+        }
+
+        .eng-board .erow2,
+        .eng-board .erow3 {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding-left: 1.65rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.52rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        .eng-board .erow3 {
+            gap: 0.9rem;
+            flex-wrap: wrap;
+        }
+
+        .eng-board .erow2 .push {
+            margin-left: auto;
+        }
+
+        .eng-board .erow2 time {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .eng-board .eperson {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 0.3rem;
+            min-width: 0;
+        }
+
+        .eng-board .eperson b {
+            font-weight: 400;
+            color: var(--text-primary);
+            text-transform: none;
+            letter-spacing: 0.02em;
+            font-size: 0.58rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .eng-board .eperson .lbl {
+            font-size: 0.46rem;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+            flex: none;
+        }
+
+        .eng-board .eperson b.is-empty {
+            color: var(--text-secondary);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .eng-board .board { scroll-behavior: auto; }
+            .eng-board .board-hint .pip { animation: none; }
+            .eng-board .col.is-breach .col-strip,
+            .eng-board .col.is-breach .col-body { animation: none; }
+        }
+
+        /* ── Epic detail panel (§6.3) — geometry lifted from the asset's
+           .backdrop/.modal/.m-head/.m-eyebrow/.m-controls/.m-title/.m-body/.m-desc/.m-sec:
+           700px wide, capped at 92vh, head and section fixed while the body scrolls, and the
+           description clamped to 11.5rem behind a fade.
+
+           Two deliberate departures from the asset's names, both to survive inside the app's one
+           dashboard.css: `.backdrop`/`.modal` are far too generic to ship, so the app's existing
+           `<thing>-modal-backdrop` grammar (settings/modal-shell.css) gives .epic-panel-backdrop /
+           .epic-panel, and the asset's literal `z-index: 9000` becomes the app's own
+           --modal-backdrop-z, which is that same 9000. Everything inside is scoped under
+           .eng-board for the same reason the columns are.
+
+           The controls inside are NOT styled here: priority, track and status are the app's own
+           .task-priority-icon / .epic-track-indicator / .status-pill, the sort control is the
+           app's .sprint-dropdown, and the story rows are eng/subtasks.css's .story-subtask-row
+           plus its additive .has-priority modifier. ── */
+        .eng-board .epic-panel-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(26, 24, 22, 0.42);
+            display: grid;
+            place-items: center;
+            padding: 4vh 1rem;
+            z-index: var(--modal-backdrop-z);
+        }
+
+        .eng-board .epic-panel {
+            width: min(700px, 100%);
+            max-height: 92vh;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+            text-align: left;
+        }
+
+        .eng-board .m-head {
+            padding: 1.1rem 1.25rem 1rem;
+            border-bottom: 1px solid var(--border);
+            flex: none;
+        }
+
+        .eng-board .m-eyebrow {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.54rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            flex-wrap: wrap;
+        }
+
+        .eng-board .m-eyebrow a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .eng-board .m-eyebrow a:hover {
+            text-decoration: underline;
+        }
+
+        .eng-board .m-close {
+            margin: 0 0 0 auto;
+            letter-spacing: normal;
+            border: 0;
+            background: none;
+            cursor: pointer;
+            font-size: 1.05rem;
+            line-height: 1;
+            color: var(--text-secondary);
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            padding: 0;
+        }
+
+        .eng-board .m-close:hover {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            box-shadow: none;
+            transform: none;
+        }
+
+        .eng-board .m-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            margin-bottom: 0.5rem;
+            position: relative;
+        }
+
+        .eng-board .m-controls .m-sp {
+            margin-left: auto;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.54rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        .eng-board .m-title {
+            font-size: 1.36rem;
+            font-weight: 400;
+            line-height: 1.28;
+            margin: 0;
+            text-wrap: balance;
+        }
+
+        .eng-board .m-body {
+            padding: 1.05rem 1.25rem 1.25rem;
+            overflow-y: auto;
+            flex: 1 1 auto;
+        }
+
+        .eng-board .m-desc {
+            position: relative;
+            font-size: 0.95rem;
+            max-width: 68ch;
+        }
+
+        /* The clamp and its fade. 11.5rem is the measured figure (§6.3): a real epic body of this
+           shape renders ~1364px, so without it the story list is pushed off the panel entirely. */
+        .eng-board .m-desc.is-clamped .m-desc-body {
+            max-height: 11.5rem;
+            overflow: hidden;
+        }
+
+        .eng-board .m-desc.is-clamped .m-desc-body::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 3.2rem;
+            background: linear-gradient(to bottom, transparent, var(--bg-secondary));
+            pointer-events: none;
+        }
+
+        .eng-board .m-desc-body {
+            position: relative;
+        }
+
+        .eng-board .m-desc-body h1,
+        .eng-board .m-desc-body h2,
+        .eng-board .m-desc-body h3,
+        .eng-board .m-desc-body h4,
+        .eng-board .m-desc-body h5,
+        .eng-board .m-desc-body h6 {
+            margin: 1rem 0 0.4rem;
+            font-family: inherit;
+            color: var(--text-primary);
+            text-transform: none;
+            letter-spacing: normal;
+            line-height: 1.3;
+        }
+
+        .eng-board .m-desc-body h1,
+        .eng-board .m-desc-body h2 { font-size: 1.05rem; }
+        .eng-board .m-desc-body h3,
+        .eng-board .m-desc-body h4,
+        .eng-board .m-desc-body h5,
+        .eng-board .m-desc-body h6 { font-size: 0.92rem; }
+
+        .eng-board .m-desc-body .adf-table-scroll {
+            max-width: 100%;
+            margin: 0.55rem 0 0.8rem;
+            overflow-x: auto;
+            overscroll-behavior-inline: contain;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .eng-board .m-desc-body .adf-table-scroll:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .eng-board .m-desc-body table {
+            width: 100%;
+            min-width: 36rem;
+            border-collapse: collapse;
+            table-layout: auto;
+            font-size: 0.78rem;
+            line-height: 1.35;
+        }
+
+        .eng-board .m-desc-body th,
+        .eng-board .m-desc-body td {
+            min-width: 7rem;
+            padding: 0.45rem 0.55rem;
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            vertical-align: top;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .eng-board .m-desc-body th {
+            background: var(--bg-primary);
+            font-weight: 600;
+        }
+
+        .eng-board .m-desc-body th:last-child,
+        .eng-board .m-desc-body td:last-child { border-right: 0; }
+        .eng-board .m-desc-body tr:last-child > * { border-bottom: 0; }
+        .eng-board .m-desc-body th > :last-child,
+        .eng-board .m-desc-body td > :last-child { margin-bottom: 0; }
+
+        .eng-board .m-desc-body > :first-child {
+            margin-top: 0;
+        }
+
+        .eng-board .m-desc-body p {
+            margin: 0 0 0.5rem;
+        }
+
+        .eng-board .m-desc-body ul,
+        .eng-board .m-desc-body ol {
+            margin: 0 0 0.5rem;
+            padding-left: 1.1rem;
+        }
+
+        .eng-board .m-desc-body ul ul,
+        .eng-board .m-desc-body ol ol {
+            margin: 0.2rem 0 0.3rem;
+        }
+
+        .eng-board .m-desc-body li {
+            margin-bottom: 0.2rem;
+        }
+
+        .eng-board .m-desc-body a {
+            color: var(--accent);
+            text-decoration: none;
+            overflow-wrap: anywhere;
+        }
+
+        .eng-board .m-desc-body a:hover {
+            text-decoration: underline;
+        }
+
+        .eng-board .m-desc-more {
+            margin: 0.4rem 0 0;
+            border: 0;
+            background: none;
+            padding: 0;
+            cursor: pointer;
+            font-family: 'IBM Plex Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.55rem;
+            color: var(--accent);
+        }
+
+        .eng-board .m-desc-more:hover {
+            text-decoration: underline;
+            box-shadow: none;
+            transform: none;
+        }
+
+        /* Loading is a skeleton in THIS block only: the title, controls and story list are already
+           populated from data.epics and must not wait on the description fetch (§9.2). */
+        .eng-board .m-desc-skeleton {
+            display: grid;
+            gap: 0.45rem;
+        }
+
+        .eng-board .m-desc-skeleton span {
+            height: 0.7rem;
+            border-radius: 4px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+        }
+
+        .eng-board .m-desc-skeleton span:last-child {
+            width: 62%;
+        }
+
+        .eng-board .m-desc-error {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            font-size: 0.72rem;
+            color: #b91c1c;
+        }
+
+        .eng-board .m-desc-retry {
+            margin: 0;
+            padding: 0.25rem 0.55rem;
+            border: 1px solid rgba(185, 28, 28, 0.28);
+            border-radius: 6px;
+            background: #fff1f0;
+            color: #b91c1c;
+            font-size: 0.62rem;
+            letter-spacing: 0;
+            text-transform: none;
+            cursor: pointer;
+        }
+
+        .eng-board .m-desc-retry:hover {
+            background: #ffe4e3;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .eng-board .m-sec {
+            margin-top: 1.35rem;
+            border-top: 1px solid var(--border);
+            padding-top: 0.7rem;
+        }
+
+        .eng-board .m-sec-head {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.35rem;
+            flex-wrap: wrap;
+        }
+
+        .eng-board .m-sec-head .spacer {
+            flex: 1 1 auto;
+        }
+
+        /* The sort control is the app's shared .sprint-dropdown and keeps every one of its own
+           metrics (MRT021). What is set here is only its place in THIS row: it must not shrink,
+           because "Assignee, then status" is the widest of the three labels and the toggle's own
+           `text-overflow: ellipsis` would otherwise clip it to "Assignee, t…". */
+        .eng-board .m-sec-head .epic-panel-sort-dropdown {
+            flex: none;
+        }
+
+        .eng-board .m-sec-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.55rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+
+        /* ── The drop menu (§6.4, §10.2) ─────────────────────────────────────────────────────
+           Anchored to the drop point rather than to a pill, so it is portalled to <body> and
+           positioned fixed: the board is a full-bleed `overflow-x` scroller, and a menu rendered
+           inside it would be clipped by that scroller instead of hit-testable. This wrapper is a
+           zero-size anchor; everything inside it is the shared .status-transition-menu, unchanged.
+           Left/top are written by EngBoardView.jsx, which measures the panel and nudges it back
+           inside the viewport rather than guessing. */
+        .eng-board-drop-menu {
+            position: fixed;
+            left: 0;
+            top: 0;
+            z-index: var(--sticky-search-z);
+        }
+
+        /* The ONLY thing overridden on the shared panel, and only because it has no trigger to
+           hang from here: .status-transition-menu anchors itself `absolute` under its status pill,
+           and this one is anchored to the drop point instead. Its width, padding, border, shadow,
+           row layout and typography are all left exactly as the pill's menu renders them. */
+        .eng-board-drop-menu .status-transition-menu {
+            position: static;
+        }
+
+        /* The warning line D42 puts INSIDE the same menu — one step further in, not a second
+           popup. It reuses .status-transition-menu-note's typography and adds only the colour and
+           the rule that separates it from the two choices below. */
+        .eng-board-drop-warn {
+            padding-bottom: 0.35rem;
+            border-bottom: 1px dashed var(--border);
+            color: var(--warn);
+        }
+
+        /* The confirmation's two rows have no status of their own, so they reuse the status
+           marker's geometry (.status-transition-option-marker.task-status) and set only the dot. */
+        .eng-board-drop-marker {
+            background: var(--border);
+        }
+
+        .eng-board-drop-marker.is-warn {
+            background: var(--warn);
+        }

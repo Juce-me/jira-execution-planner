@@ -419,13 +419,18 @@ test('Escape and outside pointer press dismiss the menu', async ({ page }) => {
 
     await trigger.click();
     await expect(menu).toBeVisible();
+    await expect(menu.locator('.project-track-transition-option').first()).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
+    // Escape returns focus to the track indicator that opened the menu.
+    await expect(trigger).toBeFocused();
 
     await trigger.click();
     await expect(menu).toBeVisible();
     await page.locator('.subtitle-secondary').click();
     await expect(menu).toHaveCount(0);
+    // Pointer dismissal must NOT yank focus back to the trigger.
+    await expect(trigger).not.toBeFocused();
 });
 
 test('NO_EPIC group renders no track indicator and no write control', async ({ page }) => {

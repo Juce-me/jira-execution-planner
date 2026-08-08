@@ -133,6 +133,7 @@ export function useEngSprintData({
         }
 
         const controller = registerSprintFetch();
+        const requestSignal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
         try {
             const sprintParam = options.sprintOverride !== undefined ? options.sprintOverride : (selectedSprint || '');
             const groupTeamIds = activeGroupTeamIds;
@@ -153,7 +154,7 @@ export function useEngSprintData({
                 refresh,
                 purpose: options.purpose,
                 epicKeys: options.epicKeys,
-                signal: controller.signal
+                signal: requestSignal
             });
             let response = await requestTasks();
 
@@ -189,6 +190,7 @@ export function useEngSprintData({
                 activeGroupTeamLabels
             );
             const filteredEpics = filterEpicsByTaskEpicKeys(data.epics || {}, filteredTasks);
+            if (options.shouldApplyResult?.() === false) return [];
 
             if (options.updateEpics !== false) {
                 setEpicDetails(prev => ({ ...prev, ...filteredEpics }));
@@ -226,10 +228,10 @@ export function useEngSprintData({
         }
     };
 
-    const fetchBacklogEpics = async (project) => {
+    const fetchBacklogEpics = async (project, { signal } = {}) => {
         if (!isFutureSprintSelected) return [];
         if (activeGroupId && activeGroupTeamIds.length === 0) return [];
-        const payload = await requestBacklogEpics(backendUrl, { project, teamIds: activeGroupTeamIds });
+        const payload = await requestBacklogEpics(backendUrl, { project, teamIds: activeGroupTeamIds, signal });
         return Array.isArray(payload.epics) ? payload.epics : [];
     };
 
@@ -309,7 +311,31 @@ export function useEngSprintData({
         }
     };
 
-    const loadReadyToCloseProductTasks = async ({ forceRefresh = false } = {}) => {
+    const loadAlertEpics = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
+        if (activeGroupId && activeGroupTeamIds.length === 0) {
+            return;
+        }
+        await Promise.all([
+            fetchTasks('product', {
+                purpose: 'alerts',
+                useLoading: false,
+                setErrorOnFailure: false,
+                forceRefresh,
+                shouldApplyResult,
+                signal
+            }),
+            fetchTasks('tech', {
+                purpose: 'alerts',
+                useLoading: false,
+                setErrorOnFailure: false,
+                forceRefresh,
+                shouldApplyResult,
+                signal
+            })
+        ]);
+    };
+
+    const loadReadyToCloseProductTasks = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
         if (activeGroupId && activeGroupTeamIds.length === 0) {
             setReadyToCloseProductTasks([]);
             setReadyToCloseProductEpicsInScope([]);
@@ -333,12 +359,15 @@ export function useEngSprintData({
             epicsInScopeSetter: setReadyToCloseProductEpicsInScope,
             useLoading: false,
             setErrorOnFailure: false,
-            forceRefresh
+            forceRefresh,
+            shouldApplyResult,
+            signal
         });
+        if (shouldApplyResult?.() === false) return;
         setReadyToCloseProductTasks(data);
     };
 
-    const loadReadyToCloseTechTasks = async ({ forceRefresh = false } = {}) => {
+    const loadReadyToCloseTechTasks = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
         if (activeGroupId && activeGroupTeamIds.length === 0) {
             setReadyToCloseTechTasks([]);
             setReadyToCloseTechEpicsInScope([]);
@@ -362,8 +391,11 @@ export function useEngSprintData({
             epicsInScopeSetter: setReadyToCloseTechEpicsInScope,
             useLoading: false,
             setErrorOnFailure: false,
-            forceRefresh
+            forceRefresh,
+            shouldApplyResult,
+            signal
         });
+        if (shouldApplyResult?.() === false) return;
         setReadyToCloseTechTasks(data);
     };
 
@@ -372,6 +404,7 @@ export function useEngSprintData({
         fetchBacklogEpics,
         loadProductTasks,
         loadTechTasks,
+        loadAlertEpics,
         loadReadyToCloseProductTasks,
         loadReadyToCloseTechTasks,
     };

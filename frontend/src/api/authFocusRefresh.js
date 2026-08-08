@@ -3,6 +3,7 @@ import {
     LONG_ABSENCE_MS,
     AUTH_REFRESH_SHARED_STORAGE_KEY,
     AUTH_LONG_ABSENCE_EVENT,
+    AUTH_SESSION_REFRESH_EVENT,
 } from './authRefreshContract.js';
 
 let lastAuthRefreshAt = 0;
@@ -38,6 +39,10 @@ function dispatchLongAbsenceEvent(unfocusedMs) {
     window.dispatchEvent(new CustomEvent(AUTH_LONG_ABSENCE_EVENT, { detail: { unfocusedMs } }));
 }
 
+function dispatchAuthSessionRefreshEvent() {
+    window.dispatchEvent(new CustomEvent(AUTH_SESSION_REFRESH_EVENT));
+}
+
 export async function refreshAuthOnFocus({ longAbsence = false, unfocusedMs = 0 } = {}) {
     if (document.visibilityState && document.visibilityState !== 'visible') return;
     if (refreshInFlight) return;
@@ -60,8 +65,11 @@ export async function refreshAuthOnFocus({ longAbsence = false, unfocusedMs = 0 
             clearSharedRefreshAt();
             const body = await response.json().catch(() => ({}));
             window.location.assign(body.loginUrl || '/login?reason=session_expired');
-        } else if (response.ok && longAbsence) {
-            dispatchLongAbsenceEvent(unfocusedMs);
+        } else if (response.ok) {
+            // The Jira principal behind the cookie may have changed since this page loaded.
+            // Permission-scoped client caches use this event as their partition boundary.
+            dispatchAuthSessionRefreshEvent();
+            if (longAbsence) dispatchLongAbsenceEvent(unfocusedMs);
         }
     } catch (error) {
         // Leave network failures to the next focused attempt or API request.

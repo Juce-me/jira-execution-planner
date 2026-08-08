@@ -26,6 +26,8 @@ const API_SURFACES = new Set([
     'jira_issue_transitions',
     'jira_issue_priorities',
     'jira_issue_project_track',
+    'eng_issue_description',
+    'board_config_statuses',
     'stats_source',
     'scenario',
     'scenario_drafts',

@@ -25,6 +25,7 @@ const AUTH_REFRESH_THROTTLE_MS = 60 * 1000;
 const LONG_ABSENCE_MS = 12 * 60 * 1000;
 const AUTH_REFRESH_SHARED_STORAGE_KEY = 'jep.auth.lastRefreshAt';
 const AUTH_LONG_ABSENCE_EVENT = 'jep:auth-long-absence-return';
+const AUTH_SESSION_REFRESH_EVENT = 'jep:auth-session-refreshed';
 
 // A realistic epoch-like base timestamp. Using 0 would collide with the
 // module's zero-initialized lastAuthRefreshAt sentinel and mask throttle bugs.
@@ -168,6 +169,10 @@ function longAbsenceEvents(harness) {
     return harness.dispatchedEvents.filter((event) => event.type === AUTH_LONG_ABSENCE_EVENT);
 }
 
+function authSessionRefreshEvents(harness) {
+    return harness.dispatchedEvents.filter((event) => event.type === AUTH_SESSION_REFRESH_EVENT);
+}
+
 test('initial visible load performs exactly one auth POST and dispatches no long-absence event', async () => {
     const harness = createHarness({ initialVisibility: 'visible' });
     await flushMicrotasks();
@@ -175,6 +180,7 @@ test('initial visible load performs exactly one auth POST and dispatches no long
     assert.equal(harness.fetchCalls.length, 1);
     assert.equal(harness.fetchCalls[0].url, '/api/auth/refresh');
     assert.equal(longAbsenceEvents(harness).length, 0);
+    assert.equal(authSessionRefreshEvents(harness).length, 1);
 });
 
 test('initial visible load skips the POST when another tab refreshed within the throttle window', async () => {

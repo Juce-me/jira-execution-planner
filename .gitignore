@@ -79,3 +79,4 @@ tests/debug_scenario_aleksandr.py
 
 # Throwaway agent probe/scratch workspace
 tmp/
+.playwright-mcp/

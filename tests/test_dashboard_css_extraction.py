@@ -127,6 +127,8 @@ class TestDashboardCssFileContract(unittest.TestCase):
         imported = {str(path) for path in _dashboard_css_imports()}
         expected_partials = {
             'shared/controls.css',
+            'eng/board.css',
+            'eng/filter-bar.css',
             'eng/issues.css',
             'eng/dependencies.css',
             'eng/subtasks.css',
@@ -134,6 +136,7 @@ class TestDashboardCssFileContract(unittest.TestCase):
             'planning/selection.css',
             'settings/team-groups.css',
             'settings/jira-fields.css',
+            'settings/group-board.css',
             'stats/excluded-capacity.css',
             'stats/cohort.css',
             'scenario/timeline.css',

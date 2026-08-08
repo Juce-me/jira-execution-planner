@@ -78,6 +78,16 @@ const productTasks = [...missingStories, ...blockedStories.filter(task => task.k
 const techTasks = blockedStories.filter(task => task.key.startsWith('TECH-'));
 const productEpic = epic('PROD');
 const techEpic = epic('TECH');
+const emptyEpic = epic('PROD', {
+    key: 'PROD-EMPTY',
+    summary: 'Authoritative empty product epic',
+    status: { name: 'Analysis' },
+    totalStories: 0,
+    selectedStories: 0,
+    selectedActionableStories: 0,
+    futureOpenStories: 0,
+    storyStatusCounts: {},
+});
 
 async function waitForVisualSettled(page) {
     await page.evaluate(async () => {
@@ -148,13 +158,26 @@ async function installAlertsFixture(page) {
             const purpose = url.searchParams.get('purpose');
             const isTech = project === 'tech';
             const currentEpic = isTech ? techEpic : productEpic;
+            const responseEpic = purpose === 'ready-to-close'
+                ? { ...currentEpic, openChildCount: 0 }
+                : purpose === 'alerts'
+                    ? {
+                        ...currentEpic,
+                        totalStories: isTech ? techTasks.length : productTasks.length,
+                        selectedStories: isTech ? techTasks.length : productTasks.length,
+                        selectedActionableStories: isTech ? techTasks.length : productTasks.length,
+                        futureOpenStories: 0,
+                        storyStatusCounts: isTech ? { Blocked: techTasks.length } : { 'To Do': 2, Blocked: 2 },
+                    }
+                    : currentEpic;
             const issues = purpose === 'ready-to-close'
                 ? readyToCloseStories.filter(task => task.fields.epicKey === currentEpic.key)
                 : (isTech ? techTasks : productTasks);
+            const enrichmentEpics = purpose === 'alerts' && !isTech ? [emptyEpic] : [];
             return json({
                 issues,
-                epics: { [currentEpic.key]: currentEpic },
-                epicsInScope: [currentEpic],
+                epics: Object.fromEntries([responseEpic, ...enrichmentEpics].map(value => [value.key, value])),
+                epicsInScope: [responseEpic, ...enrichmentEpics],
                 names: {},
             });
         }
@@ -196,9 +219,10 @@ async function openEng(page, viewport, showAlertsPanel = true, prefOverrides = {
 async function expectSummaryText(page) {
     const summary = page.locator('.alerts-panel-summary');
     await expect(summary).toBeVisible();
-    await expect(summary).toContainText('8 total');
+    await expect(summary).toContainText('9 total');
     await expect(summary).toContainText(/2\s+Missing info/);
     await expect(summary).toContainText(/4\s+Blocked/);
+    await expect(summary).toContainText(/1\s+Empty epic/);
     await expect(summary).toContainText(/2\s+Ready to close/);
 }
 

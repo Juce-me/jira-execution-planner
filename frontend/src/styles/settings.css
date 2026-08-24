@@ -5,6 +5,7 @@
 @import "./settings/jira-fields.css";
 @import "./settings/team-selector.css";
 @import "./settings/user-connections.css";
+@import "./settings/admin-access.css";
 @import "./settings/epm-settings.css";
 @import "./settings/mapping-preview.css";
 @import "./settings/group-editor.css";

@@ -62,6 +62,7 @@ class OAuthSettingsRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["authMode"], "basic")
+        self.assertFalse(response.get_json()["adminUserManagementAvailable"])
 
     def test_config_reports_authenticated_oauth_settings_access_before_db_roles(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \

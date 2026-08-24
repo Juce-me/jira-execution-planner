@@ -12,6 +12,7 @@ const groupBoardSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'se
 const groupBoardsTabPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'GroupBoardsTab.jsx');
 const groupVisibilityHookPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'useGroupVisibilityPreferences.js');
 const jiraFieldSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'JiraFieldSettings.jsx');
+const adminSettingsTabsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'AdminSettingsTabs.jsx');
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
 const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
 const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
@@ -29,6 +30,7 @@ const groupBoardSettingsSource = fs.existsSync(groupBoardSettingsPath) ? fs.read
 const groupBoardsTabSource = fs.existsSync(groupBoardsTabPath) ? fs.readFileSync(groupBoardsTabPath, 'utf8') : '';
 const groupVisibilityHookSource = fs.existsSync(groupVisibilityHookPath) ? fs.readFileSync(groupVisibilityHookPath, 'utf8') : '';
 const jiraFieldSettingsSource = fs.existsSync(jiraFieldSettingsPath) ? fs.readFileSync(jiraFieldSettingsPath, 'utf8') : '';
+const adminSettingsTabsSource = fs.existsSync(adminSettingsTabsPath) ? fs.readFileSync(adminSettingsTabsPath, 'utf8') : '';
 const epmSettingsUiSource = epmSettingsSource || dashboardSource;
 const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
@@ -550,13 +552,15 @@ test('settings modal groups department and admin leaves behind local sub-tabs', 
     assert.ok(dashboardSource.includes("const activeSettingsModalTab = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)"), 'Expected leaf settings tabs to resolve to grouped top-level tabs');
     assert.ok(dashboardSource.includes('id="department-settings-teams-tab"'), 'Expected Team Groups local tab');
     assert.ok(dashboardSource.includes('id="department-settings-labels-tab"'), 'Expected Group Labels local tab');
-    assert.ok(dashboardSource.includes('id="admin-settings-scope-tab"'), 'Expected Scope Projects local admin tab');
-    assert.ok(dashboardSource.includes('id="admin-settings-source-tab"'), 'Expected Jira Source local admin tab');
-    assert.ok(dashboardSource.includes('id="admin-settings-mapping-tab"'), 'Expected Field Mapping local admin tab');
-    assert.ok(dashboardSource.includes('id="admin-settings-capacity-tab"'), 'Expected Capacity local admin tab');
-    assert.ok(dashboardSource.includes('id="admin-settings-priorityWeights-tab"'), 'Expected Priority Weights local admin tab');
+    assert.ok(dashboardSource.includes('<AdminSettingsTabs'), 'Expected extracted Admin local tab strip');
+    assert.ok(adminSettingsTabsSource.includes("['scope', 'Scope projects']"), 'Expected Scope Projects local admin tab');
+    assert.ok(adminSettingsTabsSource.includes("['source', 'Jira source']"), 'Expected Jira Source local admin tab');
+    assert.ok(adminSettingsTabsSource.includes("['mapping', 'Field mapping']"), 'Expected Field Mapping local admin tab');
+    assert.ok(adminSettingsTabsSource.includes("['capacity', 'Capacity']"), 'Expected Capacity local admin tab');
+    assert.ok(adminSettingsTabsSource.includes("['priorityWeights', 'Priority weights']"), 'Expected Priority Weights local admin tab');
+    assert.ok(adminSettingsTabsSource.includes("['access', 'Access']"), 'Expected Access local admin tab');
     assert.ok(dashboardSource.includes('aria-label="Departments settings sections"'), 'Expected accessible Departments sub-tab list');
-    assert.ok(dashboardSource.includes('aria-label="Admin settings sections"'), 'Expected accessible Admin sub-tab list');
+    assert.ok(adminSettingsTabsSource.includes('aria-label="Admin settings sections"'), 'Expected accessible Admin sub-tab list');
     assert.ok(dashboardSource.includes('const handleDepartmentSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Departments sub-tabs');
     assert.ok(dashboardSource.includes('const handleAdminSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Admin sub-tabs');
 });

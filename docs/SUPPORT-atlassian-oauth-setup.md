@@ -100,6 +100,8 @@ Keep `OAUTH_TOKEN_STORE_PATH` local and ignored by git. The default local path `
 
 Older JSON-backed OAuth runs treated every signed-in Atlassian user as a local tool admin for shared configuration writes. DB-backed runs use explicit app/user state instead; Atlassian tenant/admin status, email address, email domain, Jira project access, or Home/Townsquare access must not grant tool-admin rights by itself.
 
+`SETTINGS_ADMIN_ONLY` controls who may edit shared Admin settings and manage app-admin membership. With `true` (the default), DB-backed OAuth requires an existing app admin. With `false`, every authenticated OAuth user may edit and save those settings and membership changes. The Admin → Access picker lists users already known from OAuth sign-in, displays their stored profile details, and uses the Atlassian `accountId` identity stored as the user's external subject. Basic mode treats the local user as an administrator and does not load an OAuth user list.
+
 ## Test The Flow
 
 Restart the Flask server after changing `.env`.

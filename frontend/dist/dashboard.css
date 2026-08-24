@@ -1464,6 +1464,88 @@ h1 {
   background: #fff;
 }
 
+/* frontend/src/styles/settings/admin-access.css */
+.admin-access-settings {
+  padding: 0.9rem 1rem 1rem;
+  overflow-y: auto;
+}
+.admin-access-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.85rem;
+}
+.admin-access-card .group-pane-title {
+  margin: 0;
+}
+.admin-access-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+.admin-access-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 3.25rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fbfaf7;
+  cursor: pointer;
+}
+.admin-access-row.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+.admin-access-row input {
+  margin: 0;
+}
+.admin-access-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.12rem;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+.admin-access-identity strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-access-identity code {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-access-error {
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.7rem;
+  padding: 0.55rem 0.65rem;
+}
+@media (max-width: 640px) {
+  .admin-access-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .admin-access-row .user-connection-status {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
 /* frontend/src/styles/settings/epm-settings.css */
 .group-editor {
   display: flex;

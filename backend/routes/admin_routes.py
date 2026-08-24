@@ -28,7 +28,7 @@ def _require_admin():
         context = current_request_auth_context()
     except AuthError as error:
         return auth_error_response(error, 401)
-    if not context.is_admin:
+    if SETTINGS_ADMIN_ONLY and not context.is_admin:
         payload, status = admin_required_payload()
         return jsonify(payload), status
     g.auth_context = context

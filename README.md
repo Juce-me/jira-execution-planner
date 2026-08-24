@@ -214,6 +214,8 @@ Saved local JSON files:
 
 The app now relies on Dashboard Settings for supported runtime configuration. Keep `.env` focused on credentials and local server settings.
 
+In OAuth mode, Dashboard Settings → **Admin → Access** lists users already known from Atlassian sign-in and stores app-admin membership against their stable Atlassian account identity. `SETTINGS_ADMIN_ONLY=true` restricts Admin settings and membership changes to app admins; `false` lets every authenticated OAuth user edit and save them. Basic mode treats the local user as an administrator.
+
 ## EPM View
 
 Use the `ENG | EPM` switch in the dashboard header to browse project rollups rendered as Initiative -> Epic -> Story/Task hierarchies.

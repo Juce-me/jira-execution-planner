@@ -283,6 +283,7 @@ class UserViewConfigRouteTests(unittest.TestCase):
         body = response.get_json()
         self.assertFalse(body['userCanEditSettings'])
         self.assertFalse(body['userCanEditEpmConfig'])
+        self.assertTrue(body['adminUserManagementAvailable'])
 
     def test_default_route_returns_resolved_default_view(self):
         create_response = self._post_view({

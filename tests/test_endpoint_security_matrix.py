@@ -168,6 +168,7 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
 
         non_admin_context = SimpleNamespace(is_admin=False)
         with self._oauth_mode(), \
+             patch.object(jira_server, "SETTINGS_ADMIN_ONLY", True), \
              patch.object(jira_server, "current_request_auth_context", return_value=non_admin_context), \
              patch.object(jira_server, "load_dashboard_config", side_effect=AssertionError("route code reached")):
             response = self.client.post(
@@ -182,6 +183,30 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["error"], "admin_required")
         self.assertEqual(response.get_json()["recoveryUrl"], "/auth/admin-required")
+
+    def test_shared_admin_write_allows_authenticated_user_when_admin_only_disabled(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
+        with self._oauth_mode():
+            csrf_token = self._csrf_token()
+
+        non_admin_context = SimpleNamespace(is_admin=False)
+        with self._oauth_mode(), \
+             patch.object(jira_server, "SETTINGS_ADMIN_ONLY", False), \
+             patch.object(jira_server, "current_request_auth_context", return_value=non_admin_context), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}), \
+             patch.object(jira_server, "save_dashboard_config"), \
+             patch.object(jira_server, "invalidate_sprints_cache"):
+            response = self.client.post(
+                "/api/board-config",
+                json={"boardId": "7", "boardName": "Synthetic board"},
+                headers={
+                    "X-Requested-With": "jira-execution-planner",
+                    "X-CSRF-Token": csrf_token,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["boardId"], "7")
 
     def test_unclassified_oauth_api_returns_route_not_oauth_ready(self):
         with self._oauth_mode():

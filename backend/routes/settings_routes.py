@@ -305,6 +305,7 @@ def get_config():
         'userCanEditSettings': can_edit_shared_configuration,
         'userCanEditViewConfig': True,
         'userCanEditEpmConfig': can_edit_shared_configuration,
+        'adminUserManagementAvailable': is_db_auth_context(auth_context),
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
         'projectsConfigured': bool(get_selected_projects()),

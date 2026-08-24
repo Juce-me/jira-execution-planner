@@ -193,6 +193,8 @@ import SettingsModal from './settings/SettingsModal.jsx';
 import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import GroupBoardsTab from './settings/GroupBoardsTab.jsx';
 import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
+import AdminAccessSettings, { useAdminAccessSettings } from './settings/AdminAccessSettings.jsx';
+import AdminSettingsTabs from './settings/AdminSettingsTabs.jsx';
 import { makeFieldSearchResults, useJiraFieldPickers } from './settings/useJiraFieldPickers.js';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { fetchCsrfToken, fetchHomeTokenConnection } from './api/authApi.js';
@@ -243,7 +245,7 @@ import {
         const EMPTY_OBJECT = Object.freeze({});
         const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
         const EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY = 3;
-        const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights']);
+        const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access']);
         const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels', 'boards']);
         const SHARED_CONFIGURATION_TAB_IDS = new Set([...ADMIN_SETTINGS_TAB_IDS, 'epm']);
         function isActiveHomeTokenConnection(connection) {
@@ -548,7 +550,13 @@ import {
             const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
             const [userCanEditSettings, setUserCanEditSettings] = useState(false);
             const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);
+            const [adminUserManagementAvailable, setAdminUserManagementAvailable] = useState(false);
             const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);
+            const adminAccess = useAdminAccessSettings({
+                backendUrl: BACKEND_URL,
+                available: adminUserManagementAvailable,
+                active: showGroupManage && groupManageTab === 'access',
+            });
             const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
             const canEditEpmConfiguration = canEditSharedConfiguration || userCanEditEpmConfig;
             const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
@@ -2499,7 +2507,8 @@ import {
                 return sortEpmSettingsProjects(filterEpmSettingsProjectsForView(filteredRows, epmSettingsProjectView), epmSettingsProjectSort);
             }, [epmConfigDraft, epmSettingsProjectSort, epmSettingsProjectView, epmSettingsProjects, removedEpmProjectIds]);
 
-            const isSharedConfigurationDraftDirty = React.useMemo(() => {
+            const isAdminAccessDirty = adminAccess.isDirty;
+            const isCoreSharedConfigurationDraftDirty = React.useMemo(() => {
                 if (isProjectsDraftDirty) return true;
                 if (isPriorityWeightsDirty) return true;
                 if (isBoardConfigDirty) return true;
@@ -2508,6 +2517,7 @@ import {
                 if (anyFieldConfigDirty) return true;
                 return false;
             }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, anyFieldConfigDirty]);
+            const isSharedConfigurationDraftDirty = isCoreSharedConfigurationDraftDirty || isAdminAccessDirty;
             const isGroupDraftDirty = React.useMemo(() => {
                 if (canEditSharedConfiguration && isSharedConfigurationDraftDirty) return true;
                 if (canEditEpmConfiguration && isEpmConfigDirty) return true;
@@ -2522,11 +2532,12 @@ import {
                     canEditSharedConfiguration && isBoardConfigDirty,
                     canEditSharedConfiguration && isCapacityDraftDirty,
                     canEditSharedConfiguration && isIssueTypesDraftDirty,
+                    canEditSharedConfiguration && isAdminAccessDirty,
                     canEditEpmConfiguration && isEpmConfigDirty,
                     Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current),
                     isGroupVisibilityDraftDirty
                 ].filter(Boolean).length + (canEditSharedConfiguration ? dirtyFieldConfigCount : 0);
-            }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, dirtyFieldConfigCount, isEpmConfigDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
+            }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isAdminAccessDirty, dirtyFieldConfigCount, isEpmConfigDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
             const priorityWeightsValidationError = React.useMemo(() => {
                 for (const row of (priorityWeightsDraft || [])) {
                     const label = String(row?.priority || '').trim() || 'Priority';
@@ -2547,7 +2558,8 @@ import {
                     return acc + numeric;
                 }, 0);
             }, [priorityWeightsDraft]);
-            const shouldValidateAdminSettings = canEditSharedConfiguration && (ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) || isSharedConfigurationDraftDirty);
+            const shouldValidateAdminSettings = canEditSharedConfiguration
+                && ((ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && groupManageTab !== 'access') || isCoreSharedConfigurationDraftDirty);
             const groupConfigValidationErrors = React.useMemo(() => {
                 const errors = [];
                 if (shouldValidateAdminSettings) {
@@ -2735,7 +2747,7 @@ import {
             const handleAdminSettingsTabKeyDown = (event) => {
                 handleSettingsSubTabKeyDown(
                     event,
-                    ['scope', 'source', 'mapping', 'capacity', 'priorityWeights'],
+                    ['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access'],
                     adminSettingsTab,
                     selectAdminSettingsTab,
                     'admin-settings'
@@ -3169,6 +3181,10 @@ import {
                         if (issueTypesChanged) {
                             await saveIssueTypesConfig();
                         }
+
+                        if (isAdminAccessDirty) {
+                            await adminAccess.save();
+                        }
                     }
 
                     // Capture the current active group's team IDs before saving
@@ -3233,6 +3249,7 @@ import {
                         setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
                         setUserCanEditSettings(cfg.userCanEditSettings === true);
                         setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
+                        setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
                         setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
                     } catch (_) { /* best-effort */ }
 
@@ -5425,6 +5442,7 @@ import {
                     setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
                     setUserCanEditSettings(config.userCanEditSettings === true);
                     setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);
+                    setAdminUserManagementAvailable(config.adminUserManagementAvailable === true);
                     setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
                     applySavedEpmConfig(config.epm);
                 } catch (err) {
@@ -15333,7 +15351,7 @@ import {
                                     <button className="compact" onClick={keepMineOnGroupsConfigConflict} type="button">Keep mine</button>
                                 </div>
                             ) : null}
-                            showTestConfiguration={groupManageTab !== 'epm' && groupManageTab !== 'connections'}
+                            showTestConfiguration={groupManageTab !== 'epm' && groupManageTab !== 'connections' && groupManageTab !== 'access'}
                             onTestConfiguration={testGroupsConfigConnection}
                             testConfigurationDisabled={groupTesting}
                             testConfigurationLabel={groupTesting ? 'Testing...' : 'Test configuration'}
@@ -15357,63 +15375,29 @@ import {
                                 )}
                                 {ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && (
                                 <>
-                                <div
-                                    className="group-modal-tabs epm-settings-tabs"
-                                    role="tablist"
-                                    aria-label="Admin settings sections"
+                                <AdminSettingsTabs
+                                    activeTab={groupManageTab}
+                                    onSelect={selectAdminSettingsTab}
                                     onKeyDown={handleAdminSettingsTabKeyDown}
-                                >
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'scope' ? 'active' : ''}`}
-                                        onClick={() => selectAdminSettingsTab('scope')}
-                                        role="tab"
-                                        aria-selected={groupManageTab === 'scope'}
-                                        aria-controls="admin-settings-scope-panel"
-                                        id="admin-settings-scope-tab"
-                                        type="button"
-                                    >Scope projects</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'source' ? 'active' : ''}`}
-                                        onClick={() => selectAdminSettingsTab('source')}
-                                        role="tab"
-                                        aria-selected={groupManageTab === 'source'}
-                                        aria-controls="admin-settings-source-panel"
-                                        id="admin-settings-source-tab"
-                                        type="button"
-                                    >Jira source</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'mapping' ? 'active' : ''}`}
-                                        onClick={() => selectAdminSettingsTab('mapping')}
-                                        role="tab"
-                                        aria-selected={groupManageTab === 'mapping'}
-                                        aria-controls="admin-settings-mapping-panel"
-                                        id="admin-settings-mapping-tab"
-                                        type="button"
-                                    >Field mapping</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'capacity' ? 'active' : ''}`}
-                                        onClick={() => selectAdminSettingsTab('capacity')}
-                                        role="tab"
-                                        aria-selected={groupManageTab === 'capacity'}
-                                        aria-controls="admin-settings-capacity-panel"
-                                        id="admin-settings-capacity-tab"
-                                        type="button"
-                                    >Capacity</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'priorityWeights' ? 'active' : ''}`}
-                                        onClick={() => selectAdminSettingsTab('priorityWeights')}
-                                        role="tab"
-                                        aria-selected={groupManageTab === 'priorityWeights'}
-                                        aria-controls="admin-settings-priorityWeights-panel"
-                                        id="admin-settings-priorityWeights-tab"
-                                        type="button"
-                                    >Priority weights</button>
-                                </div>
+                                />
                                 <div
                                     id={`admin-settings-${groupManageTab}-panel`}
                                     role="tabpanel"
                                     aria-labelledby={`admin-settings-${groupManageTab}-tab`}
                                 >
+                                {groupManageTab === 'access' ? (
+                                <AdminAccessSettings
+                                    {...{
+                                        authMode,
+                                        adminUserManagementAvailable,
+                                        adminUsers: adminAccess.users,
+                                        adminUsersLoading: adminAccess.loading,
+                                        adminUsersError: adminAccess.error,
+                                        selectedAdminUserIds: adminAccess.selectedUserIds,
+                                        onToggleAdminUser: adminAccess.toggleUser,
+                                    }}
+                                />
+                                ) : (
                                 <JiraFieldSettings
                                     {...{
                                         groupManageTab,
@@ -15570,6 +15554,7 @@ import {
                                         priorityWeightsValidationError,
                                     }}
                                 />
+                                )}
                                 </div>
                                 </>
                                 )}

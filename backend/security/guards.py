@@ -228,7 +228,7 @@ def register_security_guards(flask_app):
                 if csrf_response is not None:
                     return csrf_response
 
-        if policy_class in ADMIN_POLICY_CLASSES:
+        if policy_class in ADMIN_POLICY_CLASSES and getattr(server, "SETTINGS_ADMIN_ONLY", True):
             admin_response = _require_admin(server)
             if admin_response is not None:
                 return admin_response

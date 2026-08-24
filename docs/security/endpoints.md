@@ -11,8 +11,8 @@ The endpoint policy registry lives in `backend/security/policy.py`. Every Flask 
 | `authenticated_read` | App-data read routes that require Basic-local or an authenticated OAuth browser session. |
 | `user_write` | Current-user private state or user-owned export/connection routes. |
 | `workspace_write` | Collaborative workspace state writes such as Scenario draft collaboration. |
-| `shared_admin_write` | Shared workspace/app configuration writes requiring tool admin in OAuth/DB mode. |
-| `tool_admin` | Operator/admin inspection and user/service credential administration. |
+| `shared_admin_write` | Shared workspace/app configuration writes. OAuth requires tool admin when `SETTINGS_ADMIN_ONLY=true`; otherwise any authenticated user may write. |
+| `tool_admin` | App-admin inspection and membership routes. OAuth requires tool admin when `SETTINGS_ADMIN_ONLY=true`; otherwise any authenticated user may use them. |
 | `dev_local` | Local-only diagnostics hidden unless explicitly enabled on loopback. |
 | `legacy_basic_local` | Compatibility routes allowed only for local Basic mode during migration. |
 

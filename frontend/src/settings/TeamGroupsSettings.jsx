@@ -448,14 +448,14 @@ export default function TeamGroupsSettings(props) {
                                                             >
                                                                 Import JSON
                                                             </button>
-                                                            <span className="group-modal-meta">Import overwrites current draft.</span>
+                                                            <span className="group-modal-meta">Replaces only the selected group settings draft; Save to persist.</span>
                                                         </div>
                                                         {showGroupImport && (
                                                             <>
                                                                 <textarea
                                                                     value={groupImportText}
                                                                     onChange={(event) => setGroupImportText(event.target.value)}
-                                                                    placeholder='{"version":1,"groups":[...]}'
+                                                                    placeholder='{"version":1,"group":{...}}'
                                                                 />
                                                                 <div className="group-advanced-row">
                                                                     <button className="secondary compact" onClick={importGroupsConfig} type="button">

@@ -14,7 +14,10 @@ class StartupPreflightTests(unittest.TestCase):
 
     def _run(self, env):
         output = io.StringIO()
-        with redirect_stdout(output):
+        with patch(
+            "scripts.check_startup_preflight.validate_config_storage_startup",
+            return_value=None,
+        ), redirect_stdout(output):
             code = run_preflight(env)
         return code, output.getvalue()
 
@@ -112,7 +115,7 @@ class StartupPreflightTests(unittest.TestCase):
             "OAUTH_LOCAL_TOKEN_STORE_ALLOWED": "true",
         })
 
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 0, output)
         self.assertNotIn("FAIL oauth_local_token_store", output)
         self.assertIn("PASS oauth_local_token_store: not required for db oauth", output)
 
@@ -142,14 +145,10 @@ class StartupPreflightTests(unittest.TestCase):
         self.assertIn("FAIL network_bind: Local OAuth token storage cannot be used with network bind.", output)
 
     def test_cloud_sql_database_check_accepts_safe_passwordless_psycopg_url(self):
-        with patch(
-            "scripts.check_startup_preflight.validate_config_storage_startup",
-            return_value=None,
-        ):
-            code, output = self._run(self._cloud_sql_env(
-                "postgresql+psycopg://iam-user@private-db.internal.example:5432/planner"
-                "?sslmode=verify-full&sslrootcert=%2Fmounted-secrets%2Fserver-ca.pem"
-            ))
+        code, output = self._run(self._cloud_sql_env(
+            "postgresql+psycopg://iam-user@private-db.internal.example:5432/planner"
+            "?sslmode=verify-full&sslrootcert=%2Fmounted-secrets%2Fserver-ca.pem"
+        ))
 
         self.assertEqual(code, 0, output)
         self.assertIn(

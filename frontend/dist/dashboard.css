@@ -151,7 +151,6 @@ h1 {
   font-weight: 300;
   letter-spacing: -0.02em;
   margin-bottom: 0.2rem;
-  animation: slideDown 0.8s ease-out 0.2s both;
 }
 @keyframes slideDown {
   from {
@@ -3684,6 +3683,11 @@ button.toggle.applied-filter.active {
   font-size: 0.9rem;
   line-height: 1;
 }
+.board-help-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
 .board-help-popover {
   position: absolute;
   top: calc(100% + 0.4rem);
@@ -4038,6 +4042,7 @@ button.toggle.applied-filter.active {
   font-weight: 500;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
 }
 .eng-board .col-strip .vert {
   writing-mode: vertical-rl;

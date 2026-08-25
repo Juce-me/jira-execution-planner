@@ -151,7 +151,6 @@ h1 {
   font-weight: 300;
   letter-spacing: -0.02em;
   margin-bottom: 0.2rem;
-  animation: slideDown 0.8s ease-out 0.2s both;
 }
 @keyframes slideDown {
   from {

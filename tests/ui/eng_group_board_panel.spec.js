@@ -49,6 +49,7 @@ const STORY_SPECS = [
 
 const SMART_LINK_URL = 'https://docs.example.test/spec?section=quality';
 const DESCRIPTION_HTML = `<p>Tech design: <a href="${SMART_LINK_URL}" target="_blank" rel="noopener noreferrer">${SMART_LINK_URL}</a></p>${'<p>Objective paragraph that is long enough to need clamping. </p>'.repeat(4)}<ul><li>One</li><li>Two</li></ul>${'<p>More body copy so the block exceeds 11.5rem. </p>'.repeat(8)}`;
+const HEADING_DESCRIPTION_HTML = '<h1>Delivery objective</h1><p>Ship the scoped work without motion.</p>';
 const TABLE_DESCRIPTION_HTML = `
     <h3>Scope (Child Stories)</h3>
     <div class="adf-table-scroll" role="region" aria-label="Description table" tabindex="0">
@@ -463,6 +464,20 @@ test('a loaded description is clamped to 11.5rem and Show full description expan
     const expanded = await body.evaluate((node) => node.getBoundingClientRect().height);
     expect(expanded).toBeGreaterThan(clampedHeight);
     await page.screenshot({ path: `${screenshotDir}/panel-expanded.png` });
+});
+
+test('a description H1 appears without an entrance animation', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { descriptionHtml: HEADING_DESCRIPTION_HTML });
+    await openPanel(page, 'PLAT-1');
+
+    const heading = panel(page).locator('.m-desc-body').getByRole('heading', {
+        name: 'Delivery objective',
+        level: 1,
+    });
+    await expect(heading).toBeVisible();
+    await expect(heading).toHaveCSS('animation-name', 'none');
+    await page.screenshot({ path: `${screenshotDir}/panel-heading-without-motion.png` });
 });
 
 test('description tables keep semantic columns and scroll only the selected table', async ({ page }) => {

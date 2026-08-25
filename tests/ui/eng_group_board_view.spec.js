@@ -487,6 +487,28 @@ test('folded rails are a 340px track with the bar hanging from the top, scaled t
         .toContainText(`The tallest bar represents ${scaleMax} epics.`);
 });
 
+test('a low folded-rail count stays readable with a short fill', async ({ page }) => {
+    const epicSpecs = [
+        ...Array.from({ length: 19 }, (_, index) => [`PLAT-${index + 1}`, 'In Progress', 'Major']),
+        ['PLAT-20', 'Blocked', 'Major'],
+    ];
+    await openBoard(page, { epicSpecs });
+
+    const contrast = await col(page, 'col-5e6f7081').locator('.col-strip').evaluate((strip) => {
+        const count = strip.querySelector('.n');
+        const label = strip.querySelector('.vert');
+        return {
+            count: count.textContent,
+            countColor: getComputedStyle(count).color,
+            primaryTextColor: getComputedStyle(label).color,
+        };
+    });
+
+    expect(contrast.count).toBe('1');
+    expect(contrast.countColor).toBe(contrast.primaryTextColor);
+    await page.screenshot({ path: `${screenshotDir}/board-low-count-contrast-1280.png`, fullPage: false });
+});
+
 /* ── Off-frame hints are a control, not decoration ──────────────────────────────────────────── */
 
 test('the off-frame hint appears only when a column is off-frame, counts them, and focuses the next one', async ({ page }) => {
@@ -654,6 +676,28 @@ test('configured Board replaces the instruction wallpaper with compact on-demand
     await filtersTrigger.click();
     await expect(help).toHaveCount(0);
     await expect(filtersTrigger).toBeFocused();
+});
+
+test('Board help icon is centered within its trigger', async ({ page }) => {
+    await openBoard(page, { width: 1280, height: 720, reducedMotion: true });
+
+    const trigger = page.getByRole('button', { name: 'How Group Board works' });
+    const icon = trigger.locator('.board-help-icon');
+    await expect(icon).toBeVisible();
+
+    const geometry = await trigger.evaluate((node) => {
+        const triggerRect = node.getBoundingClientRect();
+        const iconRect = node.querySelector('.board-help-icon').getBoundingClientRect();
+        return {
+            horizontalOffset: (iconRect.left + iconRect.width / 2)
+                - (triggerRect.left + triggerRect.width / 2),
+            verticalOffset: (iconRect.top + iconRect.height / 2)
+                - (triggerRect.top + triggerRect.height / 2),
+        };
+    });
+    expect(Math.abs(geometry.horizontalOffset)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(geometry.verticalOffset)).toBeLessThanOrEqual(0.5);
+    await page.screenshot({ path: `${screenshotDir}/board-help-icon-centered-1280.png`, fullPage: false });
 });
 
 test('open Board help recalculates its width and viewport gutters after resize', async ({ page }) => {

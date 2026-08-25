@@ -43,6 +43,30 @@ class ConfigStorageSelectorTests(unittest.TestCase):
         with self.assertRaises(ConfigStorageError):
             validate_config_storage_startup({'CONFIG_STORAGE_BACKEND': 'db'})
 
+    def test_cloud_sql_storage_rejects_unsafe_tls_before_migration_check(self):
+        env = {
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_CONNECTION_MODE': 'cloud_sql_iam',
+            'DATABASE_URL': 'postgresql+psycopg://iam-user@db:5432/planner',
+        }
+
+        with patch('backend.config.repository._migrations_at_head') as migrations:
+            with self.assertRaisesRegex(ConfigStorageError, 'TLS'):
+                validate_config_storage_startup(env)
+
+        migrations.assert_not_called()
+
+    def test_db_storage_passes_environment_to_migration_check(self):
+        env = {
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_URL': 'sqlite+pysqlite:///:memory:',
+        }
+
+        with patch('backend.config.repository._migrations_at_head', return_value=True) as migrations:
+            validate_config_storage_startup(env)
+
+        migrations.assert_called_once_with(env['DATABASE_URL'], environ=env)
+
     def test_db_storage_requires_migrations_at_head(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'config-storage.db')}"

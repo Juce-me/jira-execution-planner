@@ -43,11 +43,11 @@ def _migration_config(database_url):
     return config
 
 
-def _migrations_at_head(database_url):
+def _migrations_at_head(database_url, *, environ=None):
     config = _migration_config(database_url)
     script = ScriptDirectory.from_config(config)
     expected_heads = set(script.get_heads())
-    engine = db_engine.get_engine(database_url)
+    engine = db_engine.get_engine(database_url, environ=environ)
     with engine.connect() as connection:
         current_heads = set(MigrationContext.configure(connection).get_current_heads())
     return current_heads == expected_heads
@@ -59,9 +59,10 @@ def validate_config_storage_startup(environ=None):
         return
     try:
         database_url = db_engine.resolve_database_url(environ=env, required=True)
+        db_engine.validate_startup_database_config(env)
     except db_engine.DatabaseConfigurationError as error:
         raise ConfigStorageError(str(error))
-    if not _migrations_at_head(database_url):
+    if not _migrations_at_head(database_url, environ=env):
         raise ConfigStorageError('CONFIG_STORAGE_BACKEND=db requires database migrations at head')
 
 

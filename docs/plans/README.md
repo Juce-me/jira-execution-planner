@@ -51,6 +51,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Output: default local/CI URL behavior stays unchanged; hosted mode obtains lock-protected ADC login tokens immediately before new physical connections; every IAM connection uses the fixed app-owned 10-second timeout; web pooling and Alembic `NullPool` share one engine factory; offline migrations remain ADC-independent while validating the passwordless TLS URL; hosted docs record the complete IAM/database prerequisites; no Cloud SQL Python Connector, alternate PostgreSQL driver, proxy, deployment, UI, or unrelated product change was introduced.
    - Design record: `../agents/features/2026-07-27-executed-cloud-sql-iam-connectivity-design.md`.
 
+10. `SUPPORT-multi-device-browser-sessions-design.md`
+   - Approved design for persistent DB/OAuth browser sessions that let one user remain signed in from multiple browsers while preserving one shared Atlassian rotating-token connection.
+   - Expected output after execution: independent per-browser login/logout, shared token refresh without cross-device sign-out, connection-wide revocation that fails closed, lazy upgrade of current legacy cookies, and no new UI or Home/Townsquare/Jira mutation.
+
 ## Completed Scenario Planner Workflow
 
 1. `DONE-scenario-planner-quarter-drafts-00-overview.md`

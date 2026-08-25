@@ -26,20 +26,38 @@ test('dashboard defines groupEpicsByInitiative function', () => {
     );
 });
 
-test('grouping reuses the shared checkbox control', () => {
+test('grouping reuses the shared icon-button control', () => {
     assert.ok(
-        engViewSource.includes('className="group-visible-control"'),
-        'Expected grouping to reuse the existing checkbox-label control, not a new one'
+        engViewSource.includes("import IconButton from '../ui/IconButton.jsx'"),
+        'Expected grouping to import the shared IconButton'
     );
     assert.ok(
-        engViewSource.includes('Group by initiative'),
-        'Expected the grouping control to say what it groups by'
+        engViewSource.includes('className="fb-trigger fb-trigger-icon"'),
+        'Expected grouping to use the filter-bar icon trigger'
+    );
+    assert.ok(
+        engViewSource.includes('aria-label="Group by Initiative"'),
+        'Expected the grouping button to have a stable accessible name'
+    );
+    assert.ok(
+        engViewSource.includes('aria-pressed={groupByInitiative}'),
+        'Expected the grouping button to expose its pressed state'
+    );
+    assert.equal(engViewSource.includes('className="group-visible-control"'), false);
+    assert.equal(engViewSource.includes('type="checkbox"'), false);
+    assert.equal(engViewSource.includes('initiative-toggle'), false);
+});
+
+test('dashboard initiative icon can suppress its native tooltip', () => {
+    assert.ok(
+        dashboardSource.includes("title={title || undefined}"),
+        'Expected InitiativeIcon to permit the grouping control to own its tooltip'
     );
 });
 
 test('grouping is a view control in the filter bar, not a filter', () => {
     assert.ok(
-        /viewControls=\{[\s\S]*group-visible-control/.test(engViewSource),
+        /viewControls=\{[\s\S]*initiative-grouping-control/.test(engViewSource),
         'Expected grouping to sit in the bar\'s view-control slot (D30: order and structure, not membership)'
     );
     assert.ok(

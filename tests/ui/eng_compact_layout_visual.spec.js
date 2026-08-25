@@ -142,6 +142,41 @@ async function measureFilterbarWrapper(page) {
     });
 }
 
+async function measureInitiativeTooltipLayer(page, activation, screenshotName) {
+    const grouping = page.getByRole('button', { name: 'Group by Initiative' });
+    const tooltip = page.getByRole('tooltip');
+
+    await page.mouse.move(0, 0);
+    if (activation === 'hover') {
+        await grouping.hover();
+    } else {
+        const sortToggle = page.locator('.eng-epic-sort-dropdown .sprint-dropdown-toggle');
+        await sortToggle.focus();
+        await page.keyboard.press('Tab');
+        await expect(grouping).toBeFocused();
+    }
+    await expect(tooltip).toHaveCSS('opacity', '1');
+    await waitForVisualSettled(page);
+    const layer = await tooltip.evaluate((node) => {
+        const button = node.parentElement.querySelector('button[aria-label="Group by Initiative"]');
+        const tooltipRect = node.getBoundingClientRect();
+        const buttonRect = button.getBoundingClientRect();
+        const previousPointerEvents = node.style.pointerEvents;
+        node.style.pointerEvents = 'auto';
+        const hit = document.elementFromPoint(
+            tooltipRect.left + tooltipRect.width / 2,
+            tooltipRect.top + tooltipRect.height / 2
+        );
+        node.style.pointerEvents = previousPointerEvents;
+        return {
+            belowButton: tooltipRect.top >= buttonRect.bottom,
+            ownsHitPoint: Boolean(hit && node.contains(hit)),
+        };
+    });
+    await page.screenshot({ path: `${screenshotDir}/${screenshotName}.png`, fullPage: false });
+    return layer;
+}
+
 async function installEngCompactFixture(page, options = {}) {
     const sprintState = options.sprintState || 'active';
     const productIssueSource = options.productTasks || productTasks;
@@ -248,7 +283,13 @@ async function openEngCatchUp(page, viewport, options = {}) {
     }
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
+    const expectedSurface = options.expectedSurface || 'catch-up';
+    if (expectedSurface === 'planning') {
+        await expect(page.locator('.planning-panel.open')).toBeVisible();
+    } else {
+        expect(expectedSurface).toBe('catch-up');
+        await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
+    }
     await expect(page.locator('.filterbar')).toBeVisible();
     if (!options.expectEmptyList) {
         await expect(page.locator('.task-list:not(.epm-issue-board) .epic-block').first()).toBeVisible();
@@ -306,6 +347,8 @@ async function measureBar(page, baselineOverflow = 1) {
     const metrics = await page.evaluate(() => {
         const bar = document.querySelector('.filterbar');
         const barRect = bar.getBoundingClientRect();
+        const wrapRect = bar.closest('.filterbar-wrap').getBoundingClientRect();
+        const viewControlsRect = bar.querySelector('.fb-view-controls')?.getBoundingClientRect();
         // Rows by clustering the children's vertical centres: align-items: center gives each
         // child a different `top`, so distinct tops would count four rows on a single line.
         const centres = [...bar.children]
@@ -328,14 +371,14 @@ async function measureBar(page, baselineOverflow = 1) {
             '.chip-clear',
             '.sprint-dropdown-toggle .cap',
             '.sprint-dropdown-toggle span:not(.cap)',
-            '.group-visible-control',
+            '.initiative-grouping-control',
         ];
         const labels = labelSelectors.flatMap(selector => [...bar.querySelectorAll(selector)].map(node => ({
             selector,
             text: node.textContent.trim().slice(0, 40),
             clipped: node.scrollWidth - node.clientWidth,
             right: node.getBoundingClientRect().right,
-            groupRight: node.closest('.pop-host, .fb-readout, .chip, .chip-clear, .fb-view-controls, .sprint-dropdown, .group-visible-control')
+            groupRight: node.closest('.pop-host, .fb-readout, .chip, .chip-clear, .fb-view-controls, .sprint-dropdown, .initiative-grouping-control')
                 .getBoundingClientRect().right,
         })));
         const lane = bar.querySelector('.fb-chips');
@@ -343,6 +386,9 @@ async function measureBar(page, baselineOverflow = 1) {
         return {
             height: barRect.height,
             width: barRect.width,
+            leftInset: barRect.left - wrapRect.left,
+            rightInset: wrapRect.right - barRect.right,
+            viewControlsRightInset: viewControlsRect ? barRect.right - viewControlsRect.right : null,
             containerWidth: bar.closest('.container').getBoundingClientRect().width,
             rows: rows.length,
             labels,
@@ -458,8 +504,9 @@ test('the filter bar holds one row at desktop widths with every facet active', a
     expect(wide.chipsVisible).toBe(3);
     expect(wide.chipsHidden).toBe(0);
     expect(wide.moreText).toBe('');
-    // Content-width, not full-bleed: the bar sits in the layout like the controls row above it.
-    expect(wide.width).toBeLessThan(wide.containerWidth);
+    expect(Math.abs(wide.leftInset)).toBeLessThanOrEqual(1);
+    expect(Math.abs(wide.rightInset)).toBeLessThanOrEqual(1);
+    expect(Math.abs(wide.viewControlsRightInset)).toBeLessThanOrEqual(10);
     expectNoClipping(wide);
     await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-1440.png` });
 
@@ -471,6 +518,9 @@ test('the filter bar holds one row at desktop widths with every facet active', a
         expect(metrics.rows, `bar rows at ${width}`).toBe(1);
         expect(metrics.chipsVisible + metrics.chipsHidden).toBe(3);
         expect(metrics.clear.width, `Clear all collapsed at ${width}`).toBeGreaterThan(0);
+        expect(Math.abs(metrics.leftInset), `bar left inset at ${width}`).toBeLessThanOrEqual(1);
+        expect(Math.abs(metrics.rightInset), `bar right inset at ${width}`).toBeLessThanOrEqual(1);
+        expect(Math.abs(metrics.viewControlsRightInset), `view controls right inset at ${width}`).toBeLessThanOrEqual(10);
         expectNoClipping(metrics);
     }
 
@@ -550,6 +600,7 @@ test('Catch Up exposes the compact, filter-bar, and pinned-epic sticky stack', a
 
 test('Planning orders compact, planning, filter bar, and pinned epic without overlap', async ({ page }) => {
     await openEngCatchUp(page, { width: 1440, height: 600 }, {
+        expectedSurface: 'planning',
         prefs: { showPlanning: true },
         planningSelection: ['PRODUCT-1', 'TECH-2'],
     });
@@ -588,6 +639,44 @@ test('Planning orders compact, planning, filter bar, and pinned epic without ove
     });
     expect(sortOwnsPoint).toBe(true);
     await sortOption.click();
+});
+
+test('Initiative tooltip clears higher sticky layers in Catch Up and Planning for hover and keyboard focus', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 600 }, { withInitiativeData: true });
+
+    const pinCurrentSurface = async (planning) => {
+        const snapshots = await collectStickySnapshots(page, waitForVisualSettled);
+        const witness = snapshots.find(result => (
+            result.compactVisible && result.filterbarPinned && (!planning || result.planning)
+        ));
+        expect(witness, `expected a pinned ${planning ? 'Planning' : 'Catch Up'} tooltip witness`).toBeTruthy();
+        await page.evaluate(y => window.scrollTo(0, y), witness.scrollY);
+        await waitForVisualSettled(page);
+    };
+
+    await pinCurrentSurface(false);
+    const results = {
+        catchUp: {
+            hover: await measureInitiativeTooltipLayer(page, 'hover', 'initiative-grouping-tooltip-catch-up-hover'),
+            focus: await measureInitiativeTooltipLayer(page, 'focus', 'initiative-grouping-tooltip-catch-up-focus'),
+        },
+    };
+
+    await page.locator('.compact-sticky-header.is-visible .eng-mode-control')
+        .getByRole('radio', { name: 'Planning' })
+        .click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await pinCurrentSurface(true);
+    results.planning = {
+        hover: await measureInitiativeTooltipLayer(page, 'hover', 'initiative-grouping-tooltip-planning-hover'),
+        focus: await measureInitiativeTooltipLayer(page, 'focus', 'initiative-grouping-tooltip-planning-focus'),
+    };
+
+    const visibleAboveContent = { belowButton: true, ownsHitPoint: true };
+    expect(results).toEqual({
+        catchUp: { hover: visibleAboveContent, focus: visibleAboveContent },
+        planning: { hover: visibleAboveContent, focus: visibleAboveContent },
+    });
 });
 
 test('the popover opens over the list and its options take a plain click', async ({ page }) => {
@@ -763,20 +852,105 @@ test('sort and grouping are view controls in the bar and render no chip', async 
 
     const viewControls = page.locator('.filterbar .fb-view-controls');
     await expect(viewControls.locator('.eng-epic-sort-dropdown')).toHaveCount(1);
-    await expect(viewControls.locator('.group-visible-control')).toHaveCount(1);
+    await expect(viewControls.locator('.initiative-grouping-control')).toHaveCount(1);
 
     // Only the default "Status hidden Killed" chip is present; neither view control adds one.
     const chips = page.locator('.filterbar .chip:not(.chip-more)');
     await expect(chips).toHaveCount(1);
     await expect(page.locator('.fb-trigger .badge')).toHaveText('1');
 
-    const grouping = viewControls.locator('.group-visible-control input[type="checkbox"]');
-    await expect(grouping).toBeChecked();
+    const grouping = viewControls.getByRole('button', { name: 'Group by Initiative' });
+    const sortToggle = viewControls.locator('.eng-epic-sort-dropdown .sprint-dropdown-toggle');
+    await expect(grouping).toHaveAttribute('aria-pressed', 'true');
+    await expect(grouping).toHaveCSS('color', 'rgb(255, 171, 0)');
+    await expect(grouping).toHaveCSS('border-color', 'rgb(255, 171, 0)');
+    await expect(grouping).toHaveCSS('background-color', 'rgba(255, 171, 0, 0.12)');
+    await waitForVisualSettled(page);
+    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/initiative-grouping-on.png` });
+
+    const measureGroupingGeometry = async () => Promise.all([grouping, sortToggle].map(locator => locator.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        return { width: rect.width, height: rect.height, center: rect.top + rect.height / 2 };
+    })));
+    const expectGroupedControlGeometry = (geometry) => {
+        expect(geometry[0].width).toBe(30);
+        expect(geometry[0].height).toBe(30);
+        expect(Math.abs(geometry[0].center - geometry[1].center)).toBeLessThanOrEqual(1);
+    };
+    const groupedGeometry = await measureGroupingGeometry();
+    expectGroupedControlGeometry(groupedGeometry);
+
+    await grouping.hover();
+    await expect(viewControls.getByRole('tooltip')).toHaveText('Group by Initiative — On');
+    await expect(viewControls.getByRole('tooltip')).toHaveCSS('opacity', '1');
     await expect(page.locator('.initiative-header')).toBeVisible();
     await grouping.click();
+    await expect(grouping).toHaveAttribute('aria-pressed', 'false');
+    await expect(grouping).toHaveCSS('color', 'rgb(102, 102, 102)');
+    await expect(grouping).toHaveCSS('border-color', 'rgb(224, 221, 215)');
+    await expect(grouping).toHaveCSS('background-color', 'rgb(248, 247, 244)');
+    await expect(viewControls.getByRole('tooltip')).toHaveText('Group by Initiative — Off');
     await expect(page.locator('.initiative-header')).toHaveCount(0);
     await expect(chips).toHaveCount(1);
     await expect(page.locator('.fb-trigger .badge')).toHaveText('1');
+    await page.mouse.move(0, 0);
+    await grouping.blur();
+    await waitForVisualSettled(page);
+    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/initiative-grouping-off.png` });
+    const ungroupedGeometry = await measureGroupingGeometry();
+    expect(ungroupedGeometry[0]).toEqual(groupedGeometry[0]);
+    await page.mouse.move(0, 0);
+    await grouping.focus();
+    await expect(viewControls.getByRole('tooltip')).toHaveCSS('opacity', '1');
+
+    await page.setViewportSize({ width: 1091, height: 800 });
+    await waitForVisualSettled(page);
+    await grouping.scrollIntoViewIfNeeded();
+    await waitForVisualSettled(page);
+    const mediumOffGeometry = await measureGroupingGeometry();
+    expectGroupedControlGeometry(mediumOffGeometry);
+    await grouping.click();
+    await expect(grouping).toHaveAttribute('aria-pressed', 'true');
+    const mediumOnGeometry = await measureGroupingGeometry();
+    expectGroupedControlGeometry(mediumOnGeometry);
+    expect(mediumOnGeometry[0]).toEqual(mediumOffGeometry[0]);
+    await grouping.click();
+    await expect(grouping).toHaveAttribute('aria-pressed', 'false');
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    await waitForVisualSettled(page);
+    await grouping.scrollIntoViewIfNeeded();
+    await waitForVisualSettled(page);
+    const measureNarrowGroupingRow = async () => viewControls.evaluate((controls) => {
+        const filterbar = controls.closest('.filterbar');
+        const sort = controls.querySelector('.eng-epic-sort-dropdown .sprint-dropdown-toggle');
+        const groupingButton = controls.querySelector('button[aria-label="Group by Initiative"]');
+        const firstRowBottom = Math.max(...[...filterbar.children]
+            .filter(node => node !== controls)
+            .map(node => node.getBoundingClientRect().bottom));
+        const sortRect = sort.getBoundingClientRect();
+        const groupingRect = groupingButton.getBoundingClientRect();
+        return {
+            firstRowBottom,
+            sortTop: sortRect.top,
+            sortCenter: sortRect.top + sortRect.height / 2,
+            groupingCenter: groupingRect.top + groupingRect.height / 2,
+        };
+    });
+    const narrowOffGeometry = await measureGroupingGeometry();
+    expectGroupedControlGeometry(narrowOffGeometry);
+    const narrowOffRow = await measureNarrowGroupingRow();
+    expect(narrowOffRow.sortTop).toBeGreaterThan(narrowOffRow.firstRowBottom);
+    expect(Math.abs(narrowOffRow.sortCenter - narrowOffRow.groupingCenter)).toBeLessThanOrEqual(1);
+    await grouping.click();
+    await expect(grouping).toHaveAttribute('aria-pressed', 'true');
+    const narrowOnGeometry = await measureGroupingGeometry();
+    expectGroupedControlGeometry(narrowOnGeometry);
+    expect(narrowOnGeometry[0]).toEqual(narrowOffGeometry[0]);
+    const narrowOnRow = await measureNarrowGroupingRow();
+    expect(narrowOnRow.sortTop).toBeGreaterThan(narrowOnRow.firstRowBottom);
+    expect(Math.abs(narrowOnRow.sortCenter - narrowOnRow.groupingCenter)).toBeLessThanOrEqual(1);
+    expect((await measureBar(page)).rows).toBeLessThanOrEqual(2);
 
     // A plain click on the sort option: no force, so this also proves the panel is not
     // painted under the task list from inside the sticky bar.
@@ -791,8 +965,8 @@ test('an explicit grouping choice is stored and survives initiative data arrivin
     // §2: today a useEffect recomputed groupByInitiative from hasInitiativeData and threw the
     // user's choice away every time initiative data landed.
     await openEngCatchUp(page, { width: 1440, height: 900 }, { withInitiativeData: true });
-    const grouping = page.locator('.filterbar .group-visible-control input[type="checkbox"]');
-    await expect(grouping).toBeChecked();
+    const grouping = page.getByRole('button', { name: 'Group by Initiative' });
+    await expect(grouping).toHaveAttribute('aria-pressed', 'true');
     const initial = await page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1')));
     expect(initial.groupByInitiativeChoice).toBeNull();
 
@@ -806,7 +980,7 @@ test('an explicit grouping choice is stored and survives initiative data arrivin
     await page.locator('button[title="Refresh tasks and sprints from Jira"]').click();
     await expect(page.locator('.task-list:not(.epm-issue-board) .epic-block').first()).toBeVisible();
     await waitForVisualSettled(page);
-    await expect(page.locator('.filterbar .group-visible-control input[type="checkbox"]')).not.toBeChecked();
+    await expect(page.getByRole('button', { name: 'Group by Initiative' })).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('.initiative-header')).toHaveCount(0);
 });
 

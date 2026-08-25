@@ -15,18 +15,12 @@
             z-index: calc(var(--sticky-control-overlay-z) + 2);
         }
 
-        .header-actions-row .jira-export .jira-export-icon-button,
         .jira-export .jira-export-icon-button {
-            width: var(--control-height);
-            min-width: var(--control-height);
-            height: var(--control-height);
-            min-height: var(--control-height);
             display: inline-flex;
             align-items: center;
             justify-content: center;
             margin: 0;
             padding: 0;
-            border-radius: 6px;
         }
 
         .jira-export-icon {

@@ -333,11 +333,11 @@ import {
 	            }
 	        }
 
-        function InitiativeIcon({ className = '', size = 14 }) {
+        function InitiativeIcon({ className = '', size = 14, title = 'INITIATIVE' }) {
             const classes = ['initiative-icon', className].filter(Boolean).join(' ');
 
             return (
-                <span className={classes} aria-hidden="true" title="INITIATIVE">
+                <span className={classes} aria-hidden="true" title={title || undefined}>
                     <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
                         <path
                             d="M8 1.75c-2.35 0-4.25 1.91-4.25 4.25 0 1.51.79 2.89 2.08 3.66.39.23.67.66.67 1.14v.45c0 .41.34.75.75.75h1.5c.41 0 .75-.34.75-.75v-.45c0-.48.28-.91.67-1.14A4.25 4.25 0 0 0 12.25 6c0-2.34-1.9-4.25-4.25-4.25Z"
@@ -509,6 +509,7 @@ import {
             const [engBoardFilterSelection, setEngBoardFilterSelection] = useState({});
             const [activeGroupId, setActiveGroupId] = useState(savedPrefsRef.current.activeGroupId ?? null);
             const [showGroupDropdown, setShowGroupDropdown] = useState(false);
+            const [groupDropdownQuery, setGroupDropdownQuery] = useState('');
             const groupDropdownRefs = useRef({ main: null, compact: null });
             const [showGroupManage, setShowGroupManage] = useState(false);
             const [groupDraft, setGroupDraft] = useState(null);
@@ -790,6 +791,7 @@ import {
             const excludedCapacityForceRefreshRef = useRef(false);
             const burnoutChartRef = useRef(null);
             const [showTeamDropdown, setShowTeamDropdown] = useState(false);
+            const [teamDropdownQuery, setTeamDropdownQuery] = useState('');
             const teamDropdownRefs = useRef({ main: null, compact: null });
             const [sprintSearch, setSprintSearch] = useState('');
             const [showSprintDropdown, setShowSprintDropdown] = useState(false);
@@ -1577,6 +1579,26 @@ import {
                     return nameMatch || stateLabel === query;
                 });
             }, [availableSprints, sprintSearch]);
+
+            const filteredControlGroups = React.useMemo(() => {
+                const query = groupDropdownQuery.trim().toLowerCase();
+                if (!query) return visibleControlGroups || [];
+                return (visibleControlGroups || []).filter(group =>
+                    String(group?.name || '').toLowerCase().includes(query)
+                );
+            }, [visibleControlGroups, groupDropdownQuery]);
+
+            useEffect(() => {
+                if (!showGroupDropdown) setGroupDropdownQuery('');
+            }, [showGroupDropdown]);
+
+            useEffect(() => {
+                if (!showTeamDropdown) setTeamDropdownQuery('');
+            }, [showTeamDropdown]);
+
+            useEffect(() => {
+                if (!showSprintDropdown) setSprintSearch('');
+            }, [showSprintDropdown]);
 
             const getActiveControlSurfaceName = () => (compactStickyVisible ? 'compact' : 'main');
 
@@ -6434,6 +6456,13 @@ import {
                     getTeamInfo
                 });
             }, [capacityTasks, activeGroupTeamIds, teamNameLookup]);
+            const filteredTeamOptions = React.useMemo(() => {
+                const query = teamDropdownQuery.trim().toLowerCase();
+                if (!query) return teamOptions;
+                return teamOptions.filter(team =>
+                    String(team?.name || '').toLowerCase().includes(query)
+                );
+            }, [teamOptions, teamDropdownQuery]);
             const teamNameById = React.useMemo(() => {
                 const map = new Map();
                 teamOptions.forEach(team => {
@@ -12382,14 +12411,16 @@ import {
                     <div className="sprint-dropdown" ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
-                            role="button"
-                            aria-label="Select sprint"
-                            tabIndex={sprintsLoading || availableSprints.length === 0 ? -1 : 0}
+                            role={showSprintDropdown ? undefined : 'button'}
+                            aria-label={showSprintDropdown ? undefined : 'Select sprint'}
+                            tabIndex={showSprintDropdown ? undefined : (sprintsLoading || availableSprints.length === 0 ? -1 : 0)}
                             onClick={() => {
+                                if (showSprintDropdown) return;
                                 if (sprintsLoading || availableSprints.length === 0) return;
                                 applyExclusiveDropdownState('sprint', showSprintDropdown);
                             }}
                             onKeyDown={(event) => {
+                                if (showSprintDropdown) return;
                                 if (sprintsLoading || availableSprints.length === 0) return;
                                 if (event.key === 'Enter' || event.key === ' ') {
                                     event.preventDefault();
@@ -12398,26 +12429,40 @@ import {
                             }}
                             aria-disabled={sprintsLoading || availableSprints.length === 0}
                         >
-                            <span>{sprintName || 'Sprint'}</span>
+                            {showSprintDropdown ? (
+                                <input
+                                    type="text"
+                                    className="dropdown-toggle-filter-input"
+                                    value={sprintSearch}
+                                    onChange={(event) => setSprintSearch(event.target.value)}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onKeyDown={(event) => {
+                                        event.stopPropagation();
+                                        if (event.key === 'Escape') {
+                                            event.preventDefault();
+                                            setShowSprintDropdown(false);
+                                        }
+                                    }}
+                                    placeholder={sprintName || 'Sprint'}
+                                    aria-label="Filter sprints"
+                                    autoFocus={surface === activeControlSurface}
+                                />
+                            ) : (
+                                <span>{sprintName || 'Sprint'}</span>
+                            )}
                             <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
                                 <path d="M6 9L1 4h10z"/>
                             </svg>
                         </div>
                         {showSprintDropdown && surface === activeControlSurface && (
                             <div className="sprint-dropdown-panel">
-                                <input
-                                    type="text"
-                                    className="sprint-dropdown-search"
-                                    placeholder="Filter..."
-                                    value={sprintSearch}
-                                    onChange={(e) => setSprintSearch(e.target.value)}
-                                    aria-label="Filter sprints"
-                                />
                                 <div className="sprint-dropdown-list">
                                     {sprintsLoading ? (
                                         <div className="sprint-dropdown-option">Loading sprints...</div>
-                                    ) : filteredSprints.length === 0 ? (
+                                    ) : availableSprints.length === 0 ? (
                                         <div className="sprint-dropdown-option">No sprints available</div>
+                                    ) : filteredSprints.length === 0 ? (
+                                        <div className="dropdown-filter-empty" role="status">No matching sprints</div>
                                     ) : (
                                         filteredSprints.map(sprint => {
                                             const state = (sprint.state || '').toLowerCase();
@@ -12455,14 +12500,16 @@ import {
                             <div className="group-dropdown" ref={(node) => { groupDropdownRefs.current[surface] = node; }}>
                                 <div
                                     className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
-                                    role="button"
-                                    aria-label="Select group"
-                                    tabIndex={groupsLoading ? -1 : 0}
+                                    role={showGroupDropdown ? undefined : 'button'}
+                                    aria-label={showGroupDropdown ? undefined : 'Select group'}
+                                    tabIndex={showGroupDropdown ? undefined : (groupsLoading ? -1 : 0)}
                                     onClick={() => {
+                                        if (showGroupDropdown) return;
                                         if (groupsLoading) return;
                                         applyExclusiveDropdownState('group', showGroupDropdown);
                                     }}
                                     onKeyDown={(event) => {
+                                        if (showGroupDropdown) return;
                                         if (groupsLoading) return;
                                         if (event.key === 'Enter' || event.key === ' ') {
                                             event.preventDefault();
@@ -12471,7 +12518,27 @@ import {
                                     }}
                                     aria-disabled={groupsLoading}
                                 >
-                                    <span>{activeGroup?.name || (groupsLoading ? 'Loading...' : 'Group')}</span>
+                                    {showGroupDropdown ? (
+                                        <input
+                                            type="text"
+                                            className="dropdown-toggle-filter-input"
+                                            value={groupDropdownQuery}
+                                            onChange={(event) => setGroupDropdownQuery(event.target.value)}
+                                            onClick={(event) => event.stopPropagation()}
+                                            onKeyDown={(event) => {
+                                                event.stopPropagation();
+                                                if (event.key === 'Escape') {
+                                                    event.preventDefault();
+                                                    setShowGroupDropdown(false);
+                                                }
+                                            }}
+                                            placeholder={activeGroup?.name || 'Group'}
+                                            aria-label="Filter groups"
+                                            autoFocus={surface === activeControlSurface}
+                                        />
+                                    ) : (
+                                        <span>{activeGroup?.name || (groupsLoading ? 'Loading...' : 'Group')}</span>
+                                    )}
                                     <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
                                         <path d="M6 9L1 4h10z"/>
                                     </svg>
@@ -12482,8 +12549,10 @@ import {
                                             <div className="group-dropdown-option">Loading groups...</div>
                                         ) : (visibleControlGroups || []).length === 0 ? (
                                             <div className="group-dropdown-option">No groups yet</div>
+                                        ) : filteredControlGroups.length === 0 ? (
+                                            <div className="dropdown-filter-empty" role="status">No matching groups</div>
                                         ) : (
-                                            (visibleControlGroups || []).map(group => (
+                                            filteredControlGroups.map(group => (
                                                 <div
                                                     key={group.id}
                                                     className="group-dropdown-option"
@@ -12518,14 +12587,16 @@ import {
                     <div className="team-dropdown" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''} ${!isAllTeamsSelected ? 'active-filter applied-filter' : ''}`}
-                            role="button"
-                            aria-label="Filter teams"
-                            tabIndex={tasks.length === 0 && loading ? -1 : 0}
+                            role={showTeamDropdown ? undefined : 'button'}
+                            aria-label={showTeamDropdown ? undefined : 'Filter teams'}
+                            tabIndex={showTeamDropdown ? undefined : (tasks.length === 0 && loading ? -1 : 0)}
                             onClick={() => {
+                                if (showTeamDropdown) return;
                                 if (tasks.length === 0 && loading) return;
                                 applyExclusiveDropdownState('team', showTeamDropdown);
                             }}
                             onKeyDown={(event) => {
+                                if (showTeamDropdown) return;
                                 if (tasks.length === 0 && loading) return;
                                 if (event.key === 'Enter' || event.key === ' ') {
                                     event.preventDefault();
@@ -12534,17 +12605,39 @@ import {
                             }}
                             aria-disabled={tasks.length === 0 && loading}
                         >
-                            <span style={{flex: 1, display: 'grid', textAlign: 'left', minWidth: 0}}>
-                                <span className="team-dropdown-selection-label" style={{gridArea: '1/1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{selectedTeamsLabel}</span>
-                                <span className="team-dropdown-width-label" style={{gridArea: '1/1', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap'}} aria-hidden="true">{longestTeamOptionLabel}</span>
-                            </span>
+                            {showTeamDropdown ? (
+                                <input
+                                    type="text"
+                                    className="dropdown-toggle-filter-input"
+                                    value={teamDropdownQuery}
+                                    onChange={(event) => setTeamDropdownQuery(event.target.value)}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onKeyDown={(event) => {
+                                        event.stopPropagation();
+                                        if (event.key === 'Escape') {
+                                            event.preventDefault();
+                                            setShowTeamDropdown(false);
+                                        }
+                                    }}
+                                    placeholder={selectedTeamsLabel}
+                                    aria-label="Filter teams"
+                                    autoFocus={surface === activeControlSurface}
+                                />
+                            ) : (
+                                <span style={{flex: 1, display: 'grid', textAlign: 'left', minWidth: 0}}>
+                                    <span className="team-dropdown-selection-label" style={{gridArea: '1/1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{selectedTeamsLabel}</span>
+                                    <span className="team-dropdown-width-label" style={{gridArea: '1/1', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap'}} aria-hidden="true">{longestTeamOptionLabel}</span>
+                                </span>
+                            )}
                             <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
                                 <path d="M6 9L1 4h10z"/>
                             </svg>
                         </div>
                         {showTeamDropdown && surface === activeControlSurface && (
                             <div className="team-dropdown-panel">
-                                {teamOptions.map(team => (
+                                {filteredTeamOptions.length === 0 && teamDropdownQuery.trim() ? (
+                                    <div className="dropdown-filter-empty" role="status">No matching teams</div>
+                                ) : filteredTeamOptions.map(team => (
                                     <label key={team.id} className="team-dropdown-option">
                                         <input
                                             type="checkbox"
@@ -12970,7 +13063,7 @@ import {
                                     />
                                     <IconButton
                                         variant="secondary compact"
-                                        className="refresh-icon"
+                                        className="header-icon-button refresh-icon"
                                         isLoading={selectedView === 'epm' && epmProjectsLoading}
                                         onClick={refreshActiveViewFromJira}
                                         disabled={manualRefreshDisabled}
@@ -12982,6 +13075,39 @@ import {
                                             <path d="M19 3v4h-4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
                                         </svg>
                                     </IconButton>
+                                    {selectedView === 'eng' && (
+                                        <button
+                                            className="header-icon-button group-gear-button"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                trackSettingsAction('teams', 'open', { source_surface: 'dashboard' });
+                                                openGroupManage();
+                                            }}
+                                            disabled={groupsLoading}
+                                            title="Manage team groups"
+                                            aria-label="Manage team groups"
+                                            type="button"
+                                        >
+                                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                                <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    )}
+                                    {selectedView === 'epm' && canEditEpmConfiguration && (
+                                        <button
+                                            className="header-icon-button group-gear-button"
+                                            onClick={openEpmSettingsTab}
+                                            title="Open EPM settings"
+                                            aria-label="Open EPM settings"
+                                            type="button"
+                                        >
+                                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
+                                                <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -13000,43 +13126,6 @@ import {
                                     <>
                                         {shouldUseEpmSprint(epmTab) && renderSprintControl('main')}
                                         {renderEpmControls('main')}
-                                    </>
-                                )}
-                                {selectedView === 'eng' && (
-                                    <button
-                                        className="group-gear-button"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        trackSettingsAction('teams', 'open', { source_surface: 'dashboard' });
-                                        openGroupManage();
-                                    }}
-                                        disabled={groupsLoading}
-                                        title="Manage team groups"
-                                        aria-label="Manage team groups"
-                                        type="button"
-                                    >
-                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
-                                            <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                        </svg>
-                                    </button>
-                                )}
-                                {selectedView === 'epm' && (
-                                    <>
-                                        {canEditEpmConfiguration && (
-                                            <button
-                                                className="group-gear-button"
-                                                onClick={openEpmSettingsTab}
-                                                title="Open EPM settings"
-                                                aria-label="Open EPM settings"
-                                                type="button"
-                                            >
-                                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                    <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
-                                                    <path d="M19.4 12a7.5 7.5 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.1-1.2l-.4-2.6H9.6l-.4 2.6a7.4 7.4 0 0 0-2.1 1.2l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2.1 1.2l.4 2.6h4.8l.4-2.6c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                                                </svg>
-                                            </button>
-                                        )}
                                     </>
                                 )}
                             </div>

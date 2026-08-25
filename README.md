@@ -42,6 +42,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - Local install, DB mode, migrations, and Home token setup are covered in [INSTALL.md](INSTALL.md)
 - Agent work artifact rules are defined in [docs/AGENTS.md](docs/AGENTS.md)
 - Product analytics rules are defined in [docs/README_ANALYTICS.md](docs/README_ANALYTICS.md)
+- Self-hosted data handling is described in the [privacy notice](docs/PRIVACY.md)
 
 ## 📋 Files
 

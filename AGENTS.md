@@ -305,3 +305,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - `group.teamLabels` values are Jira epic labels for Future Planning epic matching and JQL `labels =` clauses, never team display names; resolve team names through the team catalog lookup (`teamNameLookup`/`resolveTeamName`) or task-derived `getTeamInfo(task).name`, and note the catalog only loads when the settings modal opens.
 - Once the user explicitly resolves a security-policy tradeoff, implement that choice without reopening it unless new evidence materially changes the risk.
 - Department group JSON export/import is selected-group scoped: export only the active group, and import settings into only that active group while preserving its id/name, sibling groups, and the shared default.
+- In main ENG view filters, keep `.eng-mode-control` intrinsic-width, use the flexible gap after Teams for right alignment, and bottom-align it with the dropdown controls.

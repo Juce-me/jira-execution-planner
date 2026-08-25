@@ -8,7 +8,8 @@ const epmViewSource = fs.readFileSync('frontend/src/epm/EpmView.jsx', 'utf8');
 const epmRollupPanelSource = fs.readFileSync('frontend/src/epm/EpmRollupPanel.jsx', 'utf8');
 
 test('Jira export control is an icon menu instead of a split text button', () => {
-    assert.ok(componentSource.includes('className="secondary compact jira-export-icon-button"'), 'Expected one compact Jira icon trigger');
+    assert.ok(componentSource.includes('variant="secondary compact"'), 'Expected the shared compact secondary variant');
+    assert.ok(componentSource.includes('className="header-icon-button jira-export-icon-button"'), 'Expected the shared header icon-button geometry');
     assert.ok(componentSource.includes('aria-label="Open Jira issue menu"'), 'Expected accessible icon button label');
     assert.ok(componentSource.includes("renderMenuItem('epics', 'Open epics'"), 'Expected menu action for epics');
     assert.ok(componentSource.includes("renderMenuItem('stories', 'Open stories'"), 'Expected menu action for stories');

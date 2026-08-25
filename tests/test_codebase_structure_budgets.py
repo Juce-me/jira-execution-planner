@@ -81,10 +81,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # success-refresh callback by design), adds closeProjectTrackControl to the group-change
     # cleanup effect, and replaces the passive indicator with the always-rendered
     # interactive/passive branch for real Epics (+35 over the 15965 ceiling).
-    # feature/groups-config-json-roundtrip adds saved selected-group JSON export and
-    # draft-only selected-group import while preserving the destination identity and
-    # all sibling group configuration (+12 over the 16000 ceiling).
-    "frontend/src/dashboard.jsx": 16012,
+    # Header dropdown query inputs add Group, Teams, and Sprint filtering while preserving
+    # the existing shared main/compact control surface (+101 over the 16000 ceiling).
+    "frontend/src/dashboard.jsx": 16101,
 }
 
 

@@ -222,7 +222,6 @@ export function useGroupVisibilityPreferences({
     }, [backendUrl, visibleGroupDraftIds, activeGroupId, setActiveGroupId, trackSettingsAction, bucketCount, useBackendPreferences]);
 
     const openFirstRunAddGroup = React.useCallback(() => {
-        setGroupPreferences(prev => ({ ...prev, onboardingRequired: false }));
         setGroupManageTab('teams');
         setDepartmentSettingsTab('teams');
         setShowGroupManage(true);

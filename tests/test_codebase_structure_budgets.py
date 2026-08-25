@@ -83,7 +83,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # interactive/passive branch for real Epics (+35 over the 15965 ceiling).
     # Header dropdown query inputs add Group, Teams, and Sprint filtering while preserving
     # the existing shared main/compact control surface (+101 over the 16000 ceiling).
-    "frontend/src/dashboard.jsx": 16101,
+    # First-run sprint recovery waits for department onboarding, separates sprint errors
+    # from task errors, routes Retry back to sprint discovery, deduplicates concurrent Retry
+    # requests, and queues required forced refreshes behind active discovery (+24 over 16101).
+    "frontend/src/dashboard.jsx": 16125,
 }
 
 

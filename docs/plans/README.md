@@ -108,6 +108,12 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed and accepted on 2026-07-28 in commits `a7cacf6..5d3b136`. Use for audit context only.
    - Output: Initiative key/summary matches render every loaded descendant Epic and Story, Epic matching retains its descendant behavior, active ENG filters remain authoritative, the Initiative grouping choice survives search transitions, existing bucketed `app_search` analytics remain canonical, and focused unit plus committed-dist Playwright screenshot coverage proves the result.
 
+10. `EXEC-filterable-header-dropdown-inputs.md`
+   - Ready for execution on `improvement/filterable-header-dropdowns`.
+   - Expected output: the open Sprint, Group, and Teams header dropdown toggles become auto-focused local filter inputs; Sprint loses its duplicate panel input; adding visible groups no longer pushes the settings gear or any desktop control onto another row; the active ENG/EPM settings gear sits immediately after Refresh; and Group by Initiative becomes a fixed 30×30 icon toggle that is neutral gray when off and Initiative yellow with a pale-yellow surface when on.
+   - Current dropdown selection, team multi-select, Initiative grouping/persistence, settings permissions/handlers, and compact-header behavior remain unchanged. Playwright covers all three dropdown siblings, main/compact layering, multi-group row geometry, settings placement, Initiative centerlines, `aria-pressed`, hover/focus tooltip, both color states, and settled screenshots.
+   - No backend, API, saved-preference, or new analytics-event contract; existing selection/settings events remain authoritative, local Initiative regrouping stays allowlisted, and raw dropdown queries are never collected.
+
 ## Capacity Reporting Workflow
 
 1. `SUPPORT-excluded-capacity-control-row-design.md`

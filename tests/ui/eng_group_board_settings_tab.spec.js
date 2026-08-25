@@ -45,8 +45,25 @@ function baseGroupsConfig() {
     return {
         version: 1,
         groups: [
-            { id: 'northwind', name: 'Northwind', teamIds: ['team-a'], board: fixture.referenceBoard() },
-            { id: 'southridge', name: 'Southridge', teamIds: ['team-b'] },
+            {
+                id: 'northwind',
+                name: 'Northwind',
+                teamIds: ['team-a'],
+                missingInfoComponents: [],
+                excludedCapacityEpics: [],
+                adHocCapacityEpics: [],
+                teamLabels: {},
+                board: fixture.referenceBoard(),
+            },
+            {
+                id: 'southridge',
+                name: 'Southridge',
+                teamIds: ['team-b'],
+                missingInfoComponents: [],
+                excludedCapacityEpics: [],
+                adHocCapacityEpics: [],
+                teamLabels: {},
+            },
         ],
         defaultGroupId: 'northwind',
         configRevision: 2,
@@ -304,6 +321,116 @@ test('editing columns round-trips through POST /api/groups-config and survives a
     await expect(dialog.locator('.board-column').first().locator('.board-column-name')).toHaveValue('Backlog');
 });
 
+test('Export JSON downloads only the selected saved group instead of the unsaved draft', async ({ page }) => {
+    const calls = await mockConfigSettings(page);
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+
+    await dialog.locator('.group-pane-list .group-list-item', { hasText: 'Southridge' }).click();
+    await dialog.locator('.group-name-input').fill('Unsaved draft name');
+    await dialog.locator('summary', { hasText: 'Advanced' }).click();
+    const initialGetCount = calls.filter(call => call.method === 'GET' && call.pathname === '/api/groups-config').length;
+    const downloadPromise = page.waitForEvent('download', { timeout: 5000 });
+    await dialog.getByRole('button', { name: 'Export JSON' }).click();
+    const download = await downloadPromise;
+
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/groups-config').length)
+        .toBe(initialGetCount + 1);
+    expect(download.suggestedFilename()).toBe('group-southridge.json');
+    const exported = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+    expect(exported).toEqual({
+        version: 1,
+        group: {
+            id: 'southridge',
+            name: 'Southridge',
+            teamIds: ['team-b'],
+            missingInfoComponents: [],
+            excludedCapacityEpics: [],
+            adHocCapacityEpics: [],
+            teamLabels: {},
+        },
+    });
+});
+
+test('Import JSON updates only a newly created selected group and preserves sibling groups', async ({ page }) => {
+    const calls = await mockConfigSettings(page);
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    let dialog = page.getByRole('dialog').first();
+
+    await dialog.getByRole('button', { name: '+ Add group' }).click();
+    await expect(dialog.locator('.group-name-input')).toHaveValue('New Group');
+    await dialog.locator('summary', { hasText: 'Advanced' }).click();
+    await dialog.getByRole('button', { name: 'Import JSON' }).click();
+    await dialog.locator('textarea').fill(JSON.stringify({
+        version: 1,
+        group: {
+            id: 'source-group',
+            name: 'Source group',
+            teamIds: ['team-c'],
+            missingInfoComponents: ['Needs refinement'],
+            excludedCapacityEpics: ['DEMO-1'],
+            adHocCapacityEpics: ['DEMO-2'],
+            teamLabels: { 'team-c': 'team-c-label' },
+        },
+    }));
+    await dialog.getByRole('button', { name: 'Apply Import' }).click();
+
+    await page.waitForTimeout(200);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname !== '/api/auth/refresh')).toHaveLength(0);
+    await expect(dialog.locator('.group-pane-list .group-list-item')).toHaveCount(3);
+    await expect(dialog.locator('.group-pane-list .group-list-item', { hasText: 'Northwind' })).toBeVisible();
+    await expect(dialog.locator('.group-pane-list .group-list-item', { hasText: 'Southridge' })).toBeVisible();
+    await expect(dialog.locator('.group-name-input')).toHaveValue('New Group');
+    await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeEnabled();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const save = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    expect(save.body).toEqual({
+        version: 1,
+        baseRevision: 2,
+        groups: [
+            {
+                id: 'northwind',
+                name: 'Northwind',
+                teamIds: ['team-a'],
+                missingInfoComponents: [],
+                excludedCapacityEpics: [],
+                adHocCapacityEpics: [],
+                teamLabels: {},
+                board: fixture.referenceBoard(),
+            },
+            {
+                id: 'southridge',
+                name: 'Southridge',
+                teamIds: ['team-b'],
+                missingInfoComponents: [],
+                excludedCapacityEpics: [],
+                adHocCapacityEpics: [],
+                teamLabels: {},
+            },
+            {
+                id: 'new-group',
+                name: 'New Group',
+                teamIds: ['team-c'],
+                missingInfoComponents: ['Needs refinement'],
+                excludedCapacityEpics: ['DEMO-1'],
+                adHocCapacityEpics: ['DEMO-2'],
+                teamLabels: { 'team-c': 'team-c-label' },
+            },
+        ],
+        defaultGroupId: 'northwind',
+    });
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    dialog = page.getByRole('dialog').first();
+    await expect(dialog.locator('.group-pane-list .group-list-item')).toHaveCount(3);
+    await expect(dialog.locator('.group-pane-list .group-list-item', { hasText: 'New Group' })).toBeVisible();
+});
+
 test('deleting every column preserves an explicit empty board and blocks Save', async ({ page }) => {
     const calls = await mockConfigSettings(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
@@ -469,13 +596,12 @@ test('a non-string status entry in an imported column shows the board instead of
     await dialog.locator('summary', { hasText: 'Advanced' }).click();
     await dialog.getByRole('button', { name: 'Import JSON' }).click();
     const malformed = JSON.stringify({
-        groups: [{ id: 'x', name: 'Imported group', board: { columns: [{ name: 'A', statuses: [{}] }] } }],
+        group: { id: 'x', name: 'Imported group', board: { columns: [{ name: 'A', statuses: [{}] }] } },
     });
     await dialog.locator('textarea').fill(malformed);
     await dialog.getByRole('button', { name: 'Apply Import' }).click();
     await expect(dialog).toBeVisible();
 
-    await dialog.locator('.group-pane-list .group-list-item', { hasText: 'Imported group' }).click();
     await dialog.getByRole('tab', { name: 'Boards' }).click();
     await expect(dialog.locator('#department-settings-boards-panel')).toBeVisible();
     // The malformed status was dropped, not coerced into a fake string status: one empty column.

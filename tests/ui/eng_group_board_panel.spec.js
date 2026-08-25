@@ -135,6 +135,7 @@ function subtaskPayload() {
 async function installBoardFixture(page, calls, {
     descriptionGate = null,
     descriptionHtml = DESCRIPTION_HTML,
+    transitionStatuses = ['Done', 'To Do'],
 } = {}) {
     await installDashboardShell(page);
     await page.route('**/api/**', async (route) => {
@@ -209,10 +210,11 @@ async function installBoardFixture(page, calls, {
         if (url.pathname === '/api/issues/transitions/options') {
             return json({
                 issues: [],
-                targetStatuses: [
-                    { name: 'Done', availableCount: 1, blockedCount: 0 },
-                    { name: 'To Do', availableCount: 1, blockedCount: 0 },
-                ],
+                targetStatuses: transitionStatuses.map((name) => ({
+                    name,
+                    availableCount: 1,
+                    blockedCount: 0,
+                })),
             });
         }
         if (url.pathname === '/api/issues/transitions') {
@@ -739,6 +741,82 @@ test('the three sort orders reorder rows without changing the row layout', async
 });
 
 /* ── A pill click really transitions (§9.5's handed-forward hazard) ─────────────────────────── */
+
+test('every status menu in the panel stays above the modal with readable reachable options', async ({ page }) => {
+    const calls = [];
+    const transitionStatuses = [
+        'Pending',
+        'To Do',
+        'Awaiting Validation',
+        'Postponed',
+        'Blocked',
+        'Analysis',
+        'Accepted',
+        'Release',
+        'Done',
+        'Killed',
+        'Incomplete',
+    ];
+    await openBoard(page, calls, { height: 640, transitionStatuses });
+    await openPanel(page, 'PLAT-1');
+
+    const assertMenuIsUsable = async (menu) => {
+        await expect(menu).toBeVisible();
+        await expect(menu.locator('.status-transition-option').first()).toBeFocused();
+
+        const geometry = await menu.evaluate((node) => {
+            const rect = node.getBoundingClientRect();
+            const backdrop = document.querySelector('.epic-panel-backdrop');
+            const options = Array.from(node.querySelectorAll('.status-transition-option'));
+            return {
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom,
+                viewportWidth: document.documentElement.clientWidth,
+                viewportHeight: window.innerHeight,
+                zIndex: Number.parseInt(getComputedStyle(node).zIndex, 10) || 0,
+                backdropZIndex: Number.parseInt(getComputedStyle(backdrop).zIndex, 10) || 0,
+                clippedLabels: options.filter((option) => {
+                    const label = option.querySelector('.status-transition-option-label');
+                    return label.scrollWidth > label.clientWidth + 1;
+                }).length,
+                reversedRows: options.filter((option) => {
+                    const marker = option.querySelector('.status-transition-option-marker').getBoundingClientRect();
+                    const label = option.querySelector('.status-transition-option-label').getBoundingClientRect();
+                    return marker.right > label.left + 1;
+                }).length,
+            };
+        });
+
+        expect(geometry.top).toBeGreaterThanOrEqual(8);
+        expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth - 8 + 1);
+        expect(geometry.bottom).toBeLessThanOrEqual(geometry.viewportHeight - 8 + 1);
+        expect(geometry.zIndex).toBeGreaterThan(geometry.backdropZIndex);
+        expect(geometry.clippedLabels).toBe(0);
+        expect(geometry.reversedRows).toBe(0);
+
+        const lastOption = menu.locator('.status-transition-option').last();
+        await lastOption.scrollIntoViewIfNeeded();
+        const lastOptionIsReachable = await lastOption.evaluate((node) => {
+            const rect = node.getBoundingClientRect();
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return Boolean(hit && node.contains(hit));
+        });
+        expect(lastOptionIsReachable, 'the last workflow status is clipped or covered').toBe(true);
+    };
+
+    const storyRow = panel(page).locator('.story-subtask-row[data-story-key="PLAT-1-b"]');
+    await storyRow.scrollIntoViewIfNeeded();
+    await storyRow.locator('button.status-pill.task-status').click();
+    await assertMenuIsUsable(panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1-b"]'));
+    await page.screenshot({ path: `${screenshotDir}/panel-story-status-menu.png` });
+
+    await page.keyboard.press('Escape');
+    const epicTrigger = panel(page).locator('.m-controls button.status-pill.task-status');
+    await epicTrigger.click();
+    await assertMenuIsUsable(panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1"]'));
+    await page.screenshot({ path: `${screenshotDir}/panel-epic-status-menu.png` });
+});
 
 test('a status pill click in the panel performs a real transition rather than no-opping', async ({ page }) => {
     const calls = [];

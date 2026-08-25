@@ -4233,51 +4233,78 @@ import {
             };
 
             const exportGroupsConfig = async () => {
-                const source = groupDraft || groupsConfig;
-                const payload = {
-                    version: source.version || 1,
-                    groups: source.groups || [],
-                    defaultGroupId: source.defaultGroupId || '',
-                };
-                const json = JSON.stringify(payload, null, 2);
-                if (navigator.clipboard && window.isSecureContext) {
-                    try {
-                        await navigator.clipboard.writeText(json);
-                        return;
-                    } catch (err) {
-                        // fallback below
+                setGroupDraftError('');
+                try {
+                    const selectedGroupId = String(activeGroupDraftId || '').trim();
+                    if (!selectedGroupId) {
+                        throw new Error('Select a group before exporting.');
                     }
+                    const response = await requestGroupsConfig(BACKEND_URL);
+                    if (!response.ok) {
+                        throw new Error(`Export failed (${response.status})`);
+                    }
+                    const source = normalizeGroupsConfig(await response.json());
+                    const selectedGroup = source.groups.find(group => group.id === selectedGroupId);
+                    if (!selectedGroup) {
+                        throw new Error('Save the selected group before exporting.');
+                    }
+                    const payload = {
+                        version: source.version || 1,
+                        group: selectedGroup,
+                    };
+                    const json = JSON.stringify(payload, null, 2);
+                    const objectUrl = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+                    const link = document.createElement('a');
+                    try {
+                        link.href = objectUrl;
+                        const safeGroupId = selectedGroupId.replace(/[^a-z0-9_-]+/gi, '-');
+                        link.download = `group-${safeGroupId || 'selected'}.json`;
+                        document.body.appendChild(link);
+                        link.click();
+                    } finally {
+                        link.remove();
+                        URL.revokeObjectURL(objectUrl);
+                    }
+                } catch (err) {
+                    setGroupDraftError(err.message || 'Failed to export groups configuration.');
                 }
-                const temp = document.createElement('textarea');
-                temp.value = json;
-                document.body.appendChild(temp);
-                temp.select();
-                document.execCommand('copy');
-                document.body.removeChild(temp);
             };
 
             const importGroupsConfig = () => {
                 if (!groupImportText.trim()) return;
                 try {
-                    const parsed = JSON.parse(groupImportText);
-                    const normalized = normalizeGroupsConfig(parsed);
-                    if (!normalized.groups.length) {
-                        throw new Error('Imported config has no groups.');
+                    const selectedGroupId = String(activeGroupDraftId || '').trim();
+                    const selectedGroup = (groupDraft?.groups || []).find(group => group.id === selectedGroupId);
+                    if (!selectedGroup) {
+                        throw new Error('Select a group before importing.');
                     }
-                    // If imported JSON contains a teamCatalog, save it separately
-                    const rawCatalog = parsed?.teamCatalog;
-                    if (rawCatalog && typeof rawCatalog === 'object' && Object.keys(rawCatalog).length) {
-                        const catalogEntries = {};
-                        Object.entries(rawCatalog).forEach(([key, value]) => {
-                            if (value && typeof value === 'object' && value.id && value.name) {
-                                catalogEntries[String(value.id)] = { id: String(value.id), name: String(value.name) };
-                            }
-                        });
-                        if (Object.keys(catalogEntries).length) {
-                            saveTeamCatalog(catalogEntries, parsed?.teamCatalogMeta || {}, false);
+                    const parsed = JSON.parse(groupImportText);
+                    let importedGroup = parsed?.group;
+                    if (!importedGroup && Array.isArray(parsed?.groups)) {
+                        importedGroup = parsed.groups.find(group => String(group?.id || '').trim() === selectedGroupId);
+                        if (!importedGroup && parsed.groups.length === 1) {
+                            [importedGroup] = parsed.groups;
                         }
                     }
-                    setGroupDraft(normalized);
+                    if (!importedGroup || typeof importedGroup !== 'object') {
+                        throw new Error('Imported JSON must contain one group or a group matching the selected group.');
+                    }
+                    const normalized = normalizeGroupsConfig({
+                        version: parsed?.version || groupDraft?.version || 1,
+                        groups: [importedGroup],
+                    });
+                    if (!normalized.groups.length) {
+                        throw new Error('Imported config has no valid group.');
+                    }
+                    const importedSettings = normalized.groups[0];
+                    handleGroupDraftChange(prev => ({
+                        ...prev,
+                        groups: (prev.groups || []).map(group => (
+                            group.id === selectedGroupId
+                                ? { ...importedSettings, id: group.id, name: group.name }
+                                : group
+                        )),
+                    }));
                     setGroupDraftError('');
                     setGroupImportText('');
                     setShowGroupImport(false);

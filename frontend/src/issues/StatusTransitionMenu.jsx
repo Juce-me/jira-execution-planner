@@ -111,10 +111,12 @@ export default function StatusTransitionMenu({
     onClose,
     onToggleTargetSet,
     onSubmit,
+    portalTarget = null,
 }) {
     const issueKey = String(issue?.key || '').trim();
-    // Wraps BOTH the trigger and the menu; IssueFieldOptionMenu uses it to scope its
-    // outside-click dismissal (an in-wrapper click is never treated as "outside").
+    // Owns the trigger anchor. The menu normally stays inside this wrapper; Board panel menus
+    // portal to the panel root, and IssueFieldOptionMenu includes both nodes in outside-click
+    // dismissal so option clicks are never mistaken for click-away gestures.
     const fieldRef = React.useRef(null);
 
     const isServerTooMany = errorCode === 'too_many_issues';
@@ -201,6 +203,7 @@ export default function StatusTransitionMenu({
                     result={result ? resultMessage(result) : ''}
                     onEscape={() => onClose?.()}
                     dismissRef={fieldRef}
+                    portalTarget={portalTarget}
                 />
             )}
         </span>

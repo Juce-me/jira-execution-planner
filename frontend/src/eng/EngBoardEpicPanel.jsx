@@ -203,6 +203,7 @@ export default function EngBoardEpicPanel({
                 onOpen={statusTransitions.openSingleIssueStatusControl}
                 onClose={statusTransitions.closeSingleIssueStatusControl}
                 onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task)}
+                portalTarget={panelRef.current}
             />
         );
     };
@@ -307,6 +308,7 @@ export default function EngBoardEpicPanel({
                                 onOpen={statusTransitions.openSingleIssueStatusControl}
                                 onClose={statusTransitions.closeSingleIssueStatusControl}
                                 onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, { key: epicKey })}
+                                portalTarget={panelRef.current}
                             />
                         ) : (
                             <StatusPill className={getIssueStatusClassName(statusLabel)} label={statusLabel} />

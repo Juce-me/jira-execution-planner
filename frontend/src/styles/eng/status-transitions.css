@@ -81,6 +81,18 @@
             box-sizing: border-box;
         }
 
+        /* Board panel status menus are portalled out of the scrollable story list so a full Jira
+           workflow cannot be clipped by `.m-body`. Inline coordinates keep the panel attached to
+           its trigger and inside the viewport; this class supplies only the overlay/scroll layer. */
+        .status-transition-menu.is-portalled {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: var(--modal-popup-z);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
         .status-transition-menu-options,
         .priority-transition-menu-options,
         .project-track-transition-menu-options {

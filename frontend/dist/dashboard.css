@@ -6320,6 +6320,14 @@ button.status-pill:focus-visible {
   letter-spacing: 0;
   box-sizing: border-box;
 }
+.status-transition-menu.is-portalled {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--modal-popup-z);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .status-transition-menu-options,
 .priority-transition-menu-options,
 .project-track-transition-menu-options {

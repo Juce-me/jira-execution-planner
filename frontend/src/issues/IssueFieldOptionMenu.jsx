@@ -1,4 +1,8 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
+
+const MENU_EDGE_GAP = 8;
+const MENU_TRIGGER_GAP = 6;
 
 // Shared compact option-menu renderer for ENG field-change popovers (status + priority).
 // It renders the anchored role="menu" panel; the trigger (status pill / priority icon button)
@@ -27,10 +31,60 @@ export default function IssueFieldOptionMenu({
     result = '',
     onEscape,
     dismissRef = null,
+    portalTarget = null,
 }) {
     const firstOptionRef = React.useRef(null);
+    const menuRef = React.useRef(null);
     const key = String(issueKey || '').trim();
     const list = Array.isArray(options) ? options : [];
+
+    // A menu inside the Board epic panel cannot remain under its trigger in the DOM: story
+    // triggers live in the panel's overflow-y:auto body, which clips a full workflow list, and
+    // the header/body paint order can cover a header menu. When a panel host is supplied, render
+    // the same menu at that host and position it against the trigger in viewport coordinates.
+    // The menu flips above when that side has more room and scrolls internally when neither side
+    // can fit it; resize and scroll keep it attached to the live trigger.
+    React.useLayoutEffect(() => {
+        if (!portalTarget) return undefined;
+        const menu = menuRef.current;
+        const wrapper = dismissRef && dismissRef.current;
+        const trigger = wrapper?.querySelector(`[data-${blockClass}-trigger]`);
+        if (!menu || !trigger) return undefined;
+
+        const positionMenu = () => {
+            const triggerRect = trigger.getBoundingClientRect();
+            const viewportWidth = document.documentElement.clientWidth;
+            const viewportHeight = window.innerHeight;
+
+            menu.style.left = `${triggerRect.left}px`;
+            menu.style.top = `${triggerRect.bottom + MENU_TRIGGER_GAP}px`;
+            menu.style.maxHeight = `${Math.max(0, viewportHeight - MENU_EDGE_GAP * 2)}px`;
+
+            const naturalHeight = Math.min(menu.scrollHeight, viewportHeight - MENU_EDGE_GAP * 2);
+            const belowSpace = viewportHeight - MENU_EDGE_GAP - triggerRect.bottom - MENU_TRIGGER_GAP;
+            const aboveSpace = triggerRect.top - MENU_TRIGGER_GAP - MENU_EDGE_GAP;
+            const placeBelow = belowSpace >= naturalHeight || belowSpace >= aboveSpace;
+            const availableHeight = Math.max(0, placeBelow ? belowSpace : aboveSpace);
+            menu.style.maxHeight = `${availableHeight}px`;
+
+            const height = Math.min(naturalHeight, availableHeight);
+            menu.style.top = placeBelow
+                ? `${triggerRect.bottom + MENU_TRIGGER_GAP}px`
+                : `${Math.max(MENU_EDGE_GAP, triggerRect.top - MENU_TRIGGER_GAP - height)}px`;
+
+            const menuRect = menu.getBoundingClientRect();
+            const maxLeft = Math.max(MENU_EDGE_GAP, viewportWidth - MENU_EDGE_GAP - menuRect.width);
+            menu.style.left = `${Math.min(Math.max(MENU_EDGE_GAP, triggerRect.left), maxLeft)}px`;
+        };
+
+        positionMenu();
+        window.addEventListener('resize', positionMenu);
+        window.addEventListener('scroll', positionMenu, true);
+        return () => {
+            window.removeEventListener('resize', positionMenu);
+            window.removeEventListener('scroll', positionMenu, true);
+        };
+    }, [blockClass, dismissRef, portalTarget, loading, list.length, error, result]);
 
     // Move focus into the menu once options are available (mirrors status behavior). The menu
     // mounts only while open, so this runs on open and whenever loading flips to false.
@@ -58,7 +112,7 @@ export default function IssueFieldOptionMenu({
         const wrapper = dismissRef && dismissRef.current;
         if (!wrapper) return undefined;
         const handlePointerDown = (event) => {
-            if (!wrapper.contains(event.target)) {
+            if (!wrapper.contains(event.target) && !menuRef.current?.contains(event.target)) {
                 onEscapeRef.current?.();
             }
         };
@@ -77,8 +131,8 @@ export default function IssueFieldOptionMenu({
     // the focused option simply unmounts and focus falls to <body>: the keyboard user loses their
     // place on every surface, and inside a focus trap (the board's epic panel binds Escape/Tab to
     // the panel element) the next Escape reaches nothing and the dialog becomes undismissable.
-    // The trigger is resolved from the dismissRef wrapper, which holds both the trigger and this
-    // menu; every consumer marks it with data-<blockClass>-trigger.
+    // The trigger is resolved from the dismissRef wrapper; every consumer marks it with
+    // data-<blockClass>-trigger. A portalled menu still returns focus to that same anchor.
     const focusTrigger = () => {
         const wrapper = dismissRef && dismissRef.current;
         wrapper?.querySelector(`[data-${blockClass}-trigger]`)?.focus();
@@ -99,12 +153,13 @@ export default function IssueFieldOptionMenu({
         return index;
     };
 
-    return (
+    const menu = (
         <div
-            className={`${blockClass}-menu`}
+            className={`${blockClass}-menu${portalTarget ? ' is-portalled' : ''}`}
             role="menu"
             data-issue-key={key}
             onKeyDown={handleMenuKeyDown}
+            ref={menuRef}
             {...{ [`data-${blockClass}-menu`]: 'true' }}
         >
                 {leadingContent}
@@ -145,4 +200,6 @@ export default function IssueFieldOptionMenu({
                 )}
         </div>
     );
+
+    return portalTarget ? createPortal(menu, portalTarget) : menu;
 }

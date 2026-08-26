@@ -84,8 +84,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Header dropdown query inputs add Group, Teams, and Sprint filtering while preserving
     # the existing shared main/compact control surface (+101 over the 16000 ceiling).
     # improvement/personal-group-star adds source-aware personal-favorite wiring, canonical
-    # preference snapshot application, and stale group-scope clearing (+55 lines).
-    "frontend/src/dashboard.jsx": 16156,
+    # preference snapshot application, and stale group-scope clearing. First-run sprint
+    # recovery waits for department onboarding, separates sprint errors from task errors,
+    # routes Retry back to sprint discovery, deduplicates concurrent Retry requests, and
+    # queues required forced refreshes behind active discovery.
+    "frontend/src/dashboard.jsx": 16183,
 }
 
 

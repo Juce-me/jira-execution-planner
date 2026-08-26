@@ -403,6 +403,9 @@ import {
             const [techLoaded, setTechLoaded] = useState(false);
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
+            const [sprintError, setSprintError] = useState('');
+            const sprintLoadInFlightRef = useRef(false);
+            const pendingSprintRefreshRef = useRef(false);
             const [serverConnectionError, setServerConnectionError] = useState('');
             // The Status and Priority facets replaced the single statusFilter plus the Done and
             // Killed Display toggles; a payload saved before that still has to land somewhere
@@ -1726,13 +1729,18 @@ import {
                 && String(firstFutureSprintId) === String(selectedSprint);
 
             useEffect(() => {
-                // Load config and sprints on component mount
+                // Load configuration on mount. Sprint discovery waits for department onboarding
+                // below so a first-time user does not start Jira work before choosing a scope.
                 loadConfig();
                 loadGroupsConfig();
                 loadSelectedProjects();
                 loadPriorityWeightsConfig();
-                loadSprints();
             }, []);
+
+            useEffect(() => {
+                if (groupsLoading || groupPreferences.onboardingRequired) return;
+                loadSprints();
+            }, [groupsLoading, groupPreferences.onboardingRequired]);
 
             useEffect(() => {
                 let cancelled = false;
@@ -3312,7 +3320,7 @@ import {
                     queueConfigSaveRefresh(refreshTarget);
 
                     if (boardChanged) {
-                        loadSprints(true);
+                        loadSprints(true, { queueIfBusy: true });
                     }
 
                     if (closeOnSuccess) {
@@ -5636,7 +5644,12 @@ import {
                 setScenarioError('');
             }, [selectedSprint, selectedTeams]);
 
-            const loadSprints = async (forceRefresh = false) => {
+            const loadSprints = async (forceRefresh = false, { queueIfBusy = false } = {}) => {
+                if (sprintLoadInFlightRef.current) {
+                    if (queueIfBusy) pendingSprintRefreshRef.current = true;
+                    return;
+                }
+                sprintLoadInFlightRef.current = true;
                 setSprintsLoading(true);
                 try {
                     const response = await requestSprints(BACKEND_URL, { forceRefresh });
@@ -5648,6 +5661,7 @@ import {
                     const data = await response.json();
                     const sprints = data.sprints || [];
                     setAvailableSprints(sprints);
+                    setSprintError('');
 
                     const preferredSprintId = savedPrefsRef.current.selectedSprint;
                     const preferredSprint = preferredSprintId ? sprints.find(s => String(s.id) === String(preferredSprintId)) : null;
@@ -5673,12 +5687,20 @@ import {
                     console.log('✅ Loaded sprints:', sprints);
                     clearServerConnectionError();
                 } catch (err) {
-                    if (!reportServerConnectionError(err)) {
+                    if (reportServerConnectionError(err)) {
+                        setSprintError('');
+                    } else {
                         console.error('Failed to load sprints:', err);
-                        setError(`Failed to load sprints: ${err.message}`);
+                        setSprintError('Failed to load sprints from Jira. Retry, or confirm you can access the configured board.');
                     }
                 } finally {
-                    setSprintsLoading(false);
+                    sprintLoadInFlightRef.current = false;
+                    if (pendingSprintRefreshRef.current) {
+                        pendingSprintRefreshRef.current = false;
+                        void loadSprints(true, { queueIfBusy: true });
+                    } else {
+                        setSprintsLoading(false);
+                    }
                 }
             };
 
@@ -10510,6 +10532,8 @@ import {
             // Catch Up is the all-false fallthrough of the ENG mode booleans, so Board has to opt
             // out here explicitly or the whole task list renders underneath the board.
             const shouldRenderEngTaskList = selectedView === 'eng' && !showBoard && !isStatsSourceOnlyStatsView;
+            const displayedEngError = sprintError || error;
+            const retryEngLoad = sprintError ? () => loadSprints(true) : fetchTasks;
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
                 taskList.forEach(task => {
@@ -12743,7 +12767,7 @@ import {
                 void loadGroupsConfig();
                 void loadSelectedProjects();
                 void loadPriorityWeightsConfig();
-                void loadSprints(true);
+                void loadSprints(true, { queueIfBusy: true });
                 if (selectedView === 'epm') {
                     void refreshEpmView();
                 }
@@ -13041,7 +13065,7 @@ import {
                 burnoutCacheRef.current = {};
                 cohortCacheRef.current = {};
                 excludedCapacityCacheRef.current = {};
-                loadSprints(true);
+                loadSprints(true, { queueIfBusy: true });
                 if (isStatsSourceOnlyStatsView) {
                     excludedCapacityForceRefreshRef.current = true;
                     setExcludedCapacityData(null);
@@ -15353,8 +15377,8 @@ import {
                             board={activeGroup?.board || null}
                             epicGroups={boardEpicGroupsFiltered}
                             loading={loading}
-                            error={error}
-                            onRetry={fetchTasks}
+                            error={displayedEngError}
+                            onRetry={retryEngLoad}
                             view={boardView}
                             onViewChange={setBoardView}
                             renderPriorityIcon={renderPriorityIcon}
@@ -15390,8 +15414,8 @@ import {
                                     productTasksLoading={productTasksLoading}
                                     techTasksLoading={techTasksLoading}
                                     loading={loading}
-                                    error={error}
-                                    onRetry={fetchTasks}
+                                    error={displayedEngError}
+                                    onRetry={retryEngLoad}
                                     alertCelebrationPieces={alertCelebrationPieces}
                                     alertsPanel={isCatchUpMode ? (
                                         <EngAlertsPanel

@@ -7,6 +7,7 @@ from backend.auth.db_context import is_db_auth_context
 from backend.config.db_repository import ViewConfigNotFound
 from backend.config.repository import config_storage_db_enabled, db_repository
 from backend.services import shared_group_config
+from backend.services.workspace_dashboard_config import WorkspaceConfigConflict, TeamCatalogConflict
 from . import bind_server_globals
 
 
@@ -20,6 +21,55 @@ def _sync_server_globals():
 
 def _settings_process_cache_enabled():
     return jira_home_process_cache_enabled(current_request_auth_context())
+
+
+def _config_revision():
+    return load_dashboard_config_snapshot().config_revision if config_storage_db_enabled() else None
+
+
+def _with_config_revision(payload):
+    result = dict(payload)
+    revision = _config_revision()
+    if revision is not None:
+        result['configRevision'] = revision
+    return result
+
+
+def _parse_shared_write(payload, allowed_fields):
+    if not isinstance(payload, dict):
+        raise ValueError('request body must be a JSON object')
+    allowed = set(allowed_fields)
+    if config_storage_db_enabled():
+        allowed.add('baseRevision')
+        if 'baseRevision' not in payload:
+            raise ValueError('baseRevision is required')
+    unknown = set(payload) - allowed
+    if unknown:
+        raise ValueError(f'unsupported configuration field: {sorted(unknown)[0]}')
+    return payload.get('baseRevision')
+
+
+def _workspace_conflict_response(error):
+    value = (error.current.payload or {}).get(error.section)
+    return jsonify({
+        'error': 'workspace_config_conflict',
+        'message': 'Shared settings changed while you were editing. Your changes are still unsaved.',
+        'currentRevision': error.current.config_revision,
+        'current': {
+            'section': error.section,
+            'value': value if value is not None else {},
+            'configRevision': error.current.config_revision,
+        },
+    }), 409
+
+
+def _persist_shared_section(section, value, base_revision):
+    if config_storage_db_enabled():
+        return save_dashboard_config_section(section, value, base_revision=base_revision).config_revision
+    dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+    dashboard_config[section] = value
+    save_dashboard_config(dashboard_config)
+    return None
 
 
 def _has_dashboard_config_value(value):
@@ -293,9 +343,10 @@ def get_config():
     auth_context = current_request_auth_context()
     include_view_config = str(request.args.get('includeViewConfig') or '').strip().lower() in {'1', 'true', 'yes'}
     view_config = _resolve_bootstrap_view_config(auth_context) if include_view_config else None
-    view_payload = (view_config or {}).get('view') or {}
+    shared_snapshot = load_dashboard_config_snapshot()
+    shared_config = dict(shared_snapshot.payload or {})
     board_cfg = get_board_config()
-    epm_config = normalize_epm_config(view_payload.get('epm') or {}) if view_config else get_epm_config()
+    epm_config = normalize_epm_config(shared_config.get('epm') or {})
     can_edit_shared_configuration = (not SETTINGS_ADMIN_ONLY) or bool(auth_context.is_admin)
     payload = {
         'jiraUrl': auth_context.site_url,
@@ -315,6 +366,9 @@ def get_config():
         'environmentConfigExists': _environment_dashboard_config_exists(),
         'epm': epm_config
     }
+    if config_storage_db_enabled():
+        payload['sharedConfig'] = shared_config
+        payload['sharedConfigRevision'] = shared_snapshot.config_revision
     if view_config is not None:
         payload['viewConfig'] = view_config
     return jsonify(payload)
@@ -514,7 +568,12 @@ def get_team_catalog():
 @bp.route('/api/team-catalog', methods=['POST'])
 def post_team_catalog():
     """Save the team name catalog."""
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_json'}), 400
+    unknown = set(payload) - {'catalog', 'meta', 'merge'}
+    if unknown:
+        return jsonify({'error': 'unsupported_team_catalog_field'}), 400
     merge = payload.get('merge', False)
     incoming = {
         'catalog': normalize_team_catalog(payload.get('catalog') or {}),
@@ -526,9 +585,12 @@ def post_team_catalog():
             merged_catalog = {**existing['catalog'], **incoming['catalog']}
             incoming['catalog'] = merged_catalog
     if config_storage_db_enabled():
-        saved = db_repository().save_team_catalog(
-            current_request_auth_context(), incoming, merge=bool(merge),
-        )
+        try:
+            saved = db_repository().save_team_catalog(
+                current_request_auth_context(), incoming, merge=bool(merge),
+            )
+        except TeamCatalogConflict:
+            return jsonify({'error': 'team_catalog_conflict'}), 409
         return jsonify(saved)
     saved = save_team_catalog_file(incoming)
     return jsonify(saved)
@@ -869,13 +931,17 @@ def get_jira_labels():
 def get_selected_projects_endpoint():
     """Return the list of selected projects with type from dashboard config."""
     selected = get_selected_projects_typed()
-    return jsonify({'selected': selected})
+    return jsonify(_with_config_revision({'selected': selected}))
 
 
 @bp.route('/api/projects/selected', methods=['POST'])
 def save_selected_projects():
     """Save selected projects with type to dashboard config."""
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    try:
+        base_revision = _parse_shared_write(payload, {'selected'})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     selected = payload.get('selected', [])
     if not isinstance(selected, list):
         return jsonify({'error': 'selected must be an array'}), 400
@@ -888,13 +954,14 @@ def save_selected_projects():
             sanitized.append({'key': item.strip(), 'type': 'product'})
 
     try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        dashboard_config = load_dashboard_config() or {}
         existing_projects = dashboard_config.get('projects') or {}
         existing_selected = existing_projects.get('selected') if isinstance(existing_projects, dict) else []
         if not sanitized and _has_dashboard_config_value(existing_selected):
             return jsonify({'error': 'selected projects cannot be cleared implicitly'}), 400
-        dashboard_config.setdefault('projects', {})['selected'] = sanitized
-        save_dashboard_config(dashboard_config)
+        revision = _persist_shared_section('projects', {'selected': sanitized}, base_revision)
+    except WorkspaceConfigConflict as error:
+        return _workspace_conflict_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to save project selection', 'message': str(e)}), 500
 
@@ -902,31 +969,38 @@ def save_selected_projects():
     with _cache_lock:
         TASKS_CACHE.clear()
 
-    return jsonify({'selected': sanitized})
+    result = {'selected': sanitized}
+    if revision is not None:
+        result['configRevision'] = revision
+    return jsonify(result)
 
 
 @bp.route('/api/capacity/config', methods=['GET'])
 def get_capacity_config_endpoint():
     """Return current capacity configuration."""
     cap = get_capacity_config()
-    return jsonify(cap)
+    return jsonify(_with_config_revision(cap))
 
 
 @bp.route('/api/board-config', methods=['GET'])
 def get_board_config_endpoint():
     """Return current Jira board configuration."""
     board_cfg = get_board_config()
-    return jsonify({
+    return jsonify(_with_config_revision({
         'boardId': board_cfg.get('boardId', ''),
         'boardName': board_cfg.get('boardName', ''),
         'source': board_cfg.get('source', 'default')
-    })
+    }))
 
 
 @bp.route('/api/board-config', methods=['POST'])
 def save_board_config_endpoint():
     """Save Jira board configuration used for sprint loading."""
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    try:
+        base_revision = _parse_shared_write(payload, {'boardId', 'boardName'})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     board_id = str(payload.get('boardId', '') or '').strip()
     board_name = str(payload.get('boardName', '') or '').strip()
 
@@ -934,19 +1008,23 @@ def save_board_config_endpoint():
         return jsonify({'error': 'boardId must be numeric'}), 400
 
     try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config['board'] = {
+        board_value = {
             'boardId': board_id,
             'boardName': board_name,
         }
-        save_dashboard_config(dashboard_config)
+        revision = _persist_shared_section('board', board_value, base_revision)
         with _cache_lock:
             TASKS_CACHE.clear()
         invalidate_sprints_cache()
+    except WorkspaceConfigConflict as error:
+        return _workspace_conflict_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to save board config', 'message': str(e)}), 500
 
-    return jsonify({'boardId': board_id, 'boardName': board_name, 'source': 'config'})
+    result = {'boardId': board_id, 'boardName': board_name, 'source': 'config'}
+    if revision is not None:
+        result['configRevision'] = revision
+    return jsonify(result)
 
 
 @bp.route('/api/board-config/statuses', methods=['GET'])
@@ -1050,33 +1128,41 @@ def get_board_config_statuses():
 @bp.route('/api/capacity/config', methods=['POST'])
 def save_capacity_config_endpoint():
     """Save capacity project and field configuration."""
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    try:
+        base_revision = _parse_shared_write(payload, {'project', 'fieldId', 'fieldName'})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     project = str(payload.get('project', '')).strip()
     field_id = str(payload.get('fieldId', '')).strip()
     field_name = str(payload.get('fieldName', '')).strip()
 
     try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config['capacity'] = {
+        capacity_value = {
             'project': project,
             'fieldId': field_id,
             'fieldName': field_name,
         }
-        save_dashboard_config(dashboard_config)
+        revision = _persist_shared_section('capacity', capacity_value, base_revision)
         # Reset the field cache since config changed
         global CAPACITY_FIELD_CACHE
         with _cache_lock:
             _jira_server_module.CAPACITY_FIELD_CACHE = None
             CAPACITY_FIELD_CACHE = None
+    except WorkspaceConfigConflict as error:
+        return _workspace_conflict_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to save capacity config', 'message': str(e)}), 500
 
-    return jsonify({'project': project, 'fieldId': field_id, 'fieldName': field_name})
+    result = {'project': project, 'fieldId': field_id, 'fieldName': field_name}
+    if revision is not None:
+        result['configRevision'] = revision
+    return jsonify(result)
 
 
 @bp.route('/api/sprint-field/config', methods=['GET'])
 def get_sprint_field_config_endpoint():
-    return jsonify(get_sprint_field_config())
+    return jsonify(_with_config_revision(get_sprint_field_config()))
 
 
 @bp.route('/api/sprint-field/config', methods=['POST'])
@@ -1086,7 +1172,7 @@ def save_sprint_field_config_endpoint():
 
 @bp.route('/api/story-points-field/config', methods=['GET'])
 def get_story_points_field_config_endpoint():
-    return jsonify(get_story_points_field_config())
+    return jsonify(_with_config_revision(get_story_points_field_config()))
 
 
 @bp.route('/api/story-points-field/config', methods=['POST'])
@@ -1096,7 +1182,7 @@ def save_story_points_field_config_endpoint():
 
 @bp.route('/api/parent-name-field/config', methods=['GET'])
 def get_parent_name_field_config_endpoint():
-    return jsonify(get_parent_name_field_config())
+    return jsonify(_with_config_revision(get_parent_name_field_config()))
 
 
 @bp.route('/api/parent-name-field/config', methods=['POST'])
@@ -1106,7 +1192,7 @@ def save_parent_name_field_config_endpoint():
 
 @bp.route('/api/team-field/config', methods=['GET'])
 def get_team_field_config_endpoint():
-    return jsonify(get_team_field_config())
+    return jsonify(_with_config_revision(get_team_field_config()))
 
 
 @bp.route('/api/team-field/config', methods=['POST'])
@@ -1116,7 +1202,7 @@ def save_team_field_config_endpoint():
 
 @bp.route('/api/delivery-owner-field/config', methods=['GET'])
 def get_delivery_owner_field_config_endpoint():
-    return jsonify(get_delivery_owner_field_config())
+    return jsonify(_with_config_revision(get_delivery_owner_field_config()))
 
 
 @bp.route('/api/delivery-owner-field/config', methods=['POST'])
@@ -1127,12 +1213,16 @@ def save_delivery_owner_field_config_endpoint():
 @bp.route('/api/stats/priority-weights-config', methods=['GET'])
 def get_stats_priority_weights_config_endpoint():
     payload = get_priority_weights_config()
-    return jsonify(payload)
+    return jsonify(_with_config_revision(payload))
 
 
 @bp.route('/api/stats/priority-weights-config', methods=['POST'])
 def save_stats_priority_weights_config_endpoint():
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    try:
+        base_revision = _parse_shared_write(payload, {'weights'})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     raw_weights = payload.get('weights', [])
     try:
         normalized = normalize_priority_weight_rows(raw_weights)
@@ -1140,13 +1230,16 @@ def save_stats_priority_weights_config_endpoint():
         return jsonify({'error': str(e)}), 400
 
     try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config['statsPriorityWeights'] = normalized
-        save_dashboard_config(dashboard_config)
+        revision = _persist_shared_section('statsPriorityWeights', normalized, base_revision)
+    except WorkspaceConfigConflict as error:
+        return _workspace_conflict_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to save stats priority weights', 'message': str(e)}), 500
 
-    return jsonify({'weights': normalized, 'source': 'config'})
+    result = {'weights': normalized, 'source': 'config'}
+    if revision is not None:
+        result['configRevision'] = revision
+    return jsonify(result)
 
 
 @bp.route('/api/issue-types', methods=['GET'])
@@ -1193,22 +1286,26 @@ def get_jira_issue_types():
 def get_issue_types_config_endpoint():
     """Return configured issue types from dashboard config."""
     types = get_configured_issue_types()
-    return jsonify({'issueTypes': types})
+    return jsonify(_with_config_revision({'issueTypes': types}))
 
 
 @bp.route('/api/issue-types/config', methods=['POST'])
 def save_issue_types_config_endpoint():
     """Save issue types configuration."""
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    try:
+        base_revision = _parse_shared_write(payload, {'issueTypes'})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     raw = payload.get('issueTypes', [])
     if not isinstance(raw, list):
         return jsonify({'error': 'issueTypes must be an array'}), 400
     sanitized = [str(t).strip() for t in raw if str(t).strip()]
 
     try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config['issueTypes'] = sanitized
-        save_dashboard_config(dashboard_config)
+        revision = _persist_shared_section('issueTypes', sanitized, base_revision)
+    except WorkspaceConfigConflict as error:
+        return _workspace_conflict_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to save issue types config', 'message': str(e)}), 500
 
@@ -1216,7 +1313,10 @@ def save_issue_types_config_endpoint():
     with _cache_lock:
         TASKS_CACHE.clear()
 
-    return jsonify({'issueTypes': sanitized})
+    result = {'issueTypes': sanitized}
+    if revision is not None:
+        result['configRevision'] = revision
+    return jsonify(result)
 
 
 @bp.route('/api/fields', methods=['GET'])

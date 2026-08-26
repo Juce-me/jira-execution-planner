@@ -4,6 +4,7 @@ from flask import Blueprint
 
 from backend.auth.jira_auth import AuthError
 from backend.epm import issues as epm_issues
+from backend.services.workspace_dashboard_config import WorkspaceConfigConflict
 
 from . import bind_server_globals
 
@@ -66,7 +67,11 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
 
 @bp.route('/api/epm/config', methods=['GET'])
 def get_epm_config_endpoint():
-    return jsonify(get_epm_config())
+    payload = get_epm_config()
+    if config_storage_db_enabled():
+        payload = dict(payload)
+        payload['configRevision'] = load_dashboard_config_snapshot().config_revision
+    return jsonify(payload)
 
 
 @bp.route('/api/epm/scope', methods=['GET'])
@@ -221,7 +226,15 @@ def get_epm_project_rollup_endpoint(project_id):
 @bp.route('/api/epm/config', methods=['POST'])
 # TODO(SETTINGS_ADMIN_ONLY): gate this route when the admin flag ships.
 def save_epm_config_endpoint():
-    raw_payload = request.get_json(silent=True) or {}
+    raw_payload = request.get_json(silent=True)
+    if not isinstance(raw_payload, dict):
+        return jsonify({'error': 'request body must be a JSON object'}), 400
+    base_revision = raw_payload.pop('baseRevision', None)
+    if config_storage_db_enabled() and base_revision is None:
+        return jsonify({'error': 'baseRevision is required'}), 400
+    unknown = set(raw_payload) - {'version', 'labelPrefix', 'scope', 'issueTypes', 'projects'}
+    if unknown:
+        return jsonify({'error': f'unsupported configuration field: {sorted(unknown)[0]}'}), 400
     raw_projects = raw_payload.get('projects') if isinstance(raw_payload, dict) else {}
     if isinstance(raw_projects, dict):
         rewritten_projects = {}
@@ -244,15 +257,30 @@ def save_epm_config_endpoint():
         raw_payload['projects'] = rewritten_projects
     payload = normalize_epm_config(raw_payload)
     try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+        dashboard_config = load_dashboard_config() or {}
         previous_epm_config = normalize_epm_config(dashboard_config.get('epm') or {})
         previous_scope_key = build_epm_home_projects_cache_key(previous_epm_config.get('scope') or {})
         next_scope_key = build_epm_home_projects_cache_key(payload.get('scope') or {})
-        dashboard_config['epm'] = payload
-        save_dashboard_config(dashboard_config)
+        revision = None
+        if config_storage_db_enabled():
+            revision = save_dashboard_config_section('epm', payload, base_revision=base_revision).config_revision
+        else:
+            dashboard_config['epm'] = payload
+            save_dashboard_config(dashboard_config)
         if previous_scope_key != next_scope_key:
             clear_epm_project_cache()
         clear_epm_rollup_caches()
+    except WorkspaceConfigConflict as error:
+        current_value = (error.current.payload or {}).get('epm') or {}
+        return jsonify({
+            'error': 'workspace_config_conflict',
+            'message': 'Shared settings changed while you were editing. Your changes are still unsaved.',
+            'currentRevision': error.current.config_revision,
+            'current': {'section': 'epm', 'value': current_value, 'configRevision': error.current.config_revision},
+        }), 409
     except Exception as e:
         return jsonify({'error': 'Failed to save EPM config', 'message': str(e)}), 500
+    if revision is not None:
+        payload = dict(payload)
+        payload['configRevision'] = revision
     return jsonify(payload)

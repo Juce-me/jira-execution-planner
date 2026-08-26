@@ -57,6 +57,7 @@ from backend.config.repository import (
     json_repository as build_json_config_repository,
     validate_config_storage_startup,
 )
+from backend.services.workspace_dashboard_config import WorkspaceConfigConflict
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
@@ -5996,14 +5997,28 @@ LABELS_CACHE_TTL = 15 * 60  # 15 minutes
 # --- Custom Field Config Endpoints ---
 
 def _save_field_config(config_key, cache_name=None):
-    """Generic helper to save a field config (fieldId + fieldName) into dashboard-config.json."""
-    payload = request.get_json(silent=True) or {}
+    """Save a route-owned Jira field configuration."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'request body must be a JSON object'}), 400
+    allowed = {'fieldId', 'fieldName'} | ({'baseRevision'} if config_storage_db_enabled() else set())
+    if set(payload) - allowed:
+        return jsonify({'error': 'unsupported configuration field'}), 400
+    if config_storage_db_enabled() and 'baseRevision' not in payload:
+        return jsonify({'error': 'baseRevision is required'}), 400
     field_id = str(payload.get('fieldId', '')).strip()
     field_name = str(payload.get('fieldName', '')).strip()
     try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config[config_key] = {'fieldId': field_id, 'fieldName': field_name}
-        save_dashboard_config(dashboard_config)
+        value = {'fieldId': field_id, 'fieldName': field_name}
+        revision = None
+        if config_storage_db_enabled():
+            revision = save_dashboard_config_section(
+                config_key, value, base_revision=payload.get('baseRevision'),
+            ).config_revision
+        else:
+            dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+            dashboard_config[config_key] = value
+            save_dashboard_config(dashboard_config)
         # Invalidate tasks cache so next fetch uses the new field
         global TASKS_CACHE
         TASKS_CACHE = {}
@@ -6012,9 +6027,20 @@ def _save_field_config(config_key, cache_name=None):
             g = globals()
             with _cache_lock:
                 g[cache_name] = None
+    except WorkspaceConfigConflict as error:
+        current_value = (error.current.payload or {}).get(config_key) or {}
+        return jsonify({
+            'error': 'workspace_config_conflict',
+            'message': 'Shared settings changed while you were editing. Your changes are still unsaved.',
+            'currentRevision': error.current.config_revision,
+            'current': {'section': config_key, 'value': current_value, 'configRevision': error.current.config_revision},
+        }), 409
     except Exception as e:
         return jsonify({'error': f'Failed to save {config_key} config', 'message': str(e)}), 500
-    return jsonify({'fieldId': field_id, 'fieldName': field_name})
+    result = {'fieldId': field_id, 'fieldName': field_name}
+    if revision is not None:
+        result['configRevision'] = revision
+    return jsonify(result)
 
 
 # --- Issue Types ---

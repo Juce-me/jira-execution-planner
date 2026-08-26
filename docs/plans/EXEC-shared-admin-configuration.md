@@ -380,7 +380,7 @@ git commit -m "Route shared settings through workspace storage"
 - DB/OAuth writes require `baseRevision`; JSON/basic writes do not.
 - Conflict JSON is produced by one shared helper and contains only the route-owned current section.
 
-- [ ] **Step 1: Expand the security matrix before route code**
+- [x] **Step 1: Expand the security matrix before route code**
 
 Put every POST route from the matrix in `SECURITY_SAMPLES['shared_admin_write']` except `/api/team-catalog`, which remains in `user_write`. Parameterize tests so each route proves:
 
@@ -390,7 +390,7 @@ Put every POST route from the matrix in `SECURITY_SAMPLES['shared_admin_write']`
 - non-admin returns `403 admin_required` when `SETTINGS_ADMIN_ONLY=true`;
 - authenticated non-admin reaches the route when `SETTINGS_ADMIN_ONLY=false`.
 
-- [ ] **Step 2: Write failing two-workspace and bootstrap regressions**
+- [x] **Step 2: Write failing two-workspace and bootstrap regressions**
 
 Seed Admin A, Admin B, and a normal user in workspace 1 plus Admin C in workspace 2. Save each administrator section through its real route as Admin A, then read it as Admin B and the normal user. Assert Admin C receives workspace 2's empty/default value and never workspace 1's conflict body.
 
@@ -400,13 +400,13 @@ Add a regression that changes one section between two compatibility GETs and pro
 
 Patch Jira REST and Home/Townsquare fetch symbols to fail if called by `/api/config`, and assert the bootstrap performs one workspace-config repository read. Record the before/after startup request count; it must not increase.
 
-- [ ] **Step 3: Run route/security tests to verify RED**
+- [x] **Step 3: Run route/security tests to verify RED**
 
 Run: `.venv/bin/python -m unittest tests.test_dashboard_bootstrap_config_source tests.test_endpoint_security_matrix tests.test_oauth_settings_routes tests.test_epm_config_api tests.test_user_view_config_routes tests.test_db_admin_routes`
 
 Expected: FAIL because routes neither expose/require revisions nor isolate shared EPM from private views.
 
-- [ ] **Step 4: Replace read/modify/full-save route code**
+- [x] **Step 4: Replace read/modify/full-save route code**
 
 For each administrator POST route:
 
@@ -419,19 +419,19 @@ For each administrator POST route:
 
 Do not accept a client-provided section name. Refactor `jira_server._save_field_config()` to call the section-save interface with its hard-coded `config_key` and parsed `baseRevision`; do not leave any DB route or delegated route helper calling generic `save_dashboard_config()`.
 
-- [ ] **Step 5: Make shared EPM authoritative**
+- [x] **Step 5: Make shared EPM authoritative**
 
 Change `get_config()` to load one `WorkspaceConfigSnapshot`, expose its complete allowlisted payload as `sharedConfig`, expose its revision as `sharedConfigRevision`, and derive the existing compatibility fields—including `payload['epm']`—from that same snapshot. `includeViewConfig=true` may add sanitized `viewConfig`, but it must not select `view_payload.get('epm')`. Keep per-user Home token visibility/gating unchanged.
 
-- [ ] **Step 6: Lock down the team-catalog route**
+- [x] **Step 6: Lock down the team-catalog route**
 
 Require a JSON object whose keys are a subset of `catalog`, `meta`, and `merge`. Reject identity and administrator-section fields with `400 unsupported_team_catalog_field`. In DB mode call only the team-catalog repository; in JSON mode keep the file path. Convert exhausted internal catalog-merge contention to `409 team_catalog_conflict` without returning administrator revision or payload data.
 
-- [ ] **Step 7: Add audit assertions and source guards**
+- [x] **Step 7: Add audit assertions and source guards**
 
 Assert each successful administrator section save adds one `AuditEvent` with `event_type='workspace_dashboard_config_updated'`, correct request-derived workspace/actor, and metadata exactly `{'section': <name>, 'revision': <int>}`. Assert payload values and identifiers never appear in serialized metadata. Add an AST/source guard over every matrix administrator handler plus `jira_server._save_field_config()` that forbids a generic full-save call without forbidding the intentionally preserved JSON/basic groups path.
 
-- [ ] **Step 8: Run route/security tests to verify GREEN**
+- [x] **Step 8: Run route/security tests to verify GREEN**
 
 Run: `.venv/bin/python -m unittest tests.test_dashboard_bootstrap_config_source tests.test_endpoint_security_matrix tests.test_oauth_settings_routes tests.test_epm_config_api tests.test_user_view_config_routes tests.test_db_admin_routes tests.test_backend_route_source_guards`
 

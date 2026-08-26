@@ -83,7 +83,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # interactive/passive branch for real Epics (+35 over the 15965 ceiling).
     # Header dropdown query inputs add Group, Teams, and Sprint filtering while preserving
     # the existing shared main/compact control surface (+101 over the 16000 ceiling).
-    "frontend/src/dashboard.jsx": 16101,
+    # improvement/personal-group-star adds source-aware personal-favorite wiring, canonical
+    # preference snapshot application, and stale group-scope clearing (+55 lines).
+    "frontend/src/dashboard.jsx": 16156,
 }
 
 

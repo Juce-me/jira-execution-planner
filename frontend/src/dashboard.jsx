@@ -1016,6 +1016,7 @@ import {
                 }
                 return normalized;
             }, [showGroupManage]);
+            const personalGroupPreferencesEnabled = groupsConfig.source === 'workspace_db';
             const {
                 groupPreferences,
                 setGroupPreferences,
@@ -1053,7 +1054,7 @@ import {
                 applyPreferenceGroupsSnapshot,
                 trackSettingsAction,
                 bucketCount,
-                useBackendPreferences: groupsConfig.source === 'workspace_db',
+                useBackendPreferences: personalGroupPreferencesEnabled,
             });
             useEffect(() => {
                 if (!homeTokenConnectionLoaded) return;
@@ -15882,7 +15883,7 @@ import {
                                         teamCacheLabel,
                                         updateGroupDraftName,
                                         toggleDefaultGroupDraft,
-                                        personalGroupPreferencesEnabled: groupsConfig.source === 'workspace_db',
+                                        personalGroupPreferencesEnabled,
                                         favoriteGroupDraftId,
                                         setFavoriteGroupDraft,
                                         settingsPreferenceRecoveryLoginUrl,

@@ -417,7 +417,9 @@ test('the conflict banner names EPM settings as pending instead of claiming grou
 // "Your board layout is unsaved." sentence was written for the board-only trigger. A user who edits
 // only teamIds must not be told about a board they never touched.
 test('the conflict headline names what changed instead of a board the user never touched', async ({ page }) => {
-    await mockConfigSettings(page, { conflictCurrents: [conflictingServerConfig()] });
+    const groupsConfig = baseGroupsConfig();
+    groupsConfig.groups[0].teamIds = ['team-platform', 'team-secondary'];
+    await mockConfigSettings(page, { groupsConfig, conflictCurrents: [conflictingServerConfig()] });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();

@@ -12,6 +12,7 @@ Complete.
 - First-run configuration preserves the unified Settings Save, Cancel, discard, and `409` conflict paths. A shared-group save made from this context does not persist a personal favorite, so the mandatory picker returns after Settings closes.
 - The context remains active while Settings is open, including validation and conflict states, and clears only after Settings closes.
 - No created or duplicated group is automatically starred, and shared `defaultGroupId` behavior is unchanged.
+- First-run Settings hides favorite and visibility controls, so it exposes only shared group edits that its unified Save persists.
 
 ## RED evidence
 
@@ -26,9 +27,10 @@ After adding the first-run Playwright journeys and rebuilding the frontend, the 
 
 ## Coverage added
 
-- Existing and no-group first-run states.
+- Existing and no-group first-run states, with no editable personal-preference controls.
+- A real blocked `Ctrl+S` validation attempt that leaves first-run Settings open, followed by recovery.
+- No-groups creation through Add group, refresh/add team, Save, and mandatory-picker return without auto-starring.
 - Save without automatic starring, followed by mandatory-picker return.
-- Existing validation state.
 - Dirty Cancel, Keep editing, Discard, and return behavior.
 - `409` recovery that keeps Settings open until the user closes it.
 
@@ -39,3 +41,16 @@ Changed only the first-run modal, visibility-preference hook, Team groups Settin
 ## Remaining verification
 
 The full repository Python suite was not run; the requested focused frontend/browser and source-contract checks passed.
+
+## Review round 1 fix evidence
+
+### RED
+
+The new existing-group journey expected no favorite control in first-run Settings and failed with `Expected: 0, Received: 1`. This demonstrated that the favorite control remained editable even though first-run Save deliberately skips preference persistence.
+
+### GREEN
+
+- `npm run build` completed successfully with the bundled Node runtime.
+- The two new focused regression journeys passed.
+- The full related browser spec passed: `14 passed`.
+- The Settings source-contract guard passed: `24 passed`.

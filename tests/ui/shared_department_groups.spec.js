@@ -168,6 +168,9 @@ async function mockFirstRunDashboard(page, options = {}) {
                 }),
             });
         }
+        if (url.pathname === '/api/teams') {
+            return json({ teams: options.teams || [{ id: 'team-new', name: 'New Team' }] });
+        }
         if (url.pathname === '/api/sprints') {
             return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
         }
@@ -288,6 +291,8 @@ test('Configure your own reuses Team groups and returns to the mandatory picker'
     await expect(settingsDialog.getByRole('tab', { name: 'Team groups' })).toHaveAttribute('aria-selected', 'true');
     await expect(settingsDialog.getByText('Easiest way to get started: duplicate an existing group, then adjust its teams.')).toBeVisible();
     await expect(settingsDialog.getByRole('button', { name: 'Duplicate' })).toBeVisible();
+    await expect(settingsDialog.getByRole('button', { name: /favorite group/ })).toHaveCount(0);
+    await expect(settingsDialog.getByRole('checkbox', { name: 'Show in my controls' })).toHaveCount(0);
     await expect(firstRunDialog).toHaveCount(0);
 
     await settingsDialog.getByRole('button', { name: 'Cancel' }).click();
@@ -295,8 +300,8 @@ test('Configure your own reuses Team groups and returns to the mandatory picker'
     await expect(firstRunDialog.getByRole('radio', { checked: true })).toHaveCount(0);
 });
 
-test('Configure your own explains how to create the first group when none exist', async ({ page }) => {
-    await mockFirstRunDashboard(page, {
+test('first-run no-groups configuration recovers from validation, saves a team group, and returns to selection', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
         groupsConfig: {
             version: 1,
             groups: [],
@@ -317,6 +322,29 @@ test('Configure your own explains how to create the first group when none exist'
     await expect(settingsDialog.locator('.group-modal-validation')).toContainText('Choose one visible group as your favorite.');
     await expect(settingsDialog.getByRole('button', { name: 'Save' })).toBeDisabled();
     await expect(settingsDialog).toBeVisible();
+
+    await page.keyboard.press('Control+S');
+    await expect(settingsDialog).toBeVisible();
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+
+    await settingsDialog.getByRole('button', { name: '+ Add group' }).click();
+    await settingsDialog.getByRole('button', { name: 'Refresh teams' }).click();
+    const teamSearch = settingsDialog.getByPlaceholder('Search teams to add...');
+    await expect(teamSearch).toBeVisible();
+    await teamSearch.fill('new');
+    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
+    await expect(settingsDialog.getByRole('button', { name: /favorite group/ })).toHaveCount(0);
+    await expect(settingsDialog.getByRole('checkbox', { name: 'Show in my controls' })).toHaveCount(0);
+    await expect(settingsDialog.getByRole('button', { name: 'Save' })).toBeEnabled();
+    await settingsDialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(0);
+    await expect(settingsDialog).toHaveCount(0);
+
+    const firstRunDialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await expect(firstRunDialog).toBeVisible();
+    await expect(firstRunDialog.getByRole('radio', { name: /New Group/ })).toBeEnabled();
+    await expect(firstRunDialog.getByRole('radio', { checked: true })).toHaveCount(0);
 });
 
 test('first-run configuration keeps unified Save, validation, Cancel, discard, and return behavior', async ({ page }) => {

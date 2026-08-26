@@ -227,43 +227,47 @@ export default function TeamGroupsSettings(props) {
                                                         placeholder="Group name"
                                                         className="group-name-input"
                                                     />
-                                                    <button
-                                                        className={`group-star-button ${(personalGroupPreferencesEnabled ? favoriteGroupDraftId : groupDraft?.defaultGroupId) === activeGroupDraft.id ? 'active' : ''}`}
-                                                        onClick={() => personalGroupPreferencesEnabled
-                                                            ? setFavoriteGroupDraft(activeGroupDraft.id)
-                                                            : toggleDefaultGroupDraft(activeGroupDraft.id)}
-                                                        title={personalGroupPreferencesEnabled
-                                                            ? ((activeGroupDraft.teamIds || []).some(teamId => String(teamId || '').trim())
-                                                                ? (favoriteGroupDraftId === activeGroupDraft.id
-                                                                    ? `${activeGroupDraft.name || 'Group'} is my favorite group`
-                                                                    : `Set ${activeGroupDraft.name || 'group'} as my favorite group`)
-                                                                : 'Configure teams before setting as favorite')
-                                                            : 'Set as shared default group'}
-                                                        aria-label={personalGroupPreferencesEnabled
-                                                            ? (!(activeGroupDraft.teamIds || []).some(teamId => String(teamId || '').trim())
-                                                                ? 'Configure teams before setting as favorite'
-                                                                : (favoriteGroupDraftId === activeGroupDraft.id
-                                                                    ? `${activeGroupDraft.name || 'Group'} is my favorite group`
-                                                                    : `Set ${activeGroupDraft.name || 'group'} as my favorite group`))
-                                                            : (groupDraft?.defaultGroupId === activeGroupDraft.id ? 'Unset shared default group' : 'Set as shared default group')}
-                                                        disabled={groupVisibilitySaving || (personalGroupPreferencesEnabled && !(activeGroupDraft.teamIds || []).some(teamId => String(teamId || '').trim()))}
-                                                        type="button"
-                                                    >
-                                                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                                            <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.6 9.6l5.8-.8L12 3.5z"/>
-                                                        </svg>
-                                                    </button>
-                                                    <label className="group-visible-control">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={isGroupVisibleInControls(activeGroupDraft.id)}
-                                                            disabled={groupVisibilitySaving || (personalGroupPreferencesEnabled
-                                                                ? favoriteGroupDraftId === activeGroupDraft.id
-                                                                : groupDraft?.defaultGroupId === activeGroupDraft.id)}
-                                                            onChange={() => toggleGroupVisibleInControls(activeGroupDraft.id)}
-                                                        />
-                                                        <span>Show in my controls</span>
-                                                    </label>
+                                                    {!firstRunConfigurationActive && (
+                                                        <>
+                                                            <button
+                                                                className={`group-star-button ${(personalGroupPreferencesEnabled ? favoriteGroupDraftId : groupDraft?.defaultGroupId) === activeGroupDraft.id ? 'active' : ''}`}
+                                                                onClick={() => personalGroupPreferencesEnabled
+                                                                    ? setFavoriteGroupDraft(activeGroupDraft.id)
+                                                                    : toggleDefaultGroupDraft(activeGroupDraft.id)}
+                                                                title={personalGroupPreferencesEnabled
+                                                                    ? ((activeGroupDraft.teamIds || []).some(teamId => String(teamId || '').trim())
+                                                                        ? (favoriteGroupDraftId === activeGroupDraft.id
+                                                                            ? `${activeGroupDraft.name || 'Group'} is my favorite group`
+                                                                            : `Set ${activeGroupDraft.name || 'group'} as my favorite group`)
+                                                                        : 'Configure teams before setting as favorite')
+                                                                    : 'Set as shared default group'}
+                                                                aria-label={personalGroupPreferencesEnabled
+                                                                    ? (!(activeGroupDraft.teamIds || []).some(teamId => String(teamId || '').trim())
+                                                                        ? 'Configure teams before setting as favorite'
+                                                                        : (favoriteGroupDraftId === activeGroupDraft.id
+                                                                            ? `${activeGroupDraft.name || 'Group'} is my favorite group`
+                                                                            : `Set ${activeGroupDraft.name || 'group'} as my favorite group`))
+                                                                    : (groupDraft?.defaultGroupId === activeGroupDraft.id ? 'Unset shared default group' : 'Set as shared default group')}
+                                                                disabled={groupVisibilitySaving || (personalGroupPreferencesEnabled && !(activeGroupDraft.teamIds || []).some(teamId => String(teamId || '').trim()))}
+                                                                type="button"
+                                                            >
+                                                                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                                                    <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.6 9.6l5.8-.8L12 3.5z"/>
+                                                                </svg>
+                                                            </button>
+                                                            <label className="group-visible-control">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isGroupVisibleInControls(activeGroupDraft.id)}
+                                                                    disabled={groupVisibilitySaving || (personalGroupPreferencesEnabled
+                                                                        ? favoriteGroupDraftId === activeGroupDraft.id
+                                                                        : groupDraft?.defaultGroupId === activeGroupDraft.id)}
+                                                                    onChange={() => toggleGroupVisibleInControls(activeGroupDraft.id)}
+                                                                />
+                                                                <span>Show in my controls</span>
+                                                            </label>
+                                                        </>
+                                                    )}
                                                     <button
                                                         className="secondary compact"
                                                         onClick={() => duplicateGroupDraft(activeGroupDraft.id)}

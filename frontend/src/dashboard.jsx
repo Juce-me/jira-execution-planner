@@ -943,6 +943,7 @@ import {
             const catchUpAlertLoadRef = useRef('');
             const catchUpAlertForceRefreshRef = useRef(false);
             const catchUpAlertVersionRef = useRef(0);
+            const groupLoadVersionRef = useRef(0);
             const rearmCatchUpAlerts = () => { catchUpAlertLoadRef.current = ''; catchUpAlertForceRefreshRef.current = true; catchUpAlertVersionRef.current += 1; setCatchUpAlertRefreshNonce(value => value + 1); };
             const epmSettingsProjectsRequestIdRef = useRef(0);
             const epmSettingsProjectsCacheRef = useRef(new Map());
@@ -1007,11 +1008,27 @@ import {
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
+            const applyPreferenceGroupsSnapshot = React.useCallback((snapshot) => {
+                const normalized = normalizeGroupsConfig(snapshot);
+                setGroupsConfig(normalized);
+                setGroupWarnings(snapshot?.warnings || []);
+                setGroupConfigSource(normalized.source || snapshot?.source || '');
+                if (showGroupManage) {
+                    setGroupDraft(normalized);
+                    groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
+                }
+                return normalized;
+            }, [showGroupManage]);
+            const personalGroupPreferencesEnabled = groupsConfig.source === 'workspace_db';
             const {
                 groupPreferences,
                 setGroupPreferences,
                 visibleGroupDraftIds,
                 setVisibleGroupDraftIds,
+                favoriteGroupDraftId,
+                setFavoriteGroupDraft,
+                favoriteGroupValidationError,
+                settingsPreferenceRecoveryLoginUrl,
                 setGroupPreferencesSaving,
                 groupVisibilitySaving,
                 isGroupVisibilityDraftDirty,
@@ -1019,12 +1036,13 @@ import {
                 initializeGroupPreferencesDraft,
                 isGroupVisibleInControls,
                 toggleGroupVisibleInControls,
-                firstRunSelectedGroupIds,
-                toggleFirstRunGroup,
+                firstRunFavoriteGroupId,
+                selectFirstRunFavoriteGroup,
                 saveFirstRunGroupPreferences,
                 openFirstRunAddGroup,
                 firstRunSaving,
                 firstRunError,
+                firstRunRecoveryLoginUrl,
                 persistGroupPreferences,
             } = useGroupVisibilityPreferences({
                 backendUrl: BACKEND_URL,
@@ -1036,9 +1054,10 @@ import {
                 setShowGroupManage,
                 setGroupManageTab,
                 setDepartmentSettingsTab,
+                applyPreferenceGroupsSnapshot,
                 trackSettingsAction,
                 bucketCount,
-                useBackendPreferences: groupsConfig.source === 'workspace_db',
+                useBackendPreferences: personalGroupPreferencesEnabled,
             });
             useEffect(() => {
                 if (!homeTokenConnectionLoaded) return;
@@ -1620,12 +1639,10 @@ import {
                 setShowEpmSortDropdown(next.sort);
             };
 
-            const invalidateSprintDataForConfigSave = (refreshTarget) => {
-                if (!selectedSprint) return;
+            const clearEngGroupScopeData = React.useCallback(({ clearScenario = true } = {}) => {
                 abortSprintFetches();
-                if (activeGroupId) {
-                    groupStateRef.current.delete(activeGroupId);
-                }
+                groupLoadVersionRef.current += 1;
+                groupStateRef.current.clear();
                 setTasksFetched(false);
                 setProductTasks([]);
                 setTechTasks([]);
@@ -1643,6 +1660,7 @@ import {
                 setMissingInfoEpics([]);
                 setBacklogProductEpics([]);
                 setBacklogTechEpics([]);
+                setDependencyData({});
                 clearStorySubtasks();
                 burnoutCacheRef.current = {};
                 cohortCacheRef.current = {};
@@ -1658,15 +1676,27 @@ import {
                 setExcludedCapacityData(null);
                 setExcludedCapacityError('');
                 setExcludedCapacityLoading(false);
-                if (refreshTarget === 'scenario') {
+                setCapacityByTeam({});
+                setCapacityLoading(false);
+                if (clearScenario) {
                     setScenarioData(null);
                     setScenarioError('');
+                    setScenarioLoading(false);
                 }
+                setLoading(false);
+                setError('');
+                setProductTasksLoading(false);
+                setTechTasksLoading(false);
                 sprintLoadRef.current = { sprintId: selectedSprint, product: false, tech: false };
                 lastLoadedSprintRef.current = null;
                 catchUpAlertLoadRef.current = '';
                 catchUpAlertForceRefreshRef.current = false;
                 catchUpAlertVersionRef.current += 1;
+            }, [abortSprintFetches, selectedSprint]);
+
+            const invalidateSprintDataForConfigSave = (refreshTarget) => {
+                if (!selectedSprint) return;
+                clearEngGroupScopeData({ clearScenario: refreshTarget === 'scenario' });
             };
 
             const queueConfigSaveRefresh = (refreshTarget) => {
@@ -1777,7 +1807,7 @@ import {
                 setAvailableTeams(loadTeamsFromCurrentView());
                 setLoadingTeams(false);
                 loadTeamCatalog();
-            }, [showGroupManage, groupsConfig]);
+            }, [showGroupManage]);
 
             useEffect(() => {
                 if (!showGroupManage || groupManageTab !== 'epm') return;
@@ -2630,9 +2660,12 @@ import {
                         errors.push(`${groupName}: ${overlap[0]} cannot be both excluded capacity and Ad Hoc capacity.`);
                     }
                 });
+                if (favoriteGroupValidationError) {
+                    errors.push(favoriteGroupValidationError);
+                }
                 errors.push(...validatePresentGroupBoards(groupDraft?.groups));
                 return errors;
-            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft]);
+            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft, favoriteGroupValidationError]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving || epmConfigSaving) return 'Save in progress';
                 if (canEditEpmConfiguration && isEpmConfigDirty && epmConfigLoading) return 'EPM settings are loading';
@@ -5526,6 +5559,9 @@ import {
                     return;
                 }
 
+                const groupLoadVersion = ++groupLoadVersionRef.current;
+                const shouldApplyGroupLoadResult = () => groupLoadVersionRef.current === groupLoadVersion;
+
                 const forceConfigRefresh =
                     configRefreshNonce !== 0 &&
                     pendingConfigRefreshRef.current === configRefreshNonce;
@@ -5554,9 +5590,19 @@ import {
                 setTechEpicsInScope([]);
                 setMissingPlanningInfoTasks([]);
                 setMissingInfoEpics([]);
-                loadProductTasks();
-                loadTechTasks();
+                loadProductTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                loadTechTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                return () => {
+                    groupLoadVersionRef.current += 1;
+                    abortSprintFetches();
+                };
             }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce]);
+
+            useEffect(() => {
+                if (groupsLoading || !groupPreferences.onboardingRequired) return;
+                clearEngGroupScopeData();
+                setActiveGroupId(null);
+            }, [groupsLoading, groupPreferences.onboardingRequired, clearEngGroupScopeData]);
 
             useEffect(() => {
                 if (!isStatsSourceOnlyStatsView) return;
@@ -6583,7 +6629,10 @@ import {
                     availableTeamIds: validTeamIds
                 });
 
-                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey; teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams }; teamSelectionSkipPersistScopeRef.current = teamSelectionScopeKey;
+                const hydrationWillUpdateSelection = !selectedTeamSelectionsEqual(selectedTeams, nextSelectedTeams);
+                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey;
+                teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
+                teamSelectionSkipPersistScopeRef.current = hydrationWillUpdateSelection ? teamSelectionScopeKey : '';
                 setSelectedTeams(prev => {
                     const normalizedPrev = normalizeSelectedTeams(prev);
                     const sameLength = normalizedPrev.length === nextSelectedTeams.length;
@@ -12588,8 +12637,13 @@ import {
                                                 >
                                                     <span>{group.name}</span>
                                                     <div className="group-option-tags">
-                                                        {groupsConfig.defaultGroupId === group.id && (
-                                                            <span className="group-option-default" title="Default group">★</span>
+                                                        {(groupsConfig.source === 'workspace_db'
+                                                            ? groupPreferences.activeGroupId === group.id
+                                                            : groupsConfig.defaultGroupId === group.id) && (
+                                                            <span
+                                                                className="group-option-default"
+                                                                title={groupsConfig.source === 'workspace_db' ? 'My favorite group' : 'Default group'}
+                                                            >★</span>
                                                         )}
                                                         <span className="group-option-meta">
                                                             {group.teamIds?.length || 0} teams
@@ -15856,6 +15910,10 @@ import {
                                         teamCacheLabel,
                                         updateGroupDraftName,
                                         toggleDefaultGroupDraft,
+                                        personalGroupPreferencesEnabled,
+                                        favoriteGroupDraftId,
+                                        setFavoriteGroupDraft,
+                                        settingsPreferenceRecoveryLoginUrl,
                                         duplicateGroupDraft,
                                         resolveTeamName,
                                         removeTeamFromGroup,
@@ -16077,13 +16135,13 @@ import {
                     {groupPreferences.onboardingRequired && !showGroupManage && (
                         <FirstRunGroupSelectionModal
                             groups={groupsConfig.groups || []}
-                            defaultGroupId={groupsConfig.defaultGroupId || ''}
-                            selectedGroupIds={firstRunSelectedGroupIds}
-                            onToggleGroup={toggleFirstRunGroup}
+                            selectedGroupId={firstRunFavoriteGroupId}
+                            onSelectGroup={selectFirstRunFavoriteGroup}
                             onContinue={saveFirstRunGroupPreferences}
-                            onAddGroup={openFirstRunAddGroup}
+                            onConfigure={openFirstRunAddGroup}
                             saving={firstRunSaving}
                             error={firstRunError}
+                            recoveryLoginUrl={firstRunRecoveryLoginUrl}
                         />
                     )}
                     {showUpdateModal && updateNoticeVisible && (

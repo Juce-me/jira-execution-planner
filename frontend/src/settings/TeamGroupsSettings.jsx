@@ -26,6 +26,10 @@ export default function TeamGroupsSettings(props) {
         teamCacheLabel,
         updateGroupDraftName,
         toggleDefaultGroupDraft,
+        personalGroupPreferencesEnabled,
+        favoriteGroupDraftId,
+        setFavoriteGroupDraft,
+        settingsPreferenceRecoveryLoginUrl,
         duplicateGroupDraft,
         resolveTeamName,
         removeTeamFromGroup,
@@ -126,9 +130,11 @@ export default function TeamGroupsSettings(props) {
                                             {filteredGroupDrafts.length === 0 ? (
                                                 <div className="group-pane-empty">No groups match this search.</div>
                                             ) : filteredGroupDrafts.map(group => {
-                                                const teamCount = (group.teamIds || []).length;
+                                                const teamCount = (group.teamIds || []).filter(teamId => String(teamId || '').trim()).length;
                                                 const isActive = activeGroupDraft?.id === group.id;
-                                                const isDefault = groupDraft?.defaultGroupId === group.id;
+                                                const isDefault = personalGroupPreferencesEnabled
+                                                    ? favoriteGroupDraftId === group.id
+                                                    : groupDraft?.defaultGroupId === group.id;
                                                 return (
                                                     <button
                                                         key={group.id}
@@ -174,7 +180,12 @@ export default function TeamGroupsSettings(props) {
                                             </div>
                                         )}
                                         {groupDraftError && (
-                                            <div className="group-modal-warning">{groupDraftError}</div>
+                                            <div className="group-modal-warning">
+                                                {groupDraftError}
+                                                {settingsPreferenceRecoveryLoginUrl && (
+                                                    <> <a href={settingsPreferenceRecoveryLoginUrl}>Sign in again</a></>
+                                                )}
+                                            </div>
                                         )}
                                         <div className="group-pane-tools">
                                             <button
@@ -207,10 +218,25 @@ export default function TeamGroupsSettings(props) {
                                                         className="group-name-input"
                                                     />
                                                     <button
-                                                        className={`group-star-button ${groupDraft?.defaultGroupId === activeGroupDraft.id ? 'active' : ''}`}
-                                                        onClick={() => toggleDefaultGroupDraft(activeGroupDraft.id)}
-                                                        title="Set as shared default group"
-                                                        aria-label={groupDraft?.defaultGroupId === activeGroupDraft.id ? 'Unset shared default group' : 'Set as shared default group'}
+                                                        className={`group-star-button ${(personalGroupPreferencesEnabled ? favoriteGroupDraftId : groupDraft?.defaultGroupId) === activeGroupDraft.id ? 'active' : ''}`}
+                                                        onClick={() => personalGroupPreferencesEnabled
+                                                            ? setFavoriteGroupDraft(activeGroupDraft.id)
+                                                            : toggleDefaultGroupDraft(activeGroupDraft.id)}
+                                                        title={personalGroupPreferencesEnabled
+                                                            ? ((activeGroupDraft.teamIds || []).some(teamId => String(teamId || '').trim())
+                                                                ? (favoriteGroupDraftId === activeGroupDraft.id
+                                                                    ? `${activeGroupDraft.name || 'Group'} is my favorite group`
+                                                                    : `Set ${activeGroupDraft.name || 'group'} as my favorite group`)
+                                                                : 'Configure teams before setting as favorite')
+                                                            : 'Set as shared default group'}
+                                                        aria-label={personalGroupPreferencesEnabled
+                                                            ? (!(activeGroupDraft.teamIds || []).some(teamId => String(teamId || '').trim())
+                                                                ? 'Configure teams before setting as favorite'
+                                                                : (favoriteGroupDraftId === activeGroupDraft.id
+                                                                    ? `${activeGroupDraft.name || 'Group'} is my favorite group`
+                                                                    : `Set ${activeGroupDraft.name || 'group'} as my favorite group`))
+                                                            : (groupDraft?.defaultGroupId === activeGroupDraft.id ? 'Unset shared default group' : 'Set as shared default group')}
+                                                        disabled={groupVisibilitySaving || (personalGroupPreferencesEnabled && !(activeGroupDraft.teamIds || []).some(teamId => String(teamId || '').trim()))}
                                                         type="button"
                                                     >
                                                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -221,7 +247,9 @@ export default function TeamGroupsSettings(props) {
                                                         <input
                                                             type="checkbox"
                                                             checked={isGroupVisibleInControls(activeGroupDraft.id)}
-                                                            disabled={groupVisibilitySaving || groupDraft?.defaultGroupId === activeGroupDraft.id}
+                                                            disabled={groupVisibilitySaving || (personalGroupPreferencesEnabled
+                                                                ? favoriteGroupDraftId === activeGroupDraft.id
+                                                                : groupDraft?.defaultGroupId === activeGroupDraft.id)}
                                                             onChange={() => toggleGroupVisibleInControls(activeGroupDraft.id)}
                                                         />
                                                         <span>Show in my controls</span>

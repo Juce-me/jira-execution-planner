@@ -159,6 +159,25 @@ test('Lead Times capacity exclusions change local state without an app-owned eve
     assert.ok(read('docs/README_ANALYTICS.md').includes('Lead Times capacity cohort filter'));
 });
 
+test('personal group favorite analytics omit identity and retain existing event ownership', () => {
+    const preferencesSource = read('frontend/src/settings/useGroupVisibilityPreferences.js');
+    const dashboardSource = read('frontend/src/dashboard.jsx');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+
+    assert.doesNotMatch(
+        preferencesSource,
+        /first_run_selection'[\s\S]{0,240}selected_count_bucket/,
+        'first-run favorite selection must not emit the constant selected-count bucket'
+    );
+    for (const forbidden of ['favorite_group_id', 'group_id', 'group_name']) {
+        assert.equal(preferencesSource.includes(forbidden), false, `favorite analytics must omit ${forbidden}`);
+    }
+    assert.match(dashboardSource, /trackFilterChanged\('group'/);
+    assert.doesNotMatch(preferencesSource, /trackSettingsAction\([^\n]*star/);
+    assert.ok(analyticsDoc.includes('first-run selection uses `group_count_bucket` only'));
+    assert.ok(analyticsDoc.includes('Personal group favorite render/change'));
+});
+
 test('Jira issue transition API module sends the eng_status_transitions surface for both endpoints', () => {
     const source = read('frontend/src/api/jiraIssueApi.js');
     assert.ok(source.includes('/api/issues/transitions/options'), 'Expected the transition options endpoint literal');

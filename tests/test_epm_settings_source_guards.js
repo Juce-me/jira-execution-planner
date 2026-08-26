@@ -686,7 +686,8 @@ test('unified settings save gates admin writes while saving dirty config section
     assert.ok(unifiedSource.includes('await saveGroupsConfig({ closeOnSuccess: false, rebaseOnto });'), 'Expected unified save to persist shared and Department settings before closing once');
     assert.ok(unifiedSource.includes('await saveEpmConfig();'), 'Expected unified save to persist EPM settings before closing once');
     assert.ok(saveSource.includes('await persistGroupPreferences(normalized);'), 'Expected Department visibility preferences to save separately from shared catalog');
-    assert.ok(dashboardSource.includes("useBackendPreferences: groupsConfig.source === 'workspace_db'"), 'Expected JSON/basic Department visibility to stay browser-local');
+    assert.ok(dashboardSource.includes("const personalGroupPreferencesEnabled = groupsConfig.source === 'workspace_db';"), 'Expected workspace DB mode to own personal preferences');
+    assert.ok(dashboardSource.includes('useBackendPreferences: personalGroupPreferencesEnabled'), 'Expected JSON/basic Department visibility to stay browser-local');
     assert.ok(groupVisibilityHookSource.includes('requestSaveGroupPreferences'), 'Expected Department visibility preference helper to own the preference POST');
     assert.ok(groupVisibilityHookSource.includes('if (!useBackendPreferences) {'), 'Expected preference helper to avoid DB-only endpoint outside workspace DB mode');
     assert.ok(groupVisibilityHookSource.includes('buildGroupPreferencesPayload'), 'Expected Department visibility preference helper to send only user visibility preferences');
@@ -716,7 +717,10 @@ test('department visibility controls are prop-owned and separate from shared def
     assert.ok(!teamGroupsSettingsSource.includes('useState('), 'TeamGroupsSettings must not own visibility state');
     assert.ok(teamGroupsSettingsSource.includes('Show in my controls'), 'Expected explicit personal visibility label');
     assert.ok(teamGroupsSettingsSource.includes('toggleGroupVisibleInControls(activeGroupDraft.id)'), 'Expected visibility toggle handler prop');
-    assert.ok(teamGroupsSettingsSource.includes('disabled={groupVisibilitySaving || groupDraft?.defaultGroupId === activeGroupDraft.id}'), 'Expected shared default group visibility to be forced on');
+    assert.ok(teamGroupsSettingsSource.includes('personalGroupPreferencesEnabled'), 'Expected source-aware personal preference mode');
+    assert.ok(teamGroupsSettingsSource.includes('favoriteGroupDraftId === activeGroupDraft.id'), 'Expected personal favorite visibility to be forced on');
+    assert.ok(teamGroupsSettingsSource.includes(': groupDraft?.defaultGroupId === activeGroupDraft.id'), 'Expected file-mode shared default visibility compatibility');
+    assert.ok(teamGroupsSettingsSource.includes('Set ${activeGroupDraft.name || \'group\'} as my favorite group'), 'Expected personal favorite star accessible label');
     assert.ok(teamGroupsSettingsSource.includes('Set as shared default group'), 'Expected shared default star accessible label');
     assert.ok(!teamGroupsSettingsSource.includes('<input') || teamGroupsSettingsSource.indexOf('className="group-visible-control"') > teamGroupsSettingsSource.indexOf('className="group-editor-header"'), 'Expected visibility input in editor header, not group list row');
 });

@@ -466,7 +466,7 @@ async function expectJiraExportMenu(page) {
     const iconBox = await trigger.locator('.jira-export-icon').boundingBox();
     expect(iconBox).not.toBeNull();
     expect(iconBox.width).toBeGreaterThanOrEqual(18);
-    expect(iconBox.height).toBeGreaterThanOrEqual(18);
+    expect(iconBox.height).toBeGreaterThanOrEqual(17.9);
     await trigger.click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();

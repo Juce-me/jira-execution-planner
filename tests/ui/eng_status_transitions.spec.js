@@ -492,11 +492,11 @@ test('Catch Up status menu reuses fetched options and changes status on option c
 
 test('Catch Up applies rapid Story status changes optimistically without task-list refetches', async ({ page }) => {
     await setPrefs(page, catchUpPrefs());
-    const { calls, transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 1000 });
+    const { calls, transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 3000 });
     await page.goto(appBaseUrl);
     await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
     await page.waitForLoadState('networkidle');
-    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
+    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose).length;
 
     await trigger(page, 'story', 'PROD-1').click();
     await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
@@ -517,7 +517,7 @@ test('Catch Up applies rapid Story status changes optimistically without task-li
     await expect.poll(() => transitionState.inFlight).toBe(0);
     await expect(menu(page, 'PROD-2').locator('.status-transition-menu-result')).toContainText('Updated 1 issue');
 
-    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequests);
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(initialTaskRequests);
 });
 
 test('Catch Up rolls back a failed optimistic status change without refetching task lists', async ({ page }) => {
@@ -536,7 +536,7 @@ test('Catch Up rolls back a failed optimistic status change without refetching t
     await page.goto(appBaseUrl);
     await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
     await page.waitForLoadState('networkidle');
-    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
+    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose).length;
 
     await trigger(page, 'story', 'PROD-1').click();
     await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
@@ -546,7 +546,7 @@ test('Catch Up rolls back a failed optimistic status change without refetching t
     await expect.poll(() => transitionState.inFlight).toBe(0);
     await expect(menu(page, 'PROD-1').locator('.status-transition-menu-result')).toContainText('No issues updated');
     await expect(trigger(page, 'story', 'PROD-1')).toContainText('To Do');
-    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequests);
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(initialTaskRequests);
 });
 
 test('status transition options reuse safe tuple cache across matching issue icons', async ({ page }) => {

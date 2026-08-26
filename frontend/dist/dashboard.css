@@ -1010,18 +1010,6 @@ h1 {
   line-height: 1.35;
   margin-top: 0.35rem;
 }
-.department-first-run-count {
-  flex: 0 0 auto;
-  min-width: 3.2rem;
-  padding: 0.18rem 0.45rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.66rem;
-  text-align: center;
-}
 .department-first-run-modal .group-filter-input {
   width: calc(100% - 2rem);
   margin: 0.8rem 1rem 0;
@@ -1036,7 +1024,7 @@ h1 {
 }
 .department-first-run-option {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: 0.65rem;
   align-items: center;
   border: 1px solid #e6e1d9;
@@ -1051,6 +1039,10 @@ h1 {
 .department-first-run-option.selected {
   border-color: #d7d2ca;
   background: #fbfaf7;
+}
+.department-first-run-option.disabled {
+  cursor: default;
+  opacity: 0.68;
 }
 .department-first-run-option.selected {
   border-color: #9bb2f0;
@@ -1077,6 +1069,11 @@ h1 {
   color: #1a1a1a;
   font-weight: 600;
 }
+.department-first-run-option-help {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.25;
+}
 .department-first-run-option-meta {
   justify-self: end;
   padding: 0.12rem 0.4rem;
@@ -1087,6 +1084,18 @@ h1 {
   font-size: 0.66rem;
   color: #555;
   white-space: nowrap;
+}
+.department-first-run-star {
+  justify-self: end;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.department-first-run-modal .group-modal-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 1rem 0.75rem;
 }
 .department-first-run-actions {
   display: flex;

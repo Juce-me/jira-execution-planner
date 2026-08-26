@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-08-08. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-08-26. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,8 +15,8 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-08-08 |
-| Last result | FAIL insufficient_home_write_probe_input (probe not re-run: operator inputs and an approved disposable Home project were unavailable; this ENG Group Board work adds no Home write path) |
+| Checked on | 2026-08-26 |
+| Last result | FAIL insufficient_home_write_probe_input (probe not re-run: all required operator inputs are unavailable; personal-group-star execution adds no Home write path) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -127,6 +127,9 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-08-26: Startup sweep rechecked the gate while executing the personal-group-star prerequisite. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and the implementation adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-26: Startup sweep rechecked the gate while splitting personal-group-star behavior from onboarding. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and neither plan adds a Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-25: Startup sweep rechecked the gate while planning per-user onboarding. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and the plan adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-08: Startup sweep rechecked the gate while continuing the ENG Group Board execution plan. The required operator inputs and an approved disposable Home project remain unavailable, and this work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-07-27: Startup sweep rechecked the gate while designing Cloud SQL IAM database connectivity. The required disposable-project probe inputs remain unavailable, and this database-connection-only work adds no Home/Townsquare route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-07-16: Startup sweep rechecked the gate while executing the ENG Project Track write switch plan. Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs remain unavailable. The executed feature writes only the Jira Project Track field via the signed-in user's OAuth issue-edit path and adds no Home/Townsquare or EPM mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.

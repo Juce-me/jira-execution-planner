@@ -6607,7 +6607,10 @@ import {
                     availableTeamIds: validTeamIds
                 });
 
-                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey; teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams }; teamSelectionSkipPersistScopeRef.current = teamSelectionScopeKey;
+                const hydrationWillUpdateSelection = !selectedTeamSelectionsEqual(selectedTeams, nextSelectedTeams);
+                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey;
+                teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
+                teamSelectionSkipPersistScopeRef.current = hydrationWillUpdateSelection ? teamSelectionScopeKey : '';
                 setSelectedTeams(prev => {
                     const normalizedPrev = normalizeSelectedTeams(prev);
                     const sameLength = normalizedPrev.length === nextSelectedTeams.length;

@@ -382,6 +382,50 @@ test('personal favorite star is separate from shared default and temporary group
     await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveClass(/active/);
 });
 
+test('first team selection after hydration survives page reload', async ({ page }) => {
+    const groupsConfig = {
+        version: 1,
+        groups: [
+            { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+        ],
+        defaultGroupId: 'platform',
+        configRevision: 5,
+        source: 'workspace_db',
+    };
+    await mockFirstRunDashboard(page, {
+        groupsConfig,
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform'],
+        }),
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
+    const teamControl = page.locator('.view-selector .team-dropdown').first();
+    const teamLabel = teamControl.locator('.team-dropdown-selection-label');
+    await expect(teamLabel).toHaveText('All Teams');
+    await expect.poll(() => page.evaluate(() => {
+        const state = JSON.parse(window.localStorage.getItem('jira_dashboard_team_selection_state_v1') || '{}');
+        return state['team-selection::42::platform']?.selectedTeams || [];
+    })).toEqual(['all']);
+
+    await teamControl.locator('.team-dropdown-toggle').click();
+    await teamControl.getByRole('checkbox', { name: 'Platform', exact: true }).check();
+    await page.mouse.click(8, 8);
+    await expect(teamLabel).toHaveText('Platform');
+    await expect.poll(() => page.evaluate(() => {
+        const state = JSON.parse(window.localStorage.getItem('jira_dashboard_team_selection_state_v1') || '{}');
+        return state['team-selection::42::platform']?.selectedTeams || [];
+    })).toEqual(['team-platform']);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(teamLabel).toHaveText('Platform');
+});
+
 test('personal favorite save preserves its draft and exposes only safe auth recovery', async ({ page }) => {
     const groupsConfig = {
         version: 1,

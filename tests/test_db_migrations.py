@@ -99,6 +99,64 @@ class DbMigrationTests(unittest.TestCase):
             self.assertEqual(factory.call_args.args[0], database_url)
             self.assertIs(factory.call_args.kwargs["poolclass"], pool.NullPool)
 
+    def test_workspace_config_migration_is_data_neutral_and_reversible(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'workspace-config.db')}"
+            config = self._config(database_url)
+            command.upgrade(config, '20260604_0006')
+            engine = create_engine(database_url, future=True)
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "INSERT INTO users (id, external_provider, external_subject, account_type, status, created_by, created_at, updated_at) "
+                    "VALUES ('user-1', 'atlassian', 'subject-1', 'admin', 'active', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                )
+                connection.exec_driver_sql(
+                    "INSERT INTO workspaces (id, environment_key, name, created_by, created_at, updated_at) "
+                    "VALUES ('workspace-1', 'test', 'Workspace', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                )
+                connection.exec_driver_sql(
+                    "INSERT INTO view_configs (id, workspace_id, owner_user_id, name, view_type, mode_policy, payload_version, payload, visibility, is_default, created_at, updated_at) "
+                    "VALUES ('view-1', 'workspace-1', 'user-1', 'Default', 'mixed', 'configuration', 1, '{}', 'private', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                )
+                connection.exec_driver_sql(
+                    "INSERT INTO view_config_versions (id, view_config_id, version_number, payload, created_by, created_at, change_note) "
+                    "VALUES ('version-1', 'view-1', 1, '{}', 'user-1', CURRENT_TIMESTAMP, 'compatibility save')"
+                )
+            engine.dispose()
+
+            command.upgrade(config, 'head')
+            engine = create_engine(database_url, future=True)
+            inspector = inspect(engine)
+            self.assertEqual(
+                {column['name'] for column in inspector.get_columns('workspace_dashboard_configs')},
+                {'id', 'workspace_id', 'payload_version', 'payload', 'config_revision', 'created_by', 'updated_by', 'created_at', 'updated_at'},
+            )
+            self.assertEqual(
+                {column['name'] for column in inspector.get_columns('workspace_team_catalogs')},
+                {'id', 'workspace_id', 'payload_version', 'payload', 'config_revision', 'updated_by', 'created_at', 'updated_at'},
+            )
+            with engine.connect() as connection:
+                self.assertEqual(connection.exec_driver_sql('SELECT count(*) FROM workspace_dashboard_configs').scalar_one(), 0)
+                self.assertEqual(connection.exec_driver_sql('SELECT count(*) FROM view_config_versions').scalar_one(), 1)
+            engine.dispose()
+
+            command.downgrade(config, '20260604_0006')
+            engine = create_engine(database_url, future=True)
+            self.assertNotIn('workspace_dashboard_configs', inspect(engine).get_table_names())
+            self.assertNotIn('workspace_team_catalogs', inspect(engine).get_table_names())
+            engine.dispose()
+            command.upgrade(config, 'head')
+
+    def test_workspace_config_migration_renders_offline_sql(self):
+        config = self._config('postgresql+psycopg://user@db.example:5432/planner?sslmode=require')
+        output = io.StringIO()
+        config.output_buffer = output
+        with patch.dict(os.environ, {'DATABASE_CONNECTION_MODE': 'url'}, clear=False):
+            command.upgrade(config, 'head', sql=True)
+        sql = output.getvalue()
+        self.assertIn('workspace_dashboard_configs', sql)
+        self.assertIn('workspace_team_catalogs', sql)
+
     def test_offline_migrations_do_not_discover_or_refresh_adc(self):
         config = self._config(
             "postgresql+psycopg://iam-user@private-db.internal.example:5432/planner"

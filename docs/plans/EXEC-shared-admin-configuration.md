@@ -234,7 +234,7 @@ git commit -m "Define shared configuration ownership"
 - Both tables are unique on `workspace_id` and cascade on workspace deletion; user attribution uses `ON DELETE SET NULL`.
 - Recovery CLI accepts `--workspace-id`, `--view-config-id`, `--version-number`, `--expected-sha256`, and `--apply`; dry-run is the default and `--expected-sha256` is mandatory with `--apply`.
 
-- [ ] **Step 1: Write failing schema/migration tests**
+- [x] **Step 1: Write failing schema/migration tests**
 
 Extend `tests/test_db_migrations.py` to upgrade a database at `20260604_0006`, then assert both new tables, exact columns, foreign keys, and unique constraints. Add downgrade-to-`20260604_0006`, re-upgrade, and offline SQL assertions.
 
@@ -247,27 +247,27 @@ Seed four synthetic cases before upgrade:
 
 After upgrade, assert that all private rows and versions are unchanged and `workspace_dashboard_configs` is empty in every case. Migration must never infer publishable shared state from private history.
 
-- [ ] **Step 2: Run the migration test to verify RED**
+- [x] **Step 2: Run the migration test to verify RED**
 
 Run: `.venv/bin/python -m unittest tests.test_db_migrations`
 
 Expected: FAIL because revision `20260826_0007` and both tables do not exist.
 
-- [ ] **Step 3: Add models and migration**
+- [x] **Step 3: Add models and migration**
 
 Use revision `20260826_0007` with `down_revision='20260604_0006'`. Set server-safe non-null defaults in the migration for payload version, JSON payload, and revision; do not rely only on ORM defaults.
 
 Create only the tables, constraints, indexes, server-safe defaults, and downgrade path. Do not import application helpers or inspect/copy `view_configs` or `view_config_versions` in the migration. Migration output must not report private candidate data because no candidate selection occurs.
 
-- [ ] **Step 4: Write failing recovery-command tests**
+- [x] **Step 4: Write failing recovery-command tests**
 
 Test dry-run, explicit apply, missing/mismatched `--expected-sha256`, wrong-workspace rejection, actor/owner mismatch, non-marked-version rejection, inactive/non-admin actor rejection, forbidden/malformed candidate rejection, existing-row refusal, and output redaction. The test must assert that project keys, Home ids, field ids, user ids read from the database, and payload JSON are absent from stdout/stderr.
 
-- [ ] **Step 5: Implement the recovery command**
+- [x] **Step 5: Implement the recovery command**
 
 Resolve the configured DB through existing engine helpers. Read the exact immutable version payload, verify the selected view/version plus matching active-admin actor/owner, and call the same strict shared-section normalizer as live persistence. Print only operator-supplied identifiers, included section names, and a canonical `sha256:` fingerprint. With `--apply`, require the exact fingerprint from dry-run and recheck it in the insertion transaction before inserting revision `1`. Do not add an overwrite flag.
 
-- [ ] **Step 6: Run persistence/recovery tests to verify GREEN**
+- [x] **Step 6: Run persistence/recovery tests to verify GREEN**
 
 Run: `.venv/bin/python -m unittest tests.test_db_migrations tests.test_shared_admin_config_recovery`
 

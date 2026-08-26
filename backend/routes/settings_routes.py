@@ -1,6 +1,7 @@
 """Settings, config, and catalog route blueprint."""
 
 from flask import Blueprint
+from werkzeug.exceptions import BadRequest
 
 from backend.auth.db_context import is_db_auth_context
 from backend.config.db_repository import ViewConfigNotFound
@@ -43,6 +44,8 @@ _UNSUPPORTED_GROUP_CONFIG_FIELDS = {
     'accountId',
     'account_id',
 }
+
+_GROUP_PREFERENCE_FIELDS = {'visibleGroupIds', 'activeGroupId'}
 
 
 def _unsupported_group_fields(payload):
@@ -459,8 +462,15 @@ def save_groups_config():
 @bp.route('/api/groups-preferences', methods=['POST'])
 def save_groups_preferences():
     """Persist the current user's visible Department group preferences."""
-    payload = request.get_json(silent=True) or {}
-    if _unsupported_group_fields(payload):
+    if not request.is_json:
+        return jsonify({'error': 'invalid_json'}), 400
+    try:
+        payload = request.get_json()
+    except BadRequest:
+        return jsonify({'error': 'invalid_json'}), 400
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_group_preferences'}), 400
+    if set(payload) - _GROUP_PREFERENCE_FIELDS:
         return jsonify({'error': 'unsupported_group_preference_field'}), 400
     auth_context = _shared_group_db_auth_context()
     if auth_context is None:
@@ -479,7 +489,12 @@ def save_groups_preferences():
         )
     except shared_group_config.InvalidGroupPreferences as error:
         return jsonify({'error': 'invalid_group_preferences', 'message': str(error)}), 400
-    return jsonify({'preferences': preferences})
+    groups_config_snapshot = dict(groups_config)
+    groups_config_snapshot['preferences'] = preferences
+    return jsonify({
+        'preferences': preferences,
+        'groupsConfigSnapshot': groups_config_snapshot,
+    })
 
 
 @bp.route('/api/team-catalog', methods=['GET'])

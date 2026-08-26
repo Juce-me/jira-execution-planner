@@ -70,13 +70,17 @@ export const buildGroupPreferencesPayload = (visibleGroupIds, activeGroupId) => 
     activeGroupId: normalizeId(activeGroupId) || null,
 });
 
-export const buildFirstRunGroupPreferencesPayload = (selectedGroupIds, defaultGroupId) => {
-    const visibleGroupIds = uniqueIds([defaultGroupId, ...uniqueIds(selectedGroupIds)]);
-    const selectedIds = uniqueIds(selectedGroupIds);
+export const buildFirstRunGroupPreferencesPayload = (selectedGroupId) => {
+    const favoriteGroupId = normalizeId(selectedGroupId);
     return {
-        visibleGroupIds,
-        activeGroupId: selectedIds[0] || normalizeId(defaultGroupId) || null,
+        visibleGroupIds: favoriteGroupId ? [favoriteGroupId] : [],
+        activeGroupId: favoriteGroupId || null,
     };
+};
+
+export const safeAppLoginUrl = (value) => {
+    const loginUrl = String(value || '').trim();
+    return /^\/login(?:[/?#]|$)/.test(loginUrl) ? loginUrl : '';
 };
 
 export const buildSharedGroupsPayload = (groupDraft) => ({

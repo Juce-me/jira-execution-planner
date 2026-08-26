@@ -17,6 +17,50 @@ function requestBody(request) {
     }
 }
 
+function deferred() {
+    let resolve;
+    const promise = new Promise(next => { resolve = next; });
+    return { promise, resolve };
+}
+
+function visibleStoryPayload(project = 'product') {
+    const key = project === 'product' ? 'PLAT-1' : 'TECH-1';
+    const epicKey = project === 'product' ? 'PLAT-EPIC' : 'TECH-EPIC';
+    return {
+        issues: [{
+            id: key,
+            key,
+            fields: {
+                summary: `${project} visible story`,
+                status: { name: 'To Do' },
+                priority: { name: 'High' },
+                issuetype: { name: 'Story' },
+                assignee: { displayName: 'Synthetic Owner' },
+                updated: '2026-08-25T00:00:00.000+0000',
+                customfield_10004: 3,
+                epicKey,
+                parentSummary: `${project} delivery epic`,
+                projectKey: project === 'product' ? 'PLAT' : 'TECH',
+                teamId: project === 'product' ? 'team-platform' : 'team-platform',
+                teamName: 'Platform',
+                sprint: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }],
+            },
+        }],
+        epics: {
+            [epicKey]: {
+                key: epicKey,
+                summary: `${project} delivery epic`,
+                status: { name: 'In Progress' },
+                teamId: 'team-platform',
+                teamName: 'Platform',
+                sprint: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }],
+            },
+        },
+        epicsInScope: [],
+        names: {},
+    };
+}
+
 function defaultGroupPreferences(overrides = {}) {
     return {
         customized: false,
@@ -94,22 +138,36 @@ async function mockFirstRunDashboard(page, options = {}) {
         }
         if (url.pathname === '/api/groups-preferences') {
             const body = requestBody(request) || {};
+            if (options.preferenceGate) await options.preferenceGate.promise;
+            if (options.preferenceError) {
+                return json(options.preferenceError.body, options.preferenceError.status);
+            }
+            const savedPreferences = {
+                customized: true,
+                preferenceExists: true,
+                onboardingRequired: false,
+                visibleGroupIds: body.visibleGroupIds || ['platform'],
+                activeGroupId: body.activeGroupId || 'platform',
+                effectiveVisibleGroupIds: body.visibleGroupIds || ['platform'],
+            };
+            const snapshot = options.preferenceSnapshotConfig || groupsConfig;
             return json({
-                preferences: {
-                    customized: true,
-                    preferenceExists: true,
-                    onboardingRequired: false,
-                    visibleGroupIds: body.visibleGroupIds || ['platform'],
-                    activeGroupId: body.activeGroupId || 'platform',
-                    effectiveVisibleGroupIds: body.visibleGroupIds || ['platform'],
-                },
+                preferences: savedPreferences,
+                ...(options.omitPreferenceSnapshot ? {} : {
+                    groupsConfigSnapshot: {
+                        ...snapshot,
+                        preferences: savedPreferences,
+                    },
+                }),
             });
         }
         if (url.pathname === '/api/sprints') {
             return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
         }
         if (url.pathname === '/api/tasks-with-team-name') {
-            return json({ issues: [], epics: {}, epicsInScope: [] });
+            return json(options.taskPayload === false
+                ? { issues: [], epics: {}, epicsInScope: [] }
+                : visibleStoryPayload(url.searchParams.get('project') || 'product'));
         }
         if (url.pathname === '/api/missing-info') {
             return json({ issues: [], epics: [] });
@@ -145,21 +203,62 @@ function overflowGroupConfig() {
 }
 
 test('first-run department selection blocks group-scoped task loads until preferences are saved', async ({ page }) => {
-    const calls = await mockFirstRunDashboard(page);
+    const preferenceGate = deferred();
+    const calls = await mockFirstRunDashboard(page, {
+        preferenceGate,
+        groupsConfig: {
+            version: 1,
+            groups: [
+                { id: 'platform', name: 'Platform', teamIds: ['team-old'] },
+                { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+                { id: 'empty', name: 'Empty', teamIds: [] },
+            ],
+            defaultGroupId: 'platform',
+            configRevision: 2,
+            source: 'workspace_db',
+        },
+        preferenceSnapshotConfig: {
+            version: 1,
+            groups: [
+                { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+                { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+                { id: 'empty', name: 'Empty', teamIds: [] },
+            ],
+            defaultGroupId: 'platform',
+            configRevision: 3,
+            source: 'workspace_db',
+        },
+    });
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByRole('dialog', { name: 'Choose department groups' })).toBeVisible();
+    const dialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await expect(dialog).toBeVisible();
     await expect(page.getByLabel('Search groups')).toBeVisible();
-    await expect(page.locator('.department-first-run-option-name')).toHaveText(['Growth', 'Platform']);
+    await expect(page.locator('.department-first-run-option-name')).toHaveText(['Empty', 'Growth', 'Platform']);
+    await expect(dialog.getByRole('radio')).toHaveCount(3);
+    await expect(dialog.getByRole('radio', { name: /Platform/ })).not.toBeChecked();
+    await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    await expect(dialog.getByRole('radio', { name: /Empty/ })).toBeDisabled();
+    await expect(page.getByText('Configure teams before choosing this group')).toBeVisible();
+    await dialog.getByRole('radio', { name: /Platform/ }).check();
+    await expect(dialog.getByRole('radio', { name: /Platform/ })).toBeChecked();
+    await page.getByLabel('Search groups').fill('growth');
+    await expect(dialog.getByRole('radio', { name: /Growth/ })).toBeVisible();
+    await page.getByLabel('Search groups').fill('');
+    await expect(dialog.getByRole('radio', { name: /Platform/ })).toBeChecked();
     await page.waitForTimeout(900);
     await page.screenshot({ path: `${screenshotDir}/first-run-selection.png`, fullPage: true });
-    await expect(page.getByLabel('Platform')).toBeChecked();
     await page.waitForTimeout(250);
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
 
     await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('button', { name: 'Saving...' }).click({ force: true }).catch(() => {});
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/groups-preferences').length).toBe(1);
+    await page.waitForTimeout(200);
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
+    preferenceGate.resolve();
 
-    await expect(page.getByRole('dialog', { name: 'Choose department groups' })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toHaveCount(0);
     await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length).toBeGreaterThanOrEqual(2);
     const preferenceSave = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-preferences');
     expect(preferenceSave).toBeTruthy();
@@ -167,6 +266,49 @@ test('first-run department selection blocks group-scoped task loads until prefer
     const taskCalls = calls.filter(call => call.pathname === '/api/tasks-with-team-name');
     expect(taskCalls.every(call => call.params.groupId === 'platform')).toBe(true);
     expect(taskCalls.every(call => call.params.teamIds === 'team-platform')).toBe(true);
+    await expect(page.getByText('PLAT-1', { exact: true })).toBeVisible();
+});
+
+test('first-run invalid snapshot and auth failure keep mandatory selection gated', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, { omitPreferenceSnapshot: true });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /Platform/ })).toBeChecked();
+    await expect(page.locator('.group-modal-warning')).toBeVisible();
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
+
+    await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('first-run auth recovery exposes only a safe sign-in URL', async ({ page }) => {
+    const safeCalls = await mockFirstRunDashboard(page, {
+        preferenceError: {
+            status: 401,
+            body: { error: 'auth_required', message: 'Sign in required.', loginUrl: '/login?reason=session_expired' },
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(page.getByRole('radio', { name: /Platform/ })).toBeChecked();
+    expect(safeCalls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
+
+    const unsafePage = await page.context().newPage();
+    await mockFirstRunDashboard(unsafePage, {
+        preferenceError: {
+            status: 401,
+            body: { error: 'auth_required', message: 'Sign in required.', loginUrl: 'https://evil.example/login' },
+        },
+    });
+    await unsafePage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await unsafePage.getByRole('radio', { name: /Platform/ }).check();
+    await unsafePage.getByRole('button', { name: 'Continue' }).click();
+    await expect(unsafePage.getByRole('link', { name: 'Sign in again' })).toHaveCount(0);
+    await unsafePage.close();
 });
 
 test('department group editor keeps save visible when selected group content overflows', async ({ page }) => {

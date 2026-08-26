@@ -128,10 +128,34 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
     assert.match(dashboardSource, /const fetchMissingPlanningInfo = async \(sprintId, \{ shouldApplyResult, signal \} = \{\}\)/);
     assert.match(dashboardSource, /requestSignal = signal \? AbortSignal\.any\(\[controller\.signal, signal\]\) : controller\.signal/);
     assert.match(dashboardSource, /requestMissingPlanningInfo\([\s\S]*signal: requestSignal/);
+    const readyToCloseLoaders = sprintDataSource.slice(
+        sprintDataSource.indexOf('const loadReadyToCloseProductTasks'),
+        sprintDataSource.indexOf('return {', sprintDataSource.indexOf('const loadReadyToCloseTechTasks'))
+    );
     assert.equal(
-        (sprintDataSource.match(/if \(shouldApplyResult\?\.\(\) === false\) return;/g) || []).length,
+        (readyToCloseLoaders.match(/if \(shouldApplyResult\?\.\(\) === false\) return;/g) || []).length,
         2,
         'Both ready-to-close loaders must reject stale task results before committing them'
+    );
+});
+
+test('primary ENG loads reject stale group scope completions', () => {
+    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+    const sprintDataSource = fs.readFileSync(engSprintDataPath, 'utf8');
+
+    assert.match(dashboardSource, /const groupLoadVersionRef = useRef\(0\);/);
+    assert.match(
+        dashboardSource,
+        /const groupLoadVersion = \+\+groupLoadVersionRef\.current;[\s\S]*const shouldApplyGroupLoadResult = \(\) => groupLoadVersionRef\.current === groupLoadVersion;[\s\S]*loadProductTasks\(\{ shouldApplyResult: shouldApplyGroupLoadResult \}\);[\s\S]*loadTechTasks\(\{ shouldApplyResult: shouldApplyGroupLoadResult \}\);/
+    );
+    assert.match(dashboardSource, /groupLoadVersionRef\.current \+= 1;[\s\S]*abortSprintFetches\(\);/);
+    assert.match(sprintDataSource, /const loadProductTasks = async \(\{ forceRefresh = false, shouldApplyResult \} = \{\}\)/);
+    assert.match(sprintDataSource, /const loadTechTasks = async \(\{ forceRefresh = false, shouldApplyResult \} = \{\}\)/);
+    assert.match(sprintDataSource, /fetchTasks\('product', \{ forceRefresh, shouldApplyResult \}\)/);
+    assert.match(sprintDataSource, /fetchTasks\('tech', \{ forceRefresh, shouldApplyResult \}\)/);
+    assert.match(
+        sprintDataSource,
+        /catch \(err\) \{[\s\S]*if \(options\.shouldApplyResult\?\.\(\) === false\) return \[\];[\s\S]*finally \{[\s\S]*if \(useLoading && options\.shouldApplyResult\?\.\(\) !== false\)/
     );
 });
 
@@ -401,8 +425,8 @@ test('ENG sprint data hook preserves startup request sequencing markers', () => 
     assert.notEqual(readyToCloseIndex, -1, 'Expected deferred ready-to-close loader in ENG data hook');
     assert.ok(loadProductIndex < readyToCloseIndex, 'Expected visible sprint task loaders before ready-to-close alert loaders');
 
-    assert.match(source, /const data = await fetchTasks\('product', \{ forceRefresh \}\);/);
-    assert.match(source, /const data = await fetchTasks\('tech', \{ forceRefresh \}\);/);
+    assert.match(source, /const data = await fetchTasks\('product', \{ forceRefresh, shouldApplyResult \}\);/);
+    assert.match(source, /const data = await fetchTasks\('tech', \{ forceRefresh, shouldApplyResult \}\);/);
     assert.match(source, /sprintOverride: '',\s*purpose: 'ready-to-close'/);
     assert.match(source, /fetchBacklogEpics = async \(project, \{ signal \} = \{\}\) =>/);
     assert.match(source, /activeGroupId && activeGroupTeamIds\.length === 0/);

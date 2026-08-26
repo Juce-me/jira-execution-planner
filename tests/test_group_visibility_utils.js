@@ -17,7 +17,8 @@ function loadGroupVisibilityUtils() {
         buildGroupPreferencesPayload,
         buildFirstRunGroupPreferencesPayload,
         buildSharedGroupsPayload,
-        groupPreferencesSignature
+        groupPreferencesSignature,
+        safeAppLoginUrl: typeof safeAppLoginUrl === 'function' ? safeAppLoginUrl : undefined
     };`)();
 }
 
@@ -141,13 +142,25 @@ test('group preferences payloads use visibleGroupIds and activeGroupId', () => {
         { visibleGroupIds: ['platform'], activeGroupId: 'platform' }
     );
     assert.deepEqual(
-        buildFirstRunGroupPreferencesPayload(['mobile'], 'default'),
-        { visibleGroupIds: ['default', 'mobile'], activeGroupId: 'mobile' }
+        buildFirstRunGroupPreferencesPayload('mobile'),
+        { visibleGroupIds: ['mobile'], activeGroupId: 'mobile' }
     );
     assert.deepEqual(
-        buildFirstRunGroupPreferencesPayload([], 'default'),
-        { visibleGroupIds: ['default'], activeGroupId: 'default' }
+        buildFirstRunGroupPreferencesPayload(''),
+        { visibleGroupIds: [], activeGroupId: null }
     );
+});
+
+test('safeAppLoginUrl accepts only app-owned login paths', () => {
+    const { safeAppLoginUrl } = loadGroupVisibilityUtils();
+    assert.equal(typeof safeAppLoginUrl, 'function');
+
+    assert.equal(safeAppLoginUrl('/login'), '/login');
+    assert.equal(safeAppLoginUrl('/login?reason=session_expired'), '/login?reason=session_expired');
+    assert.equal(safeAppLoginUrl('/login/path#retry'), '/login/path#retry');
+    assert.equal(safeAppLoginUrl('https://example.test/login'), '');
+    assert.equal(safeAppLoginUrl('//login.example.test'), '');
+    assert.equal(safeAppLoginUrl('/login.example'), '');
 });
 
 test('normalizeGroupPreferences preserves backend metadata and nested preferences', () => {

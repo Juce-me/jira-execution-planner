@@ -940,6 +940,7 @@ import {
             const catchUpAlertLoadRef = useRef('');
             const catchUpAlertForceRefreshRef = useRef(false);
             const catchUpAlertVersionRef = useRef(0);
+            const groupLoadVersionRef = useRef(0);
             const rearmCatchUpAlerts = () => { catchUpAlertLoadRef.current = ''; catchUpAlertForceRefreshRef.current = true; catchUpAlertVersionRef.current += 1; setCatchUpAlertRefreshNonce(value => value + 1); };
             const epmSettingsProjectsRequestIdRef = useRef(0);
             const epmSettingsProjectsCacheRef = useRef(new Map());
@@ -1004,6 +1005,13 @@ import {
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
+            const applyPreferenceGroupsSnapshot = React.useCallback((snapshot) => {
+                const normalized = normalizeGroupsConfig(snapshot);
+                setGroupsConfig(normalized);
+                setGroupWarnings(snapshot?.warnings || []);
+                setGroupConfigSource(normalized.source || snapshot?.source || '');
+                return normalized;
+            }, []);
             const {
                 groupPreferences,
                 setGroupPreferences,
@@ -1016,12 +1024,13 @@ import {
                 initializeGroupPreferencesDraft,
                 isGroupVisibleInControls,
                 toggleGroupVisibleInControls,
-                firstRunSelectedGroupIds,
-                toggleFirstRunGroup,
+                firstRunFavoriteGroupId,
+                selectFirstRunFavoriteGroup,
                 saveFirstRunGroupPreferences,
                 openFirstRunAddGroup,
                 firstRunSaving,
                 firstRunError,
+                firstRunRecoveryLoginUrl,
                 persistGroupPreferences,
             } = useGroupVisibilityPreferences({
                 backendUrl: BACKEND_URL,
@@ -1033,6 +1042,7 @@ import {
                 setShowGroupManage,
                 setGroupManageTab,
                 setDepartmentSettingsTab,
+                applyPreferenceGroupsSnapshot,
                 trackSettingsAction,
                 bucketCount,
                 useBackendPreferences: groupsConfig.source === 'workspace_db',
@@ -1617,12 +1627,10 @@ import {
                 setShowEpmSortDropdown(next.sort);
             };
 
-            const invalidateSprintDataForConfigSave = (refreshTarget) => {
-                if (!selectedSprint) return;
+            const clearEngGroupScopeData = React.useCallback(({ clearScenario = true } = {}) => {
                 abortSprintFetches();
-                if (activeGroupId) {
-                    groupStateRef.current.delete(activeGroupId);
-                }
+                groupLoadVersionRef.current += 1;
+                groupStateRef.current.clear();
                 setTasksFetched(false);
                 setProductTasks([]);
                 setTechTasks([]);
@@ -1640,6 +1648,7 @@ import {
                 setMissingInfoEpics([]);
                 setBacklogProductEpics([]);
                 setBacklogTechEpics([]);
+                setDependencyData({});
                 clearStorySubtasks();
                 burnoutCacheRef.current = {};
                 cohortCacheRef.current = {};
@@ -1655,15 +1664,27 @@ import {
                 setExcludedCapacityData(null);
                 setExcludedCapacityError('');
                 setExcludedCapacityLoading(false);
-                if (refreshTarget === 'scenario') {
+                setCapacityByTeam({});
+                setCapacityLoading(false);
+                if (clearScenario) {
                     setScenarioData(null);
                     setScenarioError('');
+                    setScenarioLoading(false);
                 }
+                setLoading(false);
+                setError('');
+                setProductTasksLoading(false);
+                setTechTasksLoading(false);
                 sprintLoadRef.current = { sprintId: selectedSprint, product: false, tech: false };
                 lastLoadedSprintRef.current = null;
                 catchUpAlertLoadRef.current = '';
                 catchUpAlertForceRefreshRef.current = false;
                 catchUpAlertVersionRef.current += 1;
+            }, [abortSprintFetches, selectedSprint]);
+
+            const invalidateSprintDataForConfigSave = (refreshTarget) => {
+                if (!selectedSprint) return;
+                clearEngGroupScopeData({ clearScenario: refreshTarget === 'scenario' });
             };
 
             const queueConfigSaveRefresh = (refreshTarget) => {
@@ -5518,6 +5539,9 @@ import {
                     return;
                 }
 
+                const groupLoadVersion = ++groupLoadVersionRef.current;
+                const shouldApplyGroupLoadResult = () => groupLoadVersionRef.current === groupLoadVersion;
+
                 const forceConfigRefresh =
                     configRefreshNonce !== 0 &&
                     pendingConfigRefreshRef.current === configRefreshNonce;
@@ -5546,9 +5570,19 @@ import {
                 setTechEpicsInScope([]);
                 setMissingPlanningInfoTasks([]);
                 setMissingInfoEpics([]);
-                loadProductTasks();
-                loadTechTasks();
+                loadProductTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                loadTechTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                return () => {
+                    groupLoadVersionRef.current += 1;
+                    abortSprintFetches();
+                };
             }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce]);
+
+            useEffect(() => {
+                if (groupsLoading || !groupPreferences.onboardingRequired) return;
+                clearEngGroupScopeData();
+                setActiveGroupId(null);
+            }, [groupsLoading, groupPreferences.onboardingRequired, clearEngGroupScopeData]);
 
             useEffect(() => {
                 if (!isStatsSourceOnlyStatsView) return;
@@ -16053,13 +16087,13 @@ import {
                     {groupPreferences.onboardingRequired && !showGroupManage && (
                         <FirstRunGroupSelectionModal
                             groups={groupsConfig.groups || []}
-                            defaultGroupId={groupsConfig.defaultGroupId || ''}
-                            selectedGroupIds={firstRunSelectedGroupIds}
-                            onToggleGroup={toggleFirstRunGroup}
+                            selectedGroupId={firstRunFavoriteGroupId}
+                            onSelectGroup={selectFirstRunFavoriteGroup}
                             onContinue={saveFirstRunGroupPreferences}
-                            onAddGroup={openFirstRunAddGroup}
+                            onConfigure={openFirstRunAddGroup}
                             saving={firstRunSaving}
                             error={firstRunError}
+                            recoveryLoginUrl={firstRunRecoveryLoginUrl}
                         />
                     )}
                     {showUpdateModal && updateNoticeVisible && (

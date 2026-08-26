@@ -208,6 +208,7 @@ export function useEngSprintData({
             if (err.name === 'AbortError') {
                 return [];
             }
+            if (options.shouldApplyResult?.() === false) return [];
             const handledServerConnection = onServerConnectionFailure?.(err) === true;
             if (setErrors) {
                 setError(handledServerConnection ? '' : taskLoadErrorMessage(err, backendUrl));
@@ -222,7 +223,7 @@ export function useEngSprintData({
             return [];
         } finally {
             cleanupSprintFetch(controller);
-            if (useLoading) {
+            if (useLoading && options.shouldApplyResult?.() !== false) {
                 setLoading(false);
             }
         }
@@ -235,11 +236,12 @@ export function useEngSprintData({
         return Array.isArray(payload.epics) ? payload.epics : [];
     };
 
-    const loadProductTasks = async ({ forceRefresh = false } = {}) => {
+    const loadProductTasks = async ({ forceRefresh = false, shouldApplyResult } = {}) => {
         const sprintId = selectedSprint;
         setProductTasksLoading(true);
         try {
             if (activeGroupId && activeGroupTeamIds.length === 0) {
+                if (shouldApplyResult?.() === false) return;
                 setProductTasks([]);
                 setLoadedProductTasks([]);
                 setTasksFetched(true);
@@ -254,7 +256,8 @@ export function useEngSprintData({
                 }
                 return;
             }
-            const data = await fetchTasks('product', { forceRefresh });
+            const data = await fetchTasks('product', { forceRefresh, shouldApplyResult });
+            if (shouldApplyResult?.() === false) return;
             setProductTasks(data);
             setLoadedProductTasks(data);
             setTasksFetched(true);
@@ -268,15 +271,18 @@ export function useEngSprintData({
                 lastLoadedSprintRef.current = sprintId;
             }
         } finally {
-            setProductTasksLoading(false);
+            if (shouldApplyResult?.() !== false) {
+                setProductTasksLoading(false);
+            }
         }
     };
 
-    const loadTechTasks = async ({ forceRefresh = false } = {}) => {
+    const loadTechTasks = async ({ forceRefresh = false, shouldApplyResult } = {}) => {
         const sprintId = selectedSprint;
         setTechTasksLoading(true);
         try {
             if (activeGroupId && activeGroupTeamIds.length === 0) {
+                if (shouldApplyResult?.() === false) return;
                 setTechTasks([]);
                 setLoadedTechTasks([]);
                 setTechLoaded(true);
@@ -292,7 +298,8 @@ export function useEngSprintData({
                 }
                 return;
             }
-            const data = await fetchTasks('tech', { forceRefresh });
+            const data = await fetchTasks('tech', { forceRefresh, shouldApplyResult });
+            if (shouldApplyResult?.() === false) return;
             setTechTasks(data);
             setLoadedTechTasks(data);
             setTechLoaded(true);
@@ -307,7 +314,9 @@ export function useEngSprintData({
                 lastLoadedSprintRef.current = sprintId;
             }
         } finally {
-            setTechTasksLoading(false);
+            if (shouldApplyResult?.() !== false) {
+                setTechTasksLoading(false);
+            }
         }
     };
 

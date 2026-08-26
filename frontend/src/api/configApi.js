@@ -1,4 +1,4 @@
-import { getJson, trackedFetch } from './http.js';
+import { getJson, jsonOrStructuredError, trackedFetch } from './http.js';
 
 const postJsonWithCsrf = (backendUrl, path, payload, analytics) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' }).then(({ csrfToken }) =>
@@ -51,6 +51,12 @@ export const saveGroupPreferences = (backendUrl, payload) =>
         apiSurface: 'settings_save',
         featureName: 'settings'
     });
+
+export const saveOnboardingPreference = (backendUrl, onboardingDone) =>
+    postJsonWithCsrf(backendUrl, '/api/me/onboarding', { onboardingDone }, {
+        apiSurface: 'settings_save',
+        featureName: 'settings'
+    }).then(response => jsonOrStructuredError(response, 'Onboarding preference'));
 
 export const fetchSelectedProjects = (backendUrl) =>
     fetch(`${backendUrl}/api/projects/selected`, {

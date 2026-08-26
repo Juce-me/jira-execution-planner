@@ -40,6 +40,7 @@ The endpoint policy registry lives in `backend/security/policy.py`. Every Flask 
 | `auth-api` | `GET, POST` | `/api/auth/` | `auth_flow` | `prefix` |
 | `admin-api` | `DELETE, GET, PATCH, POST` | `/api/admin/` | `tool_admin` | `prefix` |
 | `user-views-api` | `GET, PATCH, POST` | `/api/me/views` | `user_write` | `prefix` |
+| `user-onboarding-write` | `POST` | `/api/me/onboarding` | `user_write` | `exact` |
 | `user-connections-api` | `DELETE, GET, POST` | `/api/me/connections/` | `user_write` | `prefix` |
 | `eng-api` | `GET` | `/api/tasks` | `authenticated_read` | `exact` |
 | `eng-api-team-name` | `GET` | `/api/tasks-with-team-name` | `authenticated_read` | `exact` |

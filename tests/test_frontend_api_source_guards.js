@@ -395,6 +395,7 @@ test('settings config API module owns config request endpoint construction', () 
     assert.ok(configApiSource.includes('/api/config'), 'Expected app config URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/groups-config'), 'Expected groups config URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/groups-preferences'), 'Expected group preferences URL construction in configApi.js');
+    assert.ok(configApiSource.includes('/api/me/onboarding'), 'Expected onboarding preference URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/projects/selected'), 'Expected selected projects URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/board-config'), 'Expected board config URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/capacity/config'), 'Expected capacity config URL construction in configApi.js');
@@ -639,6 +640,77 @@ test('group preferences save wrapper uses settings analytics metadata', async ()
     assert.deepEqual(trackedCalls[0].analyticsParams, { featureName: 'settings' });
     assert.equal(new Headers(trackedCalls[0].options.headers).get('X-CSRF-Token'), 'csrf-token');
     assertJsonHeader(trackedCalls[0].options);
+});
+
+test('onboarding preference save wrapper posts exactly one field with CSRF and safe errors', async () => {
+    const { getJson, jsonOrStructuredError } = loadHttpHelpers();
+    const trackedCalls = [];
+    const configApi = loadApiModule('configApi.js', [
+        'saveOnboardingPreference',
+    ], {
+        getJson,
+        jsonOrStructuredError,
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            trackedCalls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ onboardingDone: false });
+        },
+    });
+
+    let payload;
+    await withMockFetch(async () => {
+        payload = await configApi.saveOnboardingPreference('http://backend', false);
+    }, (url) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: 'csrf-token' });
+        }
+        return jsonResponse({ onboardingDone: false });
+    });
+
+    assert.deepEqual(payload, { onboardingDone: false });
+    assert.equal(trackedCalls.length, 1);
+    assert.equal(trackedCalls[0].apiSurface, 'settings_save');
+    assert.equal(trackedCalls[0].url, 'http://backend/api/me/onboarding');
+    assert.deepEqual(trackedCalls[0].analyticsParams, { featureName: 'settings' });
+    assert.deepEqual(JSON.parse(trackedCalls[0].options.body), { onboardingDone: false });
+    assert.equal(new Headers(trackedCalls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+    assert.equal(new Headers(trackedCalls[0].options.headers).get('X-CSRF-Token'), 'csrf-token');
+    assertJsonHeader(trackedCalls[0].options);
+});
+
+test('onboarding preference save wrapper preserves structured auth recovery errors', async () => {
+    const { getJson, jsonOrStructuredError } = loadHttpHelpers();
+    const configApi = loadApiModule('configApi.js', [
+        'saveOnboardingPreference',
+    ], {
+        getJson,
+        jsonOrStructuredError,
+        trackedFetch: async () => ({
+            ok: false,
+            status: 401,
+            json: async () => ({
+                error: 'auth_required',
+                message: 'Sign in required.',
+                loginUrl: '/login?reason=session_expired',
+            }),
+        }),
+    });
+
+    await withMockFetch(async () => {
+        await assert.rejects(
+            () => configApi.saveOnboardingPreference('http://backend', true),
+            (error) => {
+                assert.equal(error.status, 401);
+                assert.equal(error.code, 'auth_required');
+                assert.equal(error.loginUrl, '/login?reason=session_expired');
+                return true;
+            }
+        );
+    }, (url) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: 'csrf-token' });
+        }
+        return jsonResponse({});
+    });
 });
 
 test('excluded capacity stats source wrapper can request a backend refresh', async () => {

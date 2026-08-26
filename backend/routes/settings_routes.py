@@ -46,6 +46,7 @@ _UNSUPPORTED_GROUP_CONFIG_FIELDS = {
 }
 
 _GROUP_PREFERENCE_FIELDS = {'visibleGroupIds', 'activeGroupId'}
+_ONBOARDING_PREFERENCE_FIELDS = {'onboardingDone'}
 
 
 def _unsupported_group_fields(payload):
@@ -495,6 +496,45 @@ def save_groups_preferences():
         'preferences': preferences,
         'groupsConfigSnapshot': groups_config_snapshot,
     })
+
+
+@bp.route('/api/me/onboarding', methods=['POST'])
+def save_onboarding_preference():
+    """Persist the current user's onboarding completion state."""
+    if not request.is_json:
+        return jsonify({'error': 'invalid_json'}), 400
+    try:
+        payload = request.get_json()
+    except BadRequest:
+        return jsonify({'error': 'invalid_json'}), 400
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_json'}), 400
+    if set(payload) - _ONBOARDING_PREFERENCE_FIELDS:
+        return jsonify({'error': 'unsupported_onboarding_field'}), 400
+    onboarding_done = payload.get('onboardingDone')
+    if not isinstance(onboarding_done, bool):
+        return jsonify({'error': 'onboarding_done_required'}), 400
+
+    auth_context = _shared_group_db_auth_context()
+    if auth_context is None:
+        return jsonify({'error': 'onboarding_db_required'}), 409
+
+    groups_config = shared_group_config.load_shared_groups(
+        auth_context,
+        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        validate_groups_config_fn=validate_groups_config,
+    )
+    try:
+        saved_onboarding_done = shared_group_config.set_onboarding_done(
+            auth_context,
+            onboarding_done,
+            groups_config,
+        )
+    except shared_group_config.OnboardingPreferencesUnavailable:
+        return jsonify({'error': 'onboarding_db_required'}), 409
+    except shared_group_config.InvalidGroupPreferences:
+        return jsonify({'error': 'group_selection_required'}), 409
+    return jsonify({'onboardingDone': saved_onboarding_done})
 
 
 @bp.route('/api/team-catalog', methods=['GET'])

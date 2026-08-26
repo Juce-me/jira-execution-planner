@@ -128,6 +128,27 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
              patch.object(jira_server, 'load_dashboard_config', return_value=fallback):
             return self.client.get('/api/groups-config')
 
+    def _save_personal_favorite(self, favorite_group_id='platform'):
+        self._get_groups_config(fallback=self._favorite_config())
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            return self.client.post(
+                '/api/groups-preferences',
+                json={
+                    'visibleGroupIds': [favorite_group_id],
+                    'activeGroupId': favorite_group_id,
+                },
+                headers=self._csrf_headers(),
+            )
+
+    def _post_onboarding(self, payload, headers=None, **kwargs):
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            return self.client.post(
+                '/api/me/onboarding',
+                json=payload,
+                headers=headers or self._csrf_headers(),
+                **kwargs,
+            )
+
     def test_get_groups_config_imports_shared_catalog_and_requires_first_run(self):
         first = self._get_groups_config()
         self._install_session('session-2', 'account-2', self.other_connection_id)
@@ -479,6 +500,185 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
 
         self.assertEqual(missing_requested_with.status_code, 403, missing_requested_with.get_data(as_text=True))
         self.assertEqual(missing_csrf.status_code, 403, missing_csrf.get_data(as_text=True))
+
+    def test_post_onboarding_updates_only_scalar_and_is_idempotent(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        before = self._get_groups_config(fallback={'version': 1}).get_json()
+
+        first = self._post_onboarding({'onboardingDone': True})
+        repeated = self._post_onboarding({'onboardingDone': True})
+        replay = self._post_onboarding({'onboardingDone': False})
+        after = self._get_groups_config(fallback={'version': 1}).get_json()
+
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(first.get_json(), {'onboardingDone': True})
+        self.assertEqual(repeated.status_code, 200, repeated.get_data(as_text=True))
+        self.assertEqual(repeated.get_json(), {'onboardingDone': True})
+        self.assertEqual(replay.status_code, 200, replay.get_data(as_text=True))
+        self.assertEqual(replay.get_json(), {'onboardingDone': False})
+        self.assertEqual(after['groups'], before['groups'])
+        self.assertEqual(after['preferences']['visibleGroupIds'], ['platform'])
+        self.assertEqual(after['preferences']['activeGroupId'], 'platform')
+        self.assertFalse(after['preferences']['onboardingDone'])
+        with self.factory() as session:
+            rows = session.query(models.UserGroupPreference).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].visible_group_ids, ['platform'])
+        self.assertEqual(rows[0].active_group_id, 'platform')
+        self.assertTrue(rows[0].customized)
+        self.assertFalse(rows[0].onboarding_done)
+
+    def test_post_onboarding_rejects_invalid_json_and_non_object_payloads(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            malformed = self.client.post(
+                '/api/me/onboarding',
+                data='{',
+                content_type='application/json',
+                headers=self._csrf_headers(),
+            )
+            non_object = self.client.post(
+                '/api/me/onboarding',
+                json=['onboardingDone'],
+                headers=self._csrf_headers(),
+            )
+            wrong_content_type = self.client.post(
+                '/api/me/onboarding',
+                data='onboardingDone=true',
+                content_type='application/x-www-form-urlencoded',
+                headers=self._csrf_headers(),
+            )
+
+        for response in (malformed, non_object, wrong_content_type):
+            self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+            self.assertEqual(response.get_json(), {'error': 'invalid_json'})
+
+    def test_post_onboarding_rejects_extra_and_spoofed_fields_before_service(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        unsupported_fields = (
+            'workspaceId',
+            'workspace_id',
+            'userId',
+            'user_id',
+            'cloudId',
+            'cloud_id',
+            'siteUrl',
+            'site_url',
+            'accountId',
+            'account_id',
+            'futureField',
+        )
+
+        for field in unsupported_fields:
+            with self.subTest(field=field):
+                response = self._post_onboarding({'onboardingDone': True, field: 'forbidden'})
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                self.assertEqual(response.get_json(), {'error': 'unsupported_onboarding_field'})
+
+    def test_post_onboarding_requires_a_boolean_done_field(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        invalid_payloads = (
+            {},
+            {'onboardingDone': None},
+            {'onboardingDone': 1},
+            {'onboardingDone': 'true'},
+            {'onboardingDone': []},
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                response = self._post_onboarding(payload)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                self.assertEqual(response.get_json(), {'error': 'onboarding_done_required'})
+
+    def test_post_onboarding_requires_current_personal_group_selection_without_creating_rows(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        missing = self._post_onboarding({'onboardingDone': True})
+
+        self.assertEqual(missing.status_code, 409, missing.get_data(as_text=True))
+        self.assertEqual(missing.get_json(), {'error': 'group_selection_required'})
+        with self.factory() as session:
+            self.assertEqual(session.query(models.UserGroupPreference).count(), 0)
+
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        current = self._get_groups_config(fallback={'version': 1}).get_json()
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            self.client.post(
+                '/api/groups-config',
+                json={
+                    'version': 1,
+                    'baseRevision': current['configRevision'],
+                    'groups': [
+                        group for group in current['groups']
+                        if group['id'] != 'platform'
+                    ],
+                    'defaultGroupId': 'default',
+                },
+                headers=self._csrf_headers(),
+            )
+        stale = self._post_onboarding({'onboardingDone': True})
+
+        self.assertEqual(stale.status_code, 409, stale.get_data(as_text=True))
+        self.assertEqual(stale.get_json(), {'error': 'group_selection_required'})
+
+    def test_post_onboarding_rejects_json_mode(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}, clear=False):
+            response = self.client.post(
+                '/api/me/onboarding',
+                json={'onboardingDone': True},
+                headers=self._csrf_headers(),
+            )
+
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {'error': 'onboarding_db_required'})
+
+    def test_post_onboarding_requires_requested_with_and_token_bound_csrf(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            csrf_headers = self._csrf_headers()
+            missing_requested_with = self.client.post(
+                '/api/me/onboarding',
+                json={'onboardingDone': True},
+                headers={'X-CSRF-Token': csrf_headers['X-CSRF-Token']},
+            )
+            missing_csrf = self.client.post(
+                '/api/me/onboarding',
+                json={'onboardingDone': True},
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+
+        self.assertEqual(missing_requested_with.status_code, 403, missing_requested_with.get_data(as_text=True))
+        self.assertEqual(missing_csrf.status_code, 403, missing_csrf.get_data(as_text=True))
+
+    def test_post_onboarding_requires_authentication_with_safe_login_url(self):
+        unauthenticated_client = jira_server.app.test_client()
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = unauthenticated_client.post(
+                '/api/me/onboarding',
+                json={'onboardingDone': True},
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'auth_required')
+        self.assertEqual(response.get_json()['loginUrl'], '/login?reason=session_expired')
+        self.assertNotIn('code=', response.get_json()['loginUrl'])
+        self.assertNotIn('state=', response.get_json()['loginUrl'])
+
+    def test_post_onboarding_is_isolated_per_authenticated_user(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        self._install_session('session-2', 'account-2', self.other_connection_id)
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        self._install_session('session-1', 'account-1', self.connection_id)
+
+        saved = self._post_onboarding({'onboardingDone': True})
+        self._install_session('session-2', 'account-2', self.other_connection_id)
+        other_preferences = self._get_groups_config(fallback={'version': 1}).get_json()['preferences']
+
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        self.assertEqual(saved.get_json(), {'onboardingDone': True})
+        self.assertFalse(other_preferences['onboardingDone'])
 
 
 if __name__ == '__main__':

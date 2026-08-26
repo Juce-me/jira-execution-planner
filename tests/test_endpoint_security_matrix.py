@@ -27,6 +27,7 @@ SECURITY_SAMPLES = {
     ],
     "user_write": [
         ("POST", "/api/me/views"),
+        ("POST", "/api/me/onboarding"),
         ("POST", "/api/groups-preferences"),
         ("POST", "/api/export-excel"),
         ("POST", "/api/issues/priorities"),

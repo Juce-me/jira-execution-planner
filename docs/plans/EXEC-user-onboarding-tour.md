@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** Ready for execution on `feature/user-onboarding-tour` after `EXEC-personal-group-star.md` is implemented and verified.
+> **Status:** Ready for execution on `feature/user-onboarding-tour`; prerequisite `DONE-personal-group-star.md` was completed and verified on 2026-08-26.
 
 **Goal:** After mandatory personal-group selection succeeds, teach the dashboard's scope controls, actions, filters, issue hierarchy, and editable Jira fields through a guided tour that users may skip and replay from Settings.
 
@@ -10,7 +10,7 @@
 
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy, Alembic, React 19, React DOM portals, CSS, Node test runner, Playwright, esbuild, and GA4 through the existing GTM `userevent` contract.
 
-**Dependency:** `EXEC-personal-group-star.md` owns the exact-one personal star, first-run single-selection UI, DB preference semantics, and separation of a saved favorite from transient dashboard scope. This plan consumes those contracts read-only.
+**Dependency (satisfied):** `DONE-personal-group-star.md` owns the exact-one personal star, first-run single-selection UI, DB preference semantics, and separation of a saved favorite from transient dashboard scope. This plan consumes those contracts read-only.
 
 ## Global Constraints
 
@@ -105,7 +105,7 @@
 
 ### Read Only / Must Not Modify
 
-- The personal-star contract and tests introduced by `EXEC-personal-group-star.md`, except minimal integration needed to observe successful prerequisite completion.
+- The personal-star contract and tests introduced by `DONE-personal-group-star.md`, except minimal integration needed to observe successful prerequisite completion.
 - Shared `defaultGroupId` semantics, Settings favorite draft, dashboard group-switch persistence, and `/api/groups-preferences` validation.
 - Jira transition/priority/Product Track logic and Home/Townsquare routes.
 
@@ -238,7 +238,7 @@ Do not push until the user explicitly confirms.
 
 ## Acceptance Criteria
 
-- Mandatory personal-group selection remains unskippable and wholly owned by `EXEC-personal-group-star.md`.
+- Mandatory personal-group selection remains unskippable and wholly owned by `DONE-personal-group-star.md`.
 - Configuration supports duplicate-first guidance and group creation, then returns to mandatory selection without auto-starring anything.
 - New users start the instructional tour only after successful group selection; existing users are backfilled as complete.
 - Sprint, optional Department, Teams, Search, Jira export, Refresh, filters, Initiative/Epic/Story hierarchy, and priority/Product Track/status capability are explained when present.
@@ -252,7 +252,7 @@ Do not push until the user explicitly confirms.
 
 ## Out of Scope
 
-- Personal-star persistence, first-run selection UI, Settings star UI, saved favorite versus transient scope behavior, or shared `defaultGroupId` corrections; those belong to `EXEC-personal-group-star.md`.
+- Personal-star persistence, first-run selection UI, Settings star UI, saved favorite versus transient scope behavior, or shared `defaultGroupId` corrections; those belong to `DONE-personal-group-star.md`.
 - Persisting an individual tour step or cross-device step-by-step progress.
 - Admin-authored tours, remote content, experimentation frameworks, or localization infrastructure.
 - Analytics for step views, Next/Back clicks, searches, or issue/group/team identities.

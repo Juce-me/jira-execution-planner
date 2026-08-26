@@ -44,7 +44,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 8. `DONE-shared-department-groups.md`
    - Completed and merged in [PR #62](https://github.com/Juce-me/jira-execution-planner/pull/62). Moves department/team-group definitions to workspace-shared configuration while keeping per-user visible-group preferences. Use for audit and prerequisite evidence; do not execute as active work.
-   - Output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, shared saves are revision-conflict protected, and the existing default-group star remains shared.
+   - Historical output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, and shared saves are revision-conflict protected. PR #62 left the existing star wired to shared `defaultGroupId`; `EXEC-personal-group-star.md` corrects that product mismatch without rewriting shared catalog history.
 
 9. `EXEC-cloud-sql-iam-connectivity.md`
    - Implementation is complete and locally verified, but the plan remains `EXEC-*` pending user acceptance or merge.
@@ -113,6 +113,16 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Expected output: the open Sprint, Group, and Teams header dropdown toggles become auto-focused local filter inputs; Sprint loses its duplicate panel input; adding visible groups no longer pushes the settings gear or any desktop control onto another row; the active ENG/EPM settings gear sits immediately after Refresh; and Group by Initiative becomes a fixed 30×30 icon toggle that is neutral gray when off and Initiative yellow with a pale-yellow surface when on.
    - Current dropdown selection, team multi-select, Initiative grouping/persistence, settings permissions/handlers, and compact-header behavior remain unchanged. Playwright covers all three dropdown siblings, main/compact layering, multi-group row geometry, settings placement, Initiative centerlines, `aria-pressed`, hover/focus tooltip, both color states, and settled screenshots.
    - No backend, API, saved-preference, or new analytics-event contract; existing selection/settings events remain authoritative, local Initiative regrouping stays allowlisted, and raw dropdown queries are never collected.
+
+11. `EXEC-personal-group-star.md`
+   - Ready for execution on `improvement/personal-group-star`; implement and verify this prerequisite before the onboarding tour.
+   - Expected output: one personal starred Department group per authenticated workspace/user, single-select first-run search UI, personal Settings star controls, and strict separation between the persisted favorite and temporary dashboard Group scope. Shared `defaultGroupId` remains a file/JSON compatibility field and is never shown or mutated as a DB user's favorite.
+   - This plan owns star persistence and UI only. It adds no onboarding completion state, guided tour, configure guidance, skip action, or replay action.
+
+12. `EXEC-user-onboarding-tour.md`
+   - Ready for execution on `feature/user-onboarding-tour` after `EXEC-personal-group-star.md` is complete.
+   - Expected output: configure/duplicate guidance after the mandatory group gate, followed by a guided tour of dashboard scope controls, actions, filters, issue hierarchy, and editable Jira fields. Per-user/workspace `onboarding_done` supports completion, skip, interruption recovery, and an explicit Settings replay action without another startup request.
+   - The tour consumes the personal-star contract read-only and must not change star persistence or UI. Existing users are backfilled as complete; JSON/basic mode stays unchanged; privacy-safe `settings_action` events measure only started/completed/skipped outcomes.
 
 ## Capacity Reporting Workflow
 

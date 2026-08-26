@@ -260,6 +260,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Treat Scenario Planner group scope as a shared environment-scoped PM/EPM-managed configuration reference; drafts may reference groups but must not create private group definitions or own group membership.
 - In DB/OAuth mode, hide the EPM tab until the current user has connected a Home/Townsquare token in Settings; once visible, the EPM tab must expose an accessible EPM settings gear.
 - At the start of auth/DB/Home/EPM plan work, scan `docs/plans/GATE-*.md` and update each gate's `Checked on` and `Last result`; never mark a gate passed without its documented `PASS` output.
+- Keep personal group-star persistence and selection UI in a prerequisite plan separate from onboarding tour/state; require exactly one personally starred first-run group, persist it in the authenticated user's group preferences, and never mutate or present shared `defaultGroupId` as the user's favorite.
 - For OAuth Jira worker-thread fixes, verify a no-request-context test that reaches the real Jira auth wrapper; route mocks alone are not sufficient.
 - Name active auth/DB/Home migration docs with `EXEC-*`, executed docs with `DONE-*`, support/reference/setup docs with `SUPPORT-*`, and deferred scope with `FUTURE-*`; keep expectations in `docs/plans/README.md`.
 - Before executing a plan task, verify every named file in that task's file map exists unless the plan explicitly marks it `Create`.

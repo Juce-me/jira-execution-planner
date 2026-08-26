@@ -16,7 +16,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | --- | --- |
 | Status | Blocked |
 | Checked on | 2026-08-26 |
-| Last result | FAIL insufficient_home_write_probe_input (probe not re-run: all required operator inputs are unavailable; personal-group-star execution adds no Home write path) |
+| Last result | FAIL insufficient_home_write_probe_input (probe not re-run: all required operator inputs and an approved disposable Home project were unavailable; this shared admin configuration plan adds no Home write path) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -127,6 +127,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-08-26: Startup sweep rechecked the gate while validating workspace-shared admin configuration persistence. The required operator inputs and an approved disposable Home project remain unavailable, and this plan adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-26: Startup sweep rechecked the gate while executing the personal-group-star prerequisite. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and the implementation adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-26: Startup sweep rechecked the gate while splitting personal-group-star behavior from onboarding. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and neither plan adds a Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-25: Startup sweep rechecked the gate while planning per-user onboarding. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and the plan adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.

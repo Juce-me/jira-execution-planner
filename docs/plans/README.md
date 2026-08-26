@@ -46,7 +46,12 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed and merged in [PR #62](https://github.com/Juce-me/jira-execution-planner/pull/62). Moves department/team-group definitions to workspace-shared configuration while keeping per-user visible-group preferences. Use for audit and prerequisite evidence; do not execute as active work.
    - Historical output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, and shared saves are revision-conflict protected. PR #62 left the existing star wired to shared `defaultGroupId`; `DONE-personal-group-star.md` corrects that product mismatch without rewriting shared catalog history.
 
-9. `EXEC-cloud-sql-iam-connectivity.md`
+9. `EXEC-shared-admin-configuration.md`
+   - Validated for execution on `bugfix/shared-admin-configuration`.
+   - Expected output: admin-controlled dashboard and EPM scope/mapping configuration persists once per workspace/Jira site, every user in that workspace reads one revisioned snapshot, only authorized admins mutate route-owned sections, private views retain only personal state, normal-user catalog refreshes use separate storage, and no private payload is auto-promoted during migration.
+   - Design record: `../agents/bugfixes/2026-08-26-in-progress-shared-admin-configuration.md`.
+
+10. `EXEC-cloud-sql-iam-connectivity.md`
    - Implementation is complete and locally verified, but the plan remains `EXEC-*` pending user acceptance or merge.
    - Output: default local/CI URL behavior stays unchanged; hosted mode obtains lock-protected ADC login tokens immediately before new physical connections; every IAM connection uses the fixed app-owned 10-second timeout; web pooling and Alembic `NullPool` share one engine factory; offline migrations remain ADC-independent while validating the passwordless TLS URL; hosted docs record the complete IAM/database prerequisites; no Cloud SQL Python Connector, alternate PostgreSQL driver, proxy, deployment, UI, or unrelated product change was introduced.
    - Design record: `../agents/features/2026-07-27-executed-cloud-sql-iam-connectivity-design.md`.

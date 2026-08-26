@@ -212,7 +212,7 @@ Run: `.venv/bin/python -m unittest tests.test_shared_admin_config_validation tes
 
 Expected: PASS with private ownership/isolation, raw-history preservation, runtime stripping, and exact legacy-site matching.
 
-- [ ] **Step 6: Commit the ownership boundary**
+- [x] **Step 6: Commit the ownership boundary**
 
 ```bash
 git add backend/config/shared_config.py backend/config/view_validation.py backend/config/import_config.py backend/config/db_repository.py tests/test_shared_admin_config_validation.py tests/test_user_view_config_routes.py tests/test_view_config_resolution.py tests/test_config_jsonfile_fallback.py
@@ -273,7 +273,7 @@ Run: `.venv/bin/python -m unittest tests.test_db_migrations tests.test_shared_ad
 
 Expected: PASS with a data-neutral schema migration, upgrade/downgrade/re-upgrade, offline SQL, fingerprint-verified explicit recovery, and redacted output.
 
-- [ ] **Step 7: Commit persistence**
+- [x] **Step 7: Commit persistence**
 
 ```bash
 git add backend/db/models.py backend/db/migrations/versions/20260826_0007_workspace_dashboard_config.py scripts/promote_legacy_shared_admin_config.py tests/test_db_migrations.py tests/test_shared_admin_config_recovery.py
@@ -352,7 +352,7 @@ Run: `.venv/bin/python -m unittest tests.test_workspace_dashboard_config_service
 
 Expected: PASS with one request-scoped read, cross-user sharing, cross-workspace denial, safe fallback, atomic conflicts, team-catalog separation, and private-view isolation.
 
-- [ ] **Step 7: Commit repository services**
+- [x] **Step 7: Commit repository services**
 
 ```bash
 git add backend/services/workspace_dashboard_config.py backend/config/db_repository.py jira_server.py tests/test_workspace_dashboard_config_service.py tests/test_config_jsonfile_fallback.py tests/test_team_catalog_api.py tests/test_config_storage_selector.py tests/test_view_config_resolution.py tests/test_codebase_structure_budgets.py
@@ -437,7 +437,7 @@ Run: `.venv/bin/python -m unittest tests.test_dashboard_bootstrap_config_source 
 
 Expected: PASS for every endpoint/body/auth/CSRF/workspace/conflict/audit contract in the matrix.
 
-- [ ] **Step 9: Commit route contracts**
+- [x] **Step 9: Commit route contracts**
 
 ```bash
 git add backend/routes/settings_routes.py backend/routes/epm_routes.py backend/security/policy.py jira_server.py tests/test_dashboard_bootstrap_config_source.py tests/test_endpoint_security_matrix.py tests/test_oauth_settings_routes.py tests/test_epm_config_api.py tests/test_user_view_config_routes.py tests/test_db_admin_routes.py tests/test_backend_route_source_guards.py
@@ -466,7 +466,7 @@ git commit -m "Enforce shared settings route contracts"
 - `workspaceConfigConflict.js` exports `workspaceConfigConflictMessages`, `rebaseWorkspaceConfigSave`, and `committedWorkspaceSectionLabels`.
 - Dashboard seeds every administrator draft plus one `sharedConfigRevision` from the same atomic `sharedConfig` bootstrap snapshot and updates the revision after each sequential success.
 
-- [ ] **Step 1: Write failing pure conflict tests**
+- [x] **Step 1: Write failing pure conflict tests**
 
 ```javascript
 test('rebase uses the server revision and preserves dirty section payload', () => {
@@ -487,13 +487,13 @@ test('conflict copy names committed and pending sections', () => {
 });
 ```
 
-- [ ] **Step 2: Run Node tests to verify RED**
+- [x] **Step 2: Run Node tests to verify RED**
 
 Run: `node --test tests/test_workspace_config_conflict.js tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js`
 
 Expected: FAIL because revision helpers and request fields do not exist.
 
-- [ ] **Step 3: Thread revisions through API helpers**
+- [x] **Step 3: Thread revisions through API helpers**
 
 In DB/OAuth mode, add `baseRevision` to every administrator save body without changing route-owned fields. Parse non-2xx JSON before throwing so `status`, `payload`, and `error` remain available. Keep `X-Requested-With`, CSRF fetch, `api_surface=settings_save`, and feature analytics unchanged.
 
@@ -501,7 +501,7 @@ In DB/OAuth mode, add `baseRevision` to every administrator save body without ch
 
 Remove `normalizeAppConfig()`'s fallback from `viewConfig.view.epm` to top-level `epm`. Read shared EPM from `/api/config.epm`/`sharedConfig.epm`, and read personal tab/sprint state only from the sanitized private view.
 
-- [ ] **Step 4: Implement the Settings conflict state machine**
+- [x] **Step 4: Implement the Settings conflict state machine**
 
 In DB/OAuth mode, seed all shared section baselines and `sharedConfigRevision` from the same `/api/config.sharedConfig` snapshot. Do not derive a section baseline from an independently timed GET and pair it with `/api/config.sharedConfigRevision`. Compatibility GETs may remain for non-Settings consumers; JSON/basic mode keeps its current initialization path. During modal-wide Save, send the current revision to the first dirty administrator section, replace it with each success response's revision, and pass the new value to the next dirty section.
 
@@ -517,7 +517,7 @@ On `409`:
 
 On `401`, auth-expired `403`, network error, or validation error, keep drafts and use the existing recovery/error path. A workspace/site switch resets the revision/baselines before Save can be enabled.
 
-- [ ] **Step 5: Add Playwright conflict and geometry coverage**
+- [x] **Step 5: Add Playwright conflict and geometry coverage**
 
 Extend `tests/ui/settings_unified_save.spec.js` with two administrators' mocked sequence:
 
@@ -532,11 +532,11 @@ Extend `tests/ui/settings_unified_save.spec.js` with two administrators' mocked 
 
 Add element assertions for the conflict text/buttons and a settled screenshot. No sticky/header geometry is changed.
 
-- [ ] **Step 6: Update analytics documentation**
+- [x] **Step 6: Update analytics documentation**
 
 In `docs/README_ANALYTICS.md`, document that `settings_action` covers revision conflicts with `workflow_action=save_result`, `result=failure`, `conflict_state=remote`, and bucketed `conflict_count_bucket`. Explicitly forbid config values, revisions, Jira/Home identifiers, field ids, workspace ids, and user ids.
 
-- [ ] **Step 7: Run frontend tests and build**
+- [x] **Step 7: Run frontend tests and build**
 
 Run:
 
@@ -549,7 +549,7 @@ git diff -- frontend/dist
 
 Expected: Node and Playwright tests PASS; `npm run build` exits `0`; inspect the generated diff and verify it traces only to source changes. Stage the intended source and generated output, run `npm run build` again, then require `git diff --exit-code -- frontend/dist` so no unstaged generated drift remains.
 
-- [ ] **Step 8: Commit frontend conflict handling and generated output**
+- [x] **Step 8: Commit frontend conflict handling and generated output**
 
 ```bash
 git add frontend/src/api/configApi.js frontend/src/api/epmApi.js frontend/src/settings/useJiraFieldPickers.js frontend/src/settings/workspaceConfigConflict.js frontend/src/dashboard.jsx tests/test_workspace_config_conflict.js tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js tests/ui/settings_unified_save.spec.js docs/README_ANALYTICS.md frontend/dist

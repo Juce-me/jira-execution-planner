@@ -434,6 +434,34 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         self.assertEqual(after['preferences']['visibleGroupIds'], ['mobile'])
         self.assertEqual(after['preferences']['activeGroupId'], 'mobile')
 
+    def test_group_preference_responses_preserve_onboarding_done_without_changing_groups_or_favorite(self):
+        before = self._get_groups_config(fallback=self._favorite_config()).get_json()
+        self.assertFalse(before['preferences']['onboardingDone'])
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            saved = self.client.post(
+                '/api/groups-preferences',
+                json={'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+                headers=self._csrf_headers(),
+            )
+        after = self._get_groups_config(fallback={'version': 1}).get_json()
+
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        saved_body = saved.get_json()
+        self.assertFalse(saved_body['preferences']['onboardingDone'])
+        self.assertFalse(saved_body['groupsConfigSnapshot']['preferences']['onboardingDone'])
+        self.assertEqual(saved_body['preferences']['activeGroupId'], 'platform')
+        self.assertEqual(after['groups'], before['groups'])
+        self.assertEqual(after['preferences']['activeGroupId'], 'platform')
+        self.assertFalse(after['preferences']['onboardingDone'])
+
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}, clear=False), \
+             patch.object(jira_server, 'load_dashboard_config', return_value=self._favorite_config()):
+            json_mode = self.client.get('/api/groups-config')
+
+        self.assertEqual(json_mode.status_code, 200, json_mode.get_data(as_text=True))
+        self.assertTrue(json_mode.get_json()['preferences']['onboardingDone'])
+
     def test_post_group_preferences_requires_requested_with_and_token_bound_csrf(self):
         self._get_groups_config(fallback=self._favorite_config())
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):

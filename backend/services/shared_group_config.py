@@ -32,6 +32,10 @@ class InvalidGroupPreferences(ValueError):
     pass
 
 
+class OnboardingPreferencesUnavailable(ValueError):
+    pass
+
+
 def _group_ids(groups_config):
     return [
         str(group.get('id') or '').strip()
@@ -250,11 +254,17 @@ def _resolve_active_group_id(groups_config, visible_ids, active_group_id):
 def normalize_group_preferences(payload, groups_config, preference_exists=True, require_first_run=False):
     payload = payload or {}
     ids = _group_ids(groups_config)
+    onboarding_done = (
+        bool(payload.get('onboardingDone'))
+        if _uses_personal_preferences(groups_config)
+        else True
+    )
     if require_first_run and not preference_exists:
         return {
             'customized': False,
             'preferenceExists': False,
             'onboardingRequired': True,
+            'onboardingDone': onboarding_done,
             'visibleGroupIds': [],
             'activeGroupId': None,
             'effectiveVisibleGroupIds': [],
@@ -266,6 +276,7 @@ def normalize_group_preferences(payload, groups_config, preference_exists=True, 
         'customized': customized,
         'preferenceExists': bool(preference_exists),
         'onboardingRequired': False,
+        'onboardingDone': onboarding_done,
         'visibleGroupIds': visible,
     }
     effective = effective_visible_group_ids(groups_config, preferences)
@@ -301,6 +312,7 @@ def load_group_preferences(context, groups_config, database_url=None):
                 'visibleGroupIds': row.visible_group_ids or [],
                 'activeGroupId': row.active_group_id,
                 'customized': row.customized,
+                'onboardingDone': row.onboarding_done,
             },
             groups_config,
             preference_exists=True,
@@ -345,9 +357,9 @@ def _validate_raw_group_preferences(payload, groups_config, preference_exists):
     }
 
 
-def _normalized_saved_preferences(payload, groups_config):
+def _normalized_saved_preferences(payload, groups_config, onboarding_done=False):
     return normalize_group_preferences(
-        payload,
+        {**payload, 'onboardingDone': onboarding_done},
         groups_config,
         preference_exists=True,
         require_first_run=False,
@@ -374,7 +386,11 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
         ).scalars().first()
         was_insert = row is None
         validated = _validate_raw_group_preferences(payload, groups_config, not was_insert)
-        preferences = _normalized_saved_preferences(validated, groups_config)
+        preferences = _normalized_saved_preferences(
+            validated,
+            groups_config,
+            onboarding_done=False if was_insert else row.onboarding_done,
+        )
         if was_insert:
             row = models.UserGroupPreference(
                 workspace_id=context.workspace_id,
@@ -383,6 +399,7 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
                 visible_group_ids=preferences['visibleGroupIds'],
                 active_group_id=preferences['activeGroupId'],
                 customized=True,
+                onboarding_done=False,
             )
             session.add(row)
         else:
@@ -407,10 +424,46 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
         if row is None:
             raise insert_race_error
         validated = _validate_raw_group_preferences(payload, groups_config, True)
-        preferences = _normalized_saved_preferences(validated, groups_config)
+        preferences = _normalized_saved_preferences(
+            validated,
+            groups_config,
+            onboarding_done=row.onboarding_done,
+        )
         _apply_group_preferences(row, preferences)
         session.flush()
     return preferences
+
+
+def set_onboarding_done(context, done, groups_config, database_url=None):
+    if not _uses_personal_preferences(groups_config):
+        raise OnboardingPreferencesUnavailable('onboarding_db_required')
+
+    with db_engine.session_scope(database_url) as session:
+        row = session.execute(
+            select(models.UserGroupPreference).where(
+                models.UserGroupPreference.workspace_id == context.workspace_id,
+                models.UserGroupPreference.user_id == context.user_id,
+            )
+        ).scalars().first()
+        if row is None:
+            raise InvalidGroupPreferences('personal group selection required')
+
+        preferences = _normalized_saved_preferences(
+            {
+                'visibleGroupIds': row.visible_group_ids or [],
+                'activeGroupId': row.active_group_id,
+                'customized': row.customized,
+            },
+            groups_config,
+            onboarding_done=row.onboarding_done,
+        )
+        if preferences['onboardingRequired'] or not preferences['activeGroupId']:
+            raise InvalidGroupPreferences('personal group selection required')
+
+        row.onboarding_done = bool(done)
+        row.updated_at = models._utcnow()
+        session.flush()
+        return row.onboarding_done
 
 
 def is_first_run_required(context, groups_config, preference_exists, database_url=None):

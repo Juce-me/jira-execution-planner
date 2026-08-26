@@ -222,6 +222,7 @@ class UserGroupPreference(Base):
     visible_group_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     active_group_id: Mapped[Optional[str]] = mapped_column(String(255))
     customized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    onboarding_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text('false'))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 

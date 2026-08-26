@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, pool
+from sqlalchemy import create_engine, inspect, pool, text
 
 from backend.db import engine as db_engine
 
@@ -152,6 +152,81 @@ class DbMigrationTests(unittest.TestCase):
                 self.assertIsNone(raised.exception.__cause__)
                 self.assertIsNone(raised.exception.__context__)
                 self.assertNotIn("secret", rendered)
+
+    def test_onboarding_migration_backfills_existing_preferences_and_defaults_new_rows(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'onboarding.db')}"
+            config = self._config(database_url)
+
+            command.upgrade(config, '20260604_0006')
+            engine = create_engine(database_url, future=True)
+            try:
+                with engine.begin() as connection:
+                    connection.execute(text("""
+                        INSERT INTO user_group_preferences (
+                            id, workspace_id, user_id, payload_version, visible_group_ids,
+                            active_group_id, customized, created_at, updated_at
+                        ) VALUES (
+                            'preference-existing', 'workspace-1', 'user-1', 1, '[]',
+                            'platform', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+            finally:
+                engine.dispose()
+
+            command.upgrade(config, '20260826_0007')
+            engine = create_engine(database_url, future=True)
+            try:
+                inspector = inspect(engine)
+                onboarding_column = next(
+                    column for column in inspector.get_columns('user_group_preferences')
+                    if column['name'] == 'onboarding_done'
+                )
+                self.assertFalse(onboarding_column['nullable'])
+
+                with engine.begin() as connection:
+                    existing = connection.execute(text("""
+                        SELECT onboarding_done
+                        FROM user_group_preferences
+                        WHERE id = 'preference-existing'
+                    """)).scalar_one()
+                    connection.execute(text("""
+                        INSERT INTO user_group_preferences (
+                            id, workspace_id, user_id, payload_version, visible_group_ids,
+                            active_group_id, customized, created_at, updated_at
+                        ) VALUES (
+                            'preference-new', 'workspace-2', 'user-2', 1, '[]',
+                            'platform', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+                    inserted = connection.execute(text("""
+                        SELECT onboarding_done
+                        FROM user_group_preferences
+                        WHERE id = 'preference-new'
+                    """)).scalar_one()
+
+                self.assertTrue(bool(existing))
+                self.assertFalse(bool(inserted))
+            finally:
+                engine.dispose()
+
+            command.downgrade(config, '20260604_0006')
+            engine = create_engine(database_url, future=True)
+            try:
+                preference_columns = {
+                    column['name']
+                    for column in inspect(engine).get_columns('user_group_preferences')
+                }
+                self.assertNotIn('onboarding_done', preference_columns)
+                self.assertTrue({
+                    'workspace_id',
+                    'user_id',
+                    'visible_group_ids',
+                    'active_group_id',
+                    'customized',
+                }.issubset(preference_columns))
+            finally:
+                engine.dispose()
 
 
 if __name__ == '__main__':

@@ -403,6 +403,7 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
                         visible_group_ids=['mobile'],
                         active_group_id='mobile',
                         customized=True,
+                        onboarding_done=True,
                     ))
             return original_flush(session, *args, **kwargs)
 
@@ -416,10 +417,162 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
 
         self.assertTrue(injected)
         self.assertEqual(saved['activeGroupId'], 'platform')
+        self.assertTrue(saved['onboardingDone'])
         with self.factory() as session:
             stored = session.query(models.UserGroupPreference).one()
             self.assertEqual(stored.visible_group_ids, ['platform'])
             self.assertEqual(stored.active_group_id, 'platform')
+            self.assertTrue(stored.onboarding_done)
+
+    def test_group_preferences_serialize_stored_onboarding_values_and_missing_rows(self):
+        missing = service.load_group_preferences(
+            self.context,
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        self.assertFalse(missing['onboardingDone'])
+
+        for done in (False, True):
+            with self.subTest(done=done):
+                with self.factory() as session:
+                    session.query(models.UserGroupPreference).delete()
+                    session.add(models.UserGroupPreference(
+                        workspace_id=self.workspace_id,
+                        user_id=self.user_id,
+                        payload_version=1,
+                        visible_group_ids=['platform'],
+                        active_group_id='platform',
+                        customized=True,
+                        onboarding_done=done,
+                    ))
+                    session.commit()
+
+                loaded = service.load_group_preferences(
+                    self.context,
+                    self._db_groups(),
+                    database_url=self.database_url,
+                )
+                self.assertIs(loaded['onboardingDone'], done)
+                saved = service.save_group_preferences(
+                    self.context,
+                    {'visibleGroupIds': ['mobile'], 'activeGroupId': 'mobile'},
+                    self._db_groups(),
+                    database_url=self.database_url,
+                )
+                self.assertIs(saved['onboardingDone'], done)
+                with self.factory() as session:
+                    self.assertIs(session.query(models.UserGroupPreference).one().onboarding_done, done)
+
+    def test_set_onboarding_done_updates_only_the_scalar_idempotently_and_in_isolation(self):
+        service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        service.save_group_preferences(
+            self.other_context,
+            {'visibleGroupIds': ['mobile'], 'activeGroupId': 'mobile'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        with self.factory() as session:
+            other_workspace = models.Workspace(
+                environment_key='onboarding-other',
+                name='Onboarding Other',
+                jira_site_url='https://onboarding-other.example.atlassian.net',
+                jira_cloud_id='cloud-onboarding-other',
+                created_by='test',
+            )
+            session.add(other_workspace)
+            session.commit()
+            other_workspace_context = SimpleNamespace(
+                workspace_id=other_workspace.id,
+                user_id=self.user_id,
+                auth_connection_id='connection-onboarding-other',
+            )
+            session.add(models.UserGroupPreference(
+                workspace_id=other_workspace.id,
+                user_id=self.user_id,
+                payload_version=1,
+                visible_group_ids=['mobile'],
+                active_group_id='mobile',
+                customized=True,
+                onboarding_done=False,
+            ))
+            session.commit()
+
+        self.assertFalse(service.set_onboarding_done(
+            self.context, False, self._db_groups(), database_url=self.database_url,
+        ))
+        self.assertTrue(service.set_onboarding_done(
+            self.context, True, self._db_groups(), database_url=self.database_url,
+        ))
+        self.assertTrue(service.set_onboarding_done(
+            self.context, True, self._db_groups(), database_url=self.database_url,
+        ))
+
+        with self.factory() as session:
+            rows = {
+                (row.workspace_id, row.user_id): row
+                for row in session.query(models.UserGroupPreference).all()
+            }
+        current = rows[(self.workspace_id, self.user_id)]
+        other_user = rows[(self.workspace_id, self.other_user_id)]
+        other_workspace = rows[(other_workspace_context.workspace_id, self.user_id)]
+        self.assertTrue(current.onboarding_done)
+        self.assertEqual(current.visible_group_ids, ['platform'])
+        self.assertEqual(current.active_group_id, 'platform')
+        self.assertFalse(other_user.onboarding_done)
+        self.assertEqual(other_user.visible_group_ids, ['mobile'])
+        self.assertFalse(other_workspace.onboarding_done)
+        self.assertEqual(other_workspace.visible_group_ids, ['mobile'])
+
+    def test_set_onboarding_done_rejects_missing_and_invalid_personal_favorites(self):
+        invalid_cases = (
+            (None, self._db_groups()),
+            (('platform', 'deleted'), self._db_groups()),
+            (('mobile', 'platform'), self._db_groups()),
+            (('platform', 'platform'), {
+                **self._db_groups(),
+                'groups': [group for group in self._db_groups()['groups'] if group['id'] != 'platform'],
+            }),
+            (('empty', 'empty'), self._db_groups()),
+        )
+        for stored, groups_config in invalid_cases:
+            with self.subTest(stored=stored):
+                with self.factory() as session:
+                    session.query(models.UserGroupPreference).delete()
+                    if stored is not None:
+                        visible_ids, active_group_id = stored
+                        session.add(models.UserGroupPreference(
+                            workspace_id=self.workspace_id,
+                            user_id=self.user_id,
+                            payload_version=1,
+                            visible_group_ids=[visible_ids],
+                            active_group_id=active_group_id,
+                            customized=True,
+                            onboarding_done=False,
+                        ))
+                    session.commit()
+
+                with self.assertRaises(service.InvalidGroupPreferences):
+                    service.set_onboarding_done(
+                        self.context, True, groups_config, database_url=self.database_url,
+                    )
+
+    def test_set_onboarding_done_rejects_json_mode_groups(self):
+        service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+
+        with self.assertRaises(service.OnboardingPreferencesUnavailable):
+            service.set_onboarding_done(
+                self.context, True, self._groups(), database_url=self.database_url,
+            )
 
 
 if __name__ == '__main__':

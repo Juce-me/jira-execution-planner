@@ -145,7 +145,7 @@ The common stale-write body is exact:
 - Produces: `legacy_fallback_matches_workspace(context, legacy_site_url: str) -> bool`.
 - `resolve_effective_view_config()` continues to return `source`, `workspaceId`, `viewConfigId`, `viewType`, and `view`, but `view` is runtime-sanitized.
 
-- [ ] **Step 1: Write failing allowlist and private-view tests**
+- [x] **Step 1: Write failing allowlist and private-view tests**
 
 Add table-driven tests with synthetic data:
 
@@ -188,25 +188,25 @@ def test_private_runtime_view_cannot_override_shared_epm(self):
 
 Also assert recursive rejection of `workspaceId`, `workspace_id`, `userId`, `user_id`, `accountId`, `cloudId`, `siteUrl`, token/service keys, raw GraphQL operations, unknown top-level shared payload keys, unknown nested fields, and malformed section values. Assert that one forbidden or malformed shared field rejects the whole recovery/persistence candidate rather than silently publishing a partial payload.
 
-- [ ] **Step 2: Run the focused tests to verify RED**
+- [x] **Step 2: Run the focused tests to verify RED**
 
 Run: `.venv/bin/python -m unittest tests.test_shared_admin_config_validation tests.test_user_view_config_routes tests.test_view_config_resolution`
 
 Expected: FAIL because the ownership helpers do not exist and private EPM still passes through runtime resolution.
 
-- [ ] **Step 3: Implement pure ownership and section-shape helpers**
+- [x] **Step 3: Implement pure ownership and section-shape helpers**
 
 Use one source of truth for sensitive-key detection by reusing `FORBIDDEN_VIEW_PAYLOAD_KEYS`/the recursive collector rather than copying token names. Extract or wrap the existing pure section normalizers so live routes, fallback reads, recovery, and persistence all produce the same canonical shapes. Client writes use the strict default. Legacy fallback/recovery may set `allow_legacy_excluded_fields=True` to discard only the exact known legacy keys `filters`, `eng`, `teamGroups`, and `teamCatalog`; any other unknown top-level key, forbidden key, unknown nested shared field, or malformed shared section rejects the entire candidate. Do not maintain a second migration-only schema.
 
 Implement exact site matching with normalized scheme/host/path and no substring or suffix matching. `https://example.atlassian.net` matches the same URL with a trailing slash; it does not match `https://other.example.atlassian.net` or an empty configured site.
 
-- [ ] **Step 4: Split private import and runtime behavior**
+- [x] **Step 4: Split private import and runtime behavior**
 
 Make new/updated private views reject shared-only top-level sections and shared EPM keys with `invalid_view_payload`, while allowing only the documented personal EPM state. Make `resolve_effective_view_config()` strip shared fields from runtime output. Keep raw stored payload/version rows unchanged and keep `export_view_config_json()` able to export the historical row for operator recovery.
 
 Change `import_dashboard_config()` so a legacy file import writes only the personal portion to `ViewConfig`; it must not create or replace workspace administrator configuration as a side effect.
 
-- [ ] **Step 5: Run the focused tests to verify GREEN**
+- [x] **Step 5: Run the focused tests to verify GREEN**
 
 Run: `.venv/bin/python -m unittest tests.test_shared_admin_config_validation tests.test_user_view_config_routes tests.test_view_config_resolution tests.test_config_jsonfile_fallback`
 

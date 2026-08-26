@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from backend.config.view_validation import validate_user_view_payload
+from backend.config.shared_config import strip_shared_sections_from_private_view
 from backend.db import engine as db_engine
 from backend.db import models
 
@@ -94,7 +95,7 @@ class DbConfigRepository:
                 'workspaceId': view.workspace_id,
                 'viewConfigId': view.id,
                 'viewType': view.view_type,
-                'view': strip_private_team_groups(view.payload),
+                'view': strip_shared_sections_from_private_view(strip_private_team_groups(view.payload)),
             }
 
     def save_dashboard_config(self, context, payload, *, actor_user_id=None, change_note='compatibility save'):

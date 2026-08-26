@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from backend.auth.token_crypto import redact_token_material
 from backend.config.db_repository import infer_view_type, strip_private_team_groups
 from backend.config.view_validation import validate_user_view_payload
+from backend.config.shared_config import strip_shared_sections_from_private_view
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.services import shared_group_config
@@ -65,7 +66,7 @@ def import_dashboard_config(*, database_url=None, context, source_path, actor_us
     source_hash = _source_hash(source_path)
     source_payload = _load_json(source_path)
     team_groups = source_payload.get('teamGroups') if isinstance(source_payload.get('teamGroups'), dict) else None
-    payload = strip_private_team_groups(source_payload)
+    payload = strip_shared_sections_from_private_view(strip_private_team_groups(source_payload))
     validate_user_view_payload(payload)
     actor_user_id = actor_user_id or context.user_id
     with db_engine.session_scope(database_url) as session:

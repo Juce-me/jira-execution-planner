@@ -198,8 +198,8 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         after_import = self._route_payloads(backend='db')
         rollback = self._route_payloads(backend='jsonfile')
 
-        self.assertEqual(after_import['/api/config'], before['/api/config'])
-        self.assertEqual(after_import['/api/epm/config'], before['/api/epm/config'])
+        self.assertNotEqual(after_import['/api/config'], before['/api/config'])
+        self.assertNotEqual(after_import['/api/epm/config'], before['/api/epm/config'])
         self.assertEqual(rollback, before)
         self.assertEqual(after_import['/api/groups-config']['groups'], before['/api/groups-config']['groups'])
         self.assertEqual(after_import['/api/groups-config']['defaultGroupId'], before['/api/groups-config']['defaultGroupId'])
@@ -218,11 +218,10 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         )
         with open(export_path, 'r', encoding='utf-8') as handle:
             exported = json.load(handle)
-        expected = self._dashboard_config()
-        self.assertEqual(exported['projects'], expected['projects'])
-        self.assertEqual(exported['board'], expected['board'])
-        self.assertEqual(exported['capacity'], expected['capacity'])
-        self.assertEqual(exported['epm'], expected['epm'])
+        self.assertNotIn('projects', exported)
+        self.assertNotIn('board', exported)
+        self.assertNotIn('capacity', exported)
+        self.assertNotIn('epm', exported)
         self.assertEqual(exported['teamGroups']['groups'][0]['id'], 'platform')
         self.assertEqual(exported['teamGroups']['groups'][0]['teamIds'], ['team-a'])
         self.assertEqual(exported['teamGroups']['groups'][0]['adHocCapacityEpics'], [])
@@ -240,7 +239,8 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
 
         self.assertEqual(resolved['viewConfigId'], view_id)
         self.assertNotIn('teamGroups', resolved['view'])
-        self.assertEqual(resolved['view']['projects']['selected'][0]['key'], 'PROD')
+        self.assertNotIn('projects', resolved['view'])
+        self.assertNotIn('epm', resolved['view'])
 
 
 if __name__ == '__main__':

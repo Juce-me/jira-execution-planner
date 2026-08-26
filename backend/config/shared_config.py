@@ -100,9 +100,20 @@ def normalize_workspace_admin_payload(payload, *, allow_legacy_excluded_fields=F
             value = _require_dict(value, section)
             _reject_unknown(value, {'selected'}, section)
             selected = value.get('selected', [])
-            if not isinstance(selected, list) or not all(isinstance(item, str) for item in selected):
-                _raise('projects.selected', 'configuration field must be a string array')
-            result[section] = {'selected': [_text(item) for item in selected if _text(item)]}
+            if not isinstance(selected, list):
+                _raise('projects.selected', 'configuration field must be an array')
+            normalized_selected = []
+            for item in selected:
+                if isinstance(item, str) and _text(item):
+                    normalized_selected.append({'key': _text(item), 'type': 'product'})
+                elif isinstance(item, dict):
+                    _reject_unknown(item, {'key', 'type'}, 'projects.selected')
+                    key = _text(item.get('key'))
+                    if key:
+                        normalized_selected.append({'key': key, 'type': _text(item.get('type')) or 'product'})
+                else:
+                    _raise('projects.selected', 'configuration project entries must be strings or objects')
+            result[section] = {'selected': normalized_selected}
         elif section == 'board':
             value = _require_dict(value, section)
             _reject_unknown(value, {'boardId', 'boardName'}, section)

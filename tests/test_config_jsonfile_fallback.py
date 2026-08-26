@@ -198,8 +198,8 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         after_import = self._route_payloads(backend='db')
         rollback = self._route_payloads(backend='jsonfile')
 
-        self.assertNotEqual(after_import['/api/config'], before['/api/config'])
-        self.assertNotEqual(after_import['/api/epm/config'], before['/api/epm/config'])
+        self.assertEqual(after_import['/api/config'], before['/api/config'])
+        self.assertEqual(after_import['/api/epm/config'], before['/api/epm/config'])
         self.assertEqual(rollback, before)
         self.assertEqual(after_import['/api/groups-config']['groups'], before['/api/groups-config']['groups'])
         self.assertEqual(after_import['/api/groups-config']['defaultGroupId'], before['/api/groups-config']['defaultGroupId'])
@@ -228,19 +228,10 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         self.assertEqual(exported['teamGroups']['defaultGroupId'], 'platform')
         self.assertNotIn('api_token', json.dumps(exported).lower())
 
-    def test_db_dashboard_save_strips_legacy_team_groups_from_private_view(self):
+    def test_db_dashboard_full_save_fails_closed(self):
         repository = db_repository(database_url=self.database_url)
-        view_id = repository.save_dashboard_config(
-            self.context,
-            self._dashboard_config(),
-            actor_user_id=self.user_id,
-        )
-        resolved = repository.resolve_effective_view_config(self.context)
-
-        self.assertEqual(resolved['viewConfigId'], view_id)
-        self.assertNotIn('teamGroups', resolved['view'])
-        self.assertNotIn('projects', resolved['view'])
-        self.assertNotIn('epm', resolved['view'])
+        with self.assertRaisesRegex(RuntimeError, 'full workspace dashboard replacement'):
+            repository.save_dashboard_config(self.context, self._dashboard_config())
 
 
 if __name__ == '__main__':

@@ -102,7 +102,7 @@ def _resolve_bootstrap_view_config(auth_context):
 
 def _load_team_catalog_dashboard_config():
     if config_storage_db_enabled() and not local_file_state_enabled():
-        return db_repository().load_dashboard_config(current_request_auth_context()) or {}
+        return db_repository().load_team_catalog(current_request_auth_context()) or {}
     return load_dashboard_config() or {}
 
 
@@ -501,8 +501,7 @@ def save_groups_preferences():
 def get_team_catalog():
     """Return the team name catalog."""
     if config_storage_db_enabled():
-        config = _load_team_catalog_dashboard_config()
-        team_catalog = config.get("teamCatalog") or {}
+        team_catalog = _load_team_catalog_dashboard_config()
         return jsonify({
             "catalog": normalize_team_catalog(team_catalog.get("catalog") or {}),
             "meta": normalize_team_catalog_meta(team_catalog.get("meta") or {}),
@@ -522,22 +521,14 @@ def post_team_catalog():
         'meta': normalize_team_catalog_meta(payload.get('meta') or {})
     }
     if merge:
-        if config_storage_db_enabled():
-            config = _load_team_catalog_dashboard_config()
-            team_catalog = config.get("teamCatalog") or {}
-            existing = {
-                "catalog": normalize_team_catalog(team_catalog.get("catalog") or {}),
-                "meta": normalize_team_catalog_meta(team_catalog.get("meta") or {}),
-            }
-        else:
+        if not config_storage_db_enabled():
             existing = load_team_catalog()
-        merged_catalog = {**existing['catalog'], **incoming['catalog']}
-        incoming['catalog'] = merged_catalog
+            merged_catalog = {**existing['catalog'], **incoming['catalog']}
+            incoming['catalog'] = merged_catalog
     if config_storage_db_enabled():
-        config = _load_team_catalog_dashboard_config() or {"version": 1, "projects": {"selected": []}, "teamGroups": {}}
-        config["teamCatalog"] = incoming
-        save_dashboard_config(config)
-        saved = incoming
+        saved = db_repository().save_team_catalog(
+            current_request_auth_context(), incoming, merge=bool(merge),
+        )
         return jsonify(saved)
     saved = save_team_catalog_file(incoming)
     return jsonify(saved)

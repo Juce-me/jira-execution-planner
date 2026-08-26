@@ -316,7 +316,7 @@ def save_workspace_team_catalog(context, payload, *, merge=False, database_url=N
 - `DbConfigRepository.save_dashboard_config()` must no longer replace a DB payload or touch `ViewConfig`; DB callers use `save_dashboard_section()`.
 - `jira_server.load_dashboard_config_snapshot()` caches one DB read in Flask `g` for the request; `load_dashboard_config()` returns `.payload`.
 
-- [ ] **Step 1: Write failing workspace service tests**
+- [x] **Step 1: Write failing workspace service tests**
 
 Cover same-workspace cross-user reads, second-workspace isolation, revision-zero empty/fallback snapshots, exact-site fallback allow/deny, read-without-write, section allowlisting, actor attribution, and audit metadata.
 
@@ -326,27 +326,27 @@ Add an insert race test where two revision-zero writers target the same workspac
 
 Add a team-catalog merge race where two users add different synthetic team mappings from the same internal catalog revision. The bounded compare-and-swap retry must preserve both mappings and must not touch the administrator revision or audit stream.
 
-- [ ] **Step 2: Run service tests to verify RED**
+- [x] **Step 2: Run service tests to verify RED**
 
 Run: `.venv/bin/python -m unittest tests.test_workspace_dashboard_config_service tests.test_config_jsonfile_fallback tests.test_team_catalog_api`
 
 Expected: FAIL because the shared services and separate catalog repository do not exist.
 
-- [ ] **Step 3: Implement atomic section compare-and-swap**
+- [x] **Step 3: Implement atomic section compare-and-swap**
 
 Parse `base_revision` as a non-negative integer. For an existing row, load its payload, replace only the hard-coded section, and execute `UPDATE ... WHERE workspace_id=:workspace_id AND config_revision=:base_revision`. Increment revision and add the redacted audit event in the same transaction. If `rowcount != 1`, reload only the current workspace and raise `WorkspaceConfigConflict`.
 
 For revision zero, reload the current exact-site fallback at write time, normalize it, replace only the route-owned section, and attempt a unique insert. This preserves untouched legacy sections during first-write cutover. A non-matching workspace starts from the empty snapshot. Translate a unique race into the same conflict object in a fresh transaction; do not leak a database exception.
 
-- [ ] **Step 4: Implement team-catalog separation**
+- [x] **Step 4: Implement team-catalog separation**
 
 Load/save only `WorkspaceTeamCatalog`. Normalize route input before the service call. For merge writes, conditionally update on the internal catalog revision and retry from the latest row a bounded number of times; convert exhausted contention to a catalog-specific conflict rather than losing entries. An unprivileged request cannot name an administrator section or call the administrator update interface. Do not expose the internal revision as `baseRevision`, increment the administrator `config_revision`, or add `workspace_dashboard_config_updated` audit events.
 
-- [ ] **Step 5: Add request-scoped snapshot caching and DB full-save guard**
+- [x] **Step 5: Add request-scoped snapshot caching and DB full-save guard**
 
 Use one snapshot per Flask request so `/api/config` and its helper getters do not issue repeated DB config queries. `/api/config` must serialize `sharedConfig` and `sharedConfigRevision` from that same immutable snapshot. Replace the cached snapshot after a successful section save. Preserve `source='jsonfile'` for startup/no-request paths. In DB mode, make the legacy generic full-save wrapper fail closed with a clear internal error and remove its `compatibility save` marker/default so future route code cannot silently reintroduce whole-payload writes or create false recovery provenance.
 
-- [ ] **Step 6: Run repository/service tests to verify GREEN**
+- [x] **Step 6: Run repository/service tests to verify GREEN**
 
 Run: `.venv/bin/python -m unittest tests.test_workspace_dashboard_config_service tests.test_config_jsonfile_fallback tests.test_team_catalog_api tests.test_config_storage_selector tests.test_view_config_resolution`
 

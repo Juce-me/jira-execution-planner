@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import abort, has_request_context, jsonify, redirect, request, send_file, send_from_directory, session
+from flask import abort, g, has_request_context, jsonify, redirect, request, send_file, send_from_directory, session
 import requests
 import argparse
 import base64
@@ -1677,11 +1677,43 @@ def load_dashboard_config(*, source='auto'):
         return _load_dashboard_config_json()
     if source == 'db' or config_storage_db_enabled():
         context = _current_dashboard_config_context_or_error()
-        return build_db_config_repository().load_dashboard_config(
-            context,
-            fallback_loader=_load_dashboard_config_json,
-        )
+        return load_dashboard_config_snapshot(source='db').payload
     return _load_dashboard_config_json()
+
+
+def load_dashboard_config_snapshot(*, source='auto'):
+    source = _normalize_dashboard_config_source(source)
+    if source == 'jsonfile' or (source == 'auto' and not config_storage_db_enabled()):
+        from backend.services.workspace_dashboard_config import WorkspaceConfigSnapshot
+        payload = _load_dashboard_config_json() or {}
+        return WorkspaceConfigSnapshot(payload, 0, 'legacy_json')
+    context = _current_dashboard_config_context_or_error()
+    cache_key = '_workspace_dashboard_config_snapshot'
+    if has_request_context() and hasattr(g, cache_key):
+        return getattr(g, cache_key)
+    snapshot = build_db_config_repository().load_dashboard_config_snapshot(
+        context,
+        fallback_loader=_load_dashboard_config_json,
+        legacy_site_url=JIRA_URL or '',
+    )
+    if has_request_context():
+        setattr(g, cache_key, snapshot)
+    return snapshot
+
+
+def save_dashboard_config_section(section, value, *, base_revision):
+    context = _current_dashboard_config_context_or_error()
+    snapshot = build_db_config_repository().save_dashboard_section(
+        context,
+        section,
+        value,
+        base_revision,
+        fallback_loader=_load_dashboard_config_json,
+        legacy_site_url=JIRA_URL or '',
+    )
+    if has_request_context():
+        g._workspace_dashboard_config_snapshot = snapshot
+    return snapshot
 
 
 def _save_dashboard_config_json(config):
@@ -1694,8 +1726,7 @@ def save_dashboard_config(config, *, source='auto'):
     if source == 'jsonfile':
         return _save_dashboard_config_json(config)
     if source == 'db' or config_storage_db_enabled():
-        context = _current_dashboard_config_context_or_error()
-        return build_db_config_repository().save_dashboard_config(context, config)
+        raise ConfigStorageError('full workspace dashboard replacement is forbidden in DB mode')
     return _save_dashboard_config_json(config)
 
 

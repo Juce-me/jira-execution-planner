@@ -103,11 +103,9 @@ class TestTeamCatalogAPI(unittest.TestCase):
 
     def test_db_stateless_team_catalog_get_does_not_touch_json_file(self):
         repository = SimpleNamespace(
-            load_dashboard_config=lambda context: {
-                "teamCatalog": {
-                    "catalog": {"t1": {"id": "t1", "name": "Team One"}},
-                    "meta": {"source": "db"},
-                }
+            load_team_catalog=lambda context: {
+                "catalog": {"t1": {"id": "t1", "name": "Team One"}},
+                "meta": {"source": "db"},
             }
         )
         with patch.object(jira_server, "config_storage_db_enabled", return_value=True), \
@@ -122,15 +120,10 @@ class TestTeamCatalogAPI(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["catalog"]["t1"]["name"], "Team One")
 
-    def test_db_team_catalog_post_updates_dashboard_config(self):
-        saved_configs = []
-
-        def save_config(config):
-            saved_configs.append(config)
-            return 'view-config-id'
-
+    def test_db_team_catalog_post_uses_separate_repository(self):
+        saved_catalogs = []
         repository = SimpleNamespace(
-            load_dashboard_config=lambda context: {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+            save_team_catalog=lambda context, payload, merge=False: saved_catalogs.append((payload, merge)) or payload,
         )
         payload = {
             'catalog': {'t1': {'id': 't1', 'name': 'Team One'}},
@@ -141,7 +134,7 @@ class TestTeamCatalogAPI(unittest.TestCase):
              patch.object(settings_routes, 'db_repository', return_value=repository), \
              patch.object(jira_server, 'current_request_auth_context', return_value=object()), \
              patch.object(jira_server, '_load_dashboard_config_json', side_effect=AssertionError('json fallback forbidden')), \
-             patch.object(jira_server, 'save_dashboard_config', side_effect=save_config), \
+             patch.object(jira_server, 'save_dashboard_config', side_effect=AssertionError('admin config save forbidden')), \
              patch.object(jira_server, 'save_team_catalog_file', side_effect=AssertionError('json save forbidden')):
             response = self.client.post('/api/team-catalog',
                                         data=json.dumps(payload),
@@ -150,7 +143,7 @@ class TestTeamCatalogAPI(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data['catalog']['t1']['name'], 'Team One')
-        self.assertEqual(saved_configs[0]['teamCatalog']['catalog']['t1']['name'], 'Team One')
+        self.assertEqual(saved_catalogs[0][0]['catalog']['t1']['name'], 'Team One')
 
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')

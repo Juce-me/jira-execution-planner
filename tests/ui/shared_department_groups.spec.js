@@ -311,6 +311,161 @@ test('first-run auth recovery exposes only a safe sign-in URL', async ({ page })
     await unsafePage.close();
 });
 
+test('personal favorite star is separate from shared default and temporary group scope', async ({ page }) => {
+    const groupsConfig = {
+        version: 1,
+        groups: [
+            { id: 'default', name: 'Default', teamIds: ['team-default'] },
+            { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+            { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+            { id: 'empty', name: 'Empty', teamIds: [] },
+        ],
+        defaultGroupId: 'default',
+        configRevision: 5,
+        source: 'workspace_db',
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig,
+        preferenceSnapshotConfig: { ...groupsConfig, configRevision: 6 },
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform', 'growth', 'empty'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform', 'growth', 'empty'],
+        }),
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await dialog.locator('.group-list-item', { hasText: 'Platform' }).click();
+    await expect(dialog.getByRole('button', { name: 'Platform is my favorite group' })).toHaveClass(/active/);
+    await expect(dialog.getByTitle('Default group')).toHaveCount(0);
+
+    await dialog.locator('.group-list-item', { hasText: 'Empty' }).click();
+    await expect(dialog.getByRole('button', { name: 'Configure teams before setting as favorite' })).toBeDisabled();
+
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
+    const growthStar = dialog.getByRole('button', { name: 'Set Growth as my favorite group' });
+    await expect(growthStar).toHaveCSS('width', '26px');
+    await expect(growthStar).toHaveCSS('height', '26px');
+    await growthStar.click();
+    await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveClass(/active/);
+    await expect(dialog.getByRole('checkbox', { name: 'Show in my controls' })).toBeDisabled();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${screenshotDir}/personal-favorite-settings.png`, fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${screenshotDir}/personal-favorite-settings-mobile.png`, fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(dialog).toHaveCount(0);
+    const preferencePosts = calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences');
+    expect(preferencePosts).toHaveLength(1);
+    expect(preferencePosts[0].body).toEqual({
+        visibleGroupIds: ['platform', 'growth', 'empty'],
+        activeGroupId: 'growth',
+    });
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+
+    const groupControl = page.getByRole('button', { name: /Select group/ }).first();
+    await groupControl.click();
+    await expect(page.locator('.group-dropdown-option', { hasText: 'Growth' }).locator('[title="My favorite group"]')).toBeVisible();
+    await page.locator('.group-dropdown-option', { hasText: 'Platform' }).click();
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
+    await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveClass(/active/);
+});
+
+test('personal favorite save preserves its draft and exposes only safe auth recovery', async ({ page }) => {
+    const groupsConfig = {
+        version: 1,
+        groups: [
+            { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+            { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+        ],
+        defaultGroupId: 'platform',
+        configRevision: 5,
+        source: 'workspace_db',
+    };
+    await mockFirstRunDashboard(page, {
+        groupsConfig,
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform', 'growth'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform', 'growth'],
+        }),
+        preferenceError: {
+            status: 401,
+            body: { error: 'auth_required', message: 'Sign in required.', loginUrl: '/login?reason=session_expired' },
+        },
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
+    await dialog.getByRole('button', { name: 'Set Growth as my favorite group' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveClass(/active/);
+    await expect(dialog.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+});
+
+test('partial shared save failure retries only the personal favorite', async ({ page }) => {
+    const groupsConfig = {
+        version: 1,
+        groups: [
+            { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+            { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+        ],
+        defaultGroupId: 'platform',
+        configRevision: 5,
+        source: 'workspace_db',
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig,
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform', 'growth'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform', 'growth'],
+        }),
+        preferenceError: {
+            status: 500,
+            body: { error: 'preference_save_failed', message: 'Synthetic preference failure.' },
+        },
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
+    await dialog.getByPlaceholder('Group name').fill('Growth updated');
+    await dialog.getByRole('button', { name: 'Set Growth updated as my favorite group' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Growth updated is my favorite group' })).toHaveClass(/active/);
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
+
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(2);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+});
+
 test('department group editor keeps save visible when selected group content overflows', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     const groupsConfig = overflowGroupConfig();

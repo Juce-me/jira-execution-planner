@@ -1010,13 +1010,21 @@ import {
                 setGroupsConfig(normalized);
                 setGroupWarnings(snapshot?.warnings || []);
                 setGroupConfigSource(normalized.source || snapshot?.source || '');
+                if (showGroupManage) {
+                    setGroupDraft(normalized);
+                    groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
+                }
                 return normalized;
-            }, []);
+            }, [showGroupManage]);
             const {
                 groupPreferences,
                 setGroupPreferences,
                 visibleGroupDraftIds,
                 setVisibleGroupDraftIds,
+                favoriteGroupDraftId,
+                setFavoriteGroupDraft,
+                favoriteGroupValidationError,
+                settingsPreferenceRecoveryLoginUrl,
                 setGroupPreferencesSaving,
                 groupVisibilitySaving,
                 isGroupVisibilityDraftDirty,
@@ -1790,7 +1798,7 @@ import {
                 setAvailableTeams(loadTeamsFromCurrentView());
                 setLoadingTeams(false);
                 loadTeamCatalog();
-            }, [showGroupManage, groupsConfig]);
+            }, [showGroupManage]);
 
             useEffect(() => {
                 if (!showGroupManage || groupManageTab !== 'epm') return;
@@ -2643,9 +2651,12 @@ import {
                         errors.push(`${groupName}: ${overlap[0]} cannot be both excluded capacity and Ad Hoc capacity.`);
                     }
                 });
+                if (favoriteGroupValidationError) {
+                    errors.push(favoriteGroupValidationError);
+                }
                 errors.push(...validatePresentGroupBoards(groupDraft?.groups));
                 return errors;
-            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft]);
+            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft, favoriteGroupValidationError]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving || epmConfigSaving) return 'Save in progress';
                 if (canEditEpmConfiguration && isEpmConfigDirty && epmConfigLoading) return 'EPM settings are loading';
@@ -12598,8 +12609,13 @@ import {
                                                 >
                                                     <span>{group.name}</span>
                                                     <div className="group-option-tags">
-                                                        {groupsConfig.defaultGroupId === group.id && (
-                                                            <span className="group-option-default" title="Default group">★</span>
+                                                        {(groupsConfig.source === 'workspace_db'
+                                                            ? groupPreferences.activeGroupId === group.id
+                                                            : groupsConfig.defaultGroupId === group.id) && (
+                                                            <span
+                                                                className="group-option-default"
+                                                                title={groupsConfig.source === 'workspace_db' ? 'My favorite group' : 'Default group'}
+                                                            >★</span>
                                                         )}
                                                         <span className="group-option-meta">
                                                             {group.teamIds?.length || 0} teams
@@ -15866,6 +15882,10 @@ import {
                                         teamCacheLabel,
                                         updateGroupDraftName,
                                         toggleDefaultGroupDraft,
+                                        personalGroupPreferencesEnabled: groupsConfig.source === 'workspace_db',
+                                        favoriteGroupDraftId,
+                                        setFavoriteGroupDraft,
+                                        settingsPreferenceRecoveryLoginUrl,
                                         duplicateGroupDraft,
                                         resolveTeamName,
                                         removeTeamFromGroup,

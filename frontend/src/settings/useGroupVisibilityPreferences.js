@@ -39,6 +39,8 @@ export function useGroupVisibilityPreferences({
     const [groupPreferences, setGroupPreferences] = React.useState(EMPTY_GROUP_PREFERENCES);
     const [groupPreferencesSaving, setGroupPreferencesSaving] = React.useState(false);
     const [visibleGroupDraftIds, setVisibleGroupDraftIds] = React.useState([]);
+    const [favoriteGroupDraftId, setFavoriteGroupDraftId] = React.useState(null);
+    const [settingsPreferenceRecoveryLoginUrl, setSettingsPreferenceRecoveryLoginUrl] = React.useState('');
     const [firstRunFavoriteGroupId, setFirstRunFavoriteGroupId] = React.useState(null);
     const [firstRunSaving, setFirstRunSaving] = React.useState(false);
     const [firstRunError, setFirstRunError] = React.useState('');
@@ -86,18 +88,23 @@ export function useGroupVisibilityPreferences({
             ? (groupPreferences.visibleGroupIds || [])
             : (normalized.groups || []).map(group => group.id);
         setVisibleGroupDraftIds(initialVisibleIds);
+        const initialFavoriteId = useBackendPreferences
+            ? (groupPreferences.activeGroupId || null)
+            : (groupPreferences.activeGroupId || currentActiveGroupId || null);
+        setFavoriteGroupDraftId(initialFavoriteId);
+        setSettingsPreferenceRecoveryLoginUrl('');
         groupPreferencesBaselineRef.current = groupPreferencesSignature({
             visibleGroupIds: initialVisibleIds,
-            activeGroupId: groupPreferences.activeGroupId || currentActiveGroupId,
+            activeGroupId: initialFavoriteId,
         });
-    }, [groupPreferences]);
+    }, [groupPreferences, useBackendPreferences]);
 
     const groupPreferencesDraftSignature = React.useMemo(() => (
         groupPreferencesSignature({
             visibleGroupIds: visibleGroupDraftIds,
-            activeGroupId,
+            activeGroupId: useBackendPreferences ? favoriteGroupDraftId : activeGroupId,
         })
-    ), [visibleGroupDraftIds, activeGroupId]);
+    ), [visibleGroupDraftIds, favoriteGroupDraftId, activeGroupId, useBackendPreferences]);
     const isGroupVisibilityDraftDirty = React.useMemo(() => (
         groupPreferencesDraftSignature !== groupPreferencesBaselineRef.current
     ), [groupPreferencesDraftSignature]);
@@ -105,13 +112,16 @@ export function useGroupVisibilityPreferences({
     const isGroupVisibleInControls = React.useCallback((groupId) => {
         const normalizedId = String(groupId || '').trim();
         if (!normalizedId) return false;
-        if (groupDraft?.defaultGroupId === normalizedId) return true;
+        if (useBackendPreferences && favoriteGroupDraftId === normalizedId) return true;
+        if (!useBackendPreferences && groupDraft?.defaultGroupId === normalizedId) return true;
         return visibleGroupDraftIds.includes(normalizedId);
-    }, [groupDraft?.defaultGroupId, visibleGroupDraftIds]);
+    }, [favoriteGroupDraftId, groupDraft?.defaultGroupId, useBackendPreferences, visibleGroupDraftIds]);
 
     const toggleGroupVisibleInControls = React.useCallback((groupId) => {
         const normalizedId = String(groupId || '').trim();
-        if (!normalizedId || groupDraft?.defaultGroupId === normalizedId) return;
+        if (!normalizedId) return;
+        if (useBackendPreferences && favoriteGroupDraftId === normalizedId) return;
+        if (!useBackendPreferences && groupDraft?.defaultGroupId === normalizedId) return;
         setVisibleGroupDraftIds(prev => {
             if (prev.includes(normalizedId)) {
                 return prev.filter(id => id !== normalizedId);
@@ -121,7 +131,29 @@ export function useGroupVisibilityPreferences({
         trackSettingsAction('departments', 'preference_change', {
             source_surface: 'settings',
         });
-    }, [groupDraft?.defaultGroupId, trackSettingsAction]);
+    }, [favoriteGroupDraftId, groupDraft?.defaultGroupId, trackSettingsAction, useBackendPreferences]);
+
+    const setFavoriteGroupDraft = React.useCallback((groupId) => {
+        if (!useBackendPreferences) return;
+        const normalizedId = String(groupId || '').trim();
+        const group = (groupDraft?.groups || []).find(candidate => candidate.id === normalizedId);
+        const isEligible = (group?.teamIds || []).some(teamId => String(teamId || '').trim());
+        if (!normalizedId || !isEligible || favoriteGroupDraftId === normalizedId) return;
+        setFavoriteGroupDraftId(normalizedId);
+        setVisibleGroupDraftIds(previous => previous.includes(normalizedId) ? previous : [...previous, normalizedId]);
+        setSettingsPreferenceRecoveryLoginUrl('');
+        trackSettingsAction('departments', 'preference_change', { source_surface: 'settings' });
+    }, [favoriteGroupDraftId, groupDraft?.groups, trackSettingsAction, useBackendPreferences]);
+
+    const favoriteGroupValidationError = React.useMemo(() => {
+        if (!useBackendPreferences) return '';
+        const favorite = (groupDraft?.groups || []).find(group => group.id === favoriteGroupDraftId);
+        if (!favoriteGroupDraftId || !visibleGroupDraftIds.includes(favoriteGroupDraftId)) {
+            return 'Choose one visible group as your favorite.';
+        }
+        const hasTeams = (favorite?.teamIds || []).some(teamId => String(teamId || '').trim());
+        return hasTeams ? '' : 'Configure teams before setting this group as your favorite.';
+    }, [favoriteGroupDraftId, groupDraft?.groups, useBackendPreferences, visibleGroupDraftIds]);
 
     const selectFirstRunFavoriteGroup = React.useCallback((groupId) => {
         const normalizedId = String(groupId || '').trim();
@@ -220,32 +252,44 @@ export function useGroupVisibilityPreferences({
             }
             const preferenceResponse = await requestSaveGroupPreferences(
                 backendUrl,
-                buildGroupPreferencesPayload(visibleGroupDraftIds, activeGroupId)
+                buildGroupPreferencesPayload(visibleGroupDraftIds, favoriteGroupDraftId)
             );
             if (!preferenceResponse.ok) {
                 const errorPayload = await preferenceResponse.json().catch(() => ({}));
-                throw new Error(errorPayload.message || errorPayload.error || `Preference save failed (${preferenceResponse.status})`);
+                const error = new Error(errorPayload.message || errorPayload.error || `Preference save failed (${preferenceResponse.status})`);
+                error.status = preferenceResponse.status;
+                error.code = errorPayload.error;
+                error.loginUrl = errorPayload.loginUrl;
+                throw error;
             }
             const preferencePayload = await preferenceResponse.json();
             const nextPreferences = normalizeGroupPreferences({
                 preferences: preferencePayload.preferences || preferencePayload,
             }).preferences;
+            const snapshot = preferencePayload.groupsConfigSnapshot
+                ? normalizeGroupPreferences(preferencePayload.groupsConfigSnapshot)
+                : null;
+            if (snapshot) {
+                applyPreferenceGroupsSnapshot?.({ ...snapshot, preferences: nextPreferences });
+            }
             setGroupPreferences(nextPreferences);
             setVisibleGroupDraftIds(nextPreferences.visibleGroupIds || []);
+            setFavoriteGroupDraftId(nextPreferences.activeGroupId || null);
+            setSettingsPreferenceRecoveryLoginUrl('');
             groupPreferencesBaselineRef.current = groupPreferencesSignature(nextPreferences);
-            setActiveGroupId(prev => {
-                const effectiveIds = effectiveVisibleGroupIds(normalized, nextPreferences);
-                return resolveVisibleActiveGroupId(normalized, effectiveIds, nextPreferences.activeGroupId || prev);
-            });
+            setActiveGroupId(nextPreferences.activeGroupId || null);
             trackSettingsAction('departments', 'preference_change', {
                 result: 'success',
                 selection_count_bucket: bucketCount(visibleGroupDraftIds.length),
             });
             return nextPreferences;
+        } catch (error) {
+            setSettingsPreferenceRecoveryLoginUrl(error?.status === 401 ? safeAppLoginUrl(error?.loginUrl) : '');
+            throw error;
         } finally {
             setGroupPreferencesSaving(false);
         }
-    }, [backendUrl, visibleGroupDraftIds, activeGroupId, setActiveGroupId, trackSettingsAction, bucketCount, useBackendPreferences]);
+    }, [backendUrl, visibleGroupDraftIds, favoriteGroupDraftId, activeGroupId, setActiveGroupId, trackSettingsAction, bucketCount, useBackendPreferences, applyPreferenceGroupsSnapshot]);
 
     const openFirstRunAddGroup = React.useCallback(() => {
         setGroupManageTab('teams');
@@ -259,6 +303,10 @@ export function useGroupVisibilityPreferences({
         groupPreferencesBaselineRef,
         visibleGroupDraftIds,
         setVisibleGroupDraftIds,
+        favoriteGroupDraftId,
+        setFavoriteGroupDraft,
+        favoriteGroupValidationError,
+        settingsPreferenceRecoveryLoginUrl,
         groupPreferencesSaving,
         setGroupPreferencesSaving,
         groupVisibilitySaving: groupPreferencesSaving,

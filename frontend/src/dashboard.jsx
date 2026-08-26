@@ -2659,12 +2659,12 @@ import {
                         errors.push(`${groupName}: ${overlap[0]} cannot be both excluded capacity and Ad Hoc capacity.`);
                     }
                 });
-                if (favoriteGroupValidationError && (!firstRunConfigurationActive || groupDraftSignature === groupDraftBaselineRef.current)) {
+                if (favoriteGroupValidationError && !firstRunConfigurationActive) {
                     errors.push(favoriteGroupValidationError);
                 }
                 errors.push(...validatePresentGroupBoards(groupDraft?.groups));
                 return errors;
-            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft, favoriteGroupValidationError, firstRunConfigurationActive, groupDraftSignature]);
+            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft, favoriteGroupValidationError, firstRunConfigurationActive]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving || epmConfigSaving) return 'Save in progress';
                 if (canEditEpmConfiguration && isEpmConfigDirty && epmConfigLoading) return 'EPM settings are loading';

@@ -187,6 +187,7 @@ async function mockFirstRunDashboard(page, options = {}) {
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/board-config') return json({ boardId: '42', boardName: 'Synthetic Board' });
+        if (url.pathname === '/api/board-config/statuses') return json({ statuses: [{ name: 'Ready' }] });
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [] });
         if (url.pathname === '/api/capacity/config') return json({});
         if (url.pathname.endsWith('-field/config')) return json({});
@@ -319,13 +320,7 @@ test('first-run no-groups configuration recovers from validation, saves a team g
     await expect(settingsDialog.getByText('Create a Department group, add its teams, then save and choose it as your starting group.')).toBeVisible();
     await expect(settingsDialog.getByRole('button', { name: '+ Add group' })).toBeVisible();
     await expect(settingsDialog.getByRole('button', { name: 'Duplicate' })).toHaveCount(0);
-    await expect(settingsDialog.locator('.group-modal-validation')).toContainText('Choose one visible group as your favorite.');
-    await expect(settingsDialog.getByRole('button', { name: 'Save' })).toBeDisabled();
-    await expect(settingsDialog).toBeVisible();
-
-    await page.keyboard.press('Control+S');
-    await expect(settingsDialog).toBeVisible();
-    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+    await expect(settingsDialog.locator('.group-modal-validation')).toHaveCount(0);
 
     await settingsDialog.getByRole('button', { name: '+ Add group' }).click();
     await settingsDialog.getByRole('button', { name: 'Refresh teams' }).click();
@@ -345,6 +340,57 @@ test('first-run no-groups configuration recovers from validation, saves a team g
     await expect(firstRunDialog).toBeVisible();
     await expect(firstRunDialog.getByRole('radio', { name: /New Group/ })).toBeEnabled();
     await expect(firstRunDialog.getByRole('radio', { checked: true })).toHaveCount(0);
+});
+
+test('first-run shared board validation keeps configuration open until corrected and saved', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig: {
+            version: 1,
+            groups: [{
+                id: 'platform',
+                name: 'Platform',
+                teamIds: ['team-platform'],
+                board: {
+                    columns: [{
+                        id: 'col-a1b2c3d4',
+                        name: 'Ready',
+                        colour: '#8c8c8c',
+                        star: false,
+                        min: null,
+                        max: null,
+                        statuses: ['Ready'],
+                    }],
+                },
+            }],
+            defaultGroupId: 'platform',
+            configRevision: 2,
+            source: 'workspace_db',
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('dialog', { name: 'Choose your group' })
+        .getByRole('button', { name: 'Configure your own' }).click();
+
+    const settingsDialog = page.locator('.group-modal');
+    await expect(settingsDialog.locator('.group-modal-validation')).toHaveCount(0);
+    await settingsDialog.getByRole('tab', { name: 'Boards' }).click();
+    await settingsDialog.getByRole('button', { name: 'Delete column Ready' }).click();
+    await expect(settingsDialog.locator('.group-modal-validation')).toContainText('Platform: A board needs at least one column.');
+    await page.keyboard.press('Control+S');
+    await expect(settingsDialog).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toHaveCount(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+
+    await settingsDialog.getByRole('button', { name: '+ Add column' }).click();
+    await expect(settingsDialog.locator('.group-modal-validation')).toContainText('Platform: “New column” has no statuses. Add a status or delete the column.');
+    await settingsDialog.locator('.board-add-status').click();
+    await settingsDialog.locator('.board-pick').getByRole('button', { name: 'Ready not in a column', exact: true }).click();
+    await expect(settingsDialog.locator('.group-modal-validation')).toHaveCount(0);
+    await expect(settingsDialog.getByRole('button', { name: 'Save' })).toBeEnabled();
+    await settingsDialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    await expect(settingsDialog).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
 });
 
 test('first-run configuration keeps unified Save, validation, Cancel, discard, and return behavior', async ({ page }) => {

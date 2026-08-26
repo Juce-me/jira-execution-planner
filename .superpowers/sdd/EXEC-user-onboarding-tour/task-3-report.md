@@ -22,13 +22,13 @@ After adding the first-run Playwright journeys and rebuilding the frontend, the 
 
 - `npm run build` completed successfully with the bundled Node runtime.
 - Focused first-run journeys: `4 passed`.
-- Full related browser spec: `14 passed` in `tests/ui/shared_department_groups.spec.js`.
+- Full related browser spec: `15 passed` in `tests/ui/shared_department_groups.spec.js`.
 - Settings source-contract guard: `24 passed` in `tests/test_epm_settings_source_guards.js`.
 
 ## Coverage added
 
 - Existing and no-group first-run states, with no editable personal-preference controls.
-- A real blocked `Ctrl+S` validation attempt that leaves first-run Settings open, followed by recovery.
+- A shared-board validation failure created by deleting the only column, with a blocked `Ctrl+S` attempt, correction, and successful save.
 - No-groups creation through Add group, refresh/add team, Save, and mandatory-picker return without auto-starring.
 - Save without automatic starring, followed by mandatory-picker return.
 - Dirty Cancel, Keep editing, Discard, and return behavior.
@@ -52,5 +52,18 @@ The new existing-group journey expected no favorite control in first-run Setting
 
 - `npm run build` completed successfully with the bundled Node runtime.
 - The two new focused regression journeys passed.
-- The full related browser spec passed: `14 passed`.
+- The round 1 full related browser spec passed: `14 passed`.
 - The Settings source-contract guard passed: `24 passed`.
+
+## Review round 2 fix evidence
+
+### RED
+
+Two new first-run journeys expected no validation before a shared edit. Both failed because Settings rendered `Choose one visible group as your favorite.` before the mandatory picker could collect that personal choice.
+
+### GREEN
+
+- The no-groups journey now confirms the impossible personal validation is absent, creates a group, adds a team, saves, and returns to the mandatory picker with no selection.
+- The board journey creates a real shared validation error by deleting its only column, proves the Settings modal remains open through a blocked save attempt, restores a valid column and status, saves, and returns to the mandatory picker.
+- The focused two-journey run passed.
+- The final full related browser spec passed: `15 passed`; the Settings source-contract guard passed: `24 passed`.

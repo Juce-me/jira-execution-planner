@@ -1037,6 +1037,8 @@ import {
                 selectFirstRunFavoriteGroup,
                 saveFirstRunGroupPreferences,
                 openFirstRunAddGroup,
+                firstRunConfigurationActive,
+                clearFirstRunConfigurationActive,
                 firstRunSaving,
                 firstRunError,
                 firstRunRecoveryLoginUrl,
@@ -1056,6 +1058,11 @@ import {
                 bucketCount,
                 useBackendPreferences: personalGroupPreferencesEnabled,
             });
+            useEffect(() => {
+                if (!showGroupManage && firstRunConfigurationActive) {
+                    clearFirstRunConfigurationActive();
+                }
+            }, [showGroupManage, firstRunConfigurationActive, clearFirstRunConfigurationActive]);
             useEffect(() => {
                 if (!homeTokenConnectionLoaded) return;
                 if (showEpmNavigation) {
@@ -2652,12 +2659,12 @@ import {
                         errors.push(`${groupName}: ${overlap[0]} cannot be both excluded capacity and Ad Hoc capacity.`);
                     }
                 });
-                if (favoriteGroupValidationError) {
+                if (favoriteGroupValidationError && (!firstRunConfigurationActive || groupDraftSignature === groupDraftBaselineRef.current)) {
                     errors.push(favoriteGroupValidationError);
                 }
                 errors.push(...validatePresentGroupBoards(groupDraft?.groups));
                 return errors;
-            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft, favoriteGroupValidationError]);
+            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft, favoriteGroupValidationError, firstRunConfigurationActive, groupDraftSignature]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving || epmConfigSaving) return 'Save in progress';
                 if (canEditEpmConfiguration && isEpmConfigDirty && epmConfigLoading) return 'EPM settings are loading';
@@ -3189,7 +3196,7 @@ import {
                 try {
                     const savingAdminSettings = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
                     const sharedGroupsChanged = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current);
-                    const savingDepartmentSettings = sharedGroupsChanged || isGroupVisibilityDraftDirty;
+                    const savingDepartmentSettings = sharedGroupsChanged || (!firstRunConfigurationActive && isGroupVisibilityDraftDirty);
                     const analyticsSection = savingAdminSettings ? 'admin' : (savingDepartmentSettings ? 'departments' : groupManageTab);
                     trackSettingsAction(analyticsSection, 'save', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
 
@@ -3287,7 +3294,7 @@ import {
 
                     }
 
-                    if (savingDepartmentSettings && isGroupVisibilityDraftDirty) {
+                    if (!firstRunConfigurationActive && savingDepartmentSettings && isGroupVisibilityDraftDirty) {
                         await persistGroupPreferences(normalized);
                     }
 
@@ -15952,6 +15959,7 @@ import {
                                         importGroupsConfig,
                                         removeGroupDraft,
                                         selectDepartmentSettingsTab,
+                                        firstRunConfigurationActive,
                                     }}
                                 />
                                 </div>

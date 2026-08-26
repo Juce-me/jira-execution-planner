@@ -92,7 +92,10 @@ export default function TeamGroupsSettings(props) {
         importGroupsConfig,
         removeGroupDraft,
         selectDepartmentSettingsTab,
+        firstRunConfigurationActive,
     } = props;
+
+    const hasDuplicableGroup = (groupDraft?.groups || []).some(group => String(group?.id || '').trim());
 
     return (
         <>
@@ -171,6 +174,13 @@ export default function TeamGroupsSettings(props) {
                                                 {activeGroupDraft ? (activeGroupDraft.name || 'Untitled group') : 'No group selected'}
                                             </div>
                                         </div>
+                                        {firstRunConfigurationActive && (
+                                            <div className="group-modal-meta">
+                                                {hasDuplicableGroup
+                                                    ? 'Easiest way to get started: duplicate an existing group, then adjust its teams.'
+                                                    : 'Create a Department group, add its teams, then save and choose it as your starting group.'}
+                                            </div>
+                                        )}
                                         {groupsError && (
                                             <div className="group-modal-warning">{groupsError}</div>
                                         )}

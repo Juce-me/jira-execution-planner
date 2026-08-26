@@ -45,6 +45,7 @@ export function useGroupVisibilityPreferences({
     const [firstRunSaving, setFirstRunSaving] = React.useState(false);
     const [firstRunError, setFirstRunError] = React.useState('');
     const [firstRunRecoveryLoginUrl, setFirstRunRecoveryLoginUrl] = React.useState('');
+    const [firstRunConfigurationActive, setFirstRunConfigurationActive] = React.useState(false);
     const firstRunSaveInFlightRef = React.useRef(false);
     const groupPreferencesBaselineRef = React.useRef('');
 
@@ -292,10 +293,15 @@ export function useGroupVisibilityPreferences({
     }, [backendUrl, visibleGroupDraftIds, favoriteGroupDraftId, activeGroupId, setActiveGroupId, trackSettingsAction, bucketCount, useBackendPreferences, applyPreferenceGroupsSnapshot]);
 
     const openFirstRunAddGroup = React.useCallback(() => {
+        setFirstRunConfigurationActive(true);
         setGroupManageTab('teams');
         setDepartmentSettingsTab('teams');
         setShowGroupManage(true);
     }, [setDepartmentSettingsTab, setGroupManageTab, setShowGroupManage]);
+
+    const clearFirstRunConfigurationActive = React.useCallback(() => {
+        setFirstRunConfigurationActive(false);
+    }, []);
 
     return {
         groupPreferences,
@@ -320,6 +326,8 @@ export function useGroupVisibilityPreferences({
         selectFirstRunFavoriteGroup,
         saveFirstRunGroupPreferences,
         openFirstRunAddGroup,
+        firstRunConfigurationActive,
+        clearFirstRunConfigurationActive,
         firstRunSaving,
         firstRunError,
         firstRunRecoveryLoginUrl,

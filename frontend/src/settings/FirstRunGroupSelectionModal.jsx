@@ -86,7 +86,7 @@ export default function FirstRunGroupSelectionModal(props) {
                 )}
                 <div className="department-first-run-actions">
                     <button className="secondary compact" type="button" onClick={onConfigure}>
-                        Configure
+                        Configure your own
                     </button>
                     <button
                         className="compact"

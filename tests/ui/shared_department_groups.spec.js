@@ -122,6 +122,13 @@ async function mockFirstRunDashboard(page, options = {}) {
         }
         if (url.pathname === '/api/groups-config') {
             if (request.method() === 'POST') {
+                if (options.groupsConfigConflict) {
+                    return json({
+                        error: 'group_config_conflict',
+                        message: 'Team groups were changed by another user.',
+                        current: options.groupsConfigConflict,
+                    }, 409);
+                }
                 const body = requestBody(request) || {};
                 return json({
                     ...groupsConfig,
@@ -267,6 +274,105 @@ test('first-run department selection blocks group-scoped task loads until prefer
     expect(taskCalls.every(call => call.params.groupId === 'platform')).toBe(true);
     expect(taskCalls.every(call => call.params.teamIds === 'team-platform')).toBe(true);
     await expect(page.getByText('PLAT-1', { exact: true })).toBeVisible();
+});
+
+test('Configure your own reuses Team groups and returns to the mandatory picker', async ({ page }) => {
+    await mockFirstRunDashboard(page);
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    const firstRunDialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await firstRunDialog.getByRole('button', { name: 'Configure your own' }).click();
+
+    const settingsDialog = page.locator('.group-modal');
+    await expect(settingsDialog).toBeVisible();
+    await expect(settingsDialog.getByRole('tab', { name: 'Team groups' })).toHaveAttribute('aria-selected', 'true');
+    await expect(settingsDialog.getByText('Easiest way to get started: duplicate an existing group, then adjust its teams.')).toBeVisible();
+    await expect(settingsDialog.getByRole('button', { name: 'Duplicate' })).toBeVisible();
+    await expect(firstRunDialog).toHaveCount(0);
+
+    await settingsDialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(firstRunDialog).toBeVisible();
+    await expect(firstRunDialog.getByRole('radio', { checked: true })).toHaveCount(0);
+});
+
+test('Configure your own explains how to create the first group when none exist', async ({ page }) => {
+    await mockFirstRunDashboard(page, {
+        groupsConfig: {
+            version: 1,
+            groups: [],
+            defaultGroupId: '',
+            configRevision: 2,
+            source: 'workspace_db',
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    await page.getByRole('dialog', { name: 'Choose your group' })
+        .getByRole('button', { name: 'Configure your own' }).click();
+
+    const settingsDialog = page.locator('.group-modal');
+    await expect(settingsDialog.getByText('Create a Department group, add its teams, then save and choose it as your starting group.')).toBeVisible();
+    await expect(settingsDialog.getByRole('button', { name: '+ Add group' })).toBeVisible();
+    await expect(settingsDialog.getByRole('button', { name: 'Duplicate' })).toHaveCount(0);
+    await expect(settingsDialog.locator('.group-modal-validation')).toContainText('Choose one visible group as your favorite.');
+    await expect(settingsDialog.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await expect(settingsDialog).toBeVisible();
+});
+
+test('first-run configuration keeps unified Save, validation, Cancel, discard, and return behavior', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page);
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('dialog', { name: 'Choose your group' })
+        .getByRole('button', { name: 'Configure your own' }).click();
+
+    const settingsDialog = page.locator('.group-modal');
+    await settingsDialog.getByRole('button', { name: 'Duplicate' }).click();
+    await expect(settingsDialog.locator('.group-modal-dirty')).toBeVisible();
+    await settingsDialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(settingsDialog.locator('.group-confirm')).toBeVisible();
+    await settingsDialog.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(settingsDialog).toBeVisible();
+
+    await settingsDialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    await expect(settingsDialog).toHaveCount(0);
+
+    const firstRunDialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await expect(firstRunDialog).toBeVisible();
+    await expect(firstRunDialog.getByRole('radio', { checked: true })).toHaveCount(0);
+
+    await firstRunDialog.getByRole('button', { name: 'Configure your own' }).click();
+    await settingsDialog.getByRole('button', { name: 'Duplicate' }).click();
+    await settingsDialog.getByRole('button', { name: 'Cancel' }).click();
+    await settingsDialog.getByRole('button', { name: 'Discard' }).click();
+    await expect(firstRunDialog).toBeVisible();
+});
+
+test('first-run configuration keeps the editor open across validation and a 409 conflict', async ({ page }) => {
+    const groupsConfigConflict = {
+        version: 1,
+        groups: [{ id: 'platform', name: 'Platform', teamIds: ['team-platform'] }],
+        defaultGroupId: 'platform',
+        configRevision: 3,
+        source: 'workspace_db',
+        preferences: defaultGroupPreferences(),
+    };
+    await mockFirstRunDashboard(page, { groupsConfigConflict });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('dialog', { name: 'Choose your group' })
+        .getByRole('button', { name: 'Configure your own' }).click();
+
+    const settingsDialog = page.locator('.group-modal');
+    await settingsDialog.getByPlaceholder('Group name').fill('Platform updated');
+    await settingsDialog.getByRole('button', { name: 'Save' }).click();
+    await expect(settingsDialog.locator('.group-modal-validation')).toContainText('Team groups changed while you were editing.');
+    await expect(settingsDialog).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toHaveCount(0);
+
+    await settingsDialog.locator('.group-modal-validation').getByRole('button', { name: 'Discard mine' }).click();
+    await expect(settingsDialog).toBeVisible();
+    await settingsDialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
 });
 
 test('first-run invalid snapshot and auth failure keep mandatory selection gated', async ({ page }) => {

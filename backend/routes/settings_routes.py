@@ -6,6 +6,7 @@ from werkzeug.exceptions import BadRequest
 from backend.auth.db_context import is_db_auth_context
 from backend.config.db_repository import ViewConfigNotFound
 from backend.config.repository import config_storage_db_enabled, db_repository
+from backend.config.shared_config import normalize_shared_admin_section
 from backend.services import shared_group_config
 from backend.services.workspace_dashboard_config import WorkspaceConfigConflict, TeamCatalogConflict
 from . import bind_server_globals
@@ -942,16 +943,12 @@ def save_selected_projects():
         base_revision = _parse_shared_write(payload, {'selected'})
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
-    selected = payload.get('selected', [])
-    if not isinstance(selected, list):
-        return jsonify({'error': 'selected must be an array'}), 400
-    # Sanitize: accept both {key, type} objects and plain strings
-    sanitized = []
-    for item in selected:
-        if isinstance(item, dict) and item.get('key'):
-            sanitized.append({'key': str(item['key']).strip(), 'type': item.get('type', 'product')})
-        elif isinstance(item, str) and item.strip():
-            sanitized.append({'key': item.strip(), 'type': 'product'})
+    try:
+        sanitized = normalize_shared_admin_section(
+            'projects', {'selected': payload.get('selected', [])},
+        )['selected']
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
 
     try:
         dashboard_config = load_dashboard_config() or {}
@@ -1001,17 +998,17 @@ def save_board_config_endpoint():
         base_revision = _parse_shared_write(payload, {'boardId', 'boardName'})
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
-    board_id = str(payload.get('boardId', '') or '').strip()
-    board_name = str(payload.get('boardName', '') or '').strip()
-
-    if board_id and not re.match(r'^\d+$', board_id):
-        return jsonify({'error': 'boardId must be numeric'}), 400
+    try:
+        board_value = normalize_shared_admin_section('board', {
+            'boardId': payload.get('boardId', ''),
+            'boardName': payload.get('boardName', ''),
+        })
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    board_id = board_value['boardId']
+    board_name = board_value['boardName']
 
     try:
-        board_value = {
-            'boardId': board_id,
-            'boardName': board_name,
-        }
         revision = _persist_shared_section('board', board_value, base_revision)
         with _cache_lock:
             TASKS_CACHE.clear()
@@ -1133,16 +1130,19 @@ def save_capacity_config_endpoint():
         base_revision = _parse_shared_write(payload, {'project', 'fieldId', 'fieldName'})
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
-    project = str(payload.get('project', '')).strip()
-    field_id = str(payload.get('fieldId', '')).strip()
-    field_name = str(payload.get('fieldName', '')).strip()
+    try:
+        capacity_value = normalize_shared_admin_section('capacity', {
+            'project': payload.get('project', ''),
+            'fieldId': payload.get('fieldId', ''),
+            'fieldName': payload.get('fieldName', ''),
+        })
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    project = capacity_value['project']
+    field_id = capacity_value['fieldId']
+    field_name = capacity_value['fieldName']
 
     try:
-        capacity_value = {
-            'project': project,
-            'fieldId': field_id,
-            'fieldName': field_name,
-        }
         revision = _persist_shared_section('capacity', capacity_value, base_revision)
         # Reset the field cache since config changed
         global CAPACITY_FIELD_CACHE
@@ -1225,6 +1225,7 @@ def save_stats_priority_weights_config_endpoint():
         return jsonify({'error': str(error)}), 400
     raw_weights = payload.get('weights', [])
     try:
+        normalize_shared_admin_section('statsPriorityWeights', raw_weights)
         normalized = normalize_priority_weight_rows(raw_weights)
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -1297,10 +1298,10 @@ def save_issue_types_config_endpoint():
         base_revision = _parse_shared_write(payload, {'issueTypes'})
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
-    raw = payload.get('issueTypes', [])
-    if not isinstance(raw, list):
-        return jsonify({'error': 'issueTypes must be an array'}), 400
-    sanitized = [str(t).strip() for t in raw if str(t).strip()]
+    try:
+        sanitized = normalize_shared_admin_section('issueTypes', payload.get('issueTypes', []))
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
 
     try:
         revision = _persist_shared_section('issueTypes', sanitized, base_revision)

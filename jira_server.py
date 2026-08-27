@@ -57,6 +57,7 @@ from backend.config.repository import (
     json_repository as build_json_config_repository,
     validate_config_storage_startup,
 )
+from backend.config.shared_config import normalize_shared_admin_section
 from backend.services.workspace_dashboard_config import WorkspaceConfigConflict
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope
 from backend.auth.jira_auth import (
@@ -5994,8 +5995,6 @@ LABELS_CACHE = {'data': None, 'timestamp': 0}
 LABELS_CACHE_TTL = 15 * 60  # 15 minutes
 
 
-# --- Custom Field Config Endpoints ---
-
 def _save_field_config(config_key, cache_name=None):
     """Save a route-owned Jira field configuration."""
     payload = request.get_json(silent=True)
@@ -6006,10 +6005,11 @@ def _save_field_config(config_key, cache_name=None):
         return jsonify({'error': 'unsupported configuration field'}), 400
     if config_storage_db_enabled() and 'baseRevision' not in payload:
         return jsonify({'error': 'baseRevision is required'}), 400
-    field_id = str(payload.get('fieldId', '')).strip()
-    field_name = str(payload.get('fieldName', '')).strip()
     try:
-        value = {'fieldId': field_id, 'fieldName': field_name}
+        value = normalize_shared_admin_section(config_key, {key: payload.get(key, '') for key in ('fieldId', 'fieldName')})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    try:
         revision = None
         if config_storage_db_enabled():
             revision = save_dashboard_config_section(
@@ -6037,7 +6037,7 @@ def _save_field_config(config_key, cache_name=None):
         }), 409
     except Exception as e:
         return jsonify({'error': f'Failed to save {config_key} config', 'message': str(e)}), 500
-    result = {'fieldId': field_id, 'fieldName': field_name}
+    result = dict(value)
     if revision is not None:
         result['configRevision'] = revision
     return jsonify(result)

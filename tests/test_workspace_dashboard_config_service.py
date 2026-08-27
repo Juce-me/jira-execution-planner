@@ -3,9 +3,10 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 
+from backend.db import engine as db_engine
 from backend.db import models
 from backend.services.workspace_dashboard_config import (
     WorkspaceConfigConflict,
@@ -66,6 +67,45 @@ class WorkspaceDashboardConfigServiceTests(unittest.TestCase):
         self.assertEqual(raised.exception.current.config_revision, 2)
         self.assertEqual(raised.exception.current.payload['board']['boardId'], '8')
         self.assertEqual(second.config_revision, 2)
+
+    def test_conflict_after_overlapping_commit_returns_fresh_server_snapshot(self):
+        update_workspace_config_section(
+            self.admin_a, 'board', {'boardId': '7'}, 0,
+            database_url=self.database_url,
+        )
+        engine = db_engine.get_engine(self.database_url)
+        winner = db_engine.session_factory(self.database_url)()
+        winner.begin()
+        committed = False
+
+        def commit_winner_before_losing_update(conn, cursor, statement, parameters, context, executemany):
+            nonlocal committed
+            if committed or not statement.startswith('UPDATE workspace_dashboard_configs'):
+                return
+            committed = True
+            row = winner.execute(
+                select(models.WorkspaceDashboardConfig).where(
+                    models.WorkspaceDashboardConfig.workspace_id == self.admin_a.workspace_id,
+                )
+            ).scalars().one()
+            row.payload = {'board': {'boardId': '8'}}
+            row.config_revision = 2
+            winner.commit()
+
+        event.listen(engine, 'before_cursor_execute', commit_winner_before_losing_update)
+        try:
+            with self.assertRaises(WorkspaceConfigConflict) as raised:
+                update_workspace_config_section(
+                    self.admin_b, 'capacity', {'project': 'LOSING'}, 1,
+                    database_url=self.database_url,
+                )
+        finally:
+            event.remove(engine, 'before_cursor_execute', commit_winner_before_losing_update)
+            winner.close()
+
+        self.assertTrue(committed)
+        self.assertEqual(raised.exception.current.config_revision, 2)
+        self.assertEqual(raised.exception.current.payload, {'board': {'boardId': '8'}})
 
     def test_exact_site_fallback_is_copied_only_on_first_write(self):
         fallback = lambda: {'version': 1, 'board': {'boardId': '7'}, 'capacity': {'project': 'OLD'}}

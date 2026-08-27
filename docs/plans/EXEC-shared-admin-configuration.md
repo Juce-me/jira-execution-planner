@@ -571,13 +571,13 @@ git commit -m "Handle concurrent shared settings saves"
 **Interfaces:**
 - Documentation records the workspace/site ownership boundary, intentional EPM source-of-truth change, team-catalog separation, revision conflict contract, and actual verification evidence.
 
-- [ ] **Step 1: Update historical current-accuracy notes**
+- [x] **Step 1: Update historical current-accuracy notes**
 
 Keep `DONE-03` and `DONE-04` as accurate execution history. Add a current-accuracy note that this later plan makes normalized EPM scope/mappings workspace-admin-owned while private views retain personal view state and per-user Home credentials remain unchanged. Do not rewrite the historical tasks as if they originally implemented the new boundary.
 
 Re-run the required startup gate sweep. Update `GATE-05`'s checked date/result without running its mutation probe unless all documented operator inputs and an approved disposable target are available. This plan remains executable while that write gate is blocked because it adds no Home mutation.
 
-- [ ] **Step 2: Record the recurring ownership rule**
+- [x] **Step 2: Record the recurring ownership rule**
 
 Add this exact Project Learning:
 
@@ -585,7 +585,7 @@ Add this exact Project Learning:
 - Store administrator-owned dashboard and EPM configuration once per workspace; private views may contain only personal view state and must never override shared settings.
 ```
 
-- [ ] **Step 3: Run focused backend verification**
+- [x] **Step 3: Run focused backend verification**
 
 Run:
 
@@ -596,7 +596,7 @@ Run:
 
 Expected: all tests pass and preflight exits `0` without dependency/runtime warnings.
 
-- [ ] **Step 4: Run complete repository verification**
+- [x] **Step 4: Run complete repository verification**
 
 Run:
 
@@ -610,7 +610,7 @@ git diff --exit-code -- frontend/dist
 
 Expected: every command exits `0`; the final build produces a clean generated-output diff. If the full UI suite requires an unavailable browser/runtime, record the exact unavailable prerequisite and run the repository's documented focused fallback; do not claim the UI suite passed.
 
-- [ ] **Step 5: Inspect source-of-truth and safety guards**
+- [x] **Step 5: Inspect source-of-truth and safety guards**
 
 Run:
 
@@ -632,11 +632,11 @@ Expected:
 - no whitespace errors, secrets, real identifiers, unrelated refactors, or hand-edited dist files;
 - every changed line traces to this plan.
 
-- [ ] **Step 6: Close the work artifact**
+- [x] **Step 6: Close the work artifact**
 
 Rename the bugfix artifact to `executed`, set `Status: executed`, and record exact commands/results, schema no-backfill evidence, recovery refusal/fingerprint behavior, screenshots, and any implementation divergence. Keep this plan `EXEC-*` until user acceptance or merge; then rename it to `DONE-*` and update `docs/plans/README.md`.
 
-- [ ] **Step 7: Commit documentation and final evidence**
+- [x] **Step 7: Commit documentation and final evidence**
 
 ```bash
 git add AGENTS.md docs/plans/DONE-03-db-user-configuration.md docs/plans/DONE-04-db-user-home-epm-read-token.md docs/agents/bugfixes docs/plans/EXEC-shared-admin-configuration.md docs/plans/README.md

@@ -137,15 +137,17 @@ def update_workspace_config_section(
                     updated_at=models._utcnow(),
                 )
             )
-            if session.execute(statement).rowcount != 1:
+            result = session.execute(statement.execution_options(synchronize_session=False))
+            if result.rowcount != 1:
+                session.expire_all()
                 current = _current(session, context.workspace_id)
                 raise WorkspaceConfigConflict(_snapshot(current), section)
             next_revision = revision + 1
-        session.add(models.AuditEvent(
+        session.add(models.audit_event(
             workspace_id=context.workspace_id,
             actor_user_id=getattr(context, 'user_id', None),
             event_type='workspace_dashboard_config_updated',
-            event_metadata={'section': section, 'revision': next_revision},
+            metadata={'section': section, 'revision': next_revision},
         ))
         session.flush()
         return WorkspaceConfigSnapshot(payload, next_revision, 'workspace_db')

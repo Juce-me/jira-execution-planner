@@ -3,6 +3,7 @@
 from flask import Blueprint
 
 from backend.auth.jira_auth import AuthError
+from backend.config.shared_config import normalize_shared_admin_section
 from backend.epm import issues as epm_issues
 from backend.services.workspace_dashboard_config import WorkspaceConfigConflict
 
@@ -229,12 +230,25 @@ def save_epm_config_endpoint():
     raw_payload = request.get_json(silent=True)
     if not isinstance(raw_payload, dict):
         return jsonify({'error': 'request body must be a JSON object'}), 400
+    raw_payload = dict(raw_payload)
     base_revision = raw_payload.pop('baseRevision', None)
     if config_storage_db_enabled() and base_revision is None:
         return jsonify({'error': 'baseRevision is required'}), 400
     unknown = set(raw_payload) - {'version', 'labelPrefix', 'scope', 'issueTypes', 'projects'}
     if unknown:
         return jsonify({'error': f'unsupported configuration field: {sorted(unknown)[0]}'}), 400
+    if not config_storage_db_enabled() and isinstance(raw_payload.get('projects'), dict):
+        raw_payload['projects'] = {
+            project_id: (
+                {key: value for key, value in row.items() if key != 'jiraEpicKey'}
+                if isinstance(row, dict) else row
+            )
+            for project_id, row in raw_payload['projects'].items()
+        }
+    try:
+        raw_payload = normalize_shared_admin_section('epm', raw_payload)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     raw_projects = raw_payload.get('projects') if isinstance(raw_payload, dict) else {}
     if isinstance(raw_projects, dict):
         rewritten_projects = {}

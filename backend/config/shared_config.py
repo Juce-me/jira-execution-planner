@@ -39,10 +39,19 @@ def _text(value):
     return str(value or '').strip()
 
 
+def _require_optional_text(value, path):
+    if value is not None and not isinstance(value, str):
+        _raise(path, 'configuration field must be a string')
+    return _text(value)
+
+
 def _field_config(value, path):
     value = _require_dict(value, path)
     _reject_unknown(value, {'fieldId', 'fieldName'}, path)
-    return {'fieldId': _text(value.get('fieldId')), 'fieldName': _text(value.get('fieldName'))}
+    return {
+        'fieldId': _require_optional_text(value.get('fieldId'), f'{path}.fieldId'),
+        'fieldName': _require_optional_text(value.get('fieldName'), f'{path}.fieldName'),
+    }
 
 
 def _normalize_epm(value):
@@ -50,9 +59,17 @@ def _normalize_epm(value):
     _reject_unknown(value, SHARED_EPM_KEYS, 'epm')
     if 'version' in value and value.get('version') not in (2, None):
         _raise('epm.version', 'unsupported EPM version')
+    if 'labelPrefix' in value:
+        _require_optional_text(value.get('labelPrefix'), 'epm.labelPrefix')
     scope = value.get('scope', {})
     _require_dict(scope, 'epm.scope')
     _reject_unknown(scope, {'rootGoalKey', 'subGoalKey', 'subGoalKeys'}, 'epm.scope')
+    _require_optional_text(scope.get('rootGoalKey'), 'epm.scope.rootGoalKey')
+    _require_optional_text(scope.get('subGoalKey'), 'epm.scope.subGoalKey')
+    if 'subGoalKeys' in scope:
+        sub_goal_keys = scope.get('subGoalKeys')
+        if not isinstance(sub_goal_keys, list) or not all(isinstance(item, str) for item in sub_goal_keys):
+            _raise('epm.scope.subGoalKeys', 'configuration field must be a string array')
     issue_types = value.get('issueTypes', {})
     _require_dict(issue_types, 'epm.issueTypes')
     _reject_unknown(issue_types, {'initiative', 'epic', 'leaf'}, 'epm.issueTypes')
@@ -68,6 +85,9 @@ def _normalize_epm(value):
             {'id', 'name', 'label', 'homeProjectId', 'customName', 'jiraLabel'},
             f'epm.projects.{project_id}',
         )
+        for key in ('id', 'name', 'label', 'homeProjectId', 'customName', 'jiraLabel'):
+            if key in row:
+                _require_optional_text(row.get(key), f'epm.projects.{project_id}.{key}')
     return normalize_epm_config(value)
 
 
@@ -108,28 +128,44 @@ def normalize_workspace_admin_payload(payload, *, allow_legacy_excluded_fields=F
                     normalized_selected.append({'key': _text(item), 'type': 'product'})
                 elif isinstance(item, dict):
                     _reject_unknown(item, {'key', 'type'}, 'projects.selected')
-                    key = _text(item.get('key'))
+                    key = _require_optional_text(item.get('key'), 'projects.selected.key')
                     if key:
-                        normalized_selected.append({'key': key, 'type': _text(item.get('type')) or 'product'})
+                        normalized_selected.append({
+                            'key': key,
+                            'type': _require_optional_text(item.get('type'), 'projects.selected.type') or 'product',
+                        })
                 else:
                     _raise('projects.selected', 'configuration project entries must be strings or objects')
             result[section] = {'selected': normalized_selected}
         elif section == 'board':
             value = _require_dict(value, section)
             _reject_unknown(value, {'boardId', 'boardName'}, section)
+            raw_board_id = value.get('boardId')
+            if raw_board_id is not None and (
+                isinstance(raw_board_id, bool) or not isinstance(raw_board_id, (str, int))
+            ):
+                _raise('board.boardId', 'boardId must be numeric')
             board_id = _text(value.get('boardId'))
             if board_id and not board_id.isdigit():
                 _raise('board.boardId', 'boardId must be numeric')
-            result[section] = {'boardId': board_id, 'boardName': _text(value.get('boardName'))}
+            result[section] = {
+                'boardId': board_id,
+                'boardName': _require_optional_text(value.get('boardName'), 'board.boardName'),
+            }
         elif section == 'capacity':
             value = _require_dict(value, section)
             _reject_unknown(value, {'project', 'fieldId', 'fieldName'}, section)
-            result[section] = {key: _text(value.get(key)) for key in ('project', 'fieldId', 'fieldName')}
+            result[section] = {
+                key: _require_optional_text(value.get(key), f'{section}.{key}')
+                for key in ('project', 'fieldId', 'fieldName')
+            }
         elif section in {'sprintField', 'storyPointsField', 'parentNameField', 'teamField', 'projectTrackField', 'deliveryOwnerField'}:
             result[section] = _field_config(value, section)
         elif section == 'statsPriorityWeights':
             if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
                 _raise(section, 'configuration field must be an array of objects')
+            for index, item in enumerate(value):
+                _reject_unknown(item, {'priority', 'weight'}, f'{section}[{index}]')
             result[section] = deepcopy(value)
         elif section == 'issueTypes':
             if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
@@ -138,6 +174,13 @@ def normalize_workspace_admin_payload(payload, *, allow_legacy_excluded_fields=F
         elif section == 'epm':
             result[section] = _normalize_epm(value)
     return result
+
+
+def normalize_shared_admin_section(section, value):
+    """Validate raw route input and canonicalize one shared administrator section."""
+    if section not in ADMIN_CONFIG_SECTIONS:
+        raise ValueError('unsupported workspace configuration section')
+    return normalize_workspace_admin_payload({section: value})[section]
 
 
 def strip_shared_sections_from_private_view(payload):

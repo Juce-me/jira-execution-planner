@@ -288,6 +288,46 @@ class DbAdminRoutesTests(unittest.TestCase):
         self.assertEqual(bootstrap.get_json()['sharedConfigRevision'], revision)
         self.assertEqual(bootstrap.get_json()['sharedConfig']['board']['boardId'], '7')
 
+    def test_db_shared_admin_routes_reject_raw_values_before_revision_write(self):
+        self._install_session(account_id='admin-account', connection_id=self.admin_connection_id)
+        cases = (
+            ('/api/projects/selected', {
+                'selected': [{'key': 'ABC', 'type': 'product', 'workspaceId': 'claimed'}],
+            }),
+            ('/api/sprint-field/config', {
+                'fieldId': {'value': 'customfield_2'}, 'fieldName': 'Sprint',
+            }),
+            ('/api/issue-types/config', {'issueTypes': ['Story', {'name': 'Bug'}]}),
+            ('/api/stats/priority-weights-config', {
+                'weights': [{'priority': 'High', 'weight': 1, 'unexpected': 'value'}],
+            }),
+            ('/api/epm/config', {
+                'version': 2,
+                'scope': {'rootGoalKey': 'ROOT-1', 'unexpected': 'value'},
+                'projects': {},
+            }),
+            ('/api/epm/config', {
+                'version': 2,
+                'scope': {},
+                'projects': {'project-1': {'name': 'Project', 'jiraEpicKey': 'LEGACY-1'}},
+            }),
+        )
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            for route, body in cases:
+                with self.subTest(route=route):
+                    response = self.client.post(
+                        route,
+                        json={**body, 'baseRevision': 0},
+                        headers=self._csrf_headers(),
+                    )
+                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+
+            snapshot = self.client.get('/api/config?includeViewConfig=true')
+
+        self.assertEqual(snapshot.status_code, 200, snapshot.get_data(as_text=True))
+        self.assertEqual(snapshot.get_json()['sharedConfigRevision'], 0)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,6 +1,6 @@
 # Shared Admin Configuration Design
 
-Status: in-progress
+Status: executed
 Type: bugfix
 
 ## Problem
@@ -174,8 +174,21 @@ No new event name is needed. Reuse the existing two-trigger contract: `event_typ
 
 ## Outcome
 
-Plan validation is complete. Implementation has not started; code and tests become the source of truth only after execution and verification.
+Implemented as planned. Workspace-owned administrator configuration now has a revisioned, request-scoped persistence boundary; private views retain personal state; the normal-user team catalog uses separate workspace storage; and migration performs no private-content backfill. The implementation and tests are now the source of truth.
+
+The final full-suite verification exposed three stale compatibility assertions and one audit-construction path. The corrections preserved the planned boundary: DB-only revision metadata is compared separately from legacy JSON values, private rollback exports no longer expect shared `projects`, audit events pass through the redacting factory, and the migration source is valid on Python 3.9. Final review also added a real overlapping-transaction CAS regression and raw-route rejection tests so conflicts return the committed server snapshot and malformed or identity-bearing values cannot be coerced or silently dropped before validation. Legacy entrypoint budgets were ratcheted only for the measured shared-config wiring.
+
+## Verification Evidence
+
+- Schema and recovery: 9 migration/recovery tests passed. The migration creates empty workspace tables without selecting or copying private rows. Recovery remains dry-run by default, requires an exact immutable version and fingerprint for apply, and refuses ownership, marker, malformed payload, fingerprint, or existing-row mismatches.
+- Focused backend contract suite: 138 tests passed; startup preflight passed with Python 3.14 and OpenSSL 3.6.3 and emitted no dependency/runtime warning.
+- Full Python suite: 1255 tests passed with 1 skipped.
+- Frontend unit suite: 917 tests passed.
+- Focused Settings Playwright suite: 18 tests passed, including sequential revisions, stale-save conflict recovery, atomic latest-value reload, and safe expired-session recovery. Visual evidence was inspected at `test-results/settings-unified-save-qa/workspace-config-conflict-banner.png` and is not committed.
+- Frontend build completed and `git diff --exit-code -- frontend/dist` confirmed generated output matches source.
+- Source guards confirmed remaining route-level `save_dashboard_config()` calls are reviewed JSON/basic compatibility branches, legacy `compatibility save` appears only in explicit recovery, and private-view EPM cannot replace shared EPM.
+- Complete Playwright suite: 424 tests passed and 2 skipped. The first two full-suite attempts exposed a pre-existing Board-help resize synchronization race; before repair, a 20-run stress check reproduced 11 failures and 9 passes. With user approval, the test now waits for both viewport gutters after the component's double-animation-frame position update. The repaired case passed 20 repeated runs before the green full-suite run.
 
 ## Current Accuracy
 
-Validated against the current DB repository, endpoint policy registry, settings save flow, private-view contract, and migration history on 2026-08-26. Update this record if execution changes the ownership, fallback, or conflict boundaries.
+Accurate as executed on 2026-08-27. The ownership, exact-site fallback, section compare-and-swap, conflict recovery, and team-catalog separation described here match the implementation. The plan remains `EXEC-*` until user acceptance or merge.

@@ -56,6 +56,14 @@ class SharedAdminConfigValidationTests(unittest.TestCase):
             with self.subTest(payload=payload), self.assertRaises(ValueError):
                 normalize_workspace_admin_payload(payload, allow_legacy_excluded_fields=True)
 
+    def test_workspace_payload_rejects_unknown_priority_weight_fields(self):
+        with self.assertRaisesRegex(ValueError, r'statsPriorityWeights\[0\]\.unexpected'):
+            normalize_workspace_admin_payload({
+                'statsPriorityWeights': [
+                    {'priority': 'High', 'weight': 1, 'unexpected': 'value'},
+                ],
+            })
+
     def test_private_runtime_view_cannot_override_shared_epm(self):
         payload = {
             'version': 1,

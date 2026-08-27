@@ -53,7 +53,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 10. `EXEC-user-owned-epm-configuration.md`
    - Active correction plan for the ownership regression identified after PR #130.
-   - Expected output: EPM settings return to each user's default private saved view and every functional EPM path uses that source; department groups remain workspace-shared and user-editable; administrator settings remain workspace-shared and admin-only; misplaced workspace EPM is removed reversibly; every application API `401` locks the whole app behind one sanitized sign-in recovery screen instead of rendering a feature error.
+   - Expected output: EPM settings return to each user's default private saved view and every functional EPM path uses that source; every effective-default EPM change performs post-commit user-partitioned cache invalidation; department groups remain workspace-shared and user-editable; administrator settings remain workspace-shared and admin-only; misplaced workspace EPM is removed reversibly; every application API `401` locks the whole app behind one sanitized sign-in recovery screen instead of rendering a feature error. Completion requires the explicit real-PostgreSQL saved-view concurrency gate; a SQLite run or skipped PostgreSQL class is insufficient.
    - Design record: `../agents/bugfixes/2026-08-27-planned-global-auth-lock.md`.
 
 11. `EXEC-cloud-sql-iam-connectivity.md`

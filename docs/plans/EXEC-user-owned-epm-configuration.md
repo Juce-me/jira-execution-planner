@@ -15,8 +15,14 @@ workspace settings, and turn every application API `401` into one blocking authe
 
 **Architecture:** In DB mode, the canonical EPM settings source is the current user's private default
 `view_configs` row. One serialized private-view mutation service owns default creation, targeted merges,
-and version allocation for both EPM saves and whole-view PATCH. Functional EPM routes and worker
-dependencies resolve or capture this user-scoped configuration rather than workspace configuration.
+default switching/archive behavior, version allocation, and detection of whether a committed mutation
+changes the normalized effective EPM configuration. Its transaction-owning wrapper exposes that change
+only after commit so every caller can invoke the same partition-aware cache invalidator. Functional EPM
+routes and worker dependencies resolve or capture this user-scoped configuration rather than workspace
+configuration. Every EPM project/issues/rollup cache key also includes a deterministic digest of the
+normalized five-key EPM settings object, so another process that did not receive the local invalidation
+cannot reuse an entry from an older effective configuration; local post-commit eviction removes obsolete
+entries eagerly.
 Legacy JSON mode keeps its local single-user file behavior: stored v1/v2 reads use the existing
 legacy-aware normalizer, while HTTP writes use the same strict v2 validator as DB mode.
 Misplaced workspace EPM data is removed by a reversible migration archive without assigning it to a
@@ -26,10 +32,11 @@ authentication boundary and root recovery gate.
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test
 runner, Playwright, SQLite/PostgreSQL-compatible schema.
 
-**Status:** Plan corrected after three independent subagent audits on 2026-08-27. Implementation tasks
-pending. The audits' original no-go findings are addressed in the runtime resolver, serialized mutation,
-reversible migration, strict JSON validator, team-catalog boundary, cache isolation, and global-auth tasks
-below.
+**Status:** Plan corrected after three independent subagent audits on 2026-08-27 and amended after the
+Task 1 execution review. Implementation is in progress. The original no-go findings plus the effective-
+view cache-invalidation and real-PostgreSQL concurrency gaps are addressed in the runtime resolver,
+serialized mutation, reversible migration, strict JSON validator, team-catalog boundary, cache isolation,
+PostgreSQL completion gate, and global-auth tasks below.
 
 **Concurrency decision:** Private EPM saves remain last-write-wins and do not use workspace
 `baseRevision`. EPM writers are serialized: PostgreSQL takes an owner/workspace transaction lock plus the
@@ -38,6 +45,14 @@ a bounded retry. EPM saves merge into the latest committed private payload. Whol
 different because it is a full replacement: it must send the current private `baseVersion` and returns
 `409 view_config_conflict` when stale rather than overwriting a concurrent EPM update. View creation and
 default switching use the same owner/workspace serialization boundary.
+
+**Required PostgreSQL gate:** SQLite remains the fast focused-test backend, but it cannot prove
+`pg_advisory_xact_lock` or `SELECT ... FOR UPDATE` behavior. Task 1 and final plan completion require the
+PostgreSQL-only concurrency class in `tests/test_user_view_config_concurrency.py` to run with
+`REQUIRE_POSTGRES_USER_VIEW_CONCURRENCY=1` and an explicitly supplied PostgreSQL `TEST_DATABASE_URL`.
+The test must use a unique temporary schema, two independent connections, and `finally` cleanup. It must
+never fall back to `DATABASE_URL` or a production/shared database. The ordinary full suite may skip this
+class when the required flag is absent, but a skip does not satisfy either completion gate.
 
 **EPM view-state boundary:** This correction owns the server-persisted EPM settings keys `version`,
 `labelPrefix`, `scope`, `issueTypes`, and `projects`. Existing private `epm.tab` and
@@ -79,8 +94,13 @@ Required behavior:
 - `POST /api/epm/projects/configuration` is a non-persisting preview. It allows every authenticated user,
   requires the unsafe-request headers and token-bound CSRF, and never requires administrator permission.
   Its compatibility alias `/api/epm/projects/preview` has the identical policy and contract.
-- EPM saves invalidate only the current DB/OAuth user's EPM project/issues/rollup cache partition. JSON or
-  Basic mode retains its process-wide clear.
+- Every successful mutation that changes the normalized effective default EPM configuration invalidates
+  only the current DB/OAuth user's EPM project/issues/rollup cache partition after commit. This includes
+  direct EPM saves, effective-view replacement, default creation/switch/demotion/archive, and legacy
+  import. Rename-only and non-default-view changes, conflicts, validation failures, retries that exhaust,
+  and rollbacks do not invalidate. Every EPM cache key includes the canonical normalized-settings digest,
+  preventing stale reuse in other processes; the digest contains no raw configuration text. JSON or Basic
+  mode retains its process-wide clear.
 - Workspace snapshots and administrator recovery never expose, import, save, or promote EPM.
 - The cleanup migration archives and removes only misplaced workspace EPM, does not infer an owner, and
   supports downgrade restoration without overwriting newer administrator fields.
@@ -162,11 +182,15 @@ and docs use synthetic identifiers only.
 - Modify: `backend/security/policy.py`
 - Modify: `backend/security/guards.py`
 - Modify: `backend/auth/cache_policy.py`
+- Modify: `backend/epm/config.py`
+- Modify: `backend/services/user_view_config.py`
+- Modify: `backend/routes/views_routes.py`
 
 ### Migration and import
 
 - Create: `backend/db/migrations/versions/20260827_0008_remove_workspace_epm.py`
 - Modify: `backend/config/import_config.py`
+- Modify: `backend/services/user_view_config.py`
 - Modify: `backend/services/workspace_dashboard_config.py`
 
 ### Frontend EPM ownership
@@ -230,6 +254,20 @@ Add overlapping transaction tests for:
 - one user in two workspaces and two users in one workspace;
 - strictly increasing unique `ViewConfigVersion.version_number` values and preservation of unrelated keys.
 
+SQLite tests cover validation, bounded retry, optimistic-conflict behavior, and the mutation service's
+effective-EPM change result. The result must be true only when the normalized effective default EPM value
+changes through direct save, default-view payload replacement, default create/switch/demotion/archive, or
+legacy-import mutation. It remains false for rename-only or non-default-view changes, identical effective
+EPM values, conflicts, validation failures, retry exhaustion, and rollback.
+
+Add `PostgresUserViewConcurrencyGateTests` in the same test module. When
+`REQUIRE_POSTGRES_USER_VIEW_CONCURRENCY=1`, it must fail rather than skip unless `TEST_DATABASE_URL` is an
+explicit PostgreSQL URL. It must never read `DATABASE_URL`. In a UUID-named temporary schema and with two
+independent connections, prove same owner/workspace mutations serialize, first-default races create only
+one default, two last-write-wins EPM saves produce two unique monotonic versions and one complete winning
+payload without losing unrelated private fields, stale whole-view replacement conflicts, and a held lock
+for one owner/workspace does not block a different owner or workspace. Drop the schema in `finally`.
+
 Run:
 
 ```bash
@@ -257,6 +295,13 @@ operations that create, mutate, archive, or switch a default:
 - allocate and append the next version in the same transaction;
 - never derive workspace/user identity from a request payload.
 
+Resolve and normalize the effective default EPM value immediately before and after each mutation inside
+that serialized transaction. Return an immutable mutation result containing the sanitized view/version
+response and `effective_epm_changed`; do not call cache code while the transaction is open. A
+transaction-owning wrapper may invoke an injected post-commit callback only after `session_scope()` exits
+successfully. Exceptions, rollbacks, conflicts, and exhausted retries produce no callback. Task 2 wires
+the partition-aware cache invalidator to this contract, and Task 3 routes legacy import through it.
+
 Expose the current latest `versionNumber` in view responses. Require `baseVersion` when PATCH replaces
 `view`/`payload`; compare it inside the serialized transaction and return the current sanitized view plus
 `409 view_config_conflict` on mismatch. Name/default/archive-only PATCHes still serialize but do not claim
@@ -270,12 +315,16 @@ existing private state and unrelated fields, updates `view_type`, and uses chang
 
 ```bash
 .venv/bin/python -m unittest tests.test_shared_admin_config_validation tests.test_view_config_validator tests.test_view_config_resolution tests.test_user_view_config_routes tests.test_user_view_config_concurrency
+REQUIRE_POSTGRES_USER_VIEW_CONCURRENCY=1 .venv/bin/python -m unittest -v tests.test_user_view_config_concurrency.PostgresUserViewConcurrencyGateTests
 git diff --check
 git add backend/config/shared_config.py backend/config/view_validation.py backend/config/db_repository.py backend/services/user_view_config.py backend/routes/views_routes.py tests/test_shared_admin_config_validation.py tests/test_view_config_validator.py tests/test_view_config_resolution.py tests/test_user_view_config_routes.py tests/test_user_view_config_concurrency.py
 git commit -m "Restore serialized user-owned EPM persistence"
 ```
 
-Expected: focused tests pass; the commit contains only validation and private-view mutation behavior.
+Expected: focused tests pass; the PostgreSQL gate exits `0` without skips against the explicitly supplied
+`TEST_DATABASE_URL`; the commit contains only validation and private-view mutation behavior. If the URL
+is unavailable, stop before this commit and request a safe test database or an authorized disposable
+local PostgreSQL instance.
 
 ### Task 2: Route Every EPM Consumer Through The Private Source
 
@@ -298,6 +347,7 @@ Expected: focused tests pass; the commit contains only validation and private-vi
 - Test: `tests/test_endpoint_policy_inventory.py`
 - Test: `tests/test_oauth_settings_routes.py`
 - Test: `tests/test_workspace_dashboard_config_service.py`
+- Test: `tests/test_user_view_config_routes.py`
 
 - [ ] **Step 1: Write failing route, runtime, policy, cache, and bootstrap tests**
 
@@ -311,9 +361,20 @@ per-project rollup, all-project rollup, and the Home OAuth probe with different 
 users. Add a no-request-context worker test that reaches the real resolver through captured rollup
 dependencies; an uncaptured DB resolver call must fail closed rather than use workspace/default data.
 
-Prove one user's EPM save evicts only cache keys matching that request context's workspace and
-auth-connection/user partition across project, issues, and rollup caches. Another user and another
-workspace remain cached. Basic/JSON mode still clears all EPM caches.
+Warm project, issue, and rollup entries for two users and two workspaces. Prove direct EPM save, payload
+replacement of the current default, default creation/promotion/demotion/archive, and default switching
+evict exactly the active DB/OAuth partition when and only when the normalized effective EPM value changes.
+Another user and another workspace remain cached. Rename-only, non-default payload edits, identical
+effective EPM, validation failures, stale `baseVersion`, exhausted retries, and forced commit rollback do
+not evict. Assert invalidation runs once after commit, never while the transaction is open. Basic/JSON
+mode still clears all EPM caches for direct EPM saves. Task 3 adds the same assertions for legacy import.
+
+Prove a stable SHA-256 digest is derived from canonical normalized `version`, `labelPrefix`, `scope`,
+`issueTypes`, and `projects`; equivalent normalized objects share a digest, any effective setting change
+changes it, `tab`/`selectedSprint` do not affect it, and no raw goal key, label, or project id appears in a
+digest component. Existing functional cache-key parts remain unchanged. With local invalidation disabled
+to simulate another process, a request using the new digest must miss the old project/issues/rollup
+entries. Worker-thread dependencies capture the same digest with the EPM config snapshot.
 
 Policy assertions:
 
@@ -353,17 +414,32 @@ validation to fixed `400 invalid_epm_config` and storage/integrity/retry exhaust
 Add cache partition helpers in `backend/auth/cache_policy.py` and let `clear_epm_caches(context)` remove
 only matching tuple-prefixed keys in DB/OAuth mode. Keep full clear for Basic/JSON mode.
 
+Add a canonical EPM cache-generation helper beside the EPM normalizer. Hash the stable serialized form of
+only the five normalized settings keys with SHA-256 and add the digest, never the raw configuration, to
+every projects/issues/rollup cache key. Capture it before worker handoff with the normalized config. This
+generation is the cross-process correctness boundary; post-commit partition eviction is eager local
+cleanup and must still cover every effective-view mutation path.
+
+Wire `clear_epm_caches(context)` as an injected post-commit callback on the serialized mutation wrapper
+used by both `DbConfigRepository.save_user_epm_config()` and `/api/me/views` writes. Do not import
+`jira_server` from the storage service. Route functions must leave `session_scope()` before invoking the
+callback; do not return from inside the transaction in a way that bypasses the post-commit step. Compute
+the decision from the service's normalized before/after effective EPM result, not from the endpoint name:
+non-default and metadata-only mutations must remain cache-neutral, while default create/switch/demotion/
+archive and current-default replacement invalidate when their effective value changes.
+
 - [ ] **Step 3: Run focused tests and commit**
 
 ```bash
-.venv/bin/python -m unittest tests.test_epm_config_api tests.test_epm_scope_api tests.test_epm_projects_api tests.test_epm_rollup_api tests.test_db_oauth_cutover tests.test_epm_home_cache_isolation tests.test_dashboard_bootstrap_config_source tests.test_endpoint_security_matrix tests.test_endpoint_policy_inventory tests.test_oauth_settings_routes tests.test_workspace_dashboard_config_service
+.venv/bin/python -m unittest tests.test_epm_config_api tests.test_epm_scope_api tests.test_epm_projects_api tests.test_epm_rollup_api tests.test_db_oauth_cutover tests.test_epm_home_cache_isolation tests.test_dashboard_bootstrap_config_source tests.test_endpoint_security_matrix tests.test_endpoint_policy_inventory tests.test_oauth_settings_routes tests.test_workspace_dashboard_config_service tests.test_user_view_config_routes
 git diff --check
-git add jira_server.py backend/routes/epm_routes.py backend/routes/settings_routes.py backend/security/policy.py backend/security/guards.py backend/auth/cache_policy.py tests/test_epm_config_api.py tests/test_epm_scope_api.py tests/test_epm_projects_api.py tests/test_epm_rollup_api.py tests/test_db_oauth_cutover.py tests/test_epm_home_cache_isolation.py tests/test_dashboard_bootstrap_config_source.py tests/test_endpoint_security_matrix.py tests/test_endpoint_policy_inventory.py tests/test_oauth_settings_routes.py tests/test_workspace_dashboard_config_service.py
+git add jira_server.py backend/routes/epm_routes.py backend/routes/settings_routes.py backend/routes/views_routes.py backend/security/policy.py backend/security/guards.py backend/auth/cache_policy.py backend/epm/config.py backend/services/user_view_config.py tests/test_epm_config_api.py tests/test_epm_scope_api.py tests/test_epm_projects_api.py tests/test_epm_rollup_api.py tests/test_db_oauth_cutover.py tests/test_epm_home_cache_isolation.py tests/test_dashboard_bootstrap_config_source.py tests/test_endpoint_security_matrix.py tests/test_endpoint_policy_inventory.py tests/test_oauth_settings_routes.py tests/test_workspace_dashboard_config_service.py tests/test_user_view_config_routes.py
 git commit -m "Route EPM runtime through private user settings"
 ```
 
 Expected: all focused tests pass; administrator routes remain `shared_admin_write`, groups remain
-`authenticated_read`/`user_write`, and EPM functional results differ by authenticated owner.
+`authenticated_read`/`user_write`, EPM functional results differ by authenticated owner, and every
+effective-view mutation path implemented so far follows the same post-commit partition invalidation rule.
 
 ### Task 3: Migrate Workspace Data Reversibly And Correct Legacy Import
 
@@ -377,6 +453,7 @@ Expected: all focused tests pass; administrator routes remain `shared_admin_writ
 - Test: `tests/test_shared_admin_config_recovery.py`
 - Test: `tests/test_shared_group_config_import.py`
 - Test: `tests/test_view_config_validator.py`
+- Test: `tests/test_epm_home_cache_isolation.py`
 
 - [ ] **Step 1: Write failing migration, downgrade, import, and ownership-isolation tests**
 
@@ -395,7 +472,10 @@ Import tests prove:
 - shared groups enter only group storage;
 - top-level legacy `teamCatalog` is discarded and never appears in a view/version/admin payload;
 - existing team-catalog, preferences, connections, and tokens remain unchanged;
-- import uses the serialized private-view mutation path.
+- import uses the serialized private-view mutation path;
+- an import that creates or changes the effective default EPM value invalidates the importing user's
+  partition once after commit, while an idempotent duplicate, unchanged effective EPM, validation failure,
+  or forced rollback does not invalidate and never touches another user/workspace partition.
 
 - [ ] **Step 2: Implement a reversible migration-owned archive**
 
@@ -419,18 +499,22 @@ operator status docs.
 
 Update runtime workspace load/recovery filtering so dormant EPM never reappears before/after migration.
 Update legacy import to use the shared serialized view service, preserve private EPM, and strip/discard
-top-level `teamCatalog` as a regenerable cache.
+top-level `teamCatalog` as a regenerable cache. Remove its independent direct view-write transaction path:
+the import must use the same transaction-owning mutation wrapper and injected post-commit invalidator as
+the HTTP mutation routes. It must compare normalized effective EPM before/after, commit first, invalidate
+only the active partition when changed, and produce no invalidation on duplicate/no-op/failure paths.
 
 - [ ] **Step 3: Run focused tests and commit**
 
 ```bash
-.venv/bin/python -m unittest tests.test_db_migrations tests.test_config_jsonfile_fallback tests.test_shared_admin_config_recovery tests.test_shared_group_config_import tests.test_view_config_validator
+.venv/bin/python -m unittest tests.test_db_migrations tests.test_config_jsonfile_fallback tests.test_shared_admin_config_recovery tests.test_shared_group_config_import tests.test_view_config_validator tests.test_epm_home_cache_isolation
 git diff --check
-git add backend/db/migrations/versions/20260827_0008_remove_workspace_epm.py backend/config/import_config.py backend/services/workspace_dashboard_config.py tests/test_db_migrations.py tests/test_config_jsonfile_fallback.py tests/test_shared_admin_config_recovery.py tests/test_shared_group_config_import.py tests/test_view_config_validator.py
+git add backend/db/migrations/versions/20260827_0008_remove_workspace_epm.py backend/config/import_config.py backend/services/user_view_config.py backend/services/workspace_dashboard_config.py tests/test_db_migrations.py tests/test_config_jsonfile_fallback.py tests/test_shared_admin_config_recovery.py tests/test_shared_group_config_import.py tests/test_view_config_validator.py tests/test_epm_home_cache_isolation.py
 git commit -m "Remove workspace EPM with reversible migration"
 ```
 
-Expected: upgrade/downgrade/offline/import tests pass with no inferred owner and no cross-domain writes.
+Expected: upgrade/downgrade/offline/import tests pass with no inferred owner, no cross-domain writes, and
+legacy import following the same post-commit effective-EPM invalidation contract as HTTP mutations.
 
 ### Task 4: Separate Frontend EPM Ownership And Permissions
 
@@ -646,6 +730,7 @@ API `401` globally locks and reauthenticates rather than creating local feature 
 ```bash
 node --version
 .venv/bin/python scripts/check_startup_preflight.py
+REQUIRE_POSTGRES_USER_VIEW_CONCURRENCY=1 .venv/bin/python -m unittest -v tests.test_user_view_config_concurrency.PostgresUserViewConcurrencyGateTests
 .venv/bin/python -m unittest discover -s tests
 npm run test:frontend:unit
 npm run test:frontend:ui
@@ -655,7 +740,9 @@ git diff --check
 git status --short
 ```
 
-Expected: Node reports `v20.x`; every command exits `0`; the post-build generated diff is clean.
+Expected: Node reports `v20.x`; every command exits `0`; the PostgreSQL gate runs without a skip against
+the explicitly supplied `TEST_DATABASE_URL`; the post-build generated diff is clean. A full-suite skip of
+the same PostgreSQL class does not replace the explicit required-gate result.
 
 Start the configured local Flask server with `.venv/bin/python jira_server.py`, verify there are no Python
 runtime/dependency warnings before the Flask banner, and exercise `curl -fsS http://127.0.0.1:5050/api/test`
@@ -682,12 +769,18 @@ Expected: final commit contains only ownership/status/design documentation. Do n
   and non-archived state.
 - [ ] EPM concurrency tests prove monotonic versions and unrelated-field preservation; stale whole-view
   replacement returns `409` instead of overwriting a concurrent EPM save.
+- [ ] The required PostgreSQL concurrency class passes without skips using two independent connections in
+  a disposable schema from `TEST_DATABASE_URL`; SQLite and offline SQL are not accepted as substitutes.
 - [ ] Two-user and two-workspace tests cover EPM, groups, preferences, catalog, connections, and untouched
   ownership domains with row-count/payload assertions.
 - [ ] Migration tests prove archive, upgrade, downgrade, re-upgrade, offline SQL, revision movement, and no
   inferred private owner.
 - [ ] JSON-mode EPM GET/POST strict-validation parity is preserved.
-- [ ] EPM cache invalidation affects only the active DB/OAuth partition.
+- [ ] Direct EPM save, effective default payload replacement, default create/switch/demotion/archive, and
+  legacy import invalidate only the active DB/OAuth partition after commit when normalized effective EPM
+  changes; metadata/non-default/no-op/conflict/validation/retry-failure/rollback paths do not invalidate.
+- [ ] Every project/issues/rollup cache key includes only a digest of the normalized effective EPM settings,
+  so a process that misses local invalidation cannot reuse an older configuration's entry.
 - [ ] Preview POST requires authentication, requested-with, and CSRF but no admin permission.
 - [ ] Missing/false EPM edit permission fails closed; explicit true enables editing.
 - [ ] No app feature/configuration panel renders raw `401`, owns a sign-in redirect, or bypasses `apiFetch`.

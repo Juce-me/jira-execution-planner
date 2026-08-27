@@ -54,13 +54,10 @@ const loadFieldConfig = async (backendUrl, endpoint, setId, setName, baselineRef
     }
 };
 
-const saveFieldConfig = async (backendUrl, endpoint, fieldId, fieldName, baselineRef) => {
-    const response = await requestSaveFieldConfig(backendUrl, endpoint, { fieldId, fieldName });
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `Save failed (${response.status})`);
-    }
+const saveFieldConfig = async (backendUrl, endpoint, fieldId, fieldName, baselineRef, baseRevision) => {
+    const payload = await requestSaveFieldConfig(backendUrl, endpoint, { fieldId, fieldName }, baseRevision);
     baselineRef.current = JSON.stringify({ fieldId, fieldName });
+    return payload;
 };
 
 // Owns the whole five-picker family (sprint, parent name, story points, team, delivery owner):
@@ -116,15 +113,29 @@ export function useJiraFieldPickers({ backendUrl, jiraFields }) {
     const isDeliveryOwnerFieldDirty = React.useMemo(() => Boolean(deliveryOwnerFieldBaselineRef.current) && JSON.stringify({ fieldId: deliveryOwnerFieldIdDraft, fieldName: deliveryOwnerFieldNameDraft }) !== deliveryOwnerFieldBaselineRef.current, [deliveryOwnerFieldIdDraft, deliveryOwnerFieldNameDraft]);
 
     const loadSprintFieldConfig = () => loadFieldConfig(backendUrl, 'sprint-field', setSprintFieldIdDraft, setSprintFieldNameDraft, sprintFieldBaselineRef);
-    const saveSprintFieldConfig = () => saveFieldConfig(backendUrl, 'sprint-field', sprintFieldIdDraft, sprintFieldNameDraft, sprintFieldBaselineRef);
+    const saveSprintFieldConfig = (baseRevision) => saveFieldConfig(backendUrl, 'sprint-field', sprintFieldIdDraft, sprintFieldNameDraft, sprintFieldBaselineRef, baseRevision);
     const loadParentNameFieldConfig = () => loadFieldConfig(backendUrl, 'parent-name-field', setParentNameFieldIdDraft, setParentNameFieldNameDraft, parentNameFieldBaselineRef);
-    const saveParentNameFieldConfig = () => saveFieldConfig(backendUrl, 'parent-name-field', parentNameFieldIdDraft, parentNameFieldNameDraft, parentNameFieldBaselineRef);
+    const saveParentNameFieldConfig = (baseRevision) => saveFieldConfig(backendUrl, 'parent-name-field', parentNameFieldIdDraft, parentNameFieldNameDraft, parentNameFieldBaselineRef, baseRevision);
     const loadStoryPointsFieldConfig = () => loadFieldConfig(backendUrl, 'story-points-field', setStoryPointsFieldIdDraft, setStoryPointsFieldNameDraft, storyPointsFieldBaselineRef);
-    const saveStoryPointsFieldConfig = () => saveFieldConfig(backendUrl, 'story-points-field', storyPointsFieldIdDraft, storyPointsFieldNameDraft, storyPointsFieldBaselineRef);
+    const saveStoryPointsFieldConfig = (baseRevision) => saveFieldConfig(backendUrl, 'story-points-field', storyPointsFieldIdDraft, storyPointsFieldNameDraft, storyPointsFieldBaselineRef, baseRevision);
     const loadTeamFieldConfig = () => loadFieldConfig(backendUrl, 'team-field', setTeamFieldIdDraft, setTeamFieldNameDraft, teamFieldBaselineRef);
-    const saveTeamFieldConfig = () => saveFieldConfig(backendUrl, 'team-field', teamFieldIdDraft, teamFieldNameDraft, teamFieldBaselineRef);
+    const saveTeamFieldConfig = (baseRevision) => saveFieldConfig(backendUrl, 'team-field', teamFieldIdDraft, teamFieldNameDraft, teamFieldBaselineRef, baseRevision);
     const loadDeliveryOwnerFieldConfig = () => loadFieldConfig(backendUrl, 'delivery-owner-field', setDeliveryOwnerFieldIdDraft, setDeliveryOwnerFieldNameDraft, deliveryOwnerFieldBaselineRef);
-    const saveDeliveryOwnerFieldConfig = () => saveFieldConfig(backendUrl, 'delivery-owner-field', deliveryOwnerFieldIdDraft, deliveryOwnerFieldNameDraft, deliveryOwnerFieldBaselineRef);
+    const saveDeliveryOwnerFieldConfig = (baseRevision) => saveFieldConfig(backendUrl, 'delivery-owner-field', deliveryOwnerFieldIdDraft, deliveryOwnerFieldNameDraft, deliveryOwnerFieldBaselineRef, baseRevision);
+
+    const seedSharedFieldConfigs = (sharedConfig = {}) => {
+        const apply = (value, setId, setName, baselineRef) => {
+            const normalized = { fieldId: value?.fieldId || '', fieldName: value?.fieldName || '' };
+            setId(normalized.fieldId);
+            setName(normalized.fieldName);
+            baselineRef.current = JSON.stringify(normalized);
+        };
+        apply(sharedConfig.sprintField, setSprintFieldIdDraft, setSprintFieldNameDraft, sprintFieldBaselineRef);
+        apply(sharedConfig.parentNameField, setParentNameFieldIdDraft, setParentNameFieldNameDraft, parentNameFieldBaselineRef);
+        apply(sharedConfig.storyPointsField, setStoryPointsFieldIdDraft, setStoryPointsFieldNameDraft, storyPointsFieldBaselineRef);
+        apply(sharedConfig.teamField, setTeamFieldIdDraft, setTeamFieldNameDraft, teamFieldBaselineRef);
+        apply(sharedConfig.deliveryOwnerField, setDeliveryOwnerFieldIdDraft, setDeliveryOwnerFieldNameDraft, deliveryOwnerFieldBaselineRef);
+    };
 
     const sprintFieldSearch = React.useMemo(() => makeFieldSearchResults(sprintFieldSearchQuery, jiraFields), [sprintFieldSearchQuery, jiraFields]);
     const sprintFieldSearchResults = sprintFieldSearch.items;
@@ -200,6 +211,6 @@ export function useJiraFieldPickers({ backendUrl, jiraFields }) {
         deliveryOwnerFieldSearchIndex, setDeliveryOwnerFieldSearchIndex, deliveryOwnerFieldSearchInputRef, deliveryOwnerFieldSearchResults, deliveryOwnerFieldSearchHidden,
         handleDeliveryOwnerFieldSearchKeyDown, isDeliveryOwnerFieldDirty, saveDeliveryOwnerFieldConfig,
 
-        loadAllFieldConfigs, anyFieldConfigDirty, dirtyFieldConfigCount,
+        loadAllFieldConfigs, seedSharedFieldConfigs, anyFieldConfigDirty, dirtyFieldConfigCount,
     };
 }

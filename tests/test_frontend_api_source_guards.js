@@ -663,14 +663,16 @@ test('excluded capacity stats source wrapper can request a backend refresh', asy
     });
 });
 
-test('app config wrapper preserves resolved view metadata and legacy epm shape', () => {
+test('app config wrapper keeps shared EPM authoritative over private view state', () => {
     const { getJson } = loadHttpHelpers();
     const configApi = loadApiModule('configApi.js', [
         'normalizeAppConfig',
     ], { getJson });
 
     const epm = { version: 2, projects: { 'home-1': { label: 'rnd_project_synthetic' } } };
+    const sharedEpm = { version: 2, projects: {} };
     const normalized = configApi.normalizeAppConfig({
+        sharedConfig: { epm: sharedEpm },
         viewConfig: {
             source: 'user_saved_view',
             workspaceId: 'workspace-1',
@@ -680,7 +682,7 @@ test('app config wrapper preserves resolved view metadata and legacy epm shape',
         },
     });
 
-    assert.deepEqual(normalized.epm, epm);
+    assert.deepEqual(normalized.epm, sharedEpm);
     assert.equal(normalized.viewConfig.source, 'user_saved_view');
 
     const withLegacyEpm = configApi.normalizeAppConfig({

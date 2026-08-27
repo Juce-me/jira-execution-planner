@@ -39,7 +39,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # validate_groups_config wrapper, mirroring normalize_group_team_labels (+6 lines).
     # bugfix/ready-to-close-jql-414 batches the GET-backed child scan at 40 epic keys
     # while retaining its existing global result cap and pagination behavior (+5 lines).
-    "jira_server.py": 6257,
+    # bugfix/shared-admin-configuration adds the request-scoped immutable workspace config
+    # snapshot, route-owned section save wrapper, DB full-replacement guard, and revision-aware
+    # field-config compatibility handlers. Validation and persistence remain extracted (+57).
+    "jira_server.py": 6314,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -88,7 +91,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # recovery waits for department onboarding, separates sprint errors from task errors,
     # routes Retry back to sprint discovery, deduplicates concurrent Retry requests, and
     # queues required forced refreshes behind active discovery.
-    "frontend/src/dashboard.jsx": 16183,
+    # bugfix/shared-admin-configuration wires one atomic shared snapshot/revision into the
+    # existing Settings drafts, threads sequential compare-and-swap saves, and renders conflict
+    # plus safe auth-recovery actions. Pure conflict copy/rebase logic stays extracted (+113).
+    "frontend/src/dashboard.jsx": 16296,
 }
 
 

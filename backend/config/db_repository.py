@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
-from backend.config.view_validation import validate_user_view_payload
+from backend.config.shared_config import strip_shared_sections_from_private_view
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.services import workspace_dashboard_config
 
 
 class ViewConfigNotFound(LookupError):
@@ -61,24 +62,39 @@ class DbConfigRepository:
         )
         return session.execute(statement).scalars().first()
 
-    def _next_version_number(self, session, view_config_id):
-        statement = select(func.max(models.ViewConfigVersion.version_number)).where(
-            models.ViewConfigVersion.view_config_id == view_config_id,
+    def load_dashboard_config_snapshot(self, context, *, fallback_loader=None, legacy_site_url=''):
+        return workspace_dashboard_config.load_workspace_config(
+            context,
+            fallback_loader=fallback_loader,
+            legacy_site_url=legacy_site_url,
+            database_url=self.database_url,
         )
-        current = session.execute(statement).scalar_one()
-        return int(current or 0) + 1
 
-    def load_dashboard_config(self, context, *, fallback_loader=None):
-        with db_engine.session_scope(self.database_url) as session:
-            view = self._default_view(session, context)
-            if view is not None:
-                return strip_private_team_groups(view.payload)
-        if fallback_loader is not None:
-            fallback_payload = fallback_loader()
-            if fallback_payload is None:
-                return None
-            return strip_private_team_groups(fallback_payload)
-        return None
+    def load_dashboard_config(self, context, *, fallback_loader=None, legacy_site_url=''):
+        return self.load_dashboard_config_snapshot(
+            context,
+            fallback_loader=fallback_loader,
+            legacy_site_url=legacy_site_url,
+        ).payload
+
+    def save_dashboard_section(self, context, section, value, base_revision, *, fallback_loader=None, legacy_site_url=''):
+        return workspace_dashboard_config.update_workspace_config_section(
+            context,
+            section,
+            value,
+            base_revision,
+            fallback_loader=fallback_loader,
+            legacy_site_url=legacy_site_url,
+            database_url=self.database_url,
+        )
+
+    def load_team_catalog(self, context):
+        return workspace_dashboard_config.load_workspace_team_catalog(context, database_url=self.database_url)
+
+    def save_team_catalog(self, context, payload, *, merge=False):
+        return workspace_dashboard_config.save_workspace_team_catalog(
+            context, payload, merge=merge, database_url=self.database_url,
+        )
 
     def resolve_effective_view_config(self, context, *, view_config_id=None):
         with db_engine.session_scope(self.database_url) as session:
@@ -94,38 +110,9 @@ class DbConfigRepository:
                 'workspaceId': view.workspace_id,
                 'viewConfigId': view.id,
                 'viewType': view.view_type,
-                'view': strip_private_team_groups(view.payload),
+                'view': strip_shared_sections_from_private_view(strip_private_team_groups(view.payload)),
             }
 
-    def save_dashboard_config(self, context, payload, *, actor_user_id=None, change_note='compatibility save'):
-        actor_user_id = actor_user_id or context.user_id
-        payload = strip_private_team_groups(payload)
-        validate_user_view_payload(payload)
-        with db_engine.session_scope(self.database_url) as session:
-            view = self._default_view(session, context)
-            if view is None:
-                view = models.ViewConfig(
-                    workspace_id=context.workspace_id,
-                    owner_user_id=context.user_id,
-                    name='Default view',
-                    view_type=infer_view_type(payload),
-                    payload_version=int(payload.get('version') or 1),
-                    payload=payload,
-                    visibility='private',
-                    is_default=True,
-                )
-                session.add(view)
-                session.flush()
-            else:
-                view.view_type = infer_view_type(payload)
-                view.payload_version = int(payload.get('version') or view.payload_version or 1)
-                view.payload = payload
-            session.add(models.ViewConfigVersion(
-                view_config_id=view.id,
-                version_number=self._next_version_number(session, view.id),
-                payload=dict(payload),
-                created_by=actor_user_id,
-                change_note=change_note,
-            ))
-            session.flush()
-            return view.id
+    def save_dashboard_config(self, context, payload, **kwargs):
+        del context, payload, kwargs
+        raise RuntimeError('full workspace dashboard replacement is forbidden in DB mode')

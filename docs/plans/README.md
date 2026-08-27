@@ -29,7 +29,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 4. `DONE-03-db-user-configuration.md`
    - Completed DB user-configuration plan. Use for audit and prerequisite evidence; do not execute as active work.
-   - Historical output: DB-backed user-owned saved views, including the EPM scope/mappings implemented in that phase. `EXEC-shared-admin-configuration.md` later moves normalized dashboard and EPM scope/mappings to workspace-admin ownership while preserving personal view state.
+   - Output: DB-backed user-owned saved views, including private EPM scope, label prefix, issue types, project-label mappings, tab, and sprint. PR #130 temporarily moved normalized EPM settings into workspace configuration; `EXEC-user-owned-epm-configuration.md` corrects that ownership regression.
 
 5. `DONE-04-db-user-home-epm-read-token.md`
    - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
@@ -46,12 +46,16 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed and merged in [PR #62](https://github.com/Juce-me/jira-execution-planner/pull/62). Moves department/team-group definitions to workspace-shared configuration while keeping per-user visible-group preferences. Use for audit and prerequisite evidence; do not execute as active work.
    - Historical output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, and shared saves are revision-conflict protected. PR #62 left the existing star wired to shared `defaultGroupId`; `DONE-personal-group-star.md` corrects that product mismatch without rewriting shared catalog history.
 
-9. `EXEC-shared-admin-configuration.md`
-   - Implemented and verified on `bugfix/shared-admin-configuration`; awaiting user acceptance or merge before the plan is renamed `DONE-*`.
-   - Expected output: admin-controlled dashboard and EPM scope/mapping configuration persists once per workspace/Jira site, every user in that workspace reads one revisioned snapshot, only authorized admins mutate route-owned sections, private views retain only personal state, normal-user catalog refreshes use separate storage, and no private payload is auto-promoted during migration.
+9. `DONE-shared-admin-configuration.md`
+   - Completed and merged in PR #130 (`7ea40db`). Use for audit context only.
+   - Current output: administrator dashboard sections persist once per workspace/Jira site with revisioned, authorized writes; normal-user catalog refreshes use separate storage; no private payload is auto-promoted. Its shared-EPM decision is superseded by `EXEC-user-owned-epm-configuration.md`.
    - Execution record: `../agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md`.
 
-10. `EXEC-cloud-sql-iam-connectivity.md`
+10. `EXEC-user-owned-epm-configuration.md`
+   - Active correction plan for the ownership regression identified after PR #130.
+   - Expected output: EPM settings return to each user's private saved view; department groups remain workspace-shared and user-editable; administrator settings remain workspace-shared and admin-only; authentication failures surface recovery instead of an ambiguous `Groups config error 401`.
+
+11. `EXEC-cloud-sql-iam-connectivity.md`
    - Implementation is complete and locally verified, but the plan remains `EXEC-*` pending user acceptance or merge.
    - Output: default local/CI URL behavior stays unchanged; hosted mode obtains lock-protected ADC login tokens immediately before new physical connections; every IAM connection uses the fixed app-owned 10-second timeout; web pooling and Alembic `NullPool` share one engine factory; offline migrations remain ADC-independent while validating the passwordless TLS URL; hosted docs record the complete IAM/database prerequisites; no Cloud SQL Python Connector, alternate PostgreSQL driver, proxy, deployment, UI, or unrelated product change was introduced.
    - Design record: `../agents/features/2026-07-27-executed-cloud-sql-iam-connectivity-design.md`.

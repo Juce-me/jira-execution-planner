@@ -50,7 +50,7 @@ Current implementation assumptions to preserve:
 - Tool admin is a tool-local role, not an Atlassian admin role.
 - Legacy pre-DB OAuth treated every signed-in Atlassian user as a local tool admin only as a temporary local policy. DB auth restored explicit tool-admin assignment.
 - Team Groups, Group Labels, and EPM-side user settings are user-owned/non-admin workflows where applicable.
-- Scope projects, Jira source, field mapping, capacity, priority weights, issue types, and shared EPM mappings are shared environment/workspace configuration controlled by tool admins.
+- Scope projects, Jira source, field mapping, capacity, priority weights, and dashboard issue types are shared environment/workspace configuration controlled by tool admins. EPM scope, label prefix, issue types, project-label mappings, tab, and sprint are private saved-view configuration controlled by the owning user.
 - Existing JSON configuration must not be silently overwritten with empty selected projects, empty groups, or missing EPM mappings.
 - Home/Townsquare user 3LO is currently unsupported unless the plans document a fresh real `PASS home_graphql_3lo_supported` probe.
 - Jira REST can use user Atlassian OAuth.

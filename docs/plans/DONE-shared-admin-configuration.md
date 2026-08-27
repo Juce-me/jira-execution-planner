@@ -1,5 +1,9 @@
 # Shared Admin Configuration Implementation Plan
 
+> **Status:** Done. Executed and merged in PR #130 (`7ea40db`). Kept for audit context only; do not execute as an active plan.
+
+> **Current accuracy:** The workspace administrator persistence, revision, recovery, and team-catalog work remains current. Its decision to share EPM configuration is superseded by `EXEC-user-owned-epm-configuration.md` and `backend/security/CONFIGURATION_OWNERSHIP.md`; EPM scope, label prefix, issue types, project-label mappings, tab, and sprint are private to the owning user's saved view.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Persist administrator-controlled dashboard and EPM configuration once per workspace/Jira site so every user in that workspace reads the same values, without allowing private views, normal-user catalog refreshes, stale saves, or a process-wide JSON fallback to cross the ownership boundary.

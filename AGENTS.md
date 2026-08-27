@@ -245,7 +245,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Auth/backend plans must name and verify the user journey for each supported route surface; backend tests alone are not enough unless the route is explicitly developer-only.
 - OAuth cookie-session slices must include unsafe-method CSRF protection before the first supported browser POST route.
 - Local OAuth token stores must require both a local/dev environment key and an explicit allow flag at startup.
-- Auth-expired states must have a visible recovery screen or re-auth target; do not leave users with only backend `401` JSON.
+- Any application API `401` must globally lock the mounted app behind one sanitized sign-in recovery screen; never render raw `401` in a feature, clear its draft, or replay its failed write automatically.
 - Browser-focus auth refresh is an optimization only; keep the visible expired-auth recovery path as the fallback.
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.

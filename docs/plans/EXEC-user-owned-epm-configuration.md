@@ -1,343 +1,698 @@
 # User-Owned EPM Configuration Correction Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended)
+> or superpowers:executing-plans to implement this plan task by task. Update the checkboxes and status after
+> every committed task.
 
-**Goal:** Restore EPM settings to each authenticated user's private saved view while preserving workspace-shared, user-editable department groups and workspace-shared, administrator-only dashboard settings.
+**Goal:** Restore EPM settings to each authenticated user's private default saved view, preserve
+workspace-shared department configuration for every authenticated editor, preserve administrator-only
+workspace settings, and turn every application API `401` into one blocking authentication-recovery state.
 
-**Architecture:** Treat `backend/security/CONFIGURATION_OWNERSHIP.md` as the canonical boundary. In DB mode, resolve and patch EPM only in the current user's default private `view_configs` row and append `view_config_versions`; keep legacy JSON mode as the existing local single-user compatibility path. Remove EPM from workspace administrator allowlists, snapshots, revisions, recovery, and frontend conflict handling, and clean already-misplaced workspace EPM data without copying it into any user row.
+**Canonical contracts:**
 
-**Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test runner, Playwright, SQLite/PostgreSQL-compatible schema.
+- `backend/security/CONFIGURATION_OWNERSHIP.md`
+- `docs/agents/bugfixes/2026-08-27-planned-global-auth-lock.md`
 
-**Status:** Documentation contract committed in `ef81333`; implementation tasks pending.
+**Architecture:** In DB mode, the canonical EPM settings source is the current user's private default
+`view_configs` row. One serialized private-view mutation service owns default creation, targeted merges,
+and version allocation for both EPM saves and whole-view PATCH. Functional EPM routes and worker
+dependencies resolve or capture this user-scoped configuration rather than workspace configuration.
+Legacy JSON mode keeps its local single-user file behavior: stored v1/v2 reads use the existing
+legacy-aware normalizer, while HTTP writes use the same strict v2 validator as DB mode.
+Misplaced workspace EPM data is removed by a reversible migration archive without assigning it to a
+guessed user. The frontend removes EPM from workspace revision/conflict state, then adds one common API
+authentication boundary and root recovery gate.
 
-**Concurrency decision:** Private EPM saves use the same same-owner last-write-wins behavior as the existing `/api/me/views` PATCH contract and append view history for audit. This correction does not add an EPM-only compare-and-swap field because whole-view PATCH would still bypass it; workspace `baseRevision` and workspace conflict UI must never participate in private EPM saves.
+**Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test
+runner, Playwright, SQLite/PostgreSQL-compatible schema.
+
+**Status:** Plan corrected after three independent subagent audits on 2026-08-27. Implementation tasks
+pending. The audits' original no-go findings are addressed in the runtime resolver, serialized mutation,
+reversible migration, strict JSON validator, team-catalog boundary, cache isolation, and global-auth tasks
+below.
+
+**Concurrency decision:** Private EPM saves remain last-write-wins and do not use workspace
+`baseRevision`. EPM writers are serialized: PostgreSQL takes an owner/workspace transaction lock plus the
+target row lock; SQLite starts an immediate write transaction; missing-default and integrity races receive
+a bounded retry. EPM saves merge into the latest committed private payload. Whole-view payload PATCH is
+different because it is a full replacement: it must send the current private `baseVersion` and returns
+`409 view_config_conflict` when stale rather than overwriting a concurrent EPM update. View creation and
+default switching use the same owner/workspace serialization boundary.
+
+**EPM view-state boundary:** This correction owns the server-persisted EPM settings keys `version`,
+`labelPrefix`, `scope`, `issueTypes`, and `projects`. Existing private `epm.tab` and
+`epm.selectedSprint` values are allowed and preserved during a settings save, but this plan does not add
+new server persistence for dashboard UI choices that currently live in private browser preferences. They
+must never enter workspace configuration.
 
 ---
 
 ## Acceptance Contract
 
-| Configuration | Storage and scope | Read | Write |
+| Configuration | Canonical storage and scope | Read | Write |
 | --- | --- | --- | --- |
 | Dashboard administrator settings | `workspace_dashboard_configs`, one row per workspace | authenticated workspace users | `shared_admin_write` |
 | Department groups, labels, memberships, exclusions, and department boards | `workspace_group_configs`, one row per workspace | `authenticated_read` | `user_write` |
 | Visible groups and favorite/active group | `user_group_preferences`, workspace + user | current user | `user_write` |
-| EPM scope, label prefix, issue types, project-label mappings, and EPM view state | private `view_configs`, workspace + owner | current user | `user_write` |
+| EPM scope, label prefix, EPM issue types, and project-label mappings | default private `view_configs`, workspace + owner | current user | `user_write` |
+| EPM tab and selected sprint UI state | private browser preferences; preserve any existing private-view values | current user | current user only |
+| Derived team catalog | `workspace_team_catalogs`, one row per workspace | `authenticated_read` | `user_write` refresh |
 | Connections and tokens | user auth connection/token tables | current user | `user_write` |
 
 Required behavior:
 
-- Two users in one workspace read the same administrator and department-group configuration but different EPM configuration and group preferences.
-- A non-admin user can open and save Departments and EPM. The Admin tabs remain hidden or read-only according to the existing admin gate.
-- `GET/POST /api/epm/config` use the current user's default private view in DB mode. POST patches only `view.epm`, preserves every unrelated private field, appends one `ViewConfigVersion`, and does not require or advance the workspace `baseRevision`.
-- `POST /api/epm/projects/configuration` remains a draft preview/read operation. It uses the submitted draft to fetch configuration candidates, does not persist, and is classified `authenticated_read`, not an administrator mutation.
+- Two users in one workspace read the same administrator, department-group, and derived team-catalog
+  configuration but different EPM settings and group preferences.
+- The same user in two workspaces receives the EPM settings, preferences, catalog, connections, and shared
+  settings belonging only to the active workspace.
+- A non-admin user can open and save Departments and EPM. Administrator tabs remain hidden or read-only
+  according to the explicit admin gate.
+- `GET/POST /api/epm/config` use the current user's private default view in DB mode. A POST changes only
+  the five EPM settings keys, preserves `epm.tab`, `epm.selectedSprint`, and every unrelated private field,
+  appends exactly one version, and neither requires nor advances a workspace revision.
+- Runtime EPM scope, project discovery, issues, per-project rollups, aggregate rollups, and the Home OAuth
+  probe consume the same user-owned settings. Worker threads receive a captured request auth/config
+  snapshot and never resolve DB configuration without request identity.
+- `/api/config?includeViewConfig=true` resolves the default private view once and derives both
+  `viewConfig.view.epm` and the compatibility `epm` field from that single snapshot. `sharedConfig` never
+  contains `epm`.
+- `POST /api/epm/projects/configuration` is a non-persisting preview. It allows every authenticated user,
+  requires the unsafe-request headers and token-bound CSRF, and never requires administrator permission.
+  Its compatibility alias `/api/epm/projects/preview` has the identical policy and contract.
+- EPM saves invalidate only the current DB/OAuth user's EPM project/issues/rollup cache partition. JSON or
+  Basic mode retains its process-wide clear.
 - Workspace snapshots and administrator recovery never expose, import, save, or promote EPM.
-- Existing workspace rows containing the mistakenly shared `epm` section are cleaned by a forward migration. The migration does not infer an owner and does not create or update any `ViewConfig` or `ViewConfigVersion`.
-- `401` always means authentication recovery is required. A non-admin user does not receive `401` or `403 admin_required` for group or EPM writes when the authenticated `user_write` checks pass.
-- Group/EPM load and save `401` responses preserve dirty UI state and show the sanitized sign-in recovery action instead of only `Groups config error 401`.
+- The cleanup migration archives and removes only misplaced workspace EPM, does not infer an owner, and
+  supports downgrade restoration without overwriting newer administrator fields.
+- Legacy import sends EPM only to the importing user's private default view, sends groups only to shared
+  group storage, and discards top-level legacy `teamCatalog` as a regenerable cache rather than placing it
+  in a private view. Existing workspace catalog rows remain unchanged.
+- `401` always enters the global auth-required lock. It never means “not an admin,” never renders as a
+  feature/configuration error, and never clears dirty state or retries a failed mutation.
 
 ## Endpoint Contract
 
-All unsafe OAuth requests require an active session, `X-Requested-With: jira-execution-planner`, and the token-bound `X-CSRF-Token`.
+Unsafe OAuth writes require an authenticated session, `X-Requested-With: jira-execution-planner`, and the
+token-bound `X-CSRF-Token`. The read-like preview POST uses a dedicated `authenticated_preview` policy
+with the same unsafe-request and CSRF checks but no administrator or persistence permission.
 
-| Route | Policy | Request | Success | Relevant errors |
+| Route | Policy | Request | Success | Stable errors |
 | --- | --- | --- | --- | --- |
-| `GET /api/config?includeViewConfig=true` | `authenticated_read` | none | shared administrator snapshot/revision plus private resolved view; `epm` compatibility field comes only from the private view | `401 auth_required`, `503 config_storage_unavailable` |
-| `GET /api/epm/config` | `authenticated_read` | none | normalized current-user EPM object; no workspace `configRevision`; empty defaults when no view exists | `401`, `503` |
-| `POST /api/epm/config` | `user_write` | normalized EPM object; no workspace identity or `baseRevision` | normalized saved EPM object and private `viewConfigId` metadata | `400 invalid shape/forbidden field`, `401`, `403` CSRF, `503`; never `admin_required` |
-| `POST /api/epm/projects/configuration` | `authenticated_read` | EPM draft | derived project candidate payload; no persistence | `400`, `401`, `409 home_user_token_required` |
-| `GET/POST /api/groups-config` | `authenticated_read` / `user_write` | existing revisioned group payload | existing shared group snapshot | `400`, `401`, `403` CSRF, `409` stale shared revision, `503`; never `admin_required` |
+| `GET /api/config?includeViewConfig=true` | `authenticated_read` | none | shared admin snapshot/revision plus one resolved private view; `epm` comes from that view | `401 auth_required`, `503 config_storage_unavailable` |
+| `GET /api/epm/config` | `authenticated_read` | none | normalized current-user settings plus optional private `viewConfigId`; empty normalized defaults when no default exists | `401 auth_required`, `503 config_storage_unavailable` |
+| `POST /api/epm/config` | `user_write` | exact EPM settings object; no identity, credential, workspace id, `tab`, `selectedSprint`, or `baseRevision` | normalized saved settings plus `viewConfigId` | `400 invalid_epm_config`, `401 auth_required`, `403 csrf_required`, `503 config_storage_unavailable`; never `admin_required` |
+| `POST /api/epm/projects/configuration` and `/api/epm/projects/preview` | `authenticated_preview` | exact EPM settings draft | derived candidates; no persistence | `400 invalid_epm_config`, `401 auth_required`, `403 csrf_required`, `409 home_user_token_required`, `503 config_storage_unavailable` |
+| `GET/POST /api/groups-config` | `authenticated_read` / `user_write` | existing revisioned group payload | existing shared group snapshot | `400`, `401 auth_required`, `403 csrf_required`, `409 group_config_conflict`, `503`; never `admin_required` |
+| `GET/POST/PATCH /api/me/views` | `user_write` | POST creates; payload-replacing PATCH requires current `baseVersion` | private view with `versionNumber` | `400 invalid_view_payload`, `401 auth_required`, `403 csrf_required`, `404 view_not_found`, `409 view_config_conflict`, `503` |
 
-The DB EPM save response is:
+The strict EPM settings schema is:
 
 ```json
 {
   "version": 2,
-  "labelPrefix": "rnd_project_*",
-  "scope": {"rootGoalKey": "ROOT-1", "subGoalKeys": ["GOAL-2"]},
-  "issueTypes": {"initiative": ["Initiative"], "epic": ["Epic"], "leaf": ["Story"]},
-  "projects": {},
-  "viewConfigId": "synthetic-view-id"
+  "labelPrefix": "portfolio_project_*",
+  "scope": {
+    "rootGoalKey": "ROOT-A",
+    "subGoalKeys": ["GOAL-B"]
+  },
+  "issueTypes": {
+    "initiative": ["Initiative"],
+    "epic": ["Epic"],
+    "leaf": ["Story"]
+  },
+  "projects": {
+    "project-a": {
+      "id": "project-a",
+      "name": "Example project",
+      "label": "portfolio_project_a",
+      "homeProjectId": "home-project-a"
+    }
+  }
 }
 ```
 
-The corrected EPM endpoints must not add actor/user/workspace identifiers, credentials, Home tokens, or real local Jira/Home identifiers to their response bodies or logs. Existing resolved-view source metadata returned by `/api/config?includeViewConfig=true` remains unchanged.
+Each v2 project row accepts exactly `id`, `name`, `label`, and optional `homeProjectId`.
+`homeProjectId`, when present, must be either a non-empty string for a Home-backed project or explicit
+`null` for a custom project. Normalization trims and preserves a non-empty Home id. It accepts `null` as
+the custom-row marker and omits that field from normalized storage/output, matching the existing
+`normalize_epm_config()` contract. Empty strings and all other types return `400 invalid_epm_config`.
+
+Unknown fields, malformed nested values, identity fields, and credential material return fixed
+`400 invalid_epm_config` text. Storage/configuration/integrity failures return fixed
+`503 config_storage_unavailable` text and log only the operation plus exception class. Responses may
+contain configured goal keys, project ids, and labels because those are EPM settings. They must not add
+actor, user, workspace, connection, token, or credential metadata. Logs, committed fixtures, examples,
+and docs use synthetic identifiers only.
 
 ## File Map
 
-- `backend/config/shared_config.py`: administrator/private allowlists and EPM input validation.
-- `backend/config/db_repository.py`: owner-scoped default-view EPM read/patch and version history.
-- `backend/config/import_config.py`: legacy JSON split between workspace sections, shared groups, and the importing user's private EPM/view state.
-- `backend/routes/epm_routes.py`: user-owned EPM GET/POST contract and draft preview route.
-- `backend/routes/settings_routes.py`: bootstrap precedence and explicit EPM edit permission.
-- `backend/security/policy.py`: EPM write and preview policy classes.
-- `backend/db/migrations/versions/20260827_0008_remove_workspace_epm.py`: remove misplaced EPM data from workspace rows only.
-- `frontend/src/api/configApi.js`: private EPM bootstrap precedence and structured group-load errors.
-- `frontend/src/api/epmApi.js`: EPM save without workspace `baseRevision`.
-- `frontend/src/dashboard.jsx`: EPM permission, save, bootstrap, recovery, and conflict separation.
-- `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`: generated frontend build.
-- Focused backend, Node, and Playwright files named in the tasks below.
-- Ownership/status docs named in Task 5.
+### Backend ownership and private-view writes
 
----
-
-### Task 1: Restore The Backend Ownership Boundary
-
-**Files:**
 - Modify: `backend/config/shared_config.py`
+- Modify: `backend/config/view_validation.py`
 - Modify: `backend/config/db_repository.py`
-- Test: `tests/test_shared_admin_config_validation.py`
-- Test: `tests/test_view_config_resolution.py`
-- Test: `tests/test_user_view_config_routes.py`
+- Create: `backend/services/user_view_config.py`
+- Modify: `backend/routes/views_routes.py`
 
-- [ ] **Step 1: Write failing ownership and repository tests**
+### Runtime resolver, policy, bootstrap, and cache isolation
 
-Add tests proving the administrator allowlist excludes `epm`, a complete normalized EPM object is allowed in private views, workspace payload validation rejects `epm`, and a targeted user EPM update preserves `filters`, `eng`, and other private keys while appending exactly one next-numbered `ViewConfigVersion`.
-
-```python
-self.assertNotIn('epm', ADMIN_CONFIG_SECTIONS)
-self.assertEqual(validate_private_view_ownership({'epm': private_epm}), {'epm': private_epm})
-with self.assertRaisesRegex(ValueError, 'unsupported configuration field: <root>.epm'):
-    normalize_workspace_admin_payload({'version': 1, 'epm': private_epm})
-```
-
-Run:
-
-```bash
-.venv/bin/python -m unittest tests.test_shared_admin_config_validation tests.test_view_config_resolution tests.test_user_view_config_routes
-```
-
-Expected: FAIL because EPM is still administrator-owned and private EPM keys are stripped/rejected.
-
-- [ ] **Step 2: Implement targeted private EPM persistence**
-
-Make private ownership explicit:
-
-```python
-ADMIN_CONFIG_SECTIONS = frozenset({
-    'version', 'projects', 'board', 'capacity', 'sprintField',
-    'storyPointsField', 'parentNameField', 'teamField', 'projectTrackField',
-    'deliveryOwnerField', 'statsPriorityWeights', 'issueTypes',
-})
-PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS = ADMIN_CONFIG_SECTIONS - {'version'}
-PRIVATE_EPM_KEYS = frozenset({'version', 'labelPrefix', 'scope', 'issueTypes', 'projects', 'tab', 'selectedSprint'})
-```
-
-Add `DbConfigRepository.load_user_epm_config(context)` and `save_user_epm_config(context, epm_payload)`. Both select by request-derived `workspace_id` and `owner_user_id`. Load returns normalized empty EPM defaults when no default view exists. Save creates a private default row named `Default view` only when none exists, merges the normalized settings keys into the existing `payload['epm']` so personal `tab` and `selectedSprint` survive, preserves every unrelated payload field, updates `view_type` through `infer_view_type`, and writes `ViewConfigVersion(change_note='user EPM update')`. Do not restore the forbidden full-dashboard replacement path.
-
-- [ ] **Step 3: Run the focused tests and commit**
-
-```bash
-.venv/bin/python -m unittest tests.test_shared_admin_config_validation tests.test_view_config_resolution tests.test_user_view_config_routes
-git diff --check
-git add backend/config/shared_config.py backend/config/db_repository.py tests/test_shared_admin_config_validation.py tests/test_view_config_resolution.py tests/test_user_view_config_routes.py
-git commit -m "Restore user-owned EPM persistence"
-```
-
-Expected: focused tests pass and the commit contains only repository/ownership behavior.
-
-### Task 2: Correct EPM Routes, Bootstrap, And Access Policies
-
-**Files:**
+- Modify: `jira_server.py`
 - Modify: `backend/routes/epm_routes.py`
 - Modify: `backend/routes/settings_routes.py`
 - Modify: `backend/security/policy.py`
-- Modify: `jira_server.py`
-- Test: `tests/test_epm_config_api.py`
-- Test: `tests/test_db_admin_routes.py`
-- Test: `tests/test_dashboard_bootstrap_config_source.py`
-- Test: `tests/test_endpoint_security_matrix.py`
-- Test: `tests/test_oauth_settings_routes.py`
-- Test: `tests/test_workspace_dashboard_config_service.py`
+- Modify: `backend/security/guards.py`
+- Modify: `backend/auth/cache_policy.py`
 
-- [ ] **Step 1: Write failing route and bootstrap tests**
+### Migration and import
 
-Cover a normal user's successful EPM POST, two-user isolation in one workspace, unrelated-view-field preservation, absence of EPM from `sharedConfig`, `userCanEditEpmConfig: true` for normal users, no workspace revision change after EPM save, and this policy classification:
+- Create: `backend/db/migrations/versions/20260827_0008_remove_workspace_epm.py`
+- Modify: `backend/config/import_config.py`
+- Modify: `backend/services/workspace_dashboard_config.py`
 
-```python
-EndpointPolicy('epm-config-write', '/api/epm/config', frozenset({'POST'}), 'user_write')
-EndpointPolicy('epm-projects-configuration', '/api/epm/projects/configuration', frozenset({'POST'}), 'authenticated_read')
-```
+### Frontend EPM ownership
+
+- Modify: `frontend/src/api/configApi.js`
+- Modify: `frontend/src/api/epmApi.js`
+- Modify: `frontend/src/dashboard.jsx`
+
+### Global authentication lock
+
+- Create: `frontend/src/api/authRequired.js`
+- Create: `frontend/src/components/AuthRequiredGate.jsx`
+- Modify: `frontend/src/api/http.js`
+- Modify application API modules containing native `fetch(`
+- Modify: `frontend/src/api/authFocusRefresh.js`
+- Modify auth-error feature hooks and Settings utilities named in Task 5
+- Modify: `frontend/src/styles/shared/shell.css`
+
+### Generated output and documentation
+
+- Generated: `frontend/dist/auth-focus-refresh.js`
+- Generated: `frontend/dist/auth-focus-refresh.js.map`
+- Generated: `frontend/dist/dashboard.js`
+- Generated: `frontend/dist/dashboard.js.map`
+- Generated: `frontend/dist/dashboard.css`
+- Ownership, analytics, status, and plan docs named in Task 6
+
+---
+
+### Task 1: Restore Ownership Validation And Serialize Private-View Writes
+
+**Files:**
+
+- Modify: `backend/config/shared_config.py`
+- Modify: `backend/config/view_validation.py`
+- Modify: `backend/config/db_repository.py`
+- Create: `backend/services/user_view_config.py`
+- Modify: `backend/routes/views_routes.py`
+- Test: `tests/test_shared_admin_config_validation.py`
+- Test: `tests/test_view_config_validator.py`
+- Test: `tests/test_view_config_resolution.py`
+- Test: `tests/test_user_view_config_routes.py`
+- Create: `tests/test_user_view_config_concurrency.py`
+
+- [ ] **Step 1: Write failing ownership, strict-validation, and concurrency tests**
+
+Prove the administrator allowlist excludes `epm`; private views accept only normalized EPM settings plus
+the existing private `tab`/`selectedSprint` keys; workspace validation rejects `epm`; and private views
+reject `teamGroups`, `teamCatalog`, workspace identity, user identity, and credential material.
+Strict project-row tests must accept and preserve a non-empty string `homeProjectId`, accept explicit
+`null` for a custom row and omit it from canonical output, and reject empty strings or other types.
+
+Add overlapping transaction tests for:
+
+- two EPM saves against an existing default view;
+- two first saves racing to create the default;
+- one EPM save overlapping a stale whole-view payload PATCH, which must return
+  `409 view_config_conflict` rather than overwrite EPM;
+- one EPM first save overlapping `/api/me/views` POST with `isDefault=true` and one overlapping a default
+  switch PATCH;
+- one user in two workspaces and two users in one workspace;
+- strictly increasing unique `ViewConfigVersion.version_number` values and preservation of unrelated keys.
 
 Run:
 
 ```bash
-.venv/bin/python -m unittest tests.test_epm_config_api tests.test_db_admin_routes tests.test_dashboard_bootstrap_config_source tests.test_endpoint_security_matrix tests.test_oauth_settings_routes tests.test_workspace_dashboard_config_service
+.venv/bin/python -m unittest tests.test_shared_admin_config_validation tests.test_view_config_validator tests.test_view_config_resolution tests.test_user_view_config_routes tests.test_user_view_config_concurrency
 ```
 
-Expected: FAIL with shared EPM, `admin_required`, and workspace revision assertions.
+Expected: FAIL because EPM is administrator-owned and view mutation/version allocation is not serialized.
 
-- [ ] **Step 2: Route DB EPM through the private repository**
+- [ ] **Step 2: Implement one serialized private-view mutation service**
 
-In DB mode, `get_epm_config_endpoint()` calls `load_user_epm_config(current_request_auth_context())`; POST validates EPM input, rewrites draft row ids as today, calls `save_user_epm_config`, and clears only the current user's EPM caches when scope/config changes. Remove `WorkspaceConfigConflict`, `baseRevision`, workspace `configRevision`, and `save_dashboard_config_section('epm', ...)` from this route.
+Define storage-neutral `normalize_epm_settings_payload()` accepting exactly `version`, `labelPrefix`,
+`scope`, `issueTypes`, and `projects`; validate nested shapes before calling `normalize_epm_config()`.
+Whole-private-view validation may also allow `epm.tab` and `epm.selectedSprint`, but an EPM settings POST
+may not write them.
 
-In JSON mode, preserve the existing local single-user file behavior. Both storage modes return the same normalized non-secret EPM fields; DB mode may add only `viewConfigId`.
+Create one service used by `DbConfigRepository.save_user_epm_config()` and all `/api/me/views` POST/PATCH
+operations that create, mutate, archive, or switch a default:
 
-In `/api/config`, set:
+- acquire a PostgreSQL transaction-scoped advisory lock derived from request-owned workspace/user ids,
+  then select the target with `FOR UPDATE`; use an immediate write transaction on SQLite;
+- select by request-derived `workspace_id`, `owner_user_id`, `visibility='private'`, and non-archived id;
+- create a default private row only when no default exists;
+- retry a default unique/integrity race at most three times, then raise a typed storage error;
+- apply a caller-supplied mutation to the latest committed payload;
+- allocate and append the next version in the same transaction;
+- never derive workspace/user identity from a request payload.
 
-```python
-'userCanEditEpmConfig': True,
-'epm': private_epm_config,
-```
+Expose the current latest `versionNumber` in view responses. Require `baseVersion` when PATCH replaces
+`view`/`payload`; compare it inside the serialized transaction and return the current sanitized view plus
+`409 view_config_conflict` on mismatch. Name/default/archive-only PATCHes still serialize but do not claim
+field-level merging. Strict v2 EPM validation accepts project `label`; HTTP v2 `jiraLabel` is rejected.
 
-and ensure `sharedConfig` has no `epm`. `includeViewConfig=true` must return the same private EPM source, never merge a workspace EPM value over it.
+`save_user_epm_config()` merges only the five normalized settings keys into `payload.epm`, preserves
+existing private state and unrelated fields, updates `view_type`, and uses change note `user EPM update`.
+`load_user_epm_config()` returns normalized defaults without creating a row.
 
-- [ ] **Step 3: Run route tests and commit**
+- [ ] **Step 3: Run focused tests and commit**
 
 ```bash
-.venv/bin/python -m unittest tests.test_epm_config_api tests.test_db_admin_routes tests.test_dashboard_bootstrap_config_source tests.test_endpoint_security_matrix tests.test_oauth_settings_routes tests.test_workspace_dashboard_config_service
+.venv/bin/python -m unittest tests.test_shared_admin_config_validation tests.test_view_config_validator tests.test_view_config_resolution tests.test_user_view_config_routes tests.test_user_view_config_concurrency
 git diff --check
-git add backend/routes/epm_routes.py backend/routes/settings_routes.py backend/security/policy.py jira_server.py tests/test_epm_config_api.py tests/test_db_admin_routes.py tests/test_dashboard_bootstrap_config_source.py tests/test_endpoint_security_matrix.py tests/test_oauth_settings_routes.py tests/test_workspace_dashboard_config_service.py
-git commit -m "Route EPM settings through private views"
+git add backend/config/shared_config.py backend/config/view_validation.py backend/config/db_repository.py backend/services/user_view_config.py backend/routes/views_routes.py tests/test_shared_admin_config_validation.py tests/test_view_config_validator.py tests/test_view_config_resolution.py tests/test_user_view_config_routes.py tests/test_user_view_config_concurrency.py
+git commit -m "Restore serialized user-owned EPM persistence"
 ```
 
-Expected: focused tests pass; groups remain `authenticated_read`/`user_write` and administrator routes remain `shared_admin_write`.
+Expected: focused tests pass; the commit contains only validation and private-view mutation behavior.
 
-### Task 3: Clean Misplaced Workspace Data And Correct Legacy Import
+### Task 2: Route Every EPM Consumer Through The Private Source
 
 **Files:**
+
+- Modify: `jira_server.py`
+- Modify: `backend/routes/epm_routes.py`
+- Modify: `backend/routes/settings_routes.py`
+- Modify: `backend/security/policy.py`
+- Modify: `backend/security/guards.py`
+- Modify: `backend/auth/cache_policy.py`
+- Test: `tests/test_epm_config_api.py`
+- Test: `tests/test_epm_scope_api.py`
+- Test: `tests/test_epm_projects_api.py`
+- Test: `tests/test_epm_rollup_api.py`
+- Test: `tests/test_db_oauth_cutover.py`
+- Test: `tests/test_epm_home_cache_isolation.py`
+- Test: `tests/test_dashboard_bootstrap_config_source.py`
+- Test: `tests/test_endpoint_security_matrix.py`
+- Test: `tests/test_endpoint_policy_inventory.py`
+- Test: `tests/test_oauth_settings_routes.py`
+- Test: `tests/test_workspace_dashboard_config_service.py`
+
+- [ ] **Step 1: Write failing route, runtime, policy, cache, and bootstrap tests**
+
+Cover normal-user EPM GET/POST, strict JSON and content-type failures, fixed storage failure bodies/log
+redaction, JSON-mode parity, two-user/two-workspace isolation, missing default, unrelated private fields,
+and no workspace revision change. Include Home-backed project saves with a preserved string
+`homeProjectId` and custom-project saves with accepted `null` and canonical omission.
+
+Exercise the real runtime call graph for `/api/epm/scope`, `/api/epm/projects`, project issues,
+per-project rollup, all-project rollup, and the Home OAuth probe with different private settings for two
+users. Add a no-request-context worker test that reaches the real resolver through captured rollup
+dependencies; an uncaptured DB resolver call must fail closed rather than use workspace/default data.
+
+Prove one user's EPM save evicts only cache keys matching that request context's workspace and
+auth-connection/user partition across project, issues, and rollup caches. Another user and another
+workspace remain cached. Basic/JSON mode still clears all EPM caches.
+
+Policy assertions:
+
+```python
+EndpointPolicy('epm-config-write', '/api/epm/config', frozenset({'POST'}), 'user_write')
+EndpointPolicy('epm-projects-configuration', '/api/epm/projects/configuration', frozenset({'POST'}), 'authenticated_preview')
+EndpointPolicy('epm-projects-preview', '/api/epm/projects/preview', frozenset({'POST'}), 'authenticated_preview')
+```
+
+The preview tests cover missing/invalid CSRF, missing `X-Requested-With`, non-admin success, expired auth,
+and `409 home_user_token_required`.
+
+- [ ] **Step 2: Implement the canonical resolver and exact route contracts**
+
+Make `jira_server.get_epm_config(context=None, source='auto')` the only runtime resolver:
+
+- DB mode loads the private default through an explicit context or the active request context;
+- DB mode without either context raises `ConfigStorageError`;
+- JSON mode loads stored v1/v2 data through the legacy-aware normalizer; strict v2 validation applies to
+  new HTTP writes in both modes;
+- `GET /api/epm/config` reuses this resolver.
+
+Capture the resolved EPM object and `RequestAuthContext` before worker-thread handoff. Remove every
+functional dependency on `load_dashboard_config()['epm']`, including scope, projects, issues, rollups,
+aggregate rollups, and Home probe. Remove EPM from `_environment_dashboard_config_exists()`.
+
+In `/api/config`, resolve the default private view once. When `includeViewConfig=true`, return the complete
+private EPM object under `viewConfig.view.epm`, but derive compatibility `epm` through a read extractor
+that selects and normalizes only the five EPM settings keys. Otherwise load those settings once through
+the same repository. Return `userCanEditEpmConfig: true` for authenticated users and never include EPM in
+`sharedConfig`.
+
+Add `authenticated_preview` to the protected and CSRF policy sets without administrator checks. Map
+validation to fixed `400 invalid_epm_config` and storage/integrity/retry exhaustion to fixed
+`503 config_storage_unavailable`; log no payloads or identifiers.
+
+Add cache partition helpers in `backend/auth/cache_policy.py` and let `clear_epm_caches(context)` remove
+only matching tuple-prefixed keys in DB/OAuth mode. Keep full clear for Basic/JSON mode.
+
+- [ ] **Step 3: Run focused tests and commit**
+
+```bash
+.venv/bin/python -m unittest tests.test_epm_config_api tests.test_epm_scope_api tests.test_epm_projects_api tests.test_epm_rollup_api tests.test_db_oauth_cutover tests.test_epm_home_cache_isolation tests.test_dashboard_bootstrap_config_source tests.test_endpoint_security_matrix tests.test_endpoint_policy_inventory tests.test_oauth_settings_routes tests.test_workspace_dashboard_config_service
+git diff --check
+git add jira_server.py backend/routes/epm_routes.py backend/routes/settings_routes.py backend/security/policy.py backend/security/guards.py backend/auth/cache_policy.py tests/test_epm_config_api.py tests/test_epm_scope_api.py tests/test_epm_projects_api.py tests/test_epm_rollup_api.py tests/test_db_oauth_cutover.py tests/test_epm_home_cache_isolation.py tests/test_dashboard_bootstrap_config_source.py tests/test_endpoint_security_matrix.py tests/test_endpoint_policy_inventory.py tests/test_oauth_settings_routes.py tests/test_workspace_dashboard_config_service.py
+git commit -m "Route EPM runtime through private user settings"
+```
+
+Expected: all focused tests pass; administrator routes remain `shared_admin_write`, groups remain
+`authenticated_read`/`user_write`, and EPM functional results differ by authenticated owner.
+
+### Task 3: Migrate Workspace Data Reversibly And Correct Legacy Import
+
+**Files:**
+
 - Create: `backend/db/migrations/versions/20260827_0008_remove_workspace_epm.py`
 - Modify: `backend/config/import_config.py`
 - Modify: `backend/services/workspace_dashboard_config.py`
 - Test: `tests/test_db_migrations.py`
 - Test: `tests/test_config_jsonfile_fallback.py`
 - Test: `tests/test_shared_admin_config_recovery.py`
+- Test: `tests/test_shared_group_config_import.py`
+- Test: `tests/test_view_config_validator.py`
 
-- [ ] **Step 1: Write failing migration/import/recovery tests**
+- [ ] **Step 1: Write failing migration, downgrade, import, and ownership-isolation tests**
 
-Prove the migration removes only `payload['epm']`, preserves all other workspace keys, increments `config_revision` only for changed rows, leaves rows without EPM unchanged, and creates zero user view/version rows. Prove legacy JSON import retains EPM in the importing user's private default view and administrator recovery never promotes EPM.
+Test SQLite upgrade, downgrade, and re-upgrade; PostgreSQL offline upgrade and offline downgrade SQL
+rendering; changed and unchanged
+rows; scalar/malformed payload handling; revision movement; and exact EPM restoration on downgrade while
+preserving administrator fields changed after upgrade.
 
-```python
-self.assertNotIn('epm', migrated_workspace.payload)
-self.assertEqual(migrated_workspace.payload['board'], {'boardId': '7', 'boardName': 'Planning'})
-self.assertEqual(session.query(models.ViewConfigVersion).count(), 0)
-```
+Assert the migration does not create/update user views or versions and does not change
+`workspace_group_configs`, `user_group_preferences`, `workspace_team_catalogs`, `auth_connections`, or
+`auth_tokens`.
 
-Run:
+Import tests prove:
 
-```bash
-.venv/bin/python -m unittest tests.test_db_migrations tests.test_config_jsonfile_fallback tests.test_shared_admin_config_recovery
-```
+- EPM enters only the importing user's default private view;
+- shared groups enter only group storage;
+- top-level legacy `teamCatalog` is discarded and never appears in a view/version/admin payload;
+- existing team-catalog, preferences, connections, and tokens remain unchanged;
+- import uses the serialized private-view mutation path.
 
-Expected: FAIL because workspace EPM remains and import currently strips private EPM.
+- [ ] **Step 2: Implement a reversible migration-owned archive**
 
-- [ ] **Step 2: Implement the data-neutral ownership cleanup**
+The `20260827_0008` upgrade runs while the application is quiesced and:
 
-Create an Alembic revision after `20260826_0007` that reads workspace JSON payloads, removes the top-level `epm` key, and updates only changed rows with `config_revision + 1`. The downgrade recreates no EPM data because ownership cannot be reconstructed safely. Do not log payloads or identifiers.
+1. creates migration-only `workspace_epm_config_migration_archive` keyed by workspace with the exact
+   removed EPM JSON and original revision;
+2. archives rows whose top-level payload is an object containing `epm`;
+3. removes `epm` and increments `config_revision` atomically in dialect-specific SQL;
+4. leaves rows without EPM and non-object payloads unchanged.
 
-Update import splitting so local JSON EPM goes only to the importing user's private view. Update every workspace load/recovery allowlist so dormant or malformed `epm` data is filtered even before the migration runs.
+PostgreSQL casts generic `JSON` through `jsonb` for key removal and back to `JSON`. SQLite uses its JSON
+functions. Offline upgrade and downgrade both emit equivalent PostgreSQL SQL without opening a
+connection; downgrade is not online-only.
+
+Downgrade merges the archived EPM fragment into the row's current payload, increments the current
+revision rather than rewinding it, then drops the archive table. It never overwrites newer non-EPM
+administrator fields and never infers a private owner. Re-upgrade recreates the archive and removes EPM
+again. Document the quiesced deployment and database-backup requirement in the migration docstring and
+operator status docs.
+
+Update runtime workspace load/recovery filtering so dormant EPM never reappears before/after migration.
+Update legacy import to use the shared serialized view service, preserve private EPM, and strip/discard
+top-level `teamCatalog` as a regenerable cache.
 
 - [ ] **Step 3: Run focused tests and commit**
 
 ```bash
-.venv/bin/python -m unittest tests.test_db_migrations tests.test_config_jsonfile_fallback tests.test_shared_admin_config_recovery
+.venv/bin/python -m unittest tests.test_db_migrations tests.test_config_jsonfile_fallback tests.test_shared_admin_config_recovery tests.test_shared_group_config_import tests.test_view_config_validator
 git diff --check
-git add backend/db/migrations/versions/20260827_0008_remove_workspace_epm.py backend/config/import_config.py backend/services/workspace_dashboard_config.py tests/test_db_migrations.py tests/test_config_jsonfile_fallback.py tests/test_shared_admin_config_recovery.py
-git commit -m "Remove EPM from workspace configuration"
+git add backend/db/migrations/versions/20260827_0008_remove_workspace_epm.py backend/config/import_config.py backend/services/workspace_dashboard_config.py tests/test_db_migrations.py tests/test_config_jsonfile_fallback.py tests/test_shared_admin_config_recovery.py tests/test_shared_group_config_import.py tests/test_view_config_validator.py
+git commit -m "Remove workspace EPM with reversible migration"
 ```
 
-Expected: migration and import tests pass with no inferred private owner.
+Expected: upgrade/downgrade/offline/import tests pass with no inferred owner and no cross-domain writes.
 
-### Task 4: Separate Frontend EPM Saving And Add Auth Recovery
+### Task 4: Separate Frontend EPM Ownership And Permissions
 
 **Files:**
+
 - Modify: `frontend/src/api/configApi.js`
 - Modify: `frontend/src/api/epmApi.js`
 - Modify: `frontend/src/dashboard.jsx`
 - Modify: `tests/test_frontend_api_source_guards.js`
 - Modify: `tests/test_epm_settings_source_guards.js`
+- Modify: `tests/test_auth_isolation_source_guard.js`
 - Modify: `tests/ui/settings_unified_save.spec.js`
 - Modify: `tests/ui/settings_admin_access.spec.js`
 - Modify: `tests/ui/shared_department_groups.spec.js`
-- Generated: `frontend/dist/dashboard.js`
-- Generated: `frontend/dist/dashboard.js.map`
+- Generated frontend files listed in the File Map
 
-- [ ] **Step 1: Write failing frontend tests**
+- [ ] **Step 1: Write failing frontend ownership and permission tests**
 
-Assert private EPM bootstrap wins even if a stale `sharedConfig.epm` fixture exists, EPM saves omit workspace `baseRevision`, EPM saving never calls `commitSharedConfigRevision`, and `canEditEpmConfiguration` derives only from explicit `userCanEditEpmConfig`.
+Assert private EPM bootstrap wins even if a stale `sharedConfig.epm` fixture exists; EPM saves send only
+the strict settings object; no `baseRevision`, identity, `tab`, or `selectedSprint` is sent; EPM saving
+never calls `commitSharedConfigRevision`; and `canEditEpmConfiguration` is fail-closed until explicit
+`userCanEditEpmConfig === true`.
+Assert the save payload keeps a Home-backed row's string `homeProjectId` and sends explicit `null` for a
+custom row, without restoring legacy `jiraLabel`.
 
-Add Playwright coverage for a non-admin user who sees Departments and EPM but not Admin, can save groups and EPM, and never posts an administrator endpoint. Add group/EPM `401 auth_required` coverage that preserves the draft and renders the sanitized sign-in recovery link.
-
-Run:
-
-```bash
-node --test tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js
-npx playwright test tests/ui/settings_unified_save.spec.js tests/ui/settings_admin_access.spec.js tests/ui/shared_department_groups.spec.js
-```
-
-Expected: FAIL on shared EPM precedence, workspace revision threading, admin-derived EPM permission, and generic `Groups config error 401` handling.
+Add Playwright coverage for admin and non-admin users, missing/false/true permission flags, one settings
+Save persisting each dirty section through its own endpoint, workspace “Use latest” leaving dirty EPM
+untouched, and no EPM save posting an administrator endpoint.
 
 - [ ] **Step 2: Implement independent private EPM UI behavior**
 
-Change `saveEpmConfig(backendUrl, draftConfig)` to send only the EPM payload with the existing CSRF/requested-with headers. Seed EPM from `config.viewConfig?.view?.epm || config.epm`, never `sharedConfig.epm`. Set:
+Change `saveEpmConfig(backendUrl, draftConfig)` to post only the normalized EPM settings payload with the
+existing unsafe-request headers. Seed EPM from `config.viewConfig?.view?.epm || config.epm`, never from
+`sharedConfig.epm`. Keep browser-private `epmTab` and selected sprint behavior unchanged and out of EPM
+settings saves.
 
-```javascript
-const canEditEpmConfiguration = userCanEditEpmConfig;
-```
-
-Keep EPM dirty/save state outside `workspaceConfigConflict`; workspace “Use latest” must refresh administrator drafts without resetting a dirty EPM draft. Parse structured group/EPM load errors, use `safeAppLoginUrl`, keep the modal and draft open on `401`, and render the existing sign-in recovery action. Do not turn authentication failures into empty group/EPM baselines.
+Keep EPM dirty/save state outside `workspaceConfigConflict`; administrator “Use latest” may refresh admin
+drafts but cannot reset a dirty EPM draft. Keep the existing auth-recovery presentation working in this
+intermediate commit and preserve drafts/baselines on `401`; Task 5 replaces every feature-owned recovery
+path atomically after the shared typed contract and root gate exist.
 
 - [ ] **Step 3: Build, verify, and commit**
 
 ```bash
-node --test tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js
+node --test tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js tests/test_auth_isolation_source_guard.js
 npx playwright test tests/ui/settings_unified_save.spec.js tests/ui/settings_admin_access.spec.js tests/ui/shared_department_groups.spec.js
 npm run build
 git diff --check
-git add frontend/src/api/configApi.js frontend/src/api/epmApi.js frontend/src/dashboard.jsx tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js tests/ui/settings_unified_save.spec.js tests/ui/settings_admin_access.spec.js tests/ui/shared_department_groups.spec.js frontend/dist/dashboard.js frontend/dist/dashboard.js.map
+git add frontend/src/api/configApi.js frontend/src/api/epmApi.js frontend/src/dashboard.jsx tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js tests/test_auth_isolation_source_guard.js tests/ui/settings_unified_save.spec.js tests/ui/settings_admin_access.spec.js tests/ui/shared_department_groups.spec.js frontend/dist/auth-focus-refresh.js frontend/dist/auth-focus-refresh.js.map frontend/dist/dashboard.js frontend/dist/dashboard.js.map frontend/dist/dashboard.css
 git commit -m "Separate EPM settings from admin saves"
 ```
 
-Expected: focused Node/Playwright tests and build pass; generated output matches source.
+Expected: focused tests/build pass; generated output matches source; EPM is separated from administrator
+revision/conflict state without creating an intermediate broken auth-recovery path.
 
-### Task 5: Align Audit Documentation And Run Full Verification
+### Task 5: Add The Global Application Authentication Lock
 
 **Files:**
+
+- Modify: `backend/routes/auth_routes.py`
+- Create: `frontend/src/api/authRequired.js`
+- Create: `frontend/src/components/AuthRequiredGate.jsx`
+- Modify: `frontend/src/api/http.js`
+- Modify: `frontend/src/api/analyticsApi.js`
+- Modify: `frontend/src/api/authApi.js`
+- Modify: `frontend/src/api/authFocusRefresh.js`
+- Modify: `frontend/src/api/configApi.js`
+- Modify: `frontend/src/api/engApi.js`
+- Modify: `frontend/src/api/epmApi.js`
+- Modify: `frontend/src/api/issuesApi.js`
+- Modify: `frontend/src/api/jiraCatalogApi.js`
+- Modify: `frontend/src/api/scenarioApi.js`
+- Modify: `frontend/src/eng/useEngSprintData.js`
+- Modify: `frontend/src/eng/useEngPriorityTransitions.js`
+- Modify: `frontend/src/eng/useEngProjectTrackTransitions.js`
+- Modify: `frontend/src/eng/useEngStatusTransitions.js`
+- Modify: `frontend/src/eng/EngBoardView.jsx`
+- Modify: `frontend/src/eng/EngBoardEpicPanel.jsx`
+- Modify: `frontend/src/epm/useEpmViewData.js`
+- Modify: `frontend/src/issues/useStorySubtasks.js`
+- Modify: `frontend/src/settings/AdminAccessSettings.jsx`
+- Modify: `frontend/src/settings/GroupBoardSettings.jsx`
+- Modify: `frontend/src/settings/groupVisibilityUtils.js`
+- Modify: `frontend/src/settings/sharedExcludedCapacityToggle.js`
+- Modify: `frontend/src/settings/useGroupVisibilityPreferences.js`
+- Modify: `frontend/src/settings/FirstRunGroupSelectionModal.jsx`
+- Modify: `frontend/src/settings/TeamGroupsSettings.jsx`
+- Modify: `frontend/src/settings/UserConnectionsSettings.jsx`
+- Modify: `frontend/src/dashboard.jsx`
+- Modify: `frontend/src/styles/shared/shell.css`
+- Modify: `tests/test_auth_entry_page.py`
+- Modify: `tests/test_auth_routes.py`
+- Create: `tests/test_auth_required.js`
+- Modify: `tests/test_auth_focus_refresh.js`
+- Modify: `tests/test_auth_isolation_source_guard.js`
+- Modify: `tests/test_frontend_api_source_guards.js`
+- Modify: `tests/test_eng_auth_recovery_message.js`
+- Modify: `tests/test_eng_board_runtime_source_guards.js`
+- Modify: `tests/test_epm_settings_source_guards.js`
+- Modify: `tests/test_excluded_capacity_stats_source_guards.js`
+- Modify: `tests/test_story_subtasks.js`
+- Modify: `tests/test_group_visibility_utils.js`
+- Modify: `tests/test_planning_action_source_guards.js`
+- Create: `tests/ui/global_auth_lock.spec.js`
+- Modify: `tests/ui/auth_focus_refresh_counts.spec.js`
+- Modify: `tests/ui/shared_department_groups.spec.js`
+- Modify: `tests/ui/settings_unified_save.spec.js`
+- Modify: `tests/ui/scenario_draft_collaboration.spec.js`
+- Modify: `tests/ui/ga4_tag_and_events.spec.js`
+- Modify: `tests/ui/eng_priority_transitions.spec.js`
+- Modify: `tests/ui/eng_project_track_transitions.spec.js`
+- Modify: `tests/ui/eng_status_transitions.spec.js`
+- Modify: `tests/ui/eng_group_board_settings_tab.spec.js`
+- Modify: `tests/ui/home_token_connection_settings.spec.js`
+- Modify: `tests/ui/settings_admin_access.spec.js`
+- Modify: `docs/README_ANALYTICS.md`
+- Generated frontend files listed in the File Map
+
+- [ ] **Step 1: Write failing auth-contract, source, feature-state, analytics, and Playwright tests**
+
+Implement every unit and Playwright assertion from the global-auth design. The source guard must prove
+native application API `fetch(` exists only inside `frontend/src/api/http.js`. Replace immediate-redirect
+assertions with latch publication and no `location.assign`.
+
+Test bootstrap/ENG/group/EPM `401`, malformed bodies, same-origin absolute login URLs, unsafe URLs,
+parallel failures, a refresh `401` before dashboard mount, locked request suppression, an older concurrent
+`200` rejected after lock, dirty-save preservation until navigation, no mutation replay,
+keyboard/poll/SSE suspension, and negative `403 admin_required`,
+`403 csrf_required`, and `409 home_user_token_required` cases.
+
+Backend recovery-entry tests must prove that `session_expired` and `missing_scope` do not redirect an
+otherwise valid local session back to `/`, and that only missing-scope recovery starts OAuth with
+`prompt=consent`. Update the existing auth-entry source guard to expect `apiFetch` instead of a native
+auth-refresh `fetch`.
+
+When analytics was already initialized and enabled, assert one `app_error_shown` per lock episode with
+only:
+
+```text
+error_area=auth
+error_code=auth_required
+recoverable_state=reauth
+source_surface=app
+```
+
+When bootstrap authentication fails before analytics initialization, or analytics is disabled, assert
+zero events and no late analytics-context request. The auth lock must not queue an event for later replay.
+
+- [ ] **Step 2: Implement the common HTTP boundary and root gate**
+
+Follow `docs/agents/bugfixes/2026-08-27-planned-global-auth-lock.md` exactly. Add the window-backed latch
+shared by both frontend bundles, strict login sanitizer, typed error, pre/post-response `apiFetch` guards,
+terminal root gate, and fixed analytics event. Move every API module to the shared fetch path.
+
+Update `auth_entry_page()` so recognized terminal reasons bypass its normal authenticated-user redirect:
+`session_expired` renders a standard Atlassian sign-in action and `missing_scope` renders an action that
+starts OAuth with `prompt=consent`. Unsupported or absent reasons retain the existing redirect behavior.
+This is an entry-flow correction only; it does not change API authorization or response schemas.
+
+Feature catches must return early on the typed auth error before clearing groups, EPM settings, Home
+connection status, projects, issues, rollups, tasks, or drafts. Remove feature-owned redirects and local
+sign-in links. While locked, block every new API request, disable global keyboard effects,
+and close Scenario EventSource. The companion poll remains a status-aware SSE failure detector before
+lock, but is suppressed with every other request after lock. Apply the same preservation rule to
+`UserConnectionsSettings`: auth failures must not replace a known connection with `{ connected: false }`
+or expose a local error. Apply it explicitly to board status catalogs, epic descriptions, group-board
+status catalogs, administrator membership loads, and excluded-capacity saves so those catches neither
+replace hidden state nor render a feature error after the root gate has locked.
+
+- [ ] **Step 3: Build, verify, and commit**
+
+```bash
+.venv/bin/python -m unittest tests.test_auth_entry_page tests.test_auth_routes
+node --test tests/test_auth_required.js tests/test_auth_focus_refresh.js tests/test_auth_isolation_source_guard.js tests/test_frontend_api_source_guards.js tests/test_eng_auth_recovery_message.js tests/test_eng_board_runtime_source_guards.js tests/test_epm_settings_source_guards.js tests/test_excluded_capacity_stats_source_guards.js tests/test_story_subtasks.js tests/test_group_visibility_utils.js tests/test_planning_action_source_guards.js
+npx playwright test tests/ui/global_auth_lock.spec.js tests/ui/auth_focus_refresh_counts.spec.js tests/ui/shared_department_groups.spec.js tests/ui/settings_unified_save.spec.js tests/ui/scenario_draft_collaboration.spec.js tests/ui/ga4_tag_and_events.spec.js tests/ui/eng_priority_transitions.spec.js tests/ui/eng_project_track_transitions.spec.js tests/ui/eng_status_transitions.spec.js tests/ui/eng_group_board_settings_tab.spec.js tests/ui/home_token_connection_settings.spec.js tests/ui/settings_admin_access.spec.js
+npm run build
+git diff --check
+git add backend/routes/auth_routes.py frontend/src/api/authRequired.js frontend/src/components/AuthRequiredGate.jsx frontend/src/api/http.js frontend/src/api/analyticsApi.js frontend/src/api/authApi.js frontend/src/api/authFocusRefresh.js frontend/src/api/configApi.js frontend/src/api/engApi.js frontend/src/api/epmApi.js frontend/src/api/issuesApi.js frontend/src/api/jiraCatalogApi.js frontend/src/api/scenarioApi.js frontend/src/eng/EngBoardView.jsx frontend/src/eng/EngBoardEpicPanel.jsx frontend/src/eng/useEngSprintData.js frontend/src/eng/useEngPriorityTransitions.js frontend/src/eng/useEngProjectTrackTransitions.js frontend/src/eng/useEngStatusTransitions.js frontend/src/epm/useEpmViewData.js frontend/src/issues/useStorySubtasks.js frontend/src/settings/AdminAccessSettings.jsx frontend/src/settings/GroupBoardSettings.jsx frontend/src/settings/groupVisibilityUtils.js frontend/src/settings/sharedExcludedCapacityToggle.js frontend/src/settings/useGroupVisibilityPreferences.js frontend/src/settings/FirstRunGroupSelectionModal.jsx frontend/src/settings/TeamGroupsSettings.jsx frontend/src/settings/UserConnectionsSettings.jsx frontend/src/dashboard.jsx frontend/src/styles/shared/shell.css tests/test_auth_entry_page.py tests/test_auth_routes.py tests/test_auth_required.js tests/test_auth_focus_refresh.js tests/test_auth_isolation_source_guard.js tests/test_frontend_api_source_guards.js tests/test_eng_auth_recovery_message.js tests/test_eng_board_runtime_source_guards.js tests/test_epm_settings_source_guards.js tests/test_excluded_capacity_stats_source_guards.js tests/test_story_subtasks.js tests/test_group_visibility_utils.js tests/test_planning_action_source_guards.js tests/ui/global_auth_lock.spec.js tests/ui/auth_focus_refresh_counts.spec.js tests/ui/shared_department_groups.spec.js tests/ui/settings_unified_save.spec.js tests/ui/scenario_draft_collaboration.spec.js tests/ui/ga4_tag_and_events.spec.js tests/ui/eng_priority_transitions.spec.js tests/ui/eng_project_track_transitions.spec.js tests/ui/eng_status_transitions.spec.js tests/ui/eng_group_board_settings_tab.spec.js tests/ui/home_token_connection_settings.spec.js tests/ui/settings_admin_access.spec.js docs/README_ANALYTICS.md frontend/dist/auth-focus-refresh.js frontend/dist/auth-focus-refresh.js.map frontend/dist/dashboard.js frontend/dist/dashboard.js.map frontend/dist/dashboard.css
+git commit -m "Lock the app on authentication expiry"
+```
+
+Expected: all focused tests/build pass; no feature renders `401`; same-tab reauthentication starts a new
+fully bootstrapped document without replaying the failed request.
+
+### Task 6: Align Ownership Documentation And Run Full Verification
+
+**Files:**
+
+- Modify: `backend/security/CONFIGURATION_OWNERSHIP.md`
+- Modify: `AGENTS.md`
 - Modify: `docs/plans/DONE-shared-admin-configuration.md`
 - Modify: `docs/plans/DONE-03-db-user-configuration.md`
 - Modify: `docs/plans/DONE-04-db-user-home-epm-read-token.md`
 - Modify: `docs/plans/SUPPORT-db-migration-claude-review-workflow.md`
 - Modify: `docs/plans/README.md`
 - Modify: `docs/agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md`
+- Modify: `docs/agents/bugfixes/2026-08-27-planned-global-auth-lock.md`
 - Modify: `README.md`
-- Modify: `docs/README_ANALYTICS.md`
 - Modify: `docs/plans/EXEC-user-owned-epm-configuration.md`
 
-- [ ] **Step 1: Correct historical status without rewriting history**
+- [ ] **Step 1: Correct current guidance without rewriting historical execution**
 
-Keep the PR #130 execution status and current-accuracy warning aligned with the implemented correction. Restore `DONE-03` and `DONE-04` as authoritative for private EPM scope/mappings and update the plan index. Document the access matrix in README. Record that existing `settings_action`/`api_result` events already cover the save/access correction and no new analytics event is needed.
+Keep PR #130's historical execution record and mark only its shared-EPM decision superseded. Restore
+`DONE-03`/`DONE-04` current summaries as authoritative for private EPM. Correct the support workflow to
+the current per-user `atlassian_user_api_token` Home-read model and DB token tables.
 
-- [ ] **Step 2: Run the complete verification set**
+Document the full ownership matrix, default-private-view behavior, team-catalog import discard, reversible
+migration archive, cache isolation, and global `401` lock. Tighten the existing root learning so every app
+API `401` globally locks and reauthenticates rather than creating local feature recovery UI.
+
+- [ ] **Step 2: Run complete verification**
 
 ```bash
+node --version
 .venv/bin/python scripts/check_startup_preflight.py
 .venv/bin/python -m unittest discover -s tests
-npm test
+npm run test:frontend:unit
+npm run test:frontend:ui
 npm run build
 git diff --exit-code -- frontend/dist
 git diff --check
 git status --short
 ```
 
-Expected: every command exits `0`; the post-build generated diff is clean; only documentation/status files remain for the final commit.
+Expected: Node reports `v20.x`; every command exits `0`; the post-build generated diff is clean.
 
-- [ ] **Step 3: Review the complete diff and commit documentation/status**
+Start the configured local Flask server with `.venv/bin/python jira_server.py`, verify there are no Python
+runtime/dependency warnings before the Flask banner, and exercise `curl -fsS http://127.0.0.1:5050/api/test`
+under the configured local auth mode. Stop the server after the check.
+
+- [ ] **Step 3: Review the complete branch and commit documentation/status**
 
 ```bash
 git diff --stat origin/main...HEAD
 git log --oneline -8
-git add docs/plans/DONE-shared-admin-configuration.md docs/plans/DONE-03-db-user-configuration.md docs/plans/DONE-04-db-user-home-epm-read-token.md docs/plans/SUPPORT-db-migration-claude-review-workflow.md docs/plans/README.md docs/agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md README.md docs/README_ANALYTICS.md docs/plans/EXEC-user-owned-epm-configuration.md
+git diff --check
+git add backend/security/CONFIGURATION_OWNERSHIP.md AGENTS.md docs/plans/DONE-shared-admin-configuration.md docs/plans/DONE-03-db-user-configuration.md docs/plans/DONE-04-db-user-home-epm-read-token.md docs/plans/SUPPORT-db-migration-claude-review-workflow.md docs/plans/README.md docs/agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md docs/agents/bugfixes/2026-08-27-planned-global-auth-lock.md README.md docs/plans/EXEC-user-owned-epm-configuration.md
 git commit -m "Align configuration ownership documentation"
 ```
 
-Expected: final commit contains only ownership/status/analytics documentation. Do not rename this correction plan to `DONE-*` until implementation is verified and accepted or merged.
+Expected: final commit contains only ownership/status/design documentation. Do not rename this plan to
+`DONE-*` until implementation is verified and accepted or merged.
 
 ## Final Review Checklist
 
-- [ ] `rg -n "shared.*EPM|EPM.*shared|administrator-owned.*EPM" backend frontend/src docs tests README.md` returns only explicitly historical/superseded text.
-- [ ] `rg -n "epm.*sharedConfigRevision|requestSaveEpmConfig.*sharedConfigRevision|save_dashboard_config_section\('epm'" backend frontend/src tests` returns no active implementation paths.
-- [ ] Non-admin group/EPM route tests distinguish authenticated permission from `401` recovery.
-- [ ] Two-user and two-workspace tests prove EPM isolation and shared group/admin behavior.
-- [ ] Migration tests prove no user rows are inferred or modified.
-- [ ] Frontend screenshot/interaction tests prove Admin, Departments, and EPM visibility matches the ownership matrix.
-- [ ] Full Python, Node, Playwright focused suites, preflight, and frontend clean-build checks pass.
-- [ ] Before push: review `git log --oneline -5`, summarize verification, and wait for explicit user confirmation.
+- [ ] Every named file exists unless its task marks it `Create`.
+- [ ] No active runtime path reads EPM from workspace configuration.
+- [ ] Default private view selection explicitly checks workspace, owner, private visibility, default flag,
+  and non-archived state.
+- [ ] EPM concurrency tests prove monotonic versions and unrelated-field preservation; stale whole-view
+  replacement returns `409` instead of overwriting a concurrent EPM save.
+- [ ] Two-user and two-workspace tests cover EPM, groups, preferences, catalog, connections, and untouched
+  ownership domains with row-count/payload assertions.
+- [ ] Migration tests prove archive, upgrade, downgrade, re-upgrade, offline SQL, revision movement, and no
+  inferred private owner.
+- [ ] JSON-mode EPM GET/POST strict-validation parity is preserved.
+- [ ] EPM cache invalidation affects only the active DB/OAuth partition.
+- [ ] Preview POST requires authentication, requested-with, and CSRF but no admin permission.
+- [ ] Missing/false EPM edit permission fails closed; explicit true enables editing.
+- [ ] No app feature/configuration panel renders raw `401`, owns a sign-in redirect, or bypasses `apiFetch`.
+- [ ] The global auth gate is blocking, accessible, deduplicated, shared across both frontend bundles,
+  rejects late responses after lock, and remains terminal until same-tab sign-in navigation.
+- [ ] Full Python, Node unit, Playwright, preflight, Flask startup/API, and clean frontend build checks pass.
+- [ ] Before push: review `git log --oneline -5`, summarize verification, and wait for explicit user
+  confirmation.

@@ -57,6 +57,8 @@ class EndpointPolicy:
         return False
 
 
+# Keep configuration policies aligned with CONFIGURATION_OWNERSHIP.md. Any storage or
+# permission change must update the backend response contract and frontend edit gate together.
 ENDPOINT_POLICIES = (
     EndpointPolicy("dashboard-root", "/", PUBLIC_METHODS, "public_page"),
     EndpointPolicy("dashboard-html", "/jira-dashboard.html", PUBLIC_METHODS, "public_page"),

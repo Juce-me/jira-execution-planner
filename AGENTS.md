@@ -234,7 +234,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Treat Atlassian account ids only as stable identity keys for tool-local admin roles; never imply Atlassian tenant/admin status grants tool admin access.
 - Redact OAuth callback query strings from logs; never log authorization code or state values.
 - Store implementation plans in `docs/plans/` only.
-- Store administrator-owned dashboard and EPM configuration once per workspace; private views may contain only personal view state and must never override shared settings.
+- Before modifying configuration storage, database ownership, endpoint rights, or Settings edit gates, read `backend/security/CONFIGURATION_OWNERSHIP.md` and preserve its admin/group/preference/EPM ownership matrix across backend and frontend.
+- Keep EPM scope, label prefix, issue types, project-label mappings, tab, and sprint private to the owning user's saved view; never store them in workspace administrator configuration.
+- Keep department groups, group labels, memberships, exclusions, and department board layouts shared once per workspace and configurable by every authenticated user; keep stars/favorites, visibility, and active group private per user.
 - For any plan review, creation, or execution under `docs/plans/`, read `docs/plans/AGENTS.md` first and follow its plan review prompt, naming, and gate rules.
 - Before creating or executing any Home/Townsquare auth migration plan, read `docs/plans/AGENTS.md` and run or document the Home GraphQL OAuth probe gate; do not mark Home/Townsquare-backed routes OAuth-ready unless it passes with a real local user 3LO session.
 - After DB auth exists, Home/Townsquare 3LO plans must use DB `auth_connections`/encrypted `auth_tokens` and must not resolve route tokens through local OAuth token-store helpers.

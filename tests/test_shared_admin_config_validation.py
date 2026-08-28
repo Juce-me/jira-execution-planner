@@ -5,7 +5,7 @@ from backend.config.shared_config import (
     ADMIN_CONFIG_SECTIONS,
     PERSONAL_EPM_KEYS,
     PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS,
-    SHARED_EPM_KEYS,
+    USER_EPM_SETTINGS_KEYS,
     legacy_fallback_matches_workspace,
     normalize_workspace_admin_payload,
     strip_shared_sections_from_private_view,
@@ -22,39 +22,42 @@ class SharedAdminConfigValidationTests(unittest.TestCase):
                 'version', 'projects', 'board', 'capacity', 'sprintField',
                 'storyPointsField', 'parentNameField', 'teamField',
                 'projectTrackField', 'deliveryOwnerField', 'statsPriorityWeights',
-                'issueTypes', 'epm',
+                'issueTypes',
             }),
         )
-        self.assertEqual(PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS, ADMIN_CONFIG_SECTIONS - {'version', 'epm'})
-        self.assertEqual(SHARED_EPM_KEYS, frozenset({'version', 'labelPrefix', 'scope', 'issueTypes', 'projects'}))
+        self.assertEqual(PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS, ADMIN_CONFIG_SECTIONS - {'version'})
+        self.assertEqual(USER_EPM_SETTINGS_KEYS, frozenset({'version', 'labelPrefix', 'scope', 'issueTypes', 'projects'}))
         self.assertEqual(PERSONAL_EPM_KEYS, frozenset({'tab', 'selectedSprint'}))
 
     def test_workspace_payload_keeps_only_known_legacy_exclusions(self):
         payload = {
             'version': 1,
             'board': {'boardId': '7'},
-            'epm': {'version': 2, 'scope': {'rootGoalKey': 'GOAL-1'}},
             'filters': {'projectKeys': ['PRIVATE']},
             'eng': {'mode': 'planning'},
             'teamGroups': {'groups': []},
             'teamCatalog': {'catalog': {}},
+            'epm': {
+                'scope': {'userId': 'legacy-user'},
+                'projects': {'legacy': {'apiToken': 'legacy-token'}},
+            },
         }
         normalized = normalize_workspace_admin_payload(payload, allow_legacy_excluded_fields=True)
-        self.assertEqual(set(normalized), {'version', 'board', 'epm'})
+        self.assertEqual(set(normalized), {'version', 'board'})
         self.assertEqual(normalized['board'], {'boardId': '7', 'boardName': ''})
-        self.assertEqual(normalized['epm']['scope']['rootGoalKey'], 'GOAL-1')
 
     def test_workspace_payload_rejects_unknown_identity_and_malformed_fields(self):
         invalid = (
             {'unexpected': {}},
             {'board': {'boardId': 'not-numeric'}},
             {'board': {'boardId': '7', 'workspaceId': 'claimed'}},
-            {'epm': {'scope': {'user_id': 'claimed'}}},
-            {'epm': {'query': 'query X', 'variables': {}}},
         )
         for payload in invalid:
             with self.subTest(payload=payload), self.assertRaises(ValueError):
                 normalize_workspace_admin_payload(payload, allow_legacy_excluded_fields=True)
+
+        with self.assertRaises(ValueError):
+            normalize_workspace_admin_payload({'epm': {'version': 2}})
 
     def test_workspace_payload_rejects_unknown_priority_weight_fields(self):
         with self.assertRaisesRegex(ValueError, r'statsPriorityWeights\[0\]\.unexpected'):
@@ -64,7 +67,7 @@ class SharedAdminConfigValidationTests(unittest.TestCase):
                 ],
             })
 
-    def test_private_runtime_view_cannot_override_shared_epm(self):
+    def test_private_runtime_view_preserves_user_owned_epm(self):
         payload = {
             'version': 1,
             'filters': {'projectKeys': ['PRODUCT']},
@@ -77,14 +80,29 @@ class SharedAdminConfigValidationTests(unittest.TestCase):
         self.assertEqual(strip_shared_sections_from_private_view(payload), {
             'version': 1,
             'filters': {'projectKeys': ['PRODUCT']},
-            'epm': {'tab': 'active', 'selectedSprint': 'Active'},
+            'epm': {
+                'tab': 'active', 'selectedSprint': 'Active',
+                'scope': {'rootGoalKey': 'PRIVATE'}, 'projects': {'private': {}},
+            },
         })
 
-    def test_private_persistence_rejects_shared_sections(self):
-        for payload in ({'board': {}}, {'epm': {'scope': {}}}, {'epm': {'projects': {}}}):
+    def test_private_persistence_accepts_strict_epm_and_rejects_shared_sections(self):
+        for payload in ({'board': {}}, {'teamGroups': {}}, {'teamCatalog': {}}):
             with self.subTest(payload=payload), self.assertRaises(ViewPayloadValidationError):
                 validate_private_view_ownership(payload)
-        validate_private_view_ownership({'version': 1, 'epm': {'tab': 'active', 'selectedSprint': 'Active'}})
+        payload = {
+            'version': 1,
+            'epm': {
+                'version': 2,
+                'labelPrefix': 'portfolio_project_*',
+                'scope': {'rootGoalKey': 'ROOT-A', 'subGoalKeys': ['GOAL-B']},
+                'issueTypes': {'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story']},
+                'projects': {},
+                'tab': 'active',
+                'selectedSprint': 'Active',
+            },
+        }
+        self.assertEqual(validate_private_view_ownership(payload), payload)
 
     def test_legacy_fallback_requires_exact_normalized_site(self):
         context = SimpleNamespace(site_url='https://example.atlassian.net/')

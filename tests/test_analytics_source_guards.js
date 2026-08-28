@@ -13,6 +13,14 @@ function read(relativePath) {
     return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
+function listSourceFiles(root) {
+    return fs.readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+        const fullPath = path.join(root, entry.name);
+        if (entry.isDirectory()) return listSourceFiles(fullPath);
+        return /\.jsx?$/.test(entry.name) ? [fullPath] : [];
+    });
+}
+
 function jsSetValues(source, setName) {
     const match = source.match(new RegExp(`const ${setName} = new Set\\(\\[([\\s\\S]*?)\\]\\);`));
     assert.ok(match, `${setName} must be declared as a Set literal`);
@@ -182,12 +190,19 @@ test('onboarding analytics use only the canonical settings action outcomes and s
     const helperSource = read('frontend/src/onboarding/onboardingAnalytics.js');
     const controllerSource = read('frontend/src/onboarding/useOnboardingTour.js');
     const analyticsSources = `${helperSource}\n${controllerSource}`;
-    const onboardingDirectory = path.join(repoRoot, 'frontend', 'src', 'onboarding');
-    const bypasses = fs.readdirSync(onboardingDirectory)
-        .filter((fileName) => /\.jsx?$/.test(fileName) && fileName !== 'onboardingAnalytics.js')
-        .filter((fileName) => /trackSettingsAction\s*(?:\?\.|\()/.test(
-            fs.readFileSync(path.join(onboardingDirectory, fileName), 'utf8'),
-        ));
+    const frontendSource = path.join(repoRoot, 'frontend', 'src');
+    const helperPath = path.join(frontendSource, 'onboarding', 'onboardingAnalytics.js');
+    const directOnboardingPatterns = [
+        /trackSettingsAction\s*(?:\?\.)?\s*\(\s*['"]onboarding['"]/,
+        /track(?:Event|ProductEvent)\s*(?:\?\.)?\s*\(\s*['"]settings_action['"]\s*,\s*\{[\s\S]{0,1000}?\bsection\s*:\s*['"]onboarding['"]/,
+    ];
+    const bypasses = listSourceFiles(frontendSource)
+        .filter((filePath) => filePath !== helperPath)
+        .filter((filePath) => {
+            const source = fs.readFileSync(filePath, 'utf8');
+            return directOnboardingPatterns.some((pattern) => pattern.test(source));
+        })
+        .map((filePath) => path.relative(repoRoot, filePath));
 
     assert.match(controllerSource, /trackOnboardingAnalytics\(/);
     assert.deepEqual(bypasses, []);

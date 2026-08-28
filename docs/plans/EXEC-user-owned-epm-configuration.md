@@ -32,8 +32,8 @@ authentication boundary and root recovery gate.
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test
 runner, Playwright, SQLite/PostgreSQL-compatible schema.
 
-**Status:** Tasks 1 and 2 are implemented and verified, including the required PostgreSQL concurrency
-gate. Tasks 3 through 6 remain in progress. The original no-go findings plus the effective-
+**Status:** Tasks 1 through 3 are implemented and verified, including the required PostgreSQL concurrency
+gate. Tasks 4 through 6 remain in progress. The original no-go findings plus the effective-
 view cache-invalidation and real-PostgreSQL concurrency gaps are addressed in the runtime resolver,
 serialized mutation, reversible migration, strict JSON validator, team-catalog boundary, cache isolation,
 PostgreSQL completion gate, and global-auth tasks below.
@@ -457,7 +457,9 @@ effective-view mutation path implemented so far follows the same post-commit par
 
 - Create: `backend/db/migrations/versions/20260827_0008_remove_workspace_epm.py`
 - Modify: `backend/config/import_config.py`
+- Modify: `backend/services/user_view_config.py`
 - Modify: `backend/services/workspace_dashboard_config.py`
+- Modify: `README.md`
 - Test: `tests/test_db_migrations.py`
 - Test: `tests/test_config_jsonfile_fallback.py`
 - Test: `tests/test_shared_admin_config_recovery.py`
@@ -465,7 +467,7 @@ effective-view mutation path implemented so far follows the same post-commit par
 - Test: `tests/test_view_config_validator.py`
 - Test: `tests/test_epm_home_cache_isolation.py`
 
-- [ ] **Step 1: Write failing migration, downgrade, import, and ownership-isolation tests**
+- [x] **Step 1: Write failing migration, downgrade, import, and ownership-isolation tests**
 
 Test SQLite upgrade, downgrade, and re-upgrade; PostgreSQL offline upgrade and offline downgrade SQL
 rendering; changed and unchanged
@@ -487,7 +489,7 @@ Import tests prove:
   partition once after commit, while an idempotent duplicate, unchanged effective EPM, validation failure,
   or forced rollback does not invalidate and never touches another user/workspace partition.
 
-- [ ] **Step 2: Implement a reversible migration-owned archive**
+- [x] **Step 2: Implement a reversible migration-owned archive**
 
 The `20260827_0008` upgrade runs while the application is quiesced and:
 
@@ -514,7 +516,7 @@ the import must use the same transaction-owning mutation wrapper and injected po
 the HTTP mutation routes. It must compare normalized effective EPM before/after, commit first, invalidate
 only the active partition when changed, and produce no invalidation on duplicate/no-op/failure paths.
 
-- [ ] **Step 3: Run focused tests and commit**
+- [x] **Step 3: Run focused tests and commit**
 
 ```bash
 .venv/bin/python -m unittest tests.test_db_migrations tests.test_config_jsonfile_fallback tests.test_shared_admin_config_recovery tests.test_shared_group_config_import tests.test_view_config_validator tests.test_epm_home_cache_isolation

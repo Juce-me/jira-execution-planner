@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 import tempfile
 import threading
@@ -24,6 +25,7 @@ from backend.services.user_view_config import (
     save_user_epm_config,
 )
 from backend.config.view_validation import ViewPayloadValidationError
+from backend.config.import_config import import_dashboard_config
 import jira_server
 
 
@@ -429,6 +431,148 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
                     _before_commit=lambda: (_ for _ in ()).throw(RuntimeError('rollback')),
                 )
             assert_not_evicted(before)
+        finally:
+            for cache in (jira_server.EPM_PROJECTS_CACHE, jira_server.EPM_ISSUES_CACHE, jira_server.EPM_ROLLUP_CACHE):
+                cache.clear()
+            db_engine.dispose_engines()
+            tmpdir.cleanup()
+
+    def test_legacy_import_invalidates_only_changed_owner_partition_after_commit(self):
+        tmpdir = tempfile.TemporaryDirectory()
+        database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir.name, 'import-cache.db')}"
+        source_path = os.path.join(tmpdir.name, 'dashboard-config.json')
+        engine = db_engine.get_engine(database_url)
+        models.Base.metadata.create_all(engine)
+        factory = db_engine.session_factory(database_url)
+        try:
+            with factory() as session:
+                workspace = models.Workspace(environment_key='import', name='Import', created_by='test')
+                other_workspace = models.Workspace(environment_key='import-other', name='Other', created_by='test')
+                user = models.User(
+                    external_provider='atlassian', external_subject='import-user', account_type='user',
+                    status='active', created_by='test',
+                )
+                other_user = models.User(
+                    external_provider='atlassian', external_subject='other-user', account_type='user',
+                    status='active', created_by='test',
+                )
+                session.add_all([workspace, other_workspace, user, other_user])
+                session.flush()
+                session.commit()
+                ids = workspace.id, other_workspace.id, user.id, other_user.id
+            workspace_id, other_workspace_id, user_id, other_user_id = ids
+            target = oauth_context(user_id, 'connection-target', workspace_id=workspace_id)
+            other_user = oauth_context(other_user_id, 'connection-other-user', workspace_id=workspace_id)
+            other_workspace = oauth_context(user_id, 'connection-other-workspace', workspace_id=other_workspace_id)
+            caches = (jira_server.EPM_PROJECTS_CACHE, jira_server.EPM_ISSUES_CACHE, jira_server.EPM_ROLLUP_CACHE)
+            target_keys = [build_jira_home_process_cache_key(target, kind, 'old') for kind in ('projects', 'issues', 'rollup')]
+            other_user_keys = [build_jira_home_process_cache_key(other_user, kind, 'old') for kind in ('projects', 'issues', 'rollup')]
+            other_workspace_keys = [build_jira_home_process_cache_key(other_workspace, kind, 'old') for kind in ('projects', 'issues', 'rollup')]
+            callbacks = []
+
+            def warm():
+                for cache, target_key, user_key, workspace_key in zip(caches, target_keys, other_user_keys, other_workspace_keys):
+                    cache.clear()
+                    cache[target_key] = 'target'
+                    cache[user_key] = 'other-user'
+                    cache[workspace_key] = 'other-workspace'
+
+            def after_commit(result):
+                callbacks.append(result.view_config_id)
+                jira_server.clear_epm_caches(target)
+
+            def payload(marker):
+                return {
+                    'version': 1,
+                    'epm': {
+                        'version': 2, 'labelPrefix': 'project_*',
+                        'scope': {'rootGoalKey': marker, 'subGoalKeys': []},
+                        'issueTypes': {'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story']},
+                        'projects': {},
+                    },
+                }
+
+            with open(source_path, 'w', encoding='utf-8') as handle:
+                json.dump(payload('ROOT-1'), handle)
+            warm()
+            first = import_dashboard_config(
+                database_url=database_url, context=target, source_path=source_path,
+                post_commit=after_commit,
+            )
+            self.assertTrue(first.imported)
+            self.assertEqual(len(callbacks), 1)
+            for cache, target_key, user_key, workspace_key in zip(caches, target_keys, other_user_keys, other_workspace_keys):
+                self.assertNotIn(target_key, cache)
+                self.assertIn(user_key, cache)
+                self.assertIn(workspace_key, cache)
+
+            warm()
+            duplicate = import_dashboard_config(
+                database_url=database_url, context=target, source_path=source_path,
+                post_commit=after_commit,
+            )
+            self.assertFalse(duplicate.imported)
+            self.assertEqual(len(callbacks), 1)
+            for cache, target_key in zip(caches, target_keys):
+                self.assertIn(target_key, cache)
+
+            unchanged_path = os.path.join(tmpdir.name, 'same-epm.json')
+            with open(unchanged_path, 'w', encoding='utf-8') as handle:
+                json.dump(payload('ROOT-1'), handle)
+            unchanged = import_dashboard_config(
+                database_url=database_url, context=target, source_path=unchanged_path,
+                post_commit=after_commit,
+            )
+            self.assertTrue(unchanged.imported)
+            self.assertEqual(len(callbacks), 1)
+            with factory() as session:
+                saved = session.query(models.ViewConfig).filter_by(
+                    workspace_id=workspace_id, owner_user_id=user_id, is_default=True,
+                ).one()
+                persisted_before_failures = (
+                    dict(saved.payload), saved.source_path, saved.source_hash,
+                    session.query(models.ViewConfigVersion).filter_by(view_config_id=saved.id).count(),
+                )
+
+            invalid_path = os.path.join(tmpdir.name, 'invalid.json')
+            with open(invalid_path, 'w', encoding='utf-8') as handle:
+                json.dump({'epm': {'version': 2, 'teamCatalog': {}}}, handle)
+            with self.assertRaises(ViewPayloadValidationError):
+                import_dashboard_config(
+                    database_url=database_url, context=target, source_path=invalid_path,
+                    post_commit=after_commit,
+                )
+            self.assertEqual(len(callbacks), 1)
+            for cache, target_key, user_key, workspace_key in zip(caches, target_keys, other_user_keys, other_workspace_keys):
+                self.assertIn(target_key, cache)
+                self.assertIn(user_key, cache)
+                self.assertIn(workspace_key, cache)
+
+            changed_path = os.path.join(tmpdir.name, 'changed.json')
+            with open(changed_path, 'w', encoding='utf-8') as handle:
+                json.dump(payload('ROOT-2'), handle)
+            with self.assertRaises(RuntimeError):
+                import_dashboard_config(
+                    database_url=database_url, context=target, source_path=changed_path,
+                    post_commit=after_commit,
+                    _before_commit=lambda: (_ for _ in ()).throw(RuntimeError('rollback')),
+                )
+            self.assertEqual(len(callbacks), 1)
+            for cache, target_key, user_key, workspace_key in zip(caches, target_keys, other_user_keys, other_workspace_keys):
+                self.assertIn(target_key, cache)
+                self.assertIn(user_key, cache)
+                self.assertIn(workspace_key, cache)
+            with factory() as session:
+                saved = session.query(models.ViewConfig).filter_by(
+                    workspace_id=workspace_id, owner_user_id=user_id, is_default=True,
+                ).one()
+                self.assertEqual(
+                    (
+                        dict(saved.payload), saved.source_path, saved.source_hash,
+                        session.query(models.ViewConfigVersion).filter_by(view_config_id=saved.id).count(),
+                    ),
+                    persisted_before_failures,
+                )
         finally:
             for cache in (jira_server.EPM_PROJECTS_CACHE, jira_server.EPM_ISSUES_CACHE, jira_server.EPM_ROLLUP_CACHE):
                 cache.clear()

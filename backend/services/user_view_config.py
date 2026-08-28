@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 from types import MappingProxyType
@@ -17,6 +17,7 @@ from backend.config.view_validation import normalize_epm_settings_payload
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.epm.config import normalize_epm_config
+from backend.services import shared_group_config
 
 
 _UNSET = object()
@@ -60,6 +61,7 @@ class UserViewMutationResult:
     before_effective_epm: Mapping
     after_effective_epm: Mapping
     effective_epm_changed: bool
+    mutation_applied: bool = True
 
     def as_view_dict(self):
         return {
@@ -130,6 +132,11 @@ def _selected_view(session, context, view_config_id, dialect_name):
 
 def _scope_lock_key(context):
     digest = hashlib.sha256(f'{context.workspace_id}\0{context.user_id}'.encode('utf-8')).digest()
+    return int.from_bytes(digest[:8], byteorder='big', signed=True)
+
+
+def _workspace_import_lock_key(context):
+    digest = hashlib.sha256(f'legacy-import-groups\0{context.workspace_id}'.encode('utf-8')).digest()
     return int.from_bytes(digest[:8], byteorder='big', signed=True)
 
 
@@ -410,14 +417,50 @@ def save_imported_user_view(
     *,
     source_path,
     source_hash,
+    shared_groups=None,
+    validate_groups_config_fn=None,
     database_url=None,
     post_commit: Callable[[UserViewMutationResult], None] | None = None,
     _before_commit=None,
 ):
     """Replace the default private view through the same serialized import boundary."""
     normalized = validate_private_view_ownership(payload)
+    attempt_state = {'imported': False}
 
     def operation(session, dialect_name):
+        attempt_state['imported'] = False
+        if shared_groups is not None:
+            if validate_groups_config_fn is None:
+                raise ValueError('group validation is required for legacy import')
+            if dialect_name == 'postgresql':
+                session.execute(
+                    text('SELECT pg_advisory_xact_lock(:lock_key)'),
+                    {'lock_key': _workspace_import_lock_key(context)},
+                )
+            existing_groups = session.execute(_locked(
+                select(models.WorkspaceGroupConfig).where(
+                    models.WorkspaceGroupConfig.workspace_id == context.workspace_id,
+                ),
+                dialect_name,
+            )).scalars().first()
+            if existing_groups is None:
+                shared_group_config.ensure_workspace_group_config(
+                    session,
+                    context,
+                    shared_groups,
+                    validate_groups_config_fn=validate_groups_config_fn,
+                )
+        duplicate = session.execute(_locked(
+            select(models.ViewConfig).where(
+                models.ViewConfig.workspace_id == context.workspace_id,
+                models.ViewConfig.owner_user_id == context.user_id,
+                models.ViewConfig.source_path == str(source_path),
+                models.ViewConfig.source_hash == str(source_hash),
+            ),
+            dialect_name,
+        )).scalars().first()
+        if duplicate is not None:
+            return duplicate, _latest_version(session, duplicate.id)
         view = _default_view(session, context, dialect_name)
         if view is None:
             view = models.ViewConfig(
@@ -432,18 +475,21 @@ def save_imported_user_view(
             )
             session.add(view)
             session.flush()
+            attempt_state['imported'] = True
         else:
             view.view_type = _infer_view_type(normalized)
             view.payload_version = int(normalized.get('version') or view.payload_version or 1)
             view.payload = deepcopy(normalized)
+            attempt_state['imported'] = True
         view.source_path = str(source_path)
         view.source_hash = str(source_hash)
         session.flush()
         return view, _append_version(session, view, context, 'legacy json import')
 
-    return _run_transaction(
+    result = _run_transaction(
         context, database_url, operation, post_commit=post_commit, before_commit=_before_commit,
     )
+    return replace(result, mutation_applied=attempt_state['imported'])
 
 
 def load_user_epm_config(context, *, database_url=None):

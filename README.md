@@ -325,6 +325,8 @@ configuration.
 
 For migrations, use `RUN_DB_MIGRATIONS=true` only for a single-instance internal deployment where the app container is the agreed migration owner. For multi-replica deployments, run Alembic as a separate release job or init step before rolling out app replicas, and keep `RUN_DB_MIGRATIONS=false` on the web containers.
 
+Migration `20260827_0008` must run with application writers quiesced and only after a database backup. Its workspace-EPM archive is migration-only rollback state: the migration is reversible, and operators or application code must never use the archive to infer or create a private EPM owner.
+
 OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads require the user's connected Home token stored encrypted in DB.
 
 Needs SRE ownership or confirmation:

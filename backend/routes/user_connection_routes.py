@@ -52,8 +52,8 @@ def _error_response(error):
         'credential_email_required': 400,
         'credential_api_token_required': 400,
         'credential_subject_mismatch': 409,
-        'credential_not_authorized': 422,
-        'credential_validation_failed': 422,
+        'credential_not_authorized': 401,
+        'credential_validation_failed': 401,
         'home_credential_not_authorized': 403,
         'jira_site_required': 400,
     }.get(error.code, 400)

@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import {
     fetchEpmProjects,
     fetchEpmProjectRollup,
@@ -119,7 +118,6 @@ export function useEpmViewData({
             setEpmProjects(nextProjects);
             return nextProjects;
         } catch (err) {
-            if (isAuthenticationRequiredError(err)) throw err;
             if (epmProjectsRequestIdRef.current !== requestId) {
                 return [];
             }
@@ -189,6 +187,11 @@ export function useEpmViewData({
         setEpmProjectRollupLoadingIds(new Set());
         if (epmSelectedProjectId === '' && currentProjectId === '') {
             setEpmRollupLoading(true);
+            setEpmRollupTree(null);
+            setEpmRollupBoards(null);
+            setEpmDuplicates({});
+            setEpmAggregateTruncated(false);
+            setEpmAggregateFallback(false);
             try {
                 const payload = await fetchEpmAllProjectsRollup(backendUrl, {
                     tab: epmTab,
@@ -199,13 +202,11 @@ export function useEpmViewData({
                     return;
                 }
                 const aggregate = buildAggregateRollupBoards(payload);
-                setEpmRollupTree(null);
                 setEpmRollupBoards(aggregate.boards);
                 setEpmDuplicates(aggregate.duplicates);
                 setEpmAggregateTruncated(aggregate.truncated);
                 setEpmAggregateFallback(aggregate.fallback);
             } catch (err) {
-                if (isAuthenticationRequiredError(err)) return;
                 if (epmRollupRequestIdRef.current !== requestId) {
                     return;
                 }
@@ -246,6 +247,11 @@ export function useEpmViewData({
             return;
         }
         setEpmRollupLoading(true);
+        setEpmRollupTree(null);
+        setEpmRollupBoards(null);
+        setEpmDuplicates({});
+        setEpmAggregateTruncated(false);
+        setEpmAggregateFallback(false);
         try {
             const payload = await fetchEpmProjectRollup(backendUrl, currentProjectId, {
                 tab: epmTab,
@@ -256,12 +262,7 @@ export function useEpmViewData({
                 return;
             }
             setEpmRollupTree(buildRollupTree(payload));
-            setEpmRollupBoards(null);
-            setEpmDuplicates({});
-            setEpmAggregateTruncated(false);
-            setEpmAggregateFallback(false);
         } catch (err) {
-            if (isAuthenticationRequiredError(err)) return;
             if (epmRollupRequestIdRef.current !== requestId) {
                 return;
             }
@@ -311,7 +312,6 @@ export function useEpmViewData({
                 ))
                 : prev);
         } catch (err) {
-            if (isAuthenticationRequiredError(err)) return;
             if (epmRollupRequestIdRef.current === requestId) {
                 if (isHomeTokenRequiredError(err)) {
                     onHomeTokenRequired?.(err);
@@ -349,22 +349,11 @@ export function useEpmViewData({
             return;
         }
         if (epmSelectedProjectId === '') {
-            try {
-                await refreshEpmProjects();
-            } catch (err) {
-                if (isAuthenticationRequiredError(err)) return;
-                throw err;
-            }
+            await refreshEpmProjects();
             await refreshEpmRollup(null, '');
             return;
         }
-        let nextProjects;
-        try {
-            nextProjects = await refreshEpmProjects();
-        } catch (err) {
-            if (isAuthenticationRequiredError(err)) return;
-            throw err;
-        }
+        const nextProjects = await refreshEpmProjects();
         const nextVisibleProjects = filterEpmProjectsForTab(nextProjects, epmTab);
         const nextSelectedProject = nextVisibleProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
         await refreshEpmRollup(nextSelectedProject, epmSelectedProjectId);

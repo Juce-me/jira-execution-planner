@@ -5,7 +5,6 @@ import {
     validateAnalyticsPayload
 } from './events.js';
 import { fetchAnalyticsContext as defaultFetchContext } from '../api/analyticsApi.js';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
 
 let initialized = false;
 let enabled = false;
@@ -126,7 +125,6 @@ async function fetchAnalyticsContext(fetchContext) {
     try {
         return await fetchContext();
     } catch (err) {
-        if (initialized && isAuthenticationRequiredError(err)) throw err;
         return { enabled: false };
     }
 }
@@ -180,23 +178,6 @@ export function trackEvent(eventName, params = {}) {
         event_name: eventName,
         ...clean
     }));
-}
-
-export function trackAuthRequiredLock() {
-    const clean = sanitizeAnalyticsParams({
-        feature_name: 'auth',
-        error_area: 'auth',
-        error_code: 'auth_required',
-        recoverable_state: 'reauth',
-        source_surface: 'app',
-    }, 'app_error_shown');
-    pushDataLayer({
-        event: 'userevent',
-        trigger: 'userevent',
-        event_type: 'event',
-        event_name: 'app_error_shown',
-        ...clean,
-    });
 }
 
 export function trackExternalLinkOpened({

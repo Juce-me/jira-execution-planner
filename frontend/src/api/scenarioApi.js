@@ -1,4 +1,4 @@
-import { apiFetch, trackedFetch } from './http.js';
+import { trackedFetch } from './http.js';
 
 async function scenarioJson(response, label) {
     const payload = await response.json().catch(() => ({}));
@@ -27,7 +27,7 @@ export const fetchScenarioDraft = (backendUrl, scopeKey, { signal } = {}) =>
     }, { featureName: 'scenario' }).then(response => scenarioJson(response, 'Scenario draft'));
 
 export const postScenarioRealtimeJson = (backendUrl, draftId, path, payload, { csrfToken = '' } = {}) =>
-    apiFetch(scenarioDraftUrl(backendUrl, draftId, path), {
+    fetch(scenarioDraftUrl(backendUrl, draftId, path), {
         method: 'POST',
         cache: 'no-cache',
         headers: scenarioPostHeaders(csrfToken),
@@ -35,7 +35,7 @@ export const postScenarioRealtimeJson = (backendUrl, draftId, path, payload, { c
     }).then(response => scenarioJson(response, 'Scenario realtime'));
 
 export const pollScenarioDraftEvents = (backendUrl, draftId, sinceEventNumber, { signal } = {}) =>
-    apiFetch(scenarioDraftUrl(backendUrl, draftId, `/events?since=${encodeURIComponent(sinceEventNumber || 0)}`), {
+    fetch(scenarioDraftUrl(backendUrl, draftId, `/events?since=${encodeURIComponent(sinceEventNumber || 0)}`), {
         cache: 'no-cache',
         signal
     }).then(response => scenarioJson(response, 'Scenario draft events')).then(data => ({
@@ -52,13 +52,13 @@ export const saveScenarioDraftVersion = (backendUrl, payload, { csrfToken = '' }
     }, { featureName: 'scenario' }).then(response => scenarioJson(response, 'Scenario draft save'));
 
 export const fetchScenarioDraftVersion = (backendUrl, draftId, versionNumber, { signal } = {}) =>
-    apiFetch(scenarioDraftUrl(backendUrl, draftId, `/versions/${encodeURIComponent(versionNumber)}`), {
+    fetch(scenarioDraftUrl(backendUrl, draftId, `/versions/${encodeURIComponent(versionNumber)}`), {
         cache: 'no-cache',
         signal
     }).then(response => scenarioJson(response, 'Scenario draft version'));
 
 export const rollbackScenarioDraft = (backendUrl, draftId, payload, { csrfToken = '', signal } = {}) =>
-    apiFetch(scenarioDraftUrl(backendUrl, draftId, '/rollback'), {
+    fetch(scenarioDraftUrl(backendUrl, draftId, '/rollback'), {
         method: 'POST',
         cache: 'no-cache',
         signal,
@@ -67,7 +67,7 @@ export const rollbackScenarioDraft = (backendUrl, draftId, payload, { csrfToken 
     }).then(response => scenarioJson(response, 'Scenario draft rollback'));
 
 export const reloadScenarioDraftFromJira = (backendUrl, draftId, payload, { csrfToken = '', signal } = {}) =>
-    apiFetch(scenarioDraftUrl(backendUrl, draftId, '/reload-from-jira'), {
+    fetch(scenarioDraftUrl(backendUrl, draftId, '/reload-from-jira'), {
         method: 'POST',
         cache: 'no-cache',
         signal,

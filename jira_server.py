@@ -37,7 +37,6 @@ from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 from backend.auth.cache_policy import (
     build_jira_home_process_cache_key,
-    cache_key_in_jira_home_partition,
     jira_home_partitioned_process_cache_enabled,
     jira_home_process_cache_enabled,
 )
@@ -1899,14 +1898,8 @@ def clear_epm_rollup_caches():
         EPM_ROLLUP_CACHE.clear()
 
 
-def clear_epm_caches(context=None):
+def clear_epm_caches():
     with _epm_cache_lock:
-        if context is not None and not jira_home_process_cache_enabled(context):
-            for cache in (EPM_PROJECTS_CACHE, EPM_ISSUES_CACHE, EPM_ROLLUP_CACHE):
-                for key in list(cache):
-                    if cache_key_in_jira_home_partition(key, context):
-                        cache.pop(key, None)
-            return
         EPM_PROJECTS_CACHE.clear()
         EPM_ISSUES_CACHE.clear()
         EPM_ROLLUP_CACHE.clear()
@@ -1958,12 +1951,7 @@ register_service_integration_cache_invalidator(clear_auth_sensitive_caches)
 def build_epm_projects_dependencies(context=None, epm_config_override=None):
     auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
     fetch_context = auth_context if auth_context is not None and not jira_home_process_cache_enabled(auth_context) else None
-    config_snapshot = normalize_epm_config(
-        epm_config_override
-        if epm_config_override is not None
-        else get_epm_config(context=auth_context)
-    )
-    get_config = lambda: config_snapshot
+    get_config = (lambda: epm_config_override) if epm_config_override is not None else get_epm_config
     return epm_projects.EpmProjectsDependencies(
         fetch_epm_home_projects=(
             lambda epm_scope: fetch_epm_home_projects(epm_scope, context=fetch_context)
@@ -1980,7 +1968,6 @@ def build_epm_projects_dependencies(context=None, epm_config_override=None):
         get_epm_config=get_config,
         abort_not_found=abort,
         context=auth_context,
-        config_generation=build_epm_config_generation(config_snapshot),
     )
 
 
@@ -2121,9 +2108,9 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
     return raw_issues
 
 
-def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_override=None):
-    auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
-    epm_config_snapshot = epm_config_override if epm_config_override is not None else get_epm_config(context=auth_context)
+def build_epm_rollup_dependencies(sub_goal_keys=None):
+    auth_context = current_request_auth_context() if has_request_context() else None
+    epm_config_snapshot = get_epm_config()
     base_jql_snapshot = build_base_jql()
     story_points_field_id_snapshot = get_story_points_field_id()
     sprint_field_id_snapshot = get_sprint_field_id()
@@ -2175,7 +2162,6 @@ def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_o
         cache_lock=_epm_cache_lock,
         cache_ttl_seconds=EPM_ROLLUP_CACHE_TTL_SECONDS,
         context=auth_context,
-        config_generation=build_epm_config_generation(epm_config_snapshot),
     )
 
 
@@ -2211,7 +2197,7 @@ def find_epm_config_row(projects, project_id):
 def build_epm_projects_payload(epm_config, force_refresh=False, tab=None, sub_goal_keys=None, context=None):
     return epm_projects.build_epm_projects_payload(
         epm_config,
-        build_epm_projects_dependencies(context=context, epm_config_override=epm_config),
+        build_epm_projects_dependencies(context=context),
         force_refresh=force_refresh,
         tab=tab,
         sub_goal_keys=sub_goal_keys,
@@ -2227,24 +2213,16 @@ def collect_epm_rollup_issue_keys(rollup):
 
 
 def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
-    auth_context = current_request_auth_context() if has_request_context() else None
-    epm_config_snapshot = get_epm_config(context=auth_context)
     return epm_aggregate.build_all_epm_projects_rollup(
         tab,
         sprint,
         epm_aggregate.EpmAggregateDependencies(
             normalize_epm_text=normalize_epm_text,
             validate_epm_tab_sprint=validate_epm_tab_sprint,
-            get_epm_config=lambda: epm_config_snapshot,
-            build_epm_projects_payload=lambda config, **kwargs: build_epm_projects_payload(
-                config, context=auth_context, **kwargs,
-            ),
+            get_epm_config=get_epm_config,
+            build_epm_projects_payload=build_epm_projects_payload,
             filter_epm_projects_for_tab=filter_epm_projects_for_tab,
-            build_epm_rollup_dependencies=lambda **kwargs: build_epm_rollup_dependencies(
-                context=auth_context,
-                epm_config_override=epm_config_snapshot,
-                **kwargs,
-            ),
+            build_epm_rollup_dependencies=build_epm_rollup_dependencies,
             get_epm_project_payload_identity=get_epm_project_payload_identity,
             build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
             build_per_project_rollup=build_per_project_rollup,
@@ -2257,11 +2235,7 @@ def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
 def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None, epm_config_override=None):
     requested_sub_goal_keys = epm_projects.normalize_epm_sub_goal_keys(sub_goal_keys)
     if requested_sub_goal_keys:
-        epm_config = (
-            epm_config_override
-            if epm_config_override is not None
-            else get_epm_config(context=context)
-        )
+        epm_config = epm_config_override if epm_config_override is not None else get_epm_config()
         projects_payload = build_epm_projects_payload(
             epm_config,
             sub_goal_keys=requested_sub_goal_keys,
@@ -2313,30 +2287,10 @@ is_epm_v2_config = epm_config.is_epm_v2_config
 normalize_epm_project_row = epm_config.normalize_epm_project_row
 normalize_epm_project_output_key = epm_config.normalize_epm_project_output_key
 normalize_epm_config = epm_config.normalize_epm_config
-build_epm_config_generation = epm_config.build_epm_config_generation
 
 
-def get_epm_config(context=None, source='auto'):
-    if source not in {'auto', 'db', 'jsonfile'}:
-        raise ConfigStorageError('EPM configuration source must be auto, db, or jsonfile')
-    use_db = source == 'db' or (source == 'auto' and config_storage_db_enabled())
-    if use_db:
-        auth_context = context
-        if auth_context is None and has_request_context():
-            auth_context = current_request_auth_context()
-        if auth_context is None:
-            raise ConfigStorageError('DB-backed EPM configuration requires a request auth context')
-        return build_db_config_repository().load_user_epm_config(auth_context)
-    json_config_repository = _json_config_repository()
-    json_config_repository.log_warning_fn = lambda *_args: None
-    dashboard_path = json_config_repository.dashboard_path
-    try:
-        config = json_config_repository.load_dashboard_config()
-    except (OSError, ValueError) as error:
-        raise ConfigStorageError('JSON EPM configuration read failed') from error
-    if config is None and os.path.exists(dashboard_path):
-        raise ConfigStorageError('JSON EPM configuration read failed')
-    config = config or {}
+def get_epm_config():
+    config = load_dashboard_config() or {}
     return normalize_epm_config(config.get('epm') or {})
 
 

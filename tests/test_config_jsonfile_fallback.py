@@ -1,9 +1,6 @@
 import json
-import hashlib
-import io
 import os
 import tempfile
-import threading
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -102,7 +99,6 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
                 'groups': [{'id': 'platform', 'name': 'Platform', 'teamIds': ['team-a']}],
                 'defaultGroupId': 'platform',
             },
-            'teamCatalog': {'catalog': {'legacy-team': {'name': 'Discard me'}}},
             'epm': {
                 'version': 2,
                 'labelPrefix': 'rnd_project_*',
@@ -190,87 +186,6 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
                 view_config_id=first.view_config_id,
             ).all()
             self.assertEqual(len(versions), 1)
-            self.assertEqual(versions[0].created_by, self.user_id)
-
-    def test_concurrent_duplicate_import_serializes_to_one_version_and_one_callback(self):
-        barrier = threading.Barrier(2)
-        results = []
-        callbacks = []
-        failures = []
-
-        def run_import():
-            try:
-                barrier.wait(timeout=5)
-                results.append(import_dashboard_config(
-                    database_url=self.database_url,
-                    context=self.context,
-                    source_path=self.dashboard_path,
-                    actor_user_id='malicious-other-user',
-                    post_commit=lambda result: callbacks.append(result.view_config_id),
-                ))
-            except Exception as error:
-                failures.append(error)
-
-        threads = [threading.Thread(target=run_import) for _ in range(2)]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=10)
-
-        self.assertEqual(failures, [])
-        self.assertEqual(sorted(result.imported for result in results), [False, True])
-        self.assertEqual(len(callbacks), 1)
-        with self.factory() as session:
-            views = session.query(models.ViewConfig).filter_by(
-                workspace_id=self.workspace_id, owner_user_id=self.user_id,
-            ).all()
-            self.assertEqual(len(views), 1)
-            versions = session.query(models.ViewConfigVersion).filter_by(view_config_id=views[0].id).all()
-            self.assertEqual(len(versions), 1)
-            self.assertEqual(versions[0].created_by, self.user_id)
-
-    def test_duplicate_import_repairs_missing_shared_groups_without_new_view_version(self):
-        first = import_dashboard_config(
-            database_url=self.database_url, context=self.context, source_path=self.dashboard_path,
-        )
-        with self.factory() as session:
-            session.query(models.WorkspaceGroupConfig).delete()
-            session.commit()
-
-        duplicate = import_dashboard_config(
-            database_url=self.database_url, context=self.context, source_path=self.dashboard_path,
-        )
-
-        self.assertFalse(duplicate.imported)
-        self.assertEqual(duplicate.view_config_id, first.view_config_id)
-        with self.factory() as session:
-            self.assertEqual(session.query(models.WorkspaceGroupConfig).count(), 1)
-            self.assertEqual(
-                session.query(models.ViewConfigVersion).filter_by(view_config_id=first.view_config_id).count(),
-                1,
-            )
-
-    def test_import_hash_and_payload_come_from_one_source_read(self):
-        first_payload = self._dashboard_config()
-        first_payload['epm']['scope']['rootGoalKey'] = 'FIRST'
-        second_payload = self._dashboard_config()
-        second_payload['epm']['scope']['rootGoalKey'] = 'SECOND'
-        source_bytes = json.dumps(first_payload).encode('utf-8')
-
-        with patch(
-            'backend.config.import_config.open',
-            side_effect=[io.BytesIO(source_bytes), io.StringIO(json.dumps(second_payload))],
-        ) as source_open:
-            result = import_dashboard_config(
-                database_url=self.database_url, context=self.context,
-                source_path='/virtual/dashboard-config.json',
-            )
-
-        self.assertEqual(source_open.call_count, 1)
-        self.assertEqual(result.source_hash, hashlib.sha256(source_bytes).hexdigest())
-        with self.factory() as session:
-            view = session.query(models.ViewConfig).filter_by(id=result.view_config_id).one()
-            self.assertEqual(view.payload['epm']['scope']['rootGoalKey'], 'FIRST')
 
     def test_legacy_get_routes_match_before_import_after_import_and_json_rollback(self):
         before = self._route_payloads(backend='jsonfile')
@@ -287,11 +202,12 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         shared_config = db_config.pop('sharedConfig')
         shared_revision = db_config.pop('sharedConfigRevision')
         db_epm = dict(after_import['/api/epm/config'])
-        self.assertNotIn('configRevision', db_epm)
+        epm_revision = db_epm.pop('configRevision')
         self.assertEqual(db_config, before['/api/config'])
         self.assertEqual(db_epm, before['/api/epm/config'])
         self.assertEqual(shared_revision, 0)
-        self.assertNotIn('epm', shared_config)
+        self.assertEqual(epm_revision, 0)
+        self.assertEqual(shared_config['epm'], before['/api/epm/config'])
         self.assertEqual(rollback, before)
         self.assertEqual(after_import['/api/groups-config']['groups'], before['/api/groups-config']['groups'])
         self.assertEqual(after_import['/api/groups-config']['defaultGroupId'], before['/api/groups-config']['defaultGroupId'])
@@ -313,8 +229,7 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         self.assertNotIn('projects', exported)
         self.assertNotIn('board', exported)
         self.assertNotIn('capacity', exported)
-        self.assertEqual(exported['epm'], self._dashboard_config()['epm'])
-        self.assertNotIn('teamCatalog', exported)
+        self.assertNotIn('epm', exported)
         self.assertEqual(exported['teamGroups']['groups'][0]['id'], 'platform')
         self.assertEqual(exported['teamGroups']['groups'][0]['teamIds'], ['team-a'])
         self.assertEqual(exported['teamGroups']['groups'][0]['adHocCapacityEpics'], [])

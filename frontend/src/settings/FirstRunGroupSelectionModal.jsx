@@ -9,6 +9,7 @@ export default function FirstRunGroupSelectionModal(props) {
         onConfigure,
         saving = false,
         error = '',
+        recoveryLoginUrl = '',
     } = props;
     const [query, setQuery] = React.useState('');
     const trimmedQuery = query.trim().toLowerCase();
@@ -80,6 +81,7 @@ export default function FirstRunGroupSelectionModal(props) {
                 {error && (
                     <div className="group-modal-warning">
                         {error}
+                        {recoveryLoginUrl && <a href={recoveryLoginUrl}>Sign in again</a>}
                     </div>
                 )}
                 <div className="department-first-run-actions">

@@ -1,4 +1,4 @@
-import { apiFetch, getJson, trackedFetch } from './http.js';
+import { getJson, trackedFetch } from './http.js';
 
 export const fetchMissingPlanningInfo = (backendUrl, { sprintId, teamIds = [], components = [], signal } = {}) => {
     const params = new URLSearchParams({ sprint: String(sprintId), t: Date.now().toString() });
@@ -8,7 +8,7 @@ export const fetchMissingPlanningInfo = (backendUrl, { sprintId, teamIds = [], c
     if (components.length) {
         params.set('components', components.join(','));
     }
-    return apiFetch(`${backendUrl}/api/missing-info?${params.toString()}`, {
+    return fetch(`${backendUrl}/api/missing-info?${params.toString()}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
@@ -23,7 +23,7 @@ export const fetchSprints = (backendUrl, { forceRefresh = false } = {}) => {
     if (forceRefresh) {
         params.append('refresh', 'true');
     }
-    return apiFetch(`${backendUrl}/api/sprints?${params}`, {
+    return fetch(`${backendUrl}/api/sprints?${params}`, {
         method: 'GET',
         headers: {
             'Content-Type': 'application/json',
@@ -40,7 +40,7 @@ export const fetchCapacity = (backendUrl, { sprintName, teams = [] } = {}) => {
     if (teams.length) {
         params.append('teams', teams.join(','));
     }
-    return apiFetch(`${backendUrl}/api/capacity?${params.toString()}`, {
+    return fetch(`${backendUrl}/api/capacity?${params.toString()}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
@@ -123,7 +123,7 @@ export const fetchBacklogEpics = (backendUrl, { project, teamIds = [], signal } 
 export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], teamIds = [], refresh = false, signal } = {}) => {
     const body = { sprintIds, teamIds };
     if (refresh) body.refresh = true;
-    return apiFetch(`${backendUrl}/api/stats/excluded-capacity-source`, {
+    return fetch(`${backendUrl}/api/stats/excluded-capacity-source`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -136,7 +136,7 @@ export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], t
 };
 
 export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
-    apiFetch(`${backendUrl}/api/dependencies`, {
+    fetch(`${backendUrl}/api/dependencies`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

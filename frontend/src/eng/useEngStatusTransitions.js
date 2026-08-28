@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { fetchIssueTransitionOptions, transitionIssues } from '../api/jiraIssueApi.js';
+import { authRecoveryLoginUrl, redirectToAuthRecovery } from './useEngSprintData.js';
 import { enqueueEngIssueMutation } from './engIssueMutationQueue.js';
 import {
     MAX_STATUS_TRANSITION_ISSUES,
@@ -207,9 +207,13 @@ export function useEngStatusTransitions({
             if (err?.name === 'AbortError') {
                 return null;
             }
-            if (isAuthenticationRequiredError(err)) return null;
             if (optionsRequestRef.current.controller !== controller) {
                 return null; // Superseded; do not surface a stale error over a newer request.
+            }
+            if (authRecoveryLoginUrl(err)) {
+                onAuthRecoveryRequired?.();
+                clearTransitionOptionsCache();
+                redirectToAuthRecovery(err);
             }
             setTransitionError(err?.message || 'Failed to load status options.');
             setTransitionErrorCode(err?.code || '');
@@ -377,7 +381,11 @@ export function useEngStatusTransitions({
             }
             return response;
         } catch (err) {
-            if (isAuthenticationRequiredError(err)) return null;
+            if (authRecoveryLoginUrl(err)) {
+                onAuthRecoveryRequired?.();
+                clearTransitionOptionsCache();
+                redirectToAuthRecovery(err);
+            }
             if (isSingleIssueSurface && mutationScopeRef.current === mutationScope) {
                 onApplyLocalStatus?.(singleIssueKey, singleIssueTarget?.currentStatus || '');
             }

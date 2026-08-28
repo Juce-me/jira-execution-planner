@@ -160,14 +160,14 @@ class TestAuthRoutes(unittest.TestCase):
         query = parse_qs(urlparse(response.headers['Location']).query)
         self.assertEqual(query['prompt'], ['consent'])
 
-    def test_missing_scope_entry_page_forces_consent(self):
+    def test_missing_scope_entry_page_does_not_force_consent(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.get('/login?reason=missing_scope')
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
         self.assertIn('/api/auth/atlassian/login', body)
-        self.assertIn('prompt=consent', body)
+        self.assertNotIn('prompt=consent', body)
 
     def test_oauth_login_rejects_non_local_token_store_environment(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \

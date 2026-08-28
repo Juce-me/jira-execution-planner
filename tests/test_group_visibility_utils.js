@@ -198,9 +198,16 @@ test('group preferences payloads use visibleGroupIds and activeGroupId', () => {
     );
 });
 
-test('group visibility utilities do not own authentication recovery URLs', () => {
+test('safeAppLoginUrl accepts only app-owned login paths', () => {
     const { safeAppLoginUrl } = loadGroupVisibilityUtils();
-    assert.equal(safeAppLoginUrl, undefined);
+    assert.equal(typeof safeAppLoginUrl, 'function');
+
+    assert.equal(safeAppLoginUrl('/login'), '/login');
+    assert.equal(safeAppLoginUrl('/login?reason=session_expired'), '/login?reason=session_expired');
+    assert.equal(safeAppLoginUrl('/login/path#retry'), '/login/path#retry');
+    assert.equal(safeAppLoginUrl('https://example.test/login'), '');
+    assert.equal(safeAppLoginUrl('//login.example.test'), '');
+    assert.equal(safeAppLoginUrl('/login.example'), '');
 });
 
 test('normalizeGroupPreferences preserves backend metadata and nested preferences', () => {

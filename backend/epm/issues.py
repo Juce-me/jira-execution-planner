@@ -31,7 +31,6 @@ class EpmIssuesDependencies:
     cache_lock: object
     cache_ttl_seconds: int
     context: object = None
-    config_generation: str = ''
     now: Callable = time.time
     timer: Callable = time.perf_counter
 
@@ -55,7 +54,6 @@ def build_epm_project_issues_payload(home_project_id, tab, sprint, deps: EpmIssu
     cache_key = build_jira_home_process_cache_key(
         deps.context,
         f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}",
-        deps.config_generation,
     )
     cached = None
     if cache_enabled:

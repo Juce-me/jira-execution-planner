@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { fetchIssueProjectTrackOptions, updateIssueProjectTrack } from '../api/jiraIssueApi.js';
+import { authRecoveryLoginUrl, redirectToAuthRecovery } from './useEngSprintData.js';
 import { enqueueEngIssueMutation } from './engIssueMutationQueue.js';
 import { buildProjectTrackActionAnalyticsParams } from './engProjectTrackTransitionUtils.js';
 
@@ -87,7 +87,10 @@ export function useEngProjectTrackTransitions({
             })
             .catch((err) => {
                 if (requestTokenRef.current !== token) return; // Superseded; do not surface a stale error.
-                if (isAuthenticationRequiredError(err)) return;
+                if (authRecoveryLoginUrl(err)) {
+                    onAuthRecoveryRequired?.();
+                    redirectToAuthRecovery(err);
+                }
                 setProjectTrackError(err?.message || 'Failed to load Project Track options.');
                 setProjectTrackErrorCode(err?.code || '');
             })
@@ -145,7 +148,10 @@ export function useEngProjectTrackTransitions({
             }
             return response;
         } catch (err) {
-            if (isAuthenticationRequiredError(err)) return null;
+            if (authRecoveryLoginUrl(err)) {
+                onAuthRecoveryRequired?.();
+                redirectToAuthRecovery(err);
+            }
             if (isCatchUp && mutationScopeRef.current === mutationScope) {
                 onApplyLocalProjectTrack?.(key, priorTrack);
             }

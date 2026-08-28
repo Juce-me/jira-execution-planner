@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { fetchAdminUsers, saveAdminMembership } from '../api/adminApi.js';
 
 export function useAdminAccessSettings({ backendUrl, available, active }) {
@@ -32,10 +31,7 @@ export function useAdminAccessSettings({ backendUrl, available, active }) {
         setError('');
         fetchAdminUsers(backendUrl)
             .then(payload => applyUsers(payload.users))
-            .catch(loadError => {
-                if (isAuthenticationRequiredError(loadError)) return;
-                setError(loadError?.message || 'Failed to load administrators.');
-            })
+            .catch(loadError => setError(loadError?.message || 'Failed to load administrators.'))
             .finally(() => setLoading(false));
     }, [active, applyUsers, available, backendUrl]);
 

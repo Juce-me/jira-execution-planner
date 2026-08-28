@@ -235,18 +235,8 @@ def _session_payload(connection, workspace, access_token):
     }
 
 
-def refresh_db_oauth_token(
-    session,
-    *,
-    connection_id,
-    config,
-    key_provider,
-    http_post,
-    locked_connection=None,
-):
-    connection = locked_connection or _connection_for_update(session, connection_id)
-    if locked_connection is not None:
-        session.refresh(connection)
+def refresh_db_oauth_token(session, *, connection_id, config, key_provider, http_post):
+    connection = _connection_for_update(session, connection_id)
     if connection is None or connection.status != 'active':
         raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
     workspace = session.get(models.Workspace, connection.workspace_id)
@@ -331,35 +321,12 @@ def db_oauth_session_data(session, context, *, config, key_provider, http_post):
         ),
     )
     if is_oauth_token_expired(session_data):
-        connection = _connection_for_update(session, connection.id)
-        session.refresh(connection)
-        if connection is None or connection.status != 'active':
-            raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
-        workspace = session.get(models.Workspace, connection.workspace_id)
-        if workspace is None:
-            raise AuthError('auth_required', 'Atlassian authentication is required.')
-        access_row = _active_token(session, connection_id=connection.id, token_kind='access_token')
-        if access_row is None:
-            raise AuthError('auth_required', 'Atlassian authentication is required.')
-        latest_session_data = _session_payload(
-            connection,
-            workspace,
-            _decrypt_token_row(
-                access_row,
-                workspace_id=workspace.id,
-                connection_id=connection.id,
-                key_provider=key_provider,
-            ),
-        )
-        if not is_oauth_token_expired(latest_session_data):
-            return latest_session_data
         return refresh_db_oauth_token(
             session,
             connection_id=connection.id,
             config=config,
             key_provider=key_provider,
             http_post=http_post,
-            locked_connection=connection,
         )
     return session_data
 

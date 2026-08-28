@@ -1,55 +1,7 @@
-import { apiFetch, getJson, postJson, trackedFetch } from './http.js';
+import { getJson, postJson, trackedFetch } from './http.js';
 
 const fetchCsrfToken = (backendUrl) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' });
-
-const DEFAULT_EPM_ISSUE_TYPES = {
-    initiative: ['Initiative'],
-    epic: ['Epic'],
-    leaf: ['Story', 'Task', 'Sub-task', 'Subtask', 'Bug'],
-};
-
-function normalizeTextList(values, defaults = []) {
-    const normalized = Array.isArray(values)
-        ? values.map(value => String(value || '').trim()).filter(Boolean)
-        : [];
-    return normalized.length ? normalized : [...defaults];
-}
-
-function normalizeEpmSettingsPayload(draftConfig) {
-    const draft = draftConfig && typeof draftConfig === 'object' ? draftConfig : {};
-    const sourceProjects = draft.projects && typeof draft.projects === 'object' ? draft.projects : {};
-    const projects = {};
-    Object.entries(sourceProjects).forEach(([projectKey, row]) => {
-        if (!row || typeof row !== 'object') return;
-        const id = String(row.id || projectKey || '').trim();
-        if (!id) return;
-        const rawHomeProjectId = row.homeProjectId;
-        const homeProjectId = rawHomeProjectId === null || rawHomeProjectId === undefined
-            ? null
-            : String(rawHomeProjectId).trim();
-        projects[id] = {
-            id,
-            name: String(row.name || '').trim(),
-            label: String(row.label || '').trim(),
-            homeProjectId: homeProjectId || null,
-        };
-    });
-    return {
-        version: 2,
-        labelPrefix: String(draft.labelPrefix || '').trim(),
-        scope: {
-            rootGoalKey: String(draft.scope?.rootGoalKey || '').trim().toUpperCase(),
-            subGoalKeys: normalizeTextList(draft.scope?.subGoalKeys).map(value => value.toUpperCase()),
-        },
-        issueTypes: {
-            initiative: normalizeTextList(draft.issueTypes?.initiative, DEFAULT_EPM_ISSUE_TYPES.initiative),
-            epic: normalizeTextList(draft.issueTypes?.epic, DEFAULT_EPM_ISSUE_TYPES.epic),
-            leaf: normalizeTextList(draft.issueTypes?.leaf, DEFAULT_EPM_ISSUE_TYPES.leaf),
-        },
-        projects,
-    };
-}
 
 async function epmJson(response, label) {
     const payload = await response.json().catch(() => null);
@@ -68,14 +20,14 @@ function getEpmJson(url, label, options = {}) {
     const { analytics, ...fetchOptions } = options;
     const request = analytics
         ? trackedFetch(analytics.apiSurface, url, fetchOptions, analytics)
-        : apiFetch(url, fetchOptions);
+        : fetch(url, fetchOptions);
     return request.then(response => epmJson(response, label));
 }
 
 export const fetchEpmConfig = (backendUrl) =>
-    getEpmJson(`${backendUrl}/api/epm/config`, 'EPM config', { cache: 'no-cache' });
+    getJson(`${backendUrl}/api/epm/config`, 'EPM config', { cache: 'no-cache' });
 
-export async function saveEpmConfig(backendUrl, draftConfig) {
+export async function saveEpmConfig(backendUrl, draftConfig, baseRevision) {
     const { csrfToken } = await fetchCsrfToken(backendUrl);
     const response = await trackedFetch('settings_save', `${backendUrl}/api/epm/config`, {
         method: 'POST',
@@ -84,7 +36,7 @@ export async function saveEpmConfig(backendUrl, draftConfig) {
             'X-Requested-With': 'jira-execution-planner',
             'X-CSRF-Token': csrfToken || ''
         },
-        body: JSON.stringify(normalizeEpmSettingsPayload(draftConfig))
+        body: JSON.stringify({ ...(draftConfig || {}), baseRevision })
     }, { featureName: 'settings' });
     return epmJson(response, 'Failed to save EPM config');
 }

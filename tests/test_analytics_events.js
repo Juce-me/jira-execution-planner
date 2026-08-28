@@ -139,34 +139,6 @@ test('analytics lazy-loads GTM only from enabled context and pushes only through
     ]);
 });
 
-test('auth-required analytics omits user and debug context from its fixed event', async () => {
-    const { initAnalytics, trackAuthRequiredLock } = await loadAnalytics();
-    resetDom();
-    const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
-
-    await initAnalytics({
-        fetchContext: async () => ({
-            enabled: true,
-            ga4UserId: 'pseudonymous-user',
-            debugMode: true,
-        }),
-    });
-    trackAuthRequiredLock();
-
-    assert.deepEqual(pushed, [{
-        event: 'userevent',
-        trigger: 'userevent',
-        event_type: 'event',
-        event_name: 'app_error_shown',
-        feature_name: 'auth',
-        error_area: 'auth',
-        error_code: 'auth_required',
-        recoverable_state: 'reauth',
-        source_surface: 'app',
-    }]);
-});
-
 test('analytics guards drop sends while context is disabled or uninitialized', async () => {
     const { trackEvent, initAnalytics } = await loadAnalytics();
     resetDom();

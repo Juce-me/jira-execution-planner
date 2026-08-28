@@ -6,10 +6,7 @@ from flask import Blueprint, jsonify, redirect, request, session
 
 from backend.auth.csrf import issue_csrf_token
 from backend.auth.jira_auth import ensure_oauth_token, missing_oauth_scopes
-from backend.config.repository import ConfigStorageError
 from backend.epm import home as epm_home
-from backend.db.engine import DatabaseConfigurationError
-from backend.services.user_view_config import UserViewConfigStorageError
 
 from . import bind_server_globals
 
@@ -77,24 +74,21 @@ def api_auth_status():
 def auth_entry_page():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return redirect('/')
-    recovery_reason = request.args.get('reason')
-    terminal_recovery = recovery_reason in {'session_expired', 'missing_scope'}
-    if not terminal_recovery and database_storage_enabled() and db_oauth_browser_session_data():
+    if database_storage_enabled() and db_oauth_browser_session_data():
         try:
             current_request_auth_context()
             return redirect('/')
         except AuthError:
             pass
     data = oauth_session_data()
-    if not terminal_recovery and data.get('access_token') and data.get('cloudid'):
+    if data.get('access_token') and data.get('cloudid'):
         return redirect('/')
     message = ''
     login_url = '/api/auth/atlassian/login'
-    if recovery_reason == 'session_expired':
+    if request.args.get('reason') == 'session_expired':
         message = '<p class="auth-notice" role="status">Your Jira sign-in expired. Sign in again to continue.</p>'
-    elif recovery_reason == 'missing_scope':
+    elif request.args.get('reason') == 'missing_scope':
         message = '<p class="auth-notice" role="status">Your Jira sign-in needs updated permissions. Sign in again to continue.</p>'
-        login_url = '/api/auth/atlassian/login?prompt=consent'
     return f"""
 <!doctype html>
 <html lang="en">
@@ -484,7 +478,6 @@ def api_auth_refresh():
 
 @bp.route('/api/auth/dev/home-graphql-oauth-probe', methods=['GET'])
 def api_dev_home_graphql_oauth_probe():
-    context = None
     if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
         return jsonify({'error': 'not_found'}), 404
     if os.getenv('ALLOW_DEV_DIAGNOSTIC_ENDPOINTS', '').strip().lower() not in {'1', 'true', 'yes'}:
@@ -534,14 +527,7 @@ def api_dev_home_graphql_oauth_probe():
                 }), 401
             return auth_error_response(error, 401)
 
-    try:
-        epm_config = get_epm_config(context=context)
-    except (ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError) as error:
-        logger.error('EPM Home OAuth probe config read failed errorClass=%s', type(error).__name__)
-        return jsonify({
-            'error': 'config_storage_unavailable',
-            'message': 'EPM configuration storage is unavailable.',
-        }), 503
+    epm_config = get_epm_config()
     scope = epm_config.get('scope') or {}
     sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKeys') or scope.get('subGoalKey'))
     root_goal_key = normalize_epm_upper_text(request.args.get('rootGoalKey') or scope.get('rootGoalKey'))

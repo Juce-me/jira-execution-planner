@@ -5,11 +5,9 @@ from werkzeug.exceptions import BadRequest
 
 from backend.auth.db_context import is_db_auth_context
 from backend.config.db_repository import ViewConfigNotFound
-from backend.config.repository import ConfigStorageError, config_storage_db_enabled, db_repository
+from backend.config.repository import config_storage_db_enabled, db_repository
 from backend.config.shared_config import normalize_shared_admin_section
-from backend.db.engine import DatabaseConfigurationError
 from backend.services import shared_group_config
-from backend.services.user_view_config import UserViewConfigStorageError
 from backend.services.workspace_dashboard_config import WorkspaceConfigConflict, TeamCatalogConflict
 from . import bind_server_globals
 
@@ -134,6 +132,13 @@ def _environment_dashboard_config_exists():
     if _has_dashboard_config_value(config.get('issueTypes')):
         return True
 
+    epm = config.get('epm') or {}
+    if isinstance(epm, dict):
+        return (
+            _has_dashboard_config_value(epm.get('scope'))
+            or _has_dashboard_config_value(epm.get('projects'))
+            or _has_dashboard_config_value(epm.get('labelPrefix'))
+        )
     return False
 
 
@@ -338,24 +343,11 @@ def get_config():
     """Get public configuration"""
     auth_context = current_request_auth_context()
     include_view_config = str(request.args.get('includeViewConfig') or '').strip().lower() in {'1', 'true', 'yes'}
-    try:
-        view_config = _resolve_bootstrap_view_config(auth_context) if include_view_config else None
-        shared_snapshot = load_dashboard_config_snapshot()
-        shared_config = dict(shared_snapshot.payload or {})
-        shared_config.pop('epm', None)
-        if include_view_config and view_config is not None:
-            epm_config = normalize_epm_config(
-                ((view_config or {}).get('view') or {}).get('epm') or {}
-            )
-        else:
-            epm_config = get_epm_config(context=auth_context)
-    except (ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError) as error:
-        logger.error('Dashboard bootstrap EPM config read failed errorClass=%s', type(error).__name__)
-        return jsonify({
-            'error': 'config_storage_unavailable',
-            'message': 'EPM configuration storage is unavailable.',
-        }), 503
+    view_config = _resolve_bootstrap_view_config(auth_context) if include_view_config else None
+    shared_snapshot = load_dashboard_config_snapshot()
+    shared_config = dict(shared_snapshot.payload or {})
     board_cfg = get_board_config()
+    epm_config = normalize_epm_config(shared_config.get('epm') or {})
     can_edit_shared_configuration = (not SETTINGS_ADMIN_ONLY) or bool(auth_context.is_admin)
     payload = {
         'jiraUrl': auth_context.site_url,
@@ -367,7 +359,7 @@ def get_config():
         'settingsAdminOnly': bool(SETTINGS_ADMIN_ONLY),
         'userCanEditSettings': can_edit_shared_configuration,
         'userCanEditViewConfig': True,
-        'userCanEditEpmConfig': True,
+        'userCanEditEpmConfig': can_edit_shared_configuration,
         'adminUserManagementAvailable': is_db_auth_context(auth_context),
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),

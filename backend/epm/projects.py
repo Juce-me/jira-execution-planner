@@ -30,7 +30,6 @@ class EpmProjectsDependencies:
     get_epm_config: Callable | None = None
     abort_not_found: Callable | None = None
     context: object = None
-    config_generation: str = ''
     now: Callable = time.time
 
 
@@ -128,11 +127,7 @@ def build_epm_home_projects_cache_key(epm_scope):
 
 def build_epm_home_projects_state(epm_scope, deps, force_refresh=False):
     cache_enabled = jira_home_partitioned_process_cache_enabled(deps.context)
-    cache_key = build_jira_home_process_cache_key(
-        deps.context,
-        build_epm_home_projects_cache_key(epm_scope),
-        deps.config_generation,
-    )
+    cache_key = build_jira_home_process_cache_key(deps.context, build_epm_home_projects_cache_key(epm_scope))
     if cache_enabled and not force_refresh:
         with deps.cache_lock:
             cached = deps.cache.get(cache_key)

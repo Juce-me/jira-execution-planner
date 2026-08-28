@@ -29,7 +29,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 4. `DONE-03-db-user-configuration.md`
    - Completed DB user-configuration plan. Use for audit and prerequisite evidence; do not execute as active work.
-   - Output: DB-backed user-owned saved views, including private EPM scope, label prefix, issue types, and project-label mappings. EPM tab and sprint are private UI state; existing private-view values remain preserved. PR #130 temporarily moved normalized EPM settings into workspace configuration; `EXEC-user-owned-epm-configuration.md` corrects that ownership regression.
+   - Expected output: DB-backed user-owned saved views. EPM configuration is user-owned, including Home goal scope and project label mappings; service integrations remain admin/operator-controlled.
 
 5. `DONE-04-db-user-home-epm-read-token.md`
    - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
@@ -46,25 +46,15 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed and merged in [PR #62](https://github.com/Juce-me/jira-execution-planner/pull/62). Moves department/team-group definitions to workspace-shared configuration while keeping per-user visible-group preferences. Use for audit and prerequisite evidence; do not execute as active work.
    - Historical output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, and shared saves are revision-conflict protected. PR #62 left the existing star wired to shared `defaultGroupId`; `DONE-personal-group-star.md` corrects that product mismatch without rewriting shared catalog history.
 
-9. `DONE-shared-admin-configuration.md`
-   - Completed and merged in PR #130 (`7ea40db`). Use for audit context only.
-   - Current output: administrator dashboard sections persist once per workspace/Jira site with revisioned, authorized writes; normal-user catalog refreshes use separate storage; no private payload is auto-promoted. Its shared-EPM decision is superseded by `EXEC-user-owned-epm-configuration.md`.
-   - Execution record: `../agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md`.
+9. `EXEC-shared-admin-configuration.md`
+   - Validated for execution on `bugfix/shared-admin-configuration`.
+   - Expected output: admin-controlled dashboard and EPM scope/mapping configuration persists once per workspace/Jira site, every user in that workspace reads one revisioned snapshot, only authorized admins mutate route-owned sections, private views retain only personal state, normal-user catalog refreshes use separate storage, and no private payload is auto-promoted during migration.
+   - Design record: `../agents/bugfixes/2026-08-26-in-progress-shared-admin-configuration.md`.
 
-10. `EXEC-user-owned-epm-configuration.md`
-   - Active correction plan for the ownership regression identified after PR #130. Tasks 1-6 and final verification are complete; keep the `EXEC-*` name until user acceptance.
-   - Current output: EPM settings use each user's default private saved view and every functional EPM path uses that source; cache keys include a normalized-configuration digest and every effective-default change performs post-commit user-partitioned invalidation; legacy import discards derived `teamCatalog`; misplaced workspace EPM is held in a reversible archive without an inferred owner; and every application API `401` terminally locks the whole app behind one sanitized same-tab sign-in recovery screen. Department groups remain workspace-shared and user-editable, while administrator settings remain workspace-shared and admin-only. Full Python, Node, Playwright, startup, clean-build, and explicit PostgreSQL gates pass.
-   - Design record: `../agents/bugfixes/2026-08-27-planned-global-auth-lock.md`.
-
-11. `EXEC-cloud-sql-iam-connectivity.md`
+10. `EXEC-cloud-sql-iam-connectivity.md`
    - Implementation is complete and locally verified, but the plan remains `EXEC-*` pending user acceptance or merge.
    - Output: default local/CI URL behavior stays unchanged; hosted mode obtains lock-protected ADC login tokens immediately before new physical connections; every IAM connection uses the fixed app-owned 10-second timeout; web pooling and Alembic `NullPool` share one engine factory; offline migrations remain ADC-independent while validating the passwordless TLS URL; hosted docs record the complete IAM/database prerequisites; no Cloud SQL Python Connector, alternate PostgreSQL driver, proxy, deployment, UI, or unrelated product change was introduced.
    - Design record: `../agents/features/2026-07-27-executed-cloud-sql-iam-connectivity-design.md`.
-
-12. `EXEC-local-postgresql-runners.md`
-   - Implemented on `feature/local-postgresql-runners` with 39 daemon-free focused tests plus live Docker lifecycle, abuse, persistence, production-image, and release-layout isolation passing. The plan remains active: no GitHub PostgreSQL run exists, and the configured-runtime full suite still has nine pre-existing EPM configuration failures.
-   - Expected output: isolated `runners/local/` and `runners/github/` workflows that start a digest-pinned loopback PostgreSQL only for local source-checkout runtime, clean up owned containers on exit while retaining data, and prove PostgreSQL locking/concurrency in a least-privilege GitHub-hosted job without changing application or deployment implementation.
-   - Design record: `../agents/features/2026-08-27-planned-local-postgresql-runners.md`.
 
 ## Completed Scenario Planner Workflow
 

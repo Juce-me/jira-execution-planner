@@ -11,13 +11,12 @@ from backend.security.policy import UNSAFE_METHODS, classify_request_rule
 
 PROTECTED_POLICY_CLASSES = {
     "authenticated_read",
-    "authenticated_preview",
     "user_write",
     "workspace_write",
     "shared_admin_write",
     "tool_admin",
 }
-CSRF_POLICY_CLASSES = {"authenticated_preview", "user_write", "workspace_write", "shared_admin_write", "tool_admin"}
+CSRF_POLICY_CLASSES = {"user_write", "workspace_write", "shared_admin_write", "tool_admin"}
 ADMIN_POLICY_CLASSES = {"shared_admin_write", "tool_admin"}
 LOOPBACK_ADDRESSES = {"127.0.0.1", "::1", "localhost"}
 

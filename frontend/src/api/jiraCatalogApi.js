@@ -1,8 +1,8 @@
-import { apiFetch, getJson } from './http.js';
+import { getJson } from './http.js';
 
 const postJsonWithCsrf = (backendUrl, path, payload) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' }).then(({ csrfToken }) =>
-        apiFetch(`${backendUrl}${path}`, {
+        fetch(`${backendUrl}${path}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -24,14 +24,14 @@ export const fetchJiraLabels = (backendUrl, { query = '', prefix = '', limit = 2
 };
 
 export const fetchTeamCatalog = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/team-catalog?t=${Date.now()}`);
+    fetch(`${backendUrl}/api/team-catalog?t=${Date.now()}`);
 
 export const saveTeamCatalog = (backendUrl, { catalog, meta, merge }) =>
     postJsonWithCsrf(backendUrl, '/api/team-catalog', { catalog, meta, merge });
 
 export const fetchAllTeams = (backendUrl, { sprint }) => {
     const sprintParam = sprint || '';
-    return apiFetch(`${backendUrl}/api/teams?_t=${Date.now()}&sprint=${sprintParam}&all=true`);
+    return fetch(`${backendUrl}/api/teams?_t=${Date.now()}&sprint=${sprintParam}&all=true`);
 };
 
 export const resolveTeams = (backendUrl, teamIds) => {
@@ -39,18 +39,18 @@ export const resolveTeams = (backendUrl, teamIds) => {
         teamIds: teamIds.join(','),
         t: Date.now().toString()
     });
-    return apiFetch(`${backendUrl}/api/teams/resolve?${params.toString()}`);
+    return fetch(`${backendUrl}/api/teams/resolve?${params.toString()}`);
 };
 
 export const fetchProjects = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/projects`, {
+    fetch(`${backendUrl}/api/projects`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
     });
 
 export const fetchBoards = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/boards`, {
+    fetch(`${backendUrl}/api/boards`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
@@ -60,7 +60,7 @@ export const searchProjects = (backendUrl, { query, signal }) => {
     const params = new URLSearchParams();
     params.set('query', query);
     params.set('limit', '25');
-    return apiFetch(`${backendUrl}/api/projects?${params.toString()}`, {
+    return fetch(`${backendUrl}/api/projects?${params.toString()}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
@@ -72,7 +72,7 @@ export const searchBoards = (backendUrl, { query, signal }) => {
     const params = new URLSearchParams();
     params.set('query', query);
     params.set('limit', '25');
-    return apiFetch(`${backendUrl}/api/boards?${params.toString()}`, {
+    return fetch(`${backendUrl}/api/boards?${params.toString()}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
@@ -84,7 +84,7 @@ export const searchComponents = (backendUrl, { query, signal }) => {
     const params = new URLSearchParams();
     params.set('query', query);
     params.set('limit', '15');
-    return apiFetch(`${backendUrl}/api/components?${params.toString()}`, {
+    return fetch(`${backendUrl}/api/components?${params.toString()}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
@@ -96,7 +96,7 @@ export const searchEpics = (backendUrl, { query, signal }) => {
     const params = new URLSearchParams();
     params.set('query', query);
     params.set('limit', '15');
-    return apiFetch(`${backendUrl}/api/epics/search?${params.toString()}`, {
+    return fetch(`${backendUrl}/api/epics/search?${params.toString()}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
@@ -106,7 +106,7 @@ export const searchEpics = (backendUrl, { query, signal }) => {
 
 export const fetchFields = (backendUrl, { projectKey } = {}) => {
     const params = projectKey ? `?project=${encodeURIComponent(projectKey)}` : '';
-    return apiFetch(`${backendUrl}/api/fields${params}`, {
+    return fetch(`${backendUrl}/api/fields${params}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'

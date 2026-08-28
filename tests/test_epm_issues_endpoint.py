@@ -52,7 +52,6 @@ class BuildEpmProjectIssuesPayloadTests(unittest.TestCase):
         cache = {}
         fetch_calls = []
         now_values = list(now_values or [1000, 1001, 1002])
-        config_generation = jira_server.build_epm_config_generation({})
 
         def fetch_issues(jql, fields_list, context=None):
             fetch_calls.append((jql, fields_list, context))
@@ -72,7 +71,6 @@ class BuildEpmProjectIssuesPayloadTests(unittest.TestCase):
             cache_lock=jira_server._epm_cache_lock,
             cache_ttl_seconds=300,
             context=context,
-            config_generation=config_generation,
             now=lambda: now_values.pop(0) if now_values else 1002,
             timer=lambda: 50.0,
         )
@@ -129,11 +127,7 @@ class BuildEpmProjectIssuesPayloadTests(unittest.TestCase):
         cached_payload = {'project': project, 'issues': [{'key': 'SYN-CACHED'}], 'epics': {}, 'metadataOnly': False}
         deps, cache, fetch_calls = self.make_deps(project, context=auth_context, now_values=[1001])
         raw_key = 'hp-1::active::42::project = SYN ORDER BY created DESC::{"epicKeys": [], "labels": ["rnd_project_alpha"]}'
-        cache[jira_server.build_jira_home_process_cache_key(
-            auth_context,
-            raw_key,
-            deps.config_generation,
-        )] = {
+        cache[jira_server.build_jira_home_process_cache_key(auth_context, raw_key)] = {
             'timestamp': 1000,
             'data': cached_payload,
         }

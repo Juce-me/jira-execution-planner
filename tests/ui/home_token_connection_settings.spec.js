@@ -3,7 +3,7 @@ const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 
-async function mockBaseApp(page, { connection, connectStatus = 200, connectError } = {}) {
+async function mockBaseApp(page, { connection, connectStatus = 200 } = {}) {
     const requests = [];
     let currentConnection = connection || { connected: false };
 
@@ -55,10 +55,7 @@ async function mockBaseApp(page, { connection, connectStatus = 200, connectError
                 return route.fulfill({
                     status: connectStatus,
                     contentType: 'application/json',
-                    body: JSON.stringify(connectError || {
-                        error: 'home_credential_not_authorized',
-                        message: 'Home rejected this credential.',
-                    }),
+                    body: JSON.stringify({ error: 'home_credential_not_authorized', message: 'Home rejected this credential.' }),
                 });
             }
             currentConnection = {
@@ -146,36 +143,6 @@ test('Connections tab clears token field after connect failure', async ({ page }
     await expect(dialog.getByLabel('Atlassian API token')).toHaveValue('');
     await expect(dialog).not.toContainText('bad-user-token');
 });
-
-for (const validationFailure of [
-    {
-        name: 'rejected Jira credential',
-        error: 'credential_not_authorized',
-        message: 'The supplied Atlassian API token was rejected by Jira.',
-    },
-    {
-        name: 'malformed Jira validation response',
-        error: 'credential_validation_failed',
-        message: 'Jira returned an invalid credential validation response.',
-    },
-]) {
-    test(`${validationFailure.name} stays in Connections without globally locking`, async ({ page }) => {
-        await mockBaseApp(page, {
-            connectStatus: 422,
-            connectError: validationFailure,
-        });
-        const dialog = await openConnections(page);
-
-        await dialog.getByLabel('Atlassian API token').fill('invalid-user-token');
-        await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
-
-        await expect(dialog.getByRole('alert')).toContainText('Home token connection error 422');
-        await expect(dialog.getByLabel('Atlassian API token')).toHaveValue('');
-        await expect(page.getByRole('alertdialog')).toHaveCount(0);
-        await expect(dialog.getByText('Jira Home write access')).toBeVisible();
-        expect(await page.evaluate(() => window.__JEP_AUTH_REQUIRED__ || null)).toBeNull();
-    });
-}
 
 test('Connections tab shows reconnect and revoke states without token material', async ({ page }) => {
     await mockBaseApp(page, {

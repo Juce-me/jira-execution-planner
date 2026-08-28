@@ -51,12 +51,7 @@ class TestEpmProjectsApi(unittest.TestCase):
         return {
             'version': 2,
             'labelPrefix': 'rnd_project_',
-            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']},
-            'issueTypes': {
-                'initiative': ['Initiative'],
-                'epic': ['Epic'],
-                'leaf': ['Story', 'Task', 'Sub-task', 'Subtask', 'Bug'],
-            },
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
             'projects': {
                 'home-1': {
                     'id': 'home-1',
@@ -479,7 +474,7 @@ class TestEpmProjectsApi(unittest.TestCase):
 
         self.assertEqual(first_response.status_code, 200, first_response.get_data(as_text=True))
         self.assertEqual(second_response.status_code, 200, second_response.get_data(as_text=True))
-        self.assertEqual(mock_fetch_projects.call_count, 2)
+        self.assertEqual(mock_fetch_projects.call_count, 1)
         self.assertEqual(first_response.get_json()['projects'][0]['label'], 'rnd_project_alpha')
         self.assertEqual(second_response.get_json()['projects'][0]['label'], 'alt_project_beta')
 
@@ -757,20 +752,13 @@ class TestEpmProjectsApi(unittest.TestCase):
         response = self.client.post(
             '/api/epm/projects/configuration',
             json={
-                'version': 2,
-                'labelPrefix': 'rnd_project_',
-                'scope': {'rootGoalKey': ' root-100 ', 'subGoalKeys': [' child-200 ']},
-                'issueTypes': {
-                    'initiative': ['Initiative'],
-                    'epic': ['Epic'],
-                    'leaf': ['Story', 'Task', 'Sub-task', 'Subtask', 'Bug'],
-                },
+                'scope': {'rootGoalKey': ' root-100 ', 'subGoalKey': ' child-200 '},
                 'projects': {
                     'tsq-1': {
-                        'id': 'tsq-1',
                         'homeProjectId': 'tsq-1',
-                        'name': 'Preview Launch',
-                        'label': 'synthetic_label_alpha',
+                        'customName': 'Preview Launch',
+                        'jiraLabel': 'synthetic_label_alpha',
+                        'jiraEpicKey': 'syn-123',
                     }
                 },
             },
@@ -837,7 +825,7 @@ class TestEpmProjectsApi(unittest.TestCase):
 
         self.assertEqual(first_response.status_code, 200, first_response.get_data(as_text=True))
         self.assertEqual(second_response.status_code, 200, second_response.get_data(as_text=True))
-        self.assertEqual(mock_fetch_projects.call_count, 2)
+        self.assertEqual(mock_fetch_projects.call_count, 1)
         first_project = first_response.get_json()['projects'][0]
         second_project = second_response.get_json()['projects'][0]
         self.assertEqual(first_project['resolvedLinkage']['labels'], ['first_label'])
@@ -909,9 +897,9 @@ class TestEpmProjectsApi(unittest.TestCase):
         self.assertEqual(projects[0]['displayName'], 'Home One')
         self.assertEqual(projects[1]['displayName'], 'Configured Home Two')
         self.assertEqual(projects[1]['label'], 'synthetic_label_home_two')
-        self.assertIsNone(projects[2]['homeProjectId'])
+        self.assertEqual(projects[2]['homeProjectId'], None)
         self.assertEqual(projects[2]['tabBucket'], 'all')
-        self.assertIsNone(projects[3]['homeProjectId'])
+        self.assertEqual(projects[3]['homeProjectId'], None)
         self.assertEqual(projects[3]['tabBucket'], 'all')
 
     @patch('jira_server.get_epm_config')
@@ -995,12 +983,6 @@ class TestEpmProjectsApi(unittest.TestCase):
         draft_payload = {
             'version': 2,
             'labelPrefix': 'rnd_project_',
-            'scope': {'rootGoalKey': '', 'subGoalKeys': []},
-            'issueTypes': {
-                'initiative': ['Initiative'],
-                'epic': ['Epic'],
-                'leaf': ['Story', 'Task', 'Sub-task', 'Subtask', 'Bug'],
-            },
             'projects': {
                 'draft-abc': {
                     'id': 'draft-abc',
@@ -1015,7 +997,6 @@ class TestEpmProjectsApi(unittest.TestCase):
 
         self.assertEqual(preview.status_code, 200, preview.get_data(as_text=True))
         self.assertEqual(preview.get_json()['projects'][0]['id'], 'draft-abc')
-        self.assertIsNone(preview.get_json()['projects'][0]['homeProjectId'])
 
         tmpdir = tempfile.mkdtemp()
         dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
@@ -1028,7 +1009,7 @@ class TestEpmProjectsApi(unittest.TestCase):
                 uuid_key = next(iter(first['projects']))
                 self.assertRegex(uuid_key, r'^[0-9a-f]{32}$')
                 self.assertEqual(first['projects'][uuid_key]['id'], uuid_key)
-                self.assertNotIn('homeProjectId', first['projects'][uuid_key])
+                self.assertIsNone(first['projects'][uuid_key].get('homeProjectId'))
                 self.assertNotIn('draft-abc', first['projects'])
                 self.assertNotIn('draft-abc', json.dumps(first['projects']))
 
@@ -1050,61 +1031,6 @@ class TestEpmProjectsApi(unittest.TestCase):
             if os.path.exists(dashboard_path):
                 os.unlink(dashboard_path)
             os.rmdir(tmpdir)
-
-    def test_projects_preview_rejects_non_string_home_project_id_before_normalizing(self):
-        payload = self._mixed_config()
-        payload['scope'] = {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']}
-        payload['issueTypes'] = {
-            'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story'],
-        }
-        payload['projects']['home-1']['homeProjectId'] = 123
-
-        response = self.client.post('/api/epm/projects/preview', json=payload)
-
-        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'invalid_epm_config')
-    def test_projects_preview_rejects_empty_project_map_key_before_rekeying(self):
-        payload = self._mixed_config()
-        payload['scope'] = {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']}
-        payload['issueTypes'] = {
-            'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story'],
-        }
-        payload['projects'] = {
-            '': {
-                'id': 'home-1',
-                'homeProjectId': 'home-1',
-                'name': 'Invalid key',
-                'label': 'synthetic_label',
-            },
-        }
-
-        response = self.client.post('/api/epm/projects/preview', json=payload)
-
-        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'invalid_epm_config')
-
-    def test_strict_epm_endpoints_reject_project_key_id_mismatch_and_duplicate_ids(self):
-        base = self._mixed_config()
-        base['scope'] = {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']}
-        base['issueTypes'] = {
-            'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story'],
-        }
-        mismatch = json.loads(json.dumps(base))
-        mismatch['projects'] = {
-            'map-key': {'id': 'different-id', 'name': 'Mismatch', 'label': 'label-one'},
-        }
-        duplicate = json.loads(json.dumps(base))
-        duplicate['projects'] = {
-            'first': {'id': 'same-id', 'name': 'First', 'label': 'label-one'},
-            'second': {'id': 'same-id', 'name': 'Second', 'label': 'label-two'},
-        }
-
-        for path in ('/api/epm/projects/preview', '/api/epm/config'):
-            for case, payload in (('mismatch', mismatch), ('duplicate', duplicate)):
-                with self.subTest(path=path, case=case):
-                    response = self.client.post(path, json=payload)
-                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
-                    self.assertEqual(response.get_json()['error'], 'invalid_epm_config')
 
 
 if __name__ == '__main__':

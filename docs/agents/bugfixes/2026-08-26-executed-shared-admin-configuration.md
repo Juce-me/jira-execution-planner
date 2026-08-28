@@ -3,8 +3,6 @@
 Status: executed
 Type: bugfix
 
-> **Current accuracy:** PR #130 implemented the design recorded here, but only its shared-EPM decision is superseded by `docs/plans/EXEC-user-owned-epm-configuration.md` and `backend/security/CONFIGURATION_OWNERSHIP.md`. Administrator persistence/revisions and team-catalog separation remain current. EPM settings belong to the owning user's default private saved view, and misplaced workspace EPM is removed into a reversible migration archive without inferring an owner. The historical decision and execution details below are intentionally unchanged.
-
 ## Problem
 
 DB-backed compatibility endpoints call `save_dashboard_config()`, but `DbConfigRepository` persists the complete payload as the current user's private default `ViewConfig`. `load_dashboard_config()` then selects by `owner_user_id`. An administrator can therefore save environment settings that no other user in the same Jira site sees.
@@ -166,7 +164,7 @@ The Settings modal keeps every dirty draft on `409`. Sections saved before the c
 - `docs/README_ANALYTICS.md`
 - current-accuracy notes in `DONE-03-db-user-configuration.md` and `DONE-04-db-user-home-epm-read-token.md`
 - `docs/plans/GATE-05-home-write-capability.md`
-- `docs/plans/DONE-shared-admin-configuration.md`
+- `docs/plans/EXEC-shared-admin-configuration.md`
 - `docs/plans/README.md`
 - `AGENTS.md`
 

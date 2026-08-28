@@ -344,11 +344,6 @@ class FakeResponse:
         return self._payload
 
 
-class MalformedJsonResponse(FakeResponse):
-    def json(self):
-        raise ValueError('invalid json')
-
-
 class TestUserApiTokenConnections(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
@@ -640,44 +635,6 @@ class TestUserApiTokenConnections(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['error'], 'home_credential_not_authorized')
-        connection, token = self._connection_and_token()
-        self.assertIsNone(connection)
-        self.assertIsNone(token)
-
-    def test_rejected_jira_credential_is_a_targeted_validation_error(self):
-        self._install_session()
-
-        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server.HTTP_SESSION, 'get', return_value=FakeResponse(status_code=401)):
-            response = self._post_home_token(
-                {'email': 'normal@example.com', 'apiToken': 'rejected-user-token'},
-                self._csrf(),
-            )
-
-        self.assertEqual(response.status_code, 422, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {
-            'error': 'credential_not_authorized',
-            'message': 'The supplied Atlassian API token was rejected by Jira.',
-        })
-        connection, token = self._connection_and_token()
-        self.assertIsNone(connection)
-        self.assertIsNone(token)
-
-    def test_malformed_jira_validation_response_is_a_targeted_validation_error(self):
-        self._install_session()
-
-        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server.HTTP_SESSION, 'get', return_value=MalformedJsonResponse(status_code=200)):
-            response = self._post_home_token(
-                {'email': 'normal@example.com', 'apiToken': 'malformed-response-token'},
-                self._csrf(),
-            )
-
-        self.assertEqual(response.status_code, 422, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {
-            'error': 'credential_validation_failed',
-            'message': 'Jira returned an invalid credential validation response.',
-        })
         connection, token = self._connection_and_token()
         self.assertIsNone(connection)
         self.assertIsNone(token)

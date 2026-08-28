@@ -120,23 +120,23 @@ test('IssueCard hides story subtask control when the summary is empty', () => {
     );
 });
 
-test('story subtask hook preserves state on the typed global auth error', () => {
+test('story subtask hook uses shared ENG auth recovery helpers', () => {
     assert.equal(fs.existsSync(hookPath), true, 'Expected frontend/src/issues/useStorySubtasks.js to exist');
     const hookSource = readSource(hookPath);
 
     assert.ok(hookSource.includes("from '../api/engApi.js'"));
     assert.ok(hookSource.includes('fetchStorySubtasks'));
-    assert.ok(hookSource.includes("from '../api/authRequired.js'"));
-    assert.ok(hookSource.includes('if (isAuthenticationRequiredError(err)) {'));
-    assert.ok(hookSource.includes('[storyKey]: previousEntry'));
-    assert.ok(!hookSource.includes('redirectToAuthRecovery(err)'));
+    assert.ok(hookSource.includes("from '../eng/useEngSprintData.js'"));
+    assert.ok(hookSource.includes('authRecoveryLoginUrl(err)'));
+    assert.ok(hookSource.includes('redirectToAuthRecovery(err)'));
+    assert.ok(hookSource.includes('onAuthRecoveryRequired?.()'));
 });
 
-test('ENG sprint data delegates auth recovery to the shared typed boundary', () => {
+test('ENG sprint data exports shared auth recovery helpers', () => {
     const source = readSource(engSprintDataPath);
 
-    assert.match(source, /import \{ isAuthenticationRequiredError \} from '\.\.\/api\/authRequired\.js';/);
-    assert.doesNotMatch(source, /location\.assign|redirectToAuthRecovery/);
+    assert.match(source, /export function authRecoveryLoginUrl\(err\)/);
+    assert.match(source, /export function redirectToAuthRecovery\(err\)/);
 });
 
 test('dashboard wires story subtask hook without owning endpoint literals', () => {

@@ -37,7 +37,21 @@ scope, label prefix, EPM issue-type grouping, and project-label mappings. `/api/
 and update only those settings in that user's view payload, preserve unrelated private view fields and
 any existing private EPM tab/sprint state, and never require tool-admin permission. Dashboard UI choices
 that remain in private browser preferences must never be promoted to workspace configuration. EPM
-Home/Townsquare reads continue to use that user's connected credential and user-partitioned caches.
+Home/Townsquare reads continue to use that user's connected `atlassian_user_api_token`, represented by
+`auth_connections` and encrypted in `auth_tokens`; Jira REST continues to use the user's OAuth context.
+
+Every projects, issues, and rollup cache key includes a SHA-256 digest of the canonical normalized
+five-key EPM settings object. The digest, never raw configuration text, supplements the existing
+workspace/user/token partition. A mutation that changes the effective default EPM configuration evicts
+only that current partition, and only after its database transaction commits. Non-default or metadata-
+only edits, no-ops, conflicts, validation failures, exhausted retries, and rollbacks do not invalidate.
+
+Legacy import sends EPM only to the importing user's default private view and group definitions only to
+the shared workspace group payload. Top-level `teamCatalog` is a derived cache and is discarded during
+import; an existing `workspace_team_catalogs` row is not replaced. Misplaced EPM formerly stored in
+`workspace_dashboard_configs` is removed into `workspace_epm_config_migration_archive`. The migration
+does not infer a private owner, and downgrade restores the archived value without overwriting newer
+administrator fields.
 
 ## HTTP Meaning
 

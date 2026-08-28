@@ -235,7 +235,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Redact OAuth callback query strings from logs; never log authorization code or state values.
 - Store implementation plans in `docs/plans/` only.
 - Before modifying configuration storage, database ownership, endpoint rights, or Settings edit gates, read `backend/security/CONFIGURATION_OWNERSHIP.md` and preserve its admin/group/preference/EPM ownership matrix across backend and frontend.
-- Keep EPM scope, label prefix, issue types, project-label mappings, tab, and sprint private to the owning user's saved view; never store them in workspace administrator configuration.
+- Keep EPM scope, label prefix, issue types, and project-label mappings in the owning user's default private saved view; keep tab and sprint as private UI state, preserve any existing private-view values, and never store any of them in workspace administrator configuration.
 - Keep department groups, group labels, memberships, exclusions, and department board layouts shared once per workspace and configurable by every authenticated user; keep stars/favorites, visibility, and active group private per user.
 - For any plan review, creation, or execution under `docs/plans/`, read `docs/plans/AGENTS.md` first and follow its plan review prompt, naming, and gate rules.
 - Before creating or executing any Home/Townsquare auth migration plan, read `docs/plans/AGENTS.md` and run or document the Home GraphQL OAuth probe gate; do not mark Home/Townsquare-backed routes OAuth-ready unless it passes with a real local user 3LO session.
@@ -245,7 +245,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Auth/backend plans must name and verify the user journey for each supported route surface; backend tests alone are not enough unless the route is explicitly developer-only.
 - OAuth cookie-session slices must include unsafe-method CSRF protection before the first supported browser POST route.
 - Local OAuth token stores must require both a local/dev environment key and an explicit allow flag at startup.
-- Any application API `401` must globally lock the mounted app behind one sanitized sign-in recovery screen; never render raw `401` in a feature, clear its draft, or replay its failed write automatically.
+- Any application API `401` must terminally lock the mounted app behind one sanitized same-tab sign-in recovery screen; preserve mounted feature state, never render local recovery UI or raw `401`, and never unlock in place or replay the failed request after reauthentication.
 - Browser-focus auth refresh is an optimization only; keep the visible expired-auth recovery path as the fallback.
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.

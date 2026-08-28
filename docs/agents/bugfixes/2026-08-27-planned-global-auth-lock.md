@@ -1,6 +1,6 @@
 # Global Authentication Lock Design
 
-Status: planned
+Status: executed
 Type: bugfix
 
 ## Problem
@@ -270,3 +270,10 @@ tests continue proving stable `401 auth_required`, `403 admin_required`, `403 cs
 - Reauthentication creates a new fully bootstrapped document; the locked document never unlocks in place.
 - Authorization, connection setup, validation, conflict handling, and configuration ownership keep their
   distinct status semantics.
+
+## Outcome
+
+Implemented by `EXEC-user-owned-epm-configuration.md` Task 5. All application API requests use the
+shared boundary; the root gate preserves mounted state and terminally blocks the current document after
+`401` until sanitized same-tab sign-in navigation. `403 admin_required`, `403 csrf_required`, and
+`409 home_user_token_required` retain targeted handling, and failed requests are never replayed.

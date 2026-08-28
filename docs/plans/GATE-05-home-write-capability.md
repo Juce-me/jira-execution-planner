@@ -106,8 +106,9 @@ Required behavior after the gate passes:
 - Require active OAuth user, active DB user, active OAuth `auth_connection`, token-bound CSRF, and active `atlassian_user_api_token`.
 - Resolve credentials through `resolve_home_credential(context, "write_as_user")`.
 - Never fall back to the workspace `home_townsquare_basic` service integration.
-- Return `409 home_user_token_required` when the user API-token connection is missing.
-- Return `401 auth_connection_revoked` when either the OAuth connection or the user API-token connection is revoked.
+- Return `409 home_user_token_required` when the user API-token connection is missing or inactive, including
+  revoked, expired, and error states.
+- Return `401 auth_connection_revoked` only when the primary OAuth connection is revoked.
 - Return `403 home_write_not_authorized` when Home rejects the verified user credential for the target project.
 - On success, return only sanitized update metadata.
 - After a successful write, clear EPM caches so later project, issue, and rollup reads cannot serve stale Home update text.
@@ -117,6 +118,7 @@ Required tests after the gate passes:
 
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_requires_user_api_token`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_missing_token_response_includes_connect_url`
+- `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_returns_home_user_token_required_when_user_token_revoked`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_returns_auth_connection_revoked_when_oauth_revoked`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_uses_user_credential_not_service_integration`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_requires_token_bound_csrf`

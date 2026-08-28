@@ -50,12 +50,12 @@ Current implementation assumptions to preserve:
 - Tool admin is a tool-local role, not an Atlassian admin role.
 - Legacy pre-DB OAuth treated every signed-in Atlassian user as a local tool admin only as a temporary local policy. DB auth restored explicit tool-admin assignment.
 - Team Groups, Group Labels, and EPM-side user settings are user-owned/non-admin workflows where applicable.
-- Scope projects, Jira source, field mapping, capacity, priority weights, and dashboard issue types are shared environment/workspace configuration controlled by tool admins. EPM scope, label prefix, issue types, project-label mappings, tab, and sprint are private saved-view configuration controlled by the owning user.
+- Scope projects, Jira source, field mapping, capacity, priority weights, and dashboard issue types are shared environment/workspace configuration controlled by tool admins. EPM scope, label prefix, issue types, and project-label mappings are stored in the owning user's default private saved view. EPM tab and sprint are private UI state; existing private-view values are preserved but never promoted to shared configuration.
 - Existing JSON configuration must not be silently overwritten with empty selected projects, empty groups, or missing EPM mappings.
 - Home/Townsquare user 3LO is currently unsupported unless the plans document a fresh real `PASS home_graphql_3lo_supported` probe.
 - Jira REST can use user Atlassian OAuth.
-- Home/Townsquare metadata reads stay workspace service-integration-backed while the Home 3LO gate fails.
-- User-owned Atlassian API tokens are allowed only as verified per-user Home/Townsquare write credentials. They must never become shared service credentials.
+- DB/OAuth Home/Townsquare metadata reads use the current user's verified `atlassian_user_api_token` while the Home 3LO gate fails. The connection is represented in `auth_connections`, its API token is encrypted in `auth_tokens`, and neither may become shared service configuration.
+- Home/Townsquare writes remain separately gated and are not authorized by the EPM read-token path.
 - A user API token must be verified by calling Jira `/rest/api/3/myself` and matching returned `accountId` to the signed-in OAuth `account_id`; email is not identity proof.
 
 Expected execution order to validate:
@@ -63,13 +63,14 @@ Expected execution order to validate:
 2. Treat DONE-01 as completed audit context, not active execution work.
    - Task 0 is already completed pre-DB.
    - Tasks 1-8 are the active DB auth path.
-3. Keep Home/Townsquare EPM reads hybrid during DB auth:
+3. Keep Home/Townsquare EPM reads user-scoped during DB auth:
    - user OAuth for Jira REST;
-   - workspace `home_townsquare_basic` service integration for Home metadata;
-   - cache partitioning by workspace plus user auth context or service-integration context.
+   - current-user `atlassian_user_api_token` for Home metadata;
+   - DB `auth_connections` plus encrypted `auth_tokens`, with no local token-store or service-integration fallback;
+   - cache partitioning by workspace, user, token version, and normalized EPM configuration digest.
 4. Treat DONE-02 as completed user-token bridge context after DONE-01 has encrypted token storage, active user/connection checks, token-bound CSRF, and service integrations.
-   - The bridge is for explicit Home/Townsquare writes as the user.
-   - It is not required for login, dashboard load, or opening the EPM tab.
+   - The bridge supplies the current user's Home/Townsquare EPM metadata reads while user 3LO is unsupported.
+   - It is not required for login or ENG dashboard load, but EPM remains hidden until the connection exists.
    - If no concrete Home/Townsquare write action exists, flag any generic mutation task as not execution-ready.
 5. Treat DONE-03 as completed user-configuration context after DONE-01 is stable and JSON fallback behavior is verified.
 6. Treat FUTURE-db-additional-features.md as deferred scope unless explicitly reopened.
@@ -80,12 +81,14 @@ Review questions:
 3. Does any active plan imply Home/Townsquare user 3LO is supported despite the current failing probe?
 4. Does any active plan store personal user API tokens as shared service credentials?
 5. Does DONE-02 verify `accountId`, not email, before storing a user API token?
-6. Are Home/Townsquare reads and writes separated clearly enough?
+6. Do DB/OAuth Home/Townsquare reads use only the current user's `atlassian_user_api_token` from DB connection/token tables, and are writes still separately gated?
 7. Are normal users blocked from shared workspace configuration writes after DB roles land while still allowed to manage user-owned settings?
 8. Are token-bound CSRF and visible auth recovery screens prerequisites before browser-callable DB mutations?
-9. Are cache keys explicitly partitioned by workspace plus user auth context or service-integration context?
+9. Are EPM cache keys explicitly partitioned by workspace, user, token version, and the digest of the
+   canonical normalized EPM configuration?
 10. Are local OAuth token-store helpers clearly forbidden after DB auth lands?
-11. Are stale tasks in the older OAuth/EPM plans marked historical or cross-linked to the active DB service-integration path?
+11. Are stale tasks in the older OAuth/EPM plans marked historical or cross-linked to the active
+    per-user DB connection/token path?
 12. Is every EXEC plan implementable task-by-task by a coding agent without guessing missing file names, route names, credentials, or expected tests?
 
 Output format:

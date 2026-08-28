@@ -211,17 +211,20 @@ On first launch (or when local config files do not exist), open **Dashboard Sett
 
 Saved local JSON files:
 - `dashboard-config.json` (projects, Jira source, field mapping, capacity, priority weights)
-- `team-groups.json` (team groups and team catalog metadata)
+- `team-groups.json` (team groups)
+- `team-catalog.json` (derived team catalog metadata)
 
 The app now relies on Dashboard Settings for supported runtime configuration. Keep `.env` focused on credentials and local server settings.
 
 In OAuth mode, Dashboard Settings → **Admin → Access** lists users already known from Atlassian sign-in and stores app-admin membership against their stable Atlassian account identity. `SETTINGS_ADMIN_ONLY=true` restricts Admin settings and membership changes to app admins; `false` lets every authenticated OAuth user edit and save them. Basic mode treats the local user as an administrator.
 
+In DB/OAuth mode, administrator settings are shared once per workspace and use administrator writes. Department groups and their board layouts are also workspace-shared, but every authenticated user may configure them. Group visibility, favorite/active group, and EPM settings are private to the current user. EPM scope, label prefix, issue types, and project-label mappings live in that user's default private saved view; EPM tab and selected sprint remain private UI state. See [backend/security/CONFIGURATION_OWNERSHIP.md](backend/security/CONFIGURATION_OWNERSHIP.md) for the complete ownership and access contract.
+
 ## EPM View
 
 Use the `ENG | EPM` switch in the dashboard header to browse project rollups rendered as Initiative -> Epic -> Story/Task hierarchies.
 
-In DB/OAuth mode, EPM is hidden until the signed-in user connects a Home/Townsquare token in `Settings -> Connections`. Jira REST reads use the user's OAuth session; Home/Townsquare metadata reads use only the connected `atlassian_user_api_token` stored encrypted in DB `auth_tokens`.
+In DB/OAuth mode, EPM is hidden until the signed-in user connects a Home/Townsquare token in `Settings -> Connections`. Jira REST reads use the user's OAuth session; Home/Townsquare metadata reads use only the connected `atlassian_user_api_token`, represented in DB `auth_connections` and stored encrypted in `auth_tokens`.
 
 For setup details, see [INSTALL.md](INSTALL.md). For EPM behavior and configuration rules, see [docs/features/epm-view.md](docs/features/epm-view.md).
 
@@ -441,7 +444,7 @@ See the full guide:
 - Check that you filled in the required Basic auth settings for legacy API-token mode, or switch to DB/OAuth mode with `JIRA_AUTH_MODE=atlassian_oauth`
 
 **"401 Unauthorized" error:**
-- In DB/OAuth mode, sign in again through `/login`.
+- In DB/OAuth mode, any application API `401` blocks the mounted dashboard behind the global sign-in recovery screen. Use its same-tab **Sign in again** action; the new authenticated document bootstraps from scratch and does not replay the failed request.
 - In legacy Basic mode, check that your API token settings are correct in `.env`.
 
 **EPM tab is missing in DB/OAuth mode:**

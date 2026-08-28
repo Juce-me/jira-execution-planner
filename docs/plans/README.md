@@ -29,7 +29,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 4. `DONE-03-db-user-configuration.md`
    - Completed DB user-configuration plan. Use for audit and prerequisite evidence; do not execute as active work.
-   - Output: DB-backed user-owned saved views, including private EPM scope, label prefix, issue types, project-label mappings, tab, and sprint. PR #130 temporarily moved normalized EPM settings into workspace configuration; `EXEC-user-owned-epm-configuration.md` corrects that ownership regression.
+   - Output: DB-backed user-owned saved views, including private EPM scope, label prefix, issue types, and project-label mappings. EPM tab and sprint are private UI state; existing private-view values remain preserved. PR #130 temporarily moved normalized EPM settings into workspace configuration; `EXEC-user-owned-epm-configuration.md` corrects that ownership regression.
 
 5. `DONE-04-db-user-home-epm-read-token.md`
    - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
@@ -52,8 +52,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Execution record: `../agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md`.
 
 10. `EXEC-user-owned-epm-configuration.md`
-   - Active correction plan for the ownership regression identified after PR #130.
-   - Expected output: EPM settings return to each user's default private saved view and every functional EPM path uses that source; every effective-default EPM change performs post-commit user-partitioned cache invalidation; department groups remain workspace-shared and user-editable; administrator settings remain workspace-shared and admin-only; misplaced workspace EPM is removed reversibly; every application API `401` locks the whole app behind one sanitized sign-in recovery screen instead of rendering a feature error. Completion requires the explicit real-PostgreSQL saved-view concurrency gate; a SQLite run or skipped PostgreSQL class is insufficient.
+   - Active correction plan for the ownership regression identified after PR #130. Tasks 1-6 and final verification are complete; keep the `EXEC-*` name until user acceptance.
+   - Current output: EPM settings use each user's default private saved view and every functional EPM path uses that source; cache keys include a normalized-configuration digest and every effective-default change performs post-commit user-partitioned invalidation; legacy import discards derived `teamCatalog`; misplaced workspace EPM is held in a reversible archive without an inferred owner; and every application API `401` terminally locks the whole app behind one sanitized same-tab sign-in recovery screen. Department groups remain workspace-shared and user-editable, while administrator settings remain workspace-shared and admin-only. Full Python, Node, Playwright, startup, clean-build, and explicit PostgreSQL gates pass.
    - Design record: `../agents/bugfixes/2026-08-27-planned-global-auth-lock.md`.
 
 11. `EXEC-cloud-sql-iam-connectivity.md`

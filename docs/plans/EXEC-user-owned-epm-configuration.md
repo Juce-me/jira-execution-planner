@@ -32,8 +32,8 @@ authentication boundary and root recovery gate.
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test
 runner, Playwright, SQLite/PostgreSQL-compatible schema.
 
-**Status:** Tasks 1 through 5 are implemented and verified, including the required PostgreSQL concurrency
-gate. Task 6 remains in progress. The original no-go findings plus the effective-
+**Status:** Tasks 1 through 6 are implemented and verified, including the required PostgreSQL concurrency
+gate. The plan remains `EXEC-*` pending user acceptance. The original no-go findings plus the effective-
 view cache-invalidation and real-PostgreSQL concurrency gaps are addressed in the runtime resolver,
 serialized mutation, reversible migration, strict JSON validator, team-catalog boundary, cache isolation,
 PostgreSQL completion gate, and global-auth tasks below.
@@ -501,9 +501,10 @@ The `20260827_0008` upgrade runs while the application is quiesced and:
 3. removes `epm` and increments `config_revision` atomically in dialect-specific SQL;
 4. leaves rows without EPM and non-object payloads unchanged.
 
-PostgreSQL casts generic `JSON` through `jsonb` for key removal and back to `JSON`. SQLite uses its JSON
-functions. Offline upgrade and downgrade both emit equivalent PostgreSQL SQL without opening a
-connection; downgrade is not online-only.
+PostgreSQL casts generic `JSON` through `jsonb` for key removal and back to `JSON`. SQLite uses a
+strict Python top-level JSON parser plus parameterized SQL so exact non-EPM value slices are preserved.
+Offline upgrade and downgrade both emit equivalent PostgreSQL SQL without opening a connection;
+downgrade is not online-only.
 
 Downgrade merges the archived EPM fragment into the row's current payload, increments the current
 revision rather than rewinding it, then drops the archive table. It never overwrites newer non-EPM
@@ -727,13 +728,14 @@ fully bootstrapped document without replaying the failed request.
 - Modify: `docs/plans/DONE-03-db-user-configuration.md`
 - Modify: `docs/plans/DONE-04-db-user-home-epm-read-token.md`
 - Modify: `docs/plans/SUPPORT-db-migration-claude-review-workflow.md`
+- Modify: `docs/plans/GATE-05-home-write-capability.md`
 - Modify: `docs/plans/README.md`
 - Modify: `docs/agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md`
 - Modify: `docs/agents/bugfixes/2026-08-27-planned-global-auth-lock.md`
 - Modify: `README.md`
 - Modify: `docs/plans/EXEC-user-owned-epm-configuration.md`
 
-- [ ] **Step 1: Correct current guidance without rewriting historical execution**
+- [x] **Step 1: Correct current guidance without rewriting historical execution**
 
 Keep PR #130's historical execution record and mark only its shared-EPM decision superseded. Restore
 `DONE-03`/`DONE-04` current summaries as authoritative for private EPM. Correct the support workflow to
@@ -743,7 +745,7 @@ Document the full ownership matrix, default-private-view behavior, team-catalog 
 migration archive, cache isolation, and global `401` lock. Tighten the existing root learning so every app
 API `401` globally locks and reauthenticates rather than creating local feature recovery UI.
 
-- [ ] **Step 2: Run complete verification**
+- [x] **Step 2: Run complete verification**
 
 ```bash
 node --version
@@ -766,13 +768,13 @@ Start the configured local Flask server with `.venv/bin/python jira_server.py`, 
 runtime/dependency warnings before the Flask banner, and exercise `curl -fsS http://127.0.0.1:5050/api/test`
 under the configured local auth mode. Stop the server after the check.
 
-- [ ] **Step 3: Review the complete branch and commit documentation/status**
+- [x] **Step 3: Review the complete branch and commit documentation/status**
 
 ```bash
 git diff --stat origin/main...HEAD
 git log --oneline -8
 git diff --check
-git add backend/security/CONFIGURATION_OWNERSHIP.md AGENTS.md docs/plans/DONE-shared-admin-configuration.md docs/plans/DONE-03-db-user-configuration.md docs/plans/DONE-04-db-user-home-epm-read-token.md docs/plans/SUPPORT-db-migration-claude-review-workflow.md docs/plans/README.md docs/agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md docs/agents/bugfixes/2026-08-27-planned-global-auth-lock.md README.md docs/plans/EXEC-user-owned-epm-configuration.md
+git add backend/security/CONFIGURATION_OWNERSHIP.md AGENTS.md docs/plans/DONE-shared-admin-configuration.md docs/plans/DONE-03-db-user-configuration.md docs/plans/DONE-04-db-user-home-epm-read-token.md docs/plans/SUPPORT-db-migration-claude-review-workflow.md docs/plans/GATE-05-home-write-capability.md docs/plans/README.md docs/agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md docs/agents/bugfixes/2026-08-27-planned-global-auth-lock.md README.md docs/plans/EXEC-user-owned-epm-configuration.md
 git commit -m "Align configuration ownership documentation"
 ```
 
@@ -781,29 +783,29 @@ Expected: final commit contains only ownership/status/design documentation. Do n
 
 ## Final Review Checklist
 
-- [ ] Every named file exists unless its task marks it `Create`.
-- [ ] No active runtime path reads EPM from workspace configuration.
-- [ ] Default private view selection explicitly checks workspace, owner, private visibility, default flag,
+- [x] Every named file exists unless its task marks it `Create`.
+- [x] No active runtime path reads EPM from workspace configuration.
+- [x] Default private view selection explicitly checks workspace, owner, private visibility, default flag,
   and non-archived state.
-- [ ] EPM concurrency tests prove monotonic versions and unrelated-field preservation; stale whole-view
+- [x] EPM concurrency tests prove monotonic versions and unrelated-field preservation; stale whole-view
   replacement returns `409` instead of overwriting a concurrent EPM save.
-- [ ] The required PostgreSQL concurrency class passes without skips using two independent connections in
+- [x] The required PostgreSQL concurrency class passes without skips using two independent connections in
   a disposable schema from `TEST_DATABASE_URL`; SQLite and offline SQL are not accepted as substitutes.
-- [ ] Two-user and two-workspace tests cover EPM, groups, preferences, catalog, connections, and untouched
+- [x] Two-user and two-workspace tests cover EPM, groups, preferences, catalog, connections, and untouched
   ownership domains with row-count/payload assertions.
-- [ ] Migration tests prove archive, upgrade, downgrade, re-upgrade, offline SQL, revision movement, and no
+- [x] Migration tests prove archive, upgrade, downgrade, re-upgrade, offline SQL, revision movement, and no
   inferred private owner.
-- [ ] JSON-mode EPM GET/POST strict-validation parity is preserved.
-- [ ] Direct EPM save, effective default payload replacement, default create/switch/demotion/archive, and
+- [x] JSON-mode EPM GET/POST strict-validation parity is preserved.
+- [x] Direct EPM save, effective default payload replacement, default create/switch/demotion/archive, and
   legacy import invalidate only the active DB/OAuth partition after commit when normalized effective EPM
   changes; metadata/non-default/no-op/conflict/validation/retry-failure/rollback paths do not invalidate.
-- [ ] Every project/issues/rollup cache key includes only a digest of the normalized effective EPM settings,
+- [x] Every project/issues/rollup cache key includes only a digest of the normalized effective EPM settings,
   so a process that misses local invalidation cannot reuse an older configuration's entry.
-- [ ] Preview POST requires authentication, requested-with, and CSRF but no admin permission.
-- [ ] Missing/false EPM edit permission fails closed; explicit true enables editing.
-- [ ] No app feature/configuration panel renders raw `401`, owns a sign-in redirect, or bypasses `apiFetch`.
-- [ ] The global auth gate is blocking, accessible, deduplicated, shared across both frontend bundles,
+- [x] Preview POST requires authentication, requested-with, and CSRF but no admin permission.
+- [x] Missing/false EPM edit permission fails closed; explicit true enables editing.
+- [x] No app feature/configuration panel renders raw `401`, owns a sign-in redirect, or bypasses `apiFetch`.
+- [x] The global auth gate is blocking, accessible, deduplicated, shared across both frontend bundles,
   rejects late responses after lock, and remains terminal until same-tab sign-in navigation.
-- [ ] Full Python, Node unit, Playwright, preflight, Flask startup/API, and clean frontend build checks pass.
-- [ ] Before push: review `git log --oneline -5`, summarize verification, and wait for explicit user
+- [x] Full Python, Node unit, Playwright, preflight, Flask startup/API, and clean frontend build checks pass.
+- [x] Before push: review `git log --oneline -5`, summarize verification, and wait for explicit user
   confirmation.

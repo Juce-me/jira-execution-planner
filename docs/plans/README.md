@@ -33,7 +33,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 5. `DONE-04-db-user-home-epm-read-token.md`
    - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
-   - Output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed. This credential ownership is unchanged by the later shared-admin configuration boundary.
+   - Output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed.
 
 6. `GATE-05-home-write-capability.md`
    - Blocked external capability gate for Jira Home/Townsquare project update writes.
@@ -138,6 +138,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Ready for execution on `feature/user-onboarding-tour`; prerequisite `DONE-personal-group-star.md` is complete.
    - Expected output: configure/duplicate guidance after the mandatory group gate, followed by a guided tour of dashboard scope controls, actions, filters, issue hierarchy, and editable Jira fields. Per-user/workspace `onboarding_done` supports completion, skip, interruption recovery, and an explicit Settings replay action without another startup request.
    - The tour consumes the personal-star contract read-only and must not change star persistence or UI. Existing users are backfilled as complete; JSON/basic mode stays unchanged; privacy-safe `settings_action` events measure only started/completed/skipped outcomes.
+
+13. `EXEC-hide-single-option-view-mode-control.md`
+   - Ready for execution as a small frontend-only task suitable for a 5.3 coding model.
+   - Expected output: the ENG/EPM segmented control is absent when EPM navigation is unavailable, remains a two-option control when EPM is available, and updates correctly after Home-token connection, revocation, or backend prerequisite changes. Existing availability, analytics, auth, request, and shared-control contracts remain unchanged.
 
 ## Capacity Reporting Workflow
 

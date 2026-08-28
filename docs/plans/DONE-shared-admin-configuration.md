@@ -149,7 +149,7 @@ The common stale-write body is exact:
 - Produces: `legacy_fallback_matches_workspace(context, legacy_site_url: str) -> bool`.
 - `resolve_effective_view_config()` continues to return `source`, `workspaceId`, `viewConfigId`, `viewType`, and `view`, but `view` is runtime-sanitized.
 
-- [x] **Step 1: Write failing allowlist and private-view tests**
+- [ ] **Step 1: Write failing allowlist and private-view tests**
 
 Add table-driven tests with synthetic data:
 
@@ -192,31 +192,31 @@ def test_private_runtime_view_cannot_override_shared_epm(self):
 
 Also assert recursive rejection of `workspaceId`, `workspace_id`, `userId`, `user_id`, `accountId`, `cloudId`, `siteUrl`, token/service keys, raw GraphQL operations, unknown top-level shared payload keys, unknown nested fields, and malformed section values. Assert that one forbidden or malformed shared field rejects the whole recovery/persistence candidate rather than silently publishing a partial payload.
 
-- [x] **Step 2: Run the focused tests to verify RED**
+- [ ] **Step 2: Run the focused tests to verify RED**
 
 Run: `.venv/bin/python -m unittest tests.test_shared_admin_config_validation tests.test_user_view_config_routes tests.test_view_config_resolution`
 
 Expected: FAIL because the ownership helpers do not exist and private EPM still passes through runtime resolution.
 
-- [x] **Step 3: Implement pure ownership and section-shape helpers**
+- [ ] **Step 3: Implement pure ownership and section-shape helpers**
 
 Use one source of truth for sensitive-key detection by reusing `FORBIDDEN_VIEW_PAYLOAD_KEYS`/the recursive collector rather than copying token names. Extract or wrap the existing pure section normalizers so live routes, fallback reads, recovery, and persistence all produce the same canonical shapes. Client writes use the strict default. Legacy fallback/recovery may set `allow_legacy_excluded_fields=True` to discard only the exact known legacy keys `filters`, `eng`, `teamGroups`, and `teamCatalog`; any other unknown top-level key, forbidden key, unknown nested shared field, or malformed shared section rejects the entire candidate. Do not maintain a second migration-only schema.
 
 Implement exact site matching with normalized scheme/host/path and no substring or suffix matching. `https://example.atlassian.net` matches the same URL with a trailing slash; it does not match `https://other.example.atlassian.net` or an empty configured site.
 
-- [x] **Step 4: Split private import and runtime behavior**
+- [ ] **Step 4: Split private import and runtime behavior**
 
 Make new/updated private views reject shared-only top-level sections and shared EPM keys with `invalid_view_payload`, while allowing only the documented personal EPM state. Make `resolve_effective_view_config()` strip shared fields from runtime output. Keep raw stored payload/version rows unchanged and keep `export_view_config_json()` able to export the historical row for operator recovery.
 
 Change `import_dashboard_config()` so a legacy file import writes only the personal portion to `ViewConfig`; it must not create or replace workspace administrator configuration as a side effect.
 
-- [x] **Step 5: Run the focused tests to verify GREEN**
+- [ ] **Step 5: Run the focused tests to verify GREEN**
 
 Run: `.venv/bin/python -m unittest tests.test_shared_admin_config_validation tests.test_user_view_config_routes tests.test_view_config_resolution tests.test_config_jsonfile_fallback`
 
 Expected: PASS with private ownership/isolation, raw-history preservation, runtime stripping, and exact legacy-site matching.
 
-- [x] **Step 6: Commit the ownership boundary**
+- [ ] **Step 6: Commit the ownership boundary**
 
 ```bash
 git add backend/config/shared_config.py backend/config/view_validation.py backend/config/import_config.py backend/config/db_repository.py tests/test_shared_admin_config_validation.py tests/test_user_view_config_routes.py tests/test_view_config_resolution.py tests/test_config_jsonfile_fallback.py
@@ -238,7 +238,7 @@ git commit -m "Define shared configuration ownership"
 - Both tables are unique on `workspace_id` and cascade on workspace deletion; user attribution uses `ON DELETE SET NULL`.
 - Recovery CLI accepts `--workspace-id`, `--view-config-id`, `--version-number`, `--expected-sha256`, and `--apply`; dry-run is the default and `--expected-sha256` is mandatory with `--apply`.
 
-- [x] **Step 1: Write failing schema/migration tests**
+- [ ] **Step 1: Write failing schema/migration tests**
 
 Extend `tests/test_db_migrations.py` to upgrade a database at `20260604_0006`, then assert both new tables, exact columns, foreign keys, and unique constraints. Add downgrade-to-`20260604_0006`, re-upgrade, and offline SQL assertions.
 
@@ -251,33 +251,33 @@ Seed four synthetic cases before upgrade:
 
 After upgrade, assert that all private rows and versions are unchanged and `workspace_dashboard_configs` is empty in every case. Migration must never infer publishable shared state from private history.
 
-- [x] **Step 2: Run the migration test to verify RED**
+- [ ] **Step 2: Run the migration test to verify RED**
 
 Run: `.venv/bin/python -m unittest tests.test_db_migrations`
 
 Expected: FAIL because revision `20260826_0007` and both tables do not exist.
 
-- [x] **Step 3: Add models and migration**
+- [ ] **Step 3: Add models and migration**
 
 Use revision `20260826_0007` with `down_revision='20260604_0006'`. Set server-safe non-null defaults in the migration for payload version, JSON payload, and revision; do not rely only on ORM defaults.
 
 Create only the tables, constraints, indexes, server-safe defaults, and downgrade path. Do not import application helpers or inspect/copy `view_configs` or `view_config_versions` in the migration. Migration output must not report private candidate data because no candidate selection occurs.
 
-- [x] **Step 4: Write failing recovery-command tests**
+- [ ] **Step 4: Write failing recovery-command tests**
 
 Test dry-run, explicit apply, missing/mismatched `--expected-sha256`, wrong-workspace rejection, actor/owner mismatch, non-marked-version rejection, inactive/non-admin actor rejection, forbidden/malformed candidate rejection, existing-row refusal, and output redaction. The test must assert that project keys, Home ids, field ids, user ids read from the database, and payload JSON are absent from stdout/stderr.
 
-- [x] **Step 5: Implement the recovery command**
+- [ ] **Step 5: Implement the recovery command**
 
 Resolve the configured DB through existing engine helpers. Read the exact immutable version payload, verify the selected view/version plus matching active-admin actor/owner, and call the same strict shared-section normalizer as live persistence. Print only operator-supplied identifiers, included section names, and a canonical `sha256:` fingerprint. With `--apply`, require the exact fingerprint from dry-run and recheck it in the insertion transaction before inserting revision `1`. Do not add an overwrite flag.
 
-- [x] **Step 6: Run persistence/recovery tests to verify GREEN**
+- [ ] **Step 6: Run persistence/recovery tests to verify GREEN**
 
 Run: `.venv/bin/python -m unittest tests.test_db_migrations tests.test_shared_admin_config_recovery`
 
 Expected: PASS with a data-neutral schema migration, upgrade/downgrade/re-upgrade, offline SQL, fingerprint-verified explicit recovery, and redacted output.
 
-- [x] **Step 7: Commit persistence**
+- [ ] **Step 7: Commit persistence**
 
 ```bash
 git add backend/db/models.py backend/db/migrations/versions/20260826_0007_workspace_dashboard_config.py scripts/promote_legacy_shared_admin_config.py tests/test_db_migrations.py tests/test_shared_admin_config_recovery.py
@@ -320,7 +320,7 @@ def save_workspace_team_catalog(context, payload, *, merge=False, database_url=N
 - `DbConfigRepository.save_dashboard_config()` must no longer replace a DB payload or touch `ViewConfig`; DB callers use `save_dashboard_section()`.
 - `jira_server.load_dashboard_config_snapshot()` caches one DB read in Flask `g` for the request; `load_dashboard_config()` returns `.payload`.
 
-- [x] **Step 1: Write failing workspace service tests**
+- [ ] **Step 1: Write failing workspace service tests**
 
 Cover same-workspace cross-user reads, second-workspace isolation, revision-zero empty/fallback snapshots, exact-site fallback allow/deny, read-without-write, section allowlisting, actor attribution, and audit metadata.
 
@@ -330,33 +330,33 @@ Add an insert race test where two revision-zero writers target the same workspac
 
 Add a team-catalog merge race where two users add different synthetic team mappings from the same internal catalog revision. The bounded compare-and-swap retry must preserve both mappings and must not touch the administrator revision or audit stream.
 
-- [x] **Step 2: Run service tests to verify RED**
+- [ ] **Step 2: Run service tests to verify RED**
 
 Run: `.venv/bin/python -m unittest tests.test_workspace_dashboard_config_service tests.test_config_jsonfile_fallback tests.test_team_catalog_api`
 
 Expected: FAIL because the shared services and separate catalog repository do not exist.
 
-- [x] **Step 3: Implement atomic section compare-and-swap**
+- [ ] **Step 3: Implement atomic section compare-and-swap**
 
 Parse `base_revision` as a non-negative integer. For an existing row, load its payload, replace only the hard-coded section, and execute `UPDATE ... WHERE workspace_id=:workspace_id AND config_revision=:base_revision`. Increment revision and add the redacted audit event in the same transaction. If `rowcount != 1`, reload only the current workspace and raise `WorkspaceConfigConflict`.
 
 For revision zero, reload the current exact-site fallback at write time, normalize it, replace only the route-owned section, and attempt a unique insert. This preserves untouched legacy sections during first-write cutover. A non-matching workspace starts from the empty snapshot. Translate a unique race into the same conflict object in a fresh transaction; do not leak a database exception.
 
-- [x] **Step 4: Implement team-catalog separation**
+- [ ] **Step 4: Implement team-catalog separation**
 
 Load/save only `WorkspaceTeamCatalog`. Normalize route input before the service call. For merge writes, conditionally update on the internal catalog revision and retry from the latest row a bounded number of times; convert exhausted contention to a catalog-specific conflict rather than losing entries. An unprivileged request cannot name an administrator section or call the administrator update interface. Do not expose the internal revision as `baseRevision`, increment the administrator `config_revision`, or add `workspace_dashboard_config_updated` audit events.
 
-- [x] **Step 5: Add request-scoped snapshot caching and DB full-save guard**
+- [ ] **Step 5: Add request-scoped snapshot caching and DB full-save guard**
 
 Use one snapshot per Flask request so `/api/config` and its helper getters do not issue repeated DB config queries. `/api/config` must serialize `sharedConfig` and `sharedConfigRevision` from that same immutable snapshot. Replace the cached snapshot after a successful section save. Preserve `source='jsonfile'` for startup/no-request paths. In DB mode, make the legacy generic full-save wrapper fail closed with a clear internal error and remove its `compatibility save` marker/default so future route code cannot silently reintroduce whole-payload writes or create false recovery provenance.
 
-- [x] **Step 6: Run repository/service tests to verify GREEN**
+- [ ] **Step 6: Run repository/service tests to verify GREEN**
 
 Run: `.venv/bin/python -m unittest tests.test_workspace_dashboard_config_service tests.test_config_jsonfile_fallback tests.test_team_catalog_api tests.test_config_storage_selector tests.test_view_config_resolution`
 
 Expected: PASS with one request-scoped read, cross-user sharing, cross-workspace denial, safe fallback, atomic conflicts, team-catalog separation, and private-view isolation.
 
-- [x] **Step 7: Commit repository services**
+- [ ] **Step 7: Commit repository services**
 
 ```bash
 git add backend/services/workspace_dashboard_config.py backend/config/db_repository.py jira_server.py tests/test_workspace_dashboard_config_service.py tests/test_config_jsonfile_fallback.py tests/test_team_catalog_api.py tests/test_config_storage_selector.py tests/test_view_config_resolution.py tests/test_codebase_structure_budgets.py
@@ -384,7 +384,7 @@ git commit -m "Route shared settings through workspace storage"
 - DB/OAuth writes require `baseRevision`; JSON/basic writes do not.
 - Conflict JSON is produced by one shared helper and contains only the route-owned current section.
 
-- [x] **Step 1: Expand the security matrix before route code**
+- [ ] **Step 1: Expand the security matrix before route code**
 
 Put every POST route from the matrix in `SECURITY_SAMPLES['shared_admin_write']` except `/api/team-catalog`, which remains in `user_write`. Parameterize tests so each route proves:
 
@@ -394,7 +394,7 @@ Put every POST route from the matrix in `SECURITY_SAMPLES['shared_admin_write']`
 - non-admin returns `403 admin_required` when `SETTINGS_ADMIN_ONLY=true`;
 - authenticated non-admin reaches the route when `SETTINGS_ADMIN_ONLY=false`.
 
-- [x] **Step 2: Write failing two-workspace and bootstrap regressions**
+- [ ] **Step 2: Write failing two-workspace and bootstrap regressions**
 
 Seed Admin A, Admin B, and a normal user in workspace 1 plus Admin C in workspace 2. Save each administrator section through its real route as Admin A, then read it as Admin B and the normal user. Assert Admin C receives workspace 2's empty/default value and never workspace 1's conflict body.
 
@@ -404,13 +404,13 @@ Add a regression that changes one section between two compatibility GETs and pro
 
 Patch Jira REST and Home/Townsquare fetch symbols to fail if called by `/api/config`, and assert the bootstrap performs one workspace-config repository read. Record the before/after startup request count; it must not increase.
 
-- [x] **Step 3: Run route/security tests to verify RED**
+- [ ] **Step 3: Run route/security tests to verify RED**
 
 Run: `.venv/bin/python -m unittest tests.test_dashboard_bootstrap_config_source tests.test_endpoint_security_matrix tests.test_oauth_settings_routes tests.test_epm_config_api tests.test_user_view_config_routes tests.test_db_admin_routes`
 
 Expected: FAIL because routes neither expose/require revisions nor isolate shared EPM from private views.
 
-- [x] **Step 4: Replace read/modify/full-save route code**
+- [ ] **Step 4: Replace read/modify/full-save route code**
 
 For each administrator POST route:
 
@@ -423,25 +423,25 @@ For each administrator POST route:
 
 Do not accept a client-provided section name. Refactor `jira_server._save_field_config()` to call the section-save interface with its hard-coded `config_key` and parsed `baseRevision`; do not leave any DB route or delegated route helper calling generic `save_dashboard_config()`.
 
-- [x] **Step 5: Make shared EPM authoritative**
+- [ ] **Step 5: Make shared EPM authoritative**
 
 Change `get_config()` to load one `WorkspaceConfigSnapshot`, expose its complete allowlisted payload as `sharedConfig`, expose its revision as `sharedConfigRevision`, and derive the existing compatibility fields—including `payload['epm']`—from that same snapshot. `includeViewConfig=true` may add sanitized `viewConfig`, but it must not select `view_payload.get('epm')`. Keep per-user Home token visibility/gating unchanged.
 
-- [x] **Step 6: Lock down the team-catalog route**
+- [ ] **Step 6: Lock down the team-catalog route**
 
 Require a JSON object whose keys are a subset of `catalog`, `meta`, and `merge`. Reject identity and administrator-section fields with `400 unsupported_team_catalog_field`. In DB mode call only the team-catalog repository; in JSON mode keep the file path. Convert exhausted internal catalog-merge contention to `409 team_catalog_conflict` without returning administrator revision or payload data.
 
-- [x] **Step 7: Add audit assertions and source guards**
+- [ ] **Step 7: Add audit assertions and source guards**
 
 Assert each successful administrator section save adds one `AuditEvent` with `event_type='workspace_dashboard_config_updated'`, correct request-derived workspace/actor, and metadata exactly `{'section': <name>, 'revision': <int>}`. Assert payload values and identifiers never appear in serialized metadata. Add an AST/source guard over every matrix administrator handler plus `jira_server._save_field_config()` that forbids a generic full-save call without forbidding the intentionally preserved JSON/basic groups path.
 
-- [x] **Step 8: Run route/security tests to verify GREEN**
+- [ ] **Step 8: Run route/security tests to verify GREEN**
 
 Run: `.venv/bin/python -m unittest tests.test_dashboard_bootstrap_config_source tests.test_endpoint_security_matrix tests.test_oauth_settings_routes tests.test_epm_config_api tests.test_user_view_config_routes tests.test_db_admin_routes tests.test_backend_route_source_guards`
 
 Expected: PASS for every endpoint/body/auth/CSRF/workspace/conflict/audit contract in the matrix.
 
-- [x] **Step 9: Commit route contracts**
+- [ ] **Step 9: Commit route contracts**
 
 ```bash
 git add backend/routes/settings_routes.py backend/routes/epm_routes.py backend/security/policy.py jira_server.py tests/test_dashboard_bootstrap_config_source.py tests/test_endpoint_security_matrix.py tests/test_oauth_settings_routes.py tests/test_epm_config_api.py tests/test_user_view_config_routes.py tests/test_db_admin_routes.py tests/test_backend_route_source_guards.py
@@ -470,7 +470,7 @@ git commit -m "Enforce shared settings route contracts"
 - `workspaceConfigConflict.js` exports `workspaceConfigConflictMessages`, `rebaseWorkspaceConfigSave`, and `committedWorkspaceSectionLabels`.
 - Dashboard seeds every administrator draft plus one `sharedConfigRevision` from the same atomic `sharedConfig` bootstrap snapshot and updates the revision after each sequential success.
 
-- [x] **Step 1: Write failing pure conflict tests**
+- [ ] **Step 1: Write failing pure conflict tests**
 
 ```javascript
 test('rebase uses the server revision and preserves dirty section payload', () => {
@@ -491,13 +491,13 @@ test('conflict copy names committed and pending sections', () => {
 });
 ```
 
-- [x] **Step 2: Run Node tests to verify RED**
+- [ ] **Step 2: Run Node tests to verify RED**
 
 Run: `node --test tests/test_workspace_config_conflict.js tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js`
 
 Expected: FAIL because revision helpers and request fields do not exist.
 
-- [x] **Step 3: Thread revisions through API helpers**
+- [ ] **Step 3: Thread revisions through API helpers**
 
 In DB/OAuth mode, add `baseRevision` to every administrator save body without changing route-owned fields. Parse non-2xx JSON before throwing so `status`, `payload`, and `error` remain available. Keep `X-Requested-With`, CSRF fetch, `api_surface=settings_save`, and feature analytics unchanged.
 
@@ -505,7 +505,7 @@ In DB/OAuth mode, add `baseRevision` to every administrator save body without ch
 
 Remove `normalizeAppConfig()`'s fallback from `viewConfig.view.epm` to top-level `epm`. Read shared EPM from `/api/config.epm`/`sharedConfig.epm`, and read personal tab/sprint state only from the sanitized private view.
 
-- [x] **Step 4: Implement the Settings conflict state machine**
+- [ ] **Step 4: Implement the Settings conflict state machine**
 
 In DB/OAuth mode, seed all shared section baselines and `sharedConfigRevision` from the same `/api/config.sharedConfig` snapshot. Do not derive a section baseline from an independently timed GET and pair it with `/api/config.sharedConfigRevision`. Compatibility GETs may remain for non-Settings consumers; JSON/basic mode keeps its current initialization path. During modal-wide Save, send the current revision to the first dirty administrator section, replace it with each success response's revision, and pass the new value to the next dirty section.
 
@@ -521,7 +521,7 @@ On `409`:
 
 On `401`, auth-expired `403`, network error, or validation error, keep drafts and use the existing recovery/error path. A workspace/site switch resets the revision/baselines before Save can be enabled.
 
-- [x] **Step 5: Add Playwright conflict and geometry coverage**
+- [ ] **Step 5: Add Playwright conflict and geometry coverage**
 
 Extend `tests/ui/settings_unified_save.spec.js` with two administrators' mocked sequence:
 
@@ -536,11 +536,11 @@ Extend `tests/ui/settings_unified_save.spec.js` with two administrators' mocked 
 
 Add element assertions for the conflict text/buttons and a settled screenshot. No sticky/header geometry is changed.
 
-- [x] **Step 6: Update analytics documentation**
+- [ ] **Step 6: Update analytics documentation**
 
 In `docs/README_ANALYTICS.md`, document that `settings_action` covers revision conflicts with `workflow_action=save_result`, `result=failure`, `conflict_state=remote`, and bucketed `conflict_count_bucket`. Explicitly forbid config values, revisions, Jira/Home identifiers, field ids, workspace ids, and user ids.
 
-- [x] **Step 7: Run frontend tests and build**
+- [ ] **Step 7: Run frontend tests and build**
 
 Run:
 
@@ -553,7 +553,7 @@ git diff -- frontend/dist
 
 Expected: Node and Playwright tests PASS; `npm run build` exits `0`; inspect the generated diff and verify it traces only to source changes. Stage the intended source and generated output, run `npm run build` again, then require `git diff --exit-code -- frontend/dist` so no unstaged generated drift remains.
 
-- [x] **Step 8: Commit frontend conflict handling and generated output**
+- [ ] **Step 8: Commit frontend conflict handling and generated output**
 
 ```bash
 git add frontend/src/api/configApi.js frontend/src/api/epmApi.js frontend/src/settings/useJiraFieldPickers.js frontend/src/settings/workspaceConfigConflict.js frontend/src/dashboard.jsx tests/test_workspace_config_conflict.js tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js tests/ui/settings_unified_save.spec.js docs/README_ANALYTICS.md frontend/dist
@@ -575,13 +575,13 @@ git commit -m "Handle concurrent shared settings saves"
 **Interfaces:**
 - Documentation records the workspace/site ownership boundary, intentional EPM source-of-truth change, team-catalog separation, revision conflict contract, and actual verification evidence.
 
-- [x] **Step 1: Update historical current-accuracy notes**
+- [ ] **Step 1: Update historical current-accuracy notes**
 
 Keep `DONE-03` and `DONE-04` as accurate execution history. Add a current-accuracy note that this later plan makes normalized EPM scope/mappings workspace-admin-owned while private views retain personal view state and per-user Home credentials remain unchanged. Do not rewrite the historical tasks as if they originally implemented the new boundary.
 
 Re-run the required startup gate sweep. Update `GATE-05`'s checked date/result without running its mutation probe unless all documented operator inputs and an approved disposable target are available. This plan remains executable while that write gate is blocked because it adds no Home mutation.
 
-- [x] **Step 2: Record the recurring ownership rule**
+- [ ] **Step 2: Record the recurring ownership rule**
 
 Add this exact Project Learning:
 
@@ -589,7 +589,7 @@ Add this exact Project Learning:
 - Store administrator-owned dashboard and EPM configuration once per workspace; private views may contain only personal view state and must never override shared settings.
 ```
 
-- [x] **Step 3: Run focused backend verification**
+- [ ] **Step 3: Run focused backend verification**
 
 Run:
 
@@ -600,7 +600,7 @@ Run:
 
 Expected: all tests pass and preflight exits `0` without dependency/runtime warnings.
 
-- [x] **Step 4: Run complete repository verification**
+- [ ] **Step 4: Run complete repository verification**
 
 Run:
 
@@ -614,7 +614,7 @@ git diff --exit-code -- frontend/dist
 
 Expected: every command exits `0`; the final build produces a clean generated-output diff. If the full UI suite requires an unavailable browser/runtime, record the exact unavailable prerequisite and run the repository's documented focused fallback; do not claim the UI suite passed.
 
-- [x] **Step 5: Inspect source-of-truth and safety guards**
+- [ ] **Step 5: Inspect source-of-truth and safety guards**
 
 Run:
 
@@ -636,11 +636,11 @@ Expected:
 - no whitespace errors, secrets, real identifiers, unrelated refactors, or hand-edited dist files;
 - every changed line traces to this plan.
 
-- [x] **Step 6: Close the work artifact**
+- [ ] **Step 6: Close the work artifact**
 
 Rename the bugfix artifact to `executed`, set `Status: executed`, and record exact commands/results, schema no-backfill evidence, recovery refusal/fingerprint behavior, screenshots, and any implementation divergence. Keep this plan `EXEC-*` until user acceptance or merge; then rename it to `DONE-*` and update `docs/plans/README.md`.
 
-- [x] **Step 7: Commit documentation and final evidence**
+- [ ] **Step 7: Commit documentation and final evidence**
 
 ```bash
 git add AGENTS.md docs/plans/DONE-03-db-user-configuration.md docs/plans/DONE-04-db-user-home-epm-read-token.md docs/agents/bugfixes docs/plans/EXEC-shared-admin-configuration.md docs/plans/README.md

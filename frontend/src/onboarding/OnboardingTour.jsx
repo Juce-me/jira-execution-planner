@@ -62,6 +62,7 @@ export default function OnboardingTour({
     actionPending = false,
     actionError = '',
     recoveryLoginUrl = '',
+    returnFocusRef = null,
 } = {}) {
     const [snapshot, setSnapshot] = React.useState(() => (
         typeof document === 'undefined'
@@ -136,7 +137,10 @@ export default function OnboardingTour({
     React.useEffect(() => {
         if (!tour.isOpen) return undefined;
         const appRoot = document.getElementById('root');
-        priorFocusRef.current = document.activeElement;
+        const preferredReturnFocus = returnFocusRef?.current;
+        priorFocusRef.current = preferredReturnFocus?.isConnected
+            ? preferredReturnFocus
+            : document.activeElement;
 
         let priorAriaHidden = null;
         let hadAriaHidden = false;

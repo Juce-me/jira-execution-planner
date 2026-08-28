@@ -709,6 +709,7 @@ import {
                 savedPrefsRef.current.groupByInitiativeChoice ?? null
             );
             const headerRef = useRef(null);
+            const groupManageButtonRef = useRef(null);
             const compactHeaderRef = useRef(null);
             const [compactHeaderOffset, setCompactHeaderOffset] = useState(0);
             const [compactStickyVisible, setCompactStickyVisible] = useState(false);
@@ -13305,6 +13306,7 @@ import {
                                     </IconButton>
                                     {selectedView === 'eng' && (
                                         <button
+                                            ref={groupManageButtonRef}
                                             className="header-icon-button group-gear-button"
                                             onClick={(event) => {
                                                 event.stopPropagation();
@@ -16319,6 +16321,7 @@ import {
                         actionPending={onboarding.pending}
                         actionError={onboarding.error}
                         recoveryLoginUrl={onboarding.recoveryLoginUrl}
+                        returnFocusRef={onboarding.sourceSurface === 'settings' ? groupManageButtonRef : null}
                     />
                     {showUpdateModal && updateNoticeVisible && (
                         <div

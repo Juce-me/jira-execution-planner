@@ -378,7 +378,8 @@ test('existing users do not auto-start and can replay without changing dashboard
     const teams = page.locator('[data-onboarding-target="teams"][data-onboarding-surface="main"]');
     await expect(sprint).toContainText('2026Q2 Sprint 42');
     const scopeBefore = await Promise.all([sprint.innerText(), teams.innerText()]);
-    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const settingsOpener = page.getByRole('button', { name: 'Manage team groups' });
+    await settingsOpener.click();
     await page.getByRole('button', { name: 'Run onboarding again' }).click();
 
     await expect(page.locator('.group-modal')).toHaveCount(0);
@@ -388,6 +389,10 @@ test('existing users do not auto-start and can replay without changing dashboard
     expect(await Promise.all([sprint.innerText(), teams.innerText()])).toEqual(scopeBefore);
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name').every(call => call.params.groupId === 'platform')).toBe(true);
     expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(0);
+    await page.getByRole('button', { name: 'Skip onboarding' }).click();
+    await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toHaveCount(0);
+    await expect(settingsOpener).toBeFocused();
+    expect(await settingsOpener.evaluate((node) => node.isConnected)).toBe(true);
 });
 
 test('replay is disabled while Team groups settings are dirty', async ({ page }) => {

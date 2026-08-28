@@ -390,14 +390,16 @@ test('Configure your own stays usable in the compact layout and returns to the m
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
         .toBeLessThanOrEqual(0);
 
+    const groupListDrawer = settingsDialog.locator('.group-pane-left');
+    const closedDrawerTransform = await groupListDrawer.evaluate(node => getComputedStyle(node).transform);
     await groupsButton.click();
     const addGroupButton = settingsDialog.getByRole('button', { name: '+ Add group' });
-    await expect(settingsDialog.locator('.group-pane-left')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+    await expect(groupListDrawer).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
     await expectContainedInViewport(addGroupButton);
     await settingsDialog.getByRole('button', { name: 'Back' }).click();
 
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
-    await page.waitForTimeout(300);
+    await expect(groupListDrawer).toHaveCSS('transform', closedDrawerTransform);
     await page.screenshot({ path: `${screenshotDir}/first-run-configure-compact.png`, fullPage: true });
     await cancelButton.click();
 

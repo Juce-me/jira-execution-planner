@@ -16,6 +16,7 @@ import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import OnboardingTour from './onboarding/OnboardingTour.jsx';
+import { isOnboardingAvailable } from './onboarding/onboardingSteps.js';
 import { useOnboardingController } from './onboarding/useOnboardingTour.js';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
@@ -1032,6 +1033,7 @@ import {
                 return normalized;
             }, [showGroupManage]);
             const personalGroupPreferencesEnabled = groupsConfig.source === 'workspace_db';
+            const onboardingAvailable = isOnboardingAvailable(authMode, groupsConfig.source);
             const {
                 groupPreferences,
                 setGroupPreferences,
@@ -2704,7 +2706,7 @@ import {
             }, [groupSaving, epmConfigSaving, authMode, sharedConfigReady, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
             const onboarding = useOnboardingController({
                 bootstrapReady: groupsLoading === false
-                    && groupsConfig.source === 'workspace_db'
+                    && onboardingAvailable
                     && groupPreferences.onboardingRequired === false,
                 onboardingDone: groupPreferences.onboardingDone,
                 setOnboardingDone: (onboardingDone) => setGroupPreferences((current) => ({ ...current, onboardingDone })),
@@ -16138,7 +16140,7 @@ import {
                                         removeGroupDraft,
                                         selectDepartmentSettingsTab,
                                         firstRunConfigurationActive,
-                                        onboardingReplayAvailable: personalGroupPreferencesEnabled
+                                        onboardingReplayAvailable: onboardingAvailable
                                             && groupPreferences.onboardingRequired === false,
                                         onboardingReplayDisabled,
                                         onboardingReplayPending: onboarding.pending,

@@ -8,7 +8,7 @@ First-time users must select exactly one eligible Department group. This stage h
 
 Users who need a different setup can choose **Configure your own**. Settings opens directly to Departments → Team groups. When groups already exist, the guidance recommends duplicating one and adjusting its teams; when none exist, the existing Add group flow remains available. Saving or cancelling returns to the mandatory selector, and creating or duplicating a group does not star it automatically. A validation or save failure stays in Settings so the user can correct and retry it.
 
-File, environment, and other non-database configuration modes keep their existing shared-default behavior and do not show this personal onboarding flow.
+JSON, file, and environment configuration modes keep their existing shared-default behavior. These modes and Basic-auth mode do not automatically run or replay the tour and do not write onboarding state, even when a workspace database configuration exists alongside them. The personal selection and tour flow is available only with Atlassian OAuth and workspace-database group configuration.
 
 ## Dashboard tour
 

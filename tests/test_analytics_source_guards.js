@@ -23,6 +23,46 @@ function yamlValues(source, key) {
     return new Set(Array.from(source.matchAll(new RegExp(`${key}: "([^"]+)"`, 'g')), ([, value]) => value));
 }
 
+function bracedSource(source, marker, fromIndex = 0) {
+    const markerIndex = source.indexOf(marker, fromIndex);
+    assert.ok(markerIndex >= 0, `Expected source marker: ${marker}`);
+    const openIndex = source.indexOf('{', markerIndex + marker.length);
+    assert.ok(openIndex >= 0, `Expected opening brace after: ${marker}`);
+
+    let depth = 0;
+    let quote = '';
+    let escaped = false;
+    for (let index = openIndex; index < source.length; index += 1) {
+        const character = source[index];
+        if (quote) {
+            if (escaped) {
+                escaped = false;
+            } else if (character === '\\') {
+                escaped = true;
+            } else if (character === quote) {
+                quote = '';
+            }
+            continue;
+        }
+        if (character === "'" || character === '"' || character === '`') {
+            quote = character;
+            continue;
+        }
+        if (character === '{') depth += 1;
+        if (character === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return {
+                    source: source.slice(openIndex + 1, index),
+                    start: markerIndex,
+                    end: index + 1,
+                };
+            }
+        }
+    }
+    assert.fail(`Expected closing brace after: ${marker}`);
+}
+
 test('app analytics source never sends direct gtag events', () => {
     for (const relativePath of analyticsFiles) {
         const source = read(relativePath);
@@ -192,9 +232,46 @@ test('onboarding analytics use only the canonical settings action outcomes and s
     assert.match(source, /const skip = React\.useCallback\(\(\) => persist\(true, 'skipped'\)/);
     assert.match(source, /const finish = React\.useCallback\(\(\) => persist\(true, 'completed'\)/);
 
-    const persisted = source.indexOf('const payload = await savePreference(nextDone);');
-    const outcome = source.indexOf("trackSettingsAction?.('onboarding', outcome");
-    assert.ok(persisted >= 0 && outcome > persisted, 'completion analytics must follow persisted success');
+    const openBlock = bracedSource(source, 'const open = React.useCallback((source) =>').source;
+    const automaticEffect = bracedSource(source, 'React.useEffect(() =>');
+    const automaticBlock = automaticEffect.source;
+    const resetBlock = bracedSource(source, 'React.useEffect(() =>', automaticEffect.end).source;
+    const automaticGuard = automaticBlock.indexOf('automaticStartedRef.current || replayPendingRef.current) return;');
+    const automaticSet = automaticBlock.indexOf('automaticStartedRef.current = true;');
+    const automaticOpen = automaticBlock.indexOf("open('first_run');");
+    assert.ok(
+        automaticGuard >= 0 && automaticSet > automaticGuard && automaticOpen > automaticSet,
+        'automatic onboarding must guard, mark the run, then open exactly once',
+    );
+    assert.equal((automaticBlock.match(/open\('first_run'\)/g) || []).length, 1);
+    assert.equal((openBlock.match(/trackSettingsAction\?\./g) || []).length, 1);
+    assert.match(resetBlock, /if \(onboardingDone !== false\) automaticStartedRef\.current = false;/);
+
+    const persistBlock = bracedSource(source, 'const persist = React.useCallback(async (nextDone, outcome) =>').source;
+    const verifyBlock = bracedSource(persistBlock, 'if (payload?.onboardingDone !== nextDone)').source;
+    const nextDoneBlock = bracedSource(persistBlock, 'if (nextDone)').source;
+    const catchBlock = bracedSource(persistBlock, 'catch (saveError)').source;
+    const finallyBlock = bracedSource(persistBlock, 'finally').source;
+    const inFlightGuard = persistBlock.indexOf("if (inFlightRef.current || typeof savePreference !== 'function') return false;");
+    const inFlightSet = persistBlock.indexOf('inFlightRef.current = true;');
+    const saveCall = persistBlock.indexOf('const payload = await savePreference(nextDone);');
+    const verifyStart = persistBlock.indexOf('if (payload?.onboardingDone !== nextDone)');
+    const nextDoneStart = persistBlock.indexOf('if (nextDone)');
+    assert.ok(
+        inFlightGuard >= 0 && inFlightSet > inFlightGuard && saveCall > inFlightSet
+            && verifyStart > saveCall && nextDoneStart > verifyStart,
+        'persistence must guard duplicate writes before saving and verifying the response',
+    );
+    assert.match(verifyBlock, /throw new Error\(/);
+    assert.match(nextDoneBlock, /trackSettingsAction\?\.\('onboarding', outcome,/);
+    assert.equal((persistBlock.match(/trackSettingsAction\?\./g) || []).length, 1);
+    assert.doesNotMatch(catchBlock, /trackSettingsAction/);
+    assert.doesNotMatch(finallyBlock, /trackSettingsAction/);
+    assert.match(finallyBlock, /inFlightRef\.current = false;/);
+    assert.ok(
+        finallyBlock.indexOf('inFlightRef.current = false;') < finallyBlock.indexOf('setPending(false);'),
+        'the shared in-flight guard must reset in finally before pending UI clears',
+    );
 
     const analyticsCalls = calls.join('\n');
     for (const forbidden of [
@@ -224,6 +301,27 @@ test('onboarding step navigation is untracked and its analytics contract is docu
     assert.ok(analyticsDoc.includes('Step navigation is intentionally untracked'));
     assert.ok(featureDoc.includes('Mandatory Department selection'));
     assert.ok(featureDoc.includes('Run onboarding again'));
+    assert.ok(featureDoc.includes('JSON, file, and environment configuration modes'));
+    assert.ok(featureDoc.includes('Basic-auth mode'));
+    assert.ok(featureDoc.includes('do not automatically run or replay the tour'));
+    assert.ok(featureDoc.includes('do not write onboarding state'));
+});
+
+test('dashboard gates onboarding automatic start and replay on OAuth workspace DB mode', () => {
+    const dashboardSource = read('frontend/src/dashboard.jsx');
+
+    assert.match(
+        dashboardSource,
+        /const onboardingAvailable = isOnboardingAvailable\(authMode, groupsConfig\.source\);/,
+    );
+    assert.match(
+        dashboardSource,
+        /bootstrapReady: groupsLoading === false\s*&& onboardingAvailable\s*&& groupPreferences\.onboardingRequired === false/,
+    );
+    assert.match(
+        dashboardSource,
+        /onboardingReplayAvailable: onboardingAvailable\s*&& groupPreferences\.onboardingRequired === false/,
+    );
 });
 
 test('Jira issue transition API module sends the eng_status_transitions surface for both endpoints', () => {

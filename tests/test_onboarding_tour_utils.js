@@ -27,6 +27,17 @@ function rootWith(selectors = {}) {
 const VIEWPORT = { width: 1000, height: 700 };
 const VISIBLE_RECT = { left: 100, top: 100, right: 220, bottom: 140, width: 120, height: 40 };
 
+test('onboarding persistence is available only for Atlassian OAuth workspace DB mode', async () => {
+    const { isOnboardingAvailable } = await loadModule();
+
+    assert.equal(isOnboardingAvailable('atlassian_oauth', 'workspace_db'), true);
+    assert.equal(isOnboardingAvailable('basic', 'workspace_db'), false);
+    assert.equal(isOnboardingAvailable('local_basic', 'workspace_db'), false);
+    assert.equal(isOnboardingAvailable('atlassian_oauth', 'jsonfile'), false);
+    assert.equal(isOnboardingAvailable('atlassian_oauth', 'environment'), false);
+    assert.equal(isOnboardingAvailable('', 'workspace_db'), false);
+});
+
 test('catalog contains the required product steps in deterministic order', async () => {
     const { ONBOARDING_STEP_CATALOG } = await loadModule();
     assert.deepEqual(

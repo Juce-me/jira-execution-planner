@@ -1,5 +1,9 @@
 const TARGET_PREFIX = '[data-onboarding-target=';
 
+export function isOnboardingAvailable(authMode, groupsSource) {
+    return authMode === 'atlassian_oauth' && groupsSource === 'workspace_db';
+}
+
 function target(name) {
     return `${TARGET_PREFIX}"${name}"]`;
 }

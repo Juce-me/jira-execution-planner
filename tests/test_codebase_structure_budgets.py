@@ -99,7 +99,7 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Task 5 wires the extracted onboarding controller, replay props, stable target attributes,
     # and the single portal mount; tour state and persistence behavior remain extracted (+55).
     # The replay focus fix adds one stable Settings-opener ref and passes it to the tour (+3).
-    "frontend/src/dashboard.jsx": 16362,
+    "frontend/src/dashboard.jsx": 16364,
 }
 
 

@@ -75,6 +75,7 @@ test.beforeAll(() => {
                 import * as React from 'react';
                 import { createRoot } from 'react-dom/client';
                 import OnboardingTour from './frontend/src/onboarding/OnboardingTour.jsx';
+                import { isOnboardingAvailable } from './frontend/src/onboarding/onboardingSteps.js';
                 import { useOnboardingController } from './frontend/src/onboarding/useOnboardingTour.js';
 
                 function ControllerHarness() {
@@ -83,6 +84,8 @@ test.beforeAll(() => {
                     const [showSettings, setShowSettings] = React.useState(true);
                     const [dirty, setDirty] = React.useState(false);
                     const [saving, setSaving] = React.useState(false);
+                    const [authMode, setAuthMode] = React.useState('atlassian_oauth');
+                    const [groupsSource, setGroupsSource] = React.useState('workspace_db');
                     const behaviorRef = React.useRef({ type: 'success' });
                     const writesRef = React.useRef([]);
                     const eventsRef = React.useRef([]);
@@ -111,8 +114,9 @@ test.beforeAll(() => {
                     const trackSettingsAction = React.useCallback((section, workflowAction, params) => {
                         eventsRef.current.push({ section, workflowAction, params });
                     }, []);
+                    const onboardingAvailable = isOnboardingAvailable(authMode, groupsSource);
                     const controller = useOnboardingController({
-                        bootstrapReady: ready,
+                        bootstrapReady: ready && onboardingAvailable,
                         onboardingDone: done,
                         setOnboardingDone: setDone,
                         savePreference,
@@ -124,11 +128,15 @@ test.beforeAll(() => {
                         window.__onboardingController = {
                             setBootstrap: (nextReady, nextDone) => { setReady(nextReady); setDone(nextDone); },
                             setBehavior: (behavior) => { behaviorRef.current = behavior; },
+                            setAvailability: (nextAuthMode, nextGroupsSource) => {
+                                setAuthMode(nextAuthMode);
+                                setGroupsSource(nextGroupsSource);
+                            },
                             setDirty,
                             setSaving,
                             replay: controller.replay,
                             snapshot: () => ({
-                                ready, done, showSettings, dirty, saving,
+                                ready, done, showSettings, dirty, saving, authMode, groupsSource,
                                 run: controller.run, pending: controller.pending,
                                 error: controller.error, recoveryLoginUrl: controller.recoveryLoginUrl,
                                 writes: [...writesRef.current], events: [...eventsRef.current],
@@ -140,7 +148,7 @@ test.beforeAll(() => {
                         <button data-onboarding-target="sprint">Sprint</button>
                         <button data-onboarding-target="refresh">Refresh</button>
                         <div data-onboarding-target="hierarchy">Hierarchy</div>
-                        {showSettings && (
+                        {showSettings && onboardingAvailable && (
                             <button
                                 type="button"
                                 onClick={() => { void controller.replay(); }}
@@ -386,6 +394,30 @@ test('automatic run waits for definitive bootstrap readiness and preserves scope
         path: testInfo.outputPath('onboarding-tour-desktop.png'),
         animations: 'disabled',
     });
+});
+
+test('automatic start and Settings replay require Atlassian OAuth workspace DB mode', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => {
+        window.__onboardingController.setAvailability('basic', 'workspace_db');
+        window.__onboardingController.setBootstrap(true, false);
+    });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Run onboarding again' })).toHaveCount(0);
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([]);
+
+    await page.evaluate(() => window.__onboardingController.setAvailability('atlassian_oauth', 'jsonfile'));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Run onboarding again' })).toHaveCount(0);
+
+    await page.evaluate(() => window.__onboardingController.setAvailability('atlassian_oauth', 'workspace_db'));
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Skip onboarding' })).toBeVisible();
+    const state = await page.evaluate(() => window.__onboardingController.snapshot());
+    expect(state.writes).toEqual([]);
+    expect(state.events).toEqual([
+        { section: 'onboarding', workflowAction: 'started', params: { source_surface: 'first_run' } },
+    ]);
 });
 
 test('skip persists before close and a shared pending guard deduplicates Escape', async ({ page }) => {

@@ -5,6 +5,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from backend.config.repository import ConfigStorageError
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
@@ -611,6 +612,50 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
         self.assertEqual(response.get_json(), {'error': 'onboarding_db_required'})
+
+    def test_post_onboarding_maps_config_selection_failure_to_safe_storage_error(self):
+        from backend.routes import settings_routes
+
+        with self._env_patch(), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            headers = self._csrf_headers()
+        with self._env_patch(), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(
+                 settings_routes,
+                 '_shared_group_db_auth_context',
+                 side_effect=ConfigStorageError('sensitive config selection detail'),
+             ):
+            response = self.client.post(
+                '/api/me/onboarding',
+                json={'onboardingDone': True},
+                headers=headers,
+            )
+
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {
+            'error': 'config_storage_unavailable',
+            'message': 'Onboarding preferences require database-backed configuration storage.',
+        })
+        self.assertNotIn('sensitive config selection detail', response.get_data(as_text=True))
+
+    def test_post_onboarding_maps_database_configuration_failure_to_safe_storage_error(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        from backend.routes import settings_routes
+
+        with patch.object(
+            settings_routes.shared_group_config,
+            'set_onboarding_done',
+            side_effect=db_engine.DatabaseConfigurationError('sensitive database detail'),
+        ):
+            response = self._post_onboarding({'onboardingDone': True})
+
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {
+            'error': 'config_storage_unavailable',
+            'message': 'Onboarding preferences require database-backed configuration storage.',
+        })
+        self.assertNotIn('sensitive database detail', response.get_data(as_text=True))
 
     def test_post_onboarding_requires_requested_with_and_token_bound_csrf(self):
         self.assertEqual(self._save_personal_favorite().status_code, 200)

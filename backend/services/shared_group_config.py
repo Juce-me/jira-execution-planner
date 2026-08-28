@@ -438,7 +438,7 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
     return preferences
 
 
-def set_onboarding_done(context, done, database_url=None):
+def set_onboarding_done(context, done: bool, database_url=None) -> bool:
     if not is_db_auth_context(context):
         raise OnboardingPreferencesUnavailable('onboarding_db_required')
 

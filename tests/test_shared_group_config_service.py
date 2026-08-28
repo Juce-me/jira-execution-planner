@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from types import SimpleNamespace
+from typing import get_type_hints
 from unittest.mock import patch
 
 from sqlalchemy.orm import Session
@@ -533,6 +534,12 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
             service.set_onboarding_done(
                 self.context, True, database_url=self.database_url,
             )
+
+    def test_set_onboarding_done_declares_boolean_interface(self):
+        type_hints = get_type_hints(service.set_onboarding_done)
+
+        self.assertIs(type_hints['done'], bool)
+        self.assertIs(type_hints['return'], bool)
 
     def test_set_onboarding_done_does_not_revalidate_or_mutate_group_fields(self):
         with self.factory() as session:

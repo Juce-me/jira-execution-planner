@@ -5,8 +5,9 @@ from werkzeug.exceptions import BadRequest
 
 from backend.auth.db_context import is_db_auth_context
 from backend.config.db_repository import ViewConfigNotFound
-from backend.config.repository import config_storage_db_enabled, db_repository
+from backend.config.repository import ConfigStorageError, config_storage_db_enabled, db_repository
 from backend.config.shared_config import normalize_shared_admin_section
+from backend.db.engine import DatabaseConfigurationError
 from backend.services import shared_group_config
 from backend.services.workspace_dashboard_config import WorkspaceConfigConflict, TeamCatalogConflict
 from . import bind_server_globals
@@ -62,6 +63,13 @@ def _workspace_conflict_response(error):
             'configRevision': error.current.config_revision,
         },
     }), 409
+
+
+def _onboarding_storage_error_response(_error):
+    return jsonify({
+        'error': 'config_storage_unavailable',
+        'message': 'Onboarding preferences require database-backed configuration storage.',
+    }), 503
 
 
 def _persist_shared_section(section, value, base_revision):
@@ -570,15 +578,16 @@ def save_onboarding_preference():
     if not isinstance(onboarding_done, bool):
         return jsonify({'error': 'onboarding_done_required'}), 400
 
-    auth_context = _shared_group_db_auth_context()
-    if auth_context is None:
-        return jsonify({'error': 'onboarding_db_required'}), 409
-
     try:
+        auth_context = _shared_group_db_auth_context()
+        if auth_context is None:
+            return jsonify({'error': 'onboarding_db_required'}), 409
         saved_onboarding_done = shared_group_config.set_onboarding_done(
             auth_context,
             onboarding_done,
         )
+    except (ConfigStorageError, DatabaseConfigurationError) as error:
+        return _onboarding_storage_error_response(error)
     except shared_group_config.OnboardingPreferencesUnavailable:
         return jsonify({'error': 'onboarding_db_required'}), 409
     except shared_group_config.GroupSelectionRequired:

@@ -73,7 +73,7 @@ For the current DB/OAuth path, use [INSTALL.md](INSTALL.md). The short version i
 6. Start the backend with `.venv/bin/python jira_server.py`.
 7. Sign in, then connect the current user's Home/Townsquare token in `Settings -> Connections` if you need EPM.
 
-Starting `.venv/bin/python jira_server.py` does not start PostgreSQL, create the database, or run migrations. More detailed single-user/legacy setup guidance remains below if you need it.
+Starting `.venv/bin/python jira_server.py` directly still does not start PostgreSQL, create the database, or run migrations. Source-checkout developers who want a localhost-only PostgreSQL lifecycle may instead run `./runners/local/run.sh`; it keeps Flask in `.venv`, starts only PostgreSQL in Docker, migrates before startup, and removes the container on `Ctrl+C` while retaining its named volume. Production and release startup paths are unchanged. See [INSTALL.md](INSTALL.md) and [the local runner guide](https://github.com/Juce-me/jira-execution-planner/blob/main/runners/local/README.md).
 
 ## 📦 Prebuilt download (no Node required)
 

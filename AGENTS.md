@@ -311,3 +311,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Department group JSON export/import is selected-group scoped: export only the active group, and import settings into only that active group while preserving its id/name, sibling groups, and the shared default.
 - In main ENG view filters, keep `.eng-mode-control` intrinsic-width, use the flexible gap after Teams for right alignment, and bottom-align it with the dropdown controls.
 - Global heading rules also affect Jira-rendered description headings inside `.m-desc-body`; do not apply entrance animations to H1 elements.
+- Keep localhost and CI runner assets under `runners/local/` and `runners/github/`; never mix them into application source, production startup, deployment images, or release packaging.

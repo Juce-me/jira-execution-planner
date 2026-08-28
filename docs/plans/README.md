@@ -61,6 +61,11 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Output: default local/CI URL behavior stays unchanged; hosted mode obtains lock-protected ADC login tokens immediately before new physical connections; every IAM connection uses the fixed app-owned 10-second timeout; web pooling and Alembic `NullPool` share one engine factory; offline migrations remain ADC-independent while validating the passwordless TLS URL; hosted docs record the complete IAM/database prerequisites; no Cloud SQL Python Connector, alternate PostgreSQL driver, proxy, deployment, UI, or unrelated product change was introduced.
    - Design record: `../agents/features/2026-07-27-executed-cloud-sql-iam-connectivity-design.md`.
 
+12. `EXEC-local-postgresql-runners.md`
+   - Implemented on `feature/local-postgresql-runners` with 39 daemon-free focused tests plus live Docker lifecycle, abuse, persistence, production-image, and release-layout isolation passing. The plan remains active: no GitHub PostgreSQL run exists, and the configured-runtime full suite still has nine pre-existing EPM configuration failures.
+   - Expected output: isolated `runners/local/` and `runners/github/` workflows that start a digest-pinned loopback PostgreSQL only for local source-checkout runtime, clean up owned containers on exit while retaining data, and prove PostgreSQL locking/concurrency in a least-privilege GitHub-hosted job without changing application or deployment implementation.
+   - Design record: `../agents/features/2026-08-27-planned-local-postgresql-runners.md`.
+
 ## Completed Scenario Planner Workflow
 
 1. `DONE-scenario-planner-quarter-drafts-00-overview.md`

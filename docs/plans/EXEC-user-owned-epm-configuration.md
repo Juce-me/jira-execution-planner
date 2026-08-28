@@ -32,8 +32,8 @@ authentication boundary and root recovery gate.
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test
 runner, Playwright, SQLite/PostgreSQL-compatible schema.
 
-**Status:** Plan corrected after three independent subagent audits on 2026-08-27 and amended after the
-Task 1 execution review. Implementation is in progress. The original no-go findings plus the effective-
+**Status:** Task 1 is implemented and verified, including the required PostgreSQL concurrency gate.
+Tasks 2 through 6 remain in progress. The original no-go findings plus the effective-
 view cache-invalidation and real-PostgreSQL concurrency gaps are addressed in the runtime resolver,
 serialized mutation, reversible migration, strict JSON validator, team-catalog boundary, cache isolation,
 PostgreSQL completion gate, and global-auth tasks below.
@@ -235,7 +235,7 @@ and docs use synthetic identifiers only.
 - Test: `tests/test_user_view_config_routes.py`
 - Create: `tests/test_user_view_config_concurrency.py`
 
-- [ ] **Step 1: Write failing ownership, strict-validation, and concurrency tests**
+- [x] **Step 1: Write failing ownership, strict-validation, and concurrency tests**
 
 Prove the administrator allowlist excludes `epm`; private views accept only normalized EPM settings plus
 the existing private `tab`/`selectedSprint` keys; workspace validation rejects `epm`; and private views
@@ -276,7 +276,7 @@ Run:
 
 Expected: FAIL because EPM is administrator-owned and view mutation/version allocation is not serialized.
 
-- [ ] **Step 2: Implement one serialized private-view mutation service**
+- [x] **Step 2: Implement one serialized private-view mutation service**
 
 Define storage-neutral `normalize_epm_settings_payload()` accepting exactly `version`, `labelPrefix`,
 `scope`, `issueTypes`, and `projects`; validate nested shapes before calling `normalize_epm_config()`.
@@ -311,7 +311,7 @@ field-level merging. Strict v2 EPM validation accepts project `label`; HTTP v2 `
 existing private state and unrelated fields, updates `view_type`, and uses change note `user EPM update`.
 `load_user_epm_config()` returns normalized defaults without creating a row.
 
-- [ ] **Step 3: Run focused tests and commit**
+- [x] **Step 3: Run focused tests and commit**
 
 ```bash
 .venv/bin/python -m unittest tests.test_shared_admin_config_validation tests.test_view_config_validator tests.test_view_config_resolution tests.test_user_view_config_routes tests.test_user_view_config_concurrency

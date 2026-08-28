@@ -32,11 +32,7 @@ authentication boundary and root recovery gate.
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test
 runner, Playwright, SQLite/PostgreSQL-compatible schema.
 
-**Status:** Tasks 1 through 6 are implemented and verified, including the required PostgreSQL concurrency
-gate. The plan remains `EXEC-*` pending user acceptance. The original no-go findings plus the effective-
-view cache-invalidation and real-PostgreSQL concurrency gaps are addressed in the runtime resolver,
-serialized mutation, reversible migration, strict JSON validator, team-catalog boundary, cache isolation,
-PostgreSQL completion gate, and global-auth tasks below.
+**Status:** Done. Executed in `f5c449f`. Kept as `EXEC-*` for merge context pending final sign-off.
 
 **Concurrency decision:** Private EPM saves remain last-write-wins and do not use workspace
 `baseRevision`. EPM writers are serialized: PostgreSQL takes an owner/workspace transaction lock plus the

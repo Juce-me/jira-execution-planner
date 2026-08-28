@@ -23,6 +23,27 @@ function deferred() {
     return { promise, resolve };
 }
 
+async function expectContainedInViewport(locator) {
+    await expect(locator).toBeVisible();
+    const geometry = await locator.evaluate((node) => {
+        const bounds = node.getBoundingClientRect();
+        return {
+            left: bounds.left,
+            top: bounds.top,
+            right: bounds.right,
+            bottom: bounds.bottom,
+            viewportWidth: document.documentElement.clientWidth,
+            viewportHeight: window.innerHeight,
+            clipped: node.scrollWidth > node.clientWidth + 1,
+        };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.top).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth);
+    expect(geometry.bottom).toBeLessThanOrEqual(geometry.viewportHeight);
+    expect(geometry.clipped).toBe(false);
+}
+
 function visibleStoryPayload(project = 'product') {
     const key = project === 'product' ? 'PLAT-1' : 'TECH-1';
     const epicKey = project === 'product' ? 'PLAT-EPIC' : 'TECH-EPIC';
@@ -328,6 +349,63 @@ test('Configure your own reuses Team groups and returns to the mandatory picker'
     await settingsDialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(firstRunDialog).toBeVisible();
     await expect(firstRunDialog.getByRole('radio', { checked: true })).toHaveCount(0);
+});
+
+test('Configure your own stays usable in the compact layout and returns to the mandatory picker', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const calls = await mockFirstRunDashboard(page);
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    const firstRunDialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await firstRunDialog.getByRole('button', { name: 'Configure your own' }).click();
+
+    const settingsDialog = page.locator('.group-modal');
+    const teamGroupsTab = settingsDialog.getByRole('tab', { name: 'Team groups' });
+    const guidance = settingsDialog.getByText('Easiest way to get started: duplicate an existing group, then adjust its teams.');
+    const duplicateButton = settingsDialog.getByRole('button', { name: 'Duplicate' });
+    const groupsButton = settingsDialog.getByRole('button', { name: 'Groups', exact: true });
+    const cancelButton = settingsDialog.getByRole('button', { name: 'Cancel' });
+    const saveButton = settingsDialog.getByRole('button', { name: 'Save' });
+
+    await expect(settingsDialog).toBeVisible();
+    await expect(teamGroupsTab).toHaveAttribute('aria-selected', 'true');
+    await expect(guidance).toBeVisible();
+    await expect(duplicateButton).toBeVisible();
+    await expect(groupsButton).toBeVisible();
+    await expect(cancelButton).toBeVisible();
+    await expect(saveButton).toBeVisible();
+
+    for (const locator of [
+        settingsDialog,
+        settingsDialog.locator('.group-modal-content'),
+        teamGroupsTab,
+        groupsButton,
+        guidance,
+        duplicateButton,
+        cancelButton,
+        saveButton,
+    ]) {
+        await expectContainedInViewport(locator);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
+        .toBeLessThanOrEqual(0);
+
+    await groupsButton.click();
+    const addGroupButton = settingsDialog.getByRole('button', { name: '+ Add group' });
+    await expect(settingsDialog.locator('.group-pane-left')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+    await expectContainedInViewport(addGroupButton);
+    await settingsDialog.getByRole('button', { name: 'Back' }).click();
+
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${screenshotDir}/first-run-configure-compact.png`, fullPage: true });
+    await cancelButton.click();
+
+    await expect(firstRunDialog).toBeVisible();
+    await expect(firstRunDialog.getByRole('radio', { checked: true })).toHaveCount(0);
+    await expectContainedInViewport(firstRunDialog);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
+        .toBeLessThanOrEqual(0);
 });
 
 test('first-run no-groups configuration recovers from validation, saves a team group, and returns to selection', async ({ page }) => {

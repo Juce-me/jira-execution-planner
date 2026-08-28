@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** Ready for execution on `feature/user-onboarding-tour`; prerequisite `DONE-personal-group-star.md` was completed and verified on 2026-08-26.
+> **Status:** Execution in progress on `feature/user-onboarding-tour`. Tasks 1–4 are implemented and verified; Tasks 5–7 remain.
 
 **Goal:** After mandatory personal-group selection succeeds, teach the dashboard's scope controls, actions, filters, issue hierarchy, and editable Jira fields through a guided tour that users may skip and replay from Settings.
 
@@ -97,6 +97,8 @@
 - `frontend/src/settings/FirstRunGroupSelectionModal.jsx`: add **Configure your own** entry and explanatory copy only; preserve the star plan's selection controls.
 - `frontend/src/settings/TeamGroupsSettings.jsx`: show duplicate-first guidance when opened from onboarding; preserve existing Duplicate behavior.
 - `frontend/src/dashboard.jsx`: integrate the tour, replay action, and stable target attributes.
+- `frontend/src/eng/EngFilterBar.jsx`, `frontend/src/eng/EngView.jsx`, `frontend/src/issues/IssueCard.jsx`: add stable filter and hierarchy target attributes at the components that own those controls.
+- `frontend/src/issues/PriorityTransitionMenu.jsx`, `frontend/src/issues/ProjectTrackTransitionMenu.jsx`, `frontend/src/issues/StatusTransitionMenu.jsx`: add the shared editable-control target attributes without recreating transition triggers in `dashboard.jsx`.
 - `frontend/src/styles/settings.css`: import onboarding CSS.
 - `tests/test_db_migrations.py`, `tests/test_shared_group_config_service.py`, `tests/test_shared_group_config_routes.py`, `tests/test_endpoint_policy_inventory.py`, `tests/test_backend_route_source_guards.py`: backend state and route contract.
 - `tests/test_frontend_api_source_guards.js`, `tests/test_analytics_source_guards.js`: request and analytics guards.
@@ -117,13 +119,13 @@
 
 **Interfaces:** produce `preferences.onboardingDone:boolean` and `set_onboarding_done(context, done, database_url=None) -> bool`; preserve every personal-group response field and validation rule.
 
-- [ ] Add failing migration tests proving a new column is non-null, existing rows backfill to `true`, new rows default to `false`, and downgrade removes only that column.
-- [ ] Add failing service tests for missing row, stored false/true, user/workspace isolation, idempotent writes, and JSON-mode rejection.
-- [ ] Run focused backend tests and confirm failure is limited to missing onboarding state.
-- [ ] Add migration `revision='20260828_0008'`, `down_revision='20260826_0007'` and map the boolean with a safe server default.
-- [ ] Extend groups-config preference serialization without adding a request or changing `activeGroupId`, visible-group, or `onboardingRequired` logic.
-- [ ] Implement an updater that resolves the preference row by authenticated workspace/user, rejects absence with `GroupSelectionRequired`, commits only `onboarding_done`, and translates storage errors consistently.
-- [ ] Re-run focused tests and commit the backend state slice.
+- [x] Add failing migration tests proving a new column is non-null, existing rows backfill to `true`, new rows default to `false`, and downgrade removes only that column.
+- [x] Add failing service tests for missing row, stored false/true, user/workspace isolation, idempotent writes, and JSON-mode rejection.
+- [x] Run focused backend tests and confirm failure is limited to missing onboarding state.
+- [x] Add migration `revision='20260828_0008'`, `down_revision='20260826_0007'` and map the boolean with a safe server default.
+- [x] Extend groups-config preference serialization without adding a request or changing `activeGroupId`, visible-group, or `onboardingRequired` logic.
+- [x] Implement an updater that resolves the preference row by authenticated workspace/user, rejects absence with `GroupSelectionRequired`, commits only `onboarding_done`, and translates storage errors consistently.
+- [x] Re-run focused tests and commit the backend state slice.
 
 Focused verification:
 
@@ -137,11 +139,11 @@ Focused verification:
 
 **Interfaces:** consume exactly `{onboardingDone:boolean}` and produce exactly `{"onboardingDone":boolean}`.
 
-- [ ] Add failing route tests for success, repeat success, strict JSON shape, non-boolean/missing fields, spoofed identity fields, missing group preference, JSON mode, CSRF, `X-Requested-With`, unauthenticated access, and cross-user/workspace isolation.
-- [ ] Add endpoint inventory and source-guard tests requiring `user_write`, and update the generated/maintained endpoint policy documentation.
-- [ ] Register `POST /api/me/onboarding`, validate exact keys before service invocation, and map only documented safe errors.
-- [ ] Prove the route cannot create a preference row or mutate group/star fields.
-- [ ] Run focused route/policy tests and commit.
+- [x] Add failing route tests for success, repeat success, strict JSON shape, non-boolean/missing fields, spoofed identity fields, missing group preference, JSON mode, CSRF, `X-Requested-With`, unauthenticated access, and cross-user/workspace isolation.
+- [x] Add endpoint inventory and source-guard tests requiring `user_write`, and update the generated/maintained endpoint policy documentation.
+- [x] Register `POST /api/me/onboarding`, validate exact keys before service invocation, and map only documented safe errors.
+- [x] Prove the route cannot create a preference row or mutate group/star fields.
+- [x] Run focused route/policy tests and commit.
 
 Focused verification:
 
@@ -155,13 +157,13 @@ Focused verification:
 
 **Interfaces:** consume the star plan's existing mandatory selection state; produce `openFirstRunGroupConfiguration()`, `firstRunConfigPending`, and onboarding-only guidance context.
 
-- [ ] Add failing Playwright scenarios for existing groups, no groups, Save, Cancel, validation failure, and return to the mandatory picker.
-- [ ] Add **Configure your own** to the mandatory modal. Do not add Skip and do not alter its radio/star/search behavior.
-- [ ] Open Settings → Departments → Team groups using established modal/tab handlers. While configuration is open, keep group-scoped data blocked.
-- [ ] Show: “Easiest way to get started: duplicate an existing group, then adjust its teams.” when a duplicable group exists; use appropriate create-first copy when none exists.
-- [ ] Reuse the existing Duplicate and Add group actions; do not auto-star a created/duplicated group.
-- [ ] Return to the mandatory picker after Save or Cancel. A failed save stays in Settings with the existing error path.
-- [ ] Verify both desktop and compact layouts and commit.
+- [x] Add failing Playwright scenarios for existing groups, no groups, Save, Cancel, validation failure, and return to the mandatory picker.
+- [x] Add **Configure your own** to the mandatory modal. Do not add Skip and do not alter its radio/star/search behavior.
+- [x] Open Settings → Departments → Team groups using established modal/tab handlers. While configuration is open, keep group-scoped data blocked.
+- [x] Show: “Easiest way to get started: duplicate an existing group, then adjust its teams.” when a duplicable group exists; use appropriate create-first copy when none exists.
+- [x] Reuse the existing Duplicate and Add group actions; do not auto-star a created/duplicated group.
+- [x] Return to the mandatory picker after Save or Cancel. A failed save stays in Settings with the existing error path.
+- [x] Verify both desktop and compact layouts and commit.
 
 ### Task 4: Build the accessible spotlight tour
 
@@ -169,12 +171,12 @@ Focused verification:
 
 **Interfaces:** consume eligible target descriptors and `onboardingDone`; produce deterministic visible steps, current target/fallback, navigation state, and viewport-bounded placement.
 
-- [ ] Add failing unit tests for conditional-step filtering, target resolution, progress renumbering, placement on all viewport edges, target disappearance, and fallback cards.
-- [ ] Define the catalog from the table above. Keep copy product-focused and never claim an edit is possible unless its visible control exists.
-- [ ] Implement a body portal, fixed dimmer, spotlight geometry, `role="dialog"`, labelled heading, live progress, focus trap, Escape, focus restoration, resize/scroll remeasurement, and `ResizeObserver` cleanup.
-- [ ] Disable background interaction while preserving the highlighted element as visual context only.
-- [ ] Keep the coachmark in the viewport and choose a centered fallback when no safe target exists.
-- [ ] Run helper tests and commit.
+- [x] Add failing unit tests for conditional-step filtering, target resolution, progress renumbering, placement on all viewport edges, target disappearance, and fallback cards.
+- [x] Define the catalog from the table above. Keep copy product-focused and never claim an edit is possible unless its visible control exists.
+- [x] Implement a body portal, fixed dimmer, spotlight geometry, `role="dialog"`, labelled heading, live progress, focus trap, Escape, focus restoration, resize/scroll remeasurement, and `ResizeObserver` cleanup.
+- [x] Disable background interaction while preserving the highlighted element as visual context only.
+- [x] Keep the coachmark in the viewport and choose a centered fallback when no safe target exists.
+- [x] Run helper tests and commit.
 
 Focused verification:
 
@@ -184,7 +186,7 @@ node --test tests/test_onboarding_tour_utils.js
 
 ### Task 5: Integrate automatic start, skip, finish, replay, and targets
 
-**Files:** `frontend/src/dashboard.jsx`, onboarding hook/component, frontend API guards, Playwright tests.
+**Files:** `frontend/src/dashboard.jsx`, onboarding hook/component, shared ENG filter/hierarchy/transition components, frontend API guards, Playwright tests.
 
 **Interfaces:** consume Task 2 endpoint and the star plan's successful prerequisite state; produce one automatic/replayed tour run without changing saved scope preferences.
 

@@ -245,6 +245,8 @@ def refresh_db_oauth_token(
     locked_connection=None,
 ):
     connection = locked_connection or _connection_for_update(session, connection_id)
+    if locked_connection is not None:
+        session.refresh(connection)
     if connection is None or connection.status != 'active':
         raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
     workspace = session.get(models.Workspace, connection.workspace_id)
@@ -330,6 +332,7 @@ def db_oauth_session_data(session, context, *, config, key_provider, http_post):
     )
     if is_oauth_token_expired(session_data):
         connection = _connection_for_update(session, connection.id)
+        session.refresh(connection)
         if connection is None or connection.status != 'active':
             raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
         workspace = session.get(models.Workspace, connection.workspace_id)

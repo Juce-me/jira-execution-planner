@@ -32,8 +32,8 @@ authentication boundary and root recovery gate.
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test
 runner, Playwright, SQLite/PostgreSQL-compatible schema.
 
-**Status:** Task 1 is implemented and verified, including the required PostgreSQL concurrency gate.
-Tasks 2 through 6 remain in progress. The original no-go findings plus the effective-
+**Status:** Tasks 1 and 2 are implemented and verified, including the required PostgreSQL concurrency
+gate. Tasks 3 through 6 remain in progress. The original no-go findings plus the effective-
 view cache-invalidation and real-PostgreSQL concurrency gaps are addressed in the runtime resolver,
 serialized mutation, reversible migration, strict JSON validator, team-catalog boundary, cache isolation,
 PostgreSQL completion gate, and global-auth tasks below.
@@ -183,8 +183,12 @@ and docs use synthetic identifiers only.
 - Modify: `backend/security/guards.py`
 - Modify: `backend/auth/cache_policy.py`
 - Modify: `backend/epm/config.py`
-- Modify: `backend/services/user_view_config.py`
+- Modify: `backend/epm/projects.py`
+- Modify: `backend/epm/issues.py`
+- Modify: `backend/epm/rollup.py`
+- Modify: `backend/routes/auth_routes.py`
 - Modify: `backend/routes/views_routes.py`
+- Modify: `backend/services/user_view_config.py`
 
 ### Migration and import
 
@@ -336,6 +340,12 @@ local PostgreSQL instance.
 - Modify: `backend/security/policy.py`
 - Modify: `backend/security/guards.py`
 - Modify: `backend/auth/cache_policy.py`
+- Modify: `backend/epm/config.py`
+- Modify: `backend/epm/projects.py`
+- Modify: `backend/epm/issues.py`
+- Modify: `backend/epm/rollup.py`
+- Modify: `backend/routes/auth_routes.py`
+- Modify: `backend/routes/views_routes.py`
 - Test: `tests/test_epm_config_api.py`
 - Test: `tests/test_epm_scope_api.py`
 - Test: `tests/test_epm_projects_api.py`
@@ -349,7 +359,7 @@ local PostgreSQL instance.
 - Test: `tests/test_workspace_dashboard_config_service.py`
 - Test: `tests/test_user_view_config_routes.py`
 
-- [ ] **Step 1: Write failing route, runtime, policy, cache, and bootstrap tests**
+- [x] **Step 1: Write failing route, runtime, policy, cache, and bootstrap tests**
 
 Cover normal-user EPM GET/POST, strict JSON and content-type failures, fixed storage failure bodies/log
 redaction, JSON-mode parity, two-user/two-workspace isolation, missing default, unrelated private fields,
@@ -387,7 +397,7 @@ EndpointPolicy('epm-projects-preview', '/api/epm/projects/preview', frozenset({'
 The preview tests cover missing/invalid CSRF, missing `X-Requested-With`, non-admin success, expired auth,
 and `409 home_user_token_required`.
 
-- [ ] **Step 2: Implement the canonical resolver and exact route contracts**
+- [x] **Step 2: Implement the canonical resolver and exact route contracts**
 
 Make `jira_server.get_epm_config(context=None, source='auto')` the only runtime resolver:
 
@@ -428,12 +438,12 @@ the decision from the service's normalized before/after effective EPM result, no
 non-default and metadata-only mutations must remain cache-neutral, while default create/switch/demotion/
 archive and current-default replacement invalidate when their effective value changes.
 
-- [ ] **Step 3: Run focused tests and commit**
+- [x] **Step 3: Run focused tests and commit**
 
 ```bash
 .venv/bin/python -m unittest tests.test_epm_config_api tests.test_epm_scope_api tests.test_epm_projects_api tests.test_epm_rollup_api tests.test_db_oauth_cutover tests.test_epm_home_cache_isolation tests.test_dashboard_bootstrap_config_source tests.test_endpoint_security_matrix tests.test_endpoint_policy_inventory tests.test_oauth_settings_routes tests.test_workspace_dashboard_config_service tests.test_user_view_config_routes
 git diff --check
-git add jira_server.py backend/routes/epm_routes.py backend/routes/settings_routes.py backend/routes/views_routes.py backend/security/policy.py backend/security/guards.py backend/auth/cache_policy.py backend/epm/config.py backend/services/user_view_config.py tests/test_epm_config_api.py tests/test_epm_scope_api.py tests/test_epm_projects_api.py tests/test_epm_rollup_api.py tests/test_db_oauth_cutover.py tests/test_epm_home_cache_isolation.py tests/test_dashboard_bootstrap_config_source.py tests/test_endpoint_security_matrix.py tests/test_endpoint_policy_inventory.py tests/test_oauth_settings_routes.py tests/test_workspace_dashboard_config_service.py tests/test_user_view_config_routes.py
+git add jira_server.py backend/routes/auth_routes.py backend/routes/epm_routes.py backend/routes/settings_routes.py backend/routes/views_routes.py backend/security/policy.py backend/security/guards.py backend/auth/cache_policy.py backend/epm/config.py backend/epm/projects.py backend/epm/issues.py backend/epm/rollup.py backend/services/user_view_config.py tests/test_epm_config_api.py tests/test_epm_scope_api.py tests/test_epm_projects_api.py tests/test_epm_rollup_api.py tests/test_db_oauth_cutover.py tests/test_epm_home_cache_isolation.py tests/test_dashboard_bootstrap_config_source.py tests/test_endpoint_security_matrix.py tests/test_endpoint_policy_inventory.py tests/test_oauth_settings_routes.py tests/test_workspace_dashboard_config_service.py tests/test_user_view_config_routes.py docs/plans/EXEC-user-owned-epm-configuration.md
 git commit -m "Route EPM runtime through private user settings"
 ```
 

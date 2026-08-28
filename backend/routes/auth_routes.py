@@ -6,7 +6,10 @@ from flask import Blueprint, jsonify, redirect, request, session
 
 from backend.auth.csrf import issue_csrf_token
 from backend.auth.jira_auth import ensure_oauth_token, missing_oauth_scopes
+from backend.config.repository import ConfigStorageError
 from backend.epm import home as epm_home
+from backend.db.engine import DatabaseConfigurationError
+from backend.services.user_view_config import UserViewConfigStorageError
 
 from . import bind_server_globals
 
@@ -478,6 +481,7 @@ def api_auth_refresh():
 
 @bp.route('/api/auth/dev/home-graphql-oauth-probe', methods=['GET'])
 def api_dev_home_graphql_oauth_probe():
+    context = None
     if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
         return jsonify({'error': 'not_found'}), 404
     if os.getenv('ALLOW_DEV_DIAGNOSTIC_ENDPOINTS', '').strip().lower() not in {'1', 'true', 'yes'}:
@@ -527,7 +531,14 @@ def api_dev_home_graphql_oauth_probe():
                 }), 401
             return auth_error_response(error, 401)
 
-    epm_config = get_epm_config()
+    try:
+        epm_config = get_epm_config(context=context)
+    except (ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError) as error:
+        logger.error('EPM Home OAuth probe config read failed errorClass=%s', type(error).__name__)
+        return jsonify({
+            'error': 'config_storage_unavailable',
+            'message': 'EPM configuration storage is unavailable.',
+        }), 503
     scope = epm_config.get('scope') or {}
     sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKeys') or scope.get('subGoalKey'))
     root_goal_key = normalize_epm_upper_text(request.args.get('rootGoalKey') or scope.get('rootGoalKey'))

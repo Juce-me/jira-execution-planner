@@ -64,6 +64,11 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
                 payload={
                     'filters': {'projectKeys': ['PROD']},
                     'epm': {
+                        'version': 2,
+                        'labelPrefix': 'private_*',
+                        'scope': {'rootGoalKey': 'PRIVATE-ROOT', 'subGoalKeys': ['PRIVATE-GOAL']},
+                        'issueTypes': {'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story']},
+                        'projects': {'private-1': {'id': 'private-1', 'name': 'Private', 'label': 'private_label'}},
                         'tab': 'active',
                         'selectedSprint': 'Active',
                     },
@@ -109,15 +114,17 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
 
         assert response.status_code == 200, response.get_data(as_text=True)
         body = response.get_json()
-        assert body['epm']['projects']['home-1']['label'] == 'rnd_project_synthetic'
+        assert body['epm']['projects']['private-1']['label'] == 'private_label'
         assert body['sharedConfigRevision'] == 3
-        assert body['sharedConfig']['epm']['scope']['rootGoalKey'] == 'ROOT-1'
+        assert 'epm' not in body['sharedConfig']
         assert body['viewConfig']['source'] == 'user_saved_view'
         assert body['viewConfig']['workspaceId'] == workspace_id
         assert body['viewConfig']['viewConfigId'] == view_id
         assert body['viewConfig']['viewType'] == 'epm'
         assert body['viewConfig']['view']['epm']['selectedSprint'] == 'Active'
-        assert set(body['viewConfig']['view']['epm']) == {'tab', 'selectedSprint'}
+        assert set(body['viewConfig']['view']['epm']) == {
+            'version', 'labelPrefix', 'scope', 'issueTypes', 'projects', 'tab', 'selectedSprint',
+        }
     finally:
         db_engine.dispose_engines()
         jira_server.OAUTH_TOKEN_STORE.clear()
@@ -128,6 +135,26 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
 class DashboardBootstrapConfigSourceTests(unittest.TestCase):
     def test_bootstrap_returns_resolved_view_with_source_metadata(self):
         _assert_bootstrap_returns_resolved_view_with_source_metadata()
+
+    def test_bootstrap_returns_fixed_storage_error_for_private_epm_read_failure(self):
+        jira_server.app.config['TESTING'] = True
+        client = jira_server.app.test_client()
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=type('Context', (), {
+            'site_url': 'https://example.atlassian.net', 'auth_mode': 'basic', 'is_admin': True,
+        })()), \
+             patch.object(jira_server, 'load_dashboard_config_snapshot', return_value=type('Snapshot', (), {
+                 'payload': {}, 'config_revision': None,
+             })()), \
+             patch.object(jira_server, 'get_board_config', return_value={}), \
+             patch.object(jira_server, 'get_epm_config', side_effect=jira_server.ConfigStorageError('sensitive detail')):
+            response = client.get('/api/config')
+
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {
+            'error': 'config_storage_unavailable',
+            'message': 'EPM configuration storage is unavailable.',
+        })
 
 
 def test_bootstrap_returns_resolved_view_with_source_metadata():

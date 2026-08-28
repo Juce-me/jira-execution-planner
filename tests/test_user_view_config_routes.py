@@ -319,16 +319,27 @@ class UserViewConfigRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['error'], 'invalid_view_payload')
 
-    def test_normal_user_cannot_save_shared_epm_config_without_admin_role(self):
+    def test_normal_user_can_save_private_epm_config_without_admin_role(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.post(
                 '/api/epm/config',
-                json={'version': 2, 'tab': 'active', 'projects': {}},
+                json={
+                    'version': 2,
+                    'labelPrefix': 'rnd_project_',
+                    'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-1']},
+                    'issueTypes': {
+                        'initiative': ['Initiative'],
+                        'epic': ['Epic'],
+                        'leaf': ['Story'],
+                    },
+                    'projects': {},
+                },
                 headers=self._csrf_headers(),
             )
 
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'admin_required')
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['scope']['rootGoalKey'], 'ROOT-1')
+        self.assertIn('viewConfigId', response.get_json())
 
     def test_normal_user_config_reports_epm_edit_permission_without_admin_role(self):
         with self._env_patch(), \
@@ -342,7 +353,7 @@ class UserViewConfigRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertFalse(body['userCanEditSettings'])
-        self.assertFalse(body['userCanEditEpmConfig'])
+        self.assertTrue(body['userCanEditEpmConfig'])
         self.assertTrue(body['adminUserManagementAvailable'])
 
     def test_default_route_returns_resolved_default_view(self):

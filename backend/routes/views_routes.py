@@ -268,6 +268,7 @@ def api_me_views_create():
             view_type=view_type,
             payload=payload,
             is_default=bool(raw.get('isDefault')),
+            post_commit=lambda _result: clear_epm_caches(context),
         )
         return jsonify({'view': result.as_view_dict()}), 201
     except (DatabaseConfigurationError, UserViewConfigStorageError) as error:
@@ -317,6 +318,7 @@ def api_me_views_patch(view_id):
             context,
             view_id,
             archive=raw.get('archive') is True or raw.get('archived') is True,
+            post_commit=lambda _result: clear_epm_caches(context),
             **kwargs,
         )
         return jsonify({'view': result.as_view_dict()})

@@ -12390,21 +12390,20 @@ import {
             );
 
             const renderViewSwitch = () => {
-                const options = [{ value: 'eng', label: 'ENG' }];
-                if (showEpmNavigation) {
-                    options.push({ value: 'epm', label: 'EPM' });
-                }
+                if (!showEpmNavigation) return null;
                 return (
                     <SegmentedControl
                         className="view-mode-control"
                         ariaLabel="Dashboard view"
-                        value={showEpmNavigation ? selectedView : 'eng'}
+                        value={selectedView}
                         onChange={(nextView) => {
-                            if (nextView === 'epm' && !showEpmNavigation) return;
                             trackSelectContent('dashboard_view', nextView, { from_view: currentDashboardView() });
                             setSelectedView(nextView);
                         }}
-                        options={options}
+                        options={[
+                            { value: 'eng', label: 'ENG' },
+                            { value: 'epm', label: 'EPM' },
+                        ]}
                     />
                 );
             };

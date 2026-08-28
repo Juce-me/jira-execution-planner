@@ -129,6 +129,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Expected output: configure/duplicate guidance after the mandatory group gate, followed by a guided tour of dashboard scope controls, actions, filters, issue hierarchy, and editable Jira fields. Per-user/workspace `onboarding_done` supports completion, skip, interruption recovery, and an explicit Settings replay action without another startup request.
    - The tour consumes the personal-star contract read-only and must not change star persistence or UI. Existing users are backfilled as complete; JSON/basic mode stays unchanged; privacy-safe `settings_action` events measure only started/completed/skipped outcomes.
 
+13. `EXEC-hide-single-option-view-mode-control.md`
+   - Ready for execution as a small frontend-only task suitable for a 5.3 coding model.
+   - Expected output: the ENG/EPM segmented control is absent when EPM navigation is unavailable, remains a two-option control when EPM is available, and updates correctly after Home-token connection, revocation, or backend prerequisite changes. Existing availability, analytics, auth, request, and shared-control contracts remain unchanged.
+
 ## Capacity Reporting Workflow
 
 1. `SUPPORT-excluded-capacity-control-row-design.md`

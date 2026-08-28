@@ -283,9 +283,17 @@ class UserViewConfigRouteTests(unittest.TestCase):
             'view': {
                 'filters': {'projectKeys': ['PROD']},
                 'epm': {
+                    'version': 2,
+                    'labelPrefix': 'rnd_project_',
                     'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-2']},
+                    'issueTypes': {
+                        'initiative': ['Initiative'],
+                        'epic': ['Epic'],
+                        'leaf': ['Story'],
+                    },
                     'projects': {
                         'missing-home': {
+                            'id': 'missing-home',
                             'homeProjectId': 'missing-home',
                             'name': 'Missing Home Project',
                             'label': 'rnd_project_missing',
@@ -295,8 +303,12 @@ class UserViewConfigRouteTests(unittest.TestCase):
             },
         })
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.get_json()['error'], 'invalid_view_payload')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json(), {
+            'error': 'home_project_not_found',
+            'message': "Saved view references Home projects not visible through the current user's connected Home credential.",
+            'homeProjectIds': ['missing-home'],
+        })
 
     def test_allows_custom_epm_project_row_without_home_reference(self):
         response = self._post_view({

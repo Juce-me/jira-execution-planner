@@ -210,7 +210,7 @@ def _validate_home_project_references(context, payload):
     if missing:
         return jsonify({
             'error': 'home_project_not_found',
-            'message': 'Saved view references Home projects outside the workspace service-backed catalog.',
+            'message': "Saved view references Home projects not visible through the current user's connected Home credential.",
             'homeProjectIds': missing,
         }), 403
     return None

@@ -36,6 +36,10 @@ class OnboardingPreferencesUnavailable(ValueError):
     pass
 
 
+class GroupSelectionRequired(ValueError):
+    pass
+
+
 def _group_ids(groups_config):
     return [
         str(group.get('id') or '').strip()
@@ -434,8 +438,8 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
     return preferences
 
 
-def set_onboarding_done(context, done, groups_config, database_url=None):
-    if not _uses_personal_preferences(groups_config):
+def set_onboarding_done(context, done, database_url=None):
+    if not is_db_auth_context(context):
         raise OnboardingPreferencesUnavailable('onboarding_db_required')
 
     with db_engine.session_scope(database_url) as session:
@@ -446,19 +450,7 @@ def set_onboarding_done(context, done, groups_config, database_url=None):
             )
         ).scalars().first()
         if row is None:
-            raise InvalidGroupPreferences('personal group selection required')
-
-        preferences = _normalized_saved_preferences(
-            {
-                'visibleGroupIds': row.visible_group_ids or [],
-                'activeGroupId': row.active_group_id,
-                'customized': row.customized,
-            },
-            groups_config,
-            onboarding_done=row.onboarding_done,
-        )
-        if preferences['onboardingRequired'] or not preferences['activeGroupId']:
-            raise InvalidGroupPreferences('personal group selection required')
+            raise GroupSelectionRequired('personal group selection required')
 
         row.onboarding_done = bool(done)
         row.updated_at = models._utcnow()

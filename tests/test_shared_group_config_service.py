@@ -503,13 +503,13 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
             session.commit()
 
         self.assertFalse(service.set_onboarding_done(
-            self.context, False, self._db_groups(), database_url=self.database_url,
+            self.context, False, database_url=self.database_url,
         ))
         self.assertTrue(service.set_onboarding_done(
-            self.context, True, self._db_groups(), database_url=self.database_url,
+            self.context, True, database_url=self.database_url,
         ))
         self.assertTrue(service.set_onboarding_done(
-            self.context, True, self._db_groups(), database_url=self.database_url,
+            self.context, True, database_url=self.database_url,
         ))
 
         with self.factory() as session:
@@ -528,40 +528,38 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         self.assertFalse(other_workspace.onboarding_done)
         self.assertEqual(other_workspace.visible_group_ids, ['mobile'])
 
-    def test_set_onboarding_done_rejects_missing_and_invalid_personal_favorites(self):
-        invalid_cases = (
-            (None, self._db_groups()),
-            (('platform', 'deleted'), self._db_groups()),
-            (('mobile', 'platform'), self._db_groups()),
-            (('platform', 'platform'), {
-                **self._db_groups(),
-                'groups': [group for group in self._db_groups()['groups'] if group['id'] != 'platform'],
-            }),
-            (('empty', 'empty'), self._db_groups()),
-        )
-        for stored, groups_config in invalid_cases:
-            with self.subTest(stored=stored):
-                with self.factory() as session:
-                    session.query(models.UserGroupPreference).delete()
-                    if stored is not None:
-                        visible_ids, active_group_id = stored
-                        session.add(models.UserGroupPreference(
-                            workspace_id=self.workspace_id,
-                            user_id=self.user_id,
-                            payload_version=1,
-                            visible_group_ids=[visible_ids],
-                            active_group_id=active_group_id,
-                            customized=True,
-                            onboarding_done=False,
-                        ))
-                    session.commit()
+    def test_set_onboarding_done_rejects_missing_preference_with_dedicated_error(self):
+        with self.assertRaises(service.GroupSelectionRequired):
+            service.set_onboarding_done(
+                self.context, True, database_url=self.database_url,
+            )
 
-                with self.assertRaises(service.InvalidGroupPreferences):
-                    service.set_onboarding_done(
-                        self.context, True, groups_config, database_url=self.database_url,
-                    )
+    def test_set_onboarding_done_does_not_revalidate_or_mutate_group_fields(self):
+        with self.factory() as session:
+            session.add(models.UserGroupPreference(
+                workspace_id=self.workspace_id,
+                user_id=self.user_id,
+                payload_version=7,
+                visible_group_ids=['deleted'],
+                active_group_id='not-visible',
+                customized=False,
+                onboarding_done=False,
+            ))
+            session.commit()
 
-    def test_set_onboarding_done_rejects_json_mode_groups(self):
+        self.assertTrue(service.set_onboarding_done(
+            self.context, True, database_url=self.database_url,
+        ))
+
+        with self.factory() as session:
+            stored = session.query(models.UserGroupPreference).one()
+        self.assertEqual(stored.payload_version, 7)
+        self.assertEqual(stored.visible_group_ids, ['deleted'])
+        self.assertEqual(stored.active_group_id, 'not-visible')
+        self.assertFalse(stored.customized)
+        self.assertTrue(stored.onboarding_done)
+
+    def test_set_onboarding_done_rejects_non_db_auth_context(self):
         service.save_group_preferences(
             self.context,
             {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
@@ -571,7 +569,13 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
 
         with self.assertRaises(service.OnboardingPreferencesUnavailable):
             service.set_onboarding_done(
-                self.context, True, self._groups(), database_url=self.database_url,
+                SimpleNamespace(
+                    workspace_id=self.workspace_id,
+                    user_id=self.user_id,
+                    auth_connection_id='local-session',
+                ),
+                True,
+                database_url=self.database_url,
             )
 
 

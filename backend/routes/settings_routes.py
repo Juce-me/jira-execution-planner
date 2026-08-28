@@ -519,20 +519,14 @@ def save_onboarding_preference():
     if auth_context is None:
         return jsonify({'error': 'onboarding_db_required'}), 409
 
-    groups_config = shared_group_config.load_shared_groups(
-        auth_context,
-        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
-        validate_groups_config_fn=validate_groups_config,
-    )
     try:
         saved_onboarding_done = shared_group_config.set_onboarding_done(
             auth_context,
             onboarding_done,
-            groups_config,
         )
     except shared_group_config.OnboardingPreferencesUnavailable:
         return jsonify({'error': 'onboarding_db_required'}), 409
-    except shared_group_config.InvalidGroupPreferences:
+    except shared_group_config.GroupSelectionRequired:
         return jsonify({'error': 'group_selection_required'}), 409
     return jsonify({'onboardingDone': saved_onboarding_done})
 

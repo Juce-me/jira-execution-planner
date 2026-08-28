@@ -592,34 +592,13 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
                 self.assertEqual(response.get_json(), {'error': 'onboarding_done_required'})
 
     def test_post_onboarding_requires_current_personal_group_selection_without_creating_rows(self):
-        self._get_groups_config(fallback=self._favorite_config())
         missing = self._post_onboarding({'onboardingDone': True})
 
         self.assertEqual(missing.status_code, 409, missing.get_data(as_text=True))
         self.assertEqual(missing.get_json(), {'error': 'group_selection_required'})
         with self.factory() as session:
             self.assertEqual(session.query(models.UserGroupPreference).count(), 0)
-
-        self.assertEqual(self._save_personal_favorite().status_code, 200)
-        current = self._get_groups_config(fallback={'version': 1}).get_json()
-        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-            self.client.post(
-                '/api/groups-config',
-                json={
-                    'version': 1,
-                    'baseRevision': current['configRevision'],
-                    'groups': [
-                        group for group in current['groups']
-                        if group['id'] != 'platform'
-                    ],
-                    'defaultGroupId': 'default',
-                },
-                headers=self._csrf_headers(),
-            )
-        stale = self._post_onboarding({'onboardingDone': True})
-
-        self.assertEqual(stale.status_code, 409, stale.get_data(as_text=True))
-        self.assertEqual(stale.get_json(), {'error': 'group_selection_required'})
+            self.assertEqual(session.query(models.WorkspaceGroupConfig).count(), 0)
 
     def test_post_onboarding_rejects_json_mode(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
@@ -679,6 +658,55 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
         self.assertEqual(saved.get_json(), {'onboardingDone': True})
         self.assertFalse(other_preferences['onboardingDone'])
+
+    def test_post_onboarding_is_isolated_per_authenticated_workspace(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        with self.factory() as session:
+            other_workspace = models.Workspace(
+                environment_key='other-workspace',
+                name='Other Workspace',
+                jira_site_url='https://other.example.atlassian.net',
+                jira_cloud_id='cloud-2',
+                created_by='test',
+            )
+            session.add(other_workspace)
+            session.flush()
+            other_connection = models.AuthConnection(
+                user_id=self.user_id,
+                workspace_id=other_workspace.id,
+                provider='atlassian_oauth',
+                site_url=other_workspace.jira_site_url,
+                cloud_id=other_workspace.jira_cloud_id,
+                scopes=FULL_OAUTH_SCOPE.split(),
+                status='active',
+                token_version=1,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+            session.add(other_connection)
+            session.commit()
+            other_workspace_id = other_workspace.id
+            other_connection_id = other_connection.id
+
+        self._install_session(
+            'session-other-workspace',
+            'account-1',
+            other_connection_id,
+            site_url='https://other.example.atlassian.net',
+            cloud_id='cloud-2',
+        )
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        self._install_session('session-1', 'account-1', self.connection_id)
+
+        saved = self._post_onboarding({'onboardingDone': True})
+
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        with self.factory() as session:
+            rows = {
+                row.workspace_id: row
+                for row in session.query(models.UserGroupPreference).filter_by(user_id=self.user_id)
+            }
+        self.assertTrue(rows[self.workspace_id].onboarding_done)
+        self.assertFalse(rows[other_workspace_id].onboarding_done)
 
 
 if __name__ == '__main__':

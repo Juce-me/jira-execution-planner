@@ -125,7 +125,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - This plan owns star persistence and UI only. It adds no onboarding completion state, guided tour, configure guidance, skip action, or replay action.
 
 12. `EXEC-user-onboarding-tour.md`
-   - Ready for execution on `feature/user-onboarding-tour`; prerequisite `DONE-personal-group-star.md` is complete.
+   - Implementation and verification are complete on `feature/user-onboarding-tour`; awaiting integration approval. The prerequisite `DONE-personal-group-star.md` remains satisfied.
    - Expected output: configure/duplicate guidance after the mandatory group gate, followed by a guided tour of dashboard scope controls, actions, filters, issue hierarchy, and editable Jira fields. Per-user/workspace `onboarding_done` supports completion, skip, interruption recovery, and an explicit Settings replay action without another startup request.
    - The tour consumes the personal-star contract read-only and must not change star persistence or UI. Existing users are backfilled as complete; JSON/basic mode stays unchanged; privacy-safe `settings_action` events measure only started/completed/skipped outcomes.
 

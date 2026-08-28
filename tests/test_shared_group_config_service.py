@@ -597,6 +597,37 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         with self.factory() as session:
             self.assertFalse(session.query(models.UserGroupPreference).one().onboarding_done)
 
+    def test_set_onboarding_done_translates_commit_storage_failure_with_cause(self):
+        service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        original_session_scope = service.db_engine.session_scope
+
+        @contextmanager
+        def failing_session_scope(database_url=None):
+            with patch.object(
+                Session,
+                'commit',
+                side_effect=SQLAlchemyError('sensitive commit detail'),
+            ):
+                with original_session_scope(database_url) as session:
+                    yield session
+
+        with patch.object(service.db_engine, 'session_scope', failing_session_scope), \
+             self.assertRaises(service.OnboardingStorageUnavailable) as raised:
+            service.set_onboarding_done(
+                self.context, True, database_url=self.database_url,
+            )
+
+        self.assertEqual(str(raised.exception), 'onboarding_storage_unavailable')
+        self.assertIsInstance(raised.exception.__cause__, SQLAlchemyError)
+        self.assertEqual(str(raised.exception.__cause__), 'sensitive commit detail')
+        with self.factory() as session:
+            self.assertFalse(session.query(models.UserGroupPreference).one().onboarding_done)
+
     def test_set_onboarding_done_does_not_revalidate_or_mutate_group_fields(self):
         with self.factory() as session:
             session.add(models.UserGroupPreference(

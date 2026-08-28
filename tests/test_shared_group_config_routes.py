@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from backend.config.repository import ConfigStorageError
 from backend.db import engine as db_engine
@@ -158,6 +159,11 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
 
         @contextmanager
         def failing_session_scope(database_url=None):
+            if method_name == 'commit':
+                with patch.object(Session, 'commit', side_effect=SQLAlchemyError(detail)):
+                    with original_session_scope(database_url) as session:
+                        yield session
+                return
             with original_session_scope(database_url) as session:
                 with patch.object(
                     session,
@@ -678,7 +684,7 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
     def test_post_onboarding_maps_sqlalchemy_failures_to_safe_storage_error(self):
         self.assertEqual(self._save_personal_favorite().status_code, 200)
 
-        for method_name in ('execute', 'flush'):
+        for method_name in ('execute', 'flush', 'commit'):
             sensitive_detail = f'sensitive {method_name} detail'
             with self.subTest(method_name=method_name):
                 with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):

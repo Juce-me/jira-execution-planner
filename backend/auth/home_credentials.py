@@ -128,7 +128,7 @@ def _resolve_user_credential(session, context, key_provider, *, missing_message)
     if connection is None:
         raise AuthError('home_user_token_required', missing_message)
     if connection.status != 'active':
-        raise AuthError('auth_connection_revoked', 'Your Jira Home token connection needs to be reconnected.')
+        raise AuthError('home_user_token_required', missing_message)
     if 'home_townsquare_graphql' not in (connection.capabilities or []):
         raise AuthError('home_user_token_required', missing_message)
     token = _active_auth_token(session, connection.id)

@@ -13,6 +13,8 @@ from backend.auth.token_crypto import encrypt_token
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.epm import home as epm_home
+import jira_server
+from tests.auth_mode_test_utils import force_basic_auth_mode
 
 
 FULL_SCOPE = (
@@ -194,10 +196,14 @@ class HomeCredentialResolverTests(unittest.TestCase):
 
         self._add_user_token_connection(status='revoked')
         with self._env_patch():
-            self._assert_auth_error(
-                lambda: resolve_home_credential(self.context, 'write_as_user'),
-                'auth_connection_revoked',
-            )
+            with self.assertRaises(AuthError) as raised:
+                resolve_home_credential(self.context, 'write_as_user')
+
+        self.assertEqual(raised.exception.code, 'home_user_token_required')
+        self.assertEqual(
+            str(raised.exception),
+            'Connect your Atlassian API token to edit Jira Home as yourself.',
+        )
 
     def test_read_metadata_rejects_revoked_user_token_even_with_service_integration(self):
         from backend.auth.home_credentials import resolve_home_credential
@@ -205,10 +211,70 @@ class HomeCredentialResolverTests(unittest.TestCase):
         self._add_service_integration()
         self._add_user_token_connection(status='revoked')
         with self._env_patch():
-            self._assert_auth_error(
-                lambda: resolve_home_credential(self.context, 'read_metadata'),
-                'auth_connection_revoked',
+            with self.assertRaises(AuthError) as raised:
+                resolve_home_credential(self.context, 'read_metadata')
+
+        self.assertEqual(raised.exception.code, 'home_user_token_required')
+        self.assertEqual(
+            str(raised.exception),
+            'Connect your Atlassian API token to load EPM Home projects.',
+        )
+
+    def test_read_metadata_treats_every_inactive_home_connection_as_missing_prerequisite(self):
+        from backend.auth.home_credentials import resolve_home_credential
+
+        connection_id = self._add_user_token_connection(status='expired')
+        for status in ('expired', 'error'):
+            with self.subTest(status=status):
+                with self.factory() as session:
+                    connection = session.get(models.AuthConnection, connection_id)
+                    connection.status = status
+                    session.commit()
+                with self._env_patch(), self.assertRaises(AuthError) as raised:
+                    resolve_home_credential(self.context, 'read_metadata')
+
+                self.assertEqual(raised.exception.code, 'home_user_token_required')
+                self.assertEqual(
+                    str(raised.exception),
+                    'Connect your Atlassian API token to load EPM Home projects.',
+                )
+
+    def test_revoked_home_connection_returns_409_prerequisite_without_session_recovery(self):
+        from backend.auth.home_credentials import resolve_home_credential
+
+        force_basic_auth_mode(self, jira_server)
+        self._add_user_token_connection(status='revoked')
+        epm_config = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_*',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']},
+            'issueTypes': {'initiative': [], 'epic': [], 'leaf': []},
+            'projects': {},
+        }
+
+        def resolve_revoked_home_token(_scope, context=None):
+            return resolve_home_credential(
+                context,
+                'read_metadata',
+                database_url=self.database_url,
+                key_provider=self.key_provider,
             )
+
+        with patch.object(jira_server, 'current_request_auth_context', return_value=self.context), \
+             patch.object(jira_server, 'get_epm_config', return_value=epm_config), \
+             patch.object(jira_server, 'fetch_epm_home_projects', side_effect=resolve_revoked_home_token):
+            response = jira_server.app.test_client().get('/api/epm/projects')
+
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(
+            response.get_json(),
+            {
+                'error': 'home_user_token_required',
+                'message': 'Connect your Atlassian API token to load EPM Home projects.',
+                'connectUrl': '/settings/connections/home-token',
+            },
+        )
+        self.assertNotIn('loginUrl', response.get_json())
 
     def test_resolver_rejects_disabled_user(self):
         from backend.auth.home_credentials import resolve_home_credential

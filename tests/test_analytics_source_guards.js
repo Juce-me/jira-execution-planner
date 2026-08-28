@@ -178,6 +178,54 @@ test('personal group favorite analytics omit identity and retain existing event 
     assert.ok(analyticsDoc.includes('Personal group favorite render/change'));
 });
 
+test('onboarding analytics use only the canonical settings action outcomes and safe parameters', () => {
+    const source = read('frontend/src/onboarding/useOnboardingTour.js');
+    const calls = Array.from(source.matchAll(/trackSettingsAction\?\.\(([\s\S]*?)\);/g), ([, args]) => (
+        args.replace(/\s+/g, ' ').trim()
+    ));
+
+    assert.deepEqual(calls, [
+        "'onboarding', 'started', { source_surface: normalizedSource }",
+        "'onboarding', outcome, { source_surface: sourceSurface, result: 'success', }",
+    ]);
+    assert.match(source, /normalizedSource = source === 'settings' \? 'settings' : 'first_run'/);
+    assert.match(source, /const skip = React\.useCallback\(\(\) => persist\(true, 'skipped'\)/);
+    assert.match(source, /const finish = React\.useCallback\(\(\) => persist\(true, 'completed'\)/);
+
+    const persisted = source.indexOf('const payload = await savePreference(nextDone);');
+    const outcome = source.indexOf("trackSettingsAction?.('onboarding', outcome");
+    assert.ok(persisted >= 0 && outcome > persisted, 'completion analytics must follow persisted success');
+
+    const analyticsCalls = calls.join('\n');
+    for (const forbidden of [
+        'step', 'group', 'team', 'sprint', 'issue', 'summary', 'url', 'search',
+        'account', 'email', 'user', 'workspace', 'name', 'key', 'raw', 'content',
+    ]) {
+        assert.equal(
+            analyticsCalls.toLowerCase().includes(forbidden),
+            false,
+            `onboarding analytics calls must not reference ${forbidden}`,
+        );
+    }
+});
+
+test('onboarding step navigation is untracked and its analytics contract is documented', () => {
+    const controllerSource = read('frontend/src/onboarding/useOnboardingTour.js');
+    const tourSource = read('frontend/src/onboarding/OnboardingTour.jsx');
+    const stepsSource = read('frontend/src/onboarding/onboardingSteps.js');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const featureDoc = read('docs/features/onboarding.md');
+
+    assert.doesNotMatch(tourSource, /track(?:SettingsAction|Event)|settings_action/);
+    assert.doesNotMatch(stepsSource, /track(?:SettingsAction|Event)|settings_action/);
+    assert.equal((controllerSource.match(/trackSettingsAction\?\./g) || []).length, 2);
+    assert.ok(analyticsDoc.includes('`section=onboarding`'));
+    assert.ok(analyticsDoc.includes('`workflow_action=started|completed|skipped`'));
+    assert.ok(analyticsDoc.includes('Step navigation is intentionally untracked'));
+    assert.ok(featureDoc.includes('Mandatory Department selection'));
+    assert.ok(featureDoc.includes('Run onboarding again'));
+});
+
 test('Jira issue transition API module sends the eng_status_transitions surface for both endpoints', () => {
     const source = read('frontend/src/api/jiraIssueApi.js');
     assert.ok(source.includes('/api/issues/transitions/options'), 'Expected the transition options endpoint literal');

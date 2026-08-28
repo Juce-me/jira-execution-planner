@@ -7,5 +7,6 @@ User-facing behavior guides for the main dashboard modules.
 - [Statistics](statistics.md)
 - [Scenario Planner](scenario-planner.md)
 - [Personal Group Favorite](personal-group-star.md)
+- [User Onboarding](onboarding.md)
 
 These pages describe what each feature is for, what users should expect in the UI, and how to interpret the output.

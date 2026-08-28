@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** Execution in progress on `feature/user-onboarding-tour`. Tasks 1–4 are implemented and verified; Tasks 5–7 remain.
+> **Status:** Execution in progress on `feature/user-onboarding-tour`. Tasks 1–6 are implemented; final verification in Task 7 remains.
 
 **Goal:** After mandatory personal-group selection succeeds, teach the dashboard's scope controls, actions, filters, issue hierarchy, and editable Jira fields through a guided tour that users may skip and replay from Settings.
 
@@ -191,24 +191,24 @@ node --test tests/test_onboarding_tour_utils.js
 
 **Interfaces:** consume Task 2 endpoint and the star plan's successful prerequisite state; produce one automatic/replayed tour run without changing saved scope preferences.
 
-- [ ] Add failing API guard tests proving every onboarding write uses the CSRF wrapper and exact payload, and no GET or duplicate startup request is added.
-- [ ] Add failing Playwright tests for automatic start only after selection, skip, Escape, finish, retry, auth recovery, interruption/reload, replay, dirty Settings, and no automatic rollout for existing users.
-- [ ] Start only when `onboardingRequired === false && onboardingDone === false`; prevent transient bootstrap defaults from starting it early.
-- [ ] Persist `true` before successful skip/finish closure. Deduplicate repeated clicks and emit analytics only after persistence succeeds.
-- [ ] Add **Run onboarding again** in the appropriate personal/preferences Settings section. Disable it while any section is dirty or saving; persist `false`, close Settings, prepare ENG Catch Up, then start.
-- [ ] Add stable target attributes to both main and compact render paths for Sprint, Group, Teams, Search, Jira export, Refresh, filters, hierarchy, and editable controls.
-- [ ] Never call the Settings favorite setter or `/api/groups-preferences` from tour code. Preserve sprint, current Department scope, teams, and personal star.
-- [ ] Run focused API and Playwright tests and commit.
+- [x] Add failing API guard tests proving every onboarding write uses the CSRF wrapper and exact payload, and no GET or duplicate startup request is added.
+- [x] Add failing Playwright tests for automatic start only after selection, skip, Escape, finish, retry, auth recovery, interruption/reload, replay, dirty Settings, and no automatic rollout for existing users.
+- [x] Start only when `onboardingRequired === false && onboardingDone === false`; prevent transient bootstrap defaults from starting it early.
+- [x] Persist `true` before successful skip/finish closure. Deduplicate repeated clicks and emit analytics only after persistence succeeds.
+- [x] Add **Run onboarding again** in the appropriate personal/preferences Settings section. Disable it while any section is dirty or saving; persist `false`, close Settings, prepare ENG Catch Up, then start.
+- [x] Add stable target attributes to both main and compact render paths for Sprint, Group, Teams, Search, Jira export, Refresh, filters, hierarchy, and editable controls.
+- [x] Never call the Settings favorite setter or `/api/groups-preferences` from tour code. Preserve sprint, current Department scope, teams, and personal star.
+- [x] Run focused API and Playwright tests and commit.
 
 ### Task 6: Lock analytics and documentation contracts
 
 **Files:** analytics guards, `docs/README_ANALYTICS.md`, feature docs/index.
 
-- [ ] Add failing source guards for exactly the allowed event/action/parameter set and forbidden identity/raw-content fields.
-- [ ] Emit `started` once per successful open, and `completed`/`skipped` once only after the corresponding persisted success. Set `source_surface` to `first_run` or `settings`.
-- [ ] Update the canonical `settings_action` row and describe why step navigation is intentionally untracked.
-- [ ] Document mandatory selection versus skippable tour, configure-your-own flow, replay, interruption behavior, and personal-star prerequisite without redefining it.
-- [ ] Run analytics guards and commit.
+- [x] Add failing source guards for exactly the allowed event/action/parameter set and forbidden identity/raw-content fields.
+- [x] Emit `started` once per successful open, and `completed`/`skipped` once only after the corresponding persisted success. Set `source_surface` to `first_run` or `settings`.
+- [x] Update the canonical `settings_action` row and describe why step navigation is intentionally untracked.
+- [x] Document mandatory selection versus skippable tour, configure-your-own flow, replay, interruption behavior, and personal-star prerequisite without redefining it.
+- [x] Run analytics guards and commit.
 
 Focused verification:
 

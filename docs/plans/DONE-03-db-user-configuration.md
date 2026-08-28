@@ -2,6 +2,8 @@
 
 > **Status:** Done. Executed on branch `cdx/auth-db-context-plan` in commits `80ae665`, `42a1427`, `e9adbe4`, `b520a18`, `983d617`, and `d18e40b`, with follow-ups `eaf3cda`, `03d05b8`, `fcfb9a0`, and `c8d9311`. Kept for audit context only; do not execute as an active plan.
 
+> **Current accuracy:** This file records the user-owned view implementation as executed at the time. The later `EXEC-shared-admin-configuration.md` boundary makes normalized dashboard and EPM scope/mappings administrator-owned once per workspace. Private views now retain personal view state only, including EPM tab and selected sprint; per-user Home/Townsquare credentials remain user-owned and unchanged.
+
 ## Goal
 
 Move dashboard and EPM view configuration from one local file-backed model toward database-backed user-owned saved views. This phase builds on `docs/plans/DONE-01-db-auth-foundation.md`.

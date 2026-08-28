@@ -23,6 +23,13 @@ FORBIDDEN_VIEW_PAYLOAD_KEYS = (
         'serviceIntegrations',
         'serviceIntegrationTokens',
         'teamGroups',
+        'workspaceId',
+        'workspace_id',
+        'userId',
+        'user_id',
+        'accountId',
+        'cloudId',
+        'siteUrl',
     }
 )
 

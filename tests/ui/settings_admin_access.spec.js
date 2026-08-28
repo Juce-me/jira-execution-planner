@@ -13,7 +13,14 @@ function requestBody(request) {
     }
 }
 
-async function installSettingsFixture(page, { authMode = 'atlassian_oauth', adminUserManagementAvailable = true } = {}) {
+async function installSettingsFixture(page, {
+    authMode = 'atlassian_oauth',
+    adminUserManagementAvailable = true,
+    settingsAdminOnly = false,
+    userCanEditSettings = true,
+    userCanEditEpmConfig = true,
+    omitEpmPermission = false,
+} = {}) {
     const calls = [];
     let users = [
         {
@@ -63,9 +70,9 @@ async function installSettingsFixture(page, { authMode = 'atlassian_oauth', admi
         if (url.pathname === '/api/config') return json({
             jiraUrl: 'https://jira.example.test',
             authMode,
-            settingsAdminOnly: false,
-            userCanEditSettings: true,
-            userCanEditEpmConfig: true,
+            settingsAdminOnly,
+            userCanEditSettings,
+            ...(omitEpmPermission ? {} : { userCanEditEpmConfig }),
             adminUserManagementAvailable,
             environmentConfigExists: true,
             projectsConfigured: true,
@@ -155,3 +162,27 @@ test('Basic mode states that every user is an administrator without loading OAut
     await expect(dialog.getByText('Basic authentication gives every user administrator access.')).toBeVisible();
     expect(calls.some(call => call.pathname === '/api/admin/users')).toBe(false);
 });
+
+for (const permissionCase of [
+    { name: 'missing for an administrator', userCanEditSettings: true, omitEpmPermission: true, visible: false },
+    { name: 'false for an administrator', userCanEditSettings: true, userCanEditEpmConfig: false, visible: false },
+    { name: 'true for a non-admin', userCanEditSettings: false, userCanEditEpmConfig: true, visible: true },
+]) {
+    test(`EPM edit permission is fail-closed when ${permissionCase.name}`, async ({ page }) => {
+        await installSettingsFixture(page, {
+            settingsAdminOnly: true,
+            userCanEditSettings: permissionCase.userCanEditSettings,
+            userCanEditEpmConfig: permissionCase.userCanEditEpmConfig,
+            omitEpmPermission: permissionCase.omitEpmPermission,
+        });
+        await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+        await page.getByRole('button', { name: 'Manage team groups' }).click();
+        const dialog = page.getByRole('dialog').first();
+        const epmTab = dialog.getByRole('button', { name: 'EPM', exact: true });
+        if (permissionCase.visible) {
+            await expect(epmTab).toBeVisible();
+        } else {
+            await expect(epmTab).toHaveCount(0);
+        }
+    });
+}

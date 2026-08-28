@@ -32,8 +32,8 @@ authentication boundary and root recovery gate.
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test
 runner, Playwright, SQLite/PostgreSQL-compatible schema.
 
-**Status:** Tasks 1 through 3 are implemented and verified, including the required PostgreSQL concurrency
-gate. Tasks 4 through 6 remain in progress. The original no-go findings plus the effective-
+**Status:** Tasks 1 through 4 are implemented and verified, including the required PostgreSQL concurrency
+gate. Tasks 5 and 6 remain in progress. The original no-go findings plus the effective-
 view cache-invalidation and real-PostgreSQL concurrency gaps are addressed in the runtime resolver,
 serialized mutation, reversible migration, strict JSON validator, team-catalog boundary, cache isolation,
 PostgreSQL completion gate, and global-auth tasks below.
@@ -202,6 +202,7 @@ and docs use synthetic identifiers only.
 - Modify: `frontend/src/api/configApi.js`
 - Modify: `frontend/src/api/epmApi.js`
 - Modify: `frontend/src/dashboard.jsx`
+- Modify: `frontend/src/settings/workspaceConfigConflict.js`
 
 ### Global authentication lock
 
@@ -535,6 +536,7 @@ legacy import following the same post-commit effective-EPM invalidation contract
 - Modify: `frontend/src/api/configApi.js`
 - Modify: `frontend/src/api/epmApi.js`
 - Modify: `frontend/src/dashboard.jsx`
+- Modify: `frontend/src/settings/workspaceConfigConflict.js`
 - Modify: `tests/test_frontend_api_source_guards.js`
 - Modify: `tests/test_epm_settings_source_guards.js`
 - Modify: `tests/test_auth_isolation_source_guard.js`
@@ -543,7 +545,7 @@ legacy import following the same post-commit effective-EPM invalidation contract
 - Modify: `tests/ui/shared_department_groups.spec.js`
 - Generated frontend files listed in the File Map
 
-- [ ] **Step 1: Write failing frontend ownership and permission tests**
+- [x] **Step 1: Write failing frontend ownership and permission tests**
 
 Assert private EPM bootstrap wins even if a stale `sharedConfig.epm` fixture exists; EPM saves send only
 the strict settings object; no `baseRevision`, identity, `tab`, or `selectedSprint` is sent; EPM saving
@@ -556,7 +558,7 @@ Add Playwright coverage for admin and non-admin users, missing/false/true permis
 Save persisting each dirty section through its own endpoint, workspace “Use latest” leaving dirty EPM
 untouched, and no EPM save posting an administrator endpoint.
 
-- [ ] **Step 2: Implement independent private EPM UI behavior**
+- [x] **Step 2: Implement independent private EPM UI behavior**
 
 Change `saveEpmConfig(backendUrl, draftConfig)` to post only the normalized EPM settings payload with the
 existing unsafe-request headers. Seed EPM from `config.viewConfig?.view?.epm || config.epm`, never from
@@ -568,14 +570,14 @@ drafts but cannot reset a dirty EPM draft. Keep the existing auth-recovery prese
 intermediate commit and preserve drafts/baselines on `401`; Task 5 replaces every feature-owned recovery
 path atomically after the shared typed contract and root gate exist.
 
-- [ ] **Step 3: Build, verify, and commit**
+- [x] **Step 3: Build, verify, and commit**
 
 ```bash
 node --test tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js tests/test_auth_isolation_source_guard.js
 npx playwright test tests/ui/settings_unified_save.spec.js tests/ui/settings_admin_access.spec.js tests/ui/shared_department_groups.spec.js
 npm run build
 git diff --check
-git add frontend/src/api/configApi.js frontend/src/api/epmApi.js frontend/src/dashboard.jsx tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js tests/test_auth_isolation_source_guard.js tests/ui/settings_unified_save.spec.js tests/ui/settings_admin_access.spec.js tests/ui/shared_department_groups.spec.js frontend/dist/auth-focus-refresh.js frontend/dist/auth-focus-refresh.js.map frontend/dist/dashboard.js frontend/dist/dashboard.js.map frontend/dist/dashboard.css
+git add frontend/src/api/configApi.js frontend/src/api/epmApi.js frontend/src/dashboard.jsx frontend/src/settings/workspaceConfigConflict.js tests/test_frontend_api_source_guards.js tests/test_epm_settings_source_guards.js tests/test_auth_isolation_source_guard.js tests/ui/settings_unified_save.spec.js tests/ui/settings_admin_access.spec.js tests/ui/shared_department_groups.spec.js frontend/dist/auth-focus-refresh.js frontend/dist/auth-focus-refresh.js.map frontend/dist/dashboard.js frontend/dist/dashboard.js.map frontend/dist/dashboard.css docs/plans/EXEC-user-owned-epm-configuration.md
 git commit -m "Separate EPM settings from admin saves"
 ```
 

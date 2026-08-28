@@ -33,3 +33,15 @@ assert(
   !localStorageAtlassianPattern.test(source),
   'dashboard must not store Atlassian tokens in localStorage'
 );
+
+const epmSaveStart = source.indexOf('const saveEpmConfig = async () => {');
+const epmSaveEnd = source.indexOf('const normalizeStatus = (status) => {', epmSaveStart);
+const epmSaveSource = source.slice(epmSaveStart, epmSaveEnd);
+assert(
+  epmSaveSource.includes('setWorkspaceConfigRecoveryLoginUrl(safeAppLoginUrl('),
+  'Task 4 must preserve the existing safe auth-recovery action for EPM saves'
+);
+assert(
+  !epmSaveSource.includes('applySavedEpmConfig(createEmptyEpmConfigDraft())'),
+  'an EPM save 401 must preserve the private draft and baseline'
+);

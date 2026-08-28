@@ -311,7 +311,7 @@ test('EPM configuration project refresh sends token-bound CSRF header', async ()
     });
 });
 
-test('EPM config save wrapper sends token-bound CSRF header', async () => {
+test('EPM config save wrapper sends only normalized private settings with token-bound CSRF', async () => {
     const { getJson, postJson } = loadHttpHelpers();
     const epmApi = loadApiModule('epmApi.js', [
         'saveEpmConfig',
@@ -319,16 +319,57 @@ test('EPM config save wrapper sends token-bound CSRF header', async () => {
 
     await withMockFetch(async (calls) => {
         const payload = await epmApi.saveEpmConfig('http://backend', {
-            scope: { rootGoalKey: 'CRITE-1' },
-        });
+            version: 2,
+            labelPrefix: 'rnd_project_*',
+            scope: { rootGoalKey: 'CRITE-1', subGoalKeys: ['CRITE-2'] },
+            issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story'] },
+            projects: {
+                'home-1': {
+                    id: 'home-1',
+                    homeProjectId: 'home-1',
+                    name: 'Home Project',
+                    label: 'rnd_project_home',
+                    jiraLabel: 'legacy-home-label',
+                },
+                custom_1: {
+                    id: 'custom_1',
+                    homeProjectId: null,
+                    name: 'Custom Project',
+                    label: 'rnd_project_custom',
+                    jiraLabel: 'legacy-custom-label',
+                },
+            },
+            baseRevision: 41,
+            userId: 'user-1',
+            workspaceId: 'workspace-1',
+            tab: 'archived',
+            selectedSprint: '42',
+        }, 99);
 
         assert.deepEqual(payload, { ok: true });
         assert.equal(calls[0].url, 'http://backend/api/auth/csrf');
         assert.equal(calls[1].url, 'http://backend/api/epm/config');
         assert.equal(calls[1].options.method, 'POST');
-        assert.equal(calls[1].options.body, JSON.stringify({
-            scope: { rootGoalKey: 'CRITE-1' },
-        }));
+        assert.deepEqual(JSON.parse(calls[1].options.body), {
+            version: 2,
+            labelPrefix: 'rnd_project_*',
+            scope: { rootGoalKey: 'CRITE-1', subGoalKeys: ['CRITE-2'] },
+            issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story'] },
+            projects: {
+                'home-1': {
+                    id: 'home-1',
+                    homeProjectId: 'home-1',
+                    name: 'Home Project',
+                    label: 'rnd_project_home',
+                },
+                custom_1: {
+                    id: 'custom_1',
+                    homeProjectId: null,
+                    name: 'Custom Project',
+                    label: 'rnd_project_custom',
+                },
+            },
+        });
         assert.equal(new Headers(calls[1].options.headers).get('X-CSRF-Token'), 'csrf-token');
         assertJsonHeader(calls[1].options);
     }, (url) => {
@@ -663,7 +704,7 @@ test('excluded capacity stats source wrapper can request a backend refresh', asy
     });
 });
 
-test('app config wrapper keeps shared EPM authoritative over private view state', () => {
+test('app config wrapper gives private view EPM precedence and never promotes shared EPM', () => {
     const { getJson } = loadHttpHelpers();
     const configApi = loadApiModule('configApi.js', [
         'normalizeAppConfig',
@@ -682,14 +723,17 @@ test('app config wrapper keeps shared EPM authoritative over private view state'
         },
     });
 
-    assert.deepEqual(normalized.epm, sharedEpm);
+    assert.deepEqual(normalized.epm, epm);
     assert.equal(normalized.viewConfig.source, 'user_saved_view');
 
     const withLegacyEpm = configApi.normalizeAppConfig({
         epm: { version: 2, projects: {} },
         viewConfig: { view: { epm } },
     });
-    assert.deepEqual(withLegacyEpm.epm, { version: 2, projects: {} });
+    assert.deepEqual(withLegacyEpm.epm, epm);
+
+    const sharedOnly = configApi.normalizeAppConfig({ sharedConfig: { epm: sharedEpm } });
+    assert.equal(sharedOnly.epm, undefined);
 });
 
 test('Jira catalog API wrappers preserve query params, cache flags, and abort signals', async () => {

@@ -34,7 +34,7 @@ export const normalizeAppConfig = (config) => {
     if (viewConfig && !normalized.viewConfig) {
         normalized.viewConfig = viewConfig;
     }
-    if (!normalized.epm && normalized.sharedConfig?.epm) normalized.epm = normalized.sharedConfig.epm;
+    if (viewConfig?.view?.epm) normalized.epm = viewConfig.view.epm;
     return normalized;
 };
 

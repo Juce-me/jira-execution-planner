@@ -120,9 +120,9 @@ async function mockFirstRunDashboard(page, options = {}) {
             return json({
                 jiraUrl: 'https://jira.example',
                 projectsConfigured: true,
-                settingsAdminOnly: false,
-                userCanEditSettings: true,
-                userCanEditEpmConfig: false,
+                settingsAdminOnly: options.settingsAdminOnly ?? false,
+                userCanEditSettings: options.userCanEditSettings ?? true,
+                userCanEditEpmConfig: options.userCanEditEpmConfig ?? false,
             });
         }
         if (url.pathname === '/api/groups-config') {
@@ -214,6 +214,39 @@ async function mockFirstRunDashboard(page, options = {}) {
     });
     return calls;
 }
+
+test('normal users can edit shared Departments without admin or EPM permission', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        settingsAdminOnly: true,
+        userCanEditSettings: false,
+        userCanEditEpmConfig: false,
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform'],
+        }),
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'EPM', exact: true })).toHaveCount(0);
+    await dialog.getByPlaceholder('Group name').fill('Platform Core');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    const save = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    expect(save.body.groups[0].name).toBe('Platform Core');
+    expect(calls.some(call => call.method === 'POST' && [
+        '/api/projects/selected',
+        '/api/board-config',
+        '/api/epm/config',
+    ].includes(call.pathname))).toBe(false);
+});
 
 function overflowGroupConfig() {
     return {

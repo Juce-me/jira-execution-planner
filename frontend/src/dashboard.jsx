@@ -249,7 +249,7 @@ import {
         const EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY = 3;
         const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access']);
         const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels', 'boards']);
-        const SHARED_CONFIGURATION_TAB_IDS = new Set([...ADMIN_SETTINGS_TAB_IDS, 'epm']);
+        const SHARED_CONFIGURATION_TAB_IDS = new Set(ADMIN_SETTINGS_TAB_IDS);
         function isActiveHomeTokenConnection(connection) {
             return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
         }
@@ -455,7 +455,17 @@ import {
             const epmSubGoalFilterDropdownRefs = useRef({ main: null, compact: null });
             const [showEpmSortDropdown, setShowEpmSortDropdown] = useState(false);
             const epmSortDropdownRefs = useRef({ main: null, compact: null });
-            const [epmConfigDraft, setEpmConfigDraft] = useState(createEmptyEpmConfigDraft());
+            const [epmConfigDraft, setEpmConfigDraftState] = useState(createEmptyEpmConfigDraft());
+            const epmConfigDraftRef = useRef(epmConfigDraft);
+            const epmConfigDraftGenerationRef = useRef(0);
+            const setEpmConfigDraft = React.useCallback((updater) => {
+                setEpmConfigDraftState((previous) => {
+                    const next = typeof updater === 'function' ? updater(previous) : updater;
+                    epmConfigDraftRef.current = next;
+                    epmConfigDraftGenerationRef.current += 1;
+                    return next;
+                });
+            }, []);
             const [epmConfigLoading, setEpmConfigLoading] = useState(false);
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
             const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);
@@ -570,7 +580,7 @@ import {
                 active: showGroupManage && groupManageTab === 'access',
             });
             const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
-            const canEditEpmConfiguration = canEditSharedConfiguration || userCanEditEpmConfig;
+            const canEditEpmConfiguration = userCanEditEpmConfig === true;
             const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
             const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
@@ -1210,11 +1220,17 @@ import {
                 setGroupDraftError('');
                 trackSettingsAction('epm', 'save', { dirty_state: isEpmConfigDirty ? 'dirty' : 'clean', project_count_bucket: bucketCount(epmConfigDraft?.projects?.length || 0) });
                 try {
-                    const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
-                    const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft, sharedConfigRevisionRef.current);
-                    commitSharedConfigRevision(payload);
+                    const submittedGeneration = epmConfigDraftGenerationRef.current;
+                    const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraftRef.current);
+                    const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);
                     const nextConfig = normalizeEpmConfigDraft(payload);
-                    applySavedEpmConfig(nextConfig);
+                    const draftUnchanged = epmConfigDraftGenerationRef.current === submittedGeneration;
+                    if (draftUnchanged) {
+                        applySavedEpmConfig(nextConfig);
+                    } else {
+                        epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+                        setEpmConfigLoaded(true);
+                    }
                     updateEpmSettingsProjectRowsAfterSave(nextConfig);
                     if (hasSavedEpmScopeConfig(nextConfig)) {
                         await refreshEpmProjects();
@@ -1225,14 +1241,10 @@ import {
                         setEpmSettingsProjectsLoaded(false);
                     }
                     trackSettingsAction('epm', 'save_result', { result: 'success' });
+                    return draftUnchanged;
                 } catch (err) {
-                    if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict') {
-                        setWorkspaceConfigConflict({
-                            ...err.payload,
-                            savedSections: lastCommittedWorkspaceSectionsRef.current,
-                            pendingSections: ['EPM settings'],
-                        });
-                        trackSettingsAction('epm', 'save_result', { result: 'failure', conflict_state: 'remote', conflict_count_bucket: '1_5' });
+                    if (err?.status === 401 || (err?.status === 403 && /auth|session|token/i.test(String(err?.code || err?.payload?.error || '')))) {
+                        setWorkspaceConfigRecoveryLoginUrl(safeAppLoginUrl(err?.payload?.loginUrl || err?.payload?.recoveryUrl));
                     }
                     const message = err?.message || 'Failed to save EPM settings.';
                     setGroupDraftError(message);
@@ -1838,12 +1850,23 @@ import {
                     setEpmRootGoalsError('');
                     let rootGoalKey = '';
                     let loadedConfig = null;
+                    let requestGeneration = null;
                     try {
-                        const config = await loadEpmConfig();
+                        if (isEpmConfigDirty) {
+                            loadedConfig = epmConfigDraft;
+                            rootGoalKey = String(epmConfigDraft.scope?.rootGoalKey || '').trim().toUpperCase();
+                        } else {
+                            requestGeneration = epmConfigDraftGenerationRef.current;
+                            const config = await loadEpmConfig();
+                            if (!cancelled) {
+                                const nextConfig = epmConfigDraftGenerationRef.current === requestGeneration
+                                    ? applySavedEpmConfig(config)
+                                    : epmConfigDraftRef.current;
+                                loadedConfig = nextConfig;
+                                rootGoalKey = String(nextConfig.scope?.rootGoalKey || '').trim().toUpperCase();
+                            }
+                        }
                         if (!cancelled) {
-                            const nextConfig = applySavedEpmConfig(config);
-                            loadedConfig = nextConfig;
-                            rootGoalKey = String(nextConfig.scope?.rootGoalKey || '').trim().toUpperCase();
                             setEpmRootGoalQuery('');
                             setEpmSubGoalQuery('');
                             setEpmRootGoalOpen(false);
@@ -1854,7 +1877,11 @@ import {
                     } catch (err) {
                         console.error('Failed to load EPM config:', err);
                         if (!cancelled) {
-                            applySavedEpmConfig(emptyEpmConfig);
+                            if (err?.status === 401 || (err?.status === 403 && /auth|session|token/i.test(String(err?.code || err?.payload?.error || '')))) {
+                                setWorkspaceConfigRecoveryLoginUrl(safeAppLoginUrl(err?.payload?.loginUrl || err?.payload?.recoveryUrl));
+                            } else if (requestGeneration === epmConfigDraftGenerationRef.current) {
+                                applySavedEpmConfig(emptyEpmConfig);
+                            }
                             setGroupDraftError('Failed to load EPM settings.');
                             setEpmConfigLoading(false);
                         }
@@ -2703,6 +2730,11 @@ import {
             };
 
             const discardGroupDraftChanges = () => {
+                if (isEpmConfigDirty) {
+                    try {
+                        setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}'));
+                    } catch (_) { /* baseline is produced by this document */ }
+                }
                 setShowGroupDiscardConfirm(false);
                 closeGroupManage();
             };
@@ -3365,7 +3397,6 @@ import {
                             capacity: isCapacityDraftDirty && !committedAdminSections.capacity,
                             fieldConfigs: anyFieldConfigDirty && !committedAdminSections.fieldConfigs,
                             issueTypes: isIssueTypesDraftDirty && !committedAdminSections.issueTypes,
-                            epm: isEpmConfigDirty,
                         });
                         setWorkspaceConfigConflict({
                             ...err.payload,
@@ -3400,11 +3431,13 @@ import {
                 const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;
                 lastCommittedWorkspaceSectionsRef.current = [];
                 try {
+                    let epmDraftUnchanged = true;
                     if (hasSharedSettingsChanges || hasDepartmentSettingsChanges) {
                         const saved = await saveGroupsConfig({ closeOnSuccess: false, rebaseOnto });
                         if (!saved) return;
                     }
-                    if (hasEpmSettingsChanges) await saveEpmConfig();
+                    if (hasEpmSettingsChanges) epmDraftUnchanged = await saveEpmConfig();
+                    if (hasEpmSettingsChanges && !epmDraftUnchanged) return;
                     if (hasSharedSettingsChanges || hasDepartmentSettingsChanges || hasEpmSettingsChanges) closeGroupManage();
                 } catch (_) {}
             };
@@ -3437,7 +3470,7 @@ import {
             const useLatestWorkspaceConfig = async () => {
                 setWorkspaceConfigConflict(null);
                 setGroupDraftError('');
-                await loadConfig();
+                await loadConfig({ preserveEpmDraft: isEpmConfigDirty });
             };
 
             useEffect(() => {
@@ -5586,7 +5619,10 @@ import {
                 updateDismissedHash
             ]);
 
-            const loadConfig = async () => {
+            const loadConfig = async ({ preserveEpmDraft = false } = {}) => {
+                const epmRequestGeneration = epmConfigDraftGenerationRef.current;
+                const shouldPreserveEpmDraft = () => preserveEpmDraft
+                    || epmConfigDraftGenerationRef.current !== epmRequestGeneration;
                 setSharedConfigReady(false);
                 setWorkspaceConfigRecoveryLoginUrl('');
                 try {
@@ -5628,20 +5664,20 @@ import {
                         setIssueTypesDraft(issueTypes);
                         issueTypesBaselineRef.current = JSON.stringify(issueTypes);
                         seedSharedFieldConfigs(sharedConfig);
-                        const personalEpm = config.viewConfig?.view?.epm || {};
-                        applySavedEpmConfig({ ...(config.epm || sharedConfig.epm || {}), ...personalEpm });
+                        const personalEpm = config.viewConfig?.view?.epm || config.epm;
+                        if (!shouldPreserveEpmDraft()) applySavedEpmConfig(personalEpm);
                         sharedConfigRevisionRef.current = config.sharedConfigRevision;
                         setSharedConfigRevision(config.sharedConfigRevision);
                         setWorkspaceConfigConflict(null);
                     } else {
-                        applySavedEpmConfig(config.epm);
+                        if (!shouldPreserveEpmDraft()) applySavedEpmConfig(config.viewConfig?.view?.epm || config.epm);
                         await Promise.all([loadSelectedProjects(), loadPriorityWeightsConfig()]);
                     }
                 } catch (err) {
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load config:', err);
                     }
-                    applySavedEpmConfig(createEmptyEpmConfigDraft());
+                    if (!shouldPreserveEpmDraft()) applySavedEpmConfig(createEmptyEpmConfigDraft());
                 } finally {
                     setSharedConfigReady(true);
                 }

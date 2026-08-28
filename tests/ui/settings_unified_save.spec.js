@@ -5,6 +5,18 @@ const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = path.join(__dirname, '..', '..', 'test-results', 'settings-unified-save-qa');
+const administratorConfigPaths = new Set([
+    '/api/projects/selected',
+    '/api/stats/priority-weights-config',
+    '/api/board-config',
+    '/api/capacity/config',
+    '/api/sprint-field/config',
+    '/api/parent-name-field/config',
+    '/api/story-points-field/config',
+    '/api/team-field/config',
+    '/api/delivery-owner-field/config',
+    '/api/issue-types/config',
+]);
 
 let fixture;
 
@@ -19,6 +31,12 @@ function requestBody(request) {
     } catch (_) {
         return null;
     }
+}
+
+function deferred() {
+    let resolve;
+    const promise = new Promise(next => { resolve = next; });
+    return { promise, resolve };
 }
 
 // Expands a { statusName: count } map into synthetic sprint-scoped epics, the shape the dashboard
@@ -77,6 +95,12 @@ async function mockConfigSettings(page, {
     extraFields = [],
     workspaceSnapshots = null,
     workspaceSaveResponses = {},
+    epmSaveResponse = null,
+    epmLoadResponse = null,
+    epmSaveGate = null,
+    epmLoadGate = null,
+    workspaceLoadGate = null,
+    workspaceLoadResponse = null,
 } = {}) {
     const calls = [];
     const epicsInScope = epicsFromCounts(fixture.REFERENCE_EPICS_BY_STATUS);
@@ -126,10 +150,15 @@ async function mockConfigSettings(page, {
         });
         if (url.pathname === '/api/version') return json({ enabled: false });
         if (url.pathname === '/api/config') {
+            const requestIndex = configGetCount;
             const workspaceSnapshot = workspaceSnapshots?.[
                 Math.min(configGetCount, workspaceSnapshots.length - 1)
             ];
             configGetCount += 1;
+            if (workspaceLoadGate && requestIndex > 0) await workspaceLoadGate.promise;
+            if (workspaceLoadResponse && requestIndex > 0) {
+                return json(workspaceLoadResponse.body, workspaceLoadResponse.status || 200);
+            }
             return json({
             jiraUrl: workspaceSnapshot?.jiraUrl || 'https://jira.example',
             authMode: workspaceSnapshot ? 'atlassian_oauth' : '',
@@ -169,8 +198,16 @@ async function mockConfigSettings(page, {
             });
         }
         if (url.pathname === '/api/groups-preferences') return json({ preferences: groupsConfig.preferences });
-        if (url.pathname === '/api/epm/config' && request.method() === 'GET') return json(epmConfig);
-        if (url.pathname === '/api/epm/config' && request.method() === 'POST') return json(requestBody(request));
+        if (url.pathname === '/api/epm/config' && request.method() === 'GET') {
+            if (epmLoadGate) await epmLoadGate.promise;
+            if (epmLoadResponse) return json(epmLoadResponse.body, epmLoadResponse.status || 200);
+            return json(epmConfig);
+        }
+        if (url.pathname === '/api/epm/config' && request.method() === 'POST') {
+            if (epmSaveGate) await epmSaveGate.promise;
+            if (epmSaveResponse) return json(epmSaveResponse.body, epmSaveResponse.status || 200);
+            return json(requestBody(request));
+        }
         if (url.pathname === '/api/epm/scope') return json({ cloudId: 'synthetic-cloud', error: '' });
         if (url.pathname === '/api/epm/goals') {
             if (url.searchParams.get('rootGoalKey')) {
@@ -321,7 +358,7 @@ test('workspace conflict preserves later drafts and Keep mine rebases onto the s
     expect(workspacePosts(calls, '/api/board-config').map(call => call.body.baseRevision)).toEqual([4, 5]);
 });
 
-test('Use latest atomically replaces workspace drafts and clears the conflict actions', async ({ page }) => {
+test('Use latest replaces workspace drafts without touching a dirty private EPM draft', async ({ page }) => {
     const latest = sharedWorkspaceSnapshot({ revision: 5, jiraUrl: 'https://second.example', boardId: '9', boardName: 'Server Board' });
     latest.sharedConfig.projects.selected = [{ key: 'DEMO', type: 'product' }];
     const calls = await mockConfigSettings(page, {
@@ -341,19 +378,162 @@ test('Use latest atomically replaces workspace drafts and clears the conflict ac
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const dialog = page.getByRole('dialog').first();
     await makeTwoWorkspaceSectionsDirty(dialog);
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await dialog.locator('[data-epm-scope-field="labelPrefix"]').fill('rnd_project_private_');
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Jira source' }).click();
     await dialog.getByRole('button', { name: /^Save$/ }).click();
     await expect.poll(() => workspacePosts(calls, '/api/projects/selected').length).toBe(1);
     await expect.poll(() => workspacePosts(calls, '/api/board-config').length).toBe(1);
 
     const banner = dialog.locator('.group-modal-validation');
+    await expect(banner).not.toContainText('EPM settings');
     await banner.getByRole('button', { name: 'Use latest' }).click();
     await expect(banner.getByTestId('workspace-config-conflict-actions')).toHaveCount(0);
-    await expect(dialog.locator('.group-modal-dirty')).toHaveCount(0);
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
     await expect(dialog.locator('#admin-settings-source-panel')).toContainText('Server Board');
     await dialog.getByRole('tab', { name: 'Scope projects' }).click();
     await expect(dialog.locator('#admin-settings-scope-panel')).not.toContainText('EXTRA');
-    await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeDisabled();
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await expect(dialog.locator('[data-epm-scope-field="labelPrefix"]')).toHaveValue('rnd_project_private_');
+    await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeEnabled();
     expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/config')).toHaveLength(2);
+    expect(workspacePosts(calls, '/api/epm/config')).toHaveLength(0);
+});
+
+for (const workspaceResult of [
+    { name: 'succeeds', response: null },
+    { name: 'fails', response: { status: 500, body: { error: 'config_unavailable', message: 'Configuration is temporarily unavailable.' } } },
+]) {
+    test(`a delayed Use latest load that ${workspaceResult.name} cannot overwrite an EPM draft edited after the request starts`, async ({ page }) => {
+        const workspaceLoadGate = deferred();
+        const latest = sharedWorkspaceSnapshot({ revision: 5, jiraUrl: 'https://second.example', boardId: '9', boardName: 'Server Board' });
+        const calls = await mockConfigSettings(page, {
+            workspaceSnapshots: [sharedWorkspaceSnapshot(), latest],
+            workspaceLoadGate,
+            workspaceLoadResponse: workspaceResult.response,
+            workspaceSaveResponses: {
+                '/api/projects/selected': [{ body: { selected: [{ key: 'DEMO', type: 'product' }], configRevision: 4 } }],
+                '/api/board-config': [{ status: 409, body: {
+                    error: 'workspace_config_conflict',
+                    message: 'Shared settings changed while you were editing. Your changes are still unsaved.',
+                    currentRevision: 5,
+                    current: { section: 'board', value: latest.sharedConfig.board, configRevision: 5 },
+                } }],
+            },
+        });
+
+        await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+        await page.getByRole('button', { name: 'Manage team groups' }).click();
+        const dialog = page.getByRole('dialog').first();
+        await makeTwoWorkspaceSectionsDirty(dialog);
+        await dialog.getByRole('button', { name: /^Save$/ }).click();
+        const banner = dialog.locator('.group-modal-validation');
+        await expect(banner.getByRole('button', { name: 'Use latest' })).toBeVisible();
+        await banner.getByRole('button', { name: 'Use latest' }).click();
+        await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/config').length).toBe(2);
+
+        await dialog.getByRole('button', { name: 'EPM' }).click();
+        await dialog.getByRole('tab', { name: 'Scope' }).click();
+        const labelPrefix = dialog.locator('[data-epm-scope-field="labelPrefix"]');
+        await labelPrefix.fill('rnd_project_during_workspace_load_');
+        const configResponse = page.waitForResponse(response => response.request().method() === 'GET'
+            && new URL(response.url()).pathname === '/api/config');
+        workspaceLoadGate.resolve();
+        await configResponse;
+
+        await expect(labelPrefix).toHaveValue('rnd_project_during_workspace_load_');
+        await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+    });
+}
+
+test('a delayed EPM load cannot overwrite a draft edited after the request starts', async ({ page }) => {
+    const epmLoadGate = deferred();
+    const calls = await mockConfigSettings(page, {
+        epmLoadGate,
+        epmLoadResponse: {
+            body: {
+                version: 2,
+                labelPrefix: 'rnd_project_remote_',
+                scope: { rootGoalKey: 'ROOT-100', subGoalKeys: ['CHILD-200'] },
+                issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story'] },
+                projects: {},
+            },
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/epm/config').length).toBe(1);
+    const labelPrefix = dialog.locator('[data-epm-scope-field="labelPrefix"]');
+    await labelPrefix.fill('rnd_project_local_');
+    const loadResponse = page.waitForResponse(response => response.request().method() === 'GET'
+        && new URL(response.url()).pathname === '/api/epm/config');
+    epmLoadGate.resolve();
+    await loadResponse;
+
+    await expect(labelPrefix).toHaveValue('rnd_project_local_');
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+});
+
+test('a delayed failing EPM load cannot reset a draft edited after the request starts', async ({ page }) => {
+    const epmLoadGate = deferred();
+    const calls = await mockConfigSettings(page, {
+        epmLoadGate,
+        epmLoadResponse: {
+            status: 500,
+            body: { error: 'epm_config_unavailable', message: 'EPM settings are temporarily unavailable.' },
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/epm/config').length).toBe(1);
+    const labelPrefix = dialog.locator('[data-epm-scope-field="labelPrefix"]');
+    await labelPrefix.fill('rnd_project_local_after_failure_');
+    const loadResponse = page.waitForResponse(response => response.request().method() === 'GET'
+        && new URL(response.url()).pathname === '/api/epm/config');
+    epmLoadGate.resolve();
+    await loadResponse;
+
+    await expect(labelPrefix).toHaveValue('rnd_project_local_after_failure_');
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+});
+
+test('a delayed EPM save advances only the submitted baseline and preserves a newer draft', async ({ page }) => {
+    const epmSaveGate = deferred();
+    const calls = await mockConfigSettings(page, { epmSaveGate });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    const labelPrefix = dialog.locator('[data-epm-scope-field="labelPrefix"]');
+    await labelPrefix.fill('rnd_project_submitted_');
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await expect.poll(() => workspacePosts(calls, '/api/epm/config').length).toBe(1);
+    await labelPrefix.fill('rnd_project_newer_');
+    const saveResponse = page.waitForResponse(response => response.request().method() === 'POST'
+        && new URL(response.url()).pathname === '/api/epm/config');
+    epmSaveGate.resolve();
+    await saveResponse;
+
+    await expect(dialog).toBeVisible();
+    await expect(labelPrefix).toHaveValue('rnd_project_newer_');
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await expect.poll(() => workspacePosts(calls, '/api/epm/config').length).toBe(2);
+    expect(workspacePosts(calls, '/api/epm/config')[0].body.labelPrefix).toBe('rnd_project_submitted_');
+    expect(workspacePosts(calls, '/api/epm/config')[1].body.labelPrefix).toBe('rnd_project_newer_');
 });
 
 test('workspace auth expiry preserves the draft, Cancel confirmation, and safe re-auth path', async ({ page }) => {
@@ -697,7 +877,12 @@ test('the unified save persists every dirty section together, group board includ
     expect(posts('/api/board-config')[0].body).toEqual({ boardId: '', boardName: '', baseRevision: 0 });
     expect(posts('/api/capacity/config')[0].body).toEqual({ project: '', fieldId: '', fieldName: '', baseRevision: 0 });
     expect(posts('/api/epm/config')[0].body.labelPrefix).toBe('rnd_project_core_');
-    expect(posts('/api/epm/config')[0].body.baseRevision).toBe(0);
+    expect(Object.keys(posts('/api/epm/config')[0].body).sort()).toEqual([
+        'issueTypes', 'labelPrefix', 'projects', 'scope', 'version',
+    ]);
+    expect(posts('/api/epm/config')[0].body.baseRevision).toBeUndefined();
+    expect(posts('/api/epm/config')[0].body.tab).toBeUndefined();
+    expect(posts('/api/epm/config')[0].body.selectedSprint).toBeUndefined();
     const groupsBody = posts('/api/groups-config')[0].body;
     expect(groupsBody.groups[0].name).toBe('Platform Core');
     expect(groupsBody.groups[0].board.columns[0].name).toBe('Local Column');
@@ -725,6 +910,90 @@ test('settings save persists dirty department and EPM sections together', async 
     expect(epmSave).toBeTruthy();
     expect(departmentSave.body.groups[0].name).toBe('Platform Core');
     expect(epmSave.body.labelPrefix).toBe('rnd_project_core_');
+    expect(calls.some(call => call.method === 'POST' && (
+        call.pathname.startsWith('/api/admin/') || administratorConfigPaths.has(call.pathname)
+    ))).toBe(false);
+});
+
+test('EPM save auth expiry preserves the private draft and exposes safe recovery without replay', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        epmSaveResponse: {
+            status: 401,
+            body: {
+                error: 'auth_required',
+                message: 'Your session expired. Sign in again to save.',
+                loginUrl: '/login?reason=session_expired',
+            },
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    const labelPrefix = dialog.locator('[data-epm-scope-field="labelPrefix"]');
+    await labelPrefix.fill('rnd_project_unsaved_');
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(labelPrefix).toHaveValue('rnd_project_unsaved_');
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+    await expect(dialog.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    expect(workspacePosts(calls, '/api/epm/config')).toHaveLength(1);
+    expect(calls.some(call => call.method === 'POST' && (
+        call.pathname.startsWith('/api/admin/') || administratorConfigPaths.has(call.pathname)
+    ))).toBe(false);
+});
+
+test('private EPM conflicts preserve the draft without opening workspace conflict actions', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        epmSaveResponse: {
+            status: 409,
+            body: {
+                error: 'view_config_conflict',
+                message: 'This private view changed while you were editing.',
+                currentVersion: 8,
+            },
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    const labelPrefix = dialog.locator('[data-epm-scope-field="labelPrefix"]');
+    await labelPrefix.fill('rnd_project_conflicting_');
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+    await expect(labelPrefix).toHaveValue('rnd_project_conflicting_');
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+    await expect(dialog.getByTestId('workspace-config-conflict-actions')).toHaveCount(0);
+    await expect.poll(() => workspacePosts(calls, '/api/epm/config').length).toBe(1);
+});
+
+test('EPM settings load auth expiry preserves the bootstrapped private baseline', async ({ page }) => {
+    await mockConfigSettings(page, {
+        epmLoadResponse: {
+            status: 401,
+            body: {
+                error: 'auth_required',
+                message: 'Sign in required.',
+                loginUrl: '/login?reason=session_expired',
+            },
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+
+    await expect(dialog.locator('[data-epm-scope-field="labelPrefix"]')).toHaveValue('rnd_project_');
+    await expect(dialog.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(dialog.locator('.group-modal-dirty')).toHaveCount(0);
 });
 
 test('the mapping pickers search the whole field catalog, not the capacity project’s screens', async ({ page }) => {

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** Execution in progress on `feature/user-onboarding-tour`. Tasks 1–6 are implemented; final verification in Task 7 remains.
+> **Status:** Implementation and verification complete on `feature/user-onboarding-tour`; awaiting integration approval.
 
 **Goal:** After mandatory personal-group selection succeeds, teach the dashboard's scope controls, actions, filters, issue hierarchy, and editable Jira fields through a guided tour that users may skip and replay from Settings.
 
@@ -218,11 +218,11 @@ node --test tests/test_analytics_source_guards.js tests/test_frontend_api_source
 
 ### Task 7: Verify scenarios, visuals, generated output, and startup
 
-- [ ] Run focused Python and Node suites from Tasks 1–6.
-- [ ] Run Playwright for all scenario rows, including normal-click layering, keyboard/focus, viewport-edge geometry, and settled desktop/mobile screenshots.
-- [ ] Run the full Python suite and frontend build; confirm generated output has no post-build diff beyond intended files.
-- [ ] Run startup preflight. Before push, launch the configured Flask server and verify `/api/test` as required by repository policy.
-- [ ] Inspect the final diff and remove every line that changes star persistence/UI, shared defaults, Jira writes, Home/Townsquare paths, or unrelated controls.
+- [x] Run focused Python and Node suites from Tasks 1–6.
+- [x] Run Playwright for all scenario rows, including normal-click layering, keyboard/focus, viewport-edge geometry, and settled desktop/mobile screenshots.
+- [x] Run the full Python suite and frontend build; confirm generated output has no post-build diff beyond intended files.
+- [x] Run startup preflight. Before push, launch the configured Flask server and verify `/api/test` as required by repository policy.
+- [x] Inspect the final diff and remove every line that changes star persistence/UI, shared defaults, Jira writes, Home/Townsquare paths, or unrelated controls.
 
 Final verification:
 

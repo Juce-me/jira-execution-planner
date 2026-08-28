@@ -48,6 +48,10 @@ function extractShorthandSpreadProps(source) {
         .map((line) => line.trim())
         .filter(Boolean)
         .map((line) => line.replace(/,$/, ''))
+        .map((line) => {
+            const explicitProp = line.match(/^([A-Za-z_$][\w$]*):/);
+            return explicitProp ? explicitProp[1] : line;
+        })
         .filter((line) => /^[A-Za-z_$][\w$]*$/.test(line))
         .sort();
 }

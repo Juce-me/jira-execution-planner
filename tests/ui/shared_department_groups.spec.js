@@ -141,6 +141,7 @@ async function mockFirstRunDashboard(page, options = {}) {
         if (url.pathname === '/api/version') return json({ enabled: false });
         if (url.pathname === '/api/config') {
             return json({
+                authMode: options.authMode || 'atlassian_oauth',
                 jiraUrl: 'https://jira.example',
                 projectsConfigured: true,
                 settingsAdminOnly: false,

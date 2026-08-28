@@ -88,6 +88,18 @@ test('visible target resolution rejects hidden, zero-sized, and disabled control
     assert.equal(resolveVisibleTarget([selector], rootWith({ [selector]: [hidden, zero, disabled] }), VIEWPORT, { requireEnabled: true }), null);
 });
 
+test('visible target resolution skips a positive-rect duplicate hidden by an ancestor', async () => {
+    const { resolveVisibleTarget } = await loadModule();
+    const selector = '[data-onboarding-target="sprint"]';
+    const hiddenParent = element(VISIBLE_RECT, { display: 'none' });
+    hiddenParent.parentElement = null;
+    const hiddenChild = element(VISIBLE_RECT);
+    hiddenChild.parentElement = hiddenParent;
+    const visible = element({ left: 300, top: 100, right: 420, bottom: 140, width: 120, height: 40 });
+    visible.parentElement = null;
+    assert.equal(resolveVisibleTarget([selector], rootWith({ [selector]: [hiddenChild, visible] }), VIEWPORT), visible);
+});
+
 test('hierarchy and editing resolve the first visible candidate selector in preference order', async () => {
     const { ONBOARDING_STEP_CATALOG, resolveStepTarget } = await loadModule();
     const hierarchy = ONBOARDING_STEP_CATALOG.find((step) => step.id === 'hierarchy');
@@ -220,4 +232,16 @@ test('navigation does not open before run, after completion, or without steps', 
     assert.equal(deriveTourNavigationState({ run: false, onboardingDone: false, currentIndex: 0, totalSteps: 2 }).isOpen, false);
     assert.equal(deriveTourNavigationState({ run: true, onboardingDone: true, currentIndex: 0, totalSteps: 2 }).isOpen, false);
     assert.equal(deriveTourNavigationState({ run: true, onboardingDone: false, currentIndex: 0, totalSteps: 0 }).isOpen, false);
+});
+
+test('a new effective-open session resets synchronously to the first eligible step', async () => {
+    const { reconcileTourSessionState } = await loadModule();
+    const steps = [{ id: 'sprint' }, { id: 'group' }, { id: 'refresh' }];
+    const navigated = { sessionOpen: true, currentStepId: 'refresh' };
+    const closed = reconcileTourSessionState(navigated, { isOpen: false, steps });
+    assert.deepEqual(closed, { sessionOpen: false, currentStepId: 'refresh' });
+    assert.deepEqual(
+        reconcileTourSessionState(closed, { isOpen: true, steps }),
+        { sessionOpen: true, currentStepId: 'sprint' }
+    );
 });

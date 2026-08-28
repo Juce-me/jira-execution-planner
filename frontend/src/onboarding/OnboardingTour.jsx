@@ -7,7 +7,7 @@ import {
     buildVisibleOnboardingSteps,
     computeCoachmarkPlacement,
     resolveOnboardingSnapshot,
-    resolveStepTarget,
+    resolveVisibleTarget,
 } from './onboardingSteps.js';
 import useOnboardingTour from './useOnboardingTour.js';
 
@@ -37,7 +37,10 @@ function sameSnapshot(left, right) {
 }
 
 function readSnapshot(eligibleTargets) {
-    const raw = resolveOnboardingSnapshot(document, viewportSize());
+    const appRoot = document.getElementById('root');
+    const raw = resolveOnboardingSnapshot(document, viewportSize(), {
+        ignoredAncestors: appRoot ? [appRoot] : [],
+    });
     if (!eligibleTargets) return raw;
     const availability = {};
     ONBOARDING_STEP_CATALOG.forEach((step) => {
@@ -81,7 +84,11 @@ export default function OnboardingTour({
         setSnapshot((current) => (sameSnapshot(current, nextSnapshot) ? current : nextSnapshot));
 
         const viewport = viewportSize();
-        const target = resolveStepTarget(tour.currentStep, document, viewport);
+        const appRoot = document.getElementById('root');
+        const target = resolveVisibleTarget(tour.currentStep.selectors, document, viewport, {
+            ignoredAncestors: appRoot ? [appRoot] : [],
+            requireEnabled: tour.currentStep.requireEnabled === true,
+        });
         const rect = target?.getBoundingClientRect?.() || null;
         const panelRect = panelRef.current?.getBoundingClientRect?.();
         setGeometry({
@@ -131,12 +138,12 @@ export default function OnboardingTour({
 
         let priorAriaHidden = null;
         let hadAriaHidden = false;
-        let hadInertAttribute = false;
+        let priorInertAttribute = null;
         let priorInertProperty = false;
         if (appRoot) {
             hadAriaHidden = appRoot.hasAttribute('aria-hidden');
             priorAriaHidden = appRoot.getAttribute('aria-hidden');
-            hadInertAttribute = appRoot.hasAttribute('inert');
+            priorInertAttribute = appRoot.getAttribute('inert');
             priorInertProperty = Boolean(appRoot.inert);
             appRoot.setAttribute('aria-hidden', 'true');
             appRoot.setAttribute('inert', '');
@@ -148,9 +155,9 @@ export default function OnboardingTour({
             if (appRoot) {
                 if (hadAriaHidden) appRoot.setAttribute('aria-hidden', priorAriaHidden);
                 else appRoot.removeAttribute('aria-hidden');
-                if (hadInertAttribute) appRoot.setAttribute('inert', '');
-                else appRoot.removeAttribute('inert');
                 if ('inert' in appRoot) appRoot.inert = priorInertProperty;
+                if (priorInertAttribute === null) appRoot.removeAttribute('inert');
+                else appRoot.setAttribute('inert', priorInertAttribute);
             }
             const priorFocus = priorFocusRef.current;
             if (priorFocus?.isConnected && typeof priorFocus.focus === 'function') priorFocus.focus();

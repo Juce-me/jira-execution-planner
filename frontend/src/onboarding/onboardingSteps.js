@@ -106,14 +106,38 @@ function viewportSize(viewport = {}) {
     };
 }
 
-export function isVisibleViewportTarget(node, viewport, { requireEnabled = false } = {}) {
+export function isVisibleViewportTarget(node, viewport, { requireEnabled = false, ignoredAncestors = [] } = {}) {
     if (!node || typeof node.getBoundingClientRect !== 'function') return false;
     if (requireEnabled && (node.disabled || node.getAttribute?.('aria-disabled') === 'true')) return false;
-    if (node.getAttribute?.('aria-hidden') === 'true' || node.hidden) return false;
+    if (typeof node.checkVisibility === 'function') {
+        try {
+            if (!node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+        } catch (_error) {
+            // Older engines may expose checkVisibility without accepting its options.
+        }
+    }
 
-    const style = node.ownerDocument?.defaultView?.getComputedStyle?.(node);
-    if (style && (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0)) {
-        return false;
+    const ignored = new Set(ignoredAncestors);
+    let current = node;
+    while (current) {
+        if (!ignored.has(current)) {
+            if (current.hidden
+                || current.inert
+                || current.hasAttribute?.('inert')
+                || current.getAttribute?.('aria-hidden') === 'true') {
+                return false;
+            }
+            const style = current.ownerDocument?.defaultView?.getComputedStyle?.(current);
+            if (style && (
+                style.display === 'none'
+                || style.visibility === 'hidden'
+                || style.visibility === 'collapse'
+                || Number(style.opacity) === 0
+            )) {
+                return false;
+            }
+        }
+        current = current.parentElement;
     }
 
     const rect = node.getBoundingClientRect();
@@ -141,11 +165,14 @@ export function resolveStepTarget(step, root, viewport) {
     return resolveVisibleTarget(step.selectors, root, viewport, { requireEnabled: step.requireEnabled === true });
 }
 
-export function resolveOnboardingSnapshot(root, viewport) {
+export function resolveOnboardingSnapshot(root, viewport, options = {}) {
     const targets = {};
     const availability = {};
     ONBOARDING_STEP_CATALOG.forEach((step) => {
-        const resolved = resolveStepTarget(step, root, viewport);
+        const resolved = resolveVisibleTarget(step.selectors, root, viewport, {
+            ...options,
+            requireEnabled: step.requireEnabled === true,
+        });
         targets[step.id] = resolved;
         availability[step.id] = Boolean(resolved);
     });
@@ -214,6 +241,18 @@ export function reconcileCurrentStepId({ previousSteps = [], nextSteps = [], cur
     if (nextSteps.some((step) => step.id === currentStepId)) return currentStepId;
     const previousIndex = Math.max(0, previousSteps.findIndex((step) => step.id === currentStepId));
     return nextSteps[Math.min(previousIndex, nextSteps.length - 1)].id;
+}
+
+export function reconcileTourSessionState(state = {}, { isOpen = false, steps = [] } = {}) {
+    const sessionOpen = Boolean(state.sessionOpen);
+    const currentStepId = state.currentStepId || '';
+    if (isOpen && !sessionOpen) {
+        return { sessionOpen: true, currentStepId: steps[0]?.id || '' };
+    }
+    if (!isOpen && sessionOpen) {
+        return { sessionOpen: false, currentStepId };
+    }
+    return state;
 }
 
 export function buildStepPresentation(step, targetNode) {

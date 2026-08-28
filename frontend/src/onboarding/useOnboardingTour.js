@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
     deriveTourNavigationState,
     reconcileCurrentStepId,
+    reconcileTourSessionState,
 } from './onboardingSteps.js';
 
 export default function useOnboardingTour({
@@ -11,15 +12,26 @@ export default function useOnboardingTour({
     onSkip,
     onFinish,
 } = {}) {
-    const [currentStepId, setCurrentStepId] = React.useState(() => steps[0]?.id || '');
+    const [sessionState, setSessionState] = React.useState(() => ({
+        sessionOpen: false,
+        currentStepId: steps[0]?.id || '',
+    }));
     const previousStepsRef = React.useRef(steps);
-    const previousRunRef = React.useRef(false);
+    const effectiveOpen = Boolean(run && !onboardingDone && steps.length);
+    let effectiveState = reconcileTourSessionState(sessionState, { isOpen: effectiveOpen, steps });
+    if (effectiveState.sessionOpen) {
+        const reconciledStepId = reconcileCurrentStepId({
+            previousSteps: previousStepsRef.current,
+            nextSteps: steps,
+            currentStepId: effectiveState.currentStepId,
+        });
+        if (reconciledStepId !== effectiveState.currentStepId) {
+            effectiveState = { ...effectiveState, currentStepId: reconciledStepId };
+        }
+    }
+    if (effectiveState !== sessionState) setSessionState(effectiveState);
 
-    const resolvedStepId = reconcileCurrentStepId({
-        previousSteps: previousStepsRef.current,
-        nextSteps: steps,
-        currentStepId,
-    });
+    const resolvedStepId = effectiveState.currentStepId;
     const foundIndex = steps.findIndex((step) => step.id === resolvedStepId);
     const currentIndex = foundIndex < 0 ? 0 : foundIndex;
     const navigation = deriveTourNavigationState({
@@ -29,25 +41,18 @@ export default function useOnboardingTour({
         totalSteps: steps.length,
     });
 
-    React.useEffect(() => {
-        const runStarted = run && !previousRunRef.current;
-        previousRunRef.current = run;
-        if (runStarted) {
-            setCurrentStepId(steps[0]?.id || '');
-        } else if (resolvedStepId !== currentStepId) {
-            setCurrentStepId(resolvedStepId);
-        }
+    React.useLayoutEffect(() => {
         previousStepsRef.current = steps;
-    }, [currentStepId, resolvedStepId, run, steps]);
+    }, [steps]);
 
     const goBack = React.useCallback(() => {
         if (!navigation.canGoBack) return;
-        setCurrentStepId(steps[navigation.index - 1].id);
+        setSessionState((state) => ({ ...state, currentStepId: steps[navigation.index - 1].id }));
     }, [navigation.canGoBack, navigation.index, steps]);
 
     const goNext = React.useCallback(() => {
         if (!navigation.canGoNext) return;
-        setCurrentStepId(steps[navigation.index + 1].id);
+        setSessionState((state) => ({ ...state, currentStepId: steps[navigation.index + 1].id }));
     }, [navigation.canGoNext, navigation.index, steps]);
 
     const skip = React.useCallback(() => {

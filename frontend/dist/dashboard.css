@@ -3018,6 +3018,11 @@ select:disabled {
     flex: 1 1 0;
   }
 }
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-tour-spotlight {
+    transition: none;
+  }
+}
 
 /* frontend/src/styles/settings.css */
 

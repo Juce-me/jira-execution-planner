@@ -227,13 +227,12 @@ test('dashboard delegates planning project split bar to ENG component', () => {
     assert.match(componentSource, /No tasks selected/);
 });
 
-test('ENG status transition hook imports the transition API and typed global auth contract', () => {
+test('ENG status transition hook imports the transition API and auth recovery helpers', () => {
     const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
     const hookSource = fs.readFileSync(hookPath, 'utf8');
 
     assert.match(hookSource, /import \{ fetchIssueTransitionOptions, transitionIssues \} from '\.\.\/api\/jiraIssueApi\.js';/);
-    assert.match(hookSource, /import \{ isAuthenticationRequiredError \} from '\.\.\/api\/authRequired\.js';/);
-    assert.doesNotMatch(hookSource, /redirectToAuthRecovery|location\.assign/);
+    assert.match(hookSource, /import \{ authRecoveryLoginUrl, redirectToAuthRecovery \} from '\.\/useEngSprintData\.js';/);
 });
 
 test('ENG status transition hook aborts in-flight option requests when the target signature changes', () => {

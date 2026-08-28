@@ -22,8 +22,6 @@ python -m pip install -e .
 
 ## 2. PostgreSQL
 
-Choose exactly one PostgreSQL setup: native PostgreSQL or the optional localhost Docker runner. Do not run both for the same local app instance.
-
 ### macOS With Homebrew
 
 ```bash
@@ -61,16 +59,6 @@ Use this URL for the named-user form:
 ```env
 DATABASE_URL=postgresql+psycopg://jep:<password>@localhost:5432/jep_local
 ```
-
-### Optional localhost Docker runner (source checkout only)
-
-Source-checkout developers may keep Flask in the local `.venv` while running only PostgreSQL in Docker. Before starting the runner, complete section 3 to configure `.env`. Then run:
-
-```bash
-./runners/local/run.sh
-```
-
-This localhost-only runner replaces the manual migration, startup preflight, and Flask launch steps in sections 4 and 5: it starts PostgreSQL, waits for health, applies Alembic migrations, runs startup preflight, and then runs Flask. `Ctrl+C` removes its container and network while preserving the named database volume. It is separate from the production image, release archive, and hosted deployment path; see [the local runner guide](https://github.com/Juce-me/jira-execution-planner/blob/main/runners/local/README.md) for prerequisites and safety boundaries.
 
 ## 3. `.env` For DB Mode
 

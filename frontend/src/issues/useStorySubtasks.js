@@ -1,14 +1,12 @@
 import * as React from 'react';
 import { fetchStorySubtasks } from '../api/engApi.js';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
+import { authRecoveryLoginUrl, redirectToAuthRecovery } from '../eng/useEngSprintData.js';
 import { applyLocalSubtaskFieldUpdate } from '../eng/engIssueLocalUpdates.js';
 
 const EMPTY_SUMMARY = { total: 0, done: 0, inProgress: 0, waiting: 0, percentComplete: 0, statusCounts: {} };
 
 export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryRequired } = {}) {
     const [storySubtasksByKey, setStorySubtasksByKey] = React.useState({});
-    const storySubtasksByKeyRef = React.useRef(storySubtasksByKey);
-    storySubtasksByKeyRef.current = storySubtasksByKey;
     const storySubtasksControllerRef = React.useRef({});
 
     const clearStorySubtasks = React.useCallback(() => {
@@ -30,9 +28,7 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
         const controller = new AbortController();
         storySubtasksControllerRef.current[storyKey] = controller;
 
-        const previousEntry = storySubtasksByKeyRef.current[storyKey];
-        setStorySubtasksByKey(prev => {
-            return ({
+        setStorySubtasksByKey(prev => ({
             ...prev,
             [storyKey]: {
                 ...(prev[storyKey] || {}),
@@ -43,8 +39,7 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
                 items: prev[storyKey]?.items || [],
                 loaded: forceRefresh ? false : !!prev[storyKey]?.loaded,
             }
-            });
-        });
+        }));
 
         try {
             const response = await fetchStorySubtasks(backendUrl, {
@@ -75,14 +70,9 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
             }));
         } catch (err) {
             if (err.name === 'AbortError') return;
-            if (isAuthenticationRequiredError(err)) {
-                setStorySubtasksByKey(prev => {
-                    if (previousEntry !== undefined) return { ...prev, [storyKey]: previousEntry };
-                    const next = { ...prev };
-                    delete next[storyKey];
-                    return next;
-                });
-                return;
+            if (authRecoveryLoginUrl(err)) {
+                onAuthRecoveryRequired?.();
+                redirectToAuthRecovery(err);
             }
             setStorySubtasksByKey(prev => ({
                 ...prev,

@@ -73,7 +73,7 @@ For the current DB/OAuth path, use [INSTALL.md](INSTALL.md). The short version i
 6. Start the backend with `.venv/bin/python jira_server.py`.
 7. Sign in, then connect the current user's Home/Townsquare token in `Settings -> Connections` if you need EPM.
 
-Starting `.venv/bin/python jira_server.py` directly still does not start PostgreSQL, create the database, or run migrations. Source-checkout developers who want a localhost-only PostgreSQL lifecycle may instead run `./runners/local/run.sh`; it keeps Flask in `.venv`, starts only PostgreSQL in Docker, migrates before startup, and removes the container on `Ctrl+C` while retaining its named volume. Production and release startup paths are unchanged. See [INSTALL.md](INSTALL.md) and [the local runner guide](https://github.com/Juce-me/jira-execution-planner/blob/main/runners/local/README.md).
+Starting `.venv/bin/python jira_server.py` does not start PostgreSQL, create the database, or run migrations. More detailed single-user/legacy setup guidance remains below if you need it.
 
 ## 📦 Prebuilt download (no Node required)
 
@@ -211,20 +211,17 @@ On first launch (or when local config files do not exist), open **Dashboard Sett
 
 Saved local JSON files:
 - `dashboard-config.json` (projects, Jira source, field mapping, capacity, priority weights)
-- `team-groups.json` (team groups)
-- `team-catalog.json` (derived team catalog metadata)
+- `team-groups.json` (team groups and team catalog metadata)
 
 The app now relies on Dashboard Settings for supported runtime configuration. Keep `.env` focused on credentials and local server settings.
 
 In OAuth mode, Dashboard Settings → **Admin → Access** lists users already known from Atlassian sign-in and stores app-admin membership against their stable Atlassian account identity. `SETTINGS_ADMIN_ONLY=true` restricts Admin settings and membership changes to app admins; `false` lets every authenticated OAuth user edit and save them. Basic mode treats the local user as an administrator.
 
-In DB/OAuth mode, administrator settings are shared once per workspace and use administrator writes. Department groups and their board layouts are also workspace-shared, but every authenticated user may configure them. Group visibility, favorite/active group, and EPM settings are private to the current user. EPM scope, label prefix, issue types, and project-label mappings live in that user's default private saved view; EPM tab and selected sprint remain private UI state. See [backend/security/CONFIGURATION_OWNERSHIP.md](backend/security/CONFIGURATION_OWNERSHIP.md) for the complete ownership and access contract.
-
 ## EPM View
 
 Use the `ENG | EPM` switch in the dashboard header to browse project rollups rendered as Initiative -> Epic -> Story/Task hierarchies.
 
-In DB/OAuth mode, EPM is hidden until the signed-in user connects a Home/Townsquare token in `Settings -> Connections`. Jira REST reads use the user's OAuth session; Home/Townsquare metadata reads use only the connected `atlassian_user_api_token`, represented in DB `auth_connections` and stored encrypted in `auth_tokens`.
+In DB/OAuth mode, EPM is hidden until the signed-in user connects a Home/Townsquare token in `Settings -> Connections`. Jira REST reads use the user's OAuth session; Home/Townsquare metadata reads use only the connected `atlassian_user_api_token` stored encrypted in DB `auth_tokens`.
 
 For setup details, see [INSTALL.md](INSTALL.md). For EPM behavior and configuration rules, see [docs/features/epm-view.md](docs/features/epm-view.md).
 
@@ -327,8 +324,6 @@ configuration.
 `PORT=5050` is the container/Gunicorn listener port. `SERVER_PORT` remains a local Flask compatibility setting for source-checkout runs. The Docker image defaults to `APP_BIND_HOST=0.0.0.0` and `ALLOW_NETWORK_BIND=true` so GCP service networking can reach Gunicorn; startup preflight still fails closed unless hosted OAuth sets `SESSION_COOKIE_SECURE=true`, a real `FLASK_SECRET_KEY`, and an explicit `APP_ALLOWED_ORIGINS` value matching the HTTPS origin.
 
 For migrations, use `RUN_DB_MIGRATIONS=true` only for a single-instance internal deployment where the app container is the agreed migration owner. For multi-replica deployments, run Alembic as a separate release job or init step before rolling out app replicas, and keep `RUN_DB_MIGRATIONS=false` on the web containers.
-
-Migration `20260827_0008` must run with application writers quiesced and only after a database backup. Its workspace-EPM archive is migration-only rollback state: the migration is reversible, and operators or application code must never use the archive to infer or create a private EPM owner.
 
 OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads require the user's connected Home token stored encrypted in DB.
 
@@ -444,7 +439,7 @@ See the full guide:
 - Check that you filled in the required Basic auth settings for legacy API-token mode, or switch to DB/OAuth mode with `JIRA_AUTH_MODE=atlassian_oauth`
 
 **"401 Unauthorized" error:**
-- In DB/OAuth mode, any application API `401` blocks the mounted dashboard behind the global sign-in recovery screen. Use its same-tab **Sign in again** action; the new authenticated document bootstraps from scratch and does not replay the failed request.
+- In DB/OAuth mode, sign in again through `/login`.
 - In legacy Basic mode, check that your API token settings are correct in `.env`.
 
 **EPM tab is missing in DB/OAuth mode:**

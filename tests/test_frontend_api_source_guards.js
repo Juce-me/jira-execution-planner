@@ -30,32 +30,11 @@ function loadHttpHelpers() {
     const helperPath = path.join(frontendSrcPath, 'api', 'http.js');
     assert.ok(fs.existsSync(helperPath), 'Expected frontend/src/api/http.js to exist');
     const source = readSource(helperPath)
-        .replace(/import\s+\{[^}]+\}\s+from\s+'[^']+';\n?/g, '')
+        .replace(/import\s+\{[^}]+\}\s+from\s+'\.\.\/analytics\/analytics\.js';\n?/, '')
         .replaceAll('export async function ', 'async function ')
         .replaceAll('export function ', 'function ');
-    class TestAuthenticationRequiredError extends Error {
-        constructor(state = {}) {
-            super('Authentication is required to continue.');
-            this.name = 'AuthenticationRequiredError';
-            this.status = 401;
-            this.code = 'auth_required';
-            this.loginUrl = state.loginUrl || '/login?reason=session_expired';
-        }
-    }
-    return new Function(
-        'trackApiResult',
-        'AuthenticationRequiredError',
-        'publishAuthenticationRequired',
-        'readPendingAuthenticationRequired',
-        `${source}; return { apiFetch, json, jsonOrStructuredError, getJson, postJson, trackedFetch };`,
-    )(() => {}, TestAuthenticationRequiredError, () => ({ loginUrl: '/login?reason=session_expired' }), () => null);
+    return new Function('trackApiResult', `${source}; return { json, jsonOrStructuredError, getJson, postJson, trackedFetch };`)(() => {});
 }
-
-test('the common HTTP boundary does not import the analytics singleton', () => {
-    const source = readSource(path.join(frontendSrcPath, 'api', 'http.js'));
-    assert.ok(!source.includes("../analytics/analytics.js"));
-    assert.ok(source.includes('globalThis?.JepAnalytics?.trackApiResult?.('));
-});
 
 function loadApiModule(fileName, exportNames, dependencies = {}) {
     const modulePath = path.join(frontendSrcPath, 'api', fileName);
@@ -67,7 +46,6 @@ function loadApiModule(fileName, exportNames, dependencies = {}) {
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
     const mergedDependencies = {
-        apiFetch: (url, options) => fetch(url, options),
         trackedFetch: (_apiSurface, url, options) => fetch(url, options),
         ...dependencies,
     };
@@ -184,14 +162,6 @@ test('frontend API endpoint literals live in api modules or approved transitiona
     assert.deepEqual(violations, []);
 });
 
-test('native application API fetch is owned only by the shared HTTP boundary', () => {
-    const violations = listSourceFiles(frontendSrcPath)
-        .filter((filePath) => readSource(filePath).includes('fetch('))
-        .filter((filePath) => relativeFile(filePath) !== 'frontend/src/api/http.js')
-        .map(relativeFile);
-    assert.deepEqual(violations, []);
-});
-
 test('ENG startup uses cached task data unless the user explicitly refreshes', () => {
     const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
 
@@ -237,7 +207,7 @@ test('shared jsonOrStructuredError helper attaches status/code/loginUrl/recovery
             assert.equal(err.status, 401);
             assert.equal(err.code, 'auth_required');
             assert.equal(err.loginUrl, '/login?reason=session_expired');
-            assert.equal(err.message, 'Authentication is required to continue.');
+            assert.equal(err.message, 'Sign in required.');
             return true;
         }
     );
@@ -341,7 +311,7 @@ test('EPM configuration project refresh sends token-bound CSRF header', async ()
     });
 });
 
-test('EPM config save wrapper sends only normalized private settings with token-bound CSRF', async () => {
+test('EPM config save wrapper sends token-bound CSRF header', async () => {
     const { getJson, postJson } = loadHttpHelpers();
     const epmApi = loadApiModule('epmApi.js', [
         'saveEpmConfig',
@@ -349,57 +319,16 @@ test('EPM config save wrapper sends only normalized private settings with token-
 
     await withMockFetch(async (calls) => {
         const payload = await epmApi.saveEpmConfig('http://backend', {
-            version: 2,
-            labelPrefix: 'rnd_project_*',
-            scope: { rootGoalKey: 'CRITE-1', subGoalKeys: ['CRITE-2'] },
-            issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story'] },
-            projects: {
-                'home-1': {
-                    id: 'home-1',
-                    homeProjectId: 'home-1',
-                    name: 'Home Project',
-                    label: 'rnd_project_home',
-                    jiraLabel: 'legacy-home-label',
-                },
-                custom_1: {
-                    id: 'custom_1',
-                    homeProjectId: null,
-                    name: 'Custom Project',
-                    label: 'rnd_project_custom',
-                    jiraLabel: 'legacy-custom-label',
-                },
-            },
-            baseRevision: 41,
-            userId: 'user-1',
-            workspaceId: 'workspace-1',
-            tab: 'archived',
-            selectedSprint: '42',
-        }, 99);
+            scope: { rootGoalKey: 'CRITE-1' },
+        });
 
         assert.deepEqual(payload, { ok: true });
         assert.equal(calls[0].url, 'http://backend/api/auth/csrf');
         assert.equal(calls[1].url, 'http://backend/api/epm/config');
         assert.equal(calls[1].options.method, 'POST');
-        assert.deepEqual(JSON.parse(calls[1].options.body), {
-            version: 2,
-            labelPrefix: 'rnd_project_*',
-            scope: { rootGoalKey: 'CRITE-1', subGoalKeys: ['CRITE-2'] },
-            issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story'] },
-            projects: {
-                'home-1': {
-                    id: 'home-1',
-                    homeProjectId: 'home-1',
-                    name: 'Home Project',
-                    label: 'rnd_project_home',
-                },
-                custom_1: {
-                    id: 'custom_1',
-                    homeProjectId: null,
-                    name: 'Custom Project',
-                    label: 'rnd_project_custom',
-                },
-            },
-        });
+        assert.equal(calls[1].options.body, JSON.stringify({
+            scope: { rootGoalKey: 'CRITE-1' },
+        }));
         assert.equal(new Headers(calls[1].options.headers).get('X-CSRF-Token'), 'csrf-token');
         assertJsonHeader(calls[1].options);
     }, (url) => {
@@ -734,7 +663,7 @@ test('excluded capacity stats source wrapper can request a backend refresh', asy
     });
 });
 
-test('app config wrapper gives private view EPM precedence and never promotes shared EPM', () => {
+test('app config wrapper keeps shared EPM authoritative over private view state', () => {
     const { getJson } = loadHttpHelpers();
     const configApi = loadApiModule('configApi.js', [
         'normalizeAppConfig',
@@ -753,17 +682,14 @@ test('app config wrapper gives private view EPM precedence and never promotes sh
         },
     });
 
-    assert.deepEqual(normalized.epm, epm);
+    assert.deepEqual(normalized.epm, sharedEpm);
     assert.equal(normalized.viewConfig.source, 'user_saved_view');
 
     const withLegacyEpm = configApi.normalizeAppConfig({
         epm: { version: 2, projects: {} },
         viewConfig: { view: { epm } },
     });
-    assert.deepEqual(withLegacyEpm.epm, epm);
-
-    const sharedOnly = configApi.normalizeAppConfig({ sharedConfig: { epm: sharedEpm } });
-    assert.equal(sharedOnly.epm, undefined);
+    assert.deepEqual(withLegacyEpm.epm, { version: 2, projects: {} });
 });
 
 test('Jira catalog API wrappers preserve query params, cache flags, and abort signals', async () => {

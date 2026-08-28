@@ -5,19 +5,18 @@ from __future__ import annotations
 from copy import deepcopy
 from urllib.parse import urlsplit
 
-from backend.config.view_validation import (
-    PERSONAL_EPM_KEYS,
-    USER_EPM_SETTINGS_KEYS,
-    sanitize_user_view_payload,
-)
+from backend.epm.config import normalize_epm_config
+
 
 ADMIN_CONFIG_SECTIONS = frozenset({
     'version', 'projects', 'board', 'capacity', 'sprintField',
     'storyPointsField', 'parentNameField', 'teamField', 'projectTrackField',
-    'deliveryOwnerField', 'statsPriorityWeights', 'issueTypes',
+    'deliveryOwnerField', 'statsPriorityWeights', 'issueTypes', 'epm',
 })
-PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS = ADMIN_CONFIG_SECTIONS - {'version'}
-LEGACY_EXCLUDED_TOP_LEVEL_SECTIONS = frozenset({'filters', 'eng', 'epm', 'teamGroups', 'teamCatalog'})
+PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS = ADMIN_CONFIG_SECTIONS - {'version', 'epm'}
+SHARED_EPM_KEYS = frozenset({'version', 'labelPrefix', 'scope', 'issueTypes', 'projects'})
+PERSONAL_EPM_KEYS = frozenset({'tab', 'selectedSprint'})
+LEGACY_EXCLUDED_TOP_LEVEL_SECTIONS = frozenset({'filters', 'eng', 'teamGroups', 'teamCatalog'})
 
 
 def _raise(path, message='unsupported configuration field'):
@@ -53,6 +52,43 @@ def _field_config(value, path):
         'fieldId': _require_optional_text(value.get('fieldId'), f'{path}.fieldId'),
         'fieldName': _require_optional_text(value.get('fieldName'), f'{path}.fieldName'),
     }
+
+
+def _normalize_epm(value):
+    value = _require_dict(value, 'epm')
+    _reject_unknown(value, SHARED_EPM_KEYS, 'epm')
+    if 'version' in value and value.get('version') not in (2, None):
+        _raise('epm.version', 'unsupported EPM version')
+    if 'labelPrefix' in value:
+        _require_optional_text(value.get('labelPrefix'), 'epm.labelPrefix')
+    scope = value.get('scope', {})
+    _require_dict(scope, 'epm.scope')
+    _reject_unknown(scope, {'rootGoalKey', 'subGoalKey', 'subGoalKeys'}, 'epm.scope')
+    _require_optional_text(scope.get('rootGoalKey'), 'epm.scope.rootGoalKey')
+    _require_optional_text(scope.get('subGoalKey'), 'epm.scope.subGoalKey')
+    if 'subGoalKeys' in scope:
+        sub_goal_keys = scope.get('subGoalKeys')
+        if not isinstance(sub_goal_keys, list) or not all(isinstance(item, str) for item in sub_goal_keys):
+            _raise('epm.scope.subGoalKeys', 'configuration field must be a string array')
+    issue_types = value.get('issueTypes', {})
+    _require_dict(issue_types, 'epm.issueTypes')
+    _reject_unknown(issue_types, {'initiative', 'epic', 'leaf'}, 'epm.issueTypes')
+    for key, values in issue_types.items():
+        if not isinstance(values, list) or not all(isinstance(item, str) for item in values):
+            _raise(f'epm.issueTypes.{key}', 'configuration field must be a string array')
+    projects = value.get('projects', {})
+    _require_dict(projects, 'epm.projects')
+    for project_id, row in projects.items():
+        _require_dict(row, f'epm.projects.{project_id}')
+        _reject_unknown(
+            row,
+            {'id', 'name', 'label', 'homeProjectId', 'customName', 'jiraLabel'},
+            f'epm.projects.{project_id}',
+        )
+        for key in ('id', 'name', 'label', 'homeProjectId', 'customName', 'jiraLabel'):
+            if key in row:
+                _require_optional_text(row.get(key), f'epm.projects.{project_id}.{key}')
+    return normalize_epm_config(value)
 
 
 def normalize_workspace_admin_payload(payload, *, allow_legacy_excluded_fields=False):
@@ -135,6 +171,8 @@ def normalize_workspace_admin_payload(payload, *, allow_legacy_excluded_fields=F
             if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
                 _raise(section, 'configuration field must be a string array')
             result[section] = [_text(item) for item in value if _text(item)]
+        elif section == 'epm':
+            result[section] = _normalize_epm(value)
     return result
 
 
@@ -149,29 +187,35 @@ def strip_shared_sections_from_private_view(payload):
     payload = deepcopy(payload) if isinstance(payload, dict) else {}
     for key in PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS:
         payload.pop(key, None)
+    epm = payload.get('epm')
+    if isinstance(epm, dict):
+        personal = {key: deepcopy(epm[key]) for key in PERSONAL_EPM_KEYS if key in epm}
+        if personal:
+            payload['epm'] = personal
+        else:
+            payload.pop('epm', None)
+    else:
+        payload.pop('epm', None)
     return payload
 
 
-def sanitize_private_view_payload(payload):
-    """Strip shared ownership fields and recursively remove forbidden response data."""
-    return sanitize_user_view_payload(strip_shared_sections_from_private_view(payload))
-
-
 def validate_private_view_ownership(payload, *, validate_sensitive=True):
-    from backend.config.view_validation import (
-        ViewPayloadValidationError,
-        _collect_forbidden_paths,
-        normalize_user_view_payload,
-    )
+    from backend.config.view_validation import ViewPayloadValidationError, _collect_forbidden_paths
     if not isinstance(payload, dict):
         raise ViewPayloadValidationError(['<root>'])
     paths = []
     if validate_sensitive:
         paths.extend(_collect_forbidden_paths(payload))
     paths.extend(key for key in payload if key in PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS)
+    epm = payload.get('epm')
+    if epm is not None:
+        if not isinstance(epm, dict):
+            paths.append('epm')
+        else:
+            paths.extend(f'epm.{key}' for key in epm if key not in PERSONAL_EPM_KEYS)
     if paths:
         raise ViewPayloadValidationError(paths)
-    return normalize_user_view_payload(payload)
+    return payload
 
 
 def _normalized_site(value):

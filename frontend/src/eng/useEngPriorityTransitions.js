@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { fetchIssuePriorityOptions, updateIssuePriorities } from '../api/jiraIssueApi.js';
+import { authRecoveryLoginUrl, redirectToAuthRecovery } from './useEngSprintData.js';
 import { enqueueEngIssueMutation } from './engIssueMutationQueue.js';
 import {
     buildCatchUpPriorityTargets,
@@ -139,7 +139,11 @@ export function useEngPriorityTransitions({
             })
             .catch((err) => {
                 if (requestTokenRef.current !== token) return; // Superseded; do not surface a stale error.
-                if (isAuthenticationRequiredError(err)) return;
+                if (authRecoveryLoginUrl(err)) {
+                    onAuthRecoveryRequired?.();
+                    clearPriorityOptionsCache();
+                    redirectToAuthRecovery(err);
+                }
                 if (err?.code === 'priority_catalog_stale') {
                     clearPriorityOptionsCache();
                 }
@@ -225,7 +229,11 @@ export function useEngPriorityTransitions({
             }
             return response;
         } catch (err) {
-            if (isAuthenticationRequiredError(err)) return null;
+            if (authRecoveryLoginUrl(err)) {
+                onAuthRecoveryRequired?.();
+                clearPriorityOptionsCache();
+                redirectToAuthRecovery(err);
+            }
             if (err?.code === 'priority_catalog_stale') {
                 clearPriorityOptionsCache();
             }

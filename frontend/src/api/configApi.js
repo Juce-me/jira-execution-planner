@@ -1,4 +1,4 @@
-import { apiFetch, getJson, trackedFetch } from './http.js';
+import { getJson, trackedFetch } from './http.js';
 
 const postJsonWithCsrf = (backendUrl, path, payload, analytics) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' }).then(({ csrfToken }) =>
@@ -34,7 +34,7 @@ export const normalizeAppConfig = (config) => {
     if (viewConfig && !normalized.viewConfig) {
         normalized.viewConfig = viewConfig;
     }
-    if (viewConfig?.view?.epm) normalized.epm = viewConfig.view.epm;
+    if (!normalized.epm && normalized.sharedConfig?.epm) normalized.epm = normalized.sharedConfig.epm;
     return normalized;
 };
 
@@ -47,10 +47,10 @@ export const fetchVersionInfo = (backendUrl) =>
     getJson(`${backendUrl}/api/version`, 'Version', { cache: 'no-cache' });
 
 export const testJiraConnection = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/test`);
+    fetch(`${backendUrl}/api/test`);
 
 export const fetchGroupsConfig = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/groups-config`, {
+    fetch(`${backendUrl}/api/groups-config`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
@@ -66,7 +66,7 @@ export const saveGroupPreferences = (backendUrl, payload) =>
     });
 
 export const fetchSelectedProjects = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/projects/selected`, {
+    fetch(`${backendUrl}/api/projects/selected`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
@@ -76,7 +76,7 @@ export const saveSelectedProjects = (backendUrl, selected, baseRevision) =>
     postWorkspaceConfig(backendUrl, '/api/projects/selected', { selected, baseRevision });
 
 export const fetchBoardConfig = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/board-config`, {
+    fetch(`${backendUrl}/api/board-config`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
@@ -86,7 +86,7 @@ export const saveBoardConfig = (backendUrl, payload, baseRevision) =>
     postWorkspaceConfig(backendUrl, '/api/board-config', { ...payload, baseRevision });
 
 export const fetchPriorityWeightsConfig = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/stats/priority-weights-config`, {
+    fetch(`${backendUrl}/api/stats/priority-weights-config`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
@@ -96,7 +96,7 @@ export const savePriorityWeightsConfig = (backendUrl, weights, baseRevision) =>
     postWorkspaceConfig(backendUrl, '/api/stats/priority-weights-config', { weights, baseRevision });
 
 export const fetchCapacityConfig = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/capacity/config`, {
+    fetch(`${backendUrl}/api/capacity/config`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
@@ -106,7 +106,7 @@ export const saveCapacityConfig = (backendUrl, payload, baseRevision) =>
     postWorkspaceConfig(backendUrl, '/api/capacity/config', { ...payload, baseRevision });
 
 export const fetchFieldConfig = (backendUrl, endpoint) =>
-    apiFetch(`${backendUrl}/api/${endpoint}/config`, {
+    fetch(`${backendUrl}/api/${endpoint}/config`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
@@ -116,7 +116,7 @@ export const saveFieldConfig = (backendUrl, endpoint, payload, baseRevision) =>
     postWorkspaceConfig(backendUrl, `/api/${endpoint}/config`, { ...payload, baseRevision });
 
 export const fetchIssueTypesConfig = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/issue-types/config`, {
+    fetch(`${backendUrl}/api/issue-types/config`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
@@ -126,7 +126,7 @@ export const saveIssueTypesConfig = (backendUrl, issueTypes, baseRevision) =>
     postWorkspaceConfig(backendUrl, '/api/issue-types/config', { issueTypes, baseRevision });
 
 export const fetchAvailableIssueTypes = (backendUrl) =>
-    apiFetch(`${backendUrl}/api/issue-types`, {
+    fetch(`${backendUrl}/api/issue-types`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'

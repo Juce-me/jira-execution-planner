@@ -1,7 +1,6 @@
 import * as React from 'react';
 
 import { trackEvent } from '../analytics/analytics.js';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import {
     connectHomeTokenConnection,
     deleteHomeTokenConnection,
@@ -53,22 +52,11 @@ export default function UserConnectionsSettings({ backendUrl, onConnectionChange
         setLoading(true);
         setMessage('');
         setError('');
-        Promise.allSettled([
-            fetchHomeTokenConnection(backendUrl),
-            fetchAuthStatus(backendUrl),
-        ]).then(([connectionResult, authResult]) => {
+        Promise.all([
+            fetchHomeTokenConnection(backendUrl).catch(() => ({ connected: false })),
+            fetchAuthStatus(backendUrl).catch(() => ({})),
+        ]).then(([connectionPayload, authStatus]) => {
             if (cancelled) return;
-            const authFailure = [connectionResult, authResult].find(result => (
-                result.status === 'rejected' && isAuthenticationRequiredError(result.reason)
-            ));
-            if (authFailure) return;
-            const connectionPayload = connectionResult.status === 'fulfilled' ? connectionResult.value : null;
-            const authStatus = authResult.status === 'fulfilled' ? authResult.value : null;
-            if (connectionResult.status === 'rejected') {
-                setError(errorMessage(connectionResult.reason));
-                trackConnectionAction('status', 'failure');
-                return;
-            }
             const nextConnection = connectionPayload || { connected: false };
             const authEmail = String(authStatus?.email || authStatus?.profile?.email || '').trim();
             const connectedEmail = String(nextConnection?.credentialSubject || '').trim();
@@ -77,7 +65,11 @@ export default function UserConnectionsSettings({ backendUrl, onConnectionChange
             setProfileEmail(authEmail);
             setEmail(connectedEmail || authEmail);
             trackConnectionAction('status', nextConnection?.connected ? 'success' : 'failure');
-            if (authResult.status === 'rejected') setError(errorMessage(authResult.reason));
+        }).catch((loadError) => {
+            if (cancelled) return;
+            setConnection({ connected: false });
+            setError(errorMessage(loadError));
+            trackConnectionAction('status', 'failure');
         }).finally(() => {
             if (!cancelled) setLoading(false);
         });
@@ -103,7 +95,6 @@ export default function UserConnectionsSettings({ backendUrl, onConnectionChange
             setMessage('Connection saved.');
             trackConnectionAction(connection?.connected ? 'reconnect_result' : 'connect_result', 'success');
         } catch (connectError) {
-            if (isAuthenticationRequiredError(connectError)) return;
             setApiToken('');
             setError(errorMessage(connectError));
             trackConnectionAction(connection?.connected ? 'reconnect_result' : 'connect_result', 'failure');
@@ -127,7 +118,6 @@ export default function UserConnectionsSettings({ backendUrl, onConnectionChange
             setMessage('Connection revoked.');
             trackConnectionAction('revoke_result', 'success');
         } catch (revokeError) {
-            if (isAuthenticationRequiredError(revokeError)) return;
             setApiToken('');
             setError(errorMessage(revokeError));
             trackConnectionAction('revoke_result', 'failure');

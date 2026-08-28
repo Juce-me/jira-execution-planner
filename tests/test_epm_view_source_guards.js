@@ -663,8 +663,8 @@ test('EPM board bootstraps saved config from initial user config before loading 
         'Expected shared helper for applying saved EPM config'
     );
     assert.ok(
-        loadConfigSource.includes('applySavedEpmConfig(config.viewConfig?.view?.epm || config.epm);'),
-        'Expected main user config load to prefer the authenticated user-owned saved EPM config'
+        loadConfigSource.includes('applySavedEpmConfig(config.epm);'),
+        'Expected main user config load to hydrate saved EPM config'
     );
     assert.ok(
         refreshEpmRollupSource.includes('if (!epmConfigLoaded) {'),
@@ -1058,15 +1058,4 @@ test('EPM stays view-only: no priority-transition imports, no priority-transitio
     assert.ok(priorityMenuSource, 'Expected shared PriorityTransitionMenu component');
     assert.ok(!priorityMenuSource.includes('jiraIssueApi'), 'PriorityTransitionMenu must not import the priority API');
     assert.ok(!priorityMenuSource.includes('useEngPriorityTransitions'), 'PriorityTransitionMenu must not import the priority transition hook');
-});
-
-test('EPM auth failures preserve visible projects and rollups and stop chained refreshes', () => {
-    assert.ok(epmViewDataSource.includes('if (isAuthenticationRequiredError(err)) throw err;'));
-    assert.ok(epmViewDataSource.match(/if \(isAuthenticationRequiredError\(err\)\) return;/g).length >= 2);
-    const aggregateRequest = epmViewDataSource.indexOf('const payload = await fetchEpmAllProjectsRollup');
-    const aggregateClear = epmViewDataSource.indexOf('setEpmRollupTree(null);', aggregateRequest);
-    assert.ok(aggregateClear > aggregateRequest, 'aggregate state clears only after a successful response');
-    const projectRequest = epmViewDataSource.indexOf('const payload = await fetchEpmProjectRollup(backendUrl, currentProjectId');
-    const projectClear = epmViewDataSource.indexOf('setEpmRollupBoards(null);', projectRequest);
-    assert.ok(projectClear > projectRequest, 'selected-project state clears only after a successful response');
 });

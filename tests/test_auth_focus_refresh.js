@@ -26,7 +26,6 @@ const LONG_ABSENCE_MS = 12 * 60 * 1000;
 const AUTH_REFRESH_SHARED_STORAGE_KEY = 'jep.auth.lastRefreshAt';
 const AUTH_LONG_ABSENCE_EVENT = 'jep:auth-long-absence-return';
 const AUTH_SESSION_REFRESH_EVENT = 'jep:auth-session-refreshed';
-const AUTH_REQUIRED_EVENT = 'jep:authentication-required';
 
 // A realistic epoch-like base timestamp. Using 0 would collide with the
 // module's zero-initialized lastAuthRefreshAt sentinel and mask throttle bugs.
@@ -172,10 +171,6 @@ function longAbsenceEvents(harness) {
 
 function authSessionRefreshEvents(harness) {
     return harness.dispatchedEvents.filter((event) => event.type === AUTH_SESSION_REFRESH_EVENT);
-}
-
-function authRequiredEvents(harness) {
-    return harness.dispatchedEvents.filter((event) => event.type === AUTH_REQUIRED_EVENT);
 }
 
 test('initial visible load performs exactly one auth POST and dispatches no long-absence event', async () => {
@@ -341,7 +336,7 @@ test('a long-absence return skips the POST when another tab refreshed within the
     assert.equal(longAbsenceEvents(harness).length, 1);
 });
 
-test('a long-absence POST that returns 401 clears the shared timestamp, publishes the latch, and does not redirect', async () => {
+test('a long-absence POST that returns 401 clears the shared timestamp, redirects, and dispatches no event', async () => {
     const storage = createFakeStorage({
         [AUTH_REFRESH_SHARED_STORAGE_KEY]: String(BASE_NOW - 10 * 60 * 1000),
     });
@@ -361,9 +356,7 @@ test('a long-absence POST that returns 401 clears the shared timestamp, publishe
     harness.fireDocumentEvent('visibilitychange');
     await flushMicrotasks();
 
-    assert.deepEqual(harness.location.assignCalls, []);
-    assert.equal(authRequiredEvents(harness).length, 1);
-    assert.equal(authRequiredEvents(harness)[0].detail.loginUrl, '/login?reason=session_expired');
+    assert.deepEqual(harness.location.assignCalls, ['/login?reason=custom']);
     assert.equal(longAbsenceEvents(harness).length, 0);
     assert.equal(
         harness.storage.getItem(AUTH_REFRESH_SHARED_STORAGE_KEY),
@@ -372,7 +365,7 @@ test('a long-absence POST that returns 401 clears the shared timestamp, publishe
     );
 });
 
-test('a 401 without a loginUrl publishes the default expired-session recovery latch', async () => {
+test('a 401 without a loginUrl falls back to the default expired-session login path', async () => {
     const harness = createHarness({
         initialVisibility: 'visible',
         fetchImpl: async () => ({
@@ -383,8 +376,7 @@ test('a 401 without a loginUrl publishes the default expired-session recovery la
     });
     await flushMicrotasks();
 
-    assert.deepEqual(harness.location.assignCalls, []);
-    assert.equal(authRequiredEvents(harness)[0].detail.loginUrl, '/login?reason=session_expired');
+    assert.deepEqual(harness.location.assignCalls, ['/login?reason=session_expired']);
 });
 
 test('a long-absence network error dispatches no event, does not crash, and a later long-absence attempt recovers with its own event', async () => {

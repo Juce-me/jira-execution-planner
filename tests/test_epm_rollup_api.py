@@ -237,11 +237,7 @@ class TestEpmRollupApi(unittest.TestCase):
             response = self.client.get('/api/epm/projects/rollup/all?tab=active&sprint=42&subGoalKeys=child-a,CHILD-B')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        call = mock_projects.call_args
-        self.assertEqual(call.args, (saved_config,))
-        self.assertEqual(call.kwargs['tab'], 'active')
-        self.assertEqual(call.kwargs['sub_goal_keys'], ['CHILD-A', 'CHILD-B'])
-        self.assertEqual(call.kwargs['context'].user_id, 'local-basic-user')
+        mock_projects.assert_called_once_with(saved_config, tab='active', sub_goal_keys=['CHILD-A', 'CHILD-B'])
         self.assertEqual(saved_config['scope']['subGoalKeys'], ['CHILD-A', 'CHILD-B', 'CHILD-C'])
 
     def test_all_projects_rollup_returns_home_token_prerequisite(self):
@@ -829,17 +825,7 @@ class TestEpmRollupApi(unittest.TestCase):
              patch.object(jira_server, 'save_dashboard_config'):
             first = self.client.get('/api/epm/projects/project-1/rollup?tab=backlog')
             second = self.client.get('/api/epm/projects/project-1/rollup?tab=backlog')
-            save = self.client.post('/api/epm/config', json={
-                'version': 2,
-                'labelPrefix': 'rnd_project_',
-                'scope': {'rootGoalKey': '', 'subGoalKeys': []},
-                'issueTypes': {
-                    'initiative': ['Initiative'],
-                    'epic': ['Epic'],
-                    'leaf': ['Story', 'Task', 'Sub-task', 'Subtask', 'Bug'],
-                },
-                'projects': {},
-            })
+            save = self.client.post('/api/epm/config', json={'version': 2, 'projects': {}})
             third = self.client.get('/api/epm/projects/project-1/rollup?tab=backlog')
 
         self.assertEqual(first.status_code, 200)
@@ -848,8 +834,6 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertEqual(third.status_code, 200)
         self.assertEqual(mock_fetch.call_count, 2)
         self.assertEqual(second.headers.get('Server-Timing'), 'cache;dur=1')
-        rollup_cache_key = next(iter(jira_server.EPM_ROLLUP_CACHE))
-        self.assertRegex(rollup_cache_key[-1], r'^[0-9a-f]{64}$')
         self.assertEqual(first.get_json()['orphanStories'][0]['key'], 'SYN-S1')
         self.assertEqual(third.get_json()['orphanStories'][0]['key'], 'SYN-S2')
 
@@ -907,8 +891,6 @@ class TestEpmRollupApi(unittest.TestCase):
             issues_response = self.client.get('/api/epm/projects/project-1/issues?tab=backlog')
 
         self.assertEqual(issues_response.status_code, 200)
-        issues_cache_key = next(iter(jira_server.EPM_ISSUES_CACHE))
-        self.assertRegex(issues_cache_key[-1], r'^[0-9a-f]{64}$')
         legacy_issue = issues_response.get_json()['issues'][0]
         self.assertEqual(sorted(legacy_issue.keys()), ['assignee', 'issueType', 'key', 'labels', 'parentKey', 'status', 'summary'])
 

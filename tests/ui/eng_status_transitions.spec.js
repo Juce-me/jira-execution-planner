@@ -270,23 +270,6 @@ async function installEngStatusFixture(page, {
     return { calls, transitionState };
 }
 
-test('ENG API auth expiry keeps already rendered tasks visible behind the global gate', async ({ page }) => {
-    const pageErrors = [];
-    page.on('pageerror', error => pageErrors.push(error.message));
-    await setPrefs(page, catchUpPrefs());
-    await installEngStatusFixture(page, {
-        optionsStatus: 401,
-        optionsBody: { error: 'auth_required', loginUrl: '/login?reason=session_expired' },
-    });
-    await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
-    await trigger(page, 'story', 'PROD-1').click();
-    await expect(page.getByRole('alertdialog')).toBeVisible();
-    expect(pageErrors).toEqual([]);
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeAttached();
-    await expect(page.locator('.task-item[data-task-key="PROD-2"]')).toBeAttached();
-});
-
 async function setPrefs(page, prefs) {
     await page.addInitScript((value) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value));

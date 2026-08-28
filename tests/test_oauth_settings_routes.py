@@ -18,15 +18,12 @@ class FakeResponse:
 
 class OAuthSettingsRouteTests(unittest.TestCase):
     def setUp(self):
-        self._config_storage_patcher = patch.object(jira_server, 'config_storage_db_enabled', return_value=False)
-        self._config_storage_patcher.start()
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
         self.client = jira_server.app.test_client()
         install_oauth_session(self.client, site_url="https://oauth-site.atlassian.net")
 
     def tearDown(self):
-        self._config_storage_patcher.stop()
         jira_server.OAUTH_TOKEN_STORE.clear()
         jira_server.OAUTH_REFRESH_LOCKS.clear()
         jira_server.PROJECTS_CACHE.update({"data": None, "timestamp": 0})
@@ -412,14 +409,11 @@ class OAuthSettingsRouteTests(unittest.TestCase):
 
 class BasicSettingsRouteTests(unittest.TestCase):
     def setUp(self):
-        self._config_storage_patcher = patch.object(jira_server, 'config_storage_db_enabled', return_value=False)
-        self._config_storage_patcher.start()
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
         self.client = jira_server.app.test_client()
 
     def tearDown(self):
-        self._config_storage_patcher.stop()
         jira_server.PROJECTS_CACHE.update({"data": None, "timestamp": 0})
 
     def test_projects_basic_uses_jira_url_basic_auth_without_csrf_header(self):

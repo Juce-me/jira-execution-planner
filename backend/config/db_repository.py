@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import select
 
-from backend.config.shared_config import sanitize_private_view_payload
+from backend.config.shared_config import strip_shared_sections_from_private_view
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.services import workspace_dashboard_config
@@ -43,7 +42,6 @@ class DbConfigRepository:
             .where(
                 models.ViewConfig.workspace_id == context.workspace_id,
                 models.ViewConfig.owner_user_id == context.user_id,
-                models.ViewConfig.visibility == 'private',
                 models.ViewConfig.is_default.is_(True),
                 models.ViewConfig.archived_at.is_(None),
             )
@@ -99,47 +97,21 @@ class DbConfigRepository:
         )
 
     def resolve_effective_view_config(self, context, *, view_config_id=None):
-        from backend.services.user_view_config import UserViewConfigStorageError
-
-        try:
-            with db_engine.session_scope(self.database_url) as session:
-                view = (
-                    self._selected_view(session, context, view_config_id)
-                    if view_config_id
-                    else self._default_view(session, context)
-                )
-                if view is None:
-                    raise ViewConfigNotFound('view config not found')
-                version_number = session.execute(
-                    select(func.max(models.ViewConfigVersion.version_number)).where(
-                        models.ViewConfigVersion.view_config_id == view.id,
-                    )
-                ).scalar_one()
-                return {
-                    'source': 'user_saved_view',
-                    'workspaceId': view.workspace_id,
-                    'viewConfigId': view.id,
-                    'viewType': view.view_type,
-                    'view': sanitize_private_view_payload(strip_private_team_groups(view.payload)),
-                    'versionNumber': int(version_number or 0),
-                }
-        except SQLAlchemyError as error:
-            raise UserViewConfigStorageError('saved view read failed') from error
-
-    def load_user_epm_config(self, context):
-        from backend.services.user_view_config import load_user_epm_config
-
-        return load_user_epm_config(context, database_url=self.database_url)
-
-    def save_user_epm_config(self, context, payload, *, post_commit=None):
-        from backend.services.user_view_config import save_user_epm_config
-
-        return save_user_epm_config(
-            context,
-            payload,
-            database_url=self.database_url,
-            post_commit=post_commit,
-        )
+        with db_engine.session_scope(self.database_url) as session:
+            view = (
+                self._selected_view(session, context, view_config_id)
+                if view_config_id
+                else self._default_view(session, context)
+            )
+            if view is None:
+                raise ViewConfigNotFound('view config not found')
+            return {
+                'source': 'user_saved_view',
+                'workspaceId': view.workspace_id,
+                'viewConfigId': view.id,
+                'viewType': view.view_type,
+                'view': strip_shared_sections_from_private_view(strip_private_team_groups(view.payload)),
+            }
 
     def save_dashboard_config(self, context, payload, **kwargs):
         del context, payload, kwargs

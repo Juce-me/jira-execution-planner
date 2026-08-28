@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { createPortal } from 'react-dom';
 import {
     boardScaleMax,
@@ -211,7 +212,10 @@ export default function EngBoardView({
         catalogRequestedRef.current = true;
         fetchIssueStatusCatalog(backendUrl)
             .then((payload) => setStatusCategoryIndex(buildStatusCategoryIndex(payload && payload.statuses)))
-            .catch(() => setStatusCategoryIndex({}));
+            .catch((error) => {
+                if (isAuthenticationRequiredError(error)) return;
+                setStatusCategoryIndex({});
+            });
     }, [backendUrl]);
 
     // Every exit from the menu hands focus back to the card, and choosing a status is no exception

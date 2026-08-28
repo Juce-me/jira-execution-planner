@@ -1,4 +1,5 @@
 import React from 'react';
+import { isAuthenticationRequiredError } from '../api/authRequired.js';
 
 import { saveGroupPreferences as requestSaveGroupPreferences } from '../api/configApi.js';
 import {
@@ -8,7 +9,6 @@ import {
     groupPreferencesSignature,
     normalizeGroupPreferences,
     resolveVisibleActiveGroupId,
-    safeAppLoginUrl,
     visibleGroupsForControls,
 } from './groupVisibilityUtils.js';
 
@@ -40,11 +40,9 @@ export function useGroupVisibilityPreferences({
     const [groupPreferencesSaving, setGroupPreferencesSaving] = React.useState(false);
     const [visibleGroupDraftIds, setVisibleGroupDraftIds] = React.useState([]);
     const [favoriteGroupDraftId, setFavoriteGroupDraftId] = React.useState(null);
-    const [settingsPreferenceRecoveryLoginUrl, setSettingsPreferenceRecoveryLoginUrl] = React.useState('');
     const [firstRunFavoriteGroupId, setFirstRunFavoriteGroupId] = React.useState(null);
     const [firstRunSaving, setFirstRunSaving] = React.useState(false);
     const [firstRunError, setFirstRunError] = React.useState('');
-    const [firstRunRecoveryLoginUrl, setFirstRunRecoveryLoginUrl] = React.useState('');
     const firstRunSaveInFlightRef = React.useRef(false);
     const groupPreferencesBaselineRef = React.useRef('');
 
@@ -58,7 +56,6 @@ export function useGroupVisibilityPreferences({
         if (!groupPreferences.onboardingRequired) {
             setFirstRunFavoriteGroupId(null);
             setFirstRunError('');
-            setFirstRunRecoveryLoginUrl('');
             return;
         }
         setFirstRunFavoriteGroupId(previous => {
@@ -92,7 +89,6 @@ export function useGroupVisibilityPreferences({
             ? (groupPreferences.activeGroupId || null)
             : (groupPreferences.activeGroupId || currentActiveGroupId || null);
         setFavoriteGroupDraftId(initialFavoriteId);
-        setSettingsPreferenceRecoveryLoginUrl('');
         groupPreferencesBaselineRef.current = groupPreferencesSignature({
             visibleGroupIds: initialVisibleIds,
             activeGroupId: initialFavoriteId,
@@ -141,7 +137,6 @@ export function useGroupVisibilityPreferences({
         if (!normalizedId || !isEligible || favoriteGroupDraftId === normalizedId) return;
         setFavoriteGroupDraftId(normalizedId);
         setVisibleGroupDraftIds(previous => previous.includes(normalizedId) ? previous : [...previous, normalizedId]);
-        setSettingsPreferenceRecoveryLoginUrl('');
         trackSettingsAction('departments', 'preference_change', { source_surface: 'settings' });
     }, [favoriteGroupDraftId, groupDraft?.groups, trackSettingsAction, useBackendPreferences]);
 
@@ -161,7 +156,6 @@ export function useGroupVisibilityPreferences({
         const isEligible = (selectedGroup?.teamIds || []).some(teamId => String(teamId || '').trim());
         if (!normalizedId || !isEligible) return;
         setFirstRunFavoriteGroupId(normalizedId);
-        setFirstRunRecoveryLoginUrl('');
     }, [groupsConfig.groups]);
 
     const saveFirstRunGroupPreferences = React.useCallback(async () => {
@@ -172,7 +166,6 @@ export function useGroupVisibilityPreferences({
         firstRunSaveInFlightRef.current = true;
         setFirstRunSaving(true);
         setFirstRunError('');
-        setFirstRunRecoveryLoginUrl('');
         try {
             const response = await requestSaveGroupPreferences(
                 backendUrl,
@@ -213,8 +206,8 @@ export function useGroupVisibilityPreferences({
                 group_count_bucket: bucketCount((groupsConfig.groups || []).length),
             });
         } catch (error) {
+            if (isAuthenticationRequiredError(error)) return;
             setFirstRunError(error?.message || 'Failed to save departments.');
-            setFirstRunRecoveryLoginUrl(error?.status === 401 ? safeAppLoginUrl(error?.loginUrl) : '');
             trackSettingsAction('departments', 'save_result', { result: 'failure', source_surface: 'first_run' });
         } finally {
             firstRunSaveInFlightRef.current = false;
@@ -275,7 +268,6 @@ export function useGroupVisibilityPreferences({
             setGroupPreferences(nextPreferences);
             setVisibleGroupDraftIds(nextPreferences.visibleGroupIds || []);
             setFavoriteGroupDraftId(nextPreferences.activeGroupId || null);
-            setSettingsPreferenceRecoveryLoginUrl('');
             groupPreferencesBaselineRef.current = groupPreferencesSignature(nextPreferences);
             setActiveGroupId(nextPreferences.activeGroupId || null);
             trackSettingsAction('departments', 'preference_change', {
@@ -284,7 +276,7 @@ export function useGroupVisibilityPreferences({
             });
             return nextPreferences;
         } catch (error) {
-            setSettingsPreferenceRecoveryLoginUrl(error?.status === 401 ? safeAppLoginUrl(error?.loginUrl) : '');
+            if (isAuthenticationRequiredError(error)) return null;
             throw error;
         } finally {
             setGroupPreferencesSaving(false);
@@ -306,7 +298,6 @@ export function useGroupVisibilityPreferences({
         favoriteGroupDraftId,
         setFavoriteGroupDraft,
         favoriteGroupValidationError,
-        settingsPreferenceRecoveryLoginUrl,
         groupPreferencesSaving,
         setGroupPreferencesSaving,
         groupVisibilitySaving: groupPreferencesSaving,
@@ -322,7 +313,6 @@ export function useGroupVisibilityPreferences({
         openFirstRunAddGroup,
         firstRunSaving,
         firstRunError,
-        firstRunRecoveryLoginUrl,
         persistGroupPreferences,
     };
 }

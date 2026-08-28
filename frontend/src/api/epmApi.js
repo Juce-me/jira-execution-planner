@@ -1,4 +1,4 @@
-import { getJson, postJson, trackedFetch } from './http.js';
+import { apiFetch, getJson, postJson, trackedFetch } from './http.js';
 
 const fetchCsrfToken = (backendUrl) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' });
@@ -68,7 +68,7 @@ function getEpmJson(url, label, options = {}) {
     const { analytics, ...fetchOptions } = options;
     const request = analytics
         ? trackedFetch(analytics.apiSurface, url, fetchOptions, analytics)
-        : fetch(url, fetchOptions);
+        : apiFetch(url, fetchOptions);
     return request.then(response => epmJson(response, label));
 }
 

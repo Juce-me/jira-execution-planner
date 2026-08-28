@@ -77,21 +77,24 @@ def api_auth_status():
 def auth_entry_page():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return redirect('/')
-    if database_storage_enabled() and db_oauth_browser_session_data():
+    recovery_reason = request.args.get('reason')
+    terminal_recovery = recovery_reason in {'session_expired', 'missing_scope'}
+    if not terminal_recovery and database_storage_enabled() and db_oauth_browser_session_data():
         try:
             current_request_auth_context()
             return redirect('/')
         except AuthError:
             pass
     data = oauth_session_data()
-    if data.get('access_token') and data.get('cloudid'):
+    if not terminal_recovery and data.get('access_token') and data.get('cloudid'):
         return redirect('/')
     message = ''
     login_url = '/api/auth/atlassian/login'
-    if request.args.get('reason') == 'session_expired':
+    if recovery_reason == 'session_expired':
         message = '<p class="auth-notice" role="status">Your Jira sign-in expired. Sign in again to continue.</p>'
-    elif request.args.get('reason') == 'missing_scope':
+    elif recovery_reason == 'missing_scope':
         message = '<p class="auth-notice" role="status">Your Jira sign-in needs updated permissions. Sign in again to continue.</p>'
+        login_url = '/api/auth/atlassian/login?prompt=consent'
     return f"""
 <!doctype html>
 <html lang="en">

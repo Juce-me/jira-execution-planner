@@ -101,6 +101,11 @@ async function mockConfigSettings(page, {
     epmLoadGate = null,
     workspaceLoadGate = null,
     workspaceLoadResponse = null,
+    configRetryAuthRequired = false,
+    failFirstGroupsConnection = false,
+    keepServerConnectionError = false,
+    failFirstSelectedProjectsConnection = false,
+    groupsRetryAuthRequired = false,
 } = {}) {
     const calls = [];
     const epicsInScope = epicsFromCounts(fixture.REFERENCE_EPICS_BY_STATUS);
@@ -155,6 +160,13 @@ async function mockConfigSettings(page, {
                 Math.min(configGetCount, workspaceSnapshots.length - 1)
             ];
             configGetCount += 1;
+            if (configRetryAuthRequired && requestIndex > 0) {
+                return json({
+                    error: 'auth_required',
+                    message: 'Sign in required.',
+                    loginUrl: '/login?reason=session_expired',
+                }, 401);
+            }
             if (workspaceLoadGate && requestIndex > 0) await workspaceLoadGate.promise;
             if (workspaceLoadResponse && requestIndex > 0) {
                 return json(workspaceLoadResponse.body, workspaceLoadResponse.status || 200);
@@ -174,7 +186,17 @@ async function mockConfigSettings(page, {
             const response = workspaceResponseQueues[url.pathname].shift();
             return json(response.body, response.status || 200);
         }
-        if (url.pathname === '/api/groups-config' && request.method() === 'GET') return json(groupsConfig);
+        if (url.pathname === '/api/groups-config' && request.method() === 'GET') {
+            const groupGets = calls.filter(call => call.method === 'GET' && call.pathname === '/api/groups-config').length;
+            if (groupsRetryAuthRequired && groupGets > 1) {
+                return json({ error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
+            }
+            if (failFirstGroupsConnection && groupGets === 1) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+                return route.abort('connectionrefused');
+            }
+            return json(groupsConfig);
+        }
         if (url.pathname === '/api/groups-config' && request.method() === 'POST') {
             groupsPostCount += 1;
             if (failGroupsSaveOnce && groupsPostCount === 1) {
@@ -216,10 +238,21 @@ async function mockConfigSettings(page, {
             return json({ goals: [{ id: 'root', key: 'ROOT-100', name: 'Root Goal' }], error: '' });
         }
         if (url.pathname === '/api/epm/projects/configuration') return json({ projects: [] });
-        if (url.pathname === '/api/sprints') return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
+        if (url.pathname === '/api/sprints') {
+            if (keepServerConnectionError) return json({ error: 'unavailable' }, 500);
+            return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
+        }
         if (url.pathname === '/api/tasks-with-team-name') return json({ issues: [], epics: {}, epicsInScope });
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [] });
-        if (url.pathname === '/api/projects/selected') return json({ selected: [{ key: 'DEMO', type: 'product' }] });
+        if (url.pathname === '/api/projects/selected') {
+            const projectGets = calls.filter(call => call.method === 'GET' && call.pathname === '/api/projects/selected').length;
+            if (failFirstSelectedProjectsConnection && projectGets === 1) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+                return route.abort('connectionrefused');
+            }
+            if (keepServerConnectionError) return json({ error: 'unavailable' }, 500);
+            return json({ selected: [{ key: 'DEMO', type: 'product' }] });
+        }
         if (url.pathname === '/api/projects') return json({ projects: [{ key: 'DEMO', name: 'Demo' }, { key: 'EXTRA', name: 'Extra' }] });
         if (url.pathname === '/api/fields') {
             // The real /api/fields answers a `project` query from that project's createmeta
@@ -238,7 +271,10 @@ async function mockConfigSettings(page, {
         }
         if (url.pathname === '/api/board-config') return json({ boardId: fixture.REFERENCE_BOARD_ID, boardName: 'Synthetic Board' });
         if (url.pathname === '/api/board-config/statuses') return json(fixture.referenceStatusesResponse());
-        if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: priorityWeights });
+        if (url.pathname === '/api/stats/priority-weights-config') {
+            if (keepServerConnectionError) return json({ error: 'unavailable' }, 500);
+            return json({ weights: priorityWeights });
+        }
         if (url.pathname === '/api/capacity/config') return json(capacityConfig);
         if (url.pathname === '/api/sprint-field/config') return json({ fieldId: 'customfield_10020', fieldName: 'Sprint' });
         if (url.pathname === '/api/parent-name-field/config') return json({ fieldId: 'customfield_10021', fieldName: 'Parent Link' });
@@ -556,16 +592,14 @@ test('workspace auth expiry preserves the draft, Cancel confirmation, and safe r
     await dialog.getByRole('button', { name: 'Clear sprint board' }).click();
     await dialog.getByRole('button', { name: /^Save$/ }).click();
 
-    await expect(dialog).toBeVisible();
-    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
-    await expect(dialog.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(page.locator('.group-modal')).toHaveCount(1);
+    await expect(page.locator('.group-modal .group-modal-dirty')).toHaveCount(1);
+    await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
     expect(workspacePosts(calls, '/api/board-config')[0].body.baseRevision).toBe(3);
 
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByText('Discard changes?')).toBeVisible();
-    await page.getByRole('button', { name: 'Keep editing' }).click();
-    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
-    await expect(dialog.locator('#admin-settings-source-panel')).toContainText('No board selected');
+    await expect(page.locator('#root > div[aria-hidden="true"]')).toHaveCount(1);
+    await expect(page.locator('.group-modal .group-modal-dirty')).toHaveCount(1);
+    await expect(page.locator('#admin-settings-source-panel')).toContainText('No board selected');
 });
 
 test('a 409 keeps the dirty board draft instead of overwriting it, and says so', async ({ page }) => {
@@ -588,7 +622,7 @@ test('a 409 keeps the dirty board draft instead of overwriting it, and says so',
     // config, so the composer re-seeded to "Server Column" and the user's layout was gone.
     await expect(dialog.locator('.board-column').first().locator('.board-column-name')).toHaveValue('Local Column');
     // ...and the baseline reset made the form stop reading as dirty, so there was nothing left to save.
-    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+    await expect(page.locator('.group-modal .group-modal-dirty')).toHaveCount(1);
     await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeEnabled();
 
     // Element-level, not a substring of the whole modal: the banner's own lines, in order.
@@ -936,14 +970,66 @@ test('EPM save auth expiry preserves the private draft and exposes safe recovery
     await labelPrefix.fill('rnd_project_unsaved_');
     await dialog.getByRole('button', { name: /^Save$/ }).click();
 
-    await expect(dialog).toBeVisible();
-    await expect(labelPrefix).toHaveValue('rnd_project_unsaved_');
-    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
-    await expect(dialog.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(page.locator('.group-modal')).toHaveCount(1);
+    await expect(page.locator('[data-epm-scope-field="labelPrefix"]')).toHaveValue('rnd_project_unsaved_');
+    await expect(page.locator('.group-modal .group-modal-dirty')).toHaveCount(1);
+    await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await page.getByRole('alertdialog').dispatchEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true });
+    await page.waitForTimeout(100);
     expect(workspacePosts(calls, '/api/epm/config')).toHaveLength(1);
     expect(calls.some(call => call.method === 'POST' && (
         call.pathname.startsWith('/api/admin/') || administratorConfigPaths.has(call.pathname)
     ))).toBe(false);
+});
+
+test('group reload auth expiry preserves the visible group draft and blocks save shortcut', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        failFirstSelectedProjectsConnection: true,
+        groupsRetryAuthRequired: true,
+        keepServerConnectionError: true,
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('button', { name: 'Retry connection' })).toBeVisible();
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    const groupName = dialog.getByPlaceholder('Group name');
+    await groupName.fill('Private draft name');
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Retry connection' }).evaluate(button => button.click());
+    const authDialog = page.getByRole('alertdialog');
+    await expect(authDialog).toBeVisible();
+    await expect(groupName).toHaveValue('Private draft name');
+    await authDialog.dispatchEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true });
+    await page.waitForTimeout(100);
+
+    expect(workspacePosts(calls, '/api/groups-config')).toHaveLength(0);
+});
+
+test('admin_required stays in targeted settings recovery and preserves the draft', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        workspaceSaveResponses: {
+            '/api/board-config': [{ status: 403, body: {
+                error: 'admin_required',
+                message: 'Administrator access is required.',
+            } }],
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Jira source' }).click();
+    await dialog.getByRole('button', { name: 'Clear sprint board' }).click();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    await expect(dialog.getByText('Administrator access is required.')).toBeVisible();
+    await expect(dialog.locator('#admin-settings-source-panel')).toContainText('No board selected');
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+    expect(workspacePosts(calls, '/api/board-config')).toHaveLength(1);
 });
 
 test('private EPM conflicts preserve the draft without opening workspace conflict actions', async ({ page }) => {
@@ -989,11 +1075,35 @@ test('EPM settings load auth expiry preserves the bootstrapped private baseline'
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const dialog = page.getByRole('dialog').first();
     await dialog.getByRole('button', { name: 'EPM' }).click();
-    await dialog.getByRole('tab', { name: 'Scope' }).click();
-
-    await expect(dialog.locator('[data-epm-scope-field="labelPrefix"]')).toHaveValue('rnd_project_');
-    await expect(dialog.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(page.locator('.group-modal')).toHaveCount(1);
     await expect(dialog.locator('.group-modal-dirty')).toHaveCount(0);
+});
+
+test('connection retry auth expiry preserves the bootstrapped private EPM baseline and draft', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        configRetryAuthRequired: true,
+        failFirstGroupsConnection: true,
+        keepServerConnectionError: true,
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('button', { name: 'Retry connection' })).toBeVisible();
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    const labelPrefix = dialog.locator('[data-epm-scope-field="labelPrefix"]');
+    await expect(labelPrefix).toHaveValue('rnd_project_');
+    await labelPrefix.fill('rnd_project_private_');
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Retry connection' }).evaluate(button => button.click());
+
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expect(labelPrefix).toHaveValue('rnd_project_private_');
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+    expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/config')).toHaveLength(2);
 });
 
 test('the mapping pickers search the whole field catalog, not the capacity project’s screens', async ({ page }) => {

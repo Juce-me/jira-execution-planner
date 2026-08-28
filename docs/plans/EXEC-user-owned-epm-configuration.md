@@ -32,8 +32,8 @@ authentication boundary and root recovery gate.
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test
 runner, Playwright, SQLite/PostgreSQL-compatible schema.
 
-**Status:** Tasks 1 through 4 are implemented and verified, including the required PostgreSQL concurrency
-gate. Tasks 5 and 6 remain in progress. The original no-go findings plus the effective-
+**Status:** Tasks 1 through 5 are implemented and verified, including the required PostgreSQL concurrency
+gate. Task 6 remains in progress. The original no-go findings plus the effective-
 view cache-invalidation and real-PostgreSQL concurrency gaps are addressed in the runtime resolver,
 serialized mutation, reversible migration, strict JSON validator, team-catalog boundary, cache isolation,
 PostgreSQL completion gate, and global-auth tasks below.
@@ -208,6 +208,7 @@ and docs use synthetic identifiers only.
 
 - Create: `frontend/src/api/authRequired.js`
 - Create: `frontend/src/components/AuthRequiredGate.jsx`
+- Modify: `frontend/src/analytics/analytics.js`
 - Modify: `frontend/src/api/http.js`
 - Modify application API modules containing native `fetch(`
 - Modify: `frontend/src/api/authFocusRefresh.js`
@@ -591,6 +592,7 @@ revision/conflict state without creating an intermediate broken auth-recovery pa
 - Modify: `backend/routes/auth_routes.py`
 - Create: `frontend/src/api/authRequired.js`
 - Create: `frontend/src/components/AuthRequiredGate.jsx`
+- Modify: `frontend/src/analytics/analytics.js`
 - Modify: `frontend/src/api/http.js`
 - Modify: `frontend/src/api/analyticsApi.js`
 - Modify: `frontend/src/api/authApi.js`
@@ -621,6 +623,7 @@ revision/conflict state without creating an intermediate broken auth-recovery pa
 - Modify: `frontend/src/styles/shared/shell.css`
 - Modify: `tests/test_auth_entry_page.py`
 - Modify: `tests/test_auth_routes.py`
+- Modify: `tests/test_analytics_events.js`
 - Create: `tests/test_auth_required.js`
 - Modify: `tests/test_auth_focus_refresh.js`
 - Modify: `tests/test_auth_isolation_source_guard.js`
@@ -628,6 +631,7 @@ revision/conflict state without creating an intermediate broken auth-recovery pa
 - Modify: `tests/test_eng_auth_recovery_message.js`
 - Modify: `tests/test_eng_board_runtime_source_guards.js`
 - Modify: `tests/test_epm_settings_source_guards.js`
+- Modify: `tests/test_epm_view_source_guards.js`
 - Modify: `tests/test_excluded_capacity_stats_source_guards.js`
 - Modify: `tests/test_story_subtasks.js`
 - Modify: `tests/test_group_visibility_utils.js`
@@ -647,7 +651,7 @@ revision/conflict state without creating an intermediate broken auth-recovery pa
 - Modify: `docs/README_ANALYTICS.md`
 - Generated frontend files listed in the File Map
 
-- [ ] **Step 1: Write failing auth-contract, source, feature-state, analytics, and Playwright tests**
+- [x] **Step 1: Write failing auth-contract, source, feature-state, analytics, and Playwright tests**
 
 Implement every unit and Playwright assertion from the global-auth design. The source guard must prove
 native application API `fetch(` exists only inside `frontend/src/api/http.js`. Replace immediate-redirect
@@ -677,7 +681,7 @@ source_surface=app
 When bootstrap authentication fails before analytics initialization, or analytics is disabled, assert
 zero events and no late analytics-context request. The auth lock must not queue an event for later replay.
 
-- [ ] **Step 2: Implement the common HTTP boundary and root gate**
+- [x] **Step 2: Implement the common HTTP boundary and root gate**
 
 Follow `docs/agents/bugfixes/2026-08-27-planned-global-auth-lock.md` exactly. Add the window-backed latch
 shared by both frontend bundles, strict login sanitizer, typed error, pre/post-response `apiFetch` guards,
@@ -698,15 +702,15 @@ or expose a local error. Apply it explicitly to board status catalogs, epic desc
 status catalogs, administrator membership loads, and excluded-capacity saves so those catches neither
 replace hidden state nor render a feature error after the root gate has locked.
 
-- [ ] **Step 3: Build, verify, and commit**
+- [x] **Step 3: Build, verify, and commit**
 
 ```bash
 .venv/bin/python -m unittest tests.test_auth_entry_page tests.test_auth_routes
-node --test tests/test_auth_required.js tests/test_auth_focus_refresh.js tests/test_auth_isolation_source_guard.js tests/test_frontend_api_source_guards.js tests/test_eng_auth_recovery_message.js tests/test_eng_board_runtime_source_guards.js tests/test_epm_settings_source_guards.js tests/test_excluded_capacity_stats_source_guards.js tests/test_story_subtasks.js tests/test_group_visibility_utils.js tests/test_planning_action_source_guards.js
+node --test tests/test_analytics_events.js tests/test_auth_required.js tests/test_auth_focus_refresh.js tests/test_auth_isolation_source_guard.js tests/test_frontend_api_source_guards.js tests/test_eng_auth_recovery_message.js tests/test_eng_board_runtime_source_guards.js tests/test_epm_settings_source_guards.js tests/test_epm_view_source_guards.js tests/test_excluded_capacity_stats_source_guards.js tests/test_story_subtasks.js tests/test_group_visibility_utils.js tests/test_planning_action_source_guards.js
 npx playwright test tests/ui/global_auth_lock.spec.js tests/ui/auth_focus_refresh_counts.spec.js tests/ui/shared_department_groups.spec.js tests/ui/settings_unified_save.spec.js tests/ui/scenario_draft_collaboration.spec.js tests/ui/ga4_tag_and_events.spec.js tests/ui/eng_priority_transitions.spec.js tests/ui/eng_project_track_transitions.spec.js tests/ui/eng_status_transitions.spec.js tests/ui/eng_group_board_settings_tab.spec.js tests/ui/home_token_connection_settings.spec.js tests/ui/settings_admin_access.spec.js
 npm run build
 git diff --check
-git add backend/routes/auth_routes.py frontend/src/api/authRequired.js frontend/src/components/AuthRequiredGate.jsx frontend/src/api/http.js frontend/src/api/analyticsApi.js frontend/src/api/authApi.js frontend/src/api/authFocusRefresh.js frontend/src/api/configApi.js frontend/src/api/engApi.js frontend/src/api/epmApi.js frontend/src/api/issuesApi.js frontend/src/api/jiraCatalogApi.js frontend/src/api/scenarioApi.js frontend/src/eng/EngBoardView.jsx frontend/src/eng/EngBoardEpicPanel.jsx frontend/src/eng/useEngSprintData.js frontend/src/eng/useEngPriorityTransitions.js frontend/src/eng/useEngProjectTrackTransitions.js frontend/src/eng/useEngStatusTransitions.js frontend/src/epm/useEpmViewData.js frontend/src/issues/useStorySubtasks.js frontend/src/settings/AdminAccessSettings.jsx frontend/src/settings/GroupBoardSettings.jsx frontend/src/settings/groupVisibilityUtils.js frontend/src/settings/sharedExcludedCapacityToggle.js frontend/src/settings/useGroupVisibilityPreferences.js frontend/src/settings/FirstRunGroupSelectionModal.jsx frontend/src/settings/TeamGroupsSettings.jsx frontend/src/settings/UserConnectionsSettings.jsx frontend/src/dashboard.jsx frontend/src/styles/shared/shell.css tests/test_auth_entry_page.py tests/test_auth_routes.py tests/test_auth_required.js tests/test_auth_focus_refresh.js tests/test_auth_isolation_source_guard.js tests/test_frontend_api_source_guards.js tests/test_eng_auth_recovery_message.js tests/test_eng_board_runtime_source_guards.js tests/test_epm_settings_source_guards.js tests/test_excluded_capacity_stats_source_guards.js tests/test_story_subtasks.js tests/test_group_visibility_utils.js tests/test_planning_action_source_guards.js tests/ui/global_auth_lock.spec.js tests/ui/auth_focus_refresh_counts.spec.js tests/ui/shared_department_groups.spec.js tests/ui/settings_unified_save.spec.js tests/ui/scenario_draft_collaboration.spec.js tests/ui/ga4_tag_and_events.spec.js tests/ui/eng_priority_transitions.spec.js tests/ui/eng_project_track_transitions.spec.js tests/ui/eng_status_transitions.spec.js tests/ui/eng_group_board_settings_tab.spec.js tests/ui/home_token_connection_settings.spec.js tests/ui/settings_admin_access.spec.js docs/README_ANALYTICS.md frontend/dist/auth-focus-refresh.js frontend/dist/auth-focus-refresh.js.map frontend/dist/dashboard.js frontend/dist/dashboard.js.map frontend/dist/dashboard.css
+git add backend/routes/auth_routes.py frontend/src/api/authRequired.js frontend/src/components/AuthRequiredGate.jsx frontend/src/analytics/analytics.js frontend/src/api/http.js frontend/src/api/analyticsApi.js frontend/src/api/authApi.js frontend/src/api/authFocusRefresh.js frontend/src/api/configApi.js frontend/src/api/engApi.js frontend/src/api/epmApi.js frontend/src/api/issuesApi.js frontend/src/api/jiraCatalogApi.js frontend/src/api/scenarioApi.js frontend/src/eng/EngBoardView.jsx frontend/src/eng/EngBoardEpicPanel.jsx frontend/src/eng/useEngSprintData.js frontend/src/eng/useEngPriorityTransitions.js frontend/src/eng/useEngProjectTrackTransitions.js frontend/src/eng/useEngStatusTransitions.js frontend/src/epm/useEpmViewData.js frontend/src/issues/useStorySubtasks.js frontend/src/settings/AdminAccessSettings.jsx frontend/src/settings/GroupBoardSettings.jsx frontend/src/settings/groupVisibilityUtils.js frontend/src/settings/sharedExcludedCapacityToggle.js frontend/src/settings/useGroupVisibilityPreferences.js frontend/src/settings/FirstRunGroupSelectionModal.jsx frontend/src/settings/TeamGroupsSettings.jsx frontend/src/settings/UserConnectionsSettings.jsx frontend/src/dashboard.jsx frontend/src/styles/shared/shell.css tests/test_auth_entry_page.py tests/test_auth_routes.py tests/test_analytics_events.js tests/test_auth_required.js tests/test_auth_focus_refresh.js tests/test_auth_isolation_source_guard.js tests/test_frontend_api_source_guards.js tests/test_eng_auth_recovery_message.js tests/test_eng_board_runtime_source_guards.js tests/test_epm_settings_source_guards.js tests/test_epm_view_source_guards.js tests/test_excluded_capacity_stats_source_guards.js tests/test_story_subtasks.js tests/test_group_visibility_utils.js tests/test_planning_action_source_guards.js tests/ui/global_auth_lock.spec.js tests/ui/auth_focus_refresh_counts.spec.js tests/ui/shared_department_groups.spec.js tests/ui/settings_unified_save.spec.js tests/ui/scenario_draft_collaboration.spec.js tests/ui/ga4_tag_and_events.spec.js tests/ui/eng_priority_transitions.spec.js tests/ui/eng_project_track_transitions.spec.js tests/ui/eng_status_transitions.spec.js tests/ui/eng_group_board_settings_tab.spec.js tests/ui/home_token_connection_settings.spec.js tests/ui/settings_admin_access.spec.js docs/README_ANALYTICS.md frontend/dist/auth-focus-refresh.js frontend/dist/auth-focus-refresh.js.map frontend/dist/dashboard.js frontend/dist/dashboard.js.map frontend/dist/dashboard.css docs/plans/EXEC-user-owned-epm-configuration.md
 git commit -m "Lock the app on authentication expiry"
 ```
 

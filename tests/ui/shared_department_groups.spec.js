@@ -355,8 +355,8 @@ test('first-run auth recovery exposes only a safe sign-in URL', async ({ page })
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('radio', { name: /Platform/ }).check();
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(page.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
-    await expect(page.getByRole('radio', { name: /Platform/ })).toBeChecked();
+    await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(page.locator('input[type="radio"]:checked')).toHaveCount(1);
     expect(safeCalls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
 
     const unsafePage = await page.context().newPage();
@@ -369,7 +369,7 @@ test('first-run auth recovery exposes only a safe sign-in URL', async ({ page })
     await unsafePage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await unsafePage.getByRole('radio', { name: /Platform/ }).check();
     await unsafePage.getByRole('button', { name: 'Continue' }).click();
-    await expect(unsafePage.getByRole('link', { name: 'Sign in again' })).toHaveCount(0);
+    await expect(unsafePage.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
     await unsafePage.close();
 });
 
@@ -523,8 +523,8 @@ test('personal favorite save preserves its draft and exposes only safe auth reco
     await dialog.getByRole('button', { name: 'Save' }).click();
 
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveClass(/active/);
-    await expect(dialog.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(dialog.locator('button[aria-label="Growth is my favorite group"]')).toHaveClass(/active/);
+    await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
 });
 
 test('partial shared save failure retries only the personal favorite', async ({ page }) => {

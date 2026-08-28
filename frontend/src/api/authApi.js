@@ -1,4 +1,4 @@
-import { getJson, json, postJson, trackedFetch } from './http.js';
+import { apiFetch, getJson, json, postJson, trackedFetch } from './http.js';
 
 const homeTokenUrl = (backendUrl) => `${backendUrl}/api/me/connections/home-token`;
 
@@ -18,7 +18,7 @@ export const fetchCsrfToken = (backendUrl) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' });
 
 export const refreshAuthSession = (backendUrl) =>
-    fetch(`${backendUrl}/api/auth/refresh`, {
+    apiFetch(`${backendUrl}/api/auth/refresh`, {
         method: 'POST',
         credentials: 'same-origin',
         cache: 'no-cache',

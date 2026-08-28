@@ -5,6 +5,8 @@ import {
     AUTH_LONG_ABSENCE_EVENT,
     AUTH_SESSION_REFRESH_EVENT,
 } from './authRefreshContract.js';
+import { apiFetch } from './http.js';
+import { isAuthenticationRequiredError } from './authRequired.js';
 
 let lastAuthRefreshAt = 0;
 let unfocusedSince = null;
@@ -56,22 +58,19 @@ export async function refreshAuthOnFocus({ longAbsence = false, unfocusedMs = 0 
     writeSharedRefreshAt(now);
     refreshInFlight = true;
     try {
-        const response = await fetch('/api/auth/refresh', {
+        const response = await apiFetch('/api/auth/refresh', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'X-Requested-With': 'jira-execution-planner' },
         });
-        if (response.status === 401) {
-            clearSharedRefreshAt();
-            const body = await response.json().catch(() => ({}));
-            window.location.assign(body.loginUrl || '/login?reason=session_expired');
-        } else if (response.ok) {
+        if (response.ok) {
             // The Jira principal behind the cookie may have changed since this page loaded.
             // Permission-scoped client caches use this event as their partition boundary.
             dispatchAuthSessionRefreshEvent();
             if (longAbsence) dispatchLongAbsenceEvent(unfocusedMs);
         }
     } catch (error) {
+        if (isAuthenticationRequiredError(error)) clearSharedRefreshAt();
         // Leave network failures to the next focused attempt or API request.
     } finally {
         refreshInFlight = false;

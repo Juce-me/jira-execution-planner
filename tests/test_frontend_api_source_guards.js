@@ -30,11 +30,32 @@ function loadHttpHelpers() {
     const helperPath = path.join(frontendSrcPath, 'api', 'http.js');
     assert.ok(fs.existsSync(helperPath), 'Expected frontend/src/api/http.js to exist');
     const source = readSource(helperPath)
-        .replace(/import\s+\{[^}]+\}\s+from\s+'\.\.\/analytics\/analytics\.js';\n?/, '')
+        .replace(/import\s+\{[^}]+\}\s+from\s+'[^']+';\n?/g, '')
         .replaceAll('export async function ', 'async function ')
         .replaceAll('export function ', 'function ');
-    return new Function('trackApiResult', `${source}; return { json, jsonOrStructuredError, getJson, postJson, trackedFetch };`)(() => {});
+    class TestAuthenticationRequiredError extends Error {
+        constructor(state = {}) {
+            super('Authentication is required to continue.');
+            this.name = 'AuthenticationRequiredError';
+            this.status = 401;
+            this.code = 'auth_required';
+            this.loginUrl = state.loginUrl || '/login?reason=session_expired';
+        }
+    }
+    return new Function(
+        'trackApiResult',
+        'AuthenticationRequiredError',
+        'publishAuthenticationRequired',
+        'readPendingAuthenticationRequired',
+        `${source}; return { apiFetch, json, jsonOrStructuredError, getJson, postJson, trackedFetch };`,
+    )(() => {}, TestAuthenticationRequiredError, () => ({ loginUrl: '/login?reason=session_expired' }), () => null);
 }
+
+test('the common HTTP boundary does not import the analytics singleton', () => {
+    const source = readSource(path.join(frontendSrcPath, 'api', 'http.js'));
+    assert.ok(!source.includes("../analytics/analytics.js"));
+    assert.ok(source.includes('globalThis?.JepAnalytics?.trackApiResult?.('));
+});
 
 function loadApiModule(fileName, exportNames, dependencies = {}) {
     const modulePath = path.join(frontendSrcPath, 'api', fileName);
@@ -46,6 +67,7 @@ function loadApiModule(fileName, exportNames, dependencies = {}) {
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
     const mergedDependencies = {
+        apiFetch: (url, options) => fetch(url, options),
         trackedFetch: (_apiSurface, url, options) => fetch(url, options),
         ...dependencies,
     };
@@ -162,6 +184,14 @@ test('frontend API endpoint literals live in api modules or approved transitiona
     assert.deepEqual(violations, []);
 });
 
+test('native application API fetch is owned only by the shared HTTP boundary', () => {
+    const violations = listSourceFiles(frontendSrcPath)
+        .filter((filePath) => readSource(filePath).includes('fetch('))
+        .filter((filePath) => relativeFile(filePath) !== 'frontend/src/api/http.js')
+        .map(relativeFile);
+    assert.deepEqual(violations, []);
+});
+
 test('ENG startup uses cached task data unless the user explicitly refreshes', () => {
     const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
 
@@ -207,7 +237,7 @@ test('shared jsonOrStructuredError helper attaches status/code/loginUrl/recovery
             assert.equal(err.status, 401);
             assert.equal(err.code, 'auth_required');
             assert.equal(err.loginUrl, '/login?reason=session_expired');
-            assert.equal(err.message, 'Sign in required.');
+            assert.equal(err.message, 'Authentication is required to continue.');
             return true;
         }
     );

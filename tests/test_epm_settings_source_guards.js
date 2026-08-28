@@ -696,7 +696,7 @@ test('private EPM bootstrap and save state are independent from shared administr
     assert.ok(!saveSource.includes('setWorkspaceConfigConflict'), 'EPM conflicts must not enter workspace conflict state');
     assert.ok(!workspaceConfigConflictSource.includes("['epm', 'EPM settings']"), 'Workspace conflicts must not classify private EPM as a shared section');
     const workspaceConflictStart = dashboardSource.indexOf("if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict')");
-    const workspaceConflictEnd = dashboardSource.indexOf("} else if (err?.status === 401", workspaceConflictStart);
+    const workspaceConflictEnd = dashboardSource.indexOf('setGroupDraftError(', workspaceConflictStart);
     const workspaceConflictSource = dashboardSource.slice(workspaceConflictStart, workspaceConflictEnd);
     assert.ok(!workspaceConflictSource.includes('epm:'), 'Workspace conflict pending sections must exclude private EPM state');
 

@@ -221,6 +221,7 @@ test('normalizeGroupPreferences preserves backend metadata and nested preference
             preferenceExists: true,
             customized: true,
             onboardingRequired: false,
+            onboardingDone: false,
             visibleGroupIds: ['platform'],
             effectiveVisibleGroupIds: ['default', 'platform'],
             activeGroupId: 'platform',
@@ -233,10 +234,17 @@ test('normalizeGroupPreferences preserves backend metadata and nested preference
         preferenceExists: true,
         customized: true,
         onboardingRequired: false,
+        onboardingDone: false,
         visibleGroupIds: ['platform'],
         effectiveVisibleGroupIds: ['default', 'platform'],
         activeGroupId: 'platform',
     });
+});
+
+test('normalizeGroupPreferences defaults missing onboarding state to complete', () => {
+    const { normalizeGroupPreferences } = loadGroupVisibilityUtils();
+
+    assert.equal(normalizeGroupPreferences({ preferences: {} }).preferences.onboardingDone, true);
 });
 
 test('groupPreferencesSignature is stable for duplicate and unsorted visible ids', () => {
@@ -266,6 +274,7 @@ test('applyLocalGroupPreferences overlays browser visibility only for JSON sourc
     assert.deepEqual(normalized.preferences.visibleGroupIds, ['platform']);
     assert.deepEqual(normalized.preferences.effectiveVisibleGroupIds, ['default', 'platform']);
     assert.equal(normalized.preferences.activeGroupId, 'platform');
+    assert.equal(normalized.preferences.onboardingDone, true);
 
     const dbConfig = applyLocalGroupPreferences({ ...config, source: 'workspace_db' }, {
         groupVisibilityPreferences: { visibleGroupIds: ['platform'], activeGroupId: 'platform' },

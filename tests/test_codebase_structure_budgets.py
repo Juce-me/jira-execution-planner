@@ -96,7 +96,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # plus safe auth-recovery actions. Pure conflict copy/rebase logic stays extracted (+113).
     # feature/user-onboarding-tour adds the first-run Configure-your-own state and suppresses
     # personal favorite validation while the mandatory group editor is active (+8).
-    "frontend/src/dashboard.jsx": 16304,
+    # Task 5 wires the extracted onboarding controller, replay props, stable target attributes,
+    # and the single portal mount; tour state and persistence behavior remain extracted (+55).
+    "frontend/src/dashboard.jsx": 16359,
 }
 
 

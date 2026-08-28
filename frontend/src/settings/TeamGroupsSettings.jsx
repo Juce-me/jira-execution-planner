@@ -93,6 +93,12 @@ export default function TeamGroupsSettings(props) {
         removeGroupDraft,
         selectDepartmentSettingsTab,
         firstRunConfigurationActive,
+        onboardingReplayAvailable,
+        onboardingReplayDisabled,
+        onboardingReplayPending,
+        onboardingReplayError,
+        onboardingReplayRecoveryLoginUrl,
+        onReplayOnboarding,
     } = props;
 
     const hasDuplicableGroup = (groupDraft?.groups || []).some(group => String(group?.id || '').trim());
@@ -162,6 +168,26 @@ export default function TeamGroupsSettings(props) {
                                         </div>
                                     </div>
                                     <div className="group-pane group-pane-right">
+                                        {onboardingReplayAvailable && (
+                                            <div className="group-modal-meta">
+                                                <button
+                                                    type="button"
+                                                    className="secondary compact"
+                                                    onClick={() => { void onReplayOnboarding?.(); }}
+                                                    disabled={onboardingReplayDisabled}
+                                                >
+                                                    {onboardingReplayPending ? 'Starting onboarding...' : 'Run onboarding again'}
+                                                </button>
+                                                {onboardingReplayError && (
+                                                    <div role="alert">
+                                                        <span>{onboardingReplayError}</span>
+                                                        {onboardingReplayRecoveryLoginUrl && (
+                                                            <a href={onboardingReplayRecoveryLoginUrl}>Sign in again</a>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                         <div className="group-pane-mobile-header">
                                             <button
                                                 className="secondary compact"

@@ -87,6 +87,7 @@ function defaultGroupPreferences(overrides = {}) {
         customized: false,
         preferenceExists: false,
         onboardingRequired: true,
+        onboardingDone: true,
         visibleGroupIds: [],
         activeGroupId: null,
         effectiveVisibleGroupIds: [],
@@ -134,6 +135,7 @@ async function mockFirstRunDashboard(page, options = {}) {
             body: JSON.stringify(body),
         });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
+        if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'test-csrf' });
         if (url.pathname === '/api/analytics/context') return json({ enabled: false });
         if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/version') return json({ enabled: false });
@@ -180,6 +182,7 @@ async function mockFirstRunDashboard(page, options = {}) {
                 customized: true,
                 preferenceExists: true,
                 onboardingRequired: false,
+                onboardingDone: preferences.onboardingDone !== false,
                 visibleGroupIds: body.visibleGroupIds || ['platform'],
                 activeGroupId: body.activeGroupId || 'platform',
                 effectiveVisibleGroupIds: body.visibleGroupIds || ['platform'],
@@ -194,6 +197,10 @@ async function mockFirstRunDashboard(page, options = {}) {
                     },
                 }),
             });
+        }
+        if (url.pathname === '/api/me/onboarding') {
+            const body = requestBody(request) || {};
+            return json({ onboardingDone: body.onboardingDone });
         }
         if (url.pathname === '/api/teams') {
             return json({ teams: options.teams || [{ id: 'team-new', name: 'New Team' }] });
@@ -330,6 +337,98 @@ test('first-run department selection blocks group-scoped task loads until prefer
     await expect(page.getByText('PLAT-1', { exact: true })).toBeVisible();
 });
 
+test('successful first-run selection starts the dashboard tour before any onboarding write', async ({ page }, testInfo) => {
+    const calls = await mockFirstRunDashboard(page, {
+        preferences: defaultGroupPreferences({ onboardingDone: false }),
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
+    expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
+
+    await page.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toBeVisible();
+    expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: testInfo.outputPath('dashboard-onboarding-desktop.png'), animations: 'disabled' });
+    await page.getByRole('button', { name: 'Skip onboarding' }).click();
+    await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toHaveCount(0);
+    const writes = calls.filter(call => call.pathname === '/api/me/onboarding');
+    expect(writes).toHaveLength(1);
+    expect(writes[0].body).toEqual({ onboardingDone: true });
+});
+
+test('existing users do not auto-start and can replay without changing dashboard scope', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            onboardingDone: true,
+            visibleGroupIds: ['platform'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform'],
+        }),
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toHaveCount(0);
+    expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
+
+    const sprint = page.locator('[data-onboarding-target="sprint"][data-onboarding-surface="main"]');
+    const teams = page.locator('[data-onboarding-target="teams"][data-onboarding-surface="main"]');
+    await expect(sprint).toContainText('2026Q2 Sprint 42');
+    const scopeBefore = await Promise.all([sprint.innerText(), teams.innerText()]);
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await page.getByRole('button', { name: 'Run onboarding again' }).click();
+
+    await expect(page.locator('.group-modal')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toBeVisible();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/me/onboarding').length).toBe(1);
+    expect(calls.find(call => call.pathname === '/api/me/onboarding').body).toEqual({ onboardingDone: false });
+    expect(await Promise.all([sprint.innerText(), teams.innerText()])).toEqual(scopeBefore);
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name').every(call => call.params.groupId === 'platform')).toBe(true);
+    expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(0);
+});
+
+test('replay is disabled while Team groups settings are dirty', async ({ page }) => {
+    await mockFirstRunDashboard(page, {
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            onboardingDone: true,
+            visibleGroupIds: ['platform', 'growth'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform', 'growth'],
+        }),
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const settings = page.locator('.group-modal');
+    await expect(settings.getByRole('button', { name: 'Run onboarding again' })).toBeEnabled();
+    await settings.locator('.group-list-item', { hasText: 'Growth' }).click();
+    await settings.getByPlaceholder('Group name').fill('Growth updated');
+    await expect(settings.getByRole('button', { name: 'Run onboarding again' })).toBeDisabled();
+});
+
+test('mobile first-run tour highlights the compact sprint target within the viewport', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 600 });
+    await mockFirstRunDashboard(page, {
+        preferences: defaultGroupPreferences({ onboardingDone: false }),
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const tour = page.getByRole('dialog', { name: 'Choose a sprint' });
+    await expect(tour).toBeVisible();
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect(page.locator('[data-onboarding-target="sprint"][data-onboarding-surface="compact"]')).toBeVisible();
+    await expectContainedInViewport(tour);
+    await expectContainedInViewport(page.locator('.onboarding-tour-spotlight'));
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: testInfo.outputPath('dashboard-onboarding-mobile.png'), animations: 'disabled' });
+});
+
 test('Configure your own reuses Team groups and returns to the mandatory picker', async ({ page }) => {
     await mockFirstRunDashboard(page);
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
@@ -344,6 +443,7 @@ test('Configure your own reuses Team groups and returns to the mandatory picker'
     await expect(settingsDialog.getByRole('button', { name: 'Duplicate' })).toBeVisible();
     await expect(settingsDialog.getByRole('button', { name: /favorite group/ })).toHaveCount(0);
     await expect(settingsDialog.getByRole('checkbox', { name: 'Show in my controls' })).toHaveCount(0);
+    await expect(settingsDialog.getByRole('button', { name: 'Run onboarding again' })).toHaveCount(0);
     await expect(firstRunDialog).toHaveCount(0);
 
     await settingsDialog.getByRole('button', { name: 'Cancel' }).click();

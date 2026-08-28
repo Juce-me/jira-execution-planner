@@ -84,6 +84,7 @@ export default function PriorityTransitionMenu({
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
                 data-priority-transition-trigger="true"
+                data-onboarding-target="editing-priority"
                 data-issue-key={issueKey}
                 data-issue-kind={kind}
                 onClick={handleTriggerClick}

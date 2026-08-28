@@ -4,7 +4,9 @@ const { test, expect } = require('@playwright/test');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const harnessUrl = 'http://onboarding-tour.test/';
+const controllerHarnessUrl = 'http://onboarding-controller.test/';
 let harnessJs;
+let controllerHarnessJs;
 let dashboardCss;
 
 test.beforeAll(() => {
@@ -65,12 +67,122 @@ test.beforeAll(() => {
         format: 'iife',
         define: { 'process.env.NODE_ENV': '"test"' },
     }).outputFiles[0].text;
+    controllerHarnessJs = esbuild.buildSync({
+        stdin: {
+            resolveDir: repoRoot,
+            loader: 'jsx',
+            contents: `
+                import * as React from 'react';
+                import { createRoot } from 'react-dom/client';
+                import OnboardingTour from './frontend/src/onboarding/OnboardingTour.jsx';
+                import { useOnboardingController } from './frontend/src/onboarding/useOnboardingTour.js';
+
+                function ControllerHarness() {
+                    const [ready, setReady] = React.useState(false);
+                    const [done, setDone] = React.useState(true);
+                    const [showSettings, setShowSettings] = React.useState(true);
+                    const [dirty, setDirty] = React.useState(false);
+                    const [saving, setSaving] = React.useState(false);
+                    const behaviorRef = React.useRef({ type: 'success' });
+                    const writesRef = React.useRef([]);
+                    const eventsRef = React.useRef([]);
+                    const preservedRef = React.useRef({ sprint: 'S-42', group: 'platform', teams: ['alpha'], favorite: 'platform' });
+                    const modeRef = React.useRef({ selectedView: 'epm', planning: true, stats: true, scenario: true, board: true });
+                    const savePreference = React.useCallback((nextDone) => {
+                        writesRef.current.push(nextDone);
+                        const behavior = behaviorRef.current;
+                        if (behavior.type === 'deferred') {
+                            return new Promise((resolve, reject) => {
+                                window.__resolveOnboardingWrite = () => resolve({ onboardingDone: nextDone });
+                                window.__rejectOnboardingWrite = () => reject(new Error('Save failed.'));
+                            });
+                        }
+                        if (behavior.type === 'error') {
+                            const error = new Error('Save failed.');
+                            error.status = behavior.status;
+                            error.loginUrl = behavior.loginUrl;
+                            return Promise.reject(error);
+                        }
+                        return Promise.resolve({ onboardingDone: nextDone });
+                    }, []);
+                    const prepareCatchUp = React.useCallback(() => {
+                        modeRef.current = { selectedView: 'eng', planning: false, stats: false, scenario: false, board: false };
+                    }, []);
+                    const trackSettingsAction = React.useCallback((section, workflowAction, params) => {
+                        eventsRef.current.push({ section, workflowAction, params });
+                    }, []);
+                    const controller = useOnboardingController({
+                        bootstrapReady: ready,
+                        onboardingDone: done,
+                        setOnboardingDone: setDone,
+                        savePreference,
+                        prepareCatchUp,
+                        closeSettings: () => setShowSettings(false),
+                        trackSettingsAction,
+                    });
+                    React.useLayoutEffect(() => {
+                        window.__onboardingController = {
+                            setBootstrap: (nextReady, nextDone) => { setReady(nextReady); setDone(nextDone); },
+                            setBehavior: (behavior) => { behaviorRef.current = behavior; },
+                            setDirty,
+                            setSaving,
+                            replay: controller.replay,
+                            snapshot: () => ({
+                                ready, done, showSettings, dirty, saving,
+                                run: controller.run, pending: controller.pending,
+                                error: controller.error, recoveryLoginUrl: controller.recoveryLoginUrl,
+                                writes: [...writesRef.current], events: [...eventsRef.current],
+                                preserved: preservedRef.current, mode: modeRef.current,
+                            }),
+                        };
+                    });
+                    return <>
+                        <button data-onboarding-target="sprint">Sprint</button>
+                        <button data-onboarding-target="refresh">Refresh</button>
+                        <div data-onboarding-target="hierarchy">Hierarchy</div>
+                        {showSettings && (
+                            <button
+                                type="button"
+                                onClick={() => { void controller.replay(); }}
+                                disabled={dirty || saving || controller.pending}
+                            >Run onboarding again</button>
+                        )}
+                        <OnboardingTour
+                            run={controller.run}
+                            onboardingDone={done}
+                            onSkip={controller.skip}
+                            onFinish={controller.finish}
+                            actionPending={controller.pending}
+                            actionError={controller.error}
+                            recoveryLoginUrl={controller.recoveryLoginUrl}
+                        />
+                    </>;
+                }
+                createRoot(document.getElementById('root')).render(<ControllerHarness />);
+            `,
+        },
+        bundle: true,
+        write: false,
+        format: 'iife',
+        define: { 'process.env.NODE_ENV': '"test"' },
+    }).outputFiles[0].text;
     dashboardCss = esbuild.buildSync({
         entryPoints: [path.join(repoRoot, 'frontend', 'src', 'styles', 'dashboard.css')],
         bundle: true,
         write: false,
     }).outputFiles[0].text;
 });
+
+async function installControllerHarness(page) {
+    await page.route(controllerHarnessUrl, (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: `<!doctype html><html><head><style>${dashboardCss}</style></head><body><div id="root"></div><script>${controllerHarnessJs}</script></body></html>`,
+    }));
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.goto(controllerHarnessUrl);
+    await page.waitForFunction(() => Boolean(window.__onboardingController));
+}
 
 async function installHarness(page) {
     await page.addInitScript(() => {
@@ -236,4 +348,139 @@ test('active observers and window listeners clean up on unmount', async ({ page 
     expect(lifecycle.listenerRemoves).toEqual(lifecycle.listenerAdds);
     await expect(page.locator('#root')).not.toHaveAttribute('aria-hidden', /.+/);
     await expect(page.locator('#root')).not.toHaveAttribute('inert', /.+/);
+});
+
+test('automatic run waits for definitive bootstrap readiness and preserves scope state', async ({ page }, testInfo) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => window.__onboardingController.setBootstrap(false, false));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, null));
+    await expect.poll(() => page.evaluate(() => window.__onboardingController.snapshot().done)).toBeNull();
+    await page.waitForTimeout(50);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
+    await expect(page.getByRole('dialog')).toBeVisible();
+
+    const state = await page.evaluate(() => window.__onboardingController.snapshot());
+    expect(state.writes).toEqual([]);
+    expect(state.preserved).toEqual({ sprint: 'S-42', group: 'platform', teams: ['alpha'], favorite: 'platform' });
+    expect(state.mode).toEqual({ selectedView: 'eng', planning: false, stats: false, scenario: false, board: false });
+    expect(state.events).toEqual([{ section: 'onboarding', workflowAction: 'started', params: { source_surface: 'first_run' } }]);
+    const actionGeometry = await page.getByRole('dialog').evaluate((dialog) => {
+        const dialogRect = dialog.getBoundingClientRect();
+        return Array.from(dialog.querySelectorAll('.onboarding-tour-actions button')).map((button) => {
+            const rect = button.getBoundingClientRect();
+            return {
+                left: rect.left,
+                right: rect.right,
+                dialogLeft: dialogRect.left,
+                dialogRight: dialogRect.right,
+            };
+        });
+    });
+    for (const rect of actionGeometry) {
+        expect(rect.left).toBeGreaterThanOrEqual(rect.dialogLeft);
+        expect(rect.right).toBeLessThanOrEqual(rect.dialogRight);
+    }
+    await page.screenshot({
+        path: testInfo.outputPath('onboarding-tour-desktop.png'),
+        animations: 'disabled',
+    });
+});
+
+test('skip persists before close and a shared pending guard deduplicates Escape', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => {
+        window.__onboardingController.setBehavior({ type: 'deferred' });
+        window.__onboardingController.setBootstrap(true, false);
+    });
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('button', { name: 'Skip onboarding' }).click();
+    await page.getByRole('dialog').press('Escape');
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([true]);
+    await page.evaluate(() => window.__resolveOnboardingWrite());
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const state = await page.evaluate(() => window.__onboardingController.snapshot());
+    expect(state.events.at(-1)).toEqual({ section: 'onboarding', workflowAction: 'skipped', params: { source_surface: 'first_run', result: 'success' } });
+});
+
+test('failed completion remains retryable and exposes only a safe local login path', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => {
+        window.__onboardingController.setBehavior({ type: 'error', status: 401, loginUrl: 'https://evil.test/login' });
+        window.__onboardingController.setBootstrap(true, false);
+    });
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('button', { name: 'Skip onboarding' }).click();
+    await expect(page.getByRole('alert')).toHaveText('Save failed.');
+    await expect(page.getByRole('link', { name: 'Sign in again' })).toHaveCount(0);
+
+    await page.evaluate(() => window.__onboardingController.setBehavior({ type: 'error', status: 401, loginUrl: '/login?reason=session_expired' }));
+    await page.getByRole('button', { name: 'Skip onboarding' }).click();
+    await expect(page.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await page.evaluate(() => window.__onboardingController.setBehavior({ type: 'success' }));
+    await page.getByRole('button', { name: 'Skip onboarding' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('settings replay is disabled while dirty and starts only after false persistence succeeds', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => window.__onboardingController.setDirty(true));
+    await expect(page.getByRole('button', { name: 'Run onboarding again' })).toBeDisabled();
+    await page.evaluate(() => window.__onboardingController.setDirty(false));
+    await page.getByRole('button', { name: 'Run onboarding again' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Run onboarding again' })).toHaveCount(0);
+    const state = await page.evaluate(() => window.__onboardingController.snapshot());
+    expect(state.writes).toEqual([false]);
+    expect(state.events.at(-1)).toEqual({ section: 'onboarding', workflowAction: 'started', params: { source_surface: 'settings' } });
+});
+
+test('Finish persists completion before closing and emits completed once', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
+    await expect(page.getByRole('dialog')).toBeVisible();
+    while (await page.getByRole('button', { name: 'Next' }).count()) {
+        await page.getByRole('button', { name: 'Next' }).click();
+    }
+    await page.getByRole('button', { name: 'Finish' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const state = await page.evaluate(() => window.__onboardingController.snapshot());
+    expect(state.writes).toEqual([true]);
+    expect(state.events.filter(event => event.workflowAction === 'completed')).toEqual([
+        { section: 'onboarding', workflowAction: 'completed', params: { source_surface: 'first_run', result: 'success' } },
+    ]);
+});
+
+test('interrupted reload restarts at the first eligible step', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading')).toHaveText('Request fresh data');
+    await page.reload();
+    await page.waitForFunction(() => Boolean(window.__onboardingController));
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
+    await expect(page.getByRole('heading')).toHaveText('Choose a sprint');
+});
+
+test('mobile coachmark and spotlight stay within the viewport', async ({ page }, testInfo) => {
+    await installHarness(page);
+    await page.setViewportSize({ width: 390, height: 700 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openTour(page);
+
+    for (const selector of ['.onboarding-tour-card', '.onboarding-tour-spotlight']) {
+        const rect = await page.locator(selector).evaluate((node) => {
+            const bounds = node.getBoundingClientRect();
+            return { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom };
+        });
+        expect(rect.left).toBeGreaterThanOrEqual(0);
+        expect(rect.top).toBeGreaterThanOrEqual(0);
+        expect(rect.right).toBeLessThanOrEqual(390);
+        expect(rect.bottom).toBeLessThanOrEqual(700);
+    }
+    await page.screenshot({
+        path: testInfo.outputPath('onboarding-tour-mobile.png'),
+        animations: 'disabled',
+    });
 });

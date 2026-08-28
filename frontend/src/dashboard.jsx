@@ -15,6 +15,8 @@ import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
+import OnboardingTour from './onboarding/OnboardingTour.jsx';
+import { useOnboardingController } from './onboarding/useOnboardingTour.js';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
@@ -131,6 +133,7 @@ import {
     fetchIssueTypesConfig as requestIssueTypesConfig,
     saveIssueTypesConfig as requestSaveIssueTypesConfig,
     fetchAvailableIssueTypes as requestAvailableIssueTypes,
+    saveOnboardingPreference as requestSaveOnboardingPreference,
 } from './api/configApi.js';
 import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.jsx';
 import {
@@ -2698,6 +2701,30 @@ import {
                 if (!isGroupDraftDirty) return 'No changes to save';
                 return '';
             }, [groupSaving, epmConfigSaving, authMode, sharedConfigReady, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
+            const onboarding = useOnboardingController({
+                bootstrapReady: groupsLoading === false
+                    && groupsConfig.source === 'workspace_db'
+                    && groupPreferences.onboardingRequired === false,
+                onboardingDone: groupPreferences.onboardingDone,
+                setOnboardingDone: (onboardingDone) => setGroupPreferences((current) => ({ ...current, onboardingDone })),
+                savePreference: (onboardingDone) => requestSaveOnboardingPreference(BACKEND_URL, onboardingDone),
+                prepareCatchUp: () => {
+                    setSelectedView('eng');
+                    setShowPlanning(false);
+                    setShowStats(false);
+                    setShowScenario(false);
+                    setShowBoard(false);
+                },
+                closeSettings: closeGroupManage,
+                trackSettingsAction,
+            });
+            const onboardingReplayDisabled = Boolean(
+                isGroupDraftDirty
+                || groupSaving
+                || epmConfigSaving
+                || groupVisibilitySaving
+                || onboarding.pending
+            );
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -12478,6 +12505,8 @@ import {
                 <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter applied-filter' : ''} ${extraClassName}`.trim()}>
                     <div className="search-wrap">
                         <input
+                            data-onboarding-target="search"
+                            data-onboarding-surface={surface}
                             type="text"
                             className="search-input"
                             placeholder="Search tickets..."
@@ -12612,6 +12641,8 @@ import {
                                 }
                             }}
                             aria-disabled={sprintsLoading || availableSprints.length === 0}
+                            data-onboarding-target="sprint"
+                            data-onboarding-surface={surface}
                         >
                             {showSprintDropdown ? (
                                 <input
@@ -12701,6 +12732,8 @@ import {
                                         }
                                     }}
                                     aria-disabled={groupsLoading}
+                                    data-onboarding-target="group"
+                                    data-onboarding-surface={surface}
                                 >
                                     {showGroupDropdown ? (
                                         <input
@@ -12793,6 +12826,8 @@ import {
                                 }
                             }}
                             aria-disabled={tasks.length === 0 && loading}
+                            data-onboarding-target="teams"
+                            data-onboarding-surface={surface}
                         >
                             {showTeamDropdown ? (
                                 <input
@@ -12908,6 +12943,7 @@ import {
                             <div
                                 key={epicGroup.key}
                                 className={`epic-block ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? 'epic-excluded' : ''} ${stickyEpicFocusKey === epicGroup.key ? 'epic-block-sticky-focus' : ''}`}
+                                data-onboarding-target="hierarchy-epic"
                                 ref={(node) => {
                                     if (!node) {
                                         epicRefMap.current.delete(epicGroup.key);
@@ -13244,6 +13280,7 @@ import {
                                     {renderViewSwitch()}
                                     {renderSearchControl('main')}
                                     <JiraExportButton
+                                        onboardingTarget="jira-export"
                                         jiraUrl={jiraUrl}
                                         epicKeys={activeJiraExportEpicKeys}
                                         storyKeys={activeJiraExportStoryKeys}
@@ -13258,6 +13295,8 @@ import {
                                         disabled={manualRefreshDisabled}
                                         title={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                         aria-label={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
+                                        data-onboarding-target="refresh"
+                                        data-onboarding-surface="main"
                                     >
                                         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                             <path d="M19 7.5a7.5 7.5 0 1 0 2 5.1" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"/>
@@ -16097,6 +16136,13 @@ import {
                                         removeGroupDraft,
                                         selectDepartmentSettingsTab,
                                         firstRunConfigurationActive,
+                                        onboardingReplayAvailable: personalGroupPreferencesEnabled
+                                            && groupPreferences.onboardingRequired === false,
+                                        onboardingReplayDisabled,
+                                        onboardingReplayPending: onboarding.pending,
+                                        onboardingReplayError: !onboarding.run ? onboarding.error : '',
+                                        onboardingReplayRecoveryLoginUrl: !onboarding.run ? onboarding.recoveryLoginUrl : '',
+                                        onReplayOnboarding: onboarding.replay,
                                     }}
                                 />
                                 </div>
@@ -16265,6 +16311,15 @@ import {
                             recoveryLoginUrl={firstRunRecoveryLoginUrl}
                         />
                     )}
+                    <OnboardingTour
+                        run={onboarding.run}
+                        onboardingDone={groupPreferences.onboardingDone}
+                        onSkip={onboarding.skip}
+                        onFinish={onboarding.finish}
+                        actionPending={onboarding.pending}
+                        actionError={onboarding.error}
+                        recoveryLoginUrl={onboarding.recoveryLoginUrl}
+                    />
                     {showUpdateModal && updateNoticeVisible && (
                         <div
                             className="update-modal-backdrop"

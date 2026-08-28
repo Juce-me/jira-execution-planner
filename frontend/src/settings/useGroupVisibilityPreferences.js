@@ -16,6 +16,7 @@ const EMPTY_GROUP_PREFERENCES = {
     customized: false,
     preferenceExists: false,
     onboardingRequired: false,
+    onboardingDone: true,
     visibleGroupIds: [],
     effectiveVisibleGroupIds: [],
     activeGroupId: null,
@@ -232,6 +233,7 @@ export function useGroupVisibilityPreferences({
                     customized: true,
                     preferenceExists: true,
                     onboardingRequired: false,
+                    onboardingDone: true,
                     visibleGroupIds: payload.visibleGroupIds,
                     activeGroupId: payload.activeGroupId,
                 };

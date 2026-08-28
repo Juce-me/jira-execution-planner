@@ -59,6 +59,7 @@ export function applyLocalGroupPreferences(config, prefs = {}) {
         customized: true,
         preferenceExists: true,
         onboardingRequired: false,
+        onboardingDone: true,
         visibleGroupIds: saved.visibleGroupIds,
         activeGroupId: saved.activeGroupId || null,
     };

@@ -97,6 +97,7 @@
 - `frontend/src/settings/FirstRunGroupSelectionModal.jsx`: add **Configure your own** entry and explanatory copy only; preserve the star plan's selection controls.
 - `frontend/src/settings/TeamGroupsSettings.jsx`: show duplicate-first guidance when opened from onboarding; preserve existing Duplicate behavior.
 - `frontend/src/dashboard.jsx`: integrate the tour, replay action, and stable target attributes.
+- `frontend/src/components/JiraExportButton.jsx`: expose the stable onboarding target on the component-owned native export trigger.
 - `frontend/src/eng/EngFilterBar.jsx`, `frontend/src/eng/EngView.jsx`, `frontend/src/issues/IssueCard.jsx`: add stable filter and hierarchy target attributes at the components that own those controls.
 - `frontend/src/issues/PriorityTransitionMenu.jsx`, `frontend/src/issues/ProjectTrackTransitionMenu.jsx`, `frontend/src/issues/StatusTransitionMenu.jsx`: add the shared editable-control target attributes without recreating transition triggers in `dashboard.jsx`.
 - `frontend/src/styles/settings.css`: import onboarding CSS.

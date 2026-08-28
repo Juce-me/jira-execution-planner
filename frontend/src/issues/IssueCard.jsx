@@ -173,6 +173,7 @@ export default function IssueCard({
             data-task-key={task.key}
             data-task-id={task.id || task.key}
             data-issue-key={task.key}
+            data-onboarding-target="hierarchy-story"
         >
             <div className="task-header">
                 {onRemove && (

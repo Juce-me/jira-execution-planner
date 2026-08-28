@@ -20,6 +20,7 @@ export default function ProjectTrackTransitionMenu({
                 type="button"
                 className="epic-track-indicator"
                 data-project-track-transition-trigger="true"
+                data-onboarding-target="editing-track"
                 data-issue-key={epicKey}
                 aria-haspopup="menu"
                 aria-expanded={isOpen}

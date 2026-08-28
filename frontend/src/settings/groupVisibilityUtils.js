@@ -23,6 +23,7 @@ export const normalizeGroupPreferences = (payload) => {
         preferenceExists: Boolean(preferences?.preferenceExists),
         customized: Boolean(preferences?.customized),
         onboardingRequired: Boolean(preferences?.onboardingRequired),
+        onboardingDone: preferences?.onboardingDone !== false,
         visibleGroupIds: uniqueIds(preferences?.visibleGroupIds),
         effectiveVisibleGroupIds: uniqueIds(preferences?.effectiveVisibleGroupIds),
         activeGroupId: normalizeId(preferences?.activeGroupId) || null,

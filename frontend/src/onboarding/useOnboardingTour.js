@@ -4,6 +4,102 @@ import {
     reconcileCurrentStepId,
     reconcileTourSessionState,
 } from './onboardingSteps.js';
+import { safeAppLoginUrl } from '../settings/groupVisibilityUtils.js';
+
+export function useOnboardingController({
+    bootstrapReady = false,
+    onboardingDone = true,
+    setOnboardingDone,
+    savePreference,
+    prepareCatchUp,
+    closeSettings,
+    trackSettingsAction,
+} = {}) {
+    const [run, setRun] = React.useState(false);
+    const [sourceSurface, setSourceSurface] = React.useState('first_run');
+    const [pending, setPending] = React.useState(false);
+    const [error, setError] = React.useState('');
+    const [recoveryLoginUrl, setRecoveryLoginUrl] = React.useState('');
+    const automaticStartedRef = React.useRef(false);
+    const inFlightRef = React.useRef(false);
+    const replayPendingRef = React.useRef(false);
+
+    const open = React.useCallback((source) => {
+        const normalizedSource = source === 'settings' ? 'settings' : 'first_run';
+        prepareCatchUp?.();
+        setError('');
+        setRecoveryLoginUrl('');
+        setSourceSurface(normalizedSource);
+        setRun(true);
+        trackSettingsAction?.('onboarding', 'started', { source_surface: normalizedSource });
+    }, [prepareCatchUp, trackSettingsAction]);
+
+    React.useEffect(() => {
+        if (!bootstrapReady || onboardingDone !== false || run || automaticStartedRef.current || replayPendingRef.current) return;
+        automaticStartedRef.current = true;
+        open('first_run');
+    }, [bootstrapReady, onboardingDone, open, run]);
+
+    React.useEffect(() => {
+        if (onboardingDone !== false) automaticStartedRef.current = false;
+    }, [onboardingDone]);
+
+    const persist = React.useCallback(async (nextDone, outcome) => {
+        if (inFlightRef.current || typeof savePreference !== 'function') return false;
+        inFlightRef.current = true;
+        setPending(true);
+        setError('');
+        setRecoveryLoginUrl('');
+        try {
+            const payload = await savePreference(nextDone);
+            if (payload?.onboardingDone !== nextDone) {
+                throw new Error('Saved onboarding preference could not be verified. Please retry.');
+            }
+            setOnboardingDone?.(nextDone);
+            if (nextDone) {
+                setRun(false);
+                trackSettingsAction?.('onboarding', outcome, {
+                    source_surface: sourceSurface,
+                    result: 'success',
+                });
+            }
+            return true;
+        } catch (saveError) {
+            setError(saveError?.message || 'Failed to save onboarding preference. Please retry.');
+            setRecoveryLoginUrl(saveError?.status === 401 ? safeAppLoginUrl(saveError?.loginUrl) : '');
+            return false;
+        } finally {
+            inFlightRef.current = false;
+            setPending(false);
+        }
+    }, [savePreference, setOnboardingDone, sourceSurface, trackSettingsAction]);
+
+    const skip = React.useCallback(() => persist(true, 'skipped'), [persist]);
+    const finish = React.useCallback(() => persist(true, 'completed'), [persist]);
+    const replay = React.useCallback(async () => {
+        replayPendingRef.current = true;
+        const saved = await persist(false, '');
+        if (!saved) {
+            replayPendingRef.current = false;
+            return false;
+        }
+        closeSettings?.();
+        open('settings');
+        replayPendingRef.current = false;
+        return true;
+    }, [closeSettings, open, persist]);
+
+    return {
+        run,
+        sourceSurface,
+        pending,
+        error,
+        recoveryLoginUrl,
+        skip,
+        finish,
+        replay,
+    };
+}
 
 export default function useOnboardingTour({
     steps = [],

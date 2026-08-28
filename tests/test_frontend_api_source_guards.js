@@ -713,6 +713,29 @@ test('onboarding preference save wrapper preserves structured auth recovery erro
     });
 });
 
+test('dashboard onboarding writes use only the exact CSRF preference wrapper', () => {
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    const onboardingSources = listSourceFiles(path.join(frontendSrcPath, 'onboarding'))
+        .map(readSource)
+        .join('\n');
+    const integrationSource = `${dashboardSource}\n${onboardingSources}`;
+
+    assert.match(
+        dashboardSource,
+        /saveOnboardingPreference\s+as\s+requestSaveOnboardingPreference/,
+        'Expected dashboard integration to import the existing CSRF onboarding wrapper',
+    );
+    assert.match(
+        integrationSource,
+        /requestSaveOnboardingPreference\(\s*BACKEND_URL\s*,\s*(?:true|false|onboardingDone)\s*\)/,
+        'Expected onboarding writes to pass only the boolean preference argument',
+    );
+    assert.doesNotMatch(integrationSource, /\/api\/me\/onboarding/);
+    assert.doesNotMatch(integrationSource, /\/api\/groups-preferences/);
+    assert.doesNotMatch(onboardingSources, /setFavoriteGroupDraft|saveGroupPreferences/);
+    assert.doesNotMatch(onboardingSources, /fetchOnboarding|loadOnboarding|method:\s*['"]GET['"]/i);
+});
+
 test('excluded capacity stats source wrapper can request a backend refresh', async () => {
     const engApi = loadApiModule('engApi.js', [
         'fetchExcludedCapacityStatsSource',

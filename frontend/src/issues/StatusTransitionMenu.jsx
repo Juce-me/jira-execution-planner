@@ -163,6 +163,7 @@ export default function StatusTransitionMenu({
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
                 data-status-transition-trigger="true"
+                data-onboarding-target="editing-status"
                 data-issue-key={issueKey}
                 data-issue-kind={String(fallbackIssueType || '').toLowerCase()}
                 disabled={submitting && !isOpen}

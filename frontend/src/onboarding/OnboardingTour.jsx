@@ -60,6 +60,8 @@ export default function OnboardingTour({
     onSkip,
     onFinish,
     actionPending = false,
+    actionError = '',
+    recoveryLoginUrl = '',
 } = {}) {
     const [snapshot, setSnapshot] = React.useState(() => (
         typeof document === 'undefined'
@@ -227,6 +229,12 @@ export default function OnboardingTour({
                 <div className="onboarding-tour-progress" aria-live="polite">{progress.label}</div>
                 <h2 id={headingId}>{presentation.title}</h2>
                 <p>{presentation.body}</p>
+                {actionError && (
+                    <div className="onboarding-tour-error" role="alert">
+                        <span>{actionError}</span>
+                        {recoveryLoginUrl && <a href={recoveryLoginUrl}>Sign in again</a>}
+                    </div>
+                )}
                 <div className="onboarding-tour-actions">
                     <button type="button" className="secondary" onClick={tour.skip} disabled={actionPending}>
                         Skip onboarding

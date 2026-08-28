@@ -179,28 +179,30 @@ test('personal group favorite analytics omit identity and retain existing event 
 });
 
 test('onboarding analytics use only the canonical settings action outcomes and safe parameters', () => {
-    const source = read('frontend/src/onboarding/useOnboardingTour.js');
-    const calls = Array.from(source.matchAll(/trackSettingsAction\?\.\(([\s\S]*?)\);/g), ([, args]) => (
-        args.replace(/\s+/g, ' ').trim()
-    ));
+    const helperSource = read('frontend/src/onboarding/onboardingAnalytics.js');
+    const controllerSource = read('frontend/src/onboarding/useOnboardingTour.js');
+    const analyticsSources = `${helperSource}\n${controllerSource}`;
+    const onboardingDirectory = path.join(repoRoot, 'frontend', 'src', 'onboarding');
+    const bypasses = fs.readdirSync(onboardingDirectory)
+        .filter((fileName) => /\.jsx?$/.test(fileName) && fileName !== 'onboardingAnalytics.js')
+        .filter((fileName) => /trackSettingsAction\s*(?:\?\.|\()/.test(
+            fs.readFileSync(path.join(onboardingDirectory, fileName), 'utf8'),
+        ));
 
-    assert.ok(calls.length > 0, 'onboarding must emit through the settings analytics helper');
-    for (const call of calls) assert.match(call, /^'onboarding',/);
-    const parameterKeys = new Set(calls.flatMap((call) => (
-        Array.from(call.matchAll(/\b([a-z][a-z0-9_]*)\s*:/g), ([, key]) => key)
-    )));
-    assert.deepEqual([...parameterKeys].sort(), ['result', 'source_surface']);
-    const analyticsCalls = calls.join('\n');
+    assert.match(controllerSource, /trackOnboardingAnalytics\(/);
+    assert.deepEqual(bypasses, []);
+    assert.doesNotMatch(controllerSource, /['"]onboarding['"]\s*,/);
     for (const forbidden of [
         'step', 'group', 'team', 'sprint', 'issue', 'summary', 'url', 'search',
         'account', 'email', 'user', 'workspace', 'name', 'key', 'raw', 'content',
     ]) {
         assert.equal(
-            analyticsCalls.toLowerCase().includes(forbidden),
+            helperSource.toLowerCase().includes(forbidden),
             false,
-            `onboarding analytics calls must not reference ${forbidden}`,
+            `onboarding analytics helper must not reference ${forbidden}`,
         );
     }
+    assert.doesNotMatch(analyticsSources, /trackEvent|trackProductEvent|settings_action/);
 });
 
 test('onboarding step navigation is untracked and its analytics contract is documented', () => {

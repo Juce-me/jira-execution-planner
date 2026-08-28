@@ -4,6 +4,7 @@ import {
     reconcileCurrentStepId,
     reconcileTourSessionState,
 } from './onboardingSteps.js';
+import { trackOnboardingAnalytics } from './onboardingAnalytics.js';
 import { safeAppLoginUrl } from '../settings/groupVisibilityUtils.js';
 
 export function useOnboardingController({
@@ -31,7 +32,7 @@ export function useOnboardingController({
         setRecoveryLoginUrl('');
         setSourceSurface(normalizedSource);
         setRun(true);
-        trackSettingsAction?.('onboarding', 'started', { source_surface: normalizedSource });
+        trackOnboardingAnalytics(trackSettingsAction, 'started', normalizedSource);
     }, [prepareCatchUp, trackSettingsAction]);
 
     React.useEffect(() => {
@@ -58,10 +59,7 @@ export function useOnboardingController({
             setOnboardingDone?.(nextDone);
             if (nextDone) {
                 setRun(false);
-                trackSettingsAction?.('onboarding', outcome, {
-                    source_surface: sourceSurface,
-                    result: 'success',
-                });
+                trackOnboardingAnalytics(trackSettingsAction, outcome, sourceSurface);
             }
             return true;
         } catch (saveError) {

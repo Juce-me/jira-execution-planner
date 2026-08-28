@@ -106,6 +106,9 @@ test.beforeAll(() => {
                             error.loginUrl = behavior.loginUrl;
                             return Promise.reject(error);
                         }
+                        if (behavior.type === 'mismatch') {
+                            return Promise.resolve({ onboardingDone: !nextDone });
+                        }
                         return Promise.resolve({ onboardingDone: nextDone });
                     }, []);
                     const prepareCatchUp = React.useCallback(() => {
@@ -368,6 +371,10 @@ test('automatic run waits for definitive bootstrap readiness and preserves scope
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
     await expect(page.getByRole('dialog')).toBeVisible();
+    await page.evaluate(() => window.__onboardingController.setBootstrap(false, false));
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
+    await expect(page.getByRole('dialog')).toBeVisible();
 
     const state = await page.evaluate(() => window.__onboardingController.snapshot());
     expect(state.writes).toEqual([]);
@@ -429,11 +436,15 @@ test('skip persists before close and a shared pending guard deduplicates Escape'
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
     await page.getByRole('dialog').press('Escape');
-    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([true]);
+    const pendingState = await page.evaluate(() => window.__onboardingController.snapshot());
+    expect(pendingState.writes).toEqual([true]);
+    expect(pendingState.events.filter(event => event.workflowAction === 'skipped')).toEqual([]);
     await page.evaluate(() => window.__resolveOnboardingWrite());
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const state = await page.evaluate(() => window.__onboardingController.snapshot());
-    expect(state.events.at(-1)).toEqual({ section: 'onboarding', workflowAction: 'skipped', params: { source_surface: 'first_run', result: 'success' } });
+    expect(state.events.filter(event => event.workflowAction === 'skipped')).toEqual([
+        { section: 'onboarding', workflowAction: 'skipped', params: { source_surface: 'first_run', result: 'success' } },
+    ]);
 });
 
 test('failed completion remains retryable and exposes only a safe local login path', async ({ page }) => {
@@ -446,13 +457,22 @@ test('failed completion remains retryable and exposes only a safe local login pa
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
     await expect(page.getByRole('alert')).toHaveText('Save failed.');
     await expect(page.getByRole('link', { name: 'Sign in again' })).toHaveCount(0);
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).events.filter(event => event.workflowAction === 'skipped')).toEqual([]);
 
     await page.evaluate(() => window.__onboardingController.setBehavior({ type: 'error', status: 401, loginUrl: '/login?reason=session_expired' }));
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
     await expect(page.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).events.filter(event => event.workflowAction === 'skipped')).toEqual([]);
+    await page.evaluate(() => window.__onboardingController.setBehavior({ type: 'mismatch' }));
+    await page.getByRole('button', { name: 'Skip onboarding' }).click();
+    await expect(page.getByRole('alert')).toHaveText('Saved onboarding preference could not be verified. Please retry.');
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).events.filter(event => event.workflowAction === 'skipped')).toEqual([]);
     await page.evaluate(() => window.__onboardingController.setBehavior({ type: 'success' }));
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).events.filter(event => event.workflowAction === 'skipped')).toEqual([
+        { section: 'onboarding', workflowAction: 'skipped', params: { source_surface: 'first_run', result: 'success' } },
+    ]);
 });
 
 test('settings replay is disabled while dirty and starts only after false persistence succeeds', async ({ page }) => {
@@ -470,12 +490,19 @@ test('settings replay is disabled while dirty and starts only after false persis
 
 test('Finish persists completion before closing and emits completed once', async ({ page }) => {
     await installControllerHarness(page);
-    await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
+    await page.evaluate(() => {
+        window.__onboardingController.setBehavior({ type: 'deferred' });
+        window.__onboardingController.setBootstrap(true, false);
+    });
     await expect(page.getByRole('dialog')).toBeVisible();
     while (await page.getByRole('button', { name: 'Next' }).count()) {
         await page.getByRole('button', { name: 'Next' }).click();
     }
     await page.getByRole('button', { name: 'Finish' }).click();
+    const pendingState = await page.evaluate(() => window.__onboardingController.snapshot());
+    expect(pendingState.writes).toEqual([true]);
+    expect(pendingState.events.filter(event => event.workflowAction === 'completed')).toEqual([]);
+    await page.evaluate(() => window.__resolveOnboardingWrite());
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const state = await page.evaluate(() => window.__onboardingController.snapshot());
     expect(state.writes).toEqual([true]);

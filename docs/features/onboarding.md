@@ -20,7 +20,7 @@ Tour progress is session-only. If a user reloads or otherwise interrupts an unfi
 
 ## Replay from Settings
 
-In workspace-database mode, **Run onboarding again** is available in Settings. It is disabled while any Settings section is dirty or saving. Starting a replay first persists the incomplete state, closes Settings, prepares ENG Catch Up, and opens the tour. A failed write keeps Settings open and leaves the previous state unchanged.
+In Atlassian OAuth workspace-database mode, **Run onboarding again** is available in Settings. It is disabled while any Settings section is dirty or saving. Starting a replay first persists the incomplete state, closes Settings, prepares ENG Catch Up, and opens the tour. A failed write keeps Settings open and leaves the previous state unchanged.
 
 Replay does not alter Department visibility, the saved favorite, current dashboard scope, sprint, or team selection.
 

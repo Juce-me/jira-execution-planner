@@ -65,21 +65,26 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
                     'filters': {'projectKeys': ['PROD']},
                     'epm': {
                         'tab': 'active',
-                        'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-2']},
-                        'labelPrefix': 'rnd_project_*',
                         'selectedSprint': 'Active',
-                        'projects': {
-                            'home-1': {
-                                'homeProjectId': 'home-1',
-                                'name': 'Synthetic Project',
-                                'label': 'rnd_project_synthetic',
-                            },
-                        },
                     },
                 },
                 is_default=True,
             )
-            session.add_all([connection, view])
+            shared = models.WorkspaceDashboardConfig(
+                workspace_id=workspace.id,
+                payload_version=1,
+                config_revision=3,
+                payload={'version': 1, 'epm': {
+                    'version': 2,
+                    'labelPrefix': 'rnd_project_*',
+                    'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-2']},
+                    'issueTypes': {'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story']},
+                    'projects': {'home-1': {'id': 'home-1', 'homeProjectId': 'home-1', 'name': 'Synthetic Project', 'label': 'rnd_project_synthetic'}},
+                }},
+                created_by=user.id,
+                updated_by=user.id,
+            )
+            session.add_all([connection, view, shared])
             session.commit()
             workspace_id = workspace.id
             view_id = view.id
@@ -105,11 +110,14 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
         assert response.status_code == 200, response.get_data(as_text=True)
         body = response.get_json()
         assert body['epm']['projects']['home-1']['label'] == 'rnd_project_synthetic'
+        assert body['sharedConfigRevision'] == 3
+        assert body['sharedConfig']['epm']['scope']['rootGoalKey'] == 'ROOT-1'
         assert body['viewConfig']['source'] == 'user_saved_view'
         assert body['viewConfig']['workspaceId'] == workspace_id
         assert body['viewConfig']['viewConfigId'] == view_id
         assert body['viewConfig']['viewType'] == 'epm'
         assert body['viewConfig']['view']['epm']['selectedSprint'] == 'Active'
+        assert set(body['viewConfig']['view']['epm']) == {'tab', 'selectedSprint'}
     finally:
         db_engine.dispose_engines()
         jira_server.OAUTH_TOKEN_STORE.clear()

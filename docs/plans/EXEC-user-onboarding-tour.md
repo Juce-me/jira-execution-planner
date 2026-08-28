@@ -77,7 +77,7 @@
 
 ### Create
 
-- `backend/db/migrations/versions/20260826_0007_user_onboarding.py`: add and backfill `user_group_preferences.onboarding_done`.
+- `backend/db/migrations/versions/20260828_0008_user_onboarding.py`: add and backfill `user_group_preferences.onboarding_done` after workspace dashboard configuration migration `20260826_0007`.
 - `frontend/src/onboarding/onboardingSteps.js`: immutable step catalog, target eligibility, and placement helpers.
 - `frontend/src/onboarding/useOnboardingTour.js`: automatic start, replay, persistence, and analytics dedupe.
 - `frontend/src/onboarding/OnboardingTour.jsx`: portal, spotlight, coachmark, navigation, focus trap, and fallback card.
@@ -120,7 +120,7 @@
 - [ ] Add failing migration tests proving a new column is non-null, existing rows backfill to `true`, new rows default to `false`, and downgrade removes only that column.
 - [ ] Add failing service tests for missing row, stored false/true, user/workspace isolation, idempotent writes, and JSON-mode rejection.
 - [ ] Run focused backend tests and confirm failure is limited to missing onboarding state.
-- [ ] Add migration `revision='20260826_0007'`, `down_revision='20260604_0006'` and map the boolean with a safe server default.
+- [ ] Add migration `revision='20260828_0008'`, `down_revision='20260826_0007'` and map the boolean with a safe server default.
 - [ ] Extend groups-config preference serialization without adding a request or changing `activeGroupId`, visible-group, or `onboardingRequired` logic.
 - [ ] Implement an updater that resolves the preference row by authenticated workspace/user, rejects absence with `GroupSelectionRequired`, commits only `onboarding_done`, and translates storage errors consistently.
 - [ ] Re-run focused tests and commit the backend state slice.

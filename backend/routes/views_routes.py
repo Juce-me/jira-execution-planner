@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from backend.auth.csrf import validate_csrf_token
 from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
 from backend.config.db_repository import DbConfigRepository, ViewConfigNotFound, infer_view_type
+from backend.config.shared_config import validate_private_view_ownership
 from backend.config.view_validation import ViewPayloadValidationError, validate_user_view_payload
 from backend.db import models
 from backend.db.engine import DatabaseConfigurationError, session_scope
@@ -132,6 +133,7 @@ def _extract_view_payload(raw):
     if not isinstance(payload, dict):
         raise ViewPayloadValidationError(['<root>'])
     validate_user_view_payload(payload)
+    validate_private_view_ownership(payload, validate_sensitive=False)
     view_type = str(raw.get('viewType') or infer_view_type(payload)).strip().lower()
     if view_type not in VALID_VIEW_TYPES:
         raise ValueError('viewType must be eng, epm, or mixed')

@@ -202,3 +202,50 @@ class PreDbToolAdminGateTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["boardId"], "7")
         mock_save.assert_called_once()
+
+    def test_shared_config_routes_reject_raw_payload_bypasses_before_saving(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
+        cases = (
+            (
+                "/api/projects/selected",
+                {"selected": [{"key": "ABC", "type": "product", "workspaceId": "claimed"}]},
+            ),
+            (
+                "/api/projects/selected",
+                {"selected": [{"key": "ABC", "type": "product", "unexpected": "value"}]},
+            ),
+            (
+                "/api/capacity/config",
+                {"project": "CAP", "fieldId": {"value": "customfield_1"}, "fieldName": "Capacity"},
+            ),
+            (
+                "/api/sprint-field/config",
+                {"fieldId": "customfield_2", "fieldName": {"value": "Sprint"}},
+            ),
+            (
+                "/api/issue-types/config",
+                {"issueTypes": ["Story", {"name": "Bug"}]},
+            ),
+            (
+                "/api/epm/config",
+                {"version": 2, "scope": {"rootGoalKey": "GOAL-1", "unexpected": "value"}, "projects": {}},
+            ),
+            (
+                "/api/epm/config",
+                {"version": 2, "issueTypes": {"leaf": ["Story", {"name": "Bug"}]}, "projects": {}},
+            ),
+            (
+                "/api/epm/config",
+                {"version": 2, "projects": {"draft-1": {"name": "Draft", "user_id": "claimed"}}},
+            ),
+        )
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
+            for route, payload in cases:
+                with self.subTest(route=route, payload=payload):
+                    response = self.client.post(route, json=payload, headers=self.csrf_headers())
+                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+
+        mock_save.assert_not_called()

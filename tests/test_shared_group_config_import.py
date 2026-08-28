@@ -193,7 +193,7 @@ class SharedGroupConfigImportTests(unittest.TestCase):
             exported = json.load(handle)
         self.assertEqual(exported['teamGroups']['groups'][0]['id'], 'updated')
         self.assertEqual(exported['teamGroups']['groups'][0]['adHocCapacityEpics'], [])
-        self.assertEqual(exported['projects']['selected'][0]['key'], 'PROD')
+        self.assertNotIn('projects', exported)
 
 
 if __name__ == '__main__':

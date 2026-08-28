@@ -117,7 +117,8 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(settingsModalCallSource.includes('onDiscard={discardGroupDraftChanges}'), 'Expected discard action to stay owned by dashboard');
     assert.ok(settingsModalCallSource.includes('saveDisabled={settingsSaveDisabled}'), 'Expected dashboard to own save disabled state');
     assert.ok(settingsModalCallSource.includes('saveTitle={settingsSaveTitle}'), 'Expected dashboard to own save title state');
-    assert.ok(settingsModalCallSource.includes("validationMessages={groupManageTab !== 'connections' ? [...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...groupConfigValidationErrors] : []}"), 'Expected validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes('workspaceConfigConflictMessages(workspaceConfigConflict)'), 'Expected workspace conflict validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes('groupConfigConflictMessages(groupsConfigConflict'), 'Expected group conflict validation messages to remain in the shell');
     assert.ok(settingsModalCallSource.includes('validationActions={'), 'Expected the conflict exits to render in the shell validation slot');
     assert.ok(settingsModalCallSource.includes('onCancel={requestCloseGroupManage}'), 'Expected dashboard to wire cancel through the shared close handler');
     assert.ok(settingsModalCallSource.includes('onSave={settingsSaveHandler}'), 'Expected dashboard to wire save through the tab-aware save handler');
@@ -232,7 +233,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const epmSubGoalsRequestIdRef = useRef(0);'), 'Expected stale-response guard ref for sub-goal fetches');
     assert.ok(epmViewDataSource.includes('if (epmProjectsRequestIdRef.current !== requestId) {'), 'Expected stale-response guard branch for EPM project refreshes');
     assert.ok(dashboardSource.includes('if (epmSubGoalsRequestIdRef.current !== requestId) {'), 'Expected stale-response guard branch for sub-goal fetches');
-    assert.ok(dashboardSource.includes('const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);'), 'Expected dashboard EPM save to delegate endpoint construction to the API wrapper');
+    assert.ok(dashboardSource.includes('const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft, sharedConfigRevisionRef.current);'), 'Expected dashboard EPM save to delegate endpoint construction with the shared revision');
     assert.ok(epmApiSource.includes('const { csrfToken } = await fetchCsrfToken(backendUrl);'), 'Expected EPM config save wrapper to fetch a token-bound CSRF token');
     assert.ok(epmApiSource.includes("'X-CSRF-Token': csrfToken || ''"), 'Expected EPM config save wrapper to send the CSRF header');
     assert.ok(dashboardSource.includes('const config = await loadEpmConfig();'), 'Expected config load to remain independent');
@@ -702,10 +703,10 @@ test('unified settings save gates admin writes while saving dirty config section
         'await savePriorityWeightsConfig();',
         'await saveBoardConfig();',
         'await saveCapacityConfig();',
-        'await saveSprintFieldConfig();',
-        'await saveParentNameFieldConfig();',
-        'await saveStoryPointsFieldConfig();',
-        'await saveTeamFieldConfig();',
+        'saveSprintFieldConfig(sharedConfigRevisionRef.current)',
+        'saveParentNameFieldConfig(sharedConfigRevisionRef.current)',
+        'saveStoryPointsFieldConfig(sharedConfigRevisionRef.current)',
+        'saveTeamFieldConfig(sharedConfigRevisionRef.current)',
         'await saveIssueTypesConfig();',
     ].forEach((call) => {
         assert.ok(!beforeGate.includes(call), `Did not expect ${call} before shared config permission gate`);

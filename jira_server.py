@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import abort, has_request_context, jsonify, redirect, request, send_file, send_from_directory, session
+from flask import abort, g, has_request_context, jsonify, redirect, request, send_file, send_from_directory, session
 import requests
 import argparse
 import base64
@@ -57,6 +57,8 @@ from backend.config.repository import (
     json_repository as build_json_config_repository,
     validate_config_storage_startup,
 )
+from backend.config.shared_config import normalize_shared_admin_section
+from backend.services.workspace_dashboard_config import WorkspaceConfigConflict
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
@@ -1677,11 +1679,43 @@ def load_dashboard_config(*, source='auto'):
         return _load_dashboard_config_json()
     if source == 'db' or config_storage_db_enabled():
         context = _current_dashboard_config_context_or_error()
-        return build_db_config_repository().load_dashboard_config(
-            context,
-            fallback_loader=_load_dashboard_config_json,
-        )
+        return load_dashboard_config_snapshot(source='db').payload
     return _load_dashboard_config_json()
+
+
+def load_dashboard_config_snapshot(*, source='auto'):
+    source = _normalize_dashboard_config_source(source)
+    if source == 'jsonfile' or (source == 'auto' and not config_storage_db_enabled()):
+        from backend.services.workspace_dashboard_config import WorkspaceConfigSnapshot
+        payload = _load_dashboard_config_json() or {}
+        return WorkspaceConfigSnapshot(payload, 0, 'legacy_json')
+    context = _current_dashboard_config_context_or_error()
+    cache_key = '_workspace_dashboard_config_snapshot'
+    if has_request_context() and hasattr(g, cache_key):
+        return getattr(g, cache_key)
+    snapshot = build_db_config_repository().load_dashboard_config_snapshot(
+        context,
+        fallback_loader=_load_dashboard_config_json,
+        legacy_site_url=JIRA_URL or '',
+    )
+    if has_request_context():
+        setattr(g, cache_key, snapshot)
+    return snapshot
+
+
+def save_dashboard_config_section(section, value, *, base_revision):
+    context = _current_dashboard_config_context_or_error()
+    snapshot = build_db_config_repository().save_dashboard_section(
+        context,
+        section,
+        value,
+        base_revision,
+        fallback_loader=_load_dashboard_config_json,
+        legacy_site_url=JIRA_URL or '',
+    )
+    if has_request_context():
+        g._workspace_dashboard_config_snapshot = snapshot
+    return snapshot
 
 
 def _save_dashboard_config_json(config):
@@ -1694,8 +1728,7 @@ def save_dashboard_config(config, *, source='auto'):
     if source == 'jsonfile':
         return _save_dashboard_config_json(config)
     if source == 'db' or config_storage_db_enabled():
-        context = _current_dashboard_config_context_or_error()
-        return build_db_config_repository().save_dashboard_config(context, config)
+        raise ConfigStorageError('full workspace dashboard replacement is forbidden in DB mode')
     return _save_dashboard_config_json(config)
 
 
@@ -5962,17 +5995,30 @@ LABELS_CACHE = {'data': None, 'timestamp': 0}
 LABELS_CACHE_TTL = 15 * 60  # 15 minutes
 
 
-# --- Custom Field Config Endpoints ---
-
 def _save_field_config(config_key, cache_name=None):
-    """Generic helper to save a field config (fieldId + fieldName) into dashboard-config.json."""
-    payload = request.get_json(silent=True) or {}
-    field_id = str(payload.get('fieldId', '')).strip()
-    field_name = str(payload.get('fieldName', '')).strip()
+    """Save a route-owned Jira field configuration."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'request body must be a JSON object'}), 400
+    allowed = {'fieldId', 'fieldName'} | ({'baseRevision'} if config_storage_db_enabled() else set())
+    if set(payload) - allowed:
+        return jsonify({'error': 'unsupported configuration field'}), 400
+    if config_storage_db_enabled() and 'baseRevision' not in payload:
+        return jsonify({'error': 'baseRevision is required'}), 400
     try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config[config_key] = {'fieldId': field_id, 'fieldName': field_name}
-        save_dashboard_config(dashboard_config)
+        value = normalize_shared_admin_section(config_key, {key: payload.get(key, '') for key in ('fieldId', 'fieldName')})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    try:
+        revision = None
+        if config_storage_db_enabled():
+            revision = save_dashboard_config_section(
+                config_key, value, base_revision=payload.get('baseRevision'),
+            ).config_revision
+        else:
+            dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+            dashboard_config[config_key] = value
+            save_dashboard_config(dashboard_config)
         # Invalidate tasks cache so next fetch uses the new field
         global TASKS_CACHE
         TASKS_CACHE = {}
@@ -5981,9 +6027,20 @@ def _save_field_config(config_key, cache_name=None):
             g = globals()
             with _cache_lock:
                 g[cache_name] = None
+    except WorkspaceConfigConflict as error:
+        current_value = (error.current.payload or {}).get(config_key) or {}
+        return jsonify({
+            'error': 'workspace_config_conflict',
+            'message': 'Shared settings changed while you were editing. Your changes are still unsaved.',
+            'currentRevision': error.current.config_revision,
+            'current': {'section': config_key, 'value': current_value, 'configRevision': error.current.config_revision},
+        }), 409
     except Exception as e:
         return jsonify({'error': f'Failed to save {config_key} config', 'message': str(e)}), 500
-    return jsonify({'fieldId': field_id, 'fieldName': field_name})
+    result = dict(value)
+    if revision is not None:
+        result['configRevision'] = revision
+    return jsonify(result)
 
 
 # --- Issue Types ---

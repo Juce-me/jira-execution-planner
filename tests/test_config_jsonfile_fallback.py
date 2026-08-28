@@ -198,8 +198,16 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         after_import = self._route_payloads(backend='db')
         rollback = self._route_payloads(backend='jsonfile')
 
-        self.assertEqual(after_import['/api/config'], before['/api/config'])
-        self.assertEqual(after_import['/api/epm/config'], before['/api/epm/config'])
+        db_config = dict(after_import['/api/config'])
+        shared_config = db_config.pop('sharedConfig')
+        shared_revision = db_config.pop('sharedConfigRevision')
+        db_epm = dict(after_import['/api/epm/config'])
+        epm_revision = db_epm.pop('configRevision')
+        self.assertEqual(db_config, before['/api/config'])
+        self.assertEqual(db_epm, before['/api/epm/config'])
+        self.assertEqual(shared_revision, 0)
+        self.assertEqual(epm_revision, 0)
+        self.assertEqual(shared_config['epm'], before['/api/epm/config'])
         self.assertEqual(rollback, before)
         self.assertEqual(after_import['/api/groups-config']['groups'], before['/api/groups-config']['groups'])
         self.assertEqual(after_import['/api/groups-config']['defaultGroupId'], before['/api/groups-config']['defaultGroupId'])
@@ -218,29 +226,20 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         )
         with open(export_path, 'r', encoding='utf-8') as handle:
             exported = json.load(handle)
-        expected = self._dashboard_config()
-        self.assertEqual(exported['projects'], expected['projects'])
-        self.assertEqual(exported['board'], expected['board'])
-        self.assertEqual(exported['capacity'], expected['capacity'])
-        self.assertEqual(exported['epm'], expected['epm'])
+        self.assertNotIn('projects', exported)
+        self.assertNotIn('board', exported)
+        self.assertNotIn('capacity', exported)
+        self.assertNotIn('epm', exported)
         self.assertEqual(exported['teamGroups']['groups'][0]['id'], 'platform')
         self.assertEqual(exported['teamGroups']['groups'][0]['teamIds'], ['team-a'])
         self.assertEqual(exported['teamGroups']['groups'][0]['adHocCapacityEpics'], [])
         self.assertEqual(exported['teamGroups']['defaultGroupId'], 'platform')
         self.assertNotIn('api_token', json.dumps(exported).lower())
 
-    def test_db_dashboard_save_strips_legacy_team_groups_from_private_view(self):
+    def test_db_dashboard_full_save_fails_closed(self):
         repository = db_repository(database_url=self.database_url)
-        view_id = repository.save_dashboard_config(
-            self.context,
-            self._dashboard_config(),
-            actor_user_id=self.user_id,
-        )
-        resolved = repository.resolve_effective_view_config(self.context)
-
-        self.assertEqual(resolved['viewConfigId'], view_id)
-        self.assertNotIn('teamGroups', resolved['view'])
-        self.assertEqual(resolved['view']['projects']['selected'][0]['key'], 'PROD')
+        with self.assertRaisesRegex(RuntimeError, 'full workspace dashboard replacement'):
+            repository.save_dashboard_config(self.context, self._dashboard_config())
 
 
 if __name__ == '__main__':

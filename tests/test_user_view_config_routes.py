@@ -142,17 +142,7 @@ class UserViewConfigRouteTests(unittest.TestCase):
                     'filters': {'projectKeys': ['PROD']},
                     'epm': {
                         'tab': 'active',
-                        'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-2']},
-                        'labelPrefix': 'rnd_project_*',
                         'selectedSprint': 'Active',
-                        'projects': {
-                            'home-1': {
-                                'homeProjectId': 'home-1',
-                                'name': 'Synthetic Project',
-                                'label': 'rnd_project_synthetic',
-                            },
-                        },
-                        'issueTypes': {'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story']},
                     },
                 },
             },
@@ -166,7 +156,7 @@ class UserViewConfigRouteTests(unittest.TestCase):
         created = [self._post_view(payload) for payload in view_payloads]
 
         self.assertEqual([response.status_code for response in created], [201, 201, 201])
-        self.assertEqual(created[1].get_json()['view']['view']['epm']['projects']['home-1']['label'], 'rnd_project_synthetic')
+        self.assertEqual(created[1].get_json()['view']['view']['epm']['selectedSprint'], 'Active')
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             list_response = self.client.get('/api/me/views')
         self.assertEqual(list_response.status_code, 200, list_response.get_data(as_text=True))
@@ -236,8 +226,8 @@ class UserViewConfigRouteTests(unittest.TestCase):
             },
         })
 
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()['error'], 'home_project_not_found')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'invalid_view_payload')
 
     def test_allows_custom_epm_project_row_without_home_reference(self):
         response = self._post_view({
@@ -257,7 +247,8 @@ class UserViewConfigRouteTests(unittest.TestCase):
             },
         })
 
-        self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'invalid_view_payload')
 
     def test_normal_user_cannot_save_shared_epm_config_without_admin_role(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):

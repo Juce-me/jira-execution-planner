@@ -144,12 +144,14 @@ import {
 } from './settings/groupConfigUtils.js';
 import { validatePresentGroupBoards } from './settings/groupBoardModel.js';
 import { boardDraftIsDirty, committedSectionLabels, groupConfigConflictMessages, rebaseSharedGroupsPayload } from './settings/groupsConfigConflict.js';
+import { committedWorkspaceSectionLabels, workspaceConfigConflictMessages } from './settings/workspaceConfigConflict.js';
 import { saveSharedExcludedCapacityToggle } from './settings/sharedExcludedCapacityToggle.js';
 import { useGroupVisibilityPreferences } from './settings/useGroupVisibilityPreferences.js';
 import {
     buildSharedGroupsPayload,
     effectiveVisibleGroupIds,
     resolveVisibleActiveGroupId,
+    safeAppLoginUrl,
 } from './settings/groupVisibilityUtils.js';
 import {
     fetchEpmConfig,
@@ -403,6 +405,9 @@ import {
             const [techLoaded, setTechLoaded] = useState(false);
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
+            const [sprintError, setSprintError] = useState('');
+            const sprintLoadInFlightRef = useRef(false);
+            const pendingSprintRefreshRef = useRef(false);
             const [serverConnectionError, setServerConnectionError] = useState('');
             // The Status and Priority facets replaced the single statusFilter plus the Done and
             // Killed Display toggles; a payload saved before that still has to land somewhere
@@ -516,6 +521,12 @@ import {
             const [groupDraftError, setGroupDraftError] = useState('');
             // { current, savedSections }: a rejected groups POST, kept so the draft survives it (D45).
             const [groupsConfigConflict, setGroupsConfigConflict] = useState(null);
+            const [workspaceConfigConflict, setWorkspaceConfigConflict] = useState(null);
+            const [workspaceConfigRecoveryLoginUrl, setWorkspaceConfigRecoveryLoginUrl] = useState('');
+            const [sharedConfigRevision, setSharedConfigRevision] = useState(0);
+            const sharedConfigRevisionRef = useRef(0);
+            const lastCommittedWorkspaceSectionsRef = useRef([]);
+            const [sharedConfigReady, setSharedConfigReady] = useState(false);
             const [groupImportText, setGroupImportText] = useState('');
             const [showGroupImport, setShowGroupImport] = useState(false);
             const [showGroupAdvanced, setShowGroupAdvanced] = useState(false);
@@ -657,7 +668,7 @@ import {
                 deliveryOwnerFieldSearchQuery, setDeliveryOwnerFieldSearchQuery, deliveryOwnerFieldSearchOpen, setDeliveryOwnerFieldSearchOpen,
                 deliveryOwnerFieldSearchIndex, setDeliveryOwnerFieldSearchIndex, deliveryOwnerFieldSearchInputRef, deliveryOwnerFieldSearchResults, deliveryOwnerFieldSearchHidden,
                 handleDeliveryOwnerFieldSearchKeyDown, isDeliveryOwnerFieldDirty, saveDeliveryOwnerFieldConfig,
-                loadAllFieldConfigs, anyFieldConfigDirty, dirtyFieldConfigCount,
+                loadAllFieldConfigs, seedSharedFieldConfigs, anyFieldConfigDirty, dirtyFieldConfigCount,
             } = useJiraFieldPickers({ backendUrl: BACKEND_URL, jiraFields });
             const [issueTypesDraft, setIssueTypesDraft] = useState(['Story']);
             const issueTypesBaselineRef = useRef(JSON.stringify(['Story']));
@@ -1207,7 +1218,8 @@ import {
                 trackSettingsAction('epm', 'save', { dirty_state: isEpmConfigDirty ? 'dirty' : 'clean', project_count_bucket: bucketCount(epmConfigDraft?.projects?.length || 0) });
                 try {
                     const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
-                    const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);
+                    const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft, sharedConfigRevisionRef.current);
+                    commitSharedConfigRevision(payload);
                     const nextConfig = normalizeEpmConfigDraft(payload);
                     applySavedEpmConfig(nextConfig);
                     updateEpmSettingsProjectRowsAfterSave(nextConfig);
@@ -1221,10 +1233,18 @@ import {
                     }
                     trackSettingsAction('epm', 'save_result', { result: 'success' });
                 } catch (err) {
+                    if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict') {
+                        setWorkspaceConfigConflict({
+                            ...err.payload,
+                            savedSections: lastCommittedWorkspaceSectionsRef.current,
+                            pendingSections: ['EPM settings'],
+                        });
+                        trackSettingsAction('epm', 'save_result', { result: 'failure', conflict_state: 'remote', conflict_count_bucket: '1_5' });
+                    }
                     const message = err?.message || 'Failed to save EPM settings.';
                     setGroupDraftError(message);
                     console.error('Failed to save EPM config:', err);
-                    trackSettingsAction('epm', 'save_result', { result: 'failure' });
+                    if (err?.status !== 409) trackSettingsAction('epm', 'save_result', { result: 'failure' });
                     throw err;
                 } finally {
                     setEpmConfigSaving(false);
@@ -1733,13 +1753,16 @@ import {
                 && String(firstFutureSprintId) === String(selectedSprint);
 
             useEffect(() => {
-                // Load config and sprints on component mount
+                // Load configuration on mount. Sprint discovery waits for department onboarding
+                // below so a first-time user does not start Jira work before choosing a scope.
                 loadConfig();
                 loadGroupsConfig();
-                loadSelectedProjects();
-                loadPriorityWeightsConfig();
-                loadSprints();
             }, []);
+
+            useEffect(() => {
+                if (groupsLoading || groupPreferences.onboardingRequired) return;
+                loadSprints();
+            }, [groupsLoading, groupPreferences.onboardingRequired]);
 
             useEffect(() => {
                 let cancelled = false;
@@ -1795,12 +1818,14 @@ import {
                 setShowGroupListMobile(false);
                 setProjectSearchQuery('');
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
-                loadSelectedProjects();
-                loadPriorityWeightsConfig();
-                loadBoardConfig();
-                loadCapacityConfig();
-                loadAllFieldConfigs();
-                loadIssueTypesConfig();
+                if (authMode !== 'atlassian_oauth') {
+                    loadSelectedProjects();
+                    loadPriorityWeightsConfig();
+                    loadBoardConfig();
+                    loadCapacityConfig();
+                    loadAllFieldConfigs();
+                    loadIssueTypesConfig();
+                }
                 fetchAvailableIssueTypes();
                 if (!jiraProjects.length) fetchJiraProjects();
                 setAvailableTeams(loadTeamsFromCurrentView());
@@ -2667,11 +2692,12 @@ import {
             }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft, favoriteGroupValidationError, firstRunConfigurationActive]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving || epmConfigSaving) return 'Save in progress';
+                if (authMode === 'atlassian_oauth' && !sharedConfigReady) return 'Shared settings are loading';
                 if (canEditEpmConfiguration && isEpmConfigDirty && epmConfigLoading) return 'EPM settings are loading';
                 if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
                 if (!isGroupDraftDirty) return 'No changes to save';
                 return '';
-            }, [groupSaving, epmConfigSaving, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
+            }, [groupSaving, epmConfigSaving, authMode, sharedConfigReady, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -3193,6 +3219,9 @@ import {
                 setGroupSaving(true);
                 setGroupDraftError('');
                 setGroupsConfigConflict(null);
+                setWorkspaceConfigConflict(null);
+                setWorkspaceConfigRecoveryLoginUrl('');
+                const committedAdminSections = {};
                 try {
                     const savingAdminSettings = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
                     const sharedGroupsChanged = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current);
@@ -3212,36 +3241,42 @@ import {
                         projectsChanged = isProjectsDraftDirty;
                         if (projectsChanged) {
                             await saveProjectSelection();
+                            committedAdminSections.projects = true;
                         }
 
                         priorityWeightsChanged = isPriorityWeightsDirty;
                         if (priorityWeightsChanged) {
                             await savePriorityWeightsConfig();
+                            committedAdminSections.priorityWeights = true;
                         }
 
                         boardChanged = isBoardConfigDirty;
                         if (boardChanged) {
                             await saveBoardConfig();
+                            committedAdminSections.board = true;
                         }
 
                         // Save capacity config if changed
                         capacityChanged = isCapacityDraftDirty;
                         if (capacityChanged) {
                             await saveCapacityConfig();
+                            committedAdminSections.capacity = true;
                         }
 
                         // Save custom field configs if changed
-                        if (isSprintFieldDirty) await saveSprintFieldConfig();
-                        if (isParentNameFieldDirty) await saveParentNameFieldConfig();
-                        if (isStoryPointsFieldDirty) await saveStoryPointsFieldConfig();
-                        if (isTeamFieldDirty) await saveTeamFieldConfig();
-                        if (isDeliveryOwnerFieldDirty) await saveDeliveryOwnerFieldConfig();
+                        if (isSprintFieldDirty) commitSharedConfigRevision(await saveSprintFieldConfig(sharedConfigRevisionRef.current));
+                        if (isParentNameFieldDirty) commitSharedConfigRevision(await saveParentNameFieldConfig(sharedConfigRevisionRef.current));
+                        if (isStoryPointsFieldDirty) commitSharedConfigRevision(await saveStoryPointsFieldConfig(sharedConfigRevisionRef.current));
+                        if (isTeamFieldDirty) commitSharedConfigRevision(await saveTeamFieldConfig(sharedConfigRevisionRef.current));
+                        if (isDeliveryOwnerFieldDirty) commitSharedConfigRevision(await saveDeliveryOwnerFieldConfig(sharedConfigRevisionRef.current));
                         fieldConfigsChanged = isSprintFieldDirty || isParentNameFieldDirty || isStoryPointsFieldDirty || isTeamFieldDirty || isDeliveryOwnerFieldDirty;
+                        if (fieldConfigsChanged) committedAdminSections.fieldConfigs = true;
 
                         // Save issue types config if changed
                         issueTypesChanged = isIssueTypesDraftDirty;
                         if (issueTypesChanged) {
                             await saveIssueTypesConfig();
+                            committedAdminSections.issueTypes = true;
                         }
 
                         if (isAdminAccessDirty) {
@@ -3319,17 +3354,41 @@ import {
                     queueConfigSaveRefresh(refreshTarget);
 
                     if (boardChanged) {
-                        loadSprints(true);
+                        loadSprints(true, { queueIfBusy: true });
                     }
 
                     if (closeOnSuccess) {
                         closeGroupManage();
                     }
                     trackSettingsAction(analyticsSection, 'save_result', { result: 'success' });
+                    lastCommittedWorkspaceSectionsRef.current = committedWorkspaceSectionLabels(committedAdminSections);
                     return true;
                 } catch (err) {
+                    if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict') {
+                        const pendingSections = committedWorkspaceSectionLabels({
+                            projects: isProjectsDraftDirty && !committedAdminSections.projects,
+                            priorityWeights: isPriorityWeightsDirty && !committedAdminSections.priorityWeights,
+                            board: isBoardConfigDirty && !committedAdminSections.board,
+                            capacity: isCapacityDraftDirty && !committedAdminSections.capacity,
+                            fieldConfigs: anyFieldConfigDirty && !committedAdminSections.fieldConfigs,
+                            issueTypes: isIssueTypesDraftDirty && !committedAdminSections.issueTypes,
+                            epm: isEpmConfigDirty,
+                        });
+                        setWorkspaceConfigConflict({
+                            ...err.payload,
+                            savedSections: committedWorkspaceSectionLabels(committedAdminSections),
+                            pendingSections,
+                        });
+                        trackSettingsAction('admin', 'save_result', {
+                            result: 'failure',
+                            conflict_state: 'remote',
+                            conflict_count_bucket: '1_5',
+                        });
+                    } else if (err?.status === 401 || (err?.status === 403 && /auth|session|token/i.test(String(err?.code || err?.payload?.error || '')))) {
+                        setWorkspaceConfigRecoveryLoginUrl(safeAppLoginUrl(err?.payload?.loginUrl || err?.payload?.recoveryUrl));
+                    }
                     setGroupDraftError(err.message || 'Failed to save groups.');
-                    trackSettingsAction(groupManageTab, 'save_result', { result: 'failure' });
+                    if (err?.status !== 409) trackSettingsAction(groupManageTab, 'save_result', { result: 'failure' });
                     return false;
                 } finally {
                     setGroupPreferencesSaving(false);
@@ -3346,6 +3405,7 @@ import {
                 const hasSharedSettingsChanges = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
                 const hasDepartmentSettingsChanges = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current) || isGroupVisibilityDraftDirty;
                 const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;
+                lastCommittedWorkspaceSectionsRef.current = [];
                 try {
                     if (hasSharedSettingsChanges || hasDepartmentSettingsChanges) {
                         const saved = await saveGroupsConfig({ closeOnSuccess: false, rebaseOnto });
@@ -3371,6 +3431,20 @@ import {
                 applySavedGroupsConfig(groupsConfigConflict.current);
                 setGroupsConfigConflict(null);
                 setGroupDraftError('');
+            };
+
+            const keepMineOnWorkspaceConfigConflict = async () => {
+                if (!workspaceConfigConflict) return;
+                sharedConfigRevisionRef.current = Number(workspaceConfigConflict.currentRevision || 0);
+                setSharedConfigRevision(sharedConfigRevisionRef.current);
+                setWorkspaceConfigConflict(null);
+                await saveAllSettings();
+            };
+
+            const useLatestWorkspaceConfig = async () => {
+                setWorkspaceConfigConflict(null);
+                setGroupDraftError('');
+                await loadConfig();
             };
 
             useEffect(() => {
@@ -3928,26 +4002,30 @@ import {
                 }
             };
 
+            const commitSharedConfigRevision = (payload) => {
+                if (!Number.isInteger(payload?.configRevision)) return;
+                sharedConfigRevisionRef.current = payload.configRevision;
+                setSharedConfigRevision(payload.configRevision);
+            };
+
             const saveBoardConfig = async () => {
-                const response = await requestSaveBoardConfig(BACKEND_URL, { boardId: boardIdDraft, boardName: boardNameDraft });
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    throw new Error(err.error || `Save failed (${response.status})`);
-                }
+                const payload = await requestSaveBoardConfig(
+                    BACKEND_URL,
+                    { boardId: boardIdDraft, boardName: boardNameDraft },
+                    sharedConfigRevisionRef.current,
+                );
+                commitSharedConfigRevision(payload);
                 boardConfigBaselineRef.current = JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft });
                 setSavedBoardId(boardIdDraft);
+                return payload;
             };
 
             const savePriorityWeightsConfig = async () => {
-                const response = await requestSavePriorityWeightsConfig(BACKEND_URL, (priorityWeightsDraft || []).map((row) => ({
+                const data = await requestSavePriorityWeightsConfig(BACKEND_URL, (priorityWeightsDraft || []).map((row) => ({
                     priority: String(row.priority || '').trim(),
                     weight: Number(row.weight)
-                })));
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    throw new Error(err.error || `Save failed (${response.status})`);
-                }
-                const data = await response.json();
+                })), sharedConfigRevisionRef.current);
+                commitSharedConfigRevision(data);
                 const rows = clonePriorityWeightRows(data.weights);
                 setPriorityWeightsDraft(rows);
                 setEffectivePriorityWeightsRows(rows);
@@ -4081,11 +4159,8 @@ import {
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
-                    const response = await requestSaveSelectedProjects(BACKEND_URL, selectedProjectsDraft);
-                    if (!response.ok) {
-                        const errorPayload = await response.json().catch(() => ({}));
-                        throw new Error(errorPayload.error || `Save failed (${response.status})`);
-                    }
+                    const payload = await requestSaveSelectedProjects(BACKEND_URL, selectedProjectsDraft, sharedConfigRevisionRef.current);
+                    commitSharedConfigRevision(payload);
                     selectedProjectsBaselineRef.current = JSON.stringify(selectedProjectsDraft);
                     setSavedSelectedProjects([...selectedProjectsDraft]);
                 } catch (err) {
@@ -4111,11 +4186,12 @@ import {
             };
 
             const saveCapacityConfig = async () => {
-                const response = await requestSaveCapacityConfig(BACKEND_URL, { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    throw new Error(err.error || `Save failed (${response.status})`);
-                }
+                const payload = await requestSaveCapacityConfig(
+                    BACKEND_URL,
+                    { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft },
+                    sharedConfigRevisionRef.current,
+                );
+                commitSharedConfigRevision(payload);
                 capacityBaselineRef.current = JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
             };
 
@@ -4133,11 +4209,8 @@ import {
             };
 
             const saveIssueTypesConfig = async () => {
-                const response = await requestSaveIssueTypesConfig(BACKEND_URL, issueTypesDraft);
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    throw new Error(err.error || `Save failed (${response.status})`);
-                }
+                const payload = await requestSaveIssueTypesConfig(BACKEND_URL, issueTypesDraft, sharedConfigRevisionRef.current);
+                commitSharedConfigRevision(payload);
                 issueTypesBaselineRef.current = JSON.stringify(issueTypesDraft);
             };
 
@@ -5521,6 +5594,8 @@ import {
             ]);
 
             const loadConfig = async () => {
+                setSharedConfigReady(false);
+                setWorkspaceConfigRecoveryLoginUrl('');
                 try {
                     const config = await fetchAppConfig(BACKEND_URL);
                     clearServerConnectionError();
@@ -5533,12 +5608,49 @@ import {
                     setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);
                     setAdminUserManagementAvailable(config.adminUserManagementAvailable === true);
                     setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
-                    applySavedEpmConfig(config.epm);
+                    const sharedConfig = config.sharedConfig;
+                    if (sharedConfig && Number.isInteger(config.sharedConfigRevision)) {
+                        const selectedProjects = sharedConfig.projects?.selected || [];
+                        setSelectedProjectsDraft(selectedProjects);
+                        setSavedSelectedProjects(selectedProjects);
+                        selectedProjectsBaselineRef.current = JSON.stringify(selectedProjects);
+                        const board = sharedConfig.board || {};
+                        const nextBoardId = String(board.boardId || '');
+                        const nextBoardName = String(board.boardName || '');
+                        setBoardIdDraft(nextBoardId);
+                        setSavedBoardId(nextBoardId);
+                        setBoardNameDraft(nextBoardName);
+                        boardConfigBaselineRef.current = JSON.stringify({ boardId: nextBoardId, boardName: nextBoardName });
+                        const capacity = sharedConfig.capacity || {};
+                        setCapacityProjectDraft(capacity.project || '');
+                        setCapacityFieldIdDraft(capacity.fieldId || '');
+                        setCapacityFieldNameDraft(capacity.fieldName || '');
+                        capacityBaselineRef.current = JSON.stringify({ project: capacity.project || '', fieldId: capacity.fieldId || '', fieldName: capacity.fieldName || '' });
+                        const weightRows = clonePriorityWeightRows(sharedConfig.statsPriorityWeights);
+                        setPriorityWeightsDraft(weightRows);
+                        setEffectivePriorityWeightsRows(weightRows);
+                        setPriorityWeightsSource(sharedConfig.statsPriorityWeights ? 'config' : 'default');
+                        priorityWeightsBaselineRef.current = JSON.stringify(weightRows);
+                        const issueTypes = sharedConfig.issueTypes || ['Story'];
+                        setIssueTypesDraft(issueTypes);
+                        issueTypesBaselineRef.current = JSON.stringify(issueTypes);
+                        seedSharedFieldConfigs(sharedConfig);
+                        const personalEpm = config.viewConfig?.view?.epm || {};
+                        applySavedEpmConfig({ ...(config.epm || sharedConfig.epm || {}), ...personalEpm });
+                        sharedConfigRevisionRef.current = config.sharedConfigRevision;
+                        setSharedConfigRevision(config.sharedConfigRevision);
+                        setWorkspaceConfigConflict(null);
+                    } else {
+                        applySavedEpmConfig(config.epm);
+                        await Promise.all([loadSelectedProjects(), loadPriorityWeightsConfig()]);
+                    }
                 } catch (err) {
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load config:', err);
                     }
                     applySavedEpmConfig(createEmptyEpmConfigDraft());
+                } finally {
+                    setSharedConfigReady(true);
                 }
             };
 
@@ -5643,7 +5755,12 @@ import {
                 setScenarioError('');
             }, [selectedSprint, selectedTeams]);
 
-            const loadSprints = async (forceRefresh = false) => {
+            const loadSprints = async (forceRefresh = false, { queueIfBusy = false } = {}) => {
+                if (sprintLoadInFlightRef.current) {
+                    if (queueIfBusy) pendingSprintRefreshRef.current = true;
+                    return;
+                }
+                sprintLoadInFlightRef.current = true;
                 setSprintsLoading(true);
                 try {
                     const response = await requestSprints(BACKEND_URL, { forceRefresh });
@@ -5655,6 +5772,7 @@ import {
                     const data = await response.json();
                     const sprints = data.sprints || [];
                     setAvailableSprints(sprints);
+                    setSprintError('');
 
                     const preferredSprintId = savedPrefsRef.current.selectedSprint;
                     const preferredSprint = preferredSprintId ? sprints.find(s => String(s.id) === String(preferredSprintId)) : null;
@@ -5680,12 +5798,20 @@ import {
                     console.log('✅ Loaded sprints:', sprints);
                     clearServerConnectionError();
                 } catch (err) {
-                    if (!reportServerConnectionError(err)) {
+                    if (reportServerConnectionError(err)) {
+                        setSprintError('');
+                    } else {
                         console.error('Failed to load sprints:', err);
-                        setError(`Failed to load sprints: ${err.message}`);
+                        setSprintError('Failed to load sprints from Jira. Retry, or confirm you can access the configured board.');
                     }
                 } finally {
-                    setSprintsLoading(false);
+                    sprintLoadInFlightRef.current = false;
+                    if (pendingSprintRefreshRef.current) {
+                        pendingSprintRefreshRef.current = false;
+                        void loadSprints(true, { queueIfBusy: true });
+                    } else {
+                        setSprintsLoading(false);
+                    }
                 }
             };
 
@@ -10517,6 +10643,8 @@ import {
             // Catch Up is the all-false fallthrough of the ENG mode booleans, so Board has to opt
             // out here explicitly or the whole task list renders underneath the board.
             const shouldRenderEngTaskList = selectedView === 'eng' && !showBoard && !isStatsSourceOnlyStatsView;
+            const displayedEngError = sprintError || error;
+            const retryEngLoad = sprintError ? () => loadSprints(true) : fetchTasks;
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
                 taskList.forEach(task => {
@@ -12750,7 +12878,7 @@ import {
                 void loadGroupsConfig();
                 void loadSelectedProjects();
                 void loadPriorityWeightsConfig();
-                void loadSprints(true);
+                void loadSprints(true, { queueIfBusy: true });
                 if (selectedView === 'epm') {
                     void refreshEpmView();
                 }
@@ -13048,7 +13176,7 @@ import {
                 burnoutCacheRef.current = {};
                 cohortCacheRef.current = {};
                 excludedCapacityCacheRef.current = {};
-                loadSprints(true);
+                loadSprints(true, { queueIfBusy: true });
                 if (isStatsSourceOnlyStatsView) {
                     excludedCapacityForceRefreshRef.current = true;
                     setExcludedCapacityData(null);
@@ -15360,8 +15488,8 @@ import {
                             board={activeGroup?.board || null}
                             epicGroups={boardEpicGroupsFiltered}
                             loading={loading}
-                            error={error}
-                            onRetry={fetchTasks}
+                            error={displayedEngError}
+                            onRetry={retryEngLoad}
                             view={boardView}
                             onViewChange={setBoardView}
                             renderPriorityIcon={renderPriorityIcon}
@@ -15397,8 +15525,8 @@ import {
                                     productTasksLoading={productTasksLoading}
                                     techTasksLoading={techTasksLoading}
                                     loading={loading}
-                                    error={error}
-                                    onRetry={fetchTasks}
+                                    error={displayedEngError}
+                                    onRetry={retryEngLoad}
                                     alertCelebrationPieces={alertCelebrationPieces}
                                     alertsPanel={isCatchUpMode ? (
                                         <EngAlertsPanel
@@ -15521,8 +15649,17 @@ import {
                             isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
                             unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
                             onRequestClose={requestCloseGroupManage}
-                            validationMessages={groupManageTab !== 'connections' ? [...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...groupConfigValidationErrors] : []}
-                            validationActions={groupManageTab !== 'connections' && groupsConfigConflict ? (
+                            validationMessages={groupManageTab !== 'connections' ? [...workspaceConfigConflictMessages(workspaceConfigConflict), ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...groupConfigValidationErrors] : []}
+                            validationActions={groupManageTab !== 'connections' && workspaceConfigConflict ? (
+                                <div className="group-modal-button-row" data-testid="workspace-config-conflict-actions">
+                                    <button className="secondary compact" onClick={useLatestWorkspaceConfig} type="button">Use latest</button>
+                                    <button className="compact" onClick={keepMineOnWorkspaceConfigConflict} type="button">Keep mine</button>
+                                </div>
+                            ) : groupManageTab !== 'connections' && workspaceConfigRecoveryLoginUrl ? (
+                                <div className="group-modal-button-row" data-testid="workspace-config-auth-recovery">
+                                    <a href={workspaceConfigRecoveryLoginUrl}>Sign in again</a>
+                                </div>
+                            ) : groupManageTab !== 'connections' && groupsConfigConflict ? (
                                 <div className="group-modal-button-row">
                                     <button className="secondary compact" onClick={discardMineOnGroupsConfigConflict} type="button">Discard mine</button>
                                     <button className="compact" onClick={keepMineOnGroupsConfigConflict} type="button">Keep mine</button>

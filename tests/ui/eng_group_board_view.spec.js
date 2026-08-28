@@ -725,8 +725,8 @@ test('open Board help recalculates its width and viewport gutters after resize',
     await expect.poll(async () => (await readGeometry()).width).toBeGreaterThanOrEqual(511);
     await expect.poll(async () => {
         const geometry = await readGeometry();
-        return geometry.viewport - geometry.right;
-    }).toBeGreaterThanOrEqual(11);
+        return geometry.left >= 11 && geometry.right <= geometry.viewport - 11;
+    }).toBe(true);
     const landscape = await readGeometry();
     expect(landscape.width).toBeGreaterThanOrEqual(511);
     expect(landscape.width).toBeLessThanOrEqual(512 + 1);
@@ -737,8 +737,8 @@ test('open Board help recalculates its width and viewport gutters after resize',
     await expect.poll(async () => (await readGeometry()).width).toBeLessThanOrEqual(296 + 1);
     await expect.poll(async () => {
         const geometry = await readGeometry();
-        return geometry.viewport - geometry.right;
-    }).toBeGreaterThanOrEqual(11);
+        return geometry.left >= 11 && geometry.right <= geometry.viewport - 11;
+    }).toBe(true);
     const compact = await readGeometry();
     expect(compact.width).toBeLessThanOrEqual(296 + 1);
     expect(compact.left).toBeGreaterThanOrEqual(11);

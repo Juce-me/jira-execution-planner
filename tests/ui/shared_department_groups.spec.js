@@ -86,13 +86,18 @@ async function mockFirstRunDashboard(page, options = {}) {
         source: 'workspace_db',
     };
     const preferences = options.preferences || defaultGroupPreferences();
+    let onboardingComplete = !preferences.onboardingRequired;
+    let sprintFailureCount = 0;
+    let sprintRequestCount = 0;
     await installDashboardShell(page);
-    await page.addInitScript(() => {
-        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
-            selectedView: 'eng',
-            selectedSprint: 42,
-        }));
-    });
+    const savedSprintId = Object.prototype.hasOwnProperty.call(options, 'savedSprintId')
+        ? options.savedSprintId
+        : 42;
+    await page.addInitScript(({ selectedSprint }) => {
+        const preferences = { selectedView: 'eng' };
+        if (selectedSprint !== null) preferences.selectedSprint = selectedSprint;
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(preferences));
+    }, { selectedSprint: savedSprintId });
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
@@ -149,6 +154,7 @@ async function mockFirstRunDashboard(page, options = {}) {
             if (options.preferenceError) {
                 return json(options.preferenceError.body, options.preferenceError.status);
             }
+            onboardingComplete = true;
             const savedPreferences = {
                 customized: true,
                 preferenceExists: true,
@@ -172,6 +178,29 @@ async function mockFirstRunDashboard(page, options = {}) {
             return json({ teams: options.teams || [{ id: 'team-new', name: 'New Team' }] });
         }
         if (url.pathname === '/api/sprints') {
+            const plannedResponse = (options.sprintResponsePlan || [])[sprintRequestCount];
+            sprintRequestCount += 1;
+            if (plannedResponse) {
+                if (plannedResponse.delayMs) {
+                    await new Promise(resolve => setTimeout(resolve, plannedResponse.delayMs));
+                }
+                return json(
+                    plannedResponse.body || (plannedResponse.status === 200
+                        ? { sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] }
+                        : { error: 'sprints_unavailable' }),
+                    plannedResponse.status
+                );
+            }
+            if (options.rejectSprintBeforeOnboarding && !onboardingComplete) {
+                return json({
+                    error: 'sprint_load_blocked',
+                    message: 'Sprint discovery started before department onboarding completed.',
+                }, 502);
+            }
+            if (onboardingComplete && sprintFailureCount < (options.sprintFailuresAfterOnboarding || 0)) {
+                sprintFailureCount += 1;
+                return json({ error: 'sprints_unavailable' }, 502);
+            }
             return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
         }
         if (url.pathname === '/api/tasks-with-team-name') {
@@ -448,7 +477,6 @@ test('first-run configuration keeps the editor open across validation and a 409 
     await settingsDialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
 });
-
 test('first-run invalid snapshot and auth failure keep mandatory selection gated', async ({ page }) => {
     const calls = await mockFirstRunDashboard(page, { omitPreferenceSnapshot: true });
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
@@ -688,6 +716,130 @@ test('partial shared save failure retries only the personal favorite', async ({ 
     await dialog.getByRole('button', { name: 'Save' }).click();
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(2);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+});
+
+test('empty first-run workspace does not load sprints while Configure opens settings', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig: {
+            version: 1,
+            groups: [],
+            defaultGroupId: '',
+            configRevision: 1,
+            source: 'workspace_db',
+        },
+        savedSprintId: null,
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
+    await page.getByRole('button', { name: 'Configure your own' }).click();
+
+    await expect(page.locator('.group-modal')).toBeVisible();
+    await page.waitForTimeout(250);
+    expect(calls.filter(call => call.pathname === '/api/sprints')).toHaveLength(0);
+});
+
+test('first-run department selection waits to load sprints and then loads the selected group', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        rejectSprintBeforeOnboarding: true,
+        savedSprintId: null,
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    const dialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await expect(dialog).toBeVisible();
+    await page.waitForTimeout(250);
+    expect(calls.filter(call => call.pathname === '/api/sprints')).toHaveLength(0);
+
+    await dialog.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBe(1);
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length).toBeGreaterThanOrEqual(2);
+    await expect(page.getByText(/Failed to load sprints/)).toHaveCount(0);
+
+    const taskCalls = calls.filter(call => call.pathname === '/api/tasks-with-team-name');
+    expect(taskCalls.every(call => call.params.groupId === 'platform')).toBe(true);
+    expect(taskCalls.every(call => call.params.teamIds === 'team-platform')).toBe(true);
+});
+
+test('first-run sprint failure retries sprint discovery and clears the actionable error', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        sprintFailuresAfterOnboarding: 1,
+        savedSprintId: null,
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    const dialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    const message = 'Failed to load sprints from Jira. Retry, or confirm you can access the configured board.';
+    await expect(page.getByText(message)).toBeVisible();
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
+    await page.getByRole('button', { name: 'Retry' }).click();
+
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBe(2);
+    expect(calls.filter(call => call.pathname === '/api/sprints')[1].params.refresh).toBe('true');
+    await expect(page.getByText(message)).toHaveCount(0);
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length).toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: `${screenshotDir}/first-run-sprint-retry-recovered.png`, fullPage: true });
+});
+
+test('sprint Retry ignores a second click while recovery is already in flight', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        savedSprintId: null,
+        sprintResponsePlan: [
+            { status: 502 },
+            { status: 200, delayMs: 300 },
+        ],
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    const dialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const message = 'Failed to load sprints from Jira. Retry, or confirm you can access the configured board.';
+    const retry = page.getByRole('button', { name: 'Retry' });
+    await expect(page.getByText(message)).toBeVisible();
+
+    await retry.dblclick();
+
+    await page.waitForTimeout(100);
+    expect(calls.filter(call => call.pathname === '/api/sprints')).toHaveLength(2);
+    await page.waitForTimeout(400);
+    await expect(page.getByText(message)).toHaveCount(0);
+    expect(calls.filter(call => call.pathname === '/api/sprints')[1].params.refresh).toBe('true');
+});
+
+test('explicit Jira refresh waits for active sprint discovery and then refreshes it', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform'],
+        }),
+        sprintResponsePlan: [
+            { status: 200, delayMs: 3000 },
+            { status: 200 },
+        ],
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBe(1);
+    const refresh = page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' });
+    await expect(refresh).toBeEnabled();
+    await refresh.click();
+
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBe(2);
+    expect(calls.filter(call => call.pathname === '/api/sprints')[1].params.refresh).toBe('true');
 });
 
 test('department group editor keeps save visible when selected group content overflows', async ({ page }) => {

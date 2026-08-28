@@ -29,11 +29,11 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 4. `DONE-03-db-user-configuration.md`
    - Completed DB user-configuration plan. Use for audit and prerequisite evidence; do not execute as active work.
-   - Expected output: DB-backed user-owned saved views. EPM configuration is user-owned, including Home goal scope and project label mappings; service integrations remain admin/operator-controlled.
+   - Historical output: DB-backed user-owned saved views, including the EPM scope/mappings implemented in that phase. `EXEC-shared-admin-configuration.md` later moves normalized dashboard and EPM scope/mappings to workspace-admin ownership while preserving personal view state.
 
 5. `DONE-04-db-user-home-epm-read-token.md`
    - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
-   - Output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed.
+   - Output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed. This credential ownership is unchanged by the later shared-admin configuration boundary.
 
 6. `GATE-05-home-write-capability.md`
    - Blocked external capability gate for Jira Home/Townsquare project update writes.
@@ -46,7 +46,12 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed and merged in [PR #62](https://github.com/Juce-me/jira-execution-planner/pull/62). Moves department/team-group definitions to workspace-shared configuration while keeping per-user visible-group preferences. Use for audit and prerequisite evidence; do not execute as active work.
    - Historical output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, and shared saves are revision-conflict protected. PR #62 left the existing star wired to shared `defaultGroupId`; `DONE-personal-group-star.md` corrects that product mismatch without rewriting shared catalog history.
 
-9. `EXEC-cloud-sql-iam-connectivity.md`
+9. `EXEC-shared-admin-configuration.md`
+   - Implemented and verified on `bugfix/shared-admin-configuration`; awaiting user acceptance or merge before the plan is renamed `DONE-*`.
+   - Expected output: admin-controlled dashboard and EPM scope/mapping configuration persists once per workspace/Jira site, every user in that workspace reads one revisioned snapshot, only authorized admins mutate route-owned sections, private views retain only personal state, normal-user catalog refreshes use separate storage, and no private payload is auto-promoted during migration.
+   - Execution record: `../agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md`.
+
+10. `EXEC-cloud-sql-iam-connectivity.md`
    - Implementation is complete and locally verified, but the plan remains `EXEC-*` pending user acceptance or merge.
    - Output: default local/CI URL behavior stays unchanged; hosted mode obtains lock-protected ADC login tokens immediately before new physical connections; every IAM connection uses the fixed app-owned 10-second timeout; web pooling and Alembic `NullPool` share one engine factory; offline migrations remain ADC-independent while validating the passwordless TLS URL; hosted docs record the complete IAM/database prerequisites; no Cloud SQL Python Connector, alternate PostgreSQL driver, proxy, deployment, UI, or unrelated product change was introduced.
    - Design record: `../agents/features/2026-07-27-executed-cloud-sql-iam-connectivity-design.md`.

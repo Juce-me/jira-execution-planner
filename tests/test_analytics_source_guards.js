@@ -17,7 +17,7 @@ function listSourceFiles(root) {
     return fs.readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
         const fullPath = path.join(root, entry.name);
         if (entry.isDirectory()) return listSourceFiles(fullPath);
-        return /\.jsx?$/.test(entry.name) ? [fullPath] : [];
+        return /\.(?:js|jsx|mjs|cjs)$/.test(entry.name) ? [fullPath] : [];
     });
 }
 

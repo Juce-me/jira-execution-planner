@@ -1,10 +1,12 @@
 import os
 import tempfile
 import unittest
+from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import get_type_hints
 from unittest.mock import patch
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.db import engine as db_engine
@@ -540,6 +542,60 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
 
         self.assertIs(type_hints['done'], bool)
         self.assertIs(type_hints['return'], bool)
+
+    def test_set_onboarding_done_translates_query_storage_failure_with_cause(self):
+        original_session_scope = service.db_engine.session_scope
+
+        @contextmanager
+        def failing_session_scope(database_url=None):
+            with original_session_scope(database_url) as session:
+                with patch.object(
+                    session,
+                    'execute',
+                    side_effect=SQLAlchemyError('sensitive query detail'),
+                ):
+                    yield session
+
+        with patch.object(service.db_engine, 'session_scope', failing_session_scope), \
+             self.assertRaises(service.OnboardingStorageUnavailable) as raised:
+            service.set_onboarding_done(
+                self.context, True, database_url=self.database_url,
+            )
+
+        self.assertEqual(str(raised.exception), 'onboarding_storage_unavailable')
+        self.assertIsInstance(raised.exception.__cause__, SQLAlchemyError)
+        self.assertEqual(str(raised.exception.__cause__), 'sensitive query detail')
+
+    def test_set_onboarding_done_translates_flush_storage_failure_with_cause(self):
+        service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        original_session_scope = service.db_engine.session_scope
+
+        @contextmanager
+        def failing_session_scope(database_url=None):
+            with original_session_scope(database_url) as session:
+                with patch.object(
+                    session,
+                    'flush',
+                    side_effect=SQLAlchemyError('sensitive flush detail'),
+                ):
+                    yield session
+
+        with patch.object(service.db_engine, 'session_scope', failing_session_scope), \
+             self.assertRaises(service.OnboardingStorageUnavailable) as raised:
+            service.set_onboarding_done(
+                self.context, True, database_url=self.database_url,
+            )
+
+        self.assertEqual(str(raised.exception), 'onboarding_storage_unavailable')
+        self.assertIsInstance(raised.exception.__cause__, SQLAlchemyError)
+        self.assertEqual(str(raised.exception.__cause__), 'sensitive flush detail')
+        with self.factory() as session:
+            self.assertFalse(session.query(models.UserGroupPreference).one().onboarding_done)
 
     def test_set_onboarding_done_does_not_revalidate_or_mutate_group_fields(self):
         with self.factory() as session:

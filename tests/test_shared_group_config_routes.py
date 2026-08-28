@@ -2,8 +2,11 @@ import os
 import tempfile
 import time
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.config.repository import ConfigStorageError
 from backend.db import engine as db_engine
@@ -149,6 +152,21 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
                 headers=headers or self._csrf_headers(),
                 **kwargs,
             )
+
+    def _failing_onboarding_session_scope(self, method_name, detail):
+        original_session_scope = db_engine.session_scope
+
+        @contextmanager
+        def failing_session_scope(database_url=None):
+            with original_session_scope(database_url) as session:
+                with patch.object(
+                    session,
+                    method_name,
+                    side_effect=SQLAlchemyError(detail),
+                ):
+                    yield session
+
+        return failing_session_scope
 
     def test_get_groups_config_imports_shared_catalog_and_requires_first_run(self):
         first = self._get_groups_config()
@@ -656,6 +674,34 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
             'message': 'Onboarding preferences require database-backed configuration storage.',
         })
         self.assertNotIn('sensitive database detail', response.get_data(as_text=True))
+
+    def test_post_onboarding_maps_sqlalchemy_failures_to_safe_storage_error(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+
+        for method_name in ('execute', 'flush'):
+            sensitive_detail = f'sensitive {method_name} detail'
+            with self.subTest(method_name=method_name):
+                with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+                    headers = self._csrf_headers()
+                with self._env_patch(), \
+                     patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                     patch.object(
+                         db_engine,
+                         'session_scope',
+                         self._failing_onboarding_session_scope(method_name, sensitive_detail),
+                     ):
+                    response = self.client.post(
+                        '/api/me/onboarding',
+                        json={'onboardingDone': True},
+                        headers=headers,
+                    )
+
+                self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+                self.assertEqual(response.get_json(), {
+                    'error': 'config_storage_unavailable',
+                    'message': 'Onboarding preferences require database-backed configuration storage.',
+                })
+                self.assertNotIn(sensitive_detail, response.get_data(as_text=True))
 
     def test_post_onboarding_requires_requested_with_and_token_bound_csrf(self):
         self.assertEqual(self._save_personal_favorite().status_code, 200)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from backend.auth.db_context import is_db_auth_context
 from backend.db import engine as db_engine
@@ -37,6 +37,10 @@ class OnboardingPreferencesUnavailable(ValueError):
 
 
 class GroupSelectionRequired(ValueError):
+    pass
+
+
+class OnboardingStorageUnavailable(RuntimeError):
     pass
 
 
@@ -442,20 +446,23 @@ def set_onboarding_done(context, done: bool, database_url=None) -> bool:
     if not is_db_auth_context(context):
         raise OnboardingPreferencesUnavailable('onboarding_db_required')
 
-    with db_engine.session_scope(database_url) as session:
-        row = session.execute(
-            select(models.UserGroupPreference).where(
-                models.UserGroupPreference.workspace_id == context.workspace_id,
-                models.UserGroupPreference.user_id == context.user_id,
-            )
-        ).scalars().first()
-        if row is None:
-            raise GroupSelectionRequired('personal group selection required')
+    try:
+        with db_engine.session_scope(database_url) as session:
+            row = session.execute(
+                select(models.UserGroupPreference).where(
+                    models.UserGroupPreference.workspace_id == context.workspace_id,
+                    models.UserGroupPreference.user_id == context.user_id,
+                )
+            ).scalars().first()
+            if row is None:
+                raise GroupSelectionRequired('personal group selection required')
 
-        row.onboarding_done = bool(done)
-        row.updated_at = models._utcnow()
-        session.flush()
-        return row.onboarding_done
+            row.onboarding_done = bool(done)
+            row.updated_at = models._utcnow()
+            session.flush()
+            return row.onboarding_done
+    except SQLAlchemyError as error:
+        raise OnboardingStorageUnavailable('onboarding_storage_unavailable') from error
 
 
 def is_first_run_required(context, groups_config, preference_exists, database_url=None):

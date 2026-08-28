@@ -586,7 +586,11 @@ def save_onboarding_preference():
             auth_context,
             onboarding_done,
         )
-    except (ConfigStorageError, DatabaseConfigurationError) as error:
+    except (
+        ConfigStorageError,
+        DatabaseConfigurationError,
+        shared_group_config.OnboardingStorageUnavailable,
+    ) as error:
         return _onboarding_storage_error_response(error)
     except shared_group_config.OnboardingPreferencesUnavailable:
         return jsonify({'error': 'onboarding_db_required'}), 409

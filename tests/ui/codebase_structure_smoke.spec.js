@@ -771,6 +771,7 @@ async function installApiMocks(page, calls, options = {}) {
                 groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
+                userCanEditEpmConfig: true,
                 projectsConfigured: true,
                 epm: epmConfig,
             });

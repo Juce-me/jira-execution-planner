@@ -234,7 +234,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Treat Atlassian account ids only as stable identity keys for tool-local admin roles; never imply Atlassian tenant/admin status grants tool admin access.
 - Redact OAuth callback query strings from logs; never log authorization code or state values.
 - Store implementation plans in `docs/plans/` only.
-- Store administrator-owned dashboard and EPM configuration once per workspace; private views may contain only personal view state and must never override shared settings.
+- Before modifying configuration storage, database ownership, endpoint rights, or Settings edit gates, read `backend/security/CONFIGURATION_OWNERSHIP.md` and preserve its admin/group/preference/EPM ownership matrix across backend and frontend.
+- Keep EPM scope, label prefix, issue types, and project-label mappings in the owning user's default private saved view; keep tab and sprint as private UI state, preserve any existing private-view values, and never store any of them in workspace administrator configuration.
+- Keep department groups, group labels, memberships, exclusions, and department board layouts shared once per workspace and configurable by every authenticated user; keep stars/favorites, visibility, and active group private per user.
 - For any plan review, creation, or execution under `docs/plans/`, read `docs/plans/AGENTS.md` first and follow its plan review prompt, naming, and gate rules.
 - Before creating or executing any Home/Townsquare auth migration plan, read `docs/plans/AGENTS.md` and run or document the Home GraphQL OAuth probe gate; do not mark Home/Townsquare-backed routes OAuth-ready unless it passes with a real local user 3LO session.
 - After DB auth exists, Home/Townsquare 3LO plans must use DB `auth_connections`/encrypted `auth_tokens` and must not resolve route tokens through local OAuth token-store helpers.
@@ -243,7 +245,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Auth/backend plans must name and verify the user journey for each supported route surface; backend tests alone are not enough unless the route is explicitly developer-only.
 - OAuth cookie-session slices must include unsafe-method CSRF protection before the first supported browser POST route.
 - Local OAuth token stores must require both a local/dev environment key and an explicit allow flag at startup.
-- Auth-expired states must have a visible recovery screen or re-auth target; do not leave users with only backend `401` JSON.
+- Any application API `401` must terminally lock the mounted app behind one sanitized same-tab sign-in recovery screen; preserve mounted feature state, never render local recovery UI or raw `401`, and never unlock in place or replay the failed request after reauthentication.
 - Browser-focus auth refresh is an optimization only; keep the visible expired-auth recovery path as the fallback.
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.
@@ -309,3 +311,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Department group JSON export/import is selected-group scoped: export only the active group, and import settings into only that active group while preserving its id/name, sibling groups, and the shared default.
 - In main ENG view filters, keep `.eng-mode-control` intrinsic-width, use the flexible gap after Teams for right alignment, and bottom-align it with the dropdown controls.
 - Global heading rules also affect Jira-rendered description headings inside `.m-desc-body`; do not apply entrance animations to H1 elements.
+- Keep localhost and CI runner assets under `runners/local/` and `runners/github/`; never mix them into application source, production startup, deployment images, or release packaging.

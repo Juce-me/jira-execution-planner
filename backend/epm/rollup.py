@@ -34,6 +34,7 @@ class EpmRollupDependencies:
     cache_lock: object
     cache_ttl_seconds: int
     context: object = None
+    config_generation: str = ''
     now: Callable = time.time
 
 
@@ -143,7 +144,11 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
 
     base_jql = deps.build_base_jql()
     cache_enabled = jira_home_partitioned_process_cache_enabled(deps.context)
-    cache_key = build_jira_home_process_cache_key(deps.context, f"{project_id}::{tab}::{sprint}::{label}::{base_jql}")
+    cache_key = build_jira_home_process_cache_key(
+        deps.context,
+        f"{project_id}::{tab}::{sprint}::{label}::{base_jql}",
+        deps.config_generation,
+    )
     cached = None
     if cache_enabled:
         with deps.cache_lock:

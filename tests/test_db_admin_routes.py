@@ -255,7 +255,6 @@ class DbAdminRoutesTests(unittest.TestCase):
             ('/api/delivery-owner-field/config', {'fieldId': 'customfield_6', 'fieldName': 'Owner'}),
             ('/api/stats/priority-weights-config', {'weights': []}),
             ('/api/issue-types/config', {'issueTypes': ['Story']}),
-            ('/api/epm/config', {'version': 2, 'labelPrefix': 'rnd_project_*', 'scope': {}, 'issueTypes': {}, 'projects': {}}),
         ]
         revision = 0
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -300,16 +299,6 @@ class DbAdminRoutesTests(unittest.TestCase):
             ('/api/issue-types/config', {'issueTypes': ['Story', {'name': 'Bug'}]}),
             ('/api/stats/priority-weights-config', {
                 'weights': [{'priority': 'High', 'weight': 1, 'unexpected': 'value'}],
-            }),
-            ('/api/epm/config', {
-                'version': 2,
-                'scope': {'rootGoalKey': 'ROOT-1', 'unexpected': 'value'},
-                'projects': {},
-            }),
-            ('/api/epm/config', {
-                'version': 2,
-                'scope': {},
-                'projects': {'project-1': {'name': 'Project', 'jiraEpicKey': 'LEGACY-1'}},
             }),
         )
 

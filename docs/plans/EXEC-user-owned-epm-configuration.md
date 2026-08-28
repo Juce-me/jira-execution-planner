@@ -32,7 +32,7 @@ authentication boundary and root recovery gate.
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy 2, Alembic, React 19, esbuild, `unittest`, Node test
 runner, Playwright, SQLite/PostgreSQL-compatible schema.
 
-**Status:** Done. Executed in `f5c449f`. Kept as `EXEC-*` for merge context pending final sign-off.
+**Status:** Done. Executed in PR [#144](https://github.com/Juce-me/jira-execution-planner/pull/144); tracked by commit `48eeed8`. Kept as `EXEC-*` for merge context pending final sign-off.
 
 **Concurrency decision:** Private EPM saves remain last-write-wins and do not use workspace
 `baseRevision`. EPM writers are serialized: PostgreSQL takes an owner/workspace transaction lock plus the

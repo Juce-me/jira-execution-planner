@@ -29,7 +29,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 4. `DONE-03-db-user-configuration.md`
    - Completed DB user-configuration plan. Use for audit and prerequisite evidence; do not execute as active work.
-   - Output: DB-backed user-owned saved views, including private EPM scope, label prefix, issue types, and project-label mappings. EPM tab and sprint are private UI state; existing private-view values remain preserved. PR #130 temporarily moved normalized EPM settings into workspace configuration; `EXEC-user-owned-epm-configuration.md` corrects that ownership regression.
+   - Output: DB-backed user-owned saved views, including private EPM scope, label prefix, issue types, and project-label mappings. EPM tab and sprint are private UI state; existing private-view values remain preserved. PR #130 temporarily moved normalized EPM settings into workspace configuration; `DONE-user-owned-epm-configuration.md` corrects that ownership regression.
 
 5. `DONE-04-db-user-home-epm-read-token.md`
    - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
@@ -48,11 +48,11 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 9. `DONE-shared-admin-configuration.md`
    - Completed and merged in PR #130 (`7ea40db`). Use for audit context only.
-   - Current output: administrator dashboard sections persist once per workspace/Jira site with revisioned, authorized writes; normal-user catalog refreshes use separate storage; no private payload is auto-promoted. Its shared-EPM decision is superseded by `EXEC-user-owned-epm-configuration.md`.
+   - Current output: administrator dashboard sections persist once per workspace/Jira site with revisioned, authorized writes; normal-user catalog refreshes use separate storage; no private payload is auto-promoted. Its shared-EPM decision is superseded by `DONE-user-owned-epm-configuration.md`.
    - Execution record: `../agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md`.
 
-10. `EXEC-user-owned-epm-configuration.md`
-   - Active correction plan for the ownership regression identified after PR #130. Tasks 1-6 and final verification are complete; keep the `EXEC-*` name until user acceptance.
+10. `DONE-user-owned-epm-configuration.md`
+   - Completed, verified, and accepted correction for the ownership regression identified after PR #130. Use for audit context only.
    - Current output: EPM settings use each user's default private saved view and every functional EPM path uses that source; cache keys include a normalized-configuration digest and every effective-default change performs post-commit user-partitioned invalidation; legacy import discards derived `teamCatalog`; misplaced workspace EPM is held in a reversible archive without an inferred owner; and every application API `401` terminally locks the whole app behind one sanitized same-tab sign-in recovery screen. Department groups remain workspace-shared and user-editable, while administrator settings remain workspace-shared and admin-only. Full Python, Node, Playwright, startup, clean-build, and explicit PostgreSQL gates pass.
    - Design record: `../agents/bugfixes/2026-08-27-planned-global-auth-lock.md`.
 

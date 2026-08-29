@@ -2,7 +2,7 @@
 
 > **Status:** Done. Executed and merged in PR #130 (`7ea40db`). Kept for audit context only; do not execute as an active plan.
 
-> **Current accuracy:** The workspace administrator persistence, revision, recovery, and team-catalog work remains current. Only this plan's decision to share EPM configuration is superseded by `EXEC-user-owned-epm-configuration.md` and `backend/security/CONFIGURATION_OWNERSHIP.md`: EPM scope, label prefix, issue types, and project-label mappings belong to the owning user's default private saved view. EPM tab and sprint remain private UI state; existing private-view values are preserved but are not promoted to shared configuration. Misplaced workspace EPM is removed into a reversible migration archive without inferring an owner.
+> **Current accuracy:** The workspace administrator persistence, revision, recovery, and team-catalog work remains current. Only this plan's decision to share EPM configuration is superseded by `DONE-user-owned-epm-configuration.md` and `backend/security/CONFIGURATION_OWNERSHIP.md`: EPM scope, label prefix, issue types, and project-label mappings belong to the owning user's default private saved view. EPM tab and sprint remain private UI state; existing private-view values are preserved but are not promoted to shared configuration. Misplaced workspace EPM is removed into a reversible migration archive without inferring an owner.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

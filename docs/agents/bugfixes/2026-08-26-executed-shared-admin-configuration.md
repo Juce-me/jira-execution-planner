@@ -3,7 +3,7 @@
 Status: executed
 Type: bugfix
 
-> **Current accuracy:** PR #130 implemented the design recorded here, but only its shared-EPM decision is superseded by `docs/plans/EXEC-user-owned-epm-configuration.md` and `backend/security/CONFIGURATION_OWNERSHIP.md`. Administrator persistence/revisions and team-catalog separation remain current. EPM settings belong to the owning user's default private saved view, and misplaced workspace EPM is removed into a reversible migration archive without inferring an owner. The historical decision and execution details below are intentionally unchanged.
+> **Current accuracy:** PR #130 implemented the design recorded here, but only its shared-EPM decision is superseded by `docs/plans/DONE-user-owned-epm-configuration.md` and `backend/security/CONFIGURATION_OWNERSHIP.md`. Administrator persistence/revisions and team-catalog separation remain current. EPM settings belong to the owning user's default private saved view, and misplaced workspace EPM is removed into a reversible migration archive without inferring an owner. The historical decision and execution details below are intentionally unchanged.
 
 ## Problem
 

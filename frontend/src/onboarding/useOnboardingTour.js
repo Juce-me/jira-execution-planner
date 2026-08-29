@@ -5,7 +5,7 @@ import {
     reconcileTourSessionState,
 } from './onboardingSteps.js';
 import { trackOnboardingAnalytics } from './onboardingAnalytics.js';
-import { safeAppLoginUrl } from '../settings/groupVisibilityUtils.js';
+import { isAuthenticationRequiredError } from '../api/authRequired.js';
 
 export function useOnboardingController({
     bootstrapReady = false,
@@ -20,7 +20,6 @@ export function useOnboardingController({
     const [sourceSurface, setSourceSurface] = React.useState('first_run');
     const [pending, setPending] = React.useState(false);
     const [error, setError] = React.useState('');
-    const [recoveryLoginUrl, setRecoveryLoginUrl] = React.useState('');
     const automaticStartedRef = React.useRef(false);
     const inFlightRef = React.useRef(false);
     const replayPendingRef = React.useRef(false);
@@ -29,7 +28,6 @@ export function useOnboardingController({
         const normalizedSource = source === 'settings' ? 'settings' : 'first_run';
         prepareCatchUp?.();
         setError('');
-        setRecoveryLoginUrl('');
         setSourceSurface(normalizedSource);
         setRun(true);
         trackOnboardingAnalytics(trackSettingsAction, 'started', normalizedSource);
@@ -50,7 +48,6 @@ export function useOnboardingController({
         inFlightRef.current = true;
         setPending(true);
         setError('');
-        setRecoveryLoginUrl('');
         try {
             const payload = await savePreference(nextDone);
             if (payload?.onboardingDone !== nextDone) {
@@ -63,8 +60,8 @@ export function useOnboardingController({
             }
             return true;
         } catch (saveError) {
+            if (isAuthenticationRequiredError(saveError)) return false;
             setError(saveError?.message || 'Failed to save onboarding preference. Please retry.');
-            setRecoveryLoginUrl(saveError?.status === 401 ? safeAppLoginUrl(saveError?.loginUrl) : '');
             return false;
         } finally {
             inFlightRef.current = false;
@@ -92,7 +89,6 @@ export function useOnboardingController({
         sourceSurface,
         pending,
         error,
-        recoveryLoginUrl,
         skip,
         finish,
         replay,

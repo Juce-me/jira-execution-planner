@@ -35,6 +35,20 @@ def context(auth_mode):
     )
 
 
+def epm_config_generation():
+    return jira_server.build_epm_config_generation({
+        'version': 2,
+        'labelPrefix': 'rnd_project_',
+        'scope': {'rootGoalKey': 'ROOT', 'subGoalKeys': ['GOAL']},
+        'issueTypes': {
+            'initiative': ['Initiative'],
+            'epic': ['Epic'],
+            'leaf': ['Story', 'Task', 'Sub-task', 'Subtask', 'Bug'],
+        },
+        'projects': {},
+    })
+
+
 class TestOauthCacheIsolation(unittest.TestCase):
     def setUp(self):
         self._env_patcher = patch.dict(os.environ, {
@@ -56,7 +70,8 @@ class TestOauthCacheIsolation(unittest.TestCase):
     def test_oauth_home_projects_use_user_token_partitioned_cache(self):
         auth_context = context('atlassian_oauth')
         scope_key = '{"rootGoalKey": "ROOT", "subGoalKeys": ["GOAL"]}'
-        partitioned_key = build_jira_home_process_cache_key(auth_context, scope_key)
+        generation = epm_config_generation()
+        partitioned_key = build_jira_home_process_cache_key(auth_context, scope_key, generation)
         cache = {
             scope_key: {
                 'timestamp': 1000,
@@ -82,6 +97,7 @@ class TestOauthCacheIsolation(unittest.TestCase):
             home_project_limit=500,
             now=lambda: 1001,
             context=auth_context,
+            config_generation=generation,
         )
 
         state = build_epm_home_projects_state(
@@ -99,7 +115,8 @@ class TestOauthCacheIsolation(unittest.TestCase):
         project = {'id': 'project-1', 'label': 'synthetic_label'}
         base_jql = 'project = SYN'
         raw_key = f"project-1::active::42::synthetic_label::{base_jql}"
-        partitioned_key = build_jira_home_process_cache_key(auth_context, raw_key)
+        generation = epm_config_generation()
+        partitioned_key = build_jira_home_process_cache_key(auth_context, raw_key, generation)
         cached_payload = {
             'project': project,
             'metadataOnly': False,
@@ -139,6 +156,7 @@ class TestOauthCacheIsolation(unittest.TestCase):
             cache_lock=threading.Lock(),
             cache_ttl_seconds=300,
             context=auth_context,
+            config_generation=generation,
             now=lambda: 1001,
         )
 
@@ -155,7 +173,8 @@ class TestOauthCacheIsolation(unittest.TestCase):
         base_jql = 'project = SYN'
         linkage_key = '{"epicKeys": [], "labels": ["synthetic_label"]}'
         raw_key = f"project-1::active::42::{base_jql}::{linkage_key}"
-        partitioned_key = build_jira_home_process_cache_key(auth_context, raw_key)
+        generation = epm_config_generation()
+        partitioned_key = build_jira_home_process_cache_key(auth_context, raw_key, generation)
         cached_payload = {
             'project': project,
             'issues': [{'key': 'SYN-CACHED'}],
@@ -184,6 +203,7 @@ class TestOauthCacheIsolation(unittest.TestCase):
             cache_lock=threading.Lock(),
             cache_ttl_seconds=300,
             context=auth_context,
+            config_generation=generation,
             now=lambda: 1001,
         )
 

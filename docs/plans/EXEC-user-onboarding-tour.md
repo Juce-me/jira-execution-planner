@@ -26,7 +26,7 @@
 - The overlay renders through `document.body`, remains above sticky/dropdown layers, and does not change existing shared control layout or z-index contracts.
 - Background controls are inert while the tour is open. Tour controls support focus trapping, Back/Next/Finish, **Skip onboarding**, Escape as skip, and focus restoration.
 - Persist completion/skip before closing. On failure, keep the UI open, show a retryable `role="alert"`, and do not emit a successful outcome event.
-- A safe app-owned `loginUrl` returned with `401` becomes a visible **Sign in again** link; never log or forward OAuth callback query strings.
+- Authentication expiry delegates to the app-wide authentication gate and its sanitized sign-in action; never log or forward OAuth callback query strings.
 - Reuse existing button, modal, typography, settings, and focus styles. Add no tour dependency or custom implementation of an existing control.
 - Analytics uses canonical `settings_action` with `section=onboarding`, `workflow_action=started|completed|skipped`, `source_surface=first_run|settings`, and `result` where applicable. Never send step ids, group/team/sprint names, issue keys, summaries, URLs, or raw search values.
 - Do not hand-edit `frontend/dist/`; rebuild it from source.
@@ -77,7 +77,7 @@
 
 ### Create
 
-- `backend/db/migrations/versions/20260828_0008_user_onboarding.py`: add and backfill `user_group_preferences.onboarding_done` after workspace dashboard configuration migration `20260826_0007`.
+- `backend/db/migrations/versions/20260829_0009_user_onboarding.py`: add and backfill `user_group_preferences.onboarding_done` after the workspace EPM removal migration `20260827_0008`.
 - `frontend/src/onboarding/onboardingSteps.js`: immutable step catalog, target eligibility, and placement helpers.
 - `frontend/src/onboarding/useOnboardingTour.js`: automatic start, replay, persistence, and analytics dedupe.
 - `frontend/src/onboarding/OnboardingTour.jsx`: portal, spotlight, coachmark, navigation, focus trap, and fallback card.
@@ -123,7 +123,7 @@
 - [x] Add failing migration tests proving a new column is non-null, existing rows backfill to `true`, new rows default to `false`, and downgrade removes only that column.
 - [x] Add failing service tests for missing row, stored false/true, user/workspace isolation, idempotent writes, and JSON-mode rejection.
 - [x] Run focused backend tests and confirm failure is limited to missing onboarding state.
-- [x] Add migration `revision='20260828_0008'`, `down_revision='20260826_0007'` and map the boolean with a safe server default.
+- [x] Add migration `revision='20260829_0009'`, `down_revision='20260827_0008'` and map the boolean with a safe server default.
 - [x] Extend groups-config preference serialization without adding a request or changing `activeGroupId`, visible-group, or `onboardingRequired` logic.
 - [x] Implement an updater that resolves the preference row by authenticated workspace/user, rejects absence with `GroupSelectionRequired`, commits only `onboarding_done`, and translates storage errors consistently.
 - [x] Re-run focused tests and commit the backend state slice.

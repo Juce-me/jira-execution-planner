@@ -144,9 +144,9 @@ async function mockFirstRunDashboard(page, options = {}) {
                 authMode: options.authMode || 'atlassian_oauth',
                 jiraUrl: 'https://jira.example',
                 projectsConfigured: true,
-                settingsAdminOnly: false,
-                userCanEditSettings: true,
-                userCanEditEpmConfig: false,
+                settingsAdminOnly: options.settingsAdminOnly ?? false,
+                userCanEditSettings: options.userCanEditSettings ?? true,
+                userCanEditEpmConfig: options.userCanEditEpmConfig ?? false,
             });
         }
         if (url.pathname === '/api/groups-config') {
@@ -254,6 +254,39 @@ async function mockFirstRunDashboard(page, options = {}) {
     });
     return calls;
 }
+
+test('normal users can edit shared Departments without admin or EPM permission', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        settingsAdminOnly: true,
+        userCanEditSettings: false,
+        userCanEditEpmConfig: false,
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform'],
+        }),
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'EPM', exact: true })).toHaveCount(0);
+    await dialog.getByPlaceholder('Group name').fill('Platform Core');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    const save = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    expect(save.body.groups[0].name).toBe('Platform Core');
+    expect(calls.some(call => call.method === 'POST' && [
+        '/api/projects/selected',
+        '/api/board-config',
+        '/api/epm/config',
+    ].includes(call.pathname))).toBe(false);
+});
 
 function overflowGroupConfig() {
     return {
@@ -687,8 +720,8 @@ test('first-run auth recovery exposes only a safe sign-in URL', async ({ page })
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('radio', { name: /Platform/ }).check();
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(page.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
-    await expect(page.getByRole('radio', { name: /Platform/ })).toBeChecked();
+    await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(page.locator('input[type="radio"]:checked')).toHaveCount(1);
     expect(safeCalls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
 
     const unsafePage = await page.context().newPage();
@@ -701,7 +734,7 @@ test('first-run auth recovery exposes only a safe sign-in URL', async ({ page })
     await unsafePage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await unsafePage.getByRole('radio', { name: /Platform/ }).check();
     await unsafePage.getByRole('button', { name: 'Continue' }).click();
-    await expect(unsafePage.getByRole('link', { name: 'Sign in again' })).toHaveCount(0);
+    await expect(unsafePage.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
     await unsafePage.close();
 });
 
@@ -855,8 +888,8 @@ test('personal favorite save preserves its draft and exposes only safe auth reco
     await dialog.getByRole('button', { name: 'Save' }).click();
 
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveClass(/active/);
-    await expect(dialog.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(dialog.locator('button[aria-label="Growth is my favorite group"]')).toHaveClass(/active/);
+    await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
 });
 
 test('partial shared save failure retries only the personal favorite', async ({ page }) => {

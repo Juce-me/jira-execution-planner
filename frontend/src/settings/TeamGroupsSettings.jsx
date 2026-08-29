@@ -29,7 +29,6 @@ export default function TeamGroupsSettings(props) {
         personalGroupPreferencesEnabled,
         favoriteGroupDraftId,
         setFavoriteGroupDraft,
-        settingsPreferenceRecoveryLoginUrl,
         duplicateGroupDraft,
         resolveTeamName,
         removeTeamFromGroup,
@@ -97,7 +96,6 @@ export default function TeamGroupsSettings(props) {
         onboardingReplayDisabled,
         onboardingReplayPending,
         onboardingReplayError,
-        onboardingReplayRecoveryLoginUrl,
         onReplayOnboarding,
     } = props;
 
@@ -181,9 +179,6 @@ export default function TeamGroupsSettings(props) {
                                                 {onboardingReplayError && (
                                                     <div role="alert">
                                                         <span>{onboardingReplayError}</span>
-                                                        {onboardingReplayRecoveryLoginUrl && (
-                                                            <a href={onboardingReplayRecoveryLoginUrl}>Sign in again</a>
-                                                        )}
                                                     </div>
                                                 )}
                                             </div>
@@ -218,9 +213,6 @@ export default function TeamGroupsSettings(props) {
                                         {groupDraftError && (
                                             <div className="group-modal-warning">
                                                 {groupDraftError}
-                                                {settingsPreferenceRecoveryLoginUrl && (
-                                                    <> <a href={settingsPreferenceRecoveryLoginUrl}>Sign in again</a></>
-                                                )}
                                             </div>
                                         )}
                                         <div className="group-pane-tools">

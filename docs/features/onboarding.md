@@ -14,7 +14,7 @@ JSON, file, and environment configuration modes keep their existing shared-defau
 
 After the required Department preference is saved, a new user starts a guided tour in ENG Catch Up. The tour explains the visible Sprint, Department, Teams, Search, Jira export, Refresh, filter, issue hierarchy, and editable issue controls. Optional or unavailable controls are omitted, and explanatory fallback cards keep the tour finishable when issue data is absent or still loading.
 
-The tour is skippable with **Skip onboarding** or Escape. **Finish** and Skip persist completion before closing. If that write fails, the tour remains open with a retryable error; an expired session may show an app-owned **Sign in again** link. The tour never changes the active sprint, current Department scope, selected teams, or personal favorite.
+The tour is skippable with **Skip onboarding** or Escape. **Finish** and Skip persist completion before closing. If that write fails, the tour remains open with a retryable error. If authentication expires, the app-wide authentication gate replaces the dashboard and provides the sign-in recovery action. The tour never changes the active sprint, current Department scope, selected teams, or personal favorite.
 
 Tour progress is session-only. If a user reloads or otherwise interrupts an unfinished tour, no individual step is saved and the next load restarts at the first eligible step. A successful Finish or Skip prevents automatic replay on later loads.
 

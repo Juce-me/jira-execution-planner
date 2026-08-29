@@ -28,6 +28,7 @@ SECURITY_SAMPLES = {
     "user_write": [
         ("POST", "/api/me/views"),
         ("POST", "/api/me/onboarding"),
+        ("POST", "/api/epm/config"),
         ("POST", "/api/groups-preferences"),
         ("POST", "/api/export-excel"),
         ("POST", "/api/issues/priorities"),
@@ -38,7 +39,11 @@ SECURITY_SAMPLES = {
         ("POST", "/api/scenario/drafts/draft-1/rollback"),
         ("POST", "/api/scenario/drafts/draft-1/writeback"),
     ],
-    "shared_admin_write": [("POST", "/api/board-config"), ("POST", "/api/epm/config"), ("POST", "/api/delivery-owner-field/config")],
+    "shared_admin_write": [("POST", "/api/board-config"), ("POST", "/api/delivery-owner-field/config")],
+    "authenticated_preview": [
+        ("POST", "/api/epm/projects/configuration"),
+        ("POST", "/api/epm/projects/preview"),
+    ],
     "tool_admin": [("GET", "/api/admin/users"), ("PATCH", "/api/admin/users/user-1/status")],
     "dev_local": [("GET", "/api/debug-fields"), ("GET", "/api/tasks-fields")],
 }
@@ -92,6 +97,7 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
     def test_anonymous_oauth_requests_cannot_read_or_write_app_data(self):
         protected_classes = [
             "authenticated_read",
+            "authenticated_preview",
             "user_write",
             "workspace_write",
             "shared_admin_write",
@@ -138,6 +144,103 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         self.assertIn(options_policy.policy_class, PROTECTED_POLICY_CLASSES)
         self.assertNotIn(options_policy.policy_class, CSRF_POLICY_CLASSES)
         self.assertIn(write_policy.policy_class, CSRF_POLICY_CLASSES)
+
+    def test_epm_preview_policy_requires_auth_and_csrf_without_admin(self):
+        from backend.security.guards import ADMIN_POLICY_CLASSES, CSRF_POLICY_CLASSES, PROTECTED_POLICY_CLASSES
+        from backend.security.policy import classify_rule
+
+        for path in ('/api/epm/projects/configuration', '/api/epm/projects/preview'):
+            with self.subTest(path=path):
+                policy = classify_rule(path, ['POST'])
+                self.assertEqual(policy.policy_class, 'authenticated_preview')
+                self.assertIn(policy.policy_class, PROTECTED_POLICY_CLASSES)
+                self.assertIn(policy.policy_class, CSRF_POLICY_CLASSES)
+                self.assertNotIn(policy.policy_class, ADMIN_POLICY_CLASSES)
+
+    def test_epm_preview_aliases_enforce_browser_guards_and_allow_non_admin(self):
+        payload = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': '', 'subGoalKeys': []},
+            'issueTypes': {
+                'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story'],
+            },
+            'projects': {},
+        }
+        aliases = ('/api/epm/projects/configuration', '/api/epm/projects/preview')
+        install_oauth_session(self.client, account_id='regular-user')
+
+        for path in aliases:
+            with self.subTest(path=path, case='missing_requested_with'), self._oauth_mode(), \
+                 patch.object(jira_server, 'build_epm_projects_payload', side_effect=AssertionError('route reached')):
+                response = self.client.post(path, json=payload)
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.get_json()['error'], 'csrf_required')
+
+            with self.subTest(path=path, case='missing_csrf'), self._oauth_mode(), \
+                 patch.object(jira_server, 'build_epm_projects_payload', side_effect=AssertionError('route reached')):
+                response = self.client.post(path, json=payload, headers={
+                    'X-Requested-With': 'jira-execution-planner',
+                })
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.get_json()['error'], 'csrf_required')
+
+            with self.subTest(path=path, case='invalid_csrf'), self._oauth_mode(), \
+                 patch.object(jira_server, 'build_epm_projects_payload', side_effect=AssertionError('route reached')):
+                response = self.client.post(path, json=payload, headers={
+                    'X-Requested-With': 'jira-execution-planner',
+                    'X-CSRF-Token': 'invalid',
+                })
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.get_json()['error'], 'csrf_required')
+
+            with self.subTest(path=path, case='non_admin_success'), self._oauth_mode(), \
+                 patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', True), \
+                 patch.object(jira_server, 'build_epm_projects_payload', return_value={'projects': []}) as build:
+                csrf_token = self._csrf_token()
+                response = self.client.post(path, json=payload, headers={
+                    'X-Requested-With': 'jira-execution-planner',
+                    'X-CSRF-Token': csrf_token,
+                })
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                build.assert_called_once()
+
+    def test_epm_preview_aliases_return_auth_and_home_token_contracts(self):
+        payload = {
+            'version': 2,
+            'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': '', 'subGoalKeys': []},
+            'issueTypes': {
+                'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story'],
+            },
+            'projects': {},
+        }
+        aliases = ('/api/epm/projects/configuration', '/api/epm/projects/preview')
+        for path in aliases:
+            fresh_client = jira_server.app.test_client()
+            with self.subTest(path=path, case='expired'), self._oauth_mode(), \
+                 patch.object(jira_server, 'build_epm_projects_payload', side_effect=AssertionError('route reached')):
+                response = fresh_client.post(path, json=payload, headers={
+                    'X-Requested-With': 'jira-execution-planner',
+                })
+                self.assertEqual(response.status_code, 401)
+                self.assertEqual(response.get_json()['error'], 'auth_required')
+
+        install_oauth_session(self.client, account_id='regular-user')
+        for path in aliases:
+            with self.subTest(path=path, case='home_token'), self._oauth_mode(), \
+                 patch.object(
+                     jira_server,
+                     'build_epm_projects_payload',
+                     side_effect=jira_server.AuthError('home_user_token_required', 'Connect token'),
+                 ):
+                csrf_token = self._csrf_token()
+                response = self.client.post(path, json=payload, headers={
+                    'X-Requested-With': 'jira-execution-planner',
+                    'X-CSRF-Token': csrf_token,
+                })
+                self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+                self.assertEqual(response.get_json()['error'], 'home_user_token_required')
 
     def test_unsafe_oauth_requests_require_x_requested_with_before_route_code(self):
         install_oauth_session(self.client, account_id="tool-admin-account")
@@ -194,6 +297,7 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         with self._oauth_mode(), \
              patch.object(jira_server, "SETTINGS_ADMIN_ONLY", False), \
              patch.object(jira_server, "current_request_auth_context", return_value=non_admin_context), \
+             patch.object(jira_server, "config_storage_db_enabled", return_value=False), \
              patch.object(jira_server, "load_dashboard_config", return_value={}), \
              patch.object(jira_server, "save_dashboard_config"), \
              patch.object(jira_server, "invalidate_sprints_cache"):

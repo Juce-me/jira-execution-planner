@@ -18,6 +18,8 @@ import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import OnboardingTour from './onboarding/OnboardingTour.jsx';
 import { isOnboardingAvailable } from './onboarding/onboardingSteps.js';
 import { useOnboardingController } from './onboarding/useOnboardingTour.js';
+import AuthRequiredGate from './components/AuthRequiredGate.jsx';
+import { AUTH_REQUIRED_EVENT, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './api/authRequired.js';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
@@ -155,7 +157,6 @@ import {
     buildSharedGroupsPayload,
     effectiveVisibleGroupIds,
     resolveVisibleActiveGroupId,
-    safeAppLoginUrl,
 } from './settings/groupVisibilityUtils.js';
 import {
     fetchEpmConfig,
@@ -253,7 +254,7 @@ import {
         const EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY = 3;
         const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access']);
         const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels', 'boards']);
-        const SHARED_CONFIGURATION_TAB_IDS = new Set([...ADMIN_SETTINGS_TAB_IDS, 'epm']);
+        const SHARED_CONFIGURATION_TAB_IDS = new Set(ADMIN_SETTINGS_TAB_IDS);
         function isActiveHomeTokenConnection(connection) {
             return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
         }
@@ -459,7 +460,17 @@ import {
             const epmSubGoalFilterDropdownRefs = useRef({ main: null, compact: null });
             const [showEpmSortDropdown, setShowEpmSortDropdown] = useState(false);
             const epmSortDropdownRefs = useRef({ main: null, compact: null });
-            const [epmConfigDraft, setEpmConfigDraft] = useState(createEmptyEpmConfigDraft());
+            const [epmConfigDraft, setEpmConfigDraftState] = useState(createEmptyEpmConfigDraft());
+            const epmConfigDraftRef = useRef(epmConfigDraft);
+            const epmConfigDraftGenerationRef = useRef(0);
+            const setEpmConfigDraft = React.useCallback((updater) => {
+                setEpmConfigDraftState((previous) => {
+                    const next = typeof updater === 'function' ? updater(previous) : updater;
+                    epmConfigDraftRef.current = next;
+                    epmConfigDraftGenerationRef.current += 1;
+                    return next;
+                });
+            }, []);
             const [epmConfigLoading, setEpmConfigLoading] = useState(false);
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
             const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);
@@ -526,7 +537,6 @@ import {
             // { current, savedSections }: a rejected groups POST, kept so the draft survives it (D45).
             const [groupsConfigConflict, setGroupsConfigConflict] = useState(null);
             const [workspaceConfigConflict, setWorkspaceConfigConflict] = useState(null);
-            const [workspaceConfigRecoveryLoginUrl, setWorkspaceConfigRecoveryLoginUrl] = useState('');
             const [sharedConfigRevision, setSharedConfigRevision] = useState(0);
             const sharedConfigRevisionRef = useRef(0);
             const lastCommittedWorkspaceSectionsRef = useRef([]);
@@ -574,7 +584,7 @@ import {
                 active: showGroupManage && groupManageTab === 'access',
             });
             const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
-            const canEditEpmConfiguration = canEditSharedConfiguration || userCanEditEpmConfig;
+            const canEditEpmConfiguration = userCanEditEpmConfig === true;
             const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
             const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
@@ -996,6 +1006,7 @@ import {
                     setHomeTokenConnection(nextConnection);
                     return nextConnection;
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return null;
                     reportServerConnectionError(err);
                     setHomeTokenConnection({ connected: false });
                     return { connected: false };
@@ -1042,7 +1053,6 @@ import {
                 favoriteGroupDraftId,
                 setFavoriteGroupDraft,
                 favoriteGroupValidationError,
-                settingsPreferenceRecoveryLoginUrl,
                 setGroupPreferencesSaving,
                 groupVisibilitySaving,
                 isGroupVisibilityDraftDirty,
@@ -1058,7 +1068,6 @@ import {
                 clearFirstRunConfigurationActive,
                 firstRunSaving,
                 firstRunError,
-                firstRunRecoveryLoginUrl,
                 persistGroupPreferences,
             } = useGroupVisibilityPreferences({
                 backendUrl: BACKEND_URL,
@@ -1183,6 +1192,7 @@ import {
                     if (epmSettingsProjectsRequestIdRef.current !== requestId) {
                         return [];
                     }
+                    if (isAuthenticationRequiredError(err)) return [];
                     console.error('Failed to load EPM projects:', err);
                     setEpmSettingsProjectsError(err?.message || 'Failed to load EPM projects.');
                     return [];
@@ -1223,11 +1233,17 @@ import {
                 setGroupDraftError('');
                 trackSettingsAction('epm', 'save', { dirty_state: isEpmConfigDirty ? 'dirty' : 'clean', project_count_bucket: bucketCount(epmConfigDraft?.projects?.length || 0) });
                 try {
-                    const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
-                    const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft, sharedConfigRevisionRef.current);
-                    commitSharedConfigRevision(payload);
+                    const submittedGeneration = epmConfigDraftGenerationRef.current;
+                    const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraftRef.current);
+                    const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);
                     const nextConfig = normalizeEpmConfigDraft(payload);
-                    applySavedEpmConfig(nextConfig);
+                    const draftUnchanged = epmConfigDraftGenerationRef.current === submittedGeneration;
+                    if (draftUnchanged) {
+                        applySavedEpmConfig(nextConfig);
+                    } else {
+                        epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+                        setEpmConfigLoaded(true);
+                    }
                     updateEpmSettingsProjectRowsAfterSave(nextConfig);
                     if (hasSavedEpmScopeConfig(nextConfig)) {
                         await refreshEpmProjects();
@@ -1238,15 +1254,9 @@ import {
                         setEpmSettingsProjectsLoaded(false);
                     }
                     trackSettingsAction('epm', 'save_result', { result: 'success' });
+                    return draftUnchanged;
                 } catch (err) {
-                    if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict') {
-                        setWorkspaceConfigConflict({
-                            ...err.payload,
-                            savedSections: lastCommittedWorkspaceSectionsRef.current,
-                            pendingSections: ['EPM settings'],
-                        });
-                        trackSettingsAction('epm', 'save_result', { result: 'failure', conflict_state: 'remote', conflict_count_bucket: '1_5' });
-                    }
+                    if (isAuthenticationRequiredError(err)) throw err;
                     const message = err?.message || 'Failed to save EPM settings.';
                     setGroupDraftError(message);
                     console.error('Failed to save EPM config:', err);
@@ -1349,6 +1359,7 @@ import {
                         setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
                     }
                 } catch (error) {
+                    if (isAuthenticationRequiredError(error)) return;
                     if (labelSearchRequestIdRef.current[key] === requestId) {
                         setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
                         setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
@@ -1542,6 +1553,7 @@ import {
                     if (epmSubGoalsRequestIdRef.current !== requestId) {
                         return { goals: [], hasExpectedSubGoal: false, lookupFailed: true };
                     }
+                    if (isAuthenticationRequiredError(err)) return { goals: [], hasExpectedSubGoal: true, lookupFailed: true };
                     console.error('Failed to fetch EPM sub-goals:', err);
                     setEpmSubGoals([]);
                     setEpmSubGoalsError(err?.message || '');
@@ -1851,12 +1863,23 @@ import {
                     setEpmRootGoalsError('');
                     let rootGoalKey = '';
                     let loadedConfig = null;
+                    let requestGeneration = null;
                     try {
-                        const config = await loadEpmConfig();
+                        if (isEpmConfigDirty) {
+                            loadedConfig = epmConfigDraft;
+                            rootGoalKey = String(epmConfigDraft.scope?.rootGoalKey || '').trim().toUpperCase();
+                        } else {
+                            requestGeneration = epmConfigDraftGenerationRef.current;
+                            const config = await loadEpmConfig();
+                            if (!cancelled) {
+                                const nextConfig = epmConfigDraftGenerationRef.current === requestGeneration
+                                    ? applySavedEpmConfig(config)
+                                    : epmConfigDraftRef.current;
+                                loadedConfig = nextConfig;
+                                rootGoalKey = String(nextConfig.scope?.rootGoalKey || '').trim().toUpperCase();
+                            }
+                        }
                         if (!cancelled) {
-                            const nextConfig = applySavedEpmConfig(config);
-                            loadedConfig = nextConfig;
-                            rootGoalKey = String(nextConfig.scope?.rootGoalKey || '').trim().toUpperCase();
                             setEpmRootGoalQuery('');
                             setEpmSubGoalQuery('');
                             setEpmRootGoalOpen(false);
@@ -1865,9 +1888,12 @@ import {
                             setEpmSubGoalIndex(0);
                         }
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
                         console.error('Failed to load EPM config:', err);
                         if (!cancelled) {
-                            applySavedEpmConfig(emptyEpmConfig);
+                            if (requestGeneration === epmConfigDraftGenerationRef.current) {
+                                applySavedEpmConfig(emptyEpmConfig);
+                            }
                             setGroupDraftError('Failed to load EPM settings.');
                             setEpmConfigLoading(false);
                         }
@@ -1887,6 +1913,7 @@ import {
                             });
                         }
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
                         console.error('Failed to load EPM scope metadata:', err);
                         if (!cancelled) {
                             setEpmScopeMeta({ cloudId: '', error: err?.message || '' });
@@ -1901,6 +1928,7 @@ import {
                             setEpmRootGoalsError(String(rootGoalsPayload?.error || '').trim());
                         }
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
                         console.error('Failed to load EPM root goals:', err);
                         if (!cancelled) {
                             setEpmRootGoals([]);
@@ -2215,6 +2243,7 @@ import {
                         return resolveVisibleActiveGroupId(normalized, effectiveIds, preferred);
                     });
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (reportServerConnectionError(err)) {
                         setGroupsError('');
                     } else {
@@ -2239,6 +2268,7 @@ import {
                         setAvailableTeams(catalogTeams);
                     }
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     console.warn('Failed to load team catalog:', err);
                 }
             };
@@ -2254,6 +2284,7 @@ import {
                     });
                     return data;
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     console.warn('Failed to save team catalog:', err);
                 }
             };
@@ -2310,6 +2341,7 @@ import {
                         source: 'sprint'
                     });
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     console.error('Error fetching teams from Jira:', err);
                     setGroupDraftError(`Failed to fetch teams: ${err.message}`);
                 } finally {
@@ -2337,6 +2369,7 @@ import {
                         resolvedAt: new Date().toISOString()
                     }, false);
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     console.warn('Failed to resolve team names:', err);
                 }
             };
@@ -2740,6 +2773,11 @@ import {
             };
 
             const discardGroupDraftChanges = () => {
+                if (isEpmConfigDirty) {
+                    try {
+                        setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}'));
+                    } catch (_) { /* baseline is produced by this document */ }
+                }
                 setShowGroupDiscardConfirm(false);
                 closeGroupManage();
             };
@@ -3250,7 +3288,6 @@ import {
                 setGroupDraftError('');
                 setGroupsConfigConflict(null);
                 setWorkspaceConfigConflict(null);
-                setWorkspaceConfigRecoveryLoginUrl('');
                 const committedAdminSections = {};
                 try {
                     const savingAdminSettings = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
@@ -3378,7 +3415,10 @@ import {
                         setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
                         setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
                         setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
-                    } catch (_) { /* best-effort */ }
+                    } catch (err) {
+                        if (isAuthenticationRequiredError(err)) throw err;
+                        /* best-effort */
+                    }
 
                     invalidateSprintDataForConfigSave(refreshTarget);
                     queueConfigSaveRefresh(refreshTarget);
@@ -3394,6 +3434,7 @@ import {
                     lastCommittedWorkspaceSectionsRef.current = committedWorkspaceSectionLabels(committedAdminSections);
                     return true;
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return false;
                     if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict') {
                         const pendingSections = committedWorkspaceSectionLabels({
                             projects: isProjectsDraftDirty && !committedAdminSections.projects,
@@ -3402,7 +3443,6 @@ import {
                             capacity: isCapacityDraftDirty && !committedAdminSections.capacity,
                             fieldConfigs: anyFieldConfigDirty && !committedAdminSections.fieldConfigs,
                             issueTypes: isIssueTypesDraftDirty && !committedAdminSections.issueTypes,
-                            epm: isEpmConfigDirty,
                         });
                         setWorkspaceConfigConflict({
                             ...err.payload,
@@ -3414,8 +3454,6 @@ import {
                             conflict_state: 'remote',
                             conflict_count_bucket: '1_5',
                         });
-                    } else if (err?.status === 401 || (err?.status === 403 && /auth|session|token/i.test(String(err?.code || err?.payload?.error || '')))) {
-                        setWorkspaceConfigRecoveryLoginUrl(safeAppLoginUrl(err?.payload?.loginUrl || err?.payload?.recoveryUrl));
                     }
                     setGroupDraftError(err.message || 'Failed to save groups.');
                     if (err?.status !== 409) trackSettingsAction(groupManageTab, 'save_result', { result: 'failure' });
@@ -3437,11 +3475,13 @@ import {
                 const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;
                 lastCommittedWorkspaceSectionsRef.current = [];
                 try {
+                    let epmDraftUnchanged = true;
                     if (hasSharedSettingsChanges || hasDepartmentSettingsChanges) {
                         const saved = await saveGroupsConfig({ closeOnSuccess: false, rebaseOnto });
                         if (!saved) return;
                     }
-                    if (hasEpmSettingsChanges) await saveEpmConfig();
+                    if (hasEpmSettingsChanges) epmDraftUnchanged = await saveEpmConfig();
+                    if (hasEpmSettingsChanges && !epmDraftUnchanged) return;
                     if (hasSharedSettingsChanges || hasDepartmentSettingsChanges || hasEpmSettingsChanges) closeGroupManage();
                 } catch (_) {}
             };
@@ -3474,12 +3514,13 @@ import {
             const useLatestWorkspaceConfig = async () => {
                 setWorkspaceConfigConflict(null);
                 setGroupDraftError('');
-                await loadConfig();
+                await loadConfig({ preserveEpmDraft: isEpmConfigDirty });
             };
 
             useEffect(() => {
                 if (!showGroupManage) return;
                 const handleKey = (event) => {
+                    if (readPendingAuthenticationRequired()) return;
                     const key = event.key;
                     if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
                         event.preventDefault();
@@ -3992,6 +4033,7 @@ import {
                     setSavedSelectedProjects(selected);
                     selectedProjectsBaselineRef.current = JSON.stringify(selected);
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load selected projects:', err);
                     }
@@ -5481,6 +5523,7 @@ import {
 
             useEffect(() => {
                 const handleKey = (event) => {
+                    if (readPendingAuthenticationRequired()) return;
                     if (event.key !== '/') return;
                     const target = event.target;
                     if (target) {
@@ -5623,9 +5666,11 @@ import {
                 updateDismissedHash
             ]);
 
-            const loadConfig = async () => {
+            const loadConfig = async ({ preserveEpmDraft = false } = {}) => {
+                const epmRequestGeneration = epmConfigDraftGenerationRef.current;
+                const shouldPreserveEpmDraft = () => preserveEpmDraft
+                    || epmConfigDraftGenerationRef.current !== epmRequestGeneration;
                 setSharedConfigReady(false);
-                setWorkspaceConfigRecoveryLoginUrl('');
                 try {
                     const config = await fetchAppConfig(BACKEND_URL);
                     clearServerConnectionError();
@@ -5665,20 +5710,21 @@ import {
                         setIssueTypesDraft(issueTypes);
                         issueTypesBaselineRef.current = JSON.stringify(issueTypes);
                         seedSharedFieldConfigs(sharedConfig);
-                        const personalEpm = config.viewConfig?.view?.epm || {};
-                        applySavedEpmConfig({ ...(config.epm || sharedConfig.epm || {}), ...personalEpm });
+                        const personalEpm = config.viewConfig?.view?.epm || config.epm;
+                        if (!shouldPreserveEpmDraft()) applySavedEpmConfig(personalEpm);
                         sharedConfigRevisionRef.current = config.sharedConfigRevision;
                         setSharedConfigRevision(config.sharedConfigRevision);
                         setWorkspaceConfigConflict(null);
                     } else {
-                        applySavedEpmConfig(config.epm);
+                        if (!shouldPreserveEpmDraft()) applySavedEpmConfig(config.viewConfig?.view?.epm || config.epm);
                         await Promise.all([loadSelectedProjects(), loadPriorityWeightsConfig()]);
                     }
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load config:', err);
                     }
-                    applySavedEpmConfig(createEmptyEpmConfigDraft());
+                    if (!shouldPreserveEpmDraft()) applySavedEpmConfig(createEmptyEpmConfigDraft());
                 } finally {
                     setSharedConfigReady(true);
                 }
@@ -5828,6 +5874,7 @@ import {
                     console.log('✅ Loaded sprints:', sprints);
                     clearServerConnectionError();
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (reportServerConnectionError(err)) {
                         setSprintError('');
                     } else {
@@ -5871,6 +5918,7 @@ import {
                     });
                     setCapacityByTeam(normalized);
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     setCapacityByTeam({});
                 } finally {
                     setCapacityLoading(false);
@@ -5954,6 +6002,7 @@ import {
                     setDependencyData(data.dependencies || {});
                 } catch (err) {
                     if (err.name === 'AbortError') return;
+                    if (isAuthenticationRequiredError(err)) return;
                     console.error('Dependencies fetch error:', err);
                 } finally {
                     cleanupSprintFetch(controller);
@@ -6015,6 +6064,7 @@ import {
                         try {
                             return await postWithToken(await fetchScenarioRealtimeCsrfToken(true));
                         } catch (retryErr) {
+                            if (isAuthenticationRequiredError(retryErr)) throw retryErr;
                             pauseScenarioRealtime('Realtime paused; session security expired. Keep editing local-only, then refresh or sign in again.');
                             throw retryErr;
                         }
@@ -6169,6 +6219,7 @@ import {
                         try {
                             return await postScenarioDraft(freshCsrfToken);
                         } catch (csrfRetry) {
+                            if (isAuthenticationRequiredError(csrfRetry)) throw csrfRetry;
                             csrfRetry.message = 'Session security check expired. Try saving again.';
                             throw csrfRetry;
                         }
@@ -6354,6 +6405,7 @@ import {
                             }
                         } catch (err) {
                             if (err.name === 'AbortError') throw err;
+                            if (isAuthenticationRequiredError(err)) return;
                             setScenarioOverrides({});
                             setScenarioDraftMeta(prev => ({
                                 ...prev,
@@ -6378,6 +6430,7 @@ import {
                     if (err.name === 'AbortError') {
                         return;
                     }
+                    if (isAuthenticationRequiredError(err)) return;
                     setScenarioError(err.message || 'Failed to run scenario.');
                     trackScenarioAction('compute_result', { result: 'failure' });
                 } finally {
@@ -6412,6 +6465,7 @@ import {
                     learnScenarioCurrentUserFromLock(data.lock);
                     mergeScenarioDraftLock(data.lock);
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (err.status === 409 && err.payload?.activeLock) {
                         mergeScenarioDraftLock(err.payload.activeLock);
                     }
@@ -6429,6 +6483,7 @@ import {
                     learnScenarioCurrentUserFromLock(data.lock);
                     mergeScenarioDraftLock(data.lock);
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (err.status === 409 && err.payload?.activeLock) {
                         mergeScenarioDraftLock(err.payload.activeLock);
                     }
@@ -6447,6 +6502,7 @@ import {
                         removeScenarioDraftLock('issue', issueKey);
                     }
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     // Advisory locks must not block local editing.
                 }
             };
@@ -6539,6 +6595,7 @@ import {
                             setBacklogTechEpics(tech);
                         } catch (err) {
                             if (cancelled || !shouldApplyAlertResult()) return;
+                            if (isAuthenticationRequiredError(err)) return;
                             setBacklogProductEpics([]);
                             setBacklogTechEpics([]);
                         }
@@ -7055,6 +7112,7 @@ import {
                         setBurnoutData(data);
                     } catch (err) {
                         if (cancelled) return;
+                        if (isAuthenticationRequiredError(err)) return;
                         if (err.name === 'AbortError') {
                             setBurnoutError('Burndown request timed out (30s). Narrow scope with team or assignee filter.');
                             setBurnoutData(null);
@@ -7182,6 +7240,7 @@ import {
                         setCohortError('');
                     } catch (err) {
                         if (cancelled) return;
+                        if (isAuthenticationRequiredError(err)) return;
                         if (err?.name === 'AbortError') {
                             setCohortError('Lead times request timed out (30s). Narrow scope with team filters.');
                         } else {
@@ -7457,6 +7516,7 @@ import {
                         }
                         return data;
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) throw err;
                         if (err?.name === 'AbortError' && timedOut) {
                             const timeoutError = new Error('request timed out after 30s');
                             timeoutError.name = 'ExcludedCapacitySprintTimeout';
@@ -7497,6 +7557,7 @@ import {
                         trackApiResult('stats_source', { featureName: 'stats', method: 'POST', status: 200, durationMs: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - analyticsStartedAt, cacheState: forceRefresh ? 'refresh' : 'unknown' });
                     } catch (err) {
                         if (cancelled) return;
+                        if (isAuthenticationRequiredError(err)) return;
                         if (err?.name === 'AbortError') {
                             setExcludedCapacityError('Excluded capacity sprint request timed out (30s). Narrow the sprint range or team filter.');
                         } else {
@@ -7634,6 +7695,7 @@ import {
                         setProjectTrackPhaseError('');
                     } catch (err) {
                         if (cancelled || err?.name === 'AbortError') return;
+                        if (isAuthenticationRequiredError(err)) return;
                         setProjectTrackPhaseError(String(err?.message || err || 'Failed to load phase duration data.'));
                         setProjectTrackPhaseData(null);
                     } finally {
@@ -7933,6 +7995,7 @@ import {
                 const expectedDraftId = scenarioActiveDraftId;
                 const expectedScopeKey = scenarioScopeKey;
                 const poll = async () => {
+                    if (readPendingAuthenticationRequired()) return;
                     const controller = new AbortController();
                     controllers.add(controller);
                     try {
@@ -7951,6 +8014,7 @@ import {
                             prev.paused ? prev : { mode: 'polling', paused: false, message: '' }
                         ));
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
                         if (!cancelled && err.name !== 'AbortError') {
                             setScenarioDraftRealtimeStatus(prev => (
                                 prev.paused ? prev : { mode: 'polling', paused: false, message: 'Realtime polling will retry.' }
@@ -7981,12 +8045,14 @@ import {
                 if (scenarioDraftRealtimeStatus.paused) return undefined;
                 let cancelled = false;
                 const heartbeat = async () => {
+                    if (readPendingAuthenticationRequired()) return;
                     try {
                         await postScenarioRealtimeJson(scenarioActiveDraftId, '/presence', {
                             mode: scenarioEditMode ? 'editing' : 'viewing',
                             cursorPayload: {}
                         }).then(data => learnScenarioCurrentUserFromPresence(data.presence));
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
                         if (!cancelled && !(err.status === 403 && err.payload?.error === 'csrf_required')) {
                             pauseScenarioRealtime('Realtime paused; keep editing local-only until the connection recovers.');
                         }
@@ -8002,11 +8068,13 @@ import {
 
             React.useEffect(() => {
                 if (!scenarioActiveDraftReady) return undefined;
+                if (readPendingAuthenticationRequired()) return undefined;
                 const sseEnabled = window.SCENARIO_DRAFT_SSE_ENABLED === true;
                 if (!sseEnabled || typeof window.EventSource !== 'function') return undefined;
                 const source = new window.EventSource(buildScenarioDraftEventsStreamUrl(BACKEND_URL, scenarioActiveDraftId, scenarioDraftLastEventNumber));
                 const expectedDraftId = scenarioActiveDraftId;
                 const handleStreamMessage = (message) => {
+                    if (readPendingAuthenticationRequired()) return;
                     if (scenarioActiveDraftIdRef.current !== expectedDraftId) return;
                     try {
                         applyScenarioDraftEvent(JSON.parse(message.data));
@@ -8026,6 +8094,7 @@ import {
                     source.addEventListener(eventType, handleStreamMessage);
                 });
                 source.onerror = () => {
+                    if (readPendingAuthenticationRequired()) return;
                     setScenarioDraftRealtimeStatus(prev => (
                         prev.paused ? prev : { mode: 'polling', paused: false, message: 'Realtime stream disconnected; polling will continue.' }
                     ));
@@ -8035,7 +8104,12 @@ import {
                         // ignore close errors
                     }
                 };
+                const closeForAuth = () => {
+                    try { source.close(); } catch (err) { /* ignore close errors */ }
+                };
+                window.addEventListener(AUTH_REQUIRED_EVENT, closeForAuth, { once: true });
                 return () => {
+                    window.removeEventListener(AUTH_REQUIRED_EVENT, closeForAuth);
                     try {
                         source.close();
                     } catch (err) {
@@ -8399,6 +8473,7 @@ import {
             React.useEffect(() => {
                 if (!scenarioEditMode) return;
                 const handler = (e) => {
+                    if (readPendingAuthenticationRequired()) return;
                     const isMeta = e.metaKey || e.ctrlKey;
                     if (!isMeta || e.key.toLowerCase() !== 'z') return;
                     e.preventDefault();
@@ -8456,6 +8531,7 @@ import {
                     }));
                     trackScenarioAction('draft_save_result', { result: 'success' });
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     const conflict = err.payload?.error === 'scenario_draft_conflict' && err.payload?.conflict
                         ? {
                             ...err.payload.conflict,
@@ -8542,6 +8618,7 @@ import {
                         error: ''
                     }));
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (
                         err.name === 'AbortError'
                         || scenarioHistoryRefreshControllerRef.current !== controller
@@ -8645,6 +8722,7 @@ import {
                         error: ''
                     }));
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (err.name === 'AbortError' || !isScenarioScopeDraftCurrent(scopeKey, expectedDraftId)) {
                         return;
                     }
@@ -8667,6 +8745,7 @@ import {
             React.useEffect(() => {
                 if (!scenarioDraftMeta.historyOpen) return undefined;
                 const handleKeyDown = (event) => {
+                    if (readPendingAuthenticationRequired()) return;
                     if (event.key !== 'Escape') return;
                     const panel = scenarioHistoryPanelRef.current;
                     if (!panel || !panel.contains(document.activeElement)) return;
@@ -8767,6 +8846,7 @@ import {
                         error: ''
                     }));
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (
                         err.name === 'AbortError'
                         || scenarioHistoryActionControllerRef.current !== controller
@@ -8834,6 +8914,7 @@ import {
                     }));
                     trackScenarioAction('writeback_preview_result', { result: 'success', selected_count_bucket: bucketCount(Array.isArray(preview?.changes) ? preview.changes.length : 0) });
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
                         return;
                     }
@@ -8872,6 +8953,7 @@ import {
                     }));
                     trackScenarioAction('writeback_gate_result', { result: 'success' });
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
                         return;
                     }
@@ -8967,6 +9049,7 @@ import {
                             error: ''
                     }));
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (
                         err.name === 'AbortError'
                         || scenarioHistoryActionControllerRef.current !== controller
@@ -10250,6 +10333,7 @@ import {
             useEffect(() => {
                 if (!scenarioEpicFocus) return;
                 const handleKey = (event) => {
+                    if (readPendingAuthenticationRequired()) return;
                     if (event.key === 'Escape') {
                         clearScenarioEpicFocus();
                     }
@@ -11009,6 +11093,7 @@ import {
             useEffect(() => {
                 if (!dependencyFocus) return;
                 const handleKey = (event) => {
+                    if (readPendingAuthenticationRequired()) return;
                     if (event.key === 'Escape') {
                         setDependencyFocus(null);
                     }
@@ -15691,15 +15776,11 @@ import {
                             isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
                             unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
                             onRequestClose={requestCloseGroupManage}
-                            validationMessages={groupManageTab !== 'connections' ? [...workspaceConfigConflictMessages(workspaceConfigConflict), ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...groupConfigValidationErrors] : []}
+                            validationMessages={groupManageTab !== 'connections' ? [...workspaceConfigConflictMessages(workspaceConfigConflict), ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...(groupDraftError && SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab) && !workspaceConfigConflict && !groupsConfigConflict ? [groupDraftError] : []), ...groupConfigValidationErrors] : []}
                             validationActions={groupManageTab !== 'connections' && workspaceConfigConflict ? (
                                 <div className="group-modal-button-row" data-testid="workspace-config-conflict-actions">
                                     <button className="secondary compact" onClick={useLatestWorkspaceConfig} type="button">Use latest</button>
                                     <button className="compact" onClick={keepMineOnWorkspaceConfigConflict} type="button">Keep mine</button>
-                                </div>
-                            ) : groupManageTab !== 'connections' && workspaceConfigRecoveryLoginUrl ? (
-                                <div className="group-modal-button-row" data-testid="workspace-config-auth-recovery">
-                                    <a href={workspaceConfigRecoveryLoginUrl}>Sign in again</a>
                                 </div>
                             ) : groupManageTab !== 'connections' && groupsConfigConflict ? (
                                 <div className="group-modal-button-row">
@@ -16075,7 +16156,6 @@ import {
                                         personalGroupPreferencesEnabled,
                                         favoriteGroupDraftId,
                                         setFavoriteGroupDraft,
-                                        settingsPreferenceRecoveryLoginUrl,
                                         duplicateGroupDraft,
                                         resolveTeamName,
                                         removeTeamFromGroup,
@@ -16144,7 +16224,6 @@ import {
                                         onboardingReplayDisabled,
                                         onboardingReplayPending: onboarding.pending,
                                         onboardingReplayError: !onboarding.run ? onboarding.error : '',
-                                        onboardingReplayRecoveryLoginUrl: !onboarding.run ? onboarding.recoveryLoginUrl : '',
                                         onReplayOnboarding: onboarding.replay,
                                     }}
                                 />
@@ -16311,7 +16390,6 @@ import {
                             onConfigure={openFirstRunAddGroup}
                             saving={firstRunSaving}
                             error={firstRunError}
-                            recoveryLoginUrl={firstRunRecoveryLoginUrl}
                         />
                     )}
                     <OnboardingTour
@@ -16321,7 +16399,6 @@ import {
                         onFinish={onboarding.finish}
                         actionPending={onboarding.pending}
                         actionError={onboarding.error}
-                        recoveryLoginUrl={onboarding.recoveryLoginUrl}
                         returnFocusRef={onboarding.sourceSurface === 'settings' ? groupManageButtonRef : null}
                     />
                     {showUpdateModal && updateNoticeVisible && (
@@ -16358,6 +16435,6 @@ import {
         const rootElement = document.getElementById('root');
         if (rootElement) {
             const root = createRoot(rootElement);
-            root.render(<App />);
+            root.render(<AuthRequiredGate><App /></AuthRequiredGate>);
         }
     

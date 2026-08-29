@@ -61,7 +61,6 @@ export default function OnboardingTour({
     onFinish,
     actionPending = false,
     actionError = '',
-    recoveryLoginUrl = '',
     returnFocusRef = null,
 } = {}) {
     const [snapshot, setSnapshot] = React.useState(() => (
@@ -236,7 +235,6 @@ export default function OnboardingTour({
                 {actionError && (
                     <div className="onboarding-tour-error" role="alert">
                         <span>{actionError}</span>
-                        {recoveryLoginUrl && <a href={recoveryLoginUrl}>Sign in again</a>}
                     </div>
                 )}
                 <div className="onboarding-tour-actions">

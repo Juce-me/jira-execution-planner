@@ -1,17 +1,23 @@
 """Current-user saved view configuration routes."""
 
-from datetime import datetime, timezone
-
 from flask import Blueprint, g, jsonify, request, session
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.auth.csrf import validate_csrf_token
 from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
 from backend.config.db_repository import DbConfigRepository, ViewConfigNotFound, infer_view_type
-from backend.config.shared_config import validate_private_view_ownership
+from backend.config.shared_config import sanitize_private_view_payload, validate_private_view_ownership
 from backend.config.view_validation import ViewPayloadValidationError, validate_user_view_payload
 from backend.db import models
 from backend.db.engine import DatabaseConfigurationError, session_scope
+from backend.services.user_view_config import (
+    UserViewConfigConflict,
+    UserViewConfigNotFound,
+    UserViewConfigStorageError,
+    create_user_view,
+    mutate_user_view,
+)
 
 from . import bind_server_globals
 
@@ -68,18 +74,19 @@ def _iso(value):
     return value.isoformat().replace('+00:00', 'Z')
 
 
-def _view_response(view):
+def _view_response(view, version_number=0):
     return {
         'id': view.id,
         'viewConfigId': view.id,
         'workspaceId': view.workspace_id,
         'name': view.name,
         'viewType': view.view_type,
-        'view': dict(view.payload or {}),
+        'view': sanitize_private_view_payload(view.payload),
         'isDefault': bool(view.is_default),
         'createdAt': _iso(view.created_at),
         'updatedAt': _iso(view.updated_at),
         'archivedAt': _iso(view.archived_at),
+        'versionNumber': int(version_number or 0),
     }
 
 
@@ -92,34 +99,11 @@ def _active_user_view_statement(context):
     )
 
 
-def _active_user_view(session_obj, context, view_id):
-    statement = _active_user_view_statement(context).where(models.ViewConfig.id == view_id)
-    return session_obj.execute(statement).scalars().first()
-
-
 def _next_version_number(session_obj, view_id):
     statement = select(func.max(models.ViewConfigVersion.version_number)).where(
         models.ViewConfigVersion.view_config_id == view_id,
     )
     return int(session_obj.execute(statement).scalar_one() or 0) + 1
-
-
-def _add_version(session_obj, view, context, payload, change_note):
-    session_obj.add(models.ViewConfigVersion(
-        view_config_id=view.id,
-        version_number=_next_version_number(session_obj, view.id),
-        payload=dict(payload),
-        created_by=context.user_id,
-        change_note=change_note,
-    ))
-
-
-def _clear_default_views(session_obj, context, exclude_view_id=None):
-    statement = _active_user_view_statement(context).where(models.ViewConfig.is_default.is_(True))
-    if exclude_view_id:
-        statement = statement.where(models.ViewConfig.id != exclude_view_id)
-    for view in session_obj.execute(statement).scalars().all():
-        view.is_default = False
 
 
 def _extract_view_payload(raw):
@@ -133,7 +117,7 @@ def _extract_view_payload(raw):
     if not isinstance(payload, dict):
         raise ViewPayloadValidationError(['<root>'])
     validate_user_view_payload(payload)
-    validate_private_view_ownership(payload, validate_sensitive=False)
+    payload = validate_private_view_ownership(payload, validate_sensitive=False)
     view_type = str(raw.get('viewType') or infer_view_type(payload)).strip().lower()
     if view_type not in VALID_VIEW_TYPES:
         raise ValueError('viewType must be eng, epm, or mixed')
@@ -226,7 +210,7 @@ def _validate_home_project_references(context, payload):
     if missing:
         return jsonify({
             'error': 'home_project_not_found',
-            'message': 'Saved view references Home projects outside the workspace service-backed catalog.',
+            'message': "Saved view references Home projects not visible through the current user's connected Home credential.",
             'homeProjectIds': missing,
         }), 403
     return None
@@ -256,10 +240,12 @@ def api_me_views():
                 models.ViewConfig.updated_at.desc(),
                 models.ViewConfig.created_at.desc(),
             )
-            return jsonify({
-                'views': [_view_response(view) for view in db_session.execute(statement).scalars().all()],
-            })
-    except DatabaseConfigurationError as error:
+            views = db_session.execute(statement).scalars().all()
+            return jsonify({'views': [
+                _view_response(view, _next_version_number(db_session, view.id) - 1)
+                for view in views
+            ]})
+    except (DatabaseConfigurationError, UserViewConfigStorageError, SQLAlchemyError) as error:
         return _storage_error_response(error)
 
 
@@ -276,26 +262,16 @@ def api_me_views_create():
         return invalid_response
 
     try:
-        with session_scope() as db_session:
-            if bool(raw.get('isDefault')):
-                _clear_default_views(db_session, context)
-                db_session.flush()
-            view = models.ViewConfig(
-                workspace_id=context.workspace_id,
-                owner_user_id=context.user_id,
-                name=name,
-                view_type=view_type,
-                payload_version=int(payload.get('version') or 1),
-                payload=payload,
-                visibility='private',
-                is_default=bool(raw.get('isDefault')),
-            )
-            db_session.add(view)
-            db_session.flush()
-            _add_version(db_session, view, context, payload, 'user create')
-            db_session.flush()
-            return jsonify({'view': _view_response(view)}), 201
-    except DatabaseConfigurationError as error:
+        result = create_user_view(
+            context,
+            name=name,
+            view_type=view_type,
+            payload=payload,
+            is_default=bool(raw.get('isDefault')),
+            post_commit=lambda _result: clear_epm_caches(context),
+        )
+        return jsonify({'view': result.as_view_dict()}), 201
+    except (DatabaseConfigurationError, UserViewConfigStorageError) as error:
         return _storage_error_response(error)
 
 
@@ -307,48 +283,56 @@ def api_me_views_patch(view_id):
         return _validation_error_response(ValueError('request body must be a JSON object'))
 
     try:
-        with session_scope() as db_session:
-            view = _active_user_view(db_session, context, view_id)
-            if view is None:
-                return jsonify({'error': 'view_not_found'}), 404
+        payload_changed = 'view' in raw or 'payload' in raw
+        payload = None
+        view_type = raw.get('viewType')
+        if payload_changed:
+            if 'baseVersion' not in raw:
+                return _validation_error_response(ValueError('baseVersion is required for payload replacement'))
+            try:
+                _, view_type, payload = _extract_view_payload({
+                    'viewType': view_type,
+                    'view': raw.get('view') if 'view' in raw else raw.get('payload'),
+                })
+            except (ValueError, ViewPayloadValidationError) as error:
+                return _validation_error_response(error)
+            invalid_response = _validate_view_references(context, payload)
+            if invalid_response:
+                return invalid_response
+        elif view_type is not None:
+            view_type = str(view_type or '').strip().lower()
+            if view_type not in VALID_VIEW_TYPES:
+                return _validation_error_response(ValueError('viewType must be eng, epm, or mixed'))
 
-            payload_changed = 'view' in raw or 'payload' in raw
-            if 'name' in raw:
-                name = str(raw.get('name') or '').strip()
-                if name:
-                    view.name = name[:255]
-            if payload_changed:
-                try:
-                    _, view_type, payload = _extract_view_payload({
-                        'name': view.name,
-                        'viewType': raw.get('viewType') or view.view_type,
-                        'view': raw.get('view') if 'view' in raw else raw.get('payload'),
-                    })
-                except (ValueError, ViewPayloadValidationError) as error:
-                    return _validation_error_response(error)
-                invalid_response = _validate_view_references(context, payload)
-                if invalid_response:
-                    return invalid_response
-                view.view_type = view_type
-                view.payload_version = int(payload.get('version') or view.payload_version or 1)
-                view.payload = payload
-                _add_version(db_session, view, context, payload, 'user update')
-            elif 'viewType' in raw:
-                view_type = str(raw.get('viewType') or '').strip().lower()
-                if view_type not in VALID_VIEW_TYPES:
-                    return _validation_error_response(ValueError('viewType must be eng, epm, or mixed'))
-                view.view_type = view_type
-
-            if raw.get('archive') is True or raw.get('archived') is True:
-                view.archived_at = datetime.now(timezone.utc)
-                view.is_default = False
-            elif 'isDefault' in raw:
-                view.is_default = bool(raw.get('isDefault'))
-                if view.is_default:
-                    _clear_default_views(db_session, context, exclude_view_id=view.id)
-            db_session.flush()
-            return jsonify({'view': _view_response(view)})
-    except DatabaseConfigurationError as error:
+        kwargs = {}
+        if 'name' in raw:
+            kwargs['name'] = raw.get('name')
+        if view_type is not None:
+            kwargs['view_type'] = view_type
+        if payload_changed:
+            kwargs['payload'] = payload
+            kwargs['base_version'] = raw.get('baseVersion')
+        if 'isDefault' in raw:
+            kwargs['is_default'] = bool(raw.get('isDefault'))
+        result = mutate_user_view(
+            context,
+            view_id,
+            archive=raw.get('archive') is True or raw.get('archived') is True,
+            post_commit=lambda _result: clear_epm_caches(context),
+            **kwargs,
+        )
+        return jsonify({'view': result.as_view_dict()})
+    except UserViewConfigConflict as error:
+        return jsonify({
+            'error': 'view_config_conflict',
+            'message': 'Saved view changed while you were editing. Your changes are still unsaved.',
+            'current': error.current.as_view_dict(),
+        }), 409
+    except UserViewConfigNotFound:
+        return jsonify({'error': 'view_not_found'}), 404
+    except (ValueError, ViewPayloadValidationError) as error:
+        return _validation_error_response(error)
+    except (DatabaseConfigurationError, UserViewConfigStorageError) as error:
         return _storage_error_response(error)
 
 
@@ -359,5 +343,5 @@ def api_me_views_default():
         return jsonify(DbConfigRepository().resolve_effective_view_config(context))
     except ViewConfigNotFound:
         return jsonify({'error': 'view_not_found'}), 404
-    except DatabaseConfigurationError as error:
+    except (DatabaseConfigurationError, UserViewConfigStorageError, SQLAlchemyError) as error:
         return _storage_error_response(error)

@@ -42,7 +42,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # bugfix/shared-admin-configuration adds the request-scoped immutable workspace config
     # snapshot, route-owned section save wrapper, DB full-replacement guard, and revision-aware
     # field-config compatibility handlers. Validation and persistence remain extracted (+57).
-    "jira_server.py": 6314,
+    # bugfix/user-owned-epm-config Task 2 routes every runtime EPM consumer through one
+    # authenticated user's private-view config snapshot, threads its generation into cache
+    # dependencies, and scopes post-commit cache invalidation to that user's partition (+46).
+    "jira_server.py": 6360,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -99,7 +102,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Task 5 wires the extracted onboarding controller, replay props, stable target attributes,
     # and the single portal mount; tour state and persistence behavior remain extracted (+55).
     # The replay focus fix adds one stable Settings-opener ref and passes it to the tour (+3).
-    "frontend/src/dashboard.jsx": 16364,
+    # bugfix/user-owned-epm-config Task 4 replaces workspace EPM draft/save wiring with the
+    # private-view contract while preserving unified Settings save behavior (+36). Task 5
+    # integrates the terminal global authentication gate across existing async consumers,
+    # keyboard handlers, Scenario polling/SSE, and removes feature-local recovery UI (+43).
+    "frontend/src/dashboard.jsx": 16440,
 }
 
 

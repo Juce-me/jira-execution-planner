@@ -106,6 +106,14 @@ test.beforeAll(() => {
                             error.loginUrl = behavior.loginUrl;
                             return Promise.reject(error);
                         }
+                        if (behavior.type === 'auth_required') {
+                            const error = new Error('Authentication is required to continue.');
+                            error.name = 'AuthenticationRequiredError';
+                            error.status = 401;
+                            error.code = 'auth_required';
+                            error.loginUrl = behavior.loginUrl;
+                            return Promise.reject(error);
+                        }
                         if (behavior.type === 'mismatch') {
                             return Promise.resolve({ onboardingDone: !nextDone });
                         }
@@ -141,7 +149,7 @@ test.beforeAll(() => {
                             snapshot: () => ({
                                 ready, done, showSettings, dirty, saving, authMode, groupsSource,
                                 run: controller.run, pending: controller.pending,
-                                error: controller.error, recoveryLoginUrl: controller.recoveryLoginUrl,
+                                error: controller.error,
                                 writes: [...writesRef.current], events: [...eventsRef.current],
                                 preserved: preservedRef.current, mode: modeRef.current,
                             }),
@@ -165,7 +173,6 @@ test.beforeAll(() => {
                             onFinish={controller.finish}
                             actionPending={controller.pending}
                             actionError={controller.error}
-                            recoveryLoginUrl={controller.recoveryLoginUrl}
                         />
                     </>;
                 }
@@ -447,22 +454,21 @@ test('skip persists before close and a shared pending guard deduplicates Escape'
     ]);
 });
 
-test('failed completion remains retryable and exposes only a safe local login path', async ({ page }) => {
+test('authentication-required completion defers to the global lock and other failures remain retryable', async ({ page }) => {
     await installControllerHarness(page);
     await page.evaluate(() => {
-        window.__onboardingController.setBehavior({ type: 'error', status: 401, loginUrl: 'https://evil.test/login' });
+        window.__onboardingController.setBehavior({ type: 'auth_required', loginUrl: '/login?reason=session_expired' });
         window.__onboardingController.setBootstrap(true, false);
     });
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
-    await expect(page.getByRole('alert')).toHaveText('Save failed.');
+    await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Sign in again' })).toHaveCount(0);
-    expect((await page.evaluate(() => window.__onboardingController.snapshot())).events.filter(event => event.workflowAction === 'skipped')).toEqual([]);
+    const authState = await page.evaluate(() => window.__onboardingController.snapshot());
+    expect(authState.pending).toBe(false);
+    expect(authState.error).toBe('');
+    expect(authState.events.filter(event => event.workflowAction === 'skipped')).toEqual([]);
 
-    await page.evaluate(() => window.__onboardingController.setBehavior({ type: 'error', status: 401, loginUrl: '/login?reason=session_expired' }));
-    await page.getByRole('button', { name: 'Skip onboarding' }).click();
-    await expect(page.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
-    expect((await page.evaluate(() => window.__onboardingController.snapshot())).events.filter(event => event.workflowAction === 'skipped')).toEqual([]);
     await page.evaluate(() => window.__onboardingController.setBehavior({ type: 'mismatch' }));
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
     await expect(page.getByRole('alert')).toHaveText('Saved onboarding preference could not be verified. Please retry.');

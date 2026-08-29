@@ -1,8 +1,8 @@
 """user onboarding state
 
-Revision ID: 20260828_0008
-Revises: 20260826_0007
-Create Date: 2026-08-28
+Revision ID: 20260829_0009
+Revises: 20260827_0008
+Create Date: 2026-08-29
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = '20260828_0008'
-down_revision = '20260826_0007'
+revision = '20260829_0009'
+down_revision = '20260827_0008'
 branch_labels = None
 depends_on = None
 

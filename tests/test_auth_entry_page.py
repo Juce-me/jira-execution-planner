@@ -43,6 +43,33 @@ class TestAuthEntryPage(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertIn('Your Jira sign-in expired', body)
         self.assertIn('Sign in with Atlassian', body)
+        self.assertNotIn('prompt=consent', body)
+
+    def test_terminal_recovery_reason_bypasses_valid_local_session_redirect(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=False), \
+             patch.object(jira_server, 'oauth_session_data', return_value={'access_token': 'present', 'cloudid': 'cloud'}):
+            response = self.client.get('/login?reason=session_expired')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('/api/auth/atlassian/login', response.get_data(as_text=True))
+
+    def test_terminal_recovery_reason_bypasses_valid_database_session_redirect(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=True), \
+             patch.object(jira_server, 'db_oauth_browser_session_data', return_value={'connectionId': 'connection'}), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=object()), \
+             patch.object(jira_server, 'oauth_session_data', return_value={}):
+            response = self.client.get('/login?reason=missing_scope')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('/api/auth/atlassian/login?prompt=consent', response.get_data(as_text=True))
+
+    def test_unsupported_recovery_reason_keeps_valid_local_session_redirect(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=False), \
+             patch.object(jira_server, 'oauth_session_data', return_value={'access_token': 'present', 'cloudid': 'cloud'}):
+            response = self.client.get('/login?reason=unsupported')
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/')
 
     def test_login_page_uses_readable_auth_entry_styles(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -60,7 +87,7 @@ class TestAuthEntryPage(unittest.TestCase):
         refresh_source = Path('frontend/src/api/authFocusRefresh.js').read_text()
         self.assertNotIn("<script>\n    (() => {", source)
         self.assertEqual(source.count('auth-focus-refresh.js'), 1)
-        self.assertIn("fetch('/api/auth/refresh'", refresh_source)
+        self.assertIn("apiFetch('/api/auth/refresh'", refresh_source)
         self.assertIn("'X-Requested-With': 'jira-execution-planner'", refresh_source)
         self.assertIn('installAuthFocusRefresh();', refresh_source)
         self.assertNotIn('location.reload', refresh_source)

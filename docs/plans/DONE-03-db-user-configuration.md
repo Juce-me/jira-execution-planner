@@ -2,7 +2,7 @@
 
 > **Status:** Done. Executed on branch `cdx/auth-db-context-plan` in commits `80ae665`, `42a1427`, `e9adbe4`, `b520a18`, `983d617`, and `d18e40b`, with follow-ups `eaf3cda`, `03d05b8`, `fcfb9a0`, and `c8d9311`. Kept for audit context only; do not execute as an active plan.
 
-> **Current accuracy:** This file records the user-owned view implementation as executed at the time. The later `EXEC-shared-admin-configuration.md` boundary makes normalized dashboard and EPM scope/mappings administrator-owned once per workspace. Private views now retain personal view state only, including EPM tab and selected sprint; per-user Home/Townsquare credentials remain user-owned and unchanged.
+> **Current accuracy:** This file remains authoritative for user-owned EPM saved-view configuration. PR #130 temporarily moved normalized EPM scope/mappings into workspace administrator configuration; `DONE-user-owned-epm-configuration.md` corrects that regression. EPM scope, label prefix, issue types, and project-label mappings belong to the owning user's default private saved view. EPM tab and sprint remain private UI state; existing private-view values are preserved, but this correction does not add server persistence for browser-owned choices. Historical service-backed Home-read statements below are superseded by `DONE-04-db-user-home-epm-read-token.md`: DB/OAuth Home reads use the current user's connected token.
 
 ## Goal
 

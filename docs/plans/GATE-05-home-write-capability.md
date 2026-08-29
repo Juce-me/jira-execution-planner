@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-08-28. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-08-29. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,8 +15,8 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-08-28 |
-| Last result | FAIL insufficient_home_write_probe_input (probe not re-run: all required operator inputs and an approved disposable Home project were unavailable; neither current frontend flow adds a Home write path) |
+| Checked on | 2026-08-29 |
+| Last result | FAIL insufficient_home_write_probe_input (probe not re-run: all required operator inputs and an approved disposable Home project were unavailable; the integrated work adds no Home write path or mutation) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -106,8 +106,9 @@ Required behavior after the gate passes:
 - Require active OAuth user, active DB user, active OAuth `auth_connection`, token-bound CSRF, and active `atlassian_user_api_token`.
 - Resolve credentials through `resolve_home_credential(context, "write_as_user")`.
 - Never fall back to the workspace `home_townsquare_basic` service integration.
-- Return `409 home_user_token_required` when the user API-token connection is missing.
-- Return `401 auth_connection_revoked` when either the OAuth connection or the user API-token connection is revoked.
+- Return `409 home_user_token_required` when the user API-token connection is missing or inactive, including
+  revoked, expired, and error states.
+- Return `401 auth_connection_revoked` only when the primary OAuth connection is revoked.
 - Return `403 home_write_not_authorized` when Home rejects the verified user credential for the target project.
 - On success, return only sanitized update metadata.
 - After a successful write, clear EPM caches so later project, issue, and rollup reads cannot serve stale Home update text.
@@ -117,6 +118,7 @@ Required tests after the gate passes:
 
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_requires_user_api_token`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_missing_token_response_includes_connect_url`
+- `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_returns_home_user_token_required_when_user_token_revoked`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_returns_auth_connection_revoked_when_oauth_revoked`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_uses_user_credential_not_service_integration`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_requires_token_bound_csrf`
@@ -127,10 +129,11 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-08-29: Acceptance/integration sweep confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this integration adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-28: Startup sweep for user-onboarding-tour execution confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this implementation adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-28: Startup sweep rechecked the gate while running the localhost PostgreSQL runner work and planning removal of the redundant single-option ENG/EPM view control. The required operator inputs and an approved disposable Home project remain unavailable, and this frontend work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-27: Final execution sweep for workspace-shared admin configuration confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this implementation adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-26: Final execution sweep for workspace-shared admin configuration confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this implementation adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
-- 2026-08-28: Startup sweep rechecked the gate while planning removal of the redundant single-option ENG/EPM view control. The required operator inputs and an approved disposable Home project remain unavailable, and this frontend-only plan adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-26: Startup sweep rechecked the gate while validating workspace-shared admin configuration persistence. The required operator inputs and an approved disposable Home project remain unavailable, and this plan adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-26: Startup sweep rechecked the gate while executing the personal-group-star prerequisite. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and the implementation adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-26: Startup sweep rechecked the gate while splitting personal-group-star behavior from onboarding. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and neither plan adds a Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.

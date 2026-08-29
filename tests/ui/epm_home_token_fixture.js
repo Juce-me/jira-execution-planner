@@ -3,6 +3,7 @@ const path = require('path');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const dashboardHtml = fs.readFileSync(path.join(__dirname, '..', '..', 'jira-dashboard.html'), 'utf8');
+const authFocusRefreshJs = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'dist', 'auth-focus-refresh.js'), 'utf8');
 const dashboardJs = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'dist', 'dashboard.js'), 'utf8');
 const dashboardCss = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'dist', 'dashboard.css'), 'utf8');
 const selectedSprintId = 34625;
@@ -245,6 +246,11 @@ async function installDashboardShell(page) {
         status: 200,
         contentType: 'text/html',
         body: dashboardHtml,
+    }));
+    await page.route('**/frontend/dist/auth-focus-refresh.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: authFocusRefreshJs,
     }));
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,

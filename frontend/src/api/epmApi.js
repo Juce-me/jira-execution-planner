@@ -27,7 +27,7 @@ function getEpmJson(url, label, options = {}) {
 export const fetchEpmConfig = (backendUrl) =>
     getJson(`${backendUrl}/api/epm/config`, 'EPM config', { cache: 'no-cache' });
 
-export async function saveEpmConfig(backendUrl, draftConfig) {
+export async function saveEpmConfig(backendUrl, draftConfig, baseRevision) {
     const { csrfToken } = await fetchCsrfToken(backendUrl);
     const response = await trackedFetch('settings_save', `${backendUrl}/api/epm/config`, {
         method: 'POST',
@@ -36,12 +36,9 @@ export async function saveEpmConfig(backendUrl, draftConfig) {
             'X-Requested-With': 'jira-execution-planner',
             'X-CSRF-Token': csrfToken || ''
         },
-        body: JSON.stringify(draftConfig || {})
+        body: JSON.stringify({ ...(draftConfig || {}), baseRevision })
     }, { featureName: 'settings' });
-    if (!response.ok) {
-        throw new Error(`Failed to save EPM config: ${response.status}`);
-    }
-    return response.json();
+    return epmJson(response, 'Failed to save EPM config');
 }
 
 export const fetchEpmScope = (backendUrl) =>

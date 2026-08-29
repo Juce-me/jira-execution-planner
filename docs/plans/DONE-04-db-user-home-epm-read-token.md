@@ -2,6 +2,8 @@
 
 > **Status:** Done. Executed on branch `cdx/auth-db-context-plan` and merged to `main` in PR #19 (`1cd0618`). Kept for audit context only; do not execute as an active plan.
 
+> **Current accuracy:** This file remains authoritative for per-user Home/Townsquare credentials and read authorization. The later `EXEC-shared-admin-configuration.md` boundary moves normalized EPM scope, label mask, issue-type mapping, and project-label mapping to one administrator-owned workspace configuration; private views retain personal EPM tab/sprint state, and the credential flow described here is unchanged.
+
 ## Status
 
 - [x] Task 1: Verify current auth/storage baseline

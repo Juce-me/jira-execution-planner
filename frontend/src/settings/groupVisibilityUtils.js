@@ -83,11 +83,6 @@ export const buildFirstRunGroupPreferencesPayload = (selectedGroupId) => {
     };
 };
 
-export const safeAppLoginUrl = (value) => {
-    const loginUrl = String(value || '').trim();
-    return /^\/login(?:[/?#]|$)/.test(loginUrl) ? loginUrl : '';
-};
-
 export const buildSharedGroupsPayload = (groupDraft) => ({
     version: groupDraft?.version || 1,
     baseRevision: groupDraft?.configRevision,

@@ -57,6 +57,8 @@ class EndpointPolicy:
         return False
 
 
+# Keep configuration policies aligned with CONFIGURATION_OWNERSHIP.md. Any storage or
+# permission change must update the backend response contract and frontend edit gate together.
 ENDPOINT_POLICIES = (
     EndpointPolicy("dashboard-root", "/", PUBLIC_METHODS, "public_page"),
     EndpointPolicy("dashboard-html", "/jira-dashboard.html", PUBLIC_METHODS, "public_page"),
@@ -126,14 +128,14 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("issue-types-config-read", "/api/issue-types/config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("issue-types-config-write", "/api/issue-types/config", frozenset({"POST"}), "shared_admin_write"),
     EndpointPolicy("epm-config-read", "/api/epm/config", PUBLIC_METHODS, "authenticated_read"),
-    EndpointPolicy("epm-config-write", "/api/epm/config", frozenset({"POST"}), "shared_admin_write"),
+    EndpointPolicy("epm-config-write", "/api/epm/config", frozenset({"POST"}), "user_write"),
     EndpointPolicy("epm-scope", "/api/epm/scope", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("epm-goals", "/api/epm/goals", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("epm-projects", "/api/epm/projects", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("epm-project-issues", "/api/epm/projects/<path:home_project_id>/issues", PUBLIC_METHODS, "authenticated_read", "dynamic"),
     EndpointPolicy("epm-project-rollup", "/api/epm/projects/<path:project_id>/rollup", PUBLIC_METHODS, "authenticated_read", "dynamic"),
-    EndpointPolicy("epm-projects-configuration", "/api/epm/projects/configuration", frozenset({"POST"}), "shared_admin_write"),
-    EndpointPolicy("epm-projects-preview", "/api/epm/projects/preview", frozenset({"POST"}), "authenticated_read"),
+    EndpointPolicy("epm-projects-configuration", "/api/epm/projects/configuration", frozenset({"POST"}), "authenticated_preview"),
+    EndpointPolicy("epm-projects-preview", "/api/epm/projects/preview", frozenset({"POST"}), "authenticated_preview"),
     EndpointPolicy("epm-projects-rollup-all", "/api/epm/projects/rollup/all", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("scenario-main", "/api/scenario", frozenset({"GET", "POST"}), "authenticated_read"),
     EndpointPolicy("scenario-drafts-root-read", "/api/scenario/drafts", PUBLIC_METHODS, "authenticated_read"),

@@ -42,3 +42,19 @@ def build_jira_home_process_cache_key(context, *parts):
         _project_access_cache_part(context),
         *(str(part) for part in parts),
     )
+
+
+def build_jira_home_cache_partition(context):
+    """Return the tuple prefix shared by this DB/OAuth user's process caches."""
+    if jira_home_process_cache_enabled(context):
+        return None
+    return build_jira_home_process_cache_key(context, '')[:-1]
+
+
+def cache_key_in_jira_home_partition(cache_key, context):
+    prefix = build_jira_home_cache_partition(context)
+    return bool(
+        prefix is not None
+        and isinstance(cache_key, tuple)
+        and cache_key[:len(prefix)] == prefix
+    )

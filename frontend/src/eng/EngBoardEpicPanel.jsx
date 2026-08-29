@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import StatusPill from '../ui/StatusPill.jsx';
 import StatusTransitionMenu from '../issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from '../issues/PriorityTransitionMenu.jsx';
@@ -69,6 +70,8 @@ export default function EngBoardEpicPanel({
     const [overflows, setOverflows] = React.useState(false);
     // §9.2's four states, as one value rather than three booleans that can disagree.
     const [description, setDescription] = React.useState({ status: 'loading' });
+    const descriptionRef = React.useRef(description);
+    descriptionRef.current = description;
     const [attempt, setAttempt] = React.useState(0);
 
     const statusOrder = React.useMemo(() => buildPanelStatusOrder(columns), [columns]);
@@ -82,6 +85,7 @@ export default function EngBoardEpicPanel({
     // data.epics and never waits on this.
     React.useEffect(() => {
         let cancelled = false;
+        const previousDescription = descriptionRef.current;
         setDescription({ status: 'loading' });
         loadEpicDescription(backendUrl, { key: epicKey })
             .then((payload) => {
@@ -92,6 +96,10 @@ export default function EngBoardEpicPanel({
             })
             .catch((error) => {
                 if (cancelled) return;
+                if (isAuthenticationRequiredError(error)) {
+                    setDescription(previousDescription);
+                    return;
+                }
                 setDescription({ status: 'error', message: error?.message || 'Could not load the description.' });
             });
         return () => { cancelled = true; };

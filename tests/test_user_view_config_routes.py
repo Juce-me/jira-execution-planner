@@ -1,12 +1,16 @@
 import os
+import sqlite3
 import tempfile
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from sqlalchemy.exc import OperationalError
+
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.services.user_view_config import UserViewConfigStorageError
 import jira_server
 
 
@@ -161,6 +165,71 @@ class UserViewConfigRouteTests(unittest.TestCase):
             list_response = self.client.get('/api/me/views')
         self.assertEqual(list_response.status_code, 200, list_response.get_data(as_text=True))
         self.assertEqual(len(list_response.get_json()['views']), 3)
+        self.assertEqual(created[0].get_json()['view']['versionNumber'], 1)
+
+    def test_payload_patch_requires_current_base_version_and_returns_conflict_snapshot(self):
+        created = self._post_view({
+            'name': 'Mutable',
+            'viewType': 'eng',
+            'view': {'filters': {'projectKeys': ['PROD']}, 'eng': {'mode': 'planning'}},
+            'isDefault': True,
+        })
+        self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+        view = created.get_json()['view']
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            first = self.client.patch(
+                f"/api/me/views/{view['id']}",
+                json={
+                    'baseVersion': view['versionNumber'],
+                    'view': {'filters': {'projectKeys': ['PROD']}, 'eng': {'mode': 'catchup'}},
+                },
+                headers=self._csrf_headers(),
+            )
+            stale = self.client.patch(
+                f"/api/me/views/{view['id']}",
+                json={
+                    'baseVersion': view['versionNumber'],
+                    'view': {'filters': {'projectKeys': ['PROD']}, 'eng': {'mode': 'planning'}},
+                },
+                headers=self._csrf_headers(),
+            )
+
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(first.get_json()['view']['versionNumber'], 2)
+        self.assertEqual(stale.status_code, 409, stale.get_data(as_text=True))
+        self.assertEqual(stale.get_json()['error'], 'view_config_conflict')
+        self.assertEqual(stale.get_json()['current']['versionNumber'], 2)
+        self.assertEqual(stale.get_json()['current']['view']['eng']['mode'], 'catchup')
+
+    def test_payload_patch_without_base_version_is_invalid(self):
+        created = self._post_view({
+            'name': 'Mutable', 'viewType': 'eng', 'view': {'eng': {}}, 'isDefault': True,
+        })
+        view_id = created.get_json()['view']['id']
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.patch(
+                f'/api/me/views/{view_id}', json={'view': {'eng': {'mode': 'catchup'}}},
+                headers=self._csrf_headers(),
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'invalid_view_payload')
+
+    def test_mutation_storage_failure_returns_stable_503(self):
+        with patch(
+            'backend.routes.views_routes.create_user_view',
+            side_effect=UserViewConfigStorageError('internal detail'),
+        ):
+            response = self._post_view({
+                'name': 'Unavailable',
+                'viewType': 'eng',
+                'view': {'eng': {}},
+            })
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json(), {
+            'error': 'config_storage_unavailable',
+            'message': 'Saved views require database-backed configuration storage.',
+        })
 
     def test_unsafe_saved_view_write_requires_token_bound_csrf(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -214,9 +283,17 @@ class UserViewConfigRouteTests(unittest.TestCase):
             'view': {
                 'filters': {'projectKeys': ['PROD']},
                 'epm': {
+                    'version': 2,
+                    'labelPrefix': 'rnd_project_',
                     'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-2']},
+                    'issueTypes': {
+                        'initiative': ['Initiative'],
+                        'epic': ['Epic'],
+                        'leaf': ['Story'],
+                    },
                     'projects': {
                         'missing-home': {
+                            'id': 'missing-home',
                             'homeProjectId': 'missing-home',
                             'name': 'Missing Home Project',
                             'label': 'rnd_project_missing',
@@ -226,8 +303,12 @@ class UserViewConfigRouteTests(unittest.TestCase):
             },
         })
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.get_json()['error'], 'invalid_view_payload')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json(), {
+            'error': 'home_project_not_found',
+            'message': "Saved view references Home projects not visible through the current user's connected Home credential.",
+            'homeProjectIds': ['missing-home'],
+        })
 
     def test_allows_custom_epm_project_row_without_home_reference(self):
         response = self._post_view({
@@ -250,16 +331,27 @@ class UserViewConfigRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['error'], 'invalid_view_payload')
 
-    def test_normal_user_cannot_save_shared_epm_config_without_admin_role(self):
+    def test_normal_user_can_save_private_epm_config_without_admin_role(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.post(
                 '/api/epm/config',
-                json={'version': 2, 'tab': 'active', 'projects': {}},
+                json={
+                    'version': 2,
+                    'labelPrefix': 'rnd_project_',
+                    'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-1']},
+                    'issueTypes': {
+                        'initiative': ['Initiative'],
+                        'epic': ['Epic'],
+                        'leaf': ['Story'],
+                    },
+                    'projects': {},
+                },
                 headers=self._csrf_headers(),
             )
 
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'admin_required')
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['scope']['rootGoalKey'], 'ROOT-1')
+        self.assertIn('viewConfigId', response.get_json())
 
     def test_normal_user_config_reports_epm_edit_permission_without_admin_role(self):
         with self._env_patch(), \
@@ -273,7 +365,7 @@ class UserViewConfigRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertFalse(body['userCanEditSettings'])
-        self.assertFalse(body['userCanEditEpmConfig'])
+        self.assertTrue(body['userCanEditEpmConfig'])
         self.assertTrue(body['adminUserManagementAvailable'])
 
     def test_default_route_returns_resolved_default_view(self):
@@ -293,6 +385,82 @@ class UserViewConfigRouteTests(unittest.TestCase):
         self.assertEqual(body['source'], 'user_saved_view')
         self.assertEqual(body['viewType'], 'epm')
         self.assertEqual(body['workspaceId'], self.workspace_id)
+
+    def test_view_get_routes_sanitize_legacy_payload_without_rewriting_storage(self):
+        payload = {
+            'filters': {
+                'safe': 'kept',
+                'nested': {
+                    'workspaceId': 'legacy-workspace',
+                    'userId': 'legacy-user',
+                    'apiToken': 'legacy-token',
+                    'password': 'legacy-password',
+                    'secret': 'legacy-secret',
+                    'private_key': 'legacy-private-key',
+                    'safe': 'kept',
+                },
+            },
+            'board': {'boardId': '7'},
+            'teamGroups': {'groups': []},
+            'epm': {'tab': 'active'},
+        }
+        with self.factory() as session:
+            view = models.ViewConfig(
+                workspace_id=self.workspace_id,
+                owner_user_id=self.user_id,
+                name='Legacy',
+                view_type='mixed',
+                payload=payload,
+                visibility='private',
+                is_default=True,
+            )
+            session.add(view)
+            session.commit()
+            view_id = view.id
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            listed = self.client.get('/api/me/views')
+            default = self.client.get('/api/me/views/default')
+
+        expected = {
+            'filters': {'safe': 'kept', 'nested': {'safe': 'kept'}},
+            'epm': {'tab': 'active'},
+        }
+        self.assertEqual(listed.status_code, 200, listed.get_data(as_text=True))
+        self.assertEqual(listed.get_json()['views'][0]['view'], expected)
+        self.assertEqual(default.status_code, 200, default.get_data(as_text=True))
+        self.assertEqual(default.get_json()['view'], expected)
+        with self.factory() as session:
+            self.assertEqual(session.get(models.ViewConfig, view_id).payload, payload)
+
+    def test_view_list_read_failure_returns_stable_503(self):
+        failure = OperationalError('select views', {}, sqlite3.OperationalError('disk I/O error'))
+        with self._env_patch(), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'session_scope', side_effect=failure):
+            response = self.client.get('/api/me/views')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json(), {
+            'error': 'config_storage_unavailable',
+            'message': 'Saved views require database-backed configuration storage.',
+        })
+
+    def test_default_view_read_failure_returns_stable_503(self):
+        failure = OperationalError('select default', {}, sqlite3.OperationalError('disk I/O error'))
+        with self._env_patch(), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch(
+                 'backend.routes.views_routes.DbConfigRepository.resolve_effective_view_config',
+                 side_effect=failure,
+             ):
+            response = self.client.get('/api/me/views/default')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json(), {
+            'error': 'config_storage_unavailable',
+            'message': 'Saved views require database-backed configuration storage.',
+        })
 
 
 if __name__ == '__main__':

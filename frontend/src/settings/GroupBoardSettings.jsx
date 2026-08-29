@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import StatusPill from '../ui/StatusPill.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { loadBoardStatusCatalog } from './boardStatusCatalog.js';
@@ -92,6 +93,8 @@ export default function GroupBoardSettings(props) {
     // `statuses` is the name list every rule here works in; `entries` keeps the catalog rows whole
     // for the shared default-column derivation.
     const [catalog, setCatalog] = React.useState({ state: 'loading', statuses: [], entries: [], code: '', message: '' });
+    const catalogRef = React.useRef(catalog);
+    catalogRef.current = catalog;
     const [pickerColumnId, setPickerColumnId] = React.useState(null);
     const [colourColumnId, setColourColumnId] = React.useState(null);
     const [colourFocusIndex, setColourFocusIndex] = React.useState(0);
@@ -147,7 +150,10 @@ export default function GroupBoardSettings(props) {
     // the global board invalidates it.
     React.useEffect(() => {
         let cancelled = false;
-        setCatalog({ state: 'loading', statuses: [], entries: [], code: '', message: '' });
+        const previousCatalog = catalogRef.current;
+        setCatalog((current) => {
+            return current.state === 'loading' ? current : { ...current, state: 'loading', code: '', message: '' };
+        });
         loadBoardStatusCatalog(backendUrl, { boardId, projectScopeKey })
             .then((payload) => {
                 if (cancelled) return;
@@ -162,6 +168,10 @@ export default function GroupBoardSettings(props) {
             })
             .catch((error) => {
                 if (cancelled) return;
+                if (isAuthenticationRequiredError(error)) {
+                    setCatalog(previousCatalog);
+                    return;
+                }
                 setCatalog({
                     state: 'error',
                     statuses: [],

@@ -29,7 +29,6 @@ export default function TeamGroupsSettings(props) {
         personalGroupPreferencesEnabled,
         favoriteGroupDraftId,
         setFavoriteGroupDraft,
-        settingsPreferenceRecoveryLoginUrl,
         duplicateGroupDraft,
         resolveTeamName,
         removeTeamFromGroup,
@@ -182,9 +181,6 @@ export default function TeamGroupsSettings(props) {
                                         {groupDraftError && (
                                             <div className="group-modal-warning">
                                                 {groupDraftError}
-                                                {settingsPreferenceRecoveryLoginUrl && (
-                                                    <> <a href={settingsPreferenceRecoveryLoginUrl}>Sign in again</a></>
-                                                )}
                                             </div>
                                         )}
                                         <div className="group-pane-tools">

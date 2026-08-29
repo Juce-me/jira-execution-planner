@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from copy import deepcopy
+import json
 
-from sqlalchemy import select, update
+from sqlalchemy import Text, cast, select, update
 from sqlalchemy.exc import IntegrityError
 
 from backend.config.shared_config import (
@@ -35,20 +36,34 @@ class TeamCatalogConflict(Exception):
     pass
 
 
+def _decoded_payload(raw_payload):
+    try:
+        raw = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+    except (TypeError, ValueError):
+        raw = {}
+    payload = deepcopy(raw) if isinstance(raw, dict) else {}
+    payload.pop('epm', None)
+    return payload
+
+
 def _snapshot(row):
     return WorkspaceConfigSnapshot(
-        payload=deepcopy(row.payload or {}),
-        config_revision=int(row.config_revision or 0),
+        payload=_decoded_payload(row[0]),
+        config_revision=int(row[1] or 0),
         source='workspace_db',
     )
 
 
 def _current(session, workspace_id):
     return session.execute(
-        select(models.WorkspaceDashboardConfig).where(
+        select(
+            cast(models.WorkspaceDashboardConfig.payload, Text),
+            models.WorkspaceDashboardConfig.config_revision,
+            models.WorkspaceDashboardConfig.payload_version,
+        ).where(
             models.WorkspaceDashboardConfig.workspace_id == workspace_id,
         )
-    ).scalars().first()
+    ).first()
 
 
 def _fallback_snapshot(context, fallback_loader, legacy_site_url):
@@ -121,7 +136,7 @@ def update_workspace_config_section(
                     raise WorkspaceConfigConflict(_snapshot(current), section)
             next_revision = 1
         else:
-            payload = deepcopy(row.payload or {})
+            payload = _decoded_payload(row[0])
             payload[section] = normalized_value
             statement = (
                 update(models.WorkspaceDashboardConfig)
@@ -131,7 +146,7 @@ def update_workspace_config_section(
                 )
                 .values(
                     payload=payload,
-                    payload_version=int(payload.get('version') or row.payload_version or 1),
+                    payload_version=int(payload.get('version') or row[2] or 1),
                     config_revision=revision + 1,
                     updated_by=getattr(context, 'user_id', None),
                     updated_at=models._utcnow(),

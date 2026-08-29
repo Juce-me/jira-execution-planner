@@ -4,17 +4,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const sourcePath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
+const hookSource = fs.readFileSync(sourcePath, 'utf8');
 
 function loadUseEngSprintData(fetchEngTasks, refreshAuthSession = async () => ({ ok: false, status: 401, json: async () => ({}) })) {
     const source = fs.readFileSync(sourcePath, 'utf8')
         .replace(/import\s+\{[\s\S]*?\}\s+from\s+'..\/api\/engApi\.js';\n/, '')
         .replace(/import\s+\{[\s\S]*?\}\s+from\s+'..\/api\/authApi\.js';\n/, '')
+        .replace(/import\s+\{[\s\S]*?\}\s+from\s+'..\/api\/authRequired\.js';\n/, '')
         .replace(/import\s+\{[\s\S]*?\}\s+from\s+'.\/engTaskUtils\.js';\n/, '')
         .replaceAll('export function ', 'function ');
 
     const dependencies = {
         requestBacklogEpics: async () => ({ epics: [] }),
         fetchEngTasks,
+        isAuthenticationRequiredError: (error) => error?.name === 'AuthenticationRequiredError',
         refreshAuthSession,
         PRIORITY_ORDER: [],
         filterEpicsByTaskEpicKeys: () => ({}),
@@ -29,7 +32,14 @@ function loadUseEngSprintData(fetchEngTasks, refreshAuthSession = async () => ({
     )(...Object.values(dependencies));
 }
 
-function createHarness(fetchEngTasks, { refreshAuthSession } = {}) {
+function createHarness(fetchEngTasks, {
+    refreshAuthSession,
+    setters = {},
+    sprintLoadRef = { current: {} },
+    lastLoadedSprintRef = { current: '' },
+    loadedProductTasks = [],
+    loadedTechTasks = [],
+} = {}) {
     const { useEngSprintData } = loadUseEngSprintData(fetchEngTasks, refreshAuthSession);
     const errors = [];
     const controller = { signal: { aborted: false } };
@@ -42,36 +52,36 @@ function createHarness(fetchEngTasks, { refreshAuthSession } = {}) {
         activeGroupTeamIds: [],
         activeGroupTeamSet: new Set(),
         pageLoadRefreshRef: { current: false },
-        sprintLoadRef: { current: {} },
-        lastLoadedSprintRef: { current: '' },
+        sprintLoadRef,
+        lastLoadedSprintRef,
         registerSprintFetch: () => controller,
         cleanupSprintFetch: noop,
         isFutureSprintSelected: false,
-        loadedProductTasks: [],
-        loadedTechTasks: [],
+        loadedProductTasks,
+        loadedTechTasks,
         setLoading: noop,
         setError: (message) => errors.push(message),
         setEpicDetails: noop,
-        setProductTasks: noop,
-        setTechTasks: noop,
-        setLoadedProductTasks: noop,
-        setLoadedTechTasks: noop,
-        setTasksFetched: noop,
-        setTechLoaded: noop,
+        setProductTasks: setters.setProductTasks || noop,
+        setTechTasks: setters.setTechTasks || noop,
+        setLoadedProductTasks: setters.setLoadedProductTasks || noop,
+        setLoadedTechTasks: setters.setLoadedTechTasks || noop,
+        setTasksFetched: setters.setTasksFetched || noop,
+        setTechLoaded: setters.setTechLoaded || noop,
         setProductTasksLoading: noop,
         setTechTasksLoading: noop,
         setProductEpicsInScope: noop,
         setTechEpicsInScope: noop,
-        setReadyToCloseProductTasks: noop,
-        setReadyToCloseTechTasks: noop,
-        setReadyToCloseProductEpicsInScope: noop,
-        setReadyToCloseTechEpicsInScope: noop,
+        setReadyToCloseProductTasks: setters.setReadyToCloseProductTasks || noop,
+        setReadyToCloseTechTasks: setters.setReadyToCloseTechTasks || noop,
+        setReadyToCloseProductEpicsInScope: setters.setReadyToCloseProductEpicsInScope || noop,
+        setReadyToCloseTechEpicsInScope: setters.setReadyToCloseTechEpicsInScope || noop,
     });
 
     return { api, errors };
 }
 
-test('ENG task auth_required errors redirect to the login recovery page', async () => {
+test('ENG typed auth errors preserve feature state without redirect or local error', async () => {
     const redirects = [];
     const previousWindow = global.window;
     const previousConsoleLog = console.log;
@@ -85,20 +95,14 @@ test('ENG task auth_required errors redirect to the login recovery page', async 
     console.error = () => {};
 
     try {
-        const { api, errors } = createHarness(async () => ({
-            ok: false,
-            status: 401,
-            json: async () => ({
-                error: 'auth_required',
-                loginUrl: '/login?reason=session_expired',
-            }),
-        }));
+        const authError = new Error('Authentication is required to continue.');
+        authError.name = 'AuthenticationRequiredError';
+        const { api, errors } = createHarness(async () => { throw authError; });
 
         await api.fetchTasks('product');
 
-        assert.deepEqual(redirects, ['/login?reason=session_expired']);
-        assert.match(errors.at(-1), /Sign in with Atlassian/);
-        assert.doesNotMatch(errors.at(-1), /Python server/);
+        assert.deepEqual(redirects, []);
+        assert.deepEqual(errors, ['']);
     } finally {
         console.log = previousConsoleLog;
         console.error = previousConsoleError;
@@ -138,7 +142,7 @@ test('ENG task missing_project_access errors show project access recovery text',
     }
 });
 
-test('ENG task stale auth refreshes the session and retries once', async () => {
+test('ENG task 401 responses are not retried by a feature hook', async () => {
     const previousConsoleLog = console.log;
     const previousConsoleError = console.error;
     console.log = () => {};
@@ -174,10 +178,9 @@ test('ENG task stale auth refreshes the session and retries once', async () => {
 
         const tasks = await api.fetchTasks('product');
 
-        assert.equal(refreshCalls.length, 1);
-        assert.equal(calls.length, 2);
-        assert.equal(tasks[0].key, 'PROD-1');
-        assert.deepEqual(errors, ['']);
+        assert.equal(refreshCalls.length, 0);
+        assert.equal(calls.length, 1);
+        assert.deepEqual(tasks, []);
     } finally {
         console.log = previousConsoleLog;
         console.error = previousConsoleError;
@@ -211,3 +214,53 @@ test('ENG task stale auth errors show reconnect text after refresh cannot recove
         console.error = previousConsoleError;
     }
 });
+
+test('ENG loaders use an auth sentinel before replacing task and sprint state', () => {
+    assert.ok(hookSource.includes("const AUTHENTICATION_REQUIRED_RESULT = Symbol('authentication-required')"));
+    assert.ok(hookSource.includes('if (data === AUTHENTICATION_REQUIRED_RESULT) return;'));
+    assert.ok(hookSource.indexOf('if (data === AUTHENTICATION_REQUIRED_RESULT) return;') < hookSource.indexOf('setProductTasks(data);'));
+});
+
+test('ENG product loader preserves task and sprint markers on typed auth', async () => {
+    const authError = Object.assign(new Error('auth'), { name: 'AuthenticationRequiredError' });
+    const mutations = [];
+    const sprintLoadRef = { current: { sprintId: 'old', product: true, tech: true } };
+    const lastLoadedSprintRef = { current: 'old' };
+    const { api } = createHarness(async () => { throw authError; }, {
+        sprintLoadRef,
+        lastLoadedSprintRef,
+        setters: {
+            setProductTasks: value => mutations.push(['product', value]),
+            setLoadedProductTasks: value => mutations.push(['loaded', value]),
+            setTasksFetched: value => mutations.push(['fetched', value]),
+        },
+    });
+    await api.loadProductTasks();
+    assert.deepEqual(mutations, []);
+    assert.deepEqual(sprintLoadRef.current, { sprintId: 'old', product: true, tech: true });
+    assert.equal(lastLoadedSprintRef.current, 'old');
+});
+
+for (const project of ['product', 'tech']) {
+    test(`ENG ready-to-close ${project} loader preserves tasks on typed auth`, async () => {
+        const authError = Object.assign(new Error('auth'), { name: 'AuthenticationRequiredError' });
+        const mutations = [];
+        const task = { key: `${project.toUpperCase()}-1`, fields: { epicKey: `${project.toUpperCase()}-EPIC` } };
+        const setters = project === 'product'
+            ? { setReadyToCloseProductTasks: value => mutations.push(value) }
+            : { setReadyToCloseTechTasks: value => mutations.push(value) };
+        const { api } = createHarness(async () => { throw authError; }, {
+            loadedProductTasks: project === 'product' ? [task] : [],
+            loadedTechTasks: project === 'tech' ? [task] : [],
+            setters,
+        });
+
+        if (project === 'product') {
+            await api.loadReadyToCloseProductTasks();
+        } else {
+            await api.loadReadyToCloseTechTasks();
+        }
+
+        assert.deepEqual(mutations, []);
+    });
+}

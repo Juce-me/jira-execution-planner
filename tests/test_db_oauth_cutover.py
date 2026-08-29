@@ -367,7 +367,7 @@ class DbOauthCutoverTests(unittest.TestCase):
                      'rootGoalKey': 'ROOT-1',
                      'subGoalKey': 'SUB-1',
                  },
-             }), patch('backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe', return_value={
+             }) as get_config, patch('backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe', return_value={
                  'ok': True,
              }) as run_probe:
             response = self.client.get('/api/auth/dev/home-graphql-oauth-probe')
@@ -376,10 +376,39 @@ class DbOauthCutoverTests(unittest.TestCase):
         run_probe.assert_called_once()
         self.assertEqual(run_probe.call_args.args[0], 'access-123')
         self.assertEqual(run_probe.call_args.args[1], 'cloud-123')
+        self.assertEqual(get_config.call_count, 1)
+        self.assertEqual(get_config.call_args.kwargs['context'].user_id, result.user_id)
         with self.client.session_transaction() as session:
             self.assertIn('db_oauth_session', session)
             self.assertNotIn('atlassian_oauth_session_id', session)
         self.assertEqual(jira_server.OAUTH_TOKEN_STORE, {})
+
+    def test_dev_home_graphql_probe_fails_closed_when_private_epm_storage_is_unavailable(self):
+        result = self._store_callback()
+        with self.client.session_transaction() as session:
+            session['db_oauth_session'] = {
+                'db_auth_connection_id': result.connection_id,
+                'db_token_version': result.session_metadata['db_token_version'],
+            }
+
+        with patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_URL': self.database_url,
+            'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([7]) * 32).decode('ascii'),
+            'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
+            'ALLOW_DEV_DIAGNOSTIC_ENDPOINTS': 'true',
+        }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
+             patch.object(jira_server, 'get_epm_config', side_effect=jira_server.ConfigStorageError('sensitive detail')), \
+             patch('backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe') as run_probe:
+            response = self.client.get('/api/auth/dev/home-graphql-oauth-probe')
+
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {
+            'error': 'config_storage_unavailable',
+            'message': 'EPM configuration storage is unavailable.',
+        })
+        run_probe.assert_not_called()
 
 
 if __name__ == '__main__':

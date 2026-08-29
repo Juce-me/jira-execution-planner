@@ -10,7 +10,6 @@ const SECTION_LABELS = [
     ['capacity', 'Capacity'],
     ['fieldConfigs', 'Field mapping'],
     ['issueTypes', 'Issue types'],
-    ['epm', 'EPM settings'],
 ];
 
 export const committedWorkspaceSectionLabels = (committed = {}) => SECTION_LABELS

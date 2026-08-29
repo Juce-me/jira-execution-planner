@@ -1,4 +1,6 @@
+import { apiFetch } from './http.js';
+
 export const fetchIssuesLookup = (backendUrl, keys, { signal } = {}) =>
-    fetch(`${backendUrl}/api/issues/lookup?keys=${encodeURIComponent((keys || []).join(','))}`, {
+    apiFetch(`${backendUrl}/api/issues/lookup?keys=${encodeURIComponent((keys || []).join(','))}`, {
         signal
     });

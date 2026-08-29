@@ -1,5 +1,8 @@
 """EPM configuration defaults and normalization helpers."""
 
+import hashlib
+import json
+
 from backend.epm.projects import normalize_epm_sub_goal_keys, normalize_epm_text, normalize_epm_upper_text
 
 
@@ -10,6 +13,8 @@ DEFAULT_EPM_ISSUE_TYPES = {
     'epic': ['Epic'],
     'leaf': ['Story', 'Task', 'Sub-task', 'Subtask', 'Bug'],
 }
+
+EPM_SETTINGS_KEYS = ('version', 'labelPrefix', 'scope', 'issueTypes', 'projects')
 
 
 def normalize_epm_scope(payload):
@@ -109,3 +114,11 @@ def normalize_epm_config(payload):
         'issueTypes': normalize_epm_issue_types(payload),
         'projects': normalized_projects,
     }
+
+
+def build_epm_config_generation(payload):
+    """Return a non-reversible generation for the normalized effective settings."""
+    normalized = normalize_epm_config(payload)
+    canonical = {key: normalized[key] for key in EPM_SETTINGS_KEYS}
+    serialized = json.dumps(canonical, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()

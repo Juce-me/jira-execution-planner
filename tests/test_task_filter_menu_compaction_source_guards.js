@@ -124,9 +124,24 @@ test('sort and grouping move into the bar as view controls, outside the chip gra
         'Expected the compact size to come from the control\'s own modifier hook, not bar CSS'
     );
     assert.ok(
-        engViewSource.includes('group-visible-control'),
-        'Expected grouping to reuse the existing checkbox-label control'
+        engViewSource.includes("import IconButton from '../ui/IconButton.jsx'"),
+        'Expected grouping to import the shared IconButton'
     );
+    assert.ok(
+        engViewSource.includes('className="fb-trigger fb-trigger-icon"'),
+        'Expected grouping to use the fixed filter-bar icon trigger'
+    );
+    assert.ok(
+        engViewSource.includes('aria-label="Group by Initiative"'),
+        'Expected grouping to retain an accessible button name'
+    );
+    assert.ok(
+        engViewSource.includes('aria-pressed={groupByInitiative}'),
+        'Expected grouping to use semantic pressed state'
+    );
+    assert.equal(engViewSource.includes('className="group-visible-control"'), false);
+    assert.equal(engViewSource.includes('type="checkbox"'), false);
+    assert.equal(engViewSource.includes('initiative-toggle'), false);
 });
 
 test('an explicit initiative-grouping choice survives new initiative data', () => {

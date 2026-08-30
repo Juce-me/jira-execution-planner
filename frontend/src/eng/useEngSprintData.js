@@ -2,7 +2,9 @@ import {
     fetchBacklogEpics as requestBacklogEpics,
     fetchEngTasks,
 } from '../api/engApi.js';
-import { refreshAuthSession } from '../api/authApi.js';
+import { isAuthenticationRequiredError } from '../api/authRequired.js';
+
+const AUTHENTICATION_REQUIRED_RESULT = Symbol('authentication-required');
 import {
     PRIORITY_ORDER,
     filterEpicsByTaskEpicKeys,
@@ -12,10 +14,6 @@ import {
 } from './engTaskUtils.js';
 
 const OAUTH_ROUTE_NOT_READY_TASKS_MESSAGE = 'OAuth login succeeded, but this dashboard data route has not been migrated to Atlassian OAuth yet.';
-
-function isStaleAuthError(err) {
-    return err?.code === 'auth_connection_stale' && err?.status === 401;
-}
 
 async function buildTaskResponseError(response) {
     const errorData = await response.json().catch(() => ({
@@ -28,36 +26,6 @@ async function buildTaskResponseError(response) {
     error.recoveryUrl = errorData.recoveryUrl;
     error.status = response.status;
     return error;
-}
-
-async function refreshStaleAuthSession(backendUrl) {
-    try {
-        const response = await refreshAuthSession(backendUrl);
-        return response.ok;
-    } catch (err) {
-        return false;
-    }
-}
-
-export function authRecoveryLoginUrl(err) {
-    const loginUrl = String(err.loginUrl || '').trim();
-    if (!loginUrl.startsWith('/login')) {
-        return '';
-    }
-    if (err.status !== 401 && err.code !== 'auth_required') {
-        return '';
-    }
-    return loginUrl;
-}
-
-export function redirectToAuthRecovery(err) {
-    const loginUrl = authRecoveryLoginUrl(err);
-    if (!loginUrl) {
-        return;
-    }
-    if (typeof window !== 'undefined' && window.location && typeof window.location.assign === 'function') {
-        window.location.assign(loginUrl);
-    }
 }
 
 function taskLoadErrorMessage(err, backendUrl) {
@@ -78,9 +46,6 @@ function taskLoadErrorMessage(err, backendUrl) {
     }
     if (err.code === 'missing_oauth_scope') {
         return 'Your Jira sign-in needs updated permissions. Sign in with Atlassian again to continue.';
-    }
-    if (authRecoveryLoginUrl(err)) {
-        return 'Sign in with Atlassian again to continue loading tasks.';
     }
     return `Failed to load tasks: ${err.message}. Make sure the Python server is running on ${backendUrl}`;
 }
@@ -156,24 +121,13 @@ export function useEngSprintData({
                 epicKeys: options.epicKeys,
                 signal: requestSignal
             });
-            let response = await requestTasks();
+            const response = await requestTasks();
 
             console.log('Response status:', response.status);
             console.log('Response ok:', response.ok);
 
             if (!response.ok) {
-                let error = await buildTaskResponseError(response);
-                if (isStaleAuthError(error) && await refreshStaleAuthSession(backendUrl)) {
-                    response = await requestTasks();
-                    console.log('Response status:', response.status);
-                    console.log('Response ok:', response.ok);
-                    if (!response.ok) {
-                        error = await buildTaskResponseError(response);
-                    }
-                }
-                if (!response.ok) {
-                    throw error;
-                }
+                throw await buildTaskResponseError(response);
             }
 
             const data = await response.json();
@@ -208,21 +162,19 @@ export function useEngSprintData({
             if (err.name === 'AbortError') {
                 return [];
             }
+            if (isAuthenticationRequiredError(err)) return AUTHENTICATION_REQUIRED_RESULT;
+            if (options.shouldApplyResult?.() === false) return [];
             const handledServerConnection = onServerConnectionFailure?.(err) === true;
             if (setErrors) {
                 setError(handledServerConnection ? '' : taskLoadErrorMessage(err, backendUrl));
             }
-            if (authRecoveryLoginUrl(err)) {
-                onAuthRecoveryRequired?.();
-            }
-            redirectToAuthRecovery(err);
             if (!handledServerConnection) {
                 console.error('Full error details:', err);
             }
             return [];
         } finally {
             cleanupSprintFetch(controller);
-            if (useLoading) {
+            if (useLoading && options.shouldApplyResult?.() !== false) {
                 setLoading(false);
             }
         }
@@ -235,11 +187,12 @@ export function useEngSprintData({
         return Array.isArray(payload.epics) ? payload.epics : [];
     };
 
-    const loadProductTasks = async ({ forceRefresh = false } = {}) => {
+    const loadProductTasks = async ({ forceRefresh = false, shouldApplyResult } = {}) => {
         const sprintId = selectedSprint;
         setProductTasksLoading(true);
         try {
             if (activeGroupId && activeGroupTeamIds.length === 0) {
+                if (shouldApplyResult?.() === false) return;
                 setProductTasks([]);
                 setLoadedProductTasks([]);
                 setTasksFetched(true);
@@ -254,7 +207,9 @@ export function useEngSprintData({
                 }
                 return;
             }
-            const data = await fetchTasks('product', { forceRefresh });
+            const data = await fetchTasks('product', { forceRefresh, shouldApplyResult });
+            if (data === AUTHENTICATION_REQUIRED_RESULT) return;
+            if (shouldApplyResult?.() === false) return;
             setProductTasks(data);
             setLoadedProductTasks(data);
             setTasksFetched(true);
@@ -268,15 +223,18 @@ export function useEngSprintData({
                 lastLoadedSprintRef.current = sprintId;
             }
         } finally {
-            setProductTasksLoading(false);
+            if (shouldApplyResult?.() !== false) {
+                setProductTasksLoading(false);
+            }
         }
     };
 
-    const loadTechTasks = async ({ forceRefresh = false } = {}) => {
+    const loadTechTasks = async ({ forceRefresh = false, shouldApplyResult } = {}) => {
         const sprintId = selectedSprint;
         setTechTasksLoading(true);
         try {
             if (activeGroupId && activeGroupTeamIds.length === 0) {
+                if (shouldApplyResult?.() === false) return;
                 setTechTasks([]);
                 setLoadedTechTasks([]);
                 setTechLoaded(true);
@@ -292,7 +250,9 @@ export function useEngSprintData({
                 }
                 return;
             }
-            const data = await fetchTasks('tech', { forceRefresh });
+            const data = await fetchTasks('tech', { forceRefresh, shouldApplyResult });
+            if (data === AUTHENTICATION_REQUIRED_RESULT) return;
+            if (shouldApplyResult?.() === false) return;
             setTechTasks(data);
             setLoadedTechTasks(data);
             setTechLoaded(true);
@@ -307,7 +267,9 @@ export function useEngSprintData({
                 lastLoadedSprintRef.current = sprintId;
             }
         } finally {
-            setTechTasksLoading(false);
+            if (shouldApplyResult?.() !== false) {
+                setTechTasksLoading(false);
+            }
         }
     };
 
@@ -363,6 +325,7 @@ export function useEngSprintData({
             shouldApplyResult,
             signal
         });
+        if (data === AUTHENTICATION_REQUIRED_RESULT) return;
         if (shouldApplyResult?.() === false) return;
         setReadyToCloseProductTasks(data);
     };
@@ -395,6 +358,7 @@ export function useEngSprintData({
             shouldApplyResult,
             signal
         });
+        if (data === AUTHENTICATION_REQUIRED_RESULT) return;
         if (shouldApplyResult?.() === false) return;
         setReadyToCloseTechTasks(data);
     };

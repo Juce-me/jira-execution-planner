@@ -242,6 +242,81 @@ class DbAdminRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()['error'], 'csrf_required')
 
+    def test_shared_admin_routes_thread_revision_and_return_exact_conflict(self):
+        self._install_session(account_id='admin-account', connection_id=self.admin_connection_id)
+        routes = [
+            ('/api/projects/selected', {'selected': [{'key': 'ABC', 'type': 'product'}]}),
+            ('/api/board-config', {'boardId': '7', 'boardName': 'Planning'}),
+            ('/api/capacity/config', {'project': 'ABC', 'fieldId': 'customfield_1', 'fieldName': 'Capacity'}),
+            ('/api/sprint-field/config', {'fieldId': 'customfield_2', 'fieldName': 'Sprint'}),
+            ('/api/story-points-field/config', {'fieldId': 'customfield_3', 'fieldName': 'Points'}),
+            ('/api/parent-name-field/config', {'fieldId': 'customfield_4', 'fieldName': 'Parent'}),
+            ('/api/team-field/config', {'fieldId': 'customfield_5', 'fieldName': 'Team'}),
+            ('/api/delivery-owner-field/config', {'fieldId': 'customfield_6', 'fieldName': 'Owner'}),
+            ('/api/stats/priority-weights-config', {'weights': []}),
+            ('/api/issue-types/config', {'issueTypes': ['Story']}),
+        ]
+        revision = 0
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            for route, body in routes:
+                headers = self._csrf_headers()
+                response = self.client.post(route, json={**body, 'baseRevision': revision}, headers=headers)
+                self.assertEqual(response.status_code, 200, f'{route}: {response.get_data(as_text=True)}')
+                revision += 1
+                self.assertEqual(response.get_json()['configRevision'], revision)
+
+            conflict = self.client.post(
+                '/api/board-config',
+                json={'boardId': '8', 'boardName': 'Stale', 'baseRevision': revision - 1},
+                headers=self._csrf_headers(),
+            )
+            bootstrap = self.client.get('/api/config?includeViewConfig=true')
+
+        self.assertEqual(conflict.status_code, 409)
+        self.assertEqual(conflict.get_json(), {
+            'error': 'workspace_config_conflict',
+            'message': 'Shared settings changed while you were editing. Your changes are still unsaved.',
+            'currentRevision': revision,
+            'current': {
+                'section': 'board',
+                'value': {'boardId': '7', 'boardName': 'Planning'},
+                'configRevision': revision,
+            },
+        })
+        self.assertEqual(bootstrap.status_code, 200)
+        self.assertEqual(bootstrap.get_json()['sharedConfigRevision'], revision)
+        self.assertEqual(bootstrap.get_json()['sharedConfig']['board']['boardId'], '7')
+
+    def test_db_shared_admin_routes_reject_raw_values_before_revision_write(self):
+        self._install_session(account_id='admin-account', connection_id=self.admin_connection_id)
+        cases = (
+            ('/api/projects/selected', {
+                'selected': [{'key': 'ABC', 'type': 'product', 'workspaceId': 'claimed'}],
+            }),
+            ('/api/sprint-field/config', {
+                'fieldId': {'value': 'customfield_2'}, 'fieldName': 'Sprint',
+            }),
+            ('/api/issue-types/config', {'issueTypes': ['Story', {'name': 'Bug'}]}),
+            ('/api/stats/priority-weights-config', {
+                'weights': [{'priority': 'High', 'weight': 1, 'unexpected': 'value'}],
+            }),
+        )
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            for route, body in cases:
+                with self.subTest(route=route):
+                    response = self.client.post(
+                        route,
+                        json={**body, 'baseRevision': 0},
+                        headers=self._csrf_headers(),
+                    )
+                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+
+            snapshot = self.client.get('/api/config?includeViewConfig=true')
+
+        self.assertEqual(snapshot.status_code, 200, snapshot.get_data(as_text=True))
+        self.assertEqual(snapshot.get_json()['sharedConfigRevision'], 0)
+
 
 if __name__ == '__main__':
     unittest.main()

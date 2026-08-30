@@ -43,8 +43,12 @@ test('dashboard without Home token hides EPM and skips EPM metadata startup', as
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 
     const viewSwitch = page.getByRole('radiogroup', { name: 'Dashboard view' });
-    await expect(viewSwitch.getByRole('radio', { name: 'ENG' })).toBeVisible();
-    await expect(viewSwitch.getByRole('radio', { name: 'EPM' })).toHaveCount(0);
+    await expect(viewSwitch).toHaveCount(0);
+    await page.screenshot({
+        path: '/tmp/epm-home-token-gating-no-view-switch.png',
+        animations: 'disabled',
+        fullPage: false,
+    });
     expect(epmMetadataCalls(fixture.calls)).toEqual([]);
 
     const dialog = await openConnectionsSettings(page);
@@ -77,13 +81,14 @@ test('basic auth mode shows EPM without a per-user Home token connection', async
 });
 
 test('connecting and revoking Home token updates EPM visibility without restart', async ({ page }) => {
+    const viewSwitch = page.getByRole('radiogroup', { name: 'Dashboard view' });
     const fixture = await installDashboardFixture(page, {
         connection: disconnectedHomeTokenConnection(),
         userCanEditEpmConfig: true,
     });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await expect(page.getByRole('radiogroup', { name: 'Dashboard view' }).getByRole('radio', { name: 'EPM' })).toHaveCount(0);
+    await expect(viewSwitch).toHaveCount(0);
 
     let dialog = await openConnectionsSettings(page);
     const firstToken = await runtimeTokenValue(page);
@@ -94,7 +99,6 @@ test('connecting and revoking Home token updates EPM visibility without restart'
     await expect(dialog).not.toContainText(firstToken);
     await closeSettingsDialog(page, dialog);
 
-    const viewSwitch = page.getByRole('radiogroup', { name: 'Dashboard view' });
     await expect(viewSwitch.getByRole('radio', { name: 'EPM' })).toBeVisible();
     await viewSwitch.getByRole('radio', { name: 'EPM' }).click();
     await expect(page.locator('.epm-project-board-name', { hasText: 'Connected Home Project' })).toBeVisible();
@@ -106,7 +110,7 @@ test('connecting and revoking Home token updates EPM visibility without restart'
     await expect(dialog.getByText('Not connected')).toBeVisible();
     await closeSettingsDialog(page, dialog);
 
-    await expect(viewSwitch.getByRole('radio', { name: 'EPM' })).toHaveCount(0);
+    await expect(viewSwitch).toHaveCount(0);
     await expect(page.locator('.epm-project-board-name', { hasText: 'Connected Home Project' })).toHaveCount(0);
 
     const homeTokenPosts = fixture.calls.filter(call => call.method === 'POST' && call.pathname === '/api/me/connections/home-token');
@@ -134,7 +138,7 @@ test('backend Home-token prerequisite refreshes status and clears stale EPM cont
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 
     const viewSwitch = page.getByRole('radiogroup', { name: 'Dashboard view' });
-    await expect(viewSwitch.getByRole('radio', { name: 'EPM' })).toHaveCount(0);
+    await expect(viewSwitch).toHaveCount(0);
     await expect(page.locator('.epm-project-board-name')).toHaveCount(0);
     expect(fixture.calls.filter(call => call.method === 'GET' && call.pathname === '/api/me/connections/home-token').length).toBeGreaterThanOrEqual(1);
 });

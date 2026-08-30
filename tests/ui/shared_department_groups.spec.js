@@ -17,6 +17,50 @@ function requestBody(request) {
     }
 }
 
+function deferred() {
+    let resolve;
+    const promise = new Promise(next => { resolve = next; });
+    return { promise, resolve };
+}
+
+function visibleStoryPayload(project = 'product') {
+    const key = project === 'product' ? 'PLAT-1' : 'TECH-1';
+    const epicKey = project === 'product' ? 'PLAT-EPIC' : 'TECH-EPIC';
+    return {
+        issues: [{
+            id: key,
+            key,
+            fields: {
+                summary: `${project} visible story`,
+                status: { name: 'To Do' },
+                priority: { name: 'High' },
+                issuetype: { name: 'Story' },
+                assignee: { displayName: 'Synthetic Owner' },
+                updated: '2026-08-25T00:00:00.000+0000',
+                customfield_10004: 3,
+                epicKey,
+                parentSummary: `${project} delivery epic`,
+                projectKey: project === 'product' ? 'PLAT' : 'TECH',
+                teamId: project === 'product' ? 'team-platform' : 'team-platform',
+                teamName: 'Platform',
+                sprint: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }],
+            },
+        }],
+        epics: {
+            [epicKey]: {
+                key: epicKey,
+                summary: `${project} delivery epic`,
+                status: { name: 'In Progress' },
+                teamId: 'team-platform',
+                teamName: 'Platform',
+                sprint: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }],
+            },
+        },
+        epicsInScope: [],
+        names: {},
+    };
+}
+
 function defaultGroupPreferences(overrides = {}) {
     return {
         customized: false,
@@ -42,13 +86,18 @@ async function mockFirstRunDashboard(page, options = {}) {
         source: 'workspace_db',
     };
     const preferences = options.preferences || defaultGroupPreferences();
+    let onboardingComplete = !preferences.onboardingRequired;
+    let sprintFailureCount = 0;
+    let sprintRequestCount = 0;
     await installDashboardShell(page);
-    await page.addInitScript(() => {
-        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
-            selectedView: 'eng',
-            selectedSprint: 42,
-        }));
-    });
+    const savedSprintId = Object.prototype.hasOwnProperty.call(options, 'savedSprintId')
+        ? options.savedSprintId
+        : 42;
+    await page.addInitScript(({ selectedSprint }) => {
+        const preferences = { selectedView: 'eng' };
+        if (selectedSprint !== null) preferences.selectedSprint = selectedSprint;
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(preferences));
+    }, { selectedSprint: savedSprintId });
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
@@ -71,9 +120,9 @@ async function mockFirstRunDashboard(page, options = {}) {
             return json({
                 jiraUrl: 'https://jira.example',
                 projectsConfigured: true,
-                settingsAdminOnly: false,
-                userCanEditSettings: true,
-                userCanEditEpmConfig: false,
+                settingsAdminOnly: options.settingsAdminOnly ?? false,
+                userCanEditSettings: options.userCanEditSettings ?? true,
+                userCanEditEpmConfig: options.userCanEditEpmConfig ?? false,
             });
         }
         if (url.pathname === '/api/groups-config') {
@@ -94,22 +143,60 @@ async function mockFirstRunDashboard(page, options = {}) {
         }
         if (url.pathname === '/api/groups-preferences') {
             const body = requestBody(request) || {};
+            if (options.preferenceGate) await options.preferenceGate.promise;
+            if (options.preferenceError) {
+                return json(options.preferenceError.body, options.preferenceError.status);
+            }
+            onboardingComplete = true;
+            const savedPreferences = {
+                customized: true,
+                preferenceExists: true,
+                onboardingRequired: false,
+                visibleGroupIds: body.visibleGroupIds || ['platform'],
+                activeGroupId: body.activeGroupId || 'platform',
+                effectiveVisibleGroupIds: body.visibleGroupIds || ['platform'],
+            };
+            const snapshot = options.preferenceSnapshotConfig || groupsConfig;
             return json({
-                preferences: {
-                    customized: true,
-                    preferenceExists: true,
-                    onboardingRequired: false,
-                    visibleGroupIds: body.visibleGroupIds || ['platform'],
-                    activeGroupId: body.activeGroupId || 'platform',
-                    effectiveVisibleGroupIds: body.visibleGroupIds || ['platform'],
-                },
+                preferences: savedPreferences,
+                ...(options.omitPreferenceSnapshot ? {} : {
+                    groupsConfigSnapshot: {
+                        ...snapshot,
+                        preferences: savedPreferences,
+                    },
+                }),
             });
         }
         if (url.pathname === '/api/sprints') {
+            const plannedResponse = (options.sprintResponsePlan || [])[sprintRequestCount];
+            sprintRequestCount += 1;
+            if (plannedResponse) {
+                if (plannedResponse.delayMs) {
+                    await new Promise(resolve => setTimeout(resolve, plannedResponse.delayMs));
+                }
+                return json(
+                    plannedResponse.body || (plannedResponse.status === 200
+                        ? { sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] }
+                        : { error: 'sprints_unavailable' }),
+                    plannedResponse.status
+                );
+            }
+            if (options.rejectSprintBeforeOnboarding && !onboardingComplete) {
+                return json({
+                    error: 'sprint_load_blocked',
+                    message: 'Sprint discovery started before department onboarding completed.',
+                }, 502);
+            }
+            if (onboardingComplete && sprintFailureCount < (options.sprintFailuresAfterOnboarding || 0)) {
+                sprintFailureCount += 1;
+                return json({ error: 'sprints_unavailable' }, 502);
+            }
             return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
         }
         if (url.pathname === '/api/tasks-with-team-name') {
-            return json({ issues: [], epics: {}, epicsInScope: [] });
+            return json(options.taskPayload === false
+                ? { issues: [], epics: {}, epicsInScope: [] }
+                : visibleStoryPayload(url.searchParams.get('project') || 'product'));
         }
         if (url.pathname === '/api/missing-info') {
             return json({ issues: [], epics: [] });
@@ -128,6 +215,39 @@ async function mockFirstRunDashboard(page, options = {}) {
     return calls;
 }
 
+test('normal users can edit shared Departments without admin or EPM permission', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        settingsAdminOnly: true,
+        userCanEditSettings: false,
+        userCanEditEpmConfig: false,
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform'],
+        }),
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'EPM', exact: true })).toHaveCount(0);
+    await dialog.getByPlaceholder('Group name').fill('Platform Core');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    const save = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    expect(save.body.groups[0].name).toBe('Platform Core');
+    expect(calls.some(call => call.method === 'POST' && [
+        '/api/projects/selected',
+        '/api/board-config',
+        '/api/epm/config',
+    ].includes(call.pathname))).toBe(false);
+});
+
 function overflowGroupConfig() {
     return {
         version: 1,
@@ -145,21 +265,62 @@ function overflowGroupConfig() {
 }
 
 test('first-run department selection blocks group-scoped task loads until preferences are saved', async ({ page }) => {
-    const calls = await mockFirstRunDashboard(page);
+    const preferenceGate = deferred();
+    const calls = await mockFirstRunDashboard(page, {
+        preferenceGate,
+        groupsConfig: {
+            version: 1,
+            groups: [
+                { id: 'platform', name: 'Platform', teamIds: ['team-old'] },
+                { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+                { id: 'empty', name: 'Empty', teamIds: [] },
+            ],
+            defaultGroupId: 'platform',
+            configRevision: 2,
+            source: 'workspace_db',
+        },
+        preferenceSnapshotConfig: {
+            version: 1,
+            groups: [
+                { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+                { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+                { id: 'empty', name: 'Empty', teamIds: [] },
+            ],
+            defaultGroupId: 'platform',
+            configRevision: 3,
+            source: 'workspace_db',
+        },
+    });
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByRole('dialog', { name: 'Choose department groups' })).toBeVisible();
+    const dialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await expect(dialog).toBeVisible();
     await expect(page.getByLabel('Search groups')).toBeVisible();
-    await expect(page.locator('.department-first-run-option-name')).toHaveText(['Growth', 'Platform']);
+    await expect(page.locator('.department-first-run-option-name')).toHaveText(['Empty', 'Growth', 'Platform']);
+    await expect(dialog.getByRole('radio')).toHaveCount(3);
+    await expect(dialog.getByRole('radio', { name: /Platform/ })).not.toBeChecked();
+    await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    await expect(dialog.getByRole('radio', { name: /Empty/ })).toBeDisabled();
+    await expect(page.getByText('Configure teams before choosing this group')).toBeVisible();
+    await dialog.getByRole('radio', { name: /Platform/ }).check();
+    await expect(dialog.getByRole('radio', { name: /Platform/ })).toBeChecked();
+    await page.getByLabel('Search groups').fill('growth');
+    await expect(dialog.getByRole('radio', { name: /Growth/ })).toBeVisible();
+    await page.getByLabel('Search groups').fill('');
+    await expect(dialog.getByRole('radio', { name: /Platform/ })).toBeChecked();
     await page.waitForTimeout(900);
     await page.screenshot({ path: `${screenshotDir}/first-run-selection.png`, fullPage: true });
-    await expect(page.getByLabel('Platform')).toBeChecked();
     await page.waitForTimeout(250);
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
 
     await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('button', { name: 'Saving...' }).click({ force: true }).catch(() => {});
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/groups-preferences').length).toBe(1);
+    await page.waitForTimeout(200);
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
+    preferenceGate.resolve();
 
-    await expect(page.getByRole('dialog', { name: 'Choose department groups' })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toHaveCount(0);
     await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length).toBeGreaterThanOrEqual(2);
     const preferenceSave = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-preferences');
     expect(preferenceSave).toBeTruthy();
@@ -167,6 +328,372 @@ test('first-run department selection blocks group-scoped task loads until prefer
     const taskCalls = calls.filter(call => call.pathname === '/api/tasks-with-team-name');
     expect(taskCalls.every(call => call.params.groupId === 'platform')).toBe(true);
     expect(taskCalls.every(call => call.params.teamIds === 'team-platform')).toBe(true);
+    await expect(page.getByText('PLAT-1', { exact: true })).toBeVisible();
+});
+
+test('first-run invalid snapshot and auth failure keep mandatory selection gated', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, { omitPreferenceSnapshot: true });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /Platform/ })).toBeChecked();
+    await expect(page.locator('.group-modal-warning')).toBeVisible();
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
+
+    await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('first-run auth recovery exposes only a safe sign-in URL', async ({ page }) => {
+    const safeCalls = await mockFirstRunDashboard(page, {
+        preferenceError: {
+            status: 401,
+            body: { error: 'auth_required', message: 'Sign in required.', loginUrl: '/login?reason=session_expired' },
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(page.locator('input[type="radio"]:checked')).toHaveCount(1);
+    expect(safeCalls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
+
+    const unsafePage = await page.context().newPage();
+    await mockFirstRunDashboard(unsafePage, {
+        preferenceError: {
+            status: 401,
+            body: { error: 'auth_required', message: 'Sign in required.', loginUrl: 'https://evil.example/login' },
+        },
+    });
+    await unsafePage.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await unsafePage.getByRole('radio', { name: /Platform/ }).check();
+    await unsafePage.getByRole('button', { name: 'Continue' }).click();
+    await expect(unsafePage.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await unsafePage.close();
+});
+
+test('personal favorite star is separate from shared default and temporary group scope', async ({ page }) => {
+    const groupsConfig = {
+        version: 1,
+        groups: [
+            { id: 'default', name: 'Default', teamIds: ['team-default'] },
+            { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+            { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+            { id: 'empty', name: 'Empty', teamIds: [] },
+        ],
+        defaultGroupId: 'default',
+        configRevision: 5,
+        source: 'workspace_db',
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig,
+        preferenceSnapshotConfig: { ...groupsConfig, configRevision: 6 },
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform', 'growth', 'empty'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform', 'growth', 'empty'],
+        }),
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await dialog.locator('.group-list-item', { hasText: 'Platform' }).click();
+    await expect(dialog.getByRole('button', { name: 'Platform is my favorite group' })).toHaveClass(/active/);
+    await expect(dialog.getByTitle('Default group')).toHaveCount(0);
+
+    await dialog.locator('.group-list-item', { hasText: 'Empty' }).click();
+    await expect(dialog.getByRole('button', { name: 'Configure teams before setting as favorite' })).toBeDisabled();
+
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
+    const growthStar = dialog.getByRole('button', { name: 'Set Growth as my favorite group' });
+    await expect(growthStar).toHaveCSS('width', '26px');
+    await expect(growthStar).toHaveCSS('height', '26px');
+    await growthStar.click();
+    await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveClass(/active/);
+    await expect(dialog.getByRole('checkbox', { name: 'Show in my controls' })).toBeDisabled();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${screenshotDir}/personal-favorite-settings.png`, fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${screenshotDir}/personal-favorite-settings-mobile.png`, fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(dialog).toHaveCount(0);
+    const preferencePosts = calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences');
+    expect(preferencePosts).toHaveLength(1);
+    expect(preferencePosts[0].body).toEqual({
+        visibleGroupIds: ['platform', 'growth', 'empty'],
+        activeGroupId: 'growth',
+    });
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+
+    const groupControl = page.getByRole('button', { name: /Select group/ }).first();
+    await groupControl.click();
+    await expect(page.locator('.group-dropdown-option', { hasText: 'Growth' }).locator('[title="My favorite group"]')).toBeVisible();
+    await page.locator('.group-dropdown-option', { hasText: 'Platform' }).click();
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
+    await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveClass(/active/);
+});
+
+test('first team selection after hydration survives page reload', async ({ page }) => {
+    const groupsConfig = {
+        version: 1,
+        groups: [
+            { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+        ],
+        defaultGroupId: 'platform',
+        configRevision: 5,
+        source: 'workspace_db',
+    };
+    await mockFirstRunDashboard(page, {
+        groupsConfig,
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform'],
+        }),
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
+    const teamControl = page.locator('.view-selector .team-dropdown').first();
+    const teamLabel = teamControl.locator('.team-dropdown-selection-label');
+    await expect(teamLabel).toHaveText('All Teams');
+    await expect.poll(() => page.evaluate(() => {
+        const state = JSON.parse(window.localStorage.getItem('jira_dashboard_team_selection_state_v1') || '{}');
+        return state['team-selection::42::platform']?.selectedTeams || [];
+    })).toEqual(['all']);
+
+    await teamControl.locator('.team-dropdown-toggle').click();
+    await teamControl.getByRole('checkbox', { name: 'Platform', exact: true }).check();
+    await page.mouse.click(8, 8);
+    await expect(teamLabel).toHaveText('Platform');
+    await expect.poll(() => page.evaluate(() => {
+        const state = JSON.parse(window.localStorage.getItem('jira_dashboard_team_selection_state_v1') || '{}');
+        return state['team-selection::42::platform']?.selectedTeams || [];
+    })).toEqual(['team-platform']);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(teamLabel).toHaveText('Platform');
+});
+
+test('personal favorite save preserves its draft and exposes only safe auth recovery', async ({ page }) => {
+    const groupsConfig = {
+        version: 1,
+        groups: [
+            { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+            { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+        ],
+        defaultGroupId: 'platform',
+        configRevision: 5,
+        source: 'workspace_db',
+    };
+    await mockFirstRunDashboard(page, {
+        groupsConfig,
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform', 'growth'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform', 'growth'],
+        }),
+        preferenceError: {
+            status: 401,
+            body: { error: 'auth_required', message: 'Sign in required.', loginUrl: '/login?reason=session_expired' },
+        },
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
+    await dialog.getByRole('button', { name: 'Set Growth as my favorite group' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('button[aria-label="Growth is my favorite group"]')).toHaveClass(/active/);
+    await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+});
+
+test('partial shared save failure retries only the personal favorite', async ({ page }) => {
+    const groupsConfig = {
+        version: 1,
+        groups: [
+            { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+            { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+        ],
+        defaultGroupId: 'platform',
+        configRevision: 5,
+        source: 'workspace_db',
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig,
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform', 'growth'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform', 'growth'],
+        }),
+        preferenceError: {
+            status: 500,
+            body: { error: 'preference_save_failed', message: 'Synthetic preference failure.' },
+        },
+    });
+
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
+    await dialog.getByPlaceholder('Group name').fill('Growth updated');
+    await dialog.getByRole('button', { name: 'Set Growth updated as my favorite group' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Growth updated is my favorite group' })).toHaveClass(/active/);
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
+
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(2);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+});
+
+test('empty first-run workspace does not load sprints while Configure opens settings', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig: {
+            version: 1,
+            groups: [],
+            defaultGroupId: '',
+            configRevision: 1,
+            source: 'workspace_db',
+        },
+        savedSprintId: null,
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
+    await page.getByRole('button', { name: 'Configure' }).click();
+
+    await expect(page.locator('.group-modal')).toBeVisible();
+    await page.waitForTimeout(250);
+    expect(calls.filter(call => call.pathname === '/api/sprints')).toHaveLength(0);
+});
+
+test('first-run department selection waits to load sprints and then loads the selected group', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        rejectSprintBeforeOnboarding: true,
+        savedSprintId: null,
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    const dialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await expect(dialog).toBeVisible();
+    await page.waitForTimeout(250);
+    expect(calls.filter(call => call.pathname === '/api/sprints')).toHaveLength(0);
+
+    await dialog.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBe(1);
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length).toBeGreaterThanOrEqual(2);
+    await expect(page.getByText(/Failed to load sprints/)).toHaveCount(0);
+
+    const taskCalls = calls.filter(call => call.pathname === '/api/tasks-with-team-name');
+    expect(taskCalls.every(call => call.params.groupId === 'platform')).toBe(true);
+    expect(taskCalls.every(call => call.params.teamIds === 'team-platform')).toBe(true);
+});
+
+test('first-run sprint failure retries sprint discovery and clears the actionable error', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        sprintFailuresAfterOnboarding: 1,
+        savedSprintId: null,
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    const dialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    const message = 'Failed to load sprints from Jira. Retry, or confirm you can access the configured board.';
+    await expect(page.getByText(message)).toBeVisible();
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
+    await page.getByRole('button', { name: 'Retry' }).click();
+
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBe(2);
+    expect(calls.filter(call => call.pathname === '/api/sprints')[1].params.refresh).toBe('true');
+    await expect(page.getByText(message)).toHaveCount(0);
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length).toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: `${screenshotDir}/first-run-sprint-retry-recovered.png`, fullPage: true });
+});
+
+test('sprint Retry ignores a second click while recovery is already in flight', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        savedSprintId: null,
+        sprintResponsePlan: [
+            { status: 502 },
+            { status: 200, delayMs: 300 },
+        ],
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    const dialog = page.getByRole('dialog', { name: 'Choose your group' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('radio', { name: /Platform/ }).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const message = 'Failed to load sprints from Jira. Retry, or confirm you can access the configured board.';
+    const retry = page.getByRole('button', { name: 'Retry' });
+    await expect(page.getByText(message)).toBeVisible();
+
+    await retry.dblclick();
+
+    await page.waitForTimeout(100);
+    expect(calls.filter(call => call.pathname === '/api/sprints')).toHaveLength(2);
+    await page.waitForTimeout(400);
+    await expect(page.getByText(message)).toHaveCount(0);
+    expect(calls.filter(call => call.pathname === '/api/sprints')[1].params.refresh).toBe('true');
+});
+
+test('explicit Jira refresh waits for active sprint discovery and then refreshes it', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        preferences: defaultGroupPreferences({
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            visibleGroupIds: ['platform'],
+            activeGroupId: 'platform',
+            effectiveVisibleGroupIds: ['platform'],
+        }),
+        sprintResponsePlan: [
+            { status: 200, delayMs: 3000 },
+            { status: 200 },
+        ],
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBe(1);
+    const refresh = page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' });
+    await expect(refresh).toBeEnabled();
+    await refresh.click();
+
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBe(2);
+    expect(calls.filter(call => call.pathname === '/api/sprints')[1].params.refresh).toBe('true');
 });
 
 test('department group editor keeps save visible when selected group content overflows', async ({ page }) => {

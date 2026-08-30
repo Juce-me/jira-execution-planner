@@ -1,6 +1,6 @@
 # Multi-Device Browser Sessions And Per-Tab Reauthentication Design
 
-**Status:** Updated for implementation review. Execute through `EXEC-multi-device-browser-sessions-01-server.md`, then `EXEC-multi-device-browser-sessions-02-tab-resume.md`.
+**Status:** Ready for execution. Run `EXEC-multi-device-browser-sessions-01-server.md`, then `EXEC-multi-device-browser-sessions-02-tab-resume.md`.
 
 ## Goal
 
@@ -8,7 +8,7 @@ Allow one Jira Delivery Planner user to remain signed in from multiple browsers 
 
 ## Source Baseline And Issue #143
 
-The fetched branch is based on `73867ff` and is 34 commits behind `origin/main` as checked on 2026-08-30. Do not execute either implementation slice until the execution branch contains `b38e8f7` (`Lock the app on authentication expiry`) and the then-current `origin/main` migration head.
+The branch merged `origin/main` at `3530f60` on 2026-08-30. It contains `b38e8f7` (`Lock the app on authentication expiry`) and reviewed migration head `20260827_0008`. Each execution slice must still run Task 0 and stop if `origin/main`, the prerequisite ancestry, or the migration head has changed.
 
 Commit `b38e8f7` already implements the first half of [issue #143](https://github.com/Juce-me/jira-execution-planner/issues/143): every app-owned API `401` terminally locks the mounted document behind one sanitized, accessible same-tab sign-in screen; failed writes are not replayed; and feature catches do not replace valid state with raw `401` errors or empty fallbacks.
 

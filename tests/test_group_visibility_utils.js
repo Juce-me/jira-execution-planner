@@ -17,7 +17,8 @@ function loadGroupVisibilityUtils() {
         buildGroupPreferencesPayload,
         buildFirstRunGroupPreferencesPayload,
         buildSharedGroupsPayload,
-        groupPreferencesSignature
+        groupPreferencesSignature,
+        safeAppLoginUrl: typeof safeAppLoginUrl === 'function' ? safeAppLoginUrl : undefined
     };`)();
 }
 
@@ -62,6 +63,53 @@ test('effectiveVisibleGroupIds keeps default when user customizes', () => {
         effectiveVisibleGroupIds({ groups, defaultGroupId: 'default' }, { customized: true, visibleGroupIds: ['mobile'] }),
         ['default', 'mobile']
     );
+});
+
+test('workspace DB visibility never injects the shared default', () => {
+    const { effectiveVisibleGroupIds, visibleGroupsForControls } = loadGroupVisibilityUtils();
+    const config = {
+        source: 'workspace_db',
+        groups: [{ id: 'default' }, { id: 'platform' }],
+        defaultGroupId: 'default',
+    };
+    const preferences = {
+        customized: true,
+        onboardingRequired: false,
+        visibleGroupIds: ['platform'],
+        activeGroupId: 'platform',
+    };
+
+    assert.deepEqual(effectiveVisibleGroupIds(config, preferences), ['platform']);
+    assert.deepEqual(visibleGroupsForControls(config, preferences), [{ id: 'platform' }]);
+});
+
+test('workspace DB current scope falls back to the personal favorite before any shared default', () => {
+    const { resolveVisibleActiveGroupId } = loadGroupVisibilityUtils();
+    const config = {
+        source: 'workspace_db',
+        groups: [{ id: 'default' }, { id: 'platform' }, { id: 'mobile' }],
+        defaultGroupId: 'default',
+        preferences: { activeGroupId: 'mobile' },
+    };
+
+    assert.equal(resolveVisibleActiveGroupId(config, ['platform', 'mobile'], 'missing'), 'mobile');
+    assert.equal(resolveVisibleActiveGroupId(config, ['platform'], 'missing'), 'platform');
+});
+
+test('file visibility and active-scope fallbacks retain shared-default behavior', () => {
+    const { effectiveVisibleGroupIds, resolveVisibleActiveGroupId } = loadGroupVisibilityUtils();
+    for (const source of ['file', 'env', 'auto']) {
+        const config = {
+            source,
+            groups: [{ id: 'default' }, { id: 'platform' }],
+            defaultGroupId: 'default',
+        };
+        assert.deepEqual(
+            effectiveVisibleGroupIds(config, { customized: true, visibleGroupIds: ['platform'] }),
+            ['default', 'platform']
+        );
+        assert.equal(resolveVisibleActiveGroupId(config, ['default', 'platform'], 'missing'), 'default');
+    }
 });
 
 test('effectiveVisibleGroupIds filters unknown customized visible ids', () => {
@@ -141,13 +189,18 @@ test('group preferences payloads use visibleGroupIds and activeGroupId', () => {
         { visibleGroupIds: ['platform'], activeGroupId: 'platform' }
     );
     assert.deepEqual(
-        buildFirstRunGroupPreferencesPayload(['mobile'], 'default'),
-        { visibleGroupIds: ['default', 'mobile'], activeGroupId: 'mobile' }
+        buildFirstRunGroupPreferencesPayload('mobile'),
+        { visibleGroupIds: ['mobile'], activeGroupId: 'mobile' }
     );
     assert.deepEqual(
-        buildFirstRunGroupPreferencesPayload([], 'default'),
-        { visibleGroupIds: ['default'], activeGroupId: 'default' }
+        buildFirstRunGroupPreferencesPayload(''),
+        { visibleGroupIds: [], activeGroupId: null }
     );
+});
+
+test('group visibility utilities do not own authentication recovery URLs', () => {
+    const { safeAppLoginUrl } = loadGroupVisibilityUtils();
+    assert.equal(safeAppLoginUrl, undefined);
 });
 
 test('normalizeGroupPreferences preserves backend metadata and nested preferences', () => {

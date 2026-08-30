@@ -1,5 +1,6 @@
 import * as React from 'react';
 import EmptyState from '../ui/EmptyState.jsx';
+import IconButton from '../ui/IconButton.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
 import EngFilterBar from './EngFilterBar.jsx';
 import { ENG_EPIC_SORT_OPTIONS, getEngEpicSortLabel } from './engTaskUtils.js';
@@ -156,14 +157,24 @@ export default function EngView({
                                     )}
                                 </div>
                                 {hasInitiativeData && (
-                                    <label className="group-visible-control">
-                                        <input
-                                            type="checkbox"
-                                            checked={groupByInitiative}
-                                            onChange={(e) => setGroupByInitiative(e.target.checked)}
-                                        />
-                                        Group by initiative
-                                    </label>
+                                    <span className="initiative-grouping-control">
+                                        <IconButton
+                                            className="fb-trigger fb-trigger-icon"
+                                            onClick={() => setGroupByInitiative(!groupByInitiative)}
+                                            aria-label="Group by Initiative"
+                                            aria-pressed={groupByInitiative}
+                                            aria-describedby="initiative-grouping-tooltip"
+                                        >
+                                            <InitiativeIcon size={14} title={null} />
+                                        </IconButton>
+                                        <span
+                                            id="initiative-grouping-tooltip"
+                                            className="initiative-grouping-tooltip"
+                                            role="tooltip"
+                                        >
+                                            {`Group by Initiative — ${groupByInitiative ? 'On' : 'Off'}`}
+                                        </span>
+                                    </span>
                                 )}
                             </>
                         )}

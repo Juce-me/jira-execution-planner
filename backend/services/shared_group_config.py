@@ -194,6 +194,27 @@ def _dedupe_known_group_ids(values, known_ids):
     return normalized
 
 
+def _uses_personal_preferences(groups_config):
+    return str((groups_config or {}).get('source') or '') == GROUPS_SOURCE_DB
+
+
+def _group_has_teams(group):
+    return bool([
+        str(team_id or '').strip()
+        for team_id in (group or {}).get('teamIds') or []
+        if str(team_id or '').strip()
+    ])
+
+
+def _group_by_id(groups_config, group_id):
+    normalized_id = str(group_id or '').strip()
+    return next((
+        group
+        for group in (groups_config or {}).get('groups') or []
+        if str(group.get('id') or '').strip() == normalized_id
+    ), None)
+
+
 def effective_visible_group_ids(groups_config, preferences):
     ids = _group_ids(groups_config)
     if not ids:
@@ -204,14 +225,20 @@ def effective_visible_group_ids(groups_config, preferences):
     if not customized:
         return ids
     visible = _dedupe_known_group_ids((preferences or {}).get('visibleGroupIds') or [], ids)
-    default_group_id = str((groups_config or {}).get('defaultGroupId') or '').strip()
-    if default_group_id and default_group_id in ids and default_group_id not in visible:
-        visible.insert(0, default_group_id)
+    if not _uses_personal_preferences(groups_config):
+        default_group_id = str((groups_config or {}).get('defaultGroupId') or '').strip()
+        if default_group_id and default_group_id in ids and default_group_id not in visible:
+            visible.insert(0, default_group_id)
     return visible
 
 
 def _resolve_active_group_id(groups_config, visible_ids, active_group_id):
     active = str(active_group_id or '').strip()
+    if _uses_personal_preferences(groups_config):
+        group = _group_by_id(groups_config, active)
+        if active and active in visible_ids and _group_has_teams(group):
+            return active
+        return None
     if active and active in visible_ids:
         return active
     default_group_id = str((groups_config or {}).get('defaultGroupId') or '').strip()
@@ -246,6 +273,9 @@ def normalize_group_preferences(payload, groups_config, preference_exists=True, 
         preferences['onboardingRequired'] = True
         effective = []
     active_group_id = _resolve_active_group_id(groups_config, effective, payload.get('activeGroupId'))
+    if _uses_personal_preferences(groups_config) and preference_exists and not active_group_id:
+        preferences['onboardingRequired'] = True
+        effective = []
     preferences['activeGroupId'] = active_group_id
     preferences['effectiveVisibleGroupIds'] = effective
     return preferences
@@ -278,19 +308,62 @@ def load_group_preferences(context, groups_config, database_url=None):
         )
 
 
-def save_group_preferences(context, payload, groups_config, database_url=None):
-    preferences = normalize_group_preferences(
-        {
-            'visibleGroupIds': payload.get('visibleGroupIds') if isinstance(payload, dict) else [],
-            'activeGroupId': payload.get('activeGroupId') if isinstance(payload, dict) else None,
-            'customized': True,
-        },
+def _validate_raw_group_preferences(payload, groups_config, preference_exists):
+    if not isinstance(payload, dict):
+        raise InvalidGroupPreferences('group preferences must be an object')
+    visible_ids = payload.get('visibleGroupIds')
+    favorite_group_id = payload.get('activeGroupId')
+    if not isinstance(visible_ids, list) or not all(isinstance(value, str) for value in visible_ids):
+        raise InvalidGroupPreferences('visibleGroupIds must be an array of group ids')
+    if not isinstance(favorite_group_id, str) or not favorite_group_id.strip():
+        raise InvalidGroupPreferences('activeGroupId must be a group id')
+
+    normalized_visible_ids = [value.strip() for value in visible_ids]
+    if any(not value for value in normalized_visible_ids) or len(set(normalized_visible_ids)) != len(normalized_visible_ids):
+        raise InvalidGroupPreferences('visibleGroupIds must contain distinct non-empty group ids')
+    known_ids = set(_group_ids(groups_config))
+    if set(normalized_visible_ids) - known_ids:
+        raise InvalidGroupPreferences('visibleGroupIds contains an unknown group')
+
+    normalized_favorite_id = favorite_group_id.strip()
+    if not preference_exists:
+        if len(normalized_visible_ids) != 1 or normalized_favorite_id != normalized_visible_ids[0]:
+            raise InvalidGroupPreferences('first run must select exactly one personal favorite group')
+    elif normalized_favorite_id not in normalized_visible_ids:
+        raise InvalidGroupPreferences('personal favorite group must remain visible')
+
+    favorite_group = _group_by_id(groups_config, normalized_favorite_id)
+    if favorite_group is None:
+        raise InvalidGroupPreferences('personal favorite group must be a known group')
+    if not _group_has_teams(favorite_group):
+        raise InvalidGroupPreferences('personal favorite group must have at least one configured team')
+
+    return {
+        'visibleGroupIds': normalized_visible_ids,
+        'activeGroupId': normalized_favorite_id,
+        'customized': True,
+    }
+
+
+def _normalized_saved_preferences(payload, groups_config):
+    return normalize_group_preferences(
+        payload,
         groups_config,
         preference_exists=True,
         require_first_run=False,
     )
-    if _group_ids(groups_config) and not preferences['effectiveVisibleGroupIds']:
-        raise InvalidGroupPreferences('visibleGroupIds must include at least one known group')
+
+
+def _apply_group_preferences(row, preferences):
+    row.payload_version = GROUPS_PAYLOAD_VERSION
+    row.visible_group_ids = preferences['visibleGroupIds']
+    row.active_group_id = preferences['activeGroupId']
+    row.customized = True
+    row.updated_at = models._utcnow()
+
+
+def save_group_preferences(context, payload, groups_config, database_url=None):
+    insert_race_error = None
 
     with db_engine.session_scope(database_url) as session:
         row = session.execute(
@@ -299,7 +372,10 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
                 models.UserGroupPreference.user_id == context.user_id,
             )
         ).scalars().first()
-        if row is None:
+        was_insert = row is None
+        validated = _validate_raw_group_preferences(payload, groups_config, not was_insert)
+        preferences = _normalized_saved_preferences(validated, groups_config)
+        if was_insert:
             row = models.UserGroupPreference(
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,
@@ -310,11 +386,29 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
             )
             session.add(row)
         else:
-            row.payload_version = GROUPS_PAYLOAD_VERSION
-            row.visible_group_ids = preferences['visibleGroupIds']
-            row.active_group_id = preferences['activeGroupId']
-            row.customized = True
-            row.updated_at = models._utcnow()
+            _apply_group_preferences(row, preferences)
+        try:
+            session.flush()
+        except IntegrityError as error:
+            if not was_insert:
+                raise
+            insert_race_error = error
+            session.rollback()
+    if insert_race_error is None:
+        return preferences
+
+    with db_engine.session_scope(database_url) as session:
+        row = session.execute(
+            select(models.UserGroupPreference).where(
+                models.UserGroupPreference.workspace_id == context.workspace_id,
+                models.UserGroupPreference.user_id == context.user_id,
+            )
+        ).scalars().first()
+        if row is None:
+            raise insert_race_error
+        validated = _validate_raw_group_preferences(payload, groups_config, True)
+        preferences = _normalized_saved_preferences(validated, groups_config)
+        _apply_group_preferences(row, preferences)
         session.flush()
     return preferences
 

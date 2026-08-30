@@ -375,7 +375,7 @@ test('dashboard source uses shared basic UI primitives for representative contro
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
     assert.ok(dashboardSource.includes('<SegmentedControl') && dashboardSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to use SegmentedControl');
     assert.ok(dashboardSource.includes('<ControlField') && dashboardSource.includes('label="Search"'), 'Expected header search control to use ControlField');
-    assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="refresh-icon"'), 'Expected compact refresh action to use IconButton');
+    assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="header-icon-button refresh-icon"'), 'Expected compact refresh action to use the shared header IconButton geometry');
     assert.ok(dashboardSource.includes('<LoadingRows') && dashboardSource.includes('className="epm-project-skeleton-list"'), 'Expected EPM project loading rows to use LoadingRows');
     assert.ok(loadingStateSource.includes('epm-burst.svg'), 'Expected LoadingState to use the EPM burst asset');
     assert.ok(loadingStateSource.includes('loading-mark-spinner'), 'Expected LoadingState to expose a rotating spinner mark');
@@ -476,6 +476,20 @@ test('dashboard source keeps EPM settings access in the main header only', () =>
     assert.ok(!compactControlsSource.includes('Open EPM settings'), 'Did not expect settings gear in compact sticky controls');
 });
 
+test('context settings actions live after refresh, outside wrapping view filters', () => {
+    const actionsStart = dashboardSource.indexOf('className="header-actions-row"');
+    const filtersStart = dashboardSource.indexOf('className="view-filters"', actionsStart);
+    const actionsSource = dashboardSource.slice(actionsStart, filtersStart);
+    const filtersEnd = dashboardSource.indexOf('</header>', filtersStart);
+    const filtersSource = dashboardSource.slice(filtersStart, filtersEnd);
+
+    assert.ok(actionsSource.indexOf('className="refresh-icon"') < actionsSource.indexOf('Manage team groups'));
+    assert.ok(actionsSource.indexOf('className="refresh-icon"') < actionsSource.indexOf('Open EPM settings'));
+    assert.ok(actionsSource.includes('groupsLoading'));
+    assert.ok(actionsSource.includes('canEditEpmConfiguration'));
+    assert.equal(filtersSource.includes('className="group-gear-button"'), false);
+});
+
 test('dashboard uses a project-stack icon for the EPM collapse-all control', () => {
     assert.ok(dashboardSource.includes('renderEpmProjectCollapseAllButton'), 'Expected shared EPM collapse-all header control');
     assert.ok(dashboardSource.includes("import EpmProjectCollapseAllButton from './epm/EpmProjectCollapseAllButton.jsx';"), 'Expected dashboard to import the collapse-all button component');
@@ -487,11 +501,11 @@ test('dashboard uses a project-stack icon for the EPM collapse-all control', () 
     assert.ok(dashboardCssSource.includes('.epm-project-collapse-all-button .epm-project-collapse-all-icon'), 'Expected collapse-all icon sizing override');
     assert.ok(!dashboardSource.includes('<path d="M5 12h14"'), 'Did not expect the old divider-only collapse glyph');
 
-    const mainControlsSource = getSnippetBetween(
-        dashboardSource,
-        '<EpmControls',
-        '{canEditEpmConfiguration && ('
-    );
+    const epmControlsStart = dashboardSource.indexOf('<EpmControls');
+    const epmControlsEnd = dashboardSource.indexOf('/>', epmControlsStart);
+    assert.notStrictEqual(epmControlsStart, -1, 'Expected EpmControls in dashboard.jsx');
+    assert.notStrictEqual(epmControlsEnd, -1, 'Expected EpmControls closing tag');
+    const mainControlsSource = dashboardSource.slice(epmControlsStart, epmControlsEnd);
     assert.ok(mainControlsSource.includes('renderEpmProjectCollapseAllButton={renderEpmProjectCollapseAllButton}'), 'Expected main collapse-all control to be delegated into EpmControls before header buttons');
 
     assert.ok(epmControlsSource.includes('{renderEpmProjectCollapseAllButton?.(surface)}'), 'Expected compact collapse-all control to render through EpmControls');
@@ -649,8 +663,8 @@ test('EPM board bootstraps saved config from initial user config before loading 
         'Expected shared helper for applying saved EPM config'
     );
     assert.ok(
-        loadConfigSource.includes('applySavedEpmConfig(config.epm);'),
-        'Expected main user config load to hydrate saved EPM config'
+        loadConfigSource.includes('applySavedEpmConfig(config.viewConfig?.view?.epm || config.epm);'),
+        'Expected main user config load to prefer the authenticated user-owned saved EPM config'
     );
     assert.ok(
         refreshEpmRollupSource.includes('if (!epmConfigLoaded) {'),
@@ -1044,4 +1058,15 @@ test('EPM stays view-only: no priority-transition imports, no priority-transitio
     assert.ok(priorityMenuSource, 'Expected shared PriorityTransitionMenu component');
     assert.ok(!priorityMenuSource.includes('jiraIssueApi'), 'PriorityTransitionMenu must not import the priority API');
     assert.ok(!priorityMenuSource.includes('useEngPriorityTransitions'), 'PriorityTransitionMenu must not import the priority transition hook');
+});
+
+test('EPM auth failures preserve visible projects and rollups and stop chained refreshes', () => {
+    assert.ok(epmViewDataSource.includes('if (isAuthenticationRequiredError(err)) throw err;'));
+    assert.ok(epmViewDataSource.match(/if \(isAuthenticationRequiredError\(err\)\) return;/g).length >= 2);
+    const aggregateRequest = epmViewDataSource.indexOf('const payload = await fetchEpmAllProjectsRollup');
+    const aggregateClear = epmViewDataSource.indexOf('setEpmRollupTree(null);', aggregateRequest);
+    assert.ok(aggregateClear > aggregateRequest, 'aggregate state clears only after a successful response');
+    const projectRequest = epmViewDataSource.indexOf('const payload = await fetchEpmProjectRollup(backendUrl, currentProjectId');
+    const projectClear = epmViewDataSource.indexOf('setEpmRollupBoards(null);', projectRequest);
+    assert.ok(projectClear > projectRequest, 'selected-project state clears only after a successful response');
 });

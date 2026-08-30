@@ -37,8 +37,9 @@ export const effectiveVisibleGroupIds = (groupsConfig, preferences) => {
 
     const knownIds = new Set(ids);
     const result = [];
+    const usesPersonalPreferences = groupsConfig?.source === 'workspace_db';
     const defaultGroupId = normalizeId(groupsConfig?.defaultGroupId);
-    if (defaultGroupId && knownIds.has(defaultGroupId)) {
+    if (!usesPersonalPreferences && defaultGroupId && knownIds.has(defaultGroupId)) {
         result.push(defaultGroupId);
     }
     uniqueIds(preferences?.visibleGroupIds).forEach((id) => {
@@ -60,8 +61,12 @@ export const resolveVisibleActiveGroupId = (groupsConfig, visibleGroupIds, curre
     const activeId = normalizeId(currentActiveGroupId);
     if (activeId && visibleSet.has(activeId)) return activeId;
 
+    const usesPersonalPreferences = groupsConfig?.source === 'workspace_db';
+    const favoriteGroupId = normalizeId(groupsConfig?.preferences?.activeGroupId);
+    if (usesPersonalPreferences && favoriteGroupId && visibleSet.has(favoriteGroupId)) return favoriteGroupId;
+
     const defaultGroupId = normalizeId(groupsConfig?.defaultGroupId);
-    if (defaultGroupId && visibleSet.has(defaultGroupId)) return defaultGroupId;
+    if (!usesPersonalPreferences && defaultGroupId && visibleSet.has(defaultGroupId)) return defaultGroupId;
     return visibleIds[0] || null;
 };
 
@@ -70,12 +75,11 @@ export const buildGroupPreferencesPayload = (visibleGroupIds, activeGroupId) => 
     activeGroupId: normalizeId(activeGroupId) || null,
 });
 
-export const buildFirstRunGroupPreferencesPayload = (selectedGroupIds, defaultGroupId) => {
-    const visibleGroupIds = uniqueIds([defaultGroupId, ...uniqueIds(selectedGroupIds)]);
-    const selectedIds = uniqueIds(selectedGroupIds);
+export const buildFirstRunGroupPreferencesPayload = (selectedGroupId) => {
+    const favoriteGroupId = normalizeId(selectedGroupId);
     return {
-        visibleGroupIds,
-        activeGroupId: selectedIds[0] || normalizeId(defaultGroupId) || null,
+        visibleGroupIds: favoriteGroupId ? [favoriteGroupId] : [],
+        activeGroupId: favoriteGroupId || null,
     };
 };
 

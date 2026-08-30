@@ -11,6 +11,7 @@ const teamGroupsSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'se
 const groupBoardSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'GroupBoardSettings.jsx');
 const groupBoardsTabPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'GroupBoardsTab.jsx');
 const groupVisibilityHookPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'useGroupVisibilityPreferences.js');
+const workspaceConfigConflictPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'workspaceConfigConflict.js');
 const jiraFieldSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'JiraFieldSettings.jsx');
 const adminSettingsTabsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'AdminSettingsTabs.jsx');
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
@@ -29,6 +30,7 @@ const teamGroupsSettingsSource = fs.existsSync(teamGroupsSettingsPath) ? fs.read
 const groupBoardSettingsSource = fs.existsSync(groupBoardSettingsPath) ? fs.readFileSync(groupBoardSettingsPath, 'utf8') : '';
 const groupBoardsTabSource = fs.existsSync(groupBoardsTabPath) ? fs.readFileSync(groupBoardsTabPath, 'utf8') : '';
 const groupVisibilityHookSource = fs.existsSync(groupVisibilityHookPath) ? fs.readFileSync(groupVisibilityHookPath, 'utf8') : '';
+const workspaceConfigConflictSource = fs.readFileSync(workspaceConfigConflictPath, 'utf8');
 const jiraFieldSettingsSource = fs.existsSync(jiraFieldSettingsPath) ? fs.readFileSync(jiraFieldSettingsPath, 'utf8') : '';
 const adminSettingsTabsSource = fs.existsSync(adminSettingsTabsPath) ? fs.readFileSync(adminSettingsTabsPath, 'utf8') : '';
 const epmSettingsUiSource = epmSettingsSource || dashboardSource;
@@ -117,7 +119,8 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(settingsModalCallSource.includes('onDiscard={discardGroupDraftChanges}'), 'Expected discard action to stay owned by dashboard');
     assert.ok(settingsModalCallSource.includes('saveDisabled={settingsSaveDisabled}'), 'Expected dashboard to own save disabled state');
     assert.ok(settingsModalCallSource.includes('saveTitle={settingsSaveTitle}'), 'Expected dashboard to own save title state');
-    assert.ok(settingsModalCallSource.includes("validationMessages={groupManageTab !== 'connections' ? [...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...groupConfigValidationErrors] : []}"), 'Expected validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes('workspaceConfigConflictMessages(workspaceConfigConflict)'), 'Expected workspace conflict validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes('groupConfigConflictMessages(groupsConfigConflict'), 'Expected group conflict validation messages to remain in the shell');
     assert.ok(settingsModalCallSource.includes('validationActions={'), 'Expected the conflict exits to render in the shell validation slot');
     assert.ok(settingsModalCallSource.includes('onCancel={requestCloseGroupManage}'), 'Expected dashboard to wire cancel through the shared close handler');
     assert.ok(settingsModalCallSource.includes('onSave={settingsSaveHandler}'), 'Expected dashboard to wire save through the tab-aware save handler');
@@ -197,7 +200,8 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes("groupManageTab === 'epm'"), 'Expected an EPM settings tab branch');
     assert.ok(fs.existsSync(epmViewDataPath), 'Expected EPM view data hook');
     assert.ok(dashboardSource.includes("const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';"), 'Expected EPM label prefix default');
-    assert.ok(dashboardSource.includes("const [epmConfigDraft, setEpmConfigDraft] = useState(createEmptyEpmConfigDraft());"), 'Expected EPM config draft state');
+    assert.ok(dashboardSource.includes("const [epmConfigDraft, setEpmConfigDraftState] = useState(createEmptyEpmConfigDraft());"), 'Expected EPM config draft state');
+    assert.ok(dashboardSource.includes('const epmConfigDraftRef = useRef(epmConfigDraft);'), 'Expected current EPM draft tracking for in-flight saves');
     assert.ok(dashboardSource.includes("const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));"), 'Expected EPM config baseline tracking');
     assert.ok(epmViewDataSource.includes("const [epmProjectsError, setEpmProjectsError] = useState('');"), 'Expected EPM project error state');
     assert.ok(dashboardSource.includes('const isEpmConfigDirty = React.useMemo(() => {'), 'Expected EPM dirty-state tracking');
@@ -232,7 +236,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const epmSubGoalsRequestIdRef = useRef(0);'), 'Expected stale-response guard ref for sub-goal fetches');
     assert.ok(epmViewDataSource.includes('if (epmProjectsRequestIdRef.current !== requestId) {'), 'Expected stale-response guard branch for EPM project refreshes');
     assert.ok(dashboardSource.includes('if (epmSubGoalsRequestIdRef.current !== requestId) {'), 'Expected stale-response guard branch for sub-goal fetches');
-    assert.ok(dashboardSource.includes('const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);'), 'Expected dashboard EPM save to delegate endpoint construction to the API wrapper');
+    assert.ok(dashboardSource.includes('const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);'), 'Expected dashboard EPM save to delegate without a workspace revision');
     assert.ok(epmApiSource.includes('const { csrfToken } = await fetchCsrfToken(backendUrl);'), 'Expected EPM config save wrapper to fetch a token-bound CSRF token');
     assert.ok(epmApiSource.includes("'X-CSRF-Token': csrfToken || ''"), 'Expected EPM config save wrapper to send the CSRF header');
     assert.ok(dashboardSource.includes('const config = await loadEpmConfig();'), 'Expected config load to remain independent');
@@ -528,7 +532,7 @@ test('settings tabs distinguish tool-admin configuration from team grouping', ()
 
     assert.ok(dashboardSource.includes('const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);'), 'Expected environment-config state from /api/config');
     assert.ok(dashboardSource.includes('const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;'), 'Expected explicit shared-configuration edit permission');
-    assert.ok(dashboardSource.includes('const canEditEpmConfiguration = canEditSharedConfiguration || userCanEditEpmConfig;'), 'Expected EPM configuration to have user-owned edit permission');
+    assert.ok(dashboardSource.includes('const canEditEpmConfiguration = userCanEditEpmConfig === true;'), 'Expected EPM configuration to require its explicit user-owned edit permission');
     assert.ok(dashboardSource.includes("const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';"), 'Expected configured environments to open settings on Team Groups');
     assert.ok(tabsSource.includes("id: 'departments'"), 'Expected Departments as the team grouping top-level tab');
     assert.ok(tabsSource.includes("label: 'Departments'"), 'Expected Departments tab label');
@@ -661,6 +665,57 @@ test('shared configuration permission fails closed while user config is missing 
         !dashboardSource.includes('userCanEditSettings !== false'),
         'Missing userCanEditSettings must not imply editable admin configuration'
     );
+    assert.ok(
+        !dashboardSource.includes('canEditSharedConfiguration || userCanEditEpmConfig'),
+        'Administrator edit permission must not grant private EPM edit permission'
+    );
+});
+
+test('private EPM bootstrap and save state are independent from shared administrator revisions', () => {
+    assert.ok(
+        dashboardSource.includes('const SHARED_CONFIGURATION_TAB_IDS = new Set(ADMIN_SETTINGS_TAB_IDS);'),
+        'EPM must not be classified as shared administrator configuration'
+    );
+    assert.ok(
+        dashboardSource.includes('const personalEpm = config.viewConfig?.view?.epm || config.epm;'),
+        'Expected private view EPM to win over the compatibility bootstrap field'
+    );
+    assert.ok(
+        !dashboardSource.includes('config.epm || sharedConfig.epm'),
+        'Workspace administrator EPM must never seed the private draft'
+    );
+
+    const saveStart = dashboardSource.indexOf('const saveEpmConfig = async () => {');
+    const saveEnd = dashboardSource.indexOf('const normalizeStatus = (status) => {', saveStart);
+    assert.notStrictEqual(saveStart, -1, 'Expected EPM save implementation');
+    assert.notStrictEqual(saveEnd, -1, 'Expected EPM save implementation end');
+    const saveSource = dashboardSource.slice(saveStart, saveEnd);
+    assert.ok(saveSource.includes('requestSaveEpmConfig(BACKEND_URL, normalizedDraft)'), 'Expected EPM save without a workspace revision');
+    assert.ok(!saveSource.includes('sharedConfigRevisionRef'), 'EPM save must not read a workspace revision');
+    assert.ok(!saveSource.includes('commitSharedConfigRevision'), 'EPM save must not advance a workspace revision');
+    assert.ok(!saveSource.includes('setWorkspaceConfigConflict'), 'EPM conflicts must not enter workspace conflict state');
+    assert.ok(!workspaceConfigConflictSource.includes("['epm', 'EPM settings']"), 'Workspace conflicts must not classify private EPM as a shared section');
+    const workspaceConflictStart = dashboardSource.indexOf("if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict')");
+    const workspaceConflictEnd = dashboardSource.indexOf('setGroupDraftError(', workspaceConflictStart);
+    const workspaceConflictSource = dashboardSource.slice(workspaceConflictStart, workspaceConflictEnd);
+    assert.ok(!workspaceConflictSource.includes('epm:'), 'Workspace conflict pending sections must exclude private EPM state');
+
+    assert.ok(
+        dashboardSource.includes('await loadConfig({ preserveEpmDraft: isEpmConfigDirty });'),
+        'Use latest must preserve a dirty private EPM draft and baseline'
+    );
+    assert.ok(
+        dashboardSource.includes('if (isEpmConfigDirty) {\n                            loadedConfig = epmConfigDraft;'),
+        'Switching back to EPM settings must not refetch over a dirty draft'
+    );
+    assert.ok(
+        dashboardSource.includes("setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}'));"),
+        'Explicit discard must restore the private EPM baseline'
+    );
+    assert.ok(dashboardSource.includes('const epmConfigDraftGenerationRef = useRef(0);'), 'Expected a private EPM draft generation guard');
+    assert.ok(dashboardSource.includes('epmConfigDraftGenerationRef.current === requestGeneration'), 'Delayed EPM reads must apply only to their starting generation');
+    assert.ok(dashboardSource.includes('const submittedGeneration = epmConfigDraftGenerationRef.current;'), 'EPM saves must capture the submitted draft generation');
+    assert.ok(dashboardSource.includes('const draftUnchanged = epmConfigDraftGenerationRef.current === submittedGeneration;'), 'EPM saves must detect edits made while the request was in flight');
 });
 
 test('unified settings save gates admin writes while saving dirty config sections', () => {
@@ -686,7 +741,8 @@ test('unified settings save gates admin writes while saving dirty config section
     assert.ok(unifiedSource.includes('await saveGroupsConfig({ closeOnSuccess: false, rebaseOnto });'), 'Expected unified save to persist shared and Department settings before closing once');
     assert.ok(unifiedSource.includes('await saveEpmConfig();'), 'Expected unified save to persist EPM settings before closing once');
     assert.ok(saveSource.includes('await persistGroupPreferences(normalized);'), 'Expected Department visibility preferences to save separately from shared catalog');
-    assert.ok(dashboardSource.includes("useBackendPreferences: groupsConfig.source === 'workspace_db'"), 'Expected JSON/basic Department visibility to stay browser-local');
+    assert.ok(dashboardSource.includes("const personalGroupPreferencesEnabled = groupsConfig.source === 'workspace_db';"), 'Expected workspace DB mode to own personal preferences');
+    assert.ok(dashboardSource.includes('useBackendPreferences: personalGroupPreferencesEnabled'), 'Expected JSON/basic Department visibility to stay browser-local');
     assert.ok(groupVisibilityHookSource.includes('requestSaveGroupPreferences'), 'Expected Department visibility preference helper to own the preference POST');
     assert.ok(groupVisibilityHookSource.includes('if (!useBackendPreferences) {'), 'Expected preference helper to avoid DB-only endpoint outside workspace DB mode');
     assert.ok(groupVisibilityHookSource.includes('buildGroupPreferencesPayload'), 'Expected Department visibility preference helper to send only user visibility preferences');
@@ -701,10 +757,10 @@ test('unified settings save gates admin writes while saving dirty config section
         'await savePriorityWeightsConfig();',
         'await saveBoardConfig();',
         'await saveCapacityConfig();',
-        'await saveSprintFieldConfig();',
-        'await saveParentNameFieldConfig();',
-        'await saveStoryPointsFieldConfig();',
-        'await saveTeamFieldConfig();',
+        'saveSprintFieldConfig(sharedConfigRevisionRef.current)',
+        'saveParentNameFieldConfig(sharedConfigRevisionRef.current)',
+        'saveStoryPointsFieldConfig(sharedConfigRevisionRef.current)',
+        'saveTeamFieldConfig(sharedConfigRevisionRef.current)',
         'await saveIssueTypesConfig();',
     ].forEach((call) => {
         assert.ok(!beforeGate.includes(call), `Did not expect ${call} before shared config permission gate`);
@@ -716,7 +772,10 @@ test('department visibility controls are prop-owned and separate from shared def
     assert.ok(!teamGroupsSettingsSource.includes('useState('), 'TeamGroupsSettings must not own visibility state');
     assert.ok(teamGroupsSettingsSource.includes('Show in my controls'), 'Expected explicit personal visibility label');
     assert.ok(teamGroupsSettingsSource.includes('toggleGroupVisibleInControls(activeGroupDraft.id)'), 'Expected visibility toggle handler prop');
-    assert.ok(teamGroupsSettingsSource.includes('disabled={groupVisibilitySaving || groupDraft?.defaultGroupId === activeGroupDraft.id}'), 'Expected shared default group visibility to be forced on');
+    assert.ok(teamGroupsSettingsSource.includes('personalGroupPreferencesEnabled'), 'Expected source-aware personal preference mode');
+    assert.ok(teamGroupsSettingsSource.includes('favoriteGroupDraftId === activeGroupDraft.id'), 'Expected personal favorite visibility to be forced on');
+    assert.ok(teamGroupsSettingsSource.includes(': groupDraft?.defaultGroupId === activeGroupDraft.id'), 'Expected file-mode shared default visibility compatibility');
+    assert.ok(teamGroupsSettingsSource.includes('Set ${activeGroupDraft.name || \'group\'} as my favorite group'), 'Expected personal favorite star accessible label');
     assert.ok(teamGroupsSettingsSource.includes('Set as shared default group'), 'Expected shared default star accessible label');
     assert.ok(!teamGroupsSettingsSource.includes('<input') || teamGroupsSettingsSource.indexOf('className="group-visible-control"') > teamGroupsSettingsSource.indexOf('className="group-editor-header"'), 'Expected visibility input in editor header, not group list row');
 });

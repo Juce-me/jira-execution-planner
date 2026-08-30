@@ -3,13 +3,25 @@
 from flask import Blueprint
 
 from backend.auth.jira_auth import AuthError
+from backend.config.repository import ConfigStorageError
+from backend.config.view_validation import ViewPayloadValidationError, normalize_epm_settings_payload
+from backend.db.engine import DatabaseConfigurationError
 from backend.epm import issues as epm_issues
+from backend.services.user_view_config import UserViewConfigStorageError
 
 from . import bind_server_globals
 
 
 bp = Blueprint("epm_routes", __name__)
 HOME_USER_TOKEN_CONNECT_URL = '/settings/connections/home-token'
+
+
+@bp.errorhandler(ConfigStorageError)
+@bp.errorhandler(UserViewConfigStorageError)
+@bp.errorhandler(DatabaseConfigurationError)
+def _epm_storage_error_handler(error):
+    logger.error('EPM route storage failed errorClass=%s', type(error).__name__)
+    return _epm_storage_unavailable_response()
 
 
 @bp.before_request
@@ -37,13 +49,66 @@ def _home_user_token_required_response(error):
     return jsonify(_home_user_token_required_payload(error)), 409
 
 
+def _invalid_epm_config_response():
+    return jsonify({
+        'error': 'invalid_epm_config',
+        'message': 'EPM configuration is invalid.',
+    }), 400
+
+
+def _epm_storage_unavailable_response():
+    return jsonify({
+        'error': 'config_storage_unavailable',
+        'message': 'EPM configuration storage is unavailable.',
+    }), 503
+
+
+def _strict_epm_request_payload(*, rekey_custom_projects=False):
+    if not request.is_json:
+        raise ViewPayloadValidationError(['epm'])
+    raw_payload = request.get_json(silent=True)
+    if not isinstance(raw_payload, dict):
+        raise ViewPayloadValidationError(['epm'])
+    payload = normalize_epm_settings_payload(raw_payload)
+    projects = payload.get('projects')
+    seen_project_ids = set()
+    for row in projects.values():
+        row_id = row.get('id')
+        if row_id in seen_project_ids:
+            raise ViewPayloadValidationError(['epm.projects'])
+        seen_project_ids.add(row_id)
+    for project_key, row in projects.items():
+        if project_key != row.get('id'):
+            raise ViewPayloadValidationError([f'epm.projects.{project_key}.id'])
+    if rekey_custom_projects:
+        rewritten = {}
+        for project_key, row in projects.items():
+            item = dict(row)
+            home_project_id = normalize_epm_text(item.get('homeProjectId'))
+            row_id = normalize_epm_text(item.get('id'))
+            if home_project_id:
+                rewritten[project_key] = item
+            else:
+                if row_id.startswith('draft-'):
+                    row_id = uuid.uuid4().hex
+                    item['id'] = row_id
+                    rewritten[row_id] = item
+                else:
+                    rewritten[project_key] = item
+        payload = dict(payload)
+        payload['projects'] = rewritten
+    return payload
+
+
 def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_keys=None):
     auth_context = current_request_auth_context()
+    epm_config_snapshot = get_epm_config(context=auth_context)
     deps = epm_issues.EpmIssuesDependencies(
         find_epm_project_or_404=lambda project_id: find_epm_project_or_404(
             project_id,
             sub_goal_keys=sub_goal_keys,
             context=auth_context,
+            epm_config_override=epm_config_snapshot,
         ),
         validate_epm_tab_sprint=validate_epm_tab_sprint,
         build_epm_scope_clause=build_epm_scope_clause,
@@ -60,20 +125,26 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
         cache_lock=_epm_cache_lock,
         cache_ttl_seconds=EPM_ISSUES_CACHE_TTL_SECONDS,
         context=auth_context,
+        config_generation=build_epm_config_generation(epm_config_snapshot),
     )
     return epm_issues.build_epm_project_issues_payload(home_project_id, tab, sprint, deps)
 
 
 @bp.route('/api/epm/config', methods=['GET'])
 def get_epm_config_endpoint():
-    return jsonify(get_epm_config())
+    try:
+        return jsonify(get_epm_config(context=current_request_auth_context()))
+    except (ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError) as error:
+        logger.error('EPM config read failed errorClass=%s', type(error).__name__)
+        return _epm_storage_unavailable_response()
 
 
 @bp.route('/api/epm/scope', methods=['GET'])
 def get_epm_scope_endpoint():
-    scope = (get_epm_config().get('scope') or {})
+    auth_context = current_request_auth_context()
+    scope = (get_epm_config(context=auth_context).get('scope') or {})
     try:
-        cloud_id = fetch_home_site_cloud_id()
+        cloud_id = fetch_home_site_cloud_id(context=auth_context)
         error = ''
     except RuntimeError as exc:
         cloud_id = ''
@@ -119,13 +190,20 @@ def get_epm_goals_endpoint():
 
 @bp.route('/api/epm/projects', methods=['GET'])
 def get_epm_projects_endpoint():
-    epm_config = get_epm_config()
+    auth_context = current_request_auth_context()
+    epm_config = get_epm_config(context=auth_context)
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
     tab = normalize_epm_text(request.args.get('tab'))
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
     started = time.perf_counter()
     try:
-        payload = build_epm_projects_payload(epm_config, force_refresh=force_refresh, tab=tab, sub_goal_keys=sub_goal_keys)
+        payload = build_epm_projects_payload(
+            epm_config,
+            force_refresh=force_refresh,
+            tab=tab,
+            sub_goal_keys=sub_goal_keys,
+            context=auth_context,
+        )
     except AuthError as exc:
         if _is_home_user_token_required(exc):
             return _home_user_token_required_response(exc)
@@ -138,7 +216,10 @@ def get_epm_projects_endpoint():
 
 @bp.route('/api/epm/projects/configuration', methods=['POST'])
 def configure_epm_projects_endpoint():
-    payload = normalize_epm_config(request.get_json(silent=True) or {})
+    try:
+        payload = _strict_epm_request_payload()
+    except (ValueError, ViewPayloadValidationError):
+        return _invalid_epm_config_response()
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
     started = time.perf_counter()
     try:
@@ -206,7 +287,10 @@ def get_epm_project_rollup_endpoint(project_id):
             project_id,
             tab,
             sprint,
-            build_epm_rollup_dependencies(sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))),
+            build_epm_rollup_dependencies(
+                sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys')),
+                context=current_request_auth_context(),
+            ),
         )
     except AuthError as exc:
         if _is_home_user_token_required(exc):
@@ -219,40 +303,34 @@ def get_epm_project_rollup_endpoint(project_id):
 
 
 @bp.route('/api/epm/config', methods=['POST'])
-# TODO(SETTINGS_ADMIN_ONLY): gate this route when the admin flag ships.
 def save_epm_config_endpoint():
-    raw_payload = request.get_json(silent=True) or {}
-    raw_projects = raw_payload.get('projects') if isinstance(raw_payload, dict) else {}
-    if isinstance(raw_projects, dict):
-        rewritten_projects = {}
-        for _, row in raw_projects.items():
-            if not isinstance(row, dict):
-                continue
-            rewritten_row = dict(row)
-            home_project_id = normalize_epm_text(rewritten_row.get('homeProjectId'))
-            row_id = normalize_epm_text(rewritten_row.get('id'))
-            if home_project_id:
-                rewritten_row['id'] = home_project_id
-                rewritten_projects[home_project_id] = rewritten_row
-                continue
-            if not row_id or row_id.startswith('draft-'):
-                row_id = uuid.uuid4().hex
-            rewritten_row['id'] = row_id
-            rewritten_row['homeProjectId'] = None
-            rewritten_projects[row_id] = rewritten_row
-        raw_payload = dict(raw_payload)
-        raw_payload['projects'] = rewritten_projects
-    payload = normalize_epm_config(raw_payload)
     try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        previous_epm_config = normalize_epm_config(dashboard_config.get('epm') or {})
-        previous_scope_key = build_epm_home_projects_cache_key(previous_epm_config.get('scope') or {})
-        next_scope_key = build_epm_home_projects_cache_key(payload.get('scope') or {})
-        dashboard_config['epm'] = payload
-        save_dashboard_config(dashboard_config)
-        if previous_scope_key != next_scope_key:
-            clear_epm_project_cache()
-        clear_epm_rollup_caches()
-    except Exception as e:
-        return jsonify({'error': 'Failed to save EPM config', 'message': str(e)}), 500
-    return jsonify(payload)
+        payload = _strict_epm_request_payload(rekey_custom_projects=True)
+    except (ValueError, ViewPayloadValidationError):
+        return _invalid_epm_config_response()
+    try:
+        if config_storage_db_enabled():
+            context = current_request_auth_context()
+            result = build_db_config_repository().save_user_epm_config(
+                context,
+                payload,
+                post_commit=lambda _result: clear_epm_caches(context),
+            )
+            response_payload = dict(payload)
+            response_payload['viewConfigId'] = result.view_config_id
+        else:
+            try:
+                previous = get_epm_config(source='jsonfile')
+                dashboard_config = load_dashboard_config(source='jsonfile') or {}
+                dashboard_config['epm'] = payload
+                save_dashboard_config(dashboard_config, source='jsonfile')
+            except OSError as error:
+                logger.error('EPM JSON config save failed errorClass=%s', type(error).__name__)
+                return _epm_storage_unavailable_response()
+            if previous != payload:
+                clear_epm_caches()
+            response_payload = payload
+    except (ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError) as error:
+        logger.error('EPM config save failed errorClass=%s', type(error).__name__)
+        return _epm_storage_unavailable_response()
+    return jsonify(response_payload)

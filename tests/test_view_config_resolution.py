@@ -1,11 +1,16 @@
 import os
+import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
+
+from sqlalchemy.exc import OperationalError
 
 from backend.auth.context import RequestAuthContext
 from backend.config.db_repository import DbConfigRepository, ViewConfigNotFound
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.services.user_view_config import UserViewConfigStorageError
 
 
 class ViewConfigResolutionTests(unittest.TestCase):
@@ -100,6 +105,7 @@ class ViewConfigResolutionTests(unittest.TestCase):
         self.assertEqual(resolved['viewConfigId'], view_id)
         self.assertEqual(resolved['viewType'], 'epm')
         self.assertEqual(resolved['view'], {'epm': {'tab': 'active'}})
+        self.assertEqual(resolved['versionNumber'], 0)
 
     def test_selected_view_takes_precedence_over_default(self):
         default_id = self._add_view(name='Default', view_type='eng', payload={'eng': {}}, is_default=True)
@@ -136,6 +142,47 @@ class ViewConfigResolutionTests(unittest.TestCase):
                     session.commit()
                 self._add_view(view_type=view_type, payload={view_type: {}}, is_default=True)
                 self.assertEqual(self.repo.resolve_effective_view_config(self.context)['viewType'], view_type)
+
+    def test_resolved_legacy_view_is_recursively_sanitized_without_rewriting_storage(self):
+        payload = {
+            'filters': {
+                'safe': 'kept',
+                'nested': {
+                    'workspaceId': 'legacy-workspace',
+                    'userId': 'legacy-user',
+                    'apiToken': 'legacy-token',
+                    'password': 'legacy-password',
+                    'secret': 'legacy-secret',
+                    'privateKey': 'legacy-private-key',
+                    'safe': ['kept'],
+                },
+            },
+            'board': {'boardId': '7'},
+            'teamGroups': {'groups': []},
+            'epm': {'tab': 'active'},
+        }
+        view_id = self._add_view(payload=payload, is_default=True)
+
+        resolved = self.repo.resolve_effective_view_config(self.context)
+
+        self.assertEqual(resolved['view'], {
+            'filters': {'safe': 'kept', 'nested': {'safe': ['kept']}},
+            'epm': {'tab': 'active'},
+        })
+        with self.factory() as session:
+            self.assertEqual(session.get(models.ViewConfig, view_id).payload, payload)
+
+    def test_resolution_translates_operational_read_failure(self):
+        failure = OperationalError('select default', {}, sqlite3.OperationalError('disk I/O error'))
+        with patch('backend.config.db_repository.db_engine.session_scope', side_effect=failure):
+            with self.assertRaises(UserViewConfigStorageError):
+                self.repo.resolve_effective_view_config(self.context)
+
+    def test_user_epm_load_translates_operational_read_failure(self):
+        failure = OperationalError('select epm', {}, sqlite3.OperationalError('disk I/O error'))
+        with patch('backend.services.user_view_config.db_engine.session_scope', side_effect=failure):
+            with self.assertRaises(UserViewConfigStorageError):
+                self.repo.load_user_epm_config(self.context)
 
 
 if __name__ == '__main__':

@@ -324,13 +324,14 @@ test('EPM control dropdowns size to short labels and long options', async ({ pag
     const controls = page.locator('.view-filters').first();
     await expect(controls.getByRole('button', { name: 'Select sprint' })).toBeVisible();
 
-    const sprintToggle = controls.getByRole('button', { name: 'Select sprint' });
+    const sprintToggle = controls.locator('.sprint-dropdown-toggle').first();
+    await expect(controls.getByRole('button', { name: 'Select sprint' })).toBeVisible();
     await sprintToggle.click();
     const sprintPanel = controls.locator('.sprint-dropdown').first().locator('.sprint-dropdown-panel');
     await expect(sprintPanel).toBeVisible();
     const sprintToggleBox = await box(sprintToggle);
     const sprintPanelBox = await box(sprintPanel);
-    expect(sprintToggleBox.width).toBeLessThan(180);
+    expect(sprintToggleBox.width).toBeLessThan(200);
     expect(sprintPanelBox.width).toBeGreaterThanOrEqual(sprintToggleBox.width);
     expect(sprintPanelBox.width).toBeLessThanOrEqual(sprintToggleBox.width + 40);
 

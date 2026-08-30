@@ -61,6 +61,12 @@ function requestBody(request) {
     }
 }
 
+function taskListRequests(calls) {
+    return calls.filter(call => (
+        call.pathname === '/api/tasks-with-team-name' && !call.params.purpose
+    ));
+}
+
 // Stories start at "Medium" so the current-priority option is filtered out of the menu
 // (mirroring how the status menu omits the current status) while "Major" stays selectable.
 function makeStory(
@@ -361,7 +367,7 @@ test('Catch Up applies rapid Story priority changes optimistically without task-
     await page.goto(appBaseUrl);
     await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
     await page.waitForLoadState('networkidle');
-    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
+    const initialTaskRequests = taskListRequests(calls).length;
 
     await priorityTrigger(page, 'story', 'PROD-1').click();
     await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
@@ -382,7 +388,7 @@ test('Catch Up applies rapid Story priority changes optimistically without task-
     await expect.poll(() => priorityState.inFlight).toBe(0);
     await expect(priorityMenu(page, 'PROD-2').locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
 
-    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequests);
+    expect(taskListRequests(calls)).toHaveLength(initialTaskRequests);
 });
 
 test('Catch Up rolls back a failed optimistic priority change without refetching task lists', async ({ page }) => {
@@ -401,7 +407,7 @@ test('Catch Up rolls back a failed optimistic priority change without refetching
     await page.goto(appBaseUrl);
     await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
     await page.waitForLoadState('networkidle');
-    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
+    const initialTaskRequests = taskListRequests(calls).length;
 
     await priorityTrigger(page, 'story', 'PROD-1').click();
     await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
@@ -411,7 +417,7 @@ test('Catch Up rolls back a failed optimistic priority change without refetching
     await expect.poll(() => priorityState.inFlight).toBe(0);
     await expect(priorityMenu(page, 'PROD-1').locator('.priority-transition-menu-result')).toContainText('No issues updated');
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Medium');
-    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequests);
+    expect(taskListRequests(calls)).toHaveLength(initialTaskRequests);
 });
 
 test('epic header priority menu omits the epic OWN priority, not the derived child priority', async ({ page }) => {

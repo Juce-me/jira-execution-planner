@@ -12,6 +12,7 @@ const dashboardHtml = fs.readFileSync(path.join(repoRoot, 'jira-dashboard.html')
 // rather than imported because this spec is CommonJS and the contract module is a plain
 // side-effect-free ESM constants file.
 const AUTH_LONG_ABSENCE_EVENT = 'jep:auth-long-absence-return';
+const AUTH_REQUIRED_EVENT = 'jep:authentication-required';
 
 // Built once for every test in this file: the same esbuild flags as
 // `npm run build:auth`, minus --minify/--sourcemap, so assertions exercise
@@ -141,6 +142,13 @@ async function installLongAbsenceEventCounter(page) {
             window.__laEvents.push(event.detail);
         });
     }, AUTH_LONG_ABSENCE_EVENT);
+}
+
+async function installAuthRequiredEventCounter(page) {
+    await page.addInitScript((eventName) => {
+        window.__authRequiredEvents = [];
+        window.addEventListener(eventName, event => window.__authRequiredEvents.push(event.detail));
+    }, AUTH_REQUIRED_EVENT);
 }
 
 async function longAbsenceEvents(page) {
@@ -357,9 +365,10 @@ test('two tabs share the cross-tab refresh throttle and each dispatches its own 
     expect(countersB.pageErrors).toEqual([]);
 });
 
-test('a 401 on the initial refresh redirects to the stubbed login page and dispatches no long-absence event', async ({ page }) => {
+test('a 401 on the initial refresh publishes the shared latch without redirecting', async ({ page }) => {
     await installAuthShell(page);
     await installLongAbsenceEventCounter(page);
+    await installAuthRequiredEventCounter(page);
     const counters = attachCounters(page);
 
     await page.route('**/login**', route => route.fulfill({
@@ -376,19 +385,20 @@ test('a 401 on the initial refresh redirects to the stubbed login page and dispa
     }));
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForURL((url) => url.pathname === '/login');
-
-    expect(page.url()).toContain('reason=session_expired');
+    await expect.poll(() => page.evaluate(() => window.__authRequiredEvents.length)).toBe(1);
+    expect(new URL(page.url()).pathname).toBe('/');
+    expect(await page.evaluate(() => window.__authRequiredEvents[0].loginUrl)).toBe('/login?reason=session_expired');
     expect(counters.authPosts.length).toBe(1);
     expect(await longAbsenceEvents(page)).toEqual([]);
     expect(counters.pageErrors).toEqual([]);
 });
 
-test('a 401 on the long-absence refresh redirects to login, dispatches no event, and never re-requests the dashboard document', async ({ page }) => {
+test('a 401 on the long-absence refresh publishes the latch, dispatches no long-absence event, and never reloads', async ({ page }) => {
     await installAuthShell(page);
     await installClockControl(page);
     await installVisibilityControl(page);
     await installLongAbsenceEventCounter(page);
+    await installAuthRequiredEventCounter(page);
     const counters = attachCounters(page);
 
     await page.route('**/login**', route => route.fulfill({
@@ -415,9 +425,8 @@ test('a 401 on the long-absence refresh redirects to login, dispatches no event,
     await blurWindow(page);
     await advanceClock(page, 12 * 60 * 1000 + 1000);
     await focusWindow(page);
-    await page.waitForURL((url) => url.pathname === '/login');
-
-    expect(page.url()).toContain('reason=session_expired');
+    await expect.poll(() => page.evaluate(() => window.__authRequiredEvents.length)).toBe(1);
+    expect(new URL(page.url()).pathname).toBe('/');
     expect(await longAbsenceEvents(page)).toEqual([]);
     // The login navigation is a different document (a different URL); the original
     // dashboard document at "/" must never be re-requested.

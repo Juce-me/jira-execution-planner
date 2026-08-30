@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Review required. Do not execute until Task 0 passes on a branch containing `b38e8f7` and the current `origin/main` migration head.
+**Status:** Ready for execution. Start with Task 0 and stop if the branch no longer contains `b38e8f7` or the current `origin/main` migration head differs from this reviewed baseline.
 
 **Goal:** Replace mutable OAuth `token_version` browser validity with persistent opaque DB browser sessions while preserving cache invalidation, per-browser logout, connection-wide revocation, legacy-cookie compatibility, and existing API contracts.
 

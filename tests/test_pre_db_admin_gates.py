@@ -38,7 +38,6 @@ class PreDbToolAdminGateTests(unittest.TestCase):
             ("/api/team-field/config", {"fieldId": "customfield_5", "fieldName": "Team"}),
             ("/api/stats/priority-weights-config", {"weights": []}),
             ("/api/issue-types/config", {"issueTypes": ["Story"]}),
-            ("/api/epm/config", {"version": 2, "projects": {}}),
         ]
 
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -55,6 +54,34 @@ class PreDbToolAdminGateTests(unittest.TestCase):
 
                     self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
             self.assertEqual(mock_save.call_count, len(routes))
+
+    def test_authenticated_oauth_account_can_save_user_owned_epm_before_db_roles(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
+        payload = {
+            "version": 2,
+            "labelPrefix": "rnd_project_*",
+            "scope": {"rootGoalKey": "", "subGoalKeys": []},
+            "issueTypes": {
+                "initiative": ["Initiative"],
+                "epic": ["Epic"],
+                "leaf": ["Story"],
+            },
+            "projects": {},
+        }
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
+            response = self.client.post(
+                "/api/epm/config",
+                json=payload,
+                headers=self.csrf_headers(),
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["version"], 2)
+        mock_save.assert_called_once()
 
     def test_shared_config_write_without_oauth_session_returns_login_url(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -202,3 +229,89 @@ class PreDbToolAdminGateTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["boardId"], "7")
         mock_save.assert_called_once()
+
+    def test_shared_config_routes_reject_raw_payload_bypasses_before_saving(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
+        cases = (
+            (
+                "/api/projects/selected",
+                {"selected": [{"key": "ABC", "type": "product", "workspaceId": "claimed"}]},
+            ),
+            (
+                "/api/projects/selected",
+                {"selected": [{"key": "ABC", "type": "product", "unexpected": "value"}]},
+            ),
+            (
+                "/api/capacity/config",
+                {"project": "CAP", "fieldId": {"value": "customfield_1"}, "fieldName": "Capacity"},
+            ),
+            (
+                "/api/sprint-field/config",
+                {"fieldId": "customfield_2", "fieldName": {"value": "Sprint"}},
+            ),
+            (
+                "/api/issue-types/config",
+                {"issueTypes": ["Story", {"name": "Bug"}]},
+            ),
+        )
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
+            for route, payload in cases:
+                with self.subTest(route=route, payload=payload):
+                    response = self.client.post(route, json=payload, headers=self.csrf_headers())
+                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+
+        mock_save.assert_not_called()
+
+    def test_user_owned_epm_rejects_raw_payload_bypasses_before_saving(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
+        cases = (
+            {
+                "version": 2,
+                "labelPrefix": "rnd_project_*",
+                "scope": {"rootGoalKey": "GOAL-1", "subGoalKeys": [], "unexpected": "value"},
+                "issueTypes": {"initiative": ["Initiative"], "epic": ["Epic"], "leaf": ["Story"]},
+                "projects": {},
+            },
+            {
+                "version": 2,
+                "labelPrefix": "rnd_project_*",
+                "scope": {"rootGoalKey": "GOAL-1", "subGoalKeys": []},
+                "issueTypes": {
+                    "initiative": ["Initiative"],
+                    "epic": ["Epic"],
+                    "leaf": ["Story", {"name": "Bug"}],
+                },
+                "projects": {},
+            },
+            {
+                "version": 2,
+                "labelPrefix": "rnd_project_*",
+                "scope": {"rootGoalKey": "GOAL-1", "subGoalKeys": []},
+                "issueTypes": {"initiative": ["Initiative"], "epic": ["Epic"], "leaf": ["Story"]},
+                "projects": {
+                    "draft-1": {
+                        "id": "draft-1",
+                        "name": "Draft",
+                        "label": "rnd_project_draft",
+                        "user_id": "claimed",
+                    },
+                },
+            },
+        )
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
+            for payload in cases:
+                with self.subTest(payload=payload):
+                    response = self.client.post(
+                        "/api/epm/config",
+                        json=payload,
+                        headers=self.csrf_headers(),
+                    )
+                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+
+        mock_save.assert_not_called()

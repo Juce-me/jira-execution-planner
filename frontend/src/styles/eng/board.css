@@ -52,6 +52,12 @@
             line-height: 1;
         }
 
+        .board-help-icon {
+            display: block;
+            width: 16px;
+            height: 16px;
+        }
+
         .board-help-popover {
             position: absolute;
             top: calc(100% + 0.4rem);
@@ -489,6 +495,7 @@
             font-weight: 500;
             line-height: 1;
             font-variant-numeric: tabular-nums;
+            color: var(--text-primary);
         }
 
         /* D18: rotated whole words read bottom-to-top. `writing-mode: vertical-rl` alone runs

@@ -78,7 +78,16 @@ export default function EngBoardHelp({ scaleMax = 1 }) {
                 aria-controls={open ? dialogId : undefined}
                 onClick={() => setOpen((wasOpen) => !wasOpen)}
             >
-                ⓘ
+                <svg
+                    className="board-help-icon"
+                    viewBox="0 0 16 16"
+                    aria-hidden="true"
+                    focusable="false"
+                >
+                    <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                    <circle cx="8" cy="5" r="0.9" fill="currentColor" />
+                    <path d="M8 7.25v4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
             </button>
             {open && (
                 <div

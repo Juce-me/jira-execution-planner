@@ -39,7 +39,13 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # validate_groups_config wrapper, mirroring normalize_group_team_labels (+6 lines).
     # bugfix/ready-to-close-jql-414 batches the GET-backed child scan at 40 epic keys
     # while retaining its existing global result cap and pagination behavior (+5 lines).
-    "jira_server.py": 6257,
+    # bugfix/shared-admin-configuration adds the request-scoped immutable workspace config
+    # snapshot, route-owned section save wrapper, DB full-replacement guard, and revision-aware
+    # field-config compatibility handlers. Validation and persistence remain extracted (+57).
+    # bugfix/user-owned-epm-config Task 2 routes every runtime EPM consumer through one
+    # authenticated user's private-view config snapshot, threads its generation into cache
+    # dependencies, and scopes post-commit cache invalidation to that user's partition (+46).
+    "jira_server.py": 6360,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -81,10 +87,21 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # success-refresh callback by design), adds closeProjectTrackControl to the group-change
     # cleanup effect, and replaces the passive indicator with the always-rendered
     # interactive/passive branch for real Epics (+35 over the 15965 ceiling).
-    # feature/groups-config-json-roundtrip adds saved selected-group JSON export and
-    # draft-only selected-group import while preserving the destination identity and
-    # all sibling group configuration (+12 over the 16000 ceiling).
-    "frontend/src/dashboard.jsx": 16012,
+    # Header dropdown query inputs add Group, Teams, and Sprint filtering while preserving
+    # the existing shared main/compact control surface (+101 over the 16000 ceiling).
+    # improvement/personal-group-star adds source-aware personal-favorite wiring, canonical
+    # preference snapshot application, and stale group-scope clearing. First-run sprint
+    # recovery waits for department onboarding, separates sprint errors from task errors,
+    # routes Retry back to sprint discovery, deduplicates concurrent Retry requests, and
+    # queues required forced refreshes behind active discovery.
+    # bugfix/shared-admin-configuration wires one atomic shared snapshot/revision into the
+    # existing Settings drafts, threads sequential compare-and-swap saves, and renders conflict
+    # plus safe auth-recovery actions. Pure conflict copy/rebase logic stays extracted (+113).
+    # bugfix/user-owned-epm-config Task 4 replaces workspace EPM draft/save wiring with the
+    # private-view contract while preserving unified Settings save behavior (+36). Task 5
+    # integrates the terminal global authentication gate across existing async consumers,
+    # keyboard handlers, Scenario polling/SSE, and removes feature-local recovery UI (+43).
+    "frontend/src/dashboard.jsx": 16375,
 }
 
 

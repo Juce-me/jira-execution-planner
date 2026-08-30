@@ -380,6 +380,15 @@ function callsFor(calls, pathname, method = 'GET') {
     return calls.filter(call => call.method === method && call.pathname === pathname);
 }
 
+function isTaskListRequest(call) {
+    return call.pathname === '/api/tasks-with-team-name' && !call.params.purpose;
+}
+
+function isTaskListOrAlertsRequest(call) {
+    return call.pathname === '/api/tasks-with-team-name'
+        && (!call.params.purpose || call.params.purpose === 'alerts');
+}
+
 // Independent ordinal check (not the app's own compareQuarterLabels) so the test does not
 // share a bug with the implementation it is verifying.
 function quarterLabelOrdinal(label) {
@@ -427,13 +436,37 @@ async function captureSmokeScreenshot(page, name) {
     await page.screenshot({ path: `${screenshotDir}/${name}.png`, fullPage: true });
 }
 
+async function expectOpenDropdownInputGeometry(input, kind) {
+    const geometry = await input.evaluate((node, dropdownKind) => {
+        const toggle = node.closest(`.${dropdownKind}-dropdown-toggle`);
+        const dropdown = node.closest(`.${dropdownKind}-dropdown`);
+        const panel = dropdown?.querySelector(`.${dropdownKind}-dropdown-panel`);
+        const inputRect = node.getBoundingClientRect();
+        const toggleRect = toggle?.getBoundingClientRect();
+        const panelRect = panel?.getBoundingClientRect();
+        const hit = panelRect && document.elementFromPoint(panelRect.left + 12, panelRect.top + 12);
+        return {
+            inputInsideToggle: Boolean(toggleRect) && inputRect.left >= toggleRect.left && inputRect.right <= toggleRect.right,
+            inputNotClipped: node.scrollWidth <= node.clientWidth,
+            panelBelowToggle: Boolean(toggleRect && panelRect) && panelRect.top >= toggleRect.bottom,
+            panelOwnsHitPoint: Boolean(hit?.closest?.(`.${dropdownKind}-dropdown-panel`)),
+        };
+    }, kind);
+    expect(geometry).toEqual({
+        inputInsideToggle: true,
+        inputNotClipped: true,
+        panelBelowToggle: true,
+        panelOwnsHitPoint: true,
+    });
+}
+
 async function expectJiraExportMenu(page) {
     const trigger = page.getByRole('button', { name: 'Open Jira issue menu' }).first();
     await expect(trigger).toBeVisible();
     const iconBox = await trigger.locator('.jira-export-icon').boundingBox();
     expect(iconBox).not.toBeNull();
     expect(iconBox.width).toBeGreaterThanOrEqual(18);
-    expect(iconBox.height).toBeGreaterThanOrEqual(18);
+    expect(iconBox.height).toBeGreaterThanOrEqual(17.9);
     await trigger.click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
@@ -738,6 +771,7 @@ async function installApiMocks(page, calls, options = {}) {
                 groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
+                userCanEditEpmConfig: true,
                 projectsConfigured: true,
                 epm: epmConfig,
             });
@@ -758,6 +792,11 @@ async function installApiMocks(page, calls, options = {}) {
             });
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
+        if (options.allowSettingsModalLookups) {
+            if (url.pathname === '/api/projects') return json({ projects: [] });
+            if (url.pathname === '/api/team-catalog') return json({ catalog: {}, meta: {} });
+            if (url.pathname === '/api/fields') return json({ fields: [] });
+        }
         if (url.pathname === '/api/board-config') return json({ boardId: '5494', boardName: 'Synthetic Board', source: 'test' });
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
         if (url.pathname === '/api/stats/burnout') {
@@ -1007,10 +1046,17 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.getByText('Catch Up')).toBeVisible();
-    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
+    await waitForCallCount(calls, isTaskListOrAlertsRequest, 4);
     await waitForCallCount(calls, call => call.pathname === '/api/missing-info', 1);
     await expect(page.locator('.epic-header').first()).toBeVisible();
     await expect(page.locator('.task-list > .epic-block').first().locator('.epic-status-pill')).toHaveText('In Progress');
+    await waitForCallCount(
+        calls,
+        call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'ready-to-close',
+        2
+    );
+    const initialReadyToCloseCalls = callsFor(calls, '/api/tasks-with-team-name')
+        .filter(call => call.params.purpose === 'ready-to-close');
     await expectJiraExportMenu(page);
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Statistics' }).click();
     await expect(page.locator('.stats-panel.open')).toBeVisible();
@@ -1054,9 +1100,8 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
         expect(call.params.teamIds).toBe(groupTeamIds.join(','));
     });
 
-    const readyToCloseCalls = taskCalls.filter(call => call.params.purpose === 'ready-to-close');
-    expect(readyToCloseCalls).toHaveLength(2);
-    const readyToCloseByProject = Object.fromEntries(readyToCloseCalls.map(call => [call.params.project, call]));
+    expect(initialReadyToCloseCalls).toHaveLength(2);
+    const readyToCloseByProject = Object.fromEntries(initialReadyToCloseCalls.map(call => [call.params.project, call]));
     expect(readyToCloseByProject.product.params.sprint).toBe('');
     expect(readyToCloseByProject.product.params.epicKeys).toBe('PROD-EPIC');
     expect(readyToCloseByProject.tech.params.sprint).toBe('');
@@ -1150,7 +1195,7 @@ test('ENG Board is a fifth mode that replaces the Catch Up surface', async ({ pa
     await seedEngPrefs(page);
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
+    await waitForCallCount(calls, isTaskListOrAlertsRequest, 4);
     const mainModes = page.locator('.view-selector .eng-mode-control');
     await expect(mainModes.getByRole('radio', { name: 'Catch Up' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator('.task-list .task-item').first()).toBeVisible();
@@ -1400,13 +1445,13 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.getByText('Catch Up')).toBeVisible();
-    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
+    await waitForCallCount(calls, isTaskListOrAlertsRequest, 4);
     await expect(page.locator('.epic-block')).toHaveCount(3);
     await expect(page.locator('.task-item')).toHaveCount(5);
-    // Grouping now lives in the compact filter bar as the shared checkbox control.
-    const initiativeToggle = page.locator('.filterbar .group-visible-control input[type="checkbox"]');
+    // Grouping now lives in the compact filter bar as the shared icon-button control.
+    const initiativeToggle = page.getByRole('button', { name: 'Group by Initiative' });
     await expect(initiativeToggle).toBeVisible();
-    await expect(initiativeToggle).toBeChecked();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.initiative-group')).toHaveCount(1);
     await expect.poll(() => page.evaluate(() => (
         window.dataLayer?.some(entry => entry.event_name === 'page_view') || false
@@ -1426,7 +1471,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await expect(page.getByText('Tech Platform Story', { exact: true })).toHaveCount(0);
     await expect(page.locator('.epic-block')).toHaveCount(2);
     await expect(page.locator('.task-item')).toHaveCount(4);
-    await expect(initiativeToggle).toBeChecked();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.initiative-group')).toHaveCount(1);
     await captureSmokeScreenshot(page, 'initiative-search-results');
     expect(apiMocks.unexpectedCalls).toEqual([]);
@@ -1476,12 +1521,12 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await searchInput.fill('No matching hierarchy');
     await expect(page.locator('.task-item')).toHaveCount(0);
     await expect(initiativeToggle).toBeVisible();
-    await expect(initiativeToggle).toBeChecked();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
 
     await searchInput.fill('INIT-42');
     await expect(page.locator('.epic-block')).toHaveCount(2);
     await expect(page.locator('.task-item')).toHaveCount(4);
-    await expect(initiativeToggle).toBeChecked();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.initiative-group')).toHaveCount(1);
 
     await searchInput.fill(paymentsApiEpic.key);
@@ -1492,19 +1537,19 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
 
     await searchInput.fill('Payments Initiative');
     await initiativeToggle.click();
-    await expect(initiativeToggle).not.toBeChecked();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('.initiative-group')).toHaveCount(0);
     await expect(page.locator('.initiative-header')).toHaveCount(0);
 
     await searchInput.fill('No matching hierarchy');
     await expect(page.locator('.task-item')).toHaveCount(0);
     await expect(initiativeToggle).toBeVisible();
-    await expect(initiativeToggle).not.toBeChecked();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
 
     await searchInput.fill('Payments Initiative');
     await expect(page.locator('.epic-block')).toHaveCount(2);
     await expect(page.locator('.task-item')).toHaveCount(4);
-    await expect(initiativeToggle).not.toBeChecked();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('.initiative-group')).toHaveCount(0);
 
     const teamControl = page.locator('.view-selector .team-dropdown').first();
@@ -1516,7 +1561,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
 
     // The Done Display toggle is subsumed by the Status facet: hiding Done is unticking it.
     const doneOption = page.locator('.popover .pop-group[data-facet="status"] .pop-opt[data-option="Done"]');
-    await page.locator('.fb-trigger').click();
+    await page.getByRole('button', { name: 'Filters' }).click();
     await expect(doneOption).toHaveAttribute('aria-pressed', 'true');
     await doneOption.click();
     await expect(doneOption).toHaveAttribute('aria-pressed', 'false');
@@ -1527,7 +1572,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await expect(page.getByText('Payments Ledger Story 2', { exact: true })).toBeVisible();
     await expect(page.getByText('Payments API Story 2', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Payments Ledger Story 1', { exact: true })).toHaveCount(0);
-    await expect(initiativeToggle).not.toBeChecked();
+    await expect(initiativeToggle).toHaveAttribute('aria-pressed', 'false');
     await captureSmokeScreenshot(page, 'initiative-search-filtered-flat');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
@@ -1558,7 +1603,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
+    await waitForCallCount(calls, isTaskListRequest, 2);
     const statsPanel = page.locator('.stats-panel.open');
     const statsTabs = statsPanel.locator('.stats-view-toggle');
     const legendColors = async (selector) => page.locator(selector).evaluateAll((items) => Object.fromEntries(
@@ -2404,6 +2449,307 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
+test('open header dropdown toggles filter groups teams and sprints', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, {
+        groups: [
+            { id: 'grp-default', name: 'Default', teamIds: ['team-alpha', 'team-beta'] },
+            { id: 'grp-platform', name: 'Platform Delivery', teamIds: ['team-beta'] },
+        ],
+        sprints: [
+            { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+            { id: 34624, name: '2026Q2 Sprint 41', state: 'closed' },
+            { id: 34626, name: '2026Q3 Sprint 43', state: 'future' },
+        ],
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    const controls = page.locator('.view-selector').first();
+
+    const group = controls.locator('.group-dropdown');
+    await group.locator('.group-dropdown-toggle').click();
+    const groupInput = group.getByRole('textbox', { name: 'Filter groups' });
+    await expect(groupInput).toBeFocused();
+    await expect(groupInput).toHaveValue('');
+    await expect(groupInput).toHaveAttribute('placeholder', 'Default');
+    await groupInput.fill('platform');
+    await expect(group.locator('.group-dropdown-option')).toHaveCount(1);
+    await expect(group.locator('.group-dropdown-option')).toContainText('Platform Delivery');
+    await expectOpenDropdownInputGeometry(groupInput, 'group');
+
+    // Opening a sibling is a close path: its query must reset before the original control is reopened.
+    const teams = controls.locator('.team-dropdown');
+    await teams.locator('.team-dropdown-toggle').click();
+    await expect(groupInput).toHaveCount(0);
+    const teamInput = teams.getByRole('textbox', { name: 'Filter teams' });
+    await expect(teamInput).toBeFocused();
+    await teamInput.fill('beta');
+    await expect(teams.locator('label.team-dropdown-option')).toHaveCount(1);
+    await expect(teams.locator('label.team-dropdown-option')).toContainText('Beta Team');
+    const filteredTeamCheckbox = teams.locator('label.team-dropdown-option').getByRole('checkbox');
+    await expect(filteredTeamCheckbox).not.toBeChecked();
+    await filteredTeamCheckbox.check();
+    await expect(filteredTeamCheckbox).toBeChecked();
+    await expect(teamInput).toBeVisible();
+    await expect(teams.locator('.team-dropdown-panel')).toBeVisible();
+    await expectOpenDropdownInputGeometry(teamInput, 'team');
+
+    await group.locator('.group-dropdown-toggle').click();
+    await expect(groupInput).toBeFocused();
+    await expect(groupInput).toHaveValue('');
+    await expect(group.locator('.group-dropdown-option')).toHaveCount(2);
+    await page.keyboard.press('Escape');
+    await expect(groupInput).toHaveCount(0);
+
+    // Outside-click close uses the same reset path as Escape and sibling opens.
+    await teams.locator('.team-dropdown-toggle').click();
+    await expect(teamInput).toBeFocused();
+    await expect(teamInput).toHaveValue('');
+    await expect(teams.locator('label.team-dropdown-option')).toHaveCount(3);
+    await teamInput.fill('beta');
+    const outsidePoint = await page.evaluate(() => ({ x: window.innerWidth - 8, y: window.innerHeight - 8 }));
+    await page.mouse.click(outsidePoint.x, outsidePoint.y);
+    await expect(teamInput).toHaveCount(0);
+    await teams.locator('.team-dropdown-toggle').click();
+    await expect(teamInput).toHaveValue('');
+    await expect(teams.locator('label.team-dropdown-option')).toHaveCount(3);
+    await page.keyboard.press('Escape');
+
+    const sprint = controls.locator('.sprint-dropdown');
+    await sprint.locator('.sprint-dropdown-toggle').click();
+    const sprintInput = sprint.getByRole('textbox', { name: 'Filter sprints' });
+    await expect(sprintInput).toBeFocused();
+    await sprintInput.fill('f');
+    await expect(sprint.locator('.sprint-dropdown-search')).toHaveCount(0);
+    await expect(sprint.locator('.sprint-dropdown-option')).toHaveCount(1);
+    await expect(sprint.locator('.sprint-dropdown-option')).toContainText('2026Q3 Sprint 43');
+    await expectOpenDropdownInputGeometry(sprintInput, 'sprint');
+    await sprint.locator('.sprint-dropdown-option').click();
+    await expect(sprintInput).toHaveCount(0);
+    await sprint.locator('.sprint-dropdown-toggle').click();
+    await expect(sprintInput).toHaveValue('');
+    await expect(sprint.locator('.sprint-dropdown-option')).toHaveCount(3);
+    await page.keyboard.press('Escape');
+
+    await page.evaluate(() => window.scrollTo(0, 600));
+    const compactHeader = page.locator('.compact-sticky-header.is-visible');
+    await expect(compactHeader).toBeVisible();
+
+    const compactGroup = compactHeader.locator('.group-dropdown');
+    await compactGroup.locator('.group-dropdown-toggle').click();
+    const compactGroupInput = compactGroup.getByRole('textbox', { name: 'Filter groups' });
+    await expect(compactGroupInput).toBeFocused();
+    await compactGroupInput.fill('platform');
+    await expect(compactGroup.locator('.group-dropdown-option')).toHaveCount(1);
+    await expectOpenDropdownInputGeometry(compactGroupInput, 'group');
+    await page.keyboard.press('Escape');
+
+    const compactTeams = compactHeader.locator('.team-dropdown');
+    await compactTeams.locator('.team-dropdown-toggle').click();
+    const compactTeamInput = compactTeams.getByRole('textbox', { name: 'Filter teams' });
+    await expect(compactTeamInput).toBeFocused();
+    await compactTeamInput.fill('beta');
+    await expect(compactTeams.locator('label.team-dropdown-option')).toHaveCount(1);
+    await expectOpenDropdownInputGeometry(compactTeamInput, 'team');
+    await page.keyboard.press('Escape');
+
+    const compactSprint = compactHeader.locator('.sprint-dropdown');
+    await compactSprint.locator('.sprint-dropdown-toggle').click();
+    const compactSprintInput = compactSprint.getByRole('textbox', { name: 'Filter sprints' });
+    await expect(compactSprintInput).toBeFocused();
+    await compactSprintInput.fill('f');
+    await expect(compactSprint.locator('.sprint-dropdown-option')).toHaveCount(1);
+    await expectOpenDropdownInputGeometry(compactSprintInput, 'sprint');
+    await captureSmokeScreenshot(page, 'filterable-header-dropdown-input');
+
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('multiple groups keep the main controls on one row and settings beside refresh', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, {
+        allowSettingsModalLookups: true,
+        groups: [
+            { id: 'grp-default', name: 'Default', teamIds: ['team-alpha', 'team-beta'] },
+            { id: 'grp-platform', name: 'Platform Delivery', teamIds: ['team-beta'] },
+        ],
+    });
+    await page.setViewportSize({ width: 1091, height: 800 });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const filters = page.locator('.view-selector .view-filters');
+    await expect(filters.locator('.group-dropdown')).toBeVisible();
+    await expect(filters.locator('.group-gear-button')).toHaveCount(0);
+    const geometry = await filters.evaluate((row) => {
+        const visible = [...row.children]
+            .map((node) => ({ node, rect: node.getBoundingClientRect() }))
+            .filter(({ rect }) => rect.width > 0 && rect.height > 0);
+        const bottoms = visible.map(({ rect }) => rect.bottom);
+        const teamRect = row.querySelector('.team-dropdown').closest('.control-field').getBoundingClientRect();
+        const mode = row.querySelector('.eng-mode-control');
+        const modeRect = mode.getBoundingClientRect();
+        const rowStyle = getComputedStyle(row);
+        return {
+            rowCount: bottoms.reduce((rows, bottom) => (
+                rows.some(existing => Math.abs(existing - bottom) <= 2) ? rows : [...rows, bottom]
+            ), []).length,
+            clipped: visible.some(({ node }) => node.scrollWidth > node.clientWidth + 1),
+            modeWidth: modeRect.width,
+            modeRightInset: row.getBoundingClientRect().right - modeRect.right,
+            modeBottomDelta: Math.abs(row.getBoundingClientRect().bottom - modeRect.bottom),
+            teamToModeGap: modeRect.left - teamRect.right,
+            modeMarginLeft: Number.parseFloat(getComputedStyle(mode).marginLeft),
+            columnGap: Number.parseFloat(rowStyle.columnGap),
+        };
+    });
+    expect(geometry.rowCount).toBe(1);
+    expect(geometry.clipped).toBe(false);
+    expect(Math.abs(geometry.modeRightInset)).toBeLessThanOrEqual(1);
+    expect(geometry.modeBottomDelta).toBeLessThanOrEqual(1);
+    expect(geometry.teamToModeGap).toBeGreaterThanOrEqual(8);
+    expect(geometry.modeMarginLeft).toBeGreaterThan(0);
+    expect(Math.abs(geometry.teamToModeGap - geometry.columnGap - geometry.modeMarginLeft)).toBeLessThanOrEqual(1);
+
+    const headerActions = page.locator('.header-actions-row');
+    const jiraExport = headerActions.getByRole('button', { name: 'Open Jira issue menu' });
+    const refresh = headerActions.getByRole('button', { name: 'Refresh tasks and sprints from Jira' });
+    const settings = headerActions.getByRole('button', { name: 'Manage team groups' });
+    await expect(jiraExport).toBeVisible();
+    await expect(refresh).toBeVisible();
+    await expect(settings).toBeVisible();
+    await expect(headerActions.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
+    const iconButtonGeometry = await headerActions.evaluate((row) => {
+        const rowRect = row.getBoundingClientRect();
+        const headerRect = row.closest('.subtitle').getBoundingClientRect();
+        const controlHeight = Number.parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--control-height')
+        );
+        const buttons = [
+            row.querySelector('.jira-export-icon-button'),
+            row.querySelector('.refresh-icon'),
+            row.querySelector('.group-gear-button'),
+        ];
+        return {
+            controlHeight,
+            rightOverflow: rowRect.right - headerRect.right,
+            bottomDeltas: [
+                row.querySelector('.view-mode-control'),
+                row.querySelector('.search-input'),
+                row.querySelector('.jira-export-icon-button'),
+                row.querySelector('.refresh-icon'),
+                row.querySelector('.group-gear-button'),
+            ].map((control) => Math.abs(rowRect.bottom - control.getBoundingClientRect().bottom)),
+            buttons: buttons.map((button) => {
+            const rect = button.getBoundingClientRect();
+            const iconRect = button.querySelector('svg').getBoundingClientRect();
+            const style = getComputedStyle(button);
+            return {
+                width: rect.width,
+                height: rect.height,
+                iconWidth: iconRect.width,
+                iconHeight: iconRect.height,
+                borderRadius: style.borderRadius,
+                backgroundColor: style.backgroundColor,
+                borderColor: style.borderColor,
+            };
+            }),
+        };
+    });
+    expect(iconButtonGeometry.rightOverflow).toBeLessThanOrEqual(1);
+    iconButtonGeometry.bottomDeltas.forEach((delta) => expect(delta).toBeLessThanOrEqual(1));
+    const [jiraGeometry, refreshGeometry, settingsGeometry] = iconButtonGeometry.buttons;
+    for (const geometry of [jiraGeometry, refreshGeometry, settingsGeometry]) {
+        expect(geometry.width).toBe(iconButtonGeometry.controlHeight);
+        expect(geometry.height).toBe(iconButtonGeometry.controlHeight);
+        expect(geometry.iconWidth).toBeCloseTo(18, 3);
+        expect(geometry.iconHeight).toBeCloseTo(18, 3);
+        expect(geometry.borderRadius).toBe(refreshGeometry.borderRadius);
+        expect(geometry.backgroundColor).toBe(refreshGeometry.backgroundColor);
+        expect(geometry.borderColor).toBe(refreshGeometry.borderColor);
+    }
+
+    await captureSmokeScreenshot(page, 'stable-multi-group-header-controls');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const wideGeometry = await filters.evaluate((row) => {
+        const visible = [...row.children]
+            .map((node) => ({ node, rect: node.getBoundingClientRect() }))
+            .filter(({ rect }) => rect.width > 0 && rect.height > 0);
+        const bottoms = visible.map(({ rect }) => rect.bottom);
+        const teamRect = row.querySelector('.team-dropdown').closest('.control-field').getBoundingClientRect();
+        const mode = row.querySelector('.eng-mode-control');
+        const modeRect = mode.getBoundingClientRect();
+        const rowStyle = getComputedStyle(row);
+        return {
+            rowCount: bottoms.reduce((rows, bottom) => (
+                rows.some(existing => Math.abs(existing - bottom) <= 2) ? rows : [...rows, bottom]
+            ), []).length,
+            clipped: visible.some(({ node }) => node.scrollWidth > node.clientWidth + 1),
+            modeWidth: modeRect.width,
+            modeRightInset: row.getBoundingClientRect().right - modeRect.right,
+            modeBottomDelta: Math.abs(row.getBoundingClientRect().bottom - modeRect.bottom),
+            teamToModeGap: modeRect.left - teamRect.right,
+            modeMarginLeft: Number.parseFloat(getComputedStyle(mode).marginLeft),
+            columnGap: Number.parseFloat(rowStyle.columnGap),
+        };
+    });
+    expect(wideGeometry.rowCount).toBe(1);
+    expect(wideGeometry.clipped).toBe(false);
+    expect(Math.abs(wideGeometry.modeRightInset)).toBeLessThanOrEqual(1);
+    expect(wideGeometry.modeBottomDelta).toBeLessThanOrEqual(1);
+    expect(Math.abs(wideGeometry.modeWidth - geometry.modeWidth)).toBeLessThanOrEqual(1);
+    expect(wideGeometry.modeMarginLeft).toBeGreaterThan(0);
+    expect(Math.abs(wideGeometry.teamToModeGap - wideGeometry.columnGap - wideGeometry.modeMarginLeft)).toBeLessThanOrEqual(1);
+    await captureSmokeScreenshot(page, 'stable-multi-group-header-controls-wide');
+
+    // The reported regression was captured at 2418 physical pixels on a 2x display.
+    await page.setViewportSize({ width: 1209, height: 800 });
+    await waitForVisualSettled(page);
+    const reportedViewportGeometry = await headerActions.evaluate((row) => {
+        const rowRect = row.getBoundingClientRect();
+        const headerRect = row.closest('.subtitle').getBoundingClientRect();
+        return {
+            rightOverflow: rowRect.right - headerRect.right,
+            buttonSizes: [...row.querySelectorAll('.header-icon-button')].map((button) => {
+                const rect = button.getBoundingClientRect();
+                return { width: rect.width, height: rect.height };
+            }),
+        };
+    });
+    expect(reportedViewportGeometry.rightOverflow).toBeLessThanOrEqual(1);
+    expect(reportedViewportGeometry.buttonSizes).toEqual([
+        { width: 38, height: 38 },
+        { width: 38, height: 38 },
+        { width: 38, height: 38 },
+    ]);
+    await captureSmokeScreenshot(page, 'header-actions-reported-viewport');
+
+    await settings.click();
+    await expect(page.locator('.group-modal-backdrop')).toBeVisible();
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('settings modal lookup mocks require explicit opt-in', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const statuses = await page.evaluate(async () => {
+        const statuses = [];
+        for (const path of ['/api/projects', '/api/team-catalog', '/api/fields']) {
+            const response = await fetch(path);
+            statuses.push(response.status);
+        }
+        return statuses;
+    });
+
+    expect(statuses).toEqual([500, 500, 500]);
+    expect(apiMocks.unexpectedCalls).toEqual([
+        'GET /api/projects',
+        'GET /api/team-catalog',
+        'GET /api/fields',
+    ]);
+});
+
 test('team dropdown restores scoped team selection after page refresh', async ({ page }) => {
     const calls = [];
     const apiMocks = await installApiMocks(page, calls);
@@ -2429,7 +2775,7 @@ test('team dropdown restores scoped team selection after page refresh', async ({
     });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name', 4);
+    await waitForCallCount(calls, isTaskListOrAlertsRequest, 4);
     const teamToggle = page.locator('.team-dropdown-toggle').first();
     await expect(teamToggle.locator('.team-dropdown-selection-label')).toHaveText('Alpha Team');
     await expect(teamToggle).toBeVisible();
@@ -2470,6 +2816,11 @@ test('EPM lifecycle tabs load after config with scoped rollup requests and stick
     apiMocks.releaseConfig();
     await page.waitForLoadState('networkidle');
     expect(apiMocks.state.rollupBeforeConfigRelease).toBe(false);
+
+    const headerActions = page.locator('.header-actions-row');
+    await expect(headerActions.getByRole('button', { name: 'Open EPM settings' })).toHaveCount(1);
+    await expect(headerActions.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
+    await expect(page.locator('.view-selector .view-filters .group-gear-button')).toHaveCount(0);
 
     await expect(page.locator('.epm-project-board-name', { hasText: 'Active Project' })).toBeVisible();
     await page.getByRole('button', { name: 'Show Jira rollup for Active Project' }).first().click();

@@ -45,18 +45,16 @@
             z-index: -1;
         }
 
-        /* One row, content-width, fixed height. It sits in the layout like the controls row
-           above it rather than as a full-bleed band, it never wraps, and it never grows
-           taller: the chips lane is the only elastic part and it collapses to "+n more"
-           instead of pushing the bar onto a second row. */
+        /* One row, full container width, fixed height. It never wraps or grows taller: the
+           chips lane is the only elastic part and it collapses to "+n more" instead of pushing
+           the bar onto a second row. */
         .filterbar {
             display: inline-flex;
             align-items: center;
             gap: 0.55rem;
             flex-wrap: nowrap;
             height: 42px;
-            width: max-content;
-            max-width: 100%;
+            width: 100%;
             padding: 0.3rem 0.55rem;
             background: var(--bg-secondary);
             border: 1px solid var(--border);
@@ -87,6 +85,13 @@
 
         .fb-trigger:hover {
             box-shadow: 0 4px 10px rgba(22, 22, 22, 0.10);
+        }
+
+        .fb-trigger-icon {
+            width: 30px;
+            min-width: 30px;
+            padding-inline: 0;
+            justify-content: center;
         }
 
         .fb-trigger .badge {
@@ -391,6 +396,7 @@
             align-items: center;
             gap: 0.55rem;
             flex-wrap: wrap;
+            margin-left: auto;
         }
 
         /* The sort control is the app's own sprint-dropdown, reused rather than reinvented, in
@@ -404,13 +410,55 @@
            idiom and a second copy scoped to that surface would be the local variant this repo
            forbids. Same declarations, so the bar renders identically. */
 
-        .fb-view-controls .group-visible-control {
-            gap: 0.4rem;
+        .initiative-grouping-control {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .initiative-grouping-control .fb-trigger {
+            color: var(--text-secondary);
+            background: var(--bg-primary);
+        }
+
+        .initiative-grouping-control .initiative-icon {
+            color: inherit;
+        }
+
+        .initiative-grouping-control .fb-trigger[aria-pressed="true"] {
+            color: var(--jira-initiative-accent);
+            border-color: var(--jira-initiative-accent);
+            background: var(--jira-initiative-accent-surface);
+        }
+
+        .initiative-grouping-tooltip {
+            position: absolute;
+            left: 50%;
+            top: calc(100% + 8px);
+            bottom: auto;
+            z-index: calc(var(--sticky-control-overlay-z) + 3);
+            width: max-content;
+            max-width: 190px;
+            padding: 6px 8px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--text-primary);
+            color: var(--bg-primary);
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.56rem;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            cursor: pointer;
+            font-size: 0.55rem;
+            line-height: 1.35;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translate(-50%, 3px);
+            transition: opacity 120ms ease, transform 120ms ease;
+        }
+
+        .initiative-grouping-control:hover .initiative-grouping-tooltip,
+        .initiative-grouping-control:focus-within .initiative-grouping-tooltip {
+            opacity: 1;
+            visibility: visible;
+            transform: translate(-50%, 0);
         }
 
         @media (max-width: 720px) {

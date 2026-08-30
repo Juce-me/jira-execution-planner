@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Review required. Execute only after `EXEC-multi-device-browser-sessions-01-server.md` passes and the branch contains `b38e8f7`.
+**Status:** Ready after the server slice. Execute only after `EXEC-multi-device-browser-sessions-01-server.md` passes and the branch contains `b38e8f7`.
 
 **Goal:** Complete issue #143 by restoring each tab's safe view and Planning selection after same-tab OAuth reauthentication, while retaining the existing terminal global auth lock, no-replay rule, and cross-tab isolation.
 

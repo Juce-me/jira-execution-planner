@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Template version: 2026-07-23
+Template version: 2026-08-29
 
 Drop-in operating instructions for coding agents. Read this file before every task.
 
@@ -27,7 +27,7 @@ These rules override later guidance in this file:
 4. **Do not guess through material ambiguity.** Follow the decision rule in section 8.
 5. **Change only what the request requires.** No drive-by fixes, refactors, or formatting.
 6. **Protect existing work and contracts.** Preserve user changes, architecture boundaries, public interfaces, and migration paths unless the user changes them.
-7. **Do not commit personal or local data.** Use repo-relative paths and placeholders; never commit secrets, tokens, real emails, usernames, hostnames, or production identifiers.
+7. **Do not commit sensitive personal or local data.** Use repo-relative paths and placeholders; never commit secrets, tokens, real emails, local machine usernames, hostnames, or production identifiers. A configured Git author name may be used where project documentation requires attribution.
 8. **No agent or tool branding** in branches, commits, PRs, or project content unless explicitly requested.
 
 ---
@@ -35,7 +35,7 @@ These rules override later guidance in this file:
 ## 1. Before editing
 
 - State the intended outcome, observable acceptance criteria, files in scope, and verification. Use a numbered plan only when the work is non-trivial.
-- Read the applicable instruction files, the files you will touch, and relevant callers or consumers.
+- Before editing a target file, read the instruction chain from the project root through its directory, including nested `AGENTS.md` files the runtime did not load automatically. Then read the target file and relevant callers or consumers.
 - Check the worktree and preserve unrelated changes. If required work overlaps uncertain user edits, stop and ask.
 - When approaches differ materially, explain the tradeoff and recommend one. Do not add ceremony for trivial, reversible edits.
 

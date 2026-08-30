@@ -52,8 +52,16 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Design record: `../agents/features/2026-07-27-executed-cloud-sql-iam-connectivity-design.md`.
 
 10. `SUPPORT-multi-device-browser-sessions-design.md`
-   - Approved design for persistent DB/OAuth browser sessions that let one user remain signed in from multiple browsers while preserving one shared Atlassian rotating-token connection.
-   - Expected output after execution: independent per-browser login/logout, shared token refresh without cross-device sign-out, connection-wide revocation that fails closed, lazy upgrade of current legacy cookies, and no new UI or Home/Townsquare/Jira mutation.
+   - Updated review design for persistent DB/OAuth browser sessions plus issue #143's per-tab reauthentication resume. The fetched plan branch predates the global auth lock in `b38e8f7`; execution must first use a current `origin/main` baseline.
+   - Expected output after both execution slices: independent per-browser login/logout, shared token refresh without cross-device sign-out, connection-wide revocation that fails closed, lazy upgrade of current legacy cookies, terminal `401` recovery without raw config errors or request replay, and per-tab restoration of available view/Planning scope and selected story checkboxes after same-tab OAuth.
+
+11. `EXEC-multi-device-browser-sessions-01-server.md`
+   - Review-required first execution slice. Adds opaque DB browser-session rows, stable request/CSRF resolution, per-browser logout, connection-wide revocation, legacy-cookie upgrade, and Scenario internal-context propagation.
+   - Adds no frontend UI, Home/Townsquare mutation, Jira mutation, service credential, or device-management endpoint.
+
+12. `EXEC-multi-device-browser-sessions-02-tab-resume.md`
+   - Review-required second execution slice after the server plan and `b38e8f7`. Adds a strict 30-minute `sessionStorage` recovery capsule and a nonsecret five-minute `localStorage` OAuth leader lease.
+   - Restores each tab's available view, Settings shell, group/sprint/ENG mode, selected teams, and valid Planning story keys in a new authenticated document; it never stores credential inputs, arbitrary drafts, API payloads, or failed request bodies and never unlocks or replays the old document.
 
 ## Completed Scenario Planner Workflow
 

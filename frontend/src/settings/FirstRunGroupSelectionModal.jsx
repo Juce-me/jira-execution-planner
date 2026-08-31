@@ -63,6 +63,14 @@ export default function FirstRunGroupSelectionModal(props) {
             first.focus();
         }
     };
+    const handleContinue = () => {
+        if (saving || !effectiveSelectedGroupId) return;
+        onContinue();
+    };
+    const handleContinueKeyDown = (event) => {
+        if (!saving || !['Enter', ' '].includes(event.key)) return;
+        event.preventDefault();
+    };
 
     return (
         <div
@@ -130,7 +138,16 @@ export default function FirstRunGroupSelectionModal(props) {
                 {error && <div className="group-modal-warning" role="alert" tabIndex={-1} ref={errorRef}>{error}</div>}
                 <div className="department-first-run-actions">
                     <button className="secondary compact" type="button" onClick={onAddDepartment} ref={addButtonRef} disabled={saving}>Add Department</button>
-                    <button className="compact" type="button" onClick={onContinue} disabled={saving || !effectiveSelectedGroupId}>{saving ? 'Saving...' : 'Continue'}</button>
+                    <button
+                        className="compact"
+                        type="button"
+                        onClick={handleContinue}
+                        onKeyDown={handleContinueKeyDown}
+                        disabled={!saving && !effectiveSelectedGroupId}
+                        aria-disabled={saving ? 'true' : undefined}
+                    >
+                        {saving ? 'Saving...' : 'Continue'}
+                    </button>
                 </div>
             </div>
         </div>

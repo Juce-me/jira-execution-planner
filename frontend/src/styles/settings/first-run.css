@@ -250,3 +250,8 @@
             border-top: 1px solid var(--border);
             background: #fbfaf7;
         }
+
+        .department-first-run-actions button[aria-disabled="true"] {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }

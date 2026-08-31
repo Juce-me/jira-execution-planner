@@ -388,6 +388,8 @@ test('first-run search threshold keeps Add Department available for small and em
             if (count === 2) {
                 const firstOption = dialog.locator('.department-first-run-option', { hasText: 'Department 1' });
                 const secondOption = dialog.locator('.department-first-run-option', { hasText: 'Department 2' });
+                await expect(firstOption.locator('.department-first-run-option-main.eligible')).toHaveCSS('display', 'grid');
+                await expect(firstOption.locator('.department-first-run-option-main.eligible')).toHaveCSS('grid-column-start', '2');
                 await firstOption.getByText('Department 1', { exact: true }).click();
                 await expect(firstOption.getByRole('radio')).toBeChecked();
                 await secondOption.getByText('1 team', { exact: true }).click();
@@ -720,7 +722,24 @@ test('first-run saving locks every picker mutation and restores controls after f
     await expect(picker.getByRole('radio', { name: /Growth Department/ })).toBeDisabled();
     await expect(picker.getByRole('button', { name: 'Configure and use Empty Department' })).toBeDisabled();
     await expect(picker.getByRole('button', { name: 'Add Department' })).toBeDisabled();
-    await expect(picker.getByRole('button', { name: 'Saving...' })).toBeDisabled();
+    const savingTarget = picker.getByRole('button', { name: 'Saving...' });
+    await expect(savingTarget).toHaveAttribute('aria-disabled', 'true');
+    await expect(savingTarget).not.toHaveAttribute('disabled', '');
+    await expect(savingTarget).toBeFocused();
+    const savingTargetBounds = await savingTarget.boundingBox();
+    await page.mouse.click(
+        savingTargetBounds.x + savingTargetBounds.width / 2,
+        savingTargetBounds.y + savingTargetBounds.height / 2
+    );
+    await expect(savingTarget).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(savingTarget).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(savingTarget).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(savingTarget).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(savingTarget).toBeFocused();
     await expect(page.getByRole('dialog', { name: 'Add a Department' })).toHaveCount(0);
     await expect(page.locator('.group-modal')).toHaveCount(0);
     expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(1);
@@ -739,6 +758,7 @@ test('first-run saving locks every picker mutation and restores controls after f
     await expect(picker.getByRole('button', { name: 'Configure and use Empty Department' })).toBeEnabled();
     await expect(picker.getByRole('button', { name: 'Add Department' })).toBeEnabled();
     await expect(picker.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    await expect(picker.getByRole('button', { name: 'Continue' })).not.toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByRole('dialog', { name: 'Add a Department' })).toHaveCount(0);
     await expect(page.locator('.group-modal')).toHaveCount(0);
     expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(1);

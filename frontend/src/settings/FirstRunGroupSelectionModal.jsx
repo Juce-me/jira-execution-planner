@@ -70,7 +70,7 @@ export default function FirstRunGroupSelectionModal(props) {
             role="dialog"
             aria-modal={setupChoiceOpen ? undefined : 'true'}
             aria-hidden={setupChoiceOpen ? 'true' : undefined}
-            inert={setupChoiceOpen ? '' : undefined}
+            inert={setupChoiceOpen ? true : undefined}
             aria-labelledby="department-first-run-title"
             aria-busy={saving ? 'true' : 'false'}
             onKeyDown={handleKeyDown}

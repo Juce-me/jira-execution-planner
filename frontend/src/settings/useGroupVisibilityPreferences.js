@@ -5,6 +5,7 @@ import { saveGroupPreferences as requestSaveGroupPreferences } from '../api/conf
 import {
     buildFirstRunGroupPreferencesPayload,
     buildGroupPreferencesPayload,
+    buildPendingFirstRunGroupPreferencesDraft,
     effectiveVisibleGroupIds,
     groupPreferencesSignature,
     normalizeGroupPreferences,
@@ -141,6 +142,12 @@ export function useGroupVisibilityPreferences({
         setVisibleGroupDraftIds(previous => previous.includes(normalizedId) ? previous : [...previous, normalizedId]);
         trackSettingsAction('departments', 'preference_change', { source_surface: 'settings' });
     }, [favoriteGroupDraftId, groupDraft?.groups, trackSettingsAction, useBackendPreferences]);
+
+    const stageFirstRunGroupPreferenceDraft = React.useCallback((groupId, initialVisibleGroupIds) => {
+        const pending = buildPendingFirstRunGroupPreferencesDraft(initialVisibleGroupIds, groupId);
+        setVisibleGroupDraftIds(pending.visibleGroupIds);
+        setFavoriteGroupDraftId(pending.favoriteGroupId);
+    }, []);
 
     const favoriteGroupValidationError = React.useMemo(() => {
         if (!useBackendPreferences) return '';
@@ -305,6 +312,7 @@ export function useGroupVisibilityPreferences({
         setVisibleGroupDraftIds,
         favoriteGroupDraftId,
         setFavoriteGroupDraft,
+        stageFirstRunGroupPreferenceDraft,
         favoriteGroupValidationError,
         groupPreferencesSaving,
         setGroupPreferencesSaving,

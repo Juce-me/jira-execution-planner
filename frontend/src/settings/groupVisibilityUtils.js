@@ -76,6 +76,14 @@ export const buildGroupPreferencesPayload = (visibleGroupIds, activeGroupId) => 
     activeGroupId: normalizeId(activeGroupId) || null,
 });
 
+export const buildPendingFirstRunGroupPreferencesDraft = (visibleGroupIds, favoriteGroupId) => {
+    const favoriteId = normalizeId(favoriteGroupId);
+    return {
+        visibleGroupIds: uniqueIds([...(visibleGroupIds || []), favoriteId]),
+        favoriteGroupId: favoriteId || null,
+    };
+};
+
 export const buildFirstRunGroupPreferencesPayload = (selectedGroupId) => {
     const favoriteGroupId = normalizeId(selectedGroupId);
     return {

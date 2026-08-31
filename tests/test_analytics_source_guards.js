@@ -186,7 +186,17 @@ test('personal group favorite analytics omit identity and retain existing event 
     assert.doesNotMatch(preferencesSource, /trackSettingsAction\([^\n]*star/);
     assert.doesNotMatch(firstRunPickerSource, /trackSettingsAction|trackEvent|fetch\(/);
     assert.doesNotMatch(firstRunChoiceSource, /trackSettingsAction|trackEvent|fetch\(/);
-    assert.doesNotMatch(dashboardSource, /firstRunSetupChoice[\s\S]{0,160}trackSettingsAction/);
+    const handlersStart = dashboardSource.indexOf('const openFirstRunSetupChoice = React.useCallback');
+    const handlersEnd = dashboardSource.indexOf('useEffect(() => {', handlersStart);
+    assert.ok(handlersStart >= 0 && handlersEnd > handlersStart, 'Expected first-run setup handlers');
+    const firstRunSetupHandlers = dashboardSource.slice(handlersStart, handlersEnd);
+    assert.match(firstRunSetupHandlers, /buildFirstRunGroupDraft\(/);
+    assert.match(firstRunSetupHandlers, /mode: 'repair'/);
+    assert.doesNotMatch(
+        firstRunSetupHandlers,
+        /trackSettingsAction|trackEvent|fetch\(|onboardingDone|groupSearchQuery/,
+        'Add, create, duplicate, and repair staging must not emit analytics, write onboarding, or consume the picker query'
+    );
     assert.ok(analyticsDoc.includes('first-run selection uses `group_count_bucket` only'));
     assert.ok(analyticsDoc.includes('Personal group favorite render/change'));
 });

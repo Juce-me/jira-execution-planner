@@ -1,9 +1,19 @@
 const fs = require('node:fs');
+const path = require('node:path');
+const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = '/tmp/shared-department-groups-qa';
+const dashboardSourceBundle = esbuild.buildSync({
+    entryPoints: [path.join(__dirname, '..', '..', 'frontend', 'src', 'dashboard.jsx')],
+    bundle: true,
+    write: false,
+    format: 'iife',
+    loader: { '.css': 'empty' },
+    define: { 'process.env.NODE_ENV': '"production"' },
+}).outputFiles[0].text;
 
 test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
@@ -112,6 +122,11 @@ async function mockFirstRunDashboard(page, options = {}) {
     let sprintFailureCount = 0;
     let sprintRequestCount = 0;
     await installDashboardShell(page);
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: dashboardSourceBundle,
+    }));
     const savedSprintId = Object.prototype.hasOwnProperty.call(options, 'savedSprintId')
         ? options.savedSprintId
         : 42;
@@ -322,7 +337,7 @@ function overflowGroupConfig() {
 }
 
 test('first-run search threshold keeps Add Department available for small and empty catalogs', async ({ page }) => {
-    for (const count of [0, 3]) {
+    for (const count of [0, 1, 2, 3]) {
         await page.unrouteAll({ behavior: 'wait' });
         const groups = Array.from({ length: count }, (_, index) => ({
             id: `department-${index + 1}`,
@@ -382,10 +397,27 @@ test('first-run search appears at four Departments and preserves Add Department 
 });
 
 test('Add Department stages create clean and duplicate existing choices without requests', async ({ page }) => {
-    const calls = await mockFirstRunDashboard(page);
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig: {
+            version: 1,
+            groups: [
+                { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+                { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+                { id: 'mobile', name: 'Mobile', teamIds: ['team-mobile'] },
+                { id: 'data', name: 'Data', teamIds: ['team-data'] },
+            ],
+            defaultGroupId: 'platform',
+            configRevision: 2,
+            source: 'workspace_db',
+        },
+    });
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
 
     const picker = page.getByRole('dialog', { name: 'Choose your Department' });
+    const pickerShell = page.locator('.department-first-run-backdrop').first();
+    const query = picker.getByRole('searchbox', { name: 'Search Departments' });
+    await query.fill('plat');
+    await picker.getByRole('radio', { name: /Platform/ }).check();
     const add = picker.getByRole('button', { name: 'Add Department' });
     await add.focus();
     await add.click();
@@ -393,8 +425,15 @@ test('Add Department stages create clean and duplicate existing choices without 
     const choice = page.getByRole('dialog', { name: 'Add a Department' });
     await expect(choice).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(1);
-    await expect(page.locator('.department-first-run-backdrop[aria-hidden="true"]')).toHaveCount(1);
-    await expect(choice.getByRole('radio', { name: 'Create clean Department' })).toBeChecked();
+    await expect(pickerShell).toHaveAttribute('aria-hidden', 'true');
+    await expect(pickerShell).toHaveAttribute('inert', '');
+    const createChoice = choice.getByRole('radio', { name: 'Create clean Department' });
+    await expect(createChoice).toBeChecked();
+    await expect(createChoice).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(choice.getByRole('button', { name: 'Continue to Team Groups' })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(createChoice).toBeFocused();
     await expect(choice.getByRole('radio', { name: 'Duplicate existing Department' })).toBeEnabled();
     await expect(choice.getByRole('combobox', { name: 'Department to duplicate' })).toHaveCount(0);
     await choice.getByRole('radio', { name: 'Duplicate existing Department' }).check();
@@ -406,14 +445,24 @@ test('Add Department stages create clean and duplicate existing choices without 
     await expect(choice.getByRole('alert')).toHaveText('Choose a Department to duplicate.');
     await expect(choice.getByRole('alert')).toBeFocused();
     await choice.getByRole('combobox', { name: 'Department to duplicate' }).selectOption('platform');
-    await page.keyboard.press('Escape');
+    await choice.getByRole('checkbox', { name: 'Remove existing teams' }).check();
+    await choice.getByRole('button', { name: 'Back' }).click();
     await expect(choice).toHaveCount(0);
     await expect(picker).toBeVisible();
+    await expect(picker).toHaveAttribute('aria-modal', 'true');
+    await expect(picker).not.toHaveAttribute('aria-hidden', 'true');
+    await expect(picker).not.toHaveAttribute('inert', '');
+    await expect(query).toHaveValue('plat');
+    await expect(picker.getByRole('radio', { name: /Platform/ })).toBeChecked();
     await expect(add).toBeFocused();
     await add.click();
     await expect(choice.getByRole('radio', { name: 'Create clean Department' })).toBeChecked();
     await expect(choice.getByRole('combobox', { name: 'Department to duplicate' })).toHaveCount(0);
     await page.keyboard.press('Escape');
+    await expect(choice).toHaveCount(0);
+    await expect(query).toHaveValue('plat');
+    await expect(picker.getByRole('radio', { name: /Platform/ })).toBeChecked();
+    await expect(add).toBeFocused();
 
     expect(calls.filter(call => call.method === 'POST' && ['/api/groups-config', '/api/groups-preferences', '/api/me/onboarding'].includes(call.pathname))).toHaveLength(0);
 });
@@ -440,7 +489,9 @@ test('create clean Department ignores the empty-search query when staging its dr
     const choice = page.getByRole('dialog', { name: 'Add a Department' });
     await choice.getByRole('button', { name: 'Continue to Team Groups' }).click();
 
-    await expect(page.locator('.group-modal').getByPlaceholder('Group name')).toHaveValue('New Department');
+    const nameInput = page.locator('.group-modal').getByPlaceholder('Group name');
+    await expect(nameInput).toHaveValue('New Department');
+    await expect(nameInput).toBeFocused();
     expect(calls.filter(call => call.method === 'POST' && ['/api/groups-config', '/api/groups-preferences', '/api/me/onboarding'].includes(call.pathname))).toHaveLength(0);
 });
 
@@ -474,6 +525,9 @@ test('duplicate existing Department submits one cleaned copy and preserves its s
 
     const settings = page.locator('.group-modal');
     await expect(settings.getByPlaceholder('Group name')).toHaveValue('Source Copy');
+    await expect(settings.getByPlaceholder('Group name')).toBeFocused();
+    await expect(settings.locator('.group-list-item')).toHaveCount(2);
+    await expect(settings.locator('.group-list-item', { hasText: 'Source Copy' })).toHaveCount(1);
     await expect(settings.getByText('No teams selected. Search and add teams below.')).toBeVisible();
     await expect(settings.getByText('Backend', { exact: true })).toHaveCount(0);
     await settings.locator('.group-list-item', { hasText: 'Source', hasNotText: 'Source Copy' }).click();
@@ -504,6 +558,7 @@ test('Configure and use opens the exact ineligible Department without saving', a
     const settings = page.locator('.group-modal');
     await expect(settings).toBeVisible();
     await expect(settings.getByPlaceholder('Group name')).toHaveValue('Empty');
+    await expect(settings.getByPlaceholder('Group name')).toBeFocused();
     expect(calls.filter(call => call.method === 'POST' && ['/api/groups-config', '/api/groups-preferences', '/api/me/onboarding'].includes(call.pathname))).toHaveLength(0);
 });
 
@@ -573,7 +628,10 @@ test('first-run department selection blocks group-scoped task loads until prefer
     await page.getByRole('button', { name: 'Saving...' }).click({ force: true }).catch(() => {});
     await expect.poll(() => calls.filter(call => call.pathname === '/api/groups-preferences').length).toBe(1);
     await page.waitForTimeout(200);
-    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+    expect(calls.filter(call => ['/api/tasks-with-team-name', '/api/sprints', '/api/missing-info'].includes(call.pathname))).toHaveLength(0);
+    await expect(page.locator('.group-modal')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toHaveCount(0);
     preferenceGate.resolve();
 
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toHaveCount(0);
@@ -589,8 +647,10 @@ test('first-run department selection blocks group-scoped task loads until prefer
 });
 
 test('successful first-run selection starts the dashboard tour before any onboarding write', async ({ page }, testInfo) => {
+    const preferenceGate = deferred();
     const calls = await mockFirstRunDashboard(page, {
         preferences: defaultGroupPreferences({ onboardingDone: false }),
+        preferenceGate,
     });
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
@@ -599,6 +659,14 @@ test('successful first-run selection starts the dashboard tour before any onboar
 
     await page.getByRole('radio', { name: /Platform/ }).check();
     await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toHaveAttribute('aria-busy', 'true');
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/groups-preferences').length).toBe(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+    expect(calls.filter(call => ['/api/tasks-with-team-name', '/api/sprints', '/api/missing-info'].includes(call.pathname))).toHaveLength(0);
+    expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
+    await expect(page.locator('.group-modal')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toHaveCount(0);
+    preferenceGate.resolve();
     await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toBeVisible();
     expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
     await page.waitForTimeout(250);

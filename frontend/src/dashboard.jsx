@@ -542,6 +542,7 @@ import {
             const [firstRunSetupChoice, setFirstRunSetupChoice] = useState(null);
             const [firstRunConfigurationTargetGroupId, setFirstRunConfigurationTargetGroupId] = useState(null);
             const pendingFirstRunConfigurationRef = useRef(null);
+            const pendingFirstRunSettingsFocusRef = useRef(false);
             // { current, savedSections }: a rejected groups POST, kept so the draft survives it (D45).
             const [groupsConfigConflict, setGroupsConfigConflict] = useState(null);
             const [workspaceConfigConflict, setWorkspaceConfigConflict] = useState(null);
@@ -1060,6 +1061,7 @@ import {
                 setVisibleGroupDraftIds,
                 favoriteGroupDraftId,
                 setFavoriteGroupDraft,
+                stageFirstRunGroupPreferenceDraft,
                 favoriteGroupValidationError,
                 setGroupPreferencesSaving,
                 groupVisibilitySaving,
@@ -1104,6 +1106,7 @@ import {
                     sourceGroupId,
                 });
                 setFirstRunConfigurationTargetGroupId(sourceGroupId);
+                pendingFirstRunSettingsFocusRef.current = true;
                 setFirstRunSetupChoice(null);
                 openFirstRunAddGroup();
             }, [openFirstRunAddGroup]);
@@ -1121,11 +1124,13 @@ import {
                     draft,
                 };
                 setFirstRunConfigurationTargetGroupId(draft.id);
+                pendingFirstRunSettingsFocusRef.current = true;
                 setFirstRunSetupChoice(null);
                 openFirstRunAddGroup();
             }, [firstRunSetupChoice, groupsConfig.groups, openFirstRunAddGroup]);
             useEffect(() => {
                 if (!showGroupManage && firstRunConfigurationActive) {
+                    pendingFirstRunSettingsFocusRef.current = false;
                     clearFirstRunConfigurationActive();
                     setFirstRunConfigurationTargetGroupId(null);
                 }
@@ -1872,8 +1877,11 @@ import {
                 setGroupDraft(nextGroupDraft);
                 groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
                 initializeGroupPreferencesDraft(normalized, activeGroupId);
-                if (targetGroupId) {
-                    setVisibleGroupDraftIds(previous => previous.includes(targetGroupId) ? previous : [...previous, targetGroupId]);
+                if (pendingFirstRunConfiguration && targetGroupId) {
+                    const initialVisibleGroupIds = groupPreferences.customized
+                        ? (groupPreferences.visibleGroupIds || [])
+                        : (normalized.groups || []).map(group => group.id);
+                    stageFirstRunGroupPreferenceDraft(targetGroupId, initialVisibleGroupIds);
                 }
                 setGroupDraftError('');
                 setGroupImportText('');
@@ -1902,6 +1910,15 @@ import {
                 setLoadingTeams(false);
                 loadTeamCatalog();
             }, [showGroupManage]);
+
+            useEffect(() => {
+                if (!showGroupManage || !firstRunConfigurationActive || !pendingFirstRunSettingsFocusRef.current) return;
+                if (!activeGroupDraftId || activeGroupDraftId !== firstRunConfigurationTargetGroupId) return;
+                const groupNameInput = document.querySelector('.group-modal .group-editor .group-name-input');
+                if (!groupNameInput?.isConnected) return;
+                pendingFirstRunSettingsFocusRef.current = false;
+                groupNameInput.focus();
+            }, [showGroupManage, firstRunConfigurationActive, activeGroupDraftId, firstRunConfigurationTargetGroupId, groupDraft]);
 
             useEffect(() => {
                 if (!showGroupManage || groupManageTab !== 'epm') return;

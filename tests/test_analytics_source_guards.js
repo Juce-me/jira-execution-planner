@@ -170,6 +170,8 @@ test('Lead Times capacity exclusions change local state without an app-owned eve
 test('personal group favorite analytics omit identity and retain existing event ownership', () => {
     const preferencesSource = read('frontend/src/settings/useGroupVisibilityPreferences.js');
     const dashboardSource = read('frontend/src/dashboard.jsx');
+    const firstRunPickerSource = read('frontend/src/settings/FirstRunGroupSelectionModal.jsx');
+    const firstRunChoiceSource = read('frontend/src/settings/FirstRunGroupSetupChoice.jsx');
     const analyticsDoc = read('docs/README_ANALYTICS.md');
 
     assert.doesNotMatch(
@@ -182,6 +184,9 @@ test('personal group favorite analytics omit identity and retain existing event 
     }
     assert.match(dashboardSource, /trackFilterChanged\('group'/);
     assert.doesNotMatch(preferencesSource, /trackSettingsAction\([^\n]*star/);
+    assert.doesNotMatch(firstRunPickerSource, /trackSettingsAction|trackEvent|fetch\(/);
+    assert.doesNotMatch(firstRunChoiceSource, /trackSettingsAction|trackEvent|fetch\(/);
+    assert.doesNotMatch(dashboardSource, /firstRunSetupChoice[\s\S]{0,160}trackSettingsAction/);
     assert.ok(analyticsDoc.includes('first-run selection uses `group_count_bucket` only'));
     assert.ok(analyticsDoc.includes('Personal group favorite render/change'));
 });

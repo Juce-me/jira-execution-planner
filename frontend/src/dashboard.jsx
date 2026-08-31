@@ -139,6 +139,11 @@ import {
     saveOnboardingPreference as requestSaveOnboardingPreference,
 } from './api/configApi.js';
 import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.jsx';
+import FirstRunGroupSetupChoice from './settings/FirstRunGroupSetupChoice.jsx';
+import {
+    beginFirstRunGroupConfiguration,
+    buildFirstRunGroupDraft,
+} from './settings/firstRunGroupConfiguration.js';
 import {
     applyLocalGroupPreferences,
     buildGroupId,
@@ -534,6 +539,9 @@ import {
             const [showGroupManage, setShowGroupManage] = useState(false);
             const [groupDraft, setGroupDraft] = useState(null);
             const [groupDraftError, setGroupDraftError] = useState('');
+            const [firstRunSetupChoice, setFirstRunSetupChoice] = useState(null);
+            const [firstRunConfigurationTargetGroupId, setFirstRunConfigurationTargetGroupId] = useState(null);
+            const pendingFirstRunConfigurationRef = useRef(null);
             // { current, savedSections }: a rejected groups POST, kept so the draft survives it (D45).
             const [groupsConfigConflict, setGroupsConfigConflict] = useState(null);
             const [workspaceConfigConflict, setWorkspaceConfigConflict] = useState(null);
@@ -1084,9 +1092,42 @@ import {
                 bucketCount,
                 useBackendPreferences: personalGroupPreferencesEnabled,
             });
+            const openFirstRunSetupChoice = React.useCallback(() => {
+                setFirstRunSetupChoice(beginFirstRunGroupConfiguration({ mode: 'create' }));
+            }, []);
+            const closeFirstRunSetupChoice = React.useCallback(() => {
+                setFirstRunSetupChoice(null);
+            }, []);
+            const configureFirstRunGroup = React.useCallback((sourceGroupId) => {
+                pendingFirstRunConfigurationRef.current = beginFirstRunGroupConfiguration({
+                    mode: 'repair',
+                    sourceGroupId,
+                });
+                setFirstRunConfigurationTargetGroupId(sourceGroupId);
+                setFirstRunSetupChoice(null);
+                openFirstRunAddGroup();
+            }, [openFirstRunAddGroup]);
+            const continueFirstRunSetupChoice = React.useCallback(() => {
+                if (!firstRunSetupChoice) return;
+                const sourceGroup = (groupsConfig.groups || []).find(group => group.id === firstRunSetupChoice.sourceGroupId) || null;
+                const draft = buildFirstRunGroupDraft({
+                    ...firstRunSetupChoice,
+                    sourceGroup,
+                    existingGroups: groupsConfig.groups || [],
+                });
+                if (!draft) return;
+                pendingFirstRunConfigurationRef.current = {
+                    ...firstRunSetupChoice,
+                    draft,
+                };
+                setFirstRunConfigurationTargetGroupId(draft.id);
+                setFirstRunSetupChoice(null);
+                openFirstRunAddGroup();
+            }, [firstRunSetupChoice, groupsConfig.groups, openFirstRunAddGroup]);
             useEffect(() => {
                 if (!showGroupManage && firstRunConfigurationActive) {
                     clearFirstRunConfigurationActive();
+                    setFirstRunConfigurationTargetGroupId(null);
                 }
             }, [showGroupManage, firstRunConfigurationActive, clearFirstRunConfigurationActive]);
             useEffect(() => {
@@ -1820,9 +1861,20 @@ import {
             useEffect(() => {
                 if (!showGroupManage) return;
                 const normalized = normalizeGroupsConfig(groupsConfig);
-                setGroupDraft(normalized);
+                const pendingFirstRunConfiguration = pendingFirstRunConfigurationRef.current;
+                pendingFirstRunConfigurationRef.current = null;
+                const pendingDraft = pendingFirstRunConfiguration?.draft || null;
+                const nextGroupDraft = pendingDraft ? {
+                    ...normalized,
+                    groups: [...(normalized.groups || []), pendingDraft],
+                } : normalized;
+                const targetGroupId = pendingDraft?.id || pendingFirstRunConfiguration?.sourceGroupId || firstRunConfigurationTargetGroupId || resolveInitialGroupId(normalized);
+                setGroupDraft(nextGroupDraft);
                 groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
                 initializeGroupPreferencesDraft(normalized, activeGroupId);
+                if (targetGroupId) {
+                    setVisibleGroupDraftIds(previous => previous.includes(targetGroupId) ? previous : [...previous, targetGroupId]);
+                }
                 setGroupDraftError('');
                 setGroupImportText('');
                 setShowGroupImport(false);
@@ -1835,7 +1887,7 @@ import {
                 setShowGroupDiscardConfirm(false);
                 setShowGroupListMobile(false);
                 setProjectSearchQuery('');
-                setActiveGroupDraftId(resolveInitialGroupId(normalized));
+                setActiveGroupDraftId(targetGroupId);
                 if (authMode !== 'atlassian_oauth') {
                     loadSelectedProjects();
                     loadPriorityWeightsConfig();
@@ -1955,6 +2007,7 @@ import {
 
             useEffect(() => {
                 if (!showGroupManage) return;
+                if (!groupDraft) return;
                 const groups = groupDraft?.groups || [];
                 if (!groups.length) {
                     setActiveGroupDraftId(null);
@@ -16382,15 +16435,29 @@ import {
                         </SettingsModal>
                     )}
                     {groupPreferences.onboardingRequired && !showGroupManage && (
-                        <FirstRunGroupSelectionModal
-                            groups={groupsConfig.groups || []}
-                            selectedGroupId={firstRunFavoriteGroupId}
-                            onSelectGroup={selectFirstRunFavoriteGroup}
-                            onContinue={saveFirstRunGroupPreferences}
-                            onConfigure={openFirstRunAddGroup}
-                            saving={firstRunSaving}
-                            error={firstRunError}
-                        />
+                        <>
+                            <FirstRunGroupSelectionModal
+                                groups={groupsConfig.groups || []}
+                                selectedGroupId={firstRunFavoriteGroupId}
+                                onSelectGroup={selectFirstRunFavoriteGroup}
+                                onContinue={saveFirstRunGroupPreferences}
+                                onAddDepartment={openFirstRunSetupChoice}
+                                onConfigureGroup={configureFirstRunGroup}
+                                saving={firstRunSaving}
+                                error={firstRunError}
+                                onboardingDone={groupPreferences.onboardingDone}
+                                setupChoiceOpen={Boolean(firstRunSetupChoice)}
+                            />
+                            {firstRunSetupChoice && (
+                                <FirstRunGroupSetupChoice
+                                    groups={groupsConfig.groups || []}
+                                    value={firstRunSetupChoice}
+                                    onChange={setFirstRunSetupChoice}
+                                    onBack={closeFirstRunSetupChoice}
+                                    onContinue={continueFirstRunSetupChoice}
+                                />
+                            )}
+                        </>
                     )}
                     <OnboardingTour
                         run={onboarding.run}

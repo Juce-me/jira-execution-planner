@@ -263,10 +263,13 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Treat Scenario Planner group scope as a shared environment-scoped PM/EPM-managed configuration reference; drafts may reference groups but must not create private group definitions or own group membership.
 - In DB/OAuth mode, hide the EPM tab until the current user has connected a Home/Townsquare token in Settings; once visible, the EPM tab must expose an accessible EPM settings gear.
 - At the start of auth/DB/Home/EPM plan work, scan `docs/plans/GATE-*.md` and update each gate's `Checked on` and `Last result`; never mark a gate passed without its documented `PASS` output.
-- Keep personal group-star persistence and selection UI in a prerequisite plan separate from onboarding tour/state; require exactly one personally starred first-run group, persist it in the authenticated user's group preferences, and never mutate or present shared `defaultGroupId` as the user's favorite.
+- Keep personal group-star persistence separate from tour-completion state; first-run create/duplicate automatically marks the new draft as the pending favorite and visible group, but must save shared group configuration first, persist the choice in the authenticated user's private group preferences, continue directly without a picker round trip, and never mutate or present shared `defaultGroupId` as the user's favorite.
+- In Department Settings, keep the Department name editable only in the left group list; do not duplicate the name input in the right editor, and open the Groups drawer for compact/mobile name editing.
+- When the user asks for a visual HTML example, provide a standalone HTML artifact directly; do not require a localhost URL.
 - For OAuth Jira worker-thread fixes, verify a no-request-context test that reaches the real Jira auth wrapper; route mocks alone are not sufficient.
 - Name active auth/DB/Home migration docs with `EXEC-*`, executed docs with `DONE-*`, support/reference/setup docs with `SUPPORT-*`, and deferred scope with `FUTURE-*`; keep expectations in `docs/plans/README.md`.
 - Before executing a plan task, verify every named file in that task's file map exists unless the plan explicitly marks it `Create`.
+- Never publish an execution prompt or handoff until every referenced plan or artifact is committed, pushed, and verified fetchable from the named remote ref; if it is not fetchable, do not post the handoff.
 - In mono vs cross UI, label denominator story points as Total SP, not Shared SP.
 - In ENG filter cards, keep every card fixed-size with one-line labels and an inset fixed value/icon slot sized for up to three digits; selected Display filters use border-only state, not tinted fills.
 - Chart legends must use native button controls, not span role=button handlers.

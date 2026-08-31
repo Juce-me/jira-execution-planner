@@ -135,11 +135,16 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - This plan owns star persistence and UI only. It adds no onboarding completion state, guided tour, configure guidance, skip action, or replay action.
 
 12. `EXEC-user-onboarding-tour.md`
-   - Implementation and verification are complete on `feature/user-onboarding-tour`; awaiting integration approval. The prerequisite `DONE-personal-group-star.md` remains satisfied.
-   - Expected output: configure/duplicate guidance after the mandatory group gate, followed by a guided tour of dashboard scope controls, actions, filters, issue hierarchy, and editable Jira fields. Per-user/workspace `onboarding_done` supports completion, skip, interruption recovery, and an explicit Settings replay action without another startup request.
-   - The tour consumes the personal-star contract read-only and must not change star persistence or UI. Existing users are backfilled as complete; JSON/basic mode stays unchanged; privacy-safe `settings_action` events measure only started/completed/skipped outcomes.
+    - Implementation and verification are complete on `feature/user-onboarding-tour`; awaiting integration approval. The prerequisite `DONE-personal-group-star.md` remains satisfied.
+    - Expected output: configure/duplicate guidance after the mandatory group gate, followed by a guided tour of dashboard scope controls, actions, filters, issue hierarchy, and editable Jira fields. Per-user/workspace `onboarding_done` supports completion, skip, interruption recovery, and an explicit Settings replay action without another startup request.
+    - The tour consumes the personal-star contract read-only and must not change star persistence or UI. Existing users are backfilled as complete; JSON/basic mode stays unchanged; privacy-safe `settings_action` events measure only started/completed/skipped outcomes.
 
-13. `EXEC-hide-single-option-view-mode-control.md`
+13. `EXEC-user-onboarding-tour-improvements.md`
+   - Ready for implementation on `feature/user-onboarding-tour`; final frontend build verification remains gated on an explicitly authorized fresh verification worktree and a concrete implementation ref.
+   - Expected output: direct existing-Department selection or persistent **Add Department**, guided create/duplicate/repair in the real Team Groups editor, automatic pending favorite/visibility with ordered shared/private save recovery, a single left-list name input, Settings-header replay, and safe target-driven Priority/Project Track/Status previews.
+   - Search appears only for four or more Departments. Initiative/Epic/Story absence handling, accessibility and portal isolation, no-Jira-mutation guards, Node 20 verification, generated builds, screenshots, analytics, and operational guidance are executable release gates.
+
+14. `EXEC-hide-single-option-view-mode-control.md`
    - Ready for execution as a small frontend-only task suitable for a 5.3 coding model.
    - Expected output: the ENG/EPM segmented control is absent when EPM navigation is unavailable, remains a two-option control when EPM is available, and updates correctly after Home-token connection, revocation, or backend prerequisite changes. Existing availability, analytics, auth, request, and shared-control contracts remain unchanged.
 

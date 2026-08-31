@@ -92,11 +92,6 @@ export default function TeamGroupsSettings(props) {
         removeGroupDraft,
         selectDepartmentSettingsTab,
         firstRunConfigurationActive,
-        onboardingReplayAvailable,
-        onboardingReplayDisabled,
-        onboardingReplayPending,
-        onboardingReplayError,
-        onReplayOnboarding,
     } = props;
 
     const hasDuplicableGroup = (groupDraft?.groups || []).some(group => String(group?.id || '').trim());
@@ -142,47 +137,85 @@ export default function TeamGroupsSettings(props) {
                                                 const isDefault = personalGroupPreferencesEnabled
                                                     ? favoriteGroupDraftId === group.id
                                                     : groupDraft?.defaultGroupId === group.id;
+                                                const normalizedName = String(group.name || '').trim();
+                                                const nameConflict = !normalizedName || (groupDraft?.groups || []).some(candidate => (
+                                                    candidate.id !== group.id
+                                                    && String(candidate.name || '').trim().toLowerCase() === normalizedName.toLowerCase()
+                                                ));
                                                 return (
-                                                    <button
+                                                    <div
                                                         key={group.id}
                                                         className={`group-list-item ${isActive ? 'active' : ''}`}
                                                         onClick={() => {
                                                             setActiveGroupDraftId(group.id);
                                                             setShowGroupListMobile(false);
                                                         }}
-                                                        type="button"
                                                     >
-                                                        <div className="group-list-line">
-                                                            <span className="group-list-name">{group.name || 'Untitled group'}</span>
+                                                        {isActive ? (
+                                                            <input
+                                                                className="group-list-name-input"
+                                                                data-first-run-guide-target="name"
+                                                                value={group.name || ''}
+                                                                placeholder="Group name"
+                                                                aria-label="Department name"
+                                                                aria-invalid={nameConflict || undefined}
+                                                                aria-describedby={nameConflict ? `group-name-error-${group.id}` : undefined}
+                                                                onClick={(event) => event.stopPropagation()}
+                                                                onChange={(event) => updateGroupDraftName(group.id, event.target.value)}
+                                                                onKeyDown={(event) => {
+                                                                    if (event.key === 'Enter') {
+                                                                        event.preventDefault();
+                                                                        if (!nameConflict) updateGroupDraftName(group.id, normalizedName);
+                                                                    }
+                                                                    if (event.key === 'Escape') {
+                                                                        event.preventDefault();
+                                                                        event.currentTarget.focus();
+                                                                    }
+                                                                }}
+                                                                onBlur={(event) => {
+                                                                    if (nameConflict) return;
+                                                                    updateGroupDraftName(group.id, event.currentTarget.value.trim());
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <button
+                                                                className="group-list-select"
+                                                                onClick={() => {
+                                                                    setActiveGroupDraftId(group.id);
+                                                                    setShowGroupListMobile(false);
+                                                                }}
+                                                                type="button"
+                                                            >
+                                                                <span className="group-list-name">{group.name || 'Untitled group'}</span>
+                                                            </button>
+                                                        )}
+                                                        <div className="group-list-line group-list-meta-line">
                                                             <span className="group-list-dot">·</span>
                                                             <span className="group-list-meta">{teamCount} team{teamCount !== 1 ? 's' : ''}</span>
                                                         </div>
-                                                        <div className="group-list-star" aria-hidden="true">
+                                                        <button
+                                                            type="button"
+                                                            className="group-list-star"
+                                                            aria-pressed={isDefault}
+                                                            aria-label={isDefault ? `${group.name || 'Department'} is your favorite Department` : `Set ${group.name || 'Department'} as your favorite Department`}
+                                                            onClick={() => personalGroupPreferencesEnabled
+                                                                ? setFavoriteGroupDraft(group.id)
+                                                                : toggleDefaultGroupDraft(group.id)}
+                                                            disabled={groupVisibilitySaving || !(group.teamIds || []).some(teamId => String(teamId || '').trim())}
+                                                        >
                                                             {isDefault ? '★' : '☆'}
-                                                        </div>
-                                                    </button>
+                                                        </button>
+                                                        {isActive && nameConflict && (
+                                                            <span id={`group-name-error-${group.id}`} className="group-list-name-error" role="alert">
+                                                                {normalizedName ? 'Department names must be unique.' : 'Department name is required.'}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 );
                                             })}
                                         </div>
                                     </div>
                                     <div className="group-pane group-pane-right">
-                                        {onboardingReplayAvailable && (
-                                            <div className="group-modal-meta">
-                                                <button
-                                                    type="button"
-                                                    className="secondary compact"
-                                                    onClick={() => { void onReplayOnboarding?.(); }}
-                                                    disabled={onboardingReplayDisabled}
-                                                >
-                                                    {onboardingReplayPending ? 'Starting onboarding...' : 'Run onboarding again'}
-                                                </button>
-                                                {onboardingReplayError && (
-                                                    <div role="alert">
-                                                        <span>{onboardingReplayError}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
                                         <div className="group-pane-mobile-header">
                                             <button
                                                 className="secondary compact"
@@ -218,6 +251,7 @@ export default function TeamGroupsSettings(props) {
                                         <div className="group-pane-tools">
                                             <button
                                                 className="secondary compact"
+                                                data-first-run-guide-allow={firstRunConfigurationActive ? 'teams' : undefined}
                                                 onClick={fetchAllTeamsFromJira}
                                                 type="button"
                                                 disabled={loadingTeams}
@@ -238,13 +272,7 @@ export default function TeamGroupsSettings(props) {
                                         {activeGroupDraft ? (
                                             <div className="group-editor">
                                                 <div className="group-editor-header">
-                                                    <input
-                                                        type="text"
-                                                        value={activeGroupDraft.name}
-                                                        onChange={(event) => updateGroupDraftName(activeGroupDraft.id, event.target.value)}
-                                                        placeholder="Group name"
-                                                        className="group-name-input"
-                                                    />
+                                                    <h3 className="group-editor-name">{activeGroupDraft.name || 'Untitled Department'}</h3>
                                                     {!firstRunConfigurationActive && (
                                                         <>
                                                             <button
@@ -282,8 +310,19 @@ export default function TeamGroupsSettings(props) {
                                                                         : groupDraft?.defaultGroupId === activeGroupDraft.id)}
                                                                     onChange={() => toggleGroupVisibleInControls(activeGroupDraft.id)}
                                                                 />
-                                                                <span>Show in my controls</span>
+                                                                <span>Show in Department selector</span>
                                                             </label>
+                                                        </>
+                                                    )}
+                                                    {firstRunConfigurationActive && (
+                                                        <>
+                                                            <div className="first-run-preference-status" data-first-run-guide-target="favorite" tabIndex={0} aria-label="Favorite Department selected">
+                                                                <span aria-hidden="true">★</span> Your favorite Department
+                                                            </div>
+                                                            <div className="first-run-preference-status" data-first-run-guide-target="visibility" tabIndex={0} aria-label="Shown in Department selector">
+                                                                Shown in Department selector
+                                                                <span>Your favorite Department is always shown</span>
+                                                            </div>
                                                         </>
                                                     )}
                                                     <button
@@ -294,7 +333,7 @@ export default function TeamGroupsSettings(props) {
                                                         Duplicate
                                                     </button>
                                                 </div>
-                                                <div className="team-selector">
+                                                <div className="team-selector" data-first-run-guide-target="teams" tabIndex={-1}>
                                                     <div className="team-selector-header">
                                                         <div className="team-selector-label">
                                                             Teams {(activeGroupDraft.teamIds || []).length}/12
@@ -305,7 +344,7 @@ export default function TeamGroupsSettings(props) {
                                                     </div>
                                                     {(activeGroupDraft.teamIds || []).length === 0 ? (
                                                         <div className="team-selector-empty">
-                                                            No teams selected. Search and add teams below.
+                                                            Add at least one team. Teams define which Jira work appears for this Department.
                                                         </div>
                                                     ) : (
                                                         <div className="selected-teams-list is-capped">
@@ -374,8 +413,9 @@ export default function TeamGroupsSettings(props) {
                                                         </div>
                                                     )}
                                                 </div>
-                                                <div className="component-selector">
-                                                    <label className="component-selector-label">Components for missing info</label>
+                                                <div className="component-selector" data-first-run-guide-target="components" tabIndex={-1}>
+                                                    <label className="component-selector-label">Components for Missing Information and Lead Times</label>
+                                                    <div className="group-modal-meta">Component is a Jira issue field, usually set on an Epic.</div>
                                                     {(activeGroupDraft?.missingInfoComponents || []).length > 0 && (
                                                         <div className="selected-components-list">
                                                             {activeGroupDraft.missingInfoComponents.map(comp => (

@@ -10,7 +10,7 @@
             display: inline-flex;
             align-items: center;
             gap: 0.35rem;
-            min-height: 26px;
+            min-height: 44px;
             font-size: 0.78rem;
             color: var(--text-secondary);
             white-space: nowrap;
@@ -501,8 +501,8 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 26px;
-            height: 26px;
+            width: 44px;
+            height: 44px;
             border: 1px solid var(--border);
             border-radius: 6px;
             background: #fff;

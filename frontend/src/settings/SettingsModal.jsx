@@ -4,6 +4,7 @@ export default function SettingsModal(props) {
     const {
         title = 'Dashboard Settings',
         subtitle = 'Configure data sources and field mapping so planning metrics are calculated correctly.',
+        headerAction = null,
         activeTab,
         tabs = [],
         isDirty = false,
@@ -54,6 +55,7 @@ export default function SettingsModal(props) {
                             <div className="group-modal-title">{title}</div>
                             <div className="group-modal-subtitle">{subtitle}</div>
                         </div>
+                        {headerAction && <div className="group-modal-header-action">{headerAction}</div>}
                     </div>
                     {isDirty && (
                         <div className="group-modal-dirty">Unsaved changes{unsavedSectionsCount > 0 ? ` \u00b7 ${unsavedSectionsCount}` : ''}</div>
@@ -99,7 +101,7 @@ export default function SettingsModal(props) {
                         </div>
                     )}
                     <div className="group-modal-button-row">
-                        <button className="secondary compact lift-hover" onClick={handleCancel} type="button">
+                        <button className="secondary compact lift-hover" data-first-run-settings-cancel onClick={handleCancel} type="button">
                             {cancelLabel}
                         </button>
                     </div>

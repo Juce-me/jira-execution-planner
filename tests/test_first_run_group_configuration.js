@@ -21,6 +21,10 @@ function loadFirstRunGroupConfiguration() {
         buildFirstRunGroupDraft,
         buildPendingFirstRunGroupPreferencesDraft,
         beginFirstRunGroupConfiguration,
+        createFirstRunConfigurationSession,
+        firstRunConfigurationSessionReducer,
+        FIRST_RUN_CONFIGURATION_GUIDE_STEPS,
+        canAdvanceFirstRunConfigurationGuide,
     };`)();
 }
 
@@ -158,4 +162,148 @@ test('create draft starts clean and avoids existing name and id collisions', () 
         missingInfoComponents: [],
         excludedCapacityEpics: [],
     });
+});
+
+test('first-run configuration session follows the exact save recovery states', () => {
+    const {
+        createFirstRunConfigurationSession,
+        firstRunConfigurationSessionReducer,
+    } = loadFirstRunGroupConfiguration();
+    const reduce = (state, action) => firstRunConfigurationSessionReducer(state, action);
+    const started = reduce(createFirstRunConfigurationSession(), {
+        type: 'start',
+        mode: 'create',
+        pendingGroupId: 'new-department',
+        drafts: { shared: { groups: [] }, private: { visibleGroupIds: [] }, activeGroupId: 'old' },
+    });
+
+    assert.equal(started.status, 'editing');
+    assert.equal(started.guideStep, 'name');
+    assert.deepEqual(started.committedSections, { admin: false, groups: false, epm: false, preference: false });
+
+    const saving = reduce(started, { type: 'save_sections_started' });
+    assert.equal(saving.status, 'saving_sections');
+    assert.equal(reduce(saving, { type: 'save_sections_failed', committedSections: {} }).status, 'editing');
+
+    const partial = reduce(saving, {
+        type: 'save_sections_failed',
+        committedSections: { groups: true },
+        error: 'EPM failed',
+    });
+    assert.equal(partial.status, 'sections_pending');
+    assert.equal(partial.committedSections.groups, true);
+    assert.equal(reduce(partial, { type: 'retry_sections' }).status, 'saving_sections');
+    assert.equal(reduce(partial, { type: 'return_after_sections' }).status, 'idle');
+
+    const preferencePending = reduce(saving, {
+        type: 'sections_saved',
+        committedSections: { groups: true, epm: true },
+        normalizedGroups: { groups: [{ id: 'new-department', name: 'New Department', teamIds: ['a'] }] },
+    });
+    assert.equal(preferencePending.status, 'preference_pending');
+    assert.equal(preferencePending.committedSections.groups, true);
+    assert.equal(reduce(preferencePending, { type: 'preference_saved' }).status, 'complete');
+});
+
+test('first-run session keeps committed flags and rebased snapshot across recovery', () => {
+    const { createFirstRunConfigurationSession, firstRunConfigurationSessionReducer } = loadFirstRunGroupConfiguration();
+    const original = createFirstRunConfigurationSession({
+        status: 'sections_pending',
+        mode: 'repair',
+        pendingGroupId: 'platform',
+        guideStep: 'teams',
+        committedSections: { groups: true },
+    });
+    const rebased = firstRunConfigurationSessionReducer(original, {
+        type: 'rebase',
+        normalizedGroups: { configRevision: 8, groups: [{ id: 'platform', teamIds: ['a'] }] },
+    });
+
+    assert.equal(rebased.status, 'sections_pending');
+    assert.equal(rebased.guideStep, 'teams');
+    assert.equal(rebased.committedSections.groups, true);
+    assert.equal(rebased.latestNormalizedGroups.configRevision, 8);
+    assert.equal(firstRunConfigurationSessionReducer(rebased, { type: 'discard' }), rebased);
+});
+
+test('configuration guide has exact steps and validates only name and teams', () => {
+    const { FIRST_RUN_CONFIGURATION_GUIDE_STEPS, canAdvanceFirstRunConfigurationGuide } = loadFirstRunGroupConfiguration();
+    assert.deepEqual(FIRST_RUN_CONFIGURATION_GUIDE_STEPS, ['name', 'teams', 'components', 'favorite', 'visibility']);
+    assert.equal(canAdvanceFirstRunConfigurationGuide('name', { name: '  Growth  ', teamIds: [] }, []), true);
+    assert.equal(canAdvanceFirstRunConfigurationGuide('name', { id: 'a', name: ' Growth ' }, [{ id: 'b', name: 'growth' }]), false);
+    assert.equal(canAdvanceFirstRunConfigurationGuide('teams', { teamIds: [] }, []), false);
+    assert.equal(canAdvanceFirstRunConfigurationGuide('teams', { teamIds: ['team-a'] }, []), true);
+    assert.equal(canAdvanceFirstRunConfigurationGuide('components', { missingInfoComponents: [] }, []), true);
+});
+
+test('configuration guide is a non-modal anchored coachmark with real-target focus ownership', () => {
+    const guidePath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'FirstRunGroupConfigurationGuide.jsx');
+    assert.ok(fs.existsSync(guidePath), 'Expected FirstRunGroupConfigurationGuide.jsx');
+    const source = fs.readFileSync(guidePath, 'utf8');
+    assert.ok(source.includes('role="status"'));
+    assert.equal(source.includes('aria-modal="true"'), false);
+    assert.ok(source.includes('data-first-run-guide-target'));
+    assert.ok(source.includes("getAttribute('aria-describedby')"));
+    assert.ok(source.includes("setAttribute('aria-describedby'"));
+    assert.ok(source.includes('scrollIntoView'));
+    assert.ok(source.includes('visualViewport'));
+    assert.ok(source.includes('Back'));
+    assert.ok(source.includes('Continue without components'));
+});
+
+test('Department editor exposes one canonical inline name and guide targets', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx'), 'utf8');
+    assert.ok(source.includes('className="group-list-name-input"'));
+    assert.ok(source.includes('data-first-run-guide-target="name"'));
+    assert.ok(source.includes('data-first-run-guide-target="teams"'));
+    assert.ok(source.includes('data-first-run-guide-target="components"'));
+    assert.ok(source.includes('data-first-run-guide-target="favorite"'));
+    assert.ok(source.includes('data-first-run-guide-target="visibility"'));
+    assert.ok(source.includes('Show in Department selector'));
+    assert.ok(source.includes('Your favorite Department is always shown'));
+    assert.equal((source.match(/className="group-name-input"/g) || []).length, 0);
+    assert.equal(source.includes('Show in my controls'), false);
+});
+
+test('SettingsModal owns the replay header action slot', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'SettingsModal.jsx'), 'utf8');
+    assert.ok(source.includes('headerAction'));
+    assert.ok(source.includes('group-modal-header-action'));
+});
+
+test('dashboard owns one reducer session and ordered first-run preference handoff', () => {
+    const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+    const preferences = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'useGroupVisibilityPreferences.js'), 'utf8');
+    assert.match(dashboard, /React\.useReducer\(\s*firstRunConfigurationSessionReducer/);
+    assert.ok(dashboard.includes('saveAllSettings = async ({ rebaseOnto = null, firstRunSession = null } = {})'));
+    assert.ok(dashboard.includes('saveFirstRunGroupPreferences({'));
+    assert.ok(dashboard.includes('groupsSnapshot:'));
+    assert.ok(dashboard.includes('selectedGroupId: firstRunSession.pendingGroupId'));
+    assert.ok(preferences.includes('saveFirstRunGroupPreferences = React.useCallback(async ({ groupsSnapshot = groupsConfig, selectedGroupId = firstRunFavoriteGroupId } = {})'));
+    assert.equal(preferences.includes('const [firstRunConfigurationActive'), false);
+});
+
+test('group save returns the normalized committed snapshot to first-run preference save', () => {
+    const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+    const saveGroupsStart = dashboard.indexOf('const saveGroupsConfig = async');
+    const saveAllStart = dashboard.indexOf('const saveAllSettings = async');
+    const saveGroupsSource = dashboard.slice(saveGroupsStart, saveAllStart);
+
+    assert.ok(saveGroupsStart >= 0 && saveAllStart > saveGroupsStart);
+    assert.match(saveGroupsSource, /return \{\s*ok: true,\s*normalizedGroups: normalized,/);
+    assert.doesNotMatch(
+        dashboard.slice(dashboard.indexOf('const filteredRows = rows.filter'), saveGroupsStart),
+        /normalizedGroups: normalized/
+    );
+});
+
+test('first-run and compact controls declare keyboard-safe 44px target geometry', () => {
+    const firstRunCss = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'styles', 'settings', 'first-run.css'), 'utf8');
+    const groupCss = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'styles', 'settings', 'team-groups.css'), 'utf8');
+    const selectorCss = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'styles', 'settings', 'team-selector.css'), 'utf8');
+    assert.ok(firstRunCss.includes('.first-run-configuration-guide'));
+    assert.ok(firstRunCss.includes('min-height: 44px'));
+    assert.ok(firstRunCss.includes('max-width: min(360px'));
+    assert.ok(selectorCss.includes('.group-list-name-input'));
+    assert.ok(groupCss.includes('.settings-onboarding-replay'));
 });

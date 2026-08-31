@@ -2146,6 +2146,11 @@ test('first-run partial admin workspace conflict Retry rebases only pending work
     const guide = dialog.locator('.first-run-configuration-guide');
     const retry = guide.getByRole('button', { name: 'Retry unsaved settings' });
     await expect(retry).toBeVisible();
+    await expect(retry).toBeEnabled();
+    await expect(dialog.locator('button', { hasText: /^Use latest$/ })).toHaveCount(0);
+    await expect(dialog.locator('button', { hasText: /^Keep mine$/ })).toHaveCount(0);
+    await retry.focus();
+    await expect(retry).toBeFocused();
     await retry.click();
     await expect(dialog).toHaveCount(0);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/projects/selected')).toHaveLength(1);

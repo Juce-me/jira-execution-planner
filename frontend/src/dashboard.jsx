@@ -16337,7 +16337,7 @@ import {
                             unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
                             onRequestClose={firstRunConfigurationActive ? () => {} : requestCloseGroupManage}
                             validationMessages={groupManageTab !== 'connections' ? [...workspaceConfigConflictMessages(workspaceConfigConflict), ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...(groupDraftError && SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab) && !workspaceConfigConflict && !groupsConfigConflict ? [groupDraftError] : []), ...groupConfigValidationErrors] : []}
-                            validationActions={groupManageTab !== 'connections' && workspaceConfigConflict ? (
+                            validationActions={groupManageTab !== 'connections' && workspaceConfigConflict && !firstRunHasCommittedSection ? (
                                 <div className="group-modal-button-row" data-testid="workspace-config-conflict-actions">
                                     <button className="secondary compact" onClick={useLatestWorkspaceConfig} type="button">Use latest</button>
                                     <button className="compact" onClick={keepMineOnWorkspaceConfigConflict} type="button">Keep mine</button>

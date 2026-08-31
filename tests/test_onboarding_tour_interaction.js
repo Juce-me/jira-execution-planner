@@ -1,5 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+
+const VALID_MENU_ATTRIBUTES = Object.freeze({
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+});
 
 async function loadModule() {
     return import('../frontend/src/onboarding/onboardingInteraction.js');
@@ -47,7 +53,7 @@ function fakeElement({
 function nativeMenuButton(overrides = {}) {
     return fakeElement({
         tagName: 'BUTTON',
-        attrs: { 'aria-haspopup': 'menu', 'aria-expanded': 'false' },
+        attrs: VALID_MENU_ATTRIBUTES,
         ...overrides,
     });
 }
@@ -65,11 +71,11 @@ test('eligible menu trigger is the exact enabled connected native button with bo
 
 test('menu trigger eligibility rejects wrappers, nested children, and non-native controls', async () => {
     const { isExactMenuButtonTrigger } = await loadModule();
-    const wrapper = fakeElement({ attrs: { 'aria-expanded': 'false' } });
+    const wrapper = fakeElement({ attrs: VALID_MENU_ATTRIBUTES });
     const button = nativeMenuButton();
-    const nestedChild = fakeElement({ tagName: 'SPAN', attrs: { 'aria-expanded': 'false' } });
-    const roleButton = fakeElement({ attrs: { role: 'button', 'aria-expanded': 'false' } });
-    const input = fakeElement({ tagName: 'INPUT', attrs: { type: 'button', 'aria-expanded': 'false' } });
+    const nestedChild = fakeElement({ tagName: 'SPAN', attrs: VALID_MENU_ATTRIBUTES });
+    const roleButton = fakeElement({ attrs: { ...VALID_MENU_ATTRIBUTES, role: 'button' } });
+    const input = fakeElement({ tagName: 'INPUT', attrs: { ...VALID_MENU_ATTRIBUTES, type: 'button' } });
     wrapper.append(button);
     button.append(nestedChild);
 
@@ -169,7 +175,7 @@ test('suppression snapshots and restores exact attributes and inert property for
     const portal = fakeElement({
         attrs: {
             'aria-hidden': '',
-            'aria-describedby': '',
+            'aria-describedby': ' portal-help   status-help ',
         },
         inert: true,
     });
@@ -193,6 +199,8 @@ test('suppression snapshots and restores exact attributes and inert property for
     assert.equal(portal.inert, true);
     assert.equal(portal.getAttribute('inert'), '');
     assert.equal(portal.getAttribute('aria-hidden'), 'true');
+    rootSibling.setAttribute('aria-describedby', 'tour-description replacement-help');
+    portal.removeAttribute('aria-describedby');
 
     records.slice().reverse().forEach(restoreInteractionSuppression);
     assert.deepEqual({
@@ -241,4 +249,15 @@ test('description token helpers append once and remove only the coachmark token'
     assert.equal(removeAriaDescribedByToken('field-help tour-description error-help', 'tour-description'), 'field-help error-help');
     assert.equal(removeAriaDescribedByToken('field-help error-help', 'tour-description'), 'field-help error-help');
     assert.equal(removeAriaDescribedByToken('tour-description', 'tour-description'), '');
+});
+
+test('interaction helper stays free of React state and DOM listener registration', () => {
+    const source = readFileSync(
+        new URL('../frontend/src/onboarding/onboardingInteraction.js', `file://${__filename}`),
+        'utf8'
+    );
+
+    assert.doesNotMatch(source, /^\s*import\s+.*(?:from\s+)?['"](?:react|react-dom)(?:\/[^'"]*)?['"]/m);
+    assert.doesNotMatch(source, /\b(?:useState|useEffect|useLayoutEffect|useRef|useCallback|useMemo)\s*\(/);
+    assert.doesNotMatch(source, /\.\s*(?:addEventListener|removeEventListener)\s*\(/);
 });

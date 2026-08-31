@@ -256,6 +256,16 @@ test('onboarding step navigation is untracked and its analytics contract is docu
     assert.ok(featureDoc.includes('do not write onboarding state'));
 });
 
+test('first-run guide recovery and focus ownership add no new analytics surface', () => {
+    const guide = read('frontend/src/settings/FirstRunGroupConfigurationGuide.jsx');
+    const dashboard = read('frontend/src/dashboard.jsx');
+    const recoveryStart = dashboard.indexOf('const retryFirstRunConfiguration');
+    const recoveryEnd = dashboard.indexOf('const filteredGroupDrafts', recoveryStart);
+    assert.equal(guide.includes('trackSettingsAction'), false);
+    assert.equal(guide.includes('trackEvent'), false);
+    assert.doesNotMatch(dashboard.slice(recoveryStart, recoveryEnd), /trackSettingsAction|trackEvent/);
+});
+
 test('Jira issue transition API module sends the eng_status_transitions surface for both endpoints', () => {
     const source = read('frontend/src/api/jiraIssueApi.js');
     assert.ok(source.includes('/api/issues/transitions/options'), 'Expected the transition options endpoint literal');

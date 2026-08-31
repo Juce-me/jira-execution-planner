@@ -187,6 +187,9 @@ async function mockFirstRunDashboard(page, options = {}) {
         }
         if (url.pathname === '/api/groups-config') {
             if (request.method() === 'POST') {
+                if (options.groupsConfigError) {
+                    return json(options.groupsConfigError.body, options.groupsConfigError.status);
+                }
                 if (options.groupsConfigConflict) {
                     return json({
                         error: 'group_config_conflict',
@@ -911,10 +914,44 @@ test('first-run Add Department opens the anchored configuration guide and Cancel
     await expect(settingsDialog.getByRole('checkbox', { name: 'Show in Department selector' })).toHaveCount(0);
     await expect(settingsDialog.getByRole('button', { name: 'Run onboarding again' })).toHaveCount(0);
     await expect(firstRunDialog).toHaveCount(0);
+    const canonicalNameInput = settingsDialog.getByPlaceholder('Group name');
+    await canonicalNameInput.fill('Temporary rename');
+    await canonicalNameInput.press('Escape');
+    await expect(canonicalNameInput).toHaveValue('New Department');
+    await settingsDialog.locator('.group-list-item', { hasText: 'Growth' }).click({ position: { x: 4, y: 4 } });
+    await expect(canonicalNameInput).toHaveValue('New Department');
+
+    const backgroundButton = page.locator('button[aria-label="Manage team groups"]');
+    await expect(backgroundButton).toHaveAttribute('tabindex', '-1');
+    await page.evaluate(() => {
+        const portalButton = document.createElement('button');
+        portalButton.id = 'synthetic-unowned-portal-button';
+        portalButton.textContent = 'Outside portal action';
+        document.body.appendChild(portalButton);
+    });
+    const portalButton = page.locator('#synthetic-unowned-portal-button');
+    await expect(portalButton).toHaveAttribute('tabindex', '-1');
+    await page.keyboard.press('Tab');
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('.group-modal-backdrop')))).toBe(true);
 
     await guide.getByRole('button', { name: 'Cancel' }).click();
     await expect(firstRunDialog).toBeVisible();
     await expect(firstRunDialog.getByRole('radio', { checked: true })).toHaveCount(0);
+    await expect(backgroundButton).not.toHaveAttribute('tabindex', '-1');
+    await expect(portalButton).not.toHaveAttribute('tabindex', '-1');
+});
+
+test('first-run configuration guide target loss restores focus state and offers Return', async ({ page }) => {
+    await mockFirstRunDashboard(page);
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunCreateDepartment(page);
+    const guide = page.locator('.first-run-configuration-guide');
+    await page.evaluate(() => document.querySelector('[data-first-run-guide-target="name"]')?.remove());
+    await expect(guide).toContainText('no longer available');
+    await expect(guide.getByRole('button', { name: 'Return' })).toBeVisible();
+    await guide.getByRole('button', { name: 'Return' }).click();
+    await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
+    await expect(page.locator('#synthetic-unowned-portal-button')).toHaveCount(0);
 });
 
 test('first-run Add Department keeps the guide and canonical name keyboard-safe in compact layout', async ({ page }) => {
@@ -947,6 +984,13 @@ test('first-run Add Department keeps the guide and canonical name keyboard-safe 
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
         .toBeLessThanOrEqual(0);
+
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(settingsDialog.locator('.group-pane-left')).not.toHaveClass(/is-mobile-active/);
+    await expectContainedInViewport(settingsDialog.locator('[data-first-run-guide-target="teams"]'));
+    await guide.getByRole('button', { name: 'Back' }).click();
+    await expect(settingsDialog.locator('.group-pane-left')).toHaveClass(/is-mobile-active/);
+    await expect(nameInput).toBeFocused();
 
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
     await page.screenshot({ path: `${screenshotDir}/first-run-configure-compact.png`, fullPage: true });
@@ -1080,7 +1124,62 @@ test('first-run configuration blocks Save until Done and Cancel restores exact p
     await expect(settingsDialog).toHaveCount(0);
 });
 
-test('first-run configuration keeps the editor open across validation and a 409 conflict', async ({ page }) => {
+test('first-run preference pending recovery survives Done and retries only the private preference', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        preferenceError: {
+            status: 500,
+            body: { error: 'preference_save_failed', message: 'Synthetic preference failure.' },
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunCreateDepartment(page);
+
+    const settingsDialog = page.locator('.group-modal');
+    const guide = settingsDialog.locator('.first-run-configuration-guide');
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await settingsDialog.getByRole('button', { name: 'Refresh teams' }).click();
+    await settingsDialog.getByPlaceholder('Search teams to add...').fill('new');
+    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await guide.getByRole('button', { name: 'Done', exact: true }).click();
+    await settingsDialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(guide.getByRole('button', { name: 'Retry favorite save' })).toBeVisible();
+    await expect(guide.getByRole('button', { name: 'Return' })).toBeVisible();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
+
+    await guide.getByRole('button', { name: 'Retry favorite save' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(2);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+
+    await guide.getByRole('button', { name: 'Return' }).click();
+    await expect(settingsDialog).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
+});
+
+test('first-run group-save 401 keeps the mounted configuration behind the global auth lock', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfigError: {
+            status: 401,
+            body: { error: 'auth_required', loginUrl: '/login?reason=session_expired' },
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    const settingsDialog = page.locator('.group-modal');
+    await finishFirstRunConfigurationGuide(page);
+    await settingsDialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expect(settingsDialog).toHaveCount(1);
+    await expect(settingsDialog.locator('.first-run-configuration-error')).toHaveCount(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(0);
+});
+
+test('first-run configuration keeps the editor open for a 409 choice and Discard returns to the chooser', async ({ page }) => {
     const groupsConfigConflict = {
         version: 1,
         groups: [{ id: 'platform', name: 'Platform', teamIds: ['team-platform'] }],
@@ -1102,10 +1201,10 @@ test('first-run configuration keeps the editor open across validation and a 409 
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toHaveCount(0);
 
     await settingsDialog.locator('.group-modal-validation').getByRole('button', { name: 'Discard mine' }).click();
-    await expect(settingsDialog).toBeVisible();
-    await settingsDialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(settingsDialog).toHaveCount(0);
-    await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
+    const chooser = page.getByRole('dialog', { name: 'Choose your Department' });
+    await expect(chooser).toBeVisible();
+    await expect(chooser.getByText('Growth', { exact: true })).toHaveCount(0);
 });
 test('first-run invalid snapshot and auth failure keep mandatory selection gated', async ({ page }) => {
     const calls = await mockFirstRunDashboard(page, { omitPreferenceSnapshot: true });
@@ -1190,9 +1289,11 @@ test('personal favorite star is separate from shared default and temporary group
     const growthStar = dialog.getByRole('button', { name: 'Set Growth as my favorite group' });
     await expect(growthStar).toHaveCSS('width', '44px');
     await expect(growthStar).toHaveCSS('height', '44px');
+    await expect(growthStar).toHaveAttribute('aria-pressed', 'false');
     await growthStar.click();
-    await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveClass(/active/);
+    await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveAttribute('aria-pressed', 'true');
     await expect(dialog.getByRole('checkbox', { name: 'Show in Department selector' })).toBeDisabled();
+    await expect(dialog.locator('.group-visible-helper')).toHaveText('Your favorite Department is always shown');
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${screenshotDir}/personal-favorite-settings.png`, fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });

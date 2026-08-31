@@ -13,10 +13,16 @@ function loadFirstRunGroupConfiguration() {
         'firstRunGroupConfiguration.js'
     );
     assert.ok(fs.existsSync(modulePath), 'Expected frontend/src/settings/firstRunGroupConfiguration.js to exist');
+    const guidePath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'FirstRunGroupConfigurationGuide.jsx');
     const source = fs.readFileSync(modulePath, 'utf8')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
-    return new Function(`${source}; return {
+    const guideSource = fs.readFileSync(guidePath, 'utf8');
+    const guideContracts = guideSource.slice(
+        guideSource.indexOf('export const FIRST_RUN_CONFIGURATION_GUIDE_STEPS'),
+        guideSource.indexOf('const COPY')
+    ).replaceAll('export const ', 'const ').replaceAll('export function ', 'function ');
+    return new Function(`${source}; ${guideContracts}; return {
         shouldShowFirstRunGroupSearch,
         buildFirstRunGroupDraft,
         buildPendingFirstRunGroupPreferencesDraft,
@@ -226,6 +232,21 @@ test('first-run session keeps committed flags and rebased snapshot across recove
     assert.equal(firstRunConfigurationSessionReducer(rebased, { type: 'discard' }), rebased);
 });
 
+test('Task 2 session contracts live with the guide and expose no generic discard transition', () => {
+    const configurationSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'firstRunGroupConfiguration.js'), 'utf8');
+    const guideSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'FirstRunGroupConfigurationGuide.jsx'), 'utf8');
+    assert.equal(configurationSource.includes('firstRunConfigurationSessionReducer'), false);
+    assert.equal(configurationSource.includes('FIRST_RUN_CONFIGURATION_GUIDE_STEPS'), false);
+    assert.ok(guideSource.includes('firstRunConfigurationSessionReducer'));
+    assert.equal(guideSource.includes("case 'discard'"), false);
+});
+
+test('recovery states remain renderable after the guide is complete', () => {
+    const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+    assert.equal(dashboard.includes('firstRunConfigurationActive && !firstRunConfigurationSession.guideComplete && activeGroupDraft'), false);
+    assert.ok(dashboard.includes("['sections_pending', 'preference_pending'].includes(firstRunConfigurationSession.status)"));
+});
+
 test('configuration guide has exact steps and validates only name and teams', () => {
     const { FIRST_RUN_CONFIGURATION_GUIDE_STEPS, canAdvanceFirstRunConfigurationGuide } = loadFirstRunGroupConfiguration();
     assert.deepEqual(FIRST_RUN_CONFIGURATION_GUIDE_STEPS, ['name', 'teams', 'components', 'favorite', 'visibility']);
@@ -290,11 +311,33 @@ test('group save returns the normalized committed snapshot to first-run preferen
     const saveGroupsSource = dashboard.slice(saveGroupsStart, saveAllStart);
 
     assert.ok(saveGroupsStart >= 0 && saveAllStart > saveGroupsStart);
-    assert.match(saveGroupsSource, /return \{\s*ok: true,\s*normalizedGroups: normalized,/);
+    assert.match(saveGroupsSource, /return buildSettingsSaveOutcome\(\{\s*ok: true,\s*normalizedGroups: normalized,/);
     assert.doesNotMatch(
         dashboard.slice(dashboard.indexOf('const filteredRows = rows.filter'), saveGroupsStart),
         /normalizedGroups: normalized/
     );
+    assert.ok(saveGroupsSource.includes('authRequired: true'));
+    assert.ok(saveGroupsSource.includes('committedSections'));
+    assert.ok(saveGroupsSource.includes('pendingSections'));
+    assert.equal(saveGroupsSource.includes('isAuthenticationRequiredError(err)) return false'), false);
+});
+
+test('conflict exits preserve the first-run session through Keep and Discard', () => {
+    const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+    const keepStart = dashboard.indexOf('const keepMineOnGroupsConfigConflict');
+    const discardEnd = dashboard.indexOf('const keepMineOnWorkspaceConfigConflict', keepStart);
+    const conflictSource = dashboard.slice(keepStart, discardEnd);
+    assert.ok(conflictSource.includes('firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null'));
+    assert.ok(conflictSource.includes('returnFromFirstRunConfigurationRecovery'));
+});
+
+test('first-run save validates the pending name and teams immediately before writes', () => {
+    const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+    const saveStart = dashboard.indexOf('const saveAllSettings = async');
+    const saveEnd = dashboard.indexOf('const keepMineOnGroupsConfigConflict', saveStart);
+    const source = dashboard.slice(saveStart, saveEnd);
+    assert.ok(source.includes('validateFirstRunPendingGroup'));
+    assert.ok(source.indexOf('validateFirstRunPendingGroup') < source.indexOf('saveGroupsConfig('));
 });
 
 test('first-run and compact controls declare keyboard-safe 44px target geometry', () => {

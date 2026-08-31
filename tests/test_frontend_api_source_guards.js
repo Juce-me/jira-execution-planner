@@ -8,6 +8,15 @@ const apiPathSegment = `${path.sep}api${path.sep}`;
 // Raw API endpoint literals belong under frontend/src/api.
 const allowedTransitionalWrappers = new Set();
 
+test('first-run guide owns no endpoint literals and save auth outcomes stay in dashboard state', () => {
+    const guide = readSource(path.join(frontendSrcPath, 'settings', 'FirstRunGroupConfigurationGuide.jsx'));
+    const dashboard = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    assert.doesNotMatch(guide, /\/api\//);
+    assert.ok(dashboard.includes('authRequired: true'));
+    assert.ok(dashboard.includes('pendingSections'));
+    assert.ok(dashboard.includes('committedSections'));
+});
+
 function listSourceFiles(root) {
     if (!fs.existsSync(root)) return [];
     const entries = fs.readdirSync(root, { withFileTypes: true });

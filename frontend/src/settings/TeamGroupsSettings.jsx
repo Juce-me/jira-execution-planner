@@ -95,6 +95,7 @@ export default function TeamGroupsSettings(props) {
     } = props;
 
     const hasDuplicableGroup = (groupDraft?.groups || []).some(group => String(group?.id || '').trim());
+    const nameFocusValueRef = React.useRef(new Map());
 
     return (
         <>
@@ -104,7 +105,7 @@ export default function TeamGroupsSettings(props) {
                                         <div className="group-pane-header">
                                             <div className="group-pane-header-row">
                                                 <div className="group-pane-title">Groups</div>
-                                                <button className="secondary compact group-add-button" onClick={addGroupDraftRow} type="button">
+                                                <button className="secondary compact group-add-button" onClick={addGroupDraftRow} type="button" disabled={firstRunConfigurationActive}>
                                                     + Add group
                                                 </button>
                                             </div>
@@ -115,6 +116,7 @@ export default function TeamGroupsSettings(props) {
                                                     placeholder="Search groups or teams..."
                                                     value={groupSearchQuery}
                                                     onChange={(event) => setGroupSearchQuery(event.target.value)}
+                                                    disabled={firstRunConfigurationActive}
                                                 />
                                             </div>
                                             <div className="group-pane-count">
@@ -122,7 +124,8 @@ export default function TeamGroupsSettings(props) {
                                             </div>
                                             <button
                                                 className="group-pane-mobile-close"
-                                                onClick={() => setShowGroupListMobile(false)}
+                                                onClick={() => { if (!firstRunConfigurationActive) setShowGroupListMobile(false); }}
+                                                disabled={firstRunConfigurationActive}
                                                 type="button"
                                             >
                                                 Back
@@ -147,6 +150,7 @@ export default function TeamGroupsSettings(props) {
                                                         key={group.id}
                                                         className={`group-list-item ${isActive ? 'active' : ''}`}
                                                         onClick={() => {
+                                                            if (firstRunConfigurationActive) return;
                                                             setActiveGroupDraftId(group.id);
                                                             setShowGroupListMobile(false);
                                                         }}
@@ -161,6 +165,11 @@ export default function TeamGroupsSettings(props) {
                                                                 aria-invalid={nameConflict || undefined}
                                                                 aria-describedby={nameConflict ? `group-name-error-${group.id}` : undefined}
                                                                 onClick={(event) => event.stopPropagation()}
+                                                                onFocus={() => {
+                                                                    if (!nameFocusValueRef.current.has(group.id)) {
+                                                                        nameFocusValueRef.current.set(group.id, group.name || '');
+                                                                    }
+                                                                }}
                                                                 onChange={(event) => updateGroupDraftName(group.id, event.target.value)}
                                                                 onKeyDown={(event) => {
                                                                     if (event.key === 'Enter') {
@@ -169,22 +178,26 @@ export default function TeamGroupsSettings(props) {
                                                                     }
                                                                     if (event.key === 'Escape') {
                                                                         event.preventDefault();
+                                                                        updateGroupDraftName(group.id, nameFocusValueRef.current.get(group.id) ?? group.name ?? '');
                                                                         event.currentTarget.focus();
                                                                     }
                                                                 }}
                                                                 onBlur={(event) => {
                                                                     if (nameConflict) return;
                                                                     updateGroupDraftName(group.id, event.currentTarget.value.trim());
+                                                                    nameFocusValueRef.current.delete(group.id);
                                                                 }}
                                                             />
                                                         ) : (
                                                             <button
                                                                 className="group-list-select"
                                                                 onClick={() => {
+                                                                    if (firstRunConfigurationActive) return;
                                                                     setActiveGroupDraftId(group.id);
                                                                     setShowGroupListMobile(false);
                                                                 }}
                                                                 type="button"
+                                                                disabled={firstRunConfigurationActive}
                                                             >
                                                                 <span className="group-list-name">{group.name || 'Untitled group'}</span>
                                                             </button>
@@ -201,7 +214,7 @@ export default function TeamGroupsSettings(props) {
                                                             onClick={() => personalGroupPreferencesEnabled
                                                                 ? setFavoriteGroupDraft(group.id)
                                                                 : toggleDefaultGroupDraft(group.id)}
-                                                            disabled={groupVisibilitySaving || !(group.teamIds || []).some(teamId => String(teamId || '').trim())}
+                                                            disabled={firstRunConfigurationActive || groupVisibilitySaving || !(group.teamIds || []).some(teamId => String(teamId || '').trim())}
                                                         >
                                                             {isDefault ? '★' : '☆'}
                                                         </button>
@@ -294,6 +307,7 @@ export default function TeamGroupsSettings(props) {
                                                                             ? `${activeGroupDraft.name || 'Group'} is my favorite group`
                                                                             : `Set ${activeGroupDraft.name || 'group'} as my favorite group`))
                                                                     : (groupDraft?.defaultGroupId === activeGroupDraft.id ? 'Unset shared default group' : 'Set as shared default group')}
+                                                                aria-pressed={(personalGroupPreferencesEnabled ? favoriteGroupDraftId : groupDraft?.defaultGroupId) === activeGroupDraft.id}
                                                                 disabled={groupVisibilitySaving || (personalGroupPreferencesEnabled && !(activeGroupDraft.teamIds || []).some(teamId => String(teamId || '').trim()))}
                                                                 type="button"
                                                             >
@@ -310,7 +324,14 @@ export default function TeamGroupsSettings(props) {
                                                                         : groupDraft?.defaultGroupId === activeGroupDraft.id)}
                                                                     onChange={() => toggleGroupVisibleInControls(activeGroupDraft.id)}
                                                                 />
-                                                                <span>Show in Department selector</span>
+                                                                <span>
+                                                                    Show in Department selector
+                                                                    <span className="group-visible-helper">
+                                                                        {(personalGroupPreferencesEnabled ? favoriteGroupDraftId : groupDraft?.defaultGroupId) === activeGroupDraft.id
+                                                                            ? 'Your favorite Department is always shown'
+                                                                            : 'Choose whether this Department appears in the selector'}
+                                                                    </span>
+                                                                </span>
                                                             </label>
                                                         </>
                                                     )}

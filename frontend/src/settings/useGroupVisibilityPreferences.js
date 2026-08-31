@@ -160,10 +160,10 @@ export function useGroupVisibilityPreferences({
     }, [groupsConfig.groups]);
 
     const saveFirstRunGroupPreferences = React.useCallback(async ({ groupsSnapshot = groupsConfig, selectedGroupId = firstRunFavoriteGroupId } = {}) => {
-        if (firstRunSaveInFlightRef.current) return;
+        if (firstRunSaveInFlightRef.current) return { ok: false, inFlight: true };
         const selectedGroup = (groupsSnapshot.groups || []).find(group => group.id === selectedGroupId);
         const isEligible = (selectedGroup?.teamIds || []).some(teamId => String(teamId || '').trim());
-        if (!selectedGroupId || !isEligible) return false;
+        if (!selectedGroupId || !isEligible) return { ok: false, invalidSelection: true };
         firstRunSaveInFlightRef.current = true;
         setFirstRunSaving(true);
         setFirstRunError('');
@@ -208,7 +208,7 @@ export function useGroupVisibilityPreferences({
             });
             return { ok: true, groupsSnapshot: snapshot, preferences: nextPreferences };
         } catch (error) {
-            if (isAuthenticationRequiredError(error)) return false;
+            if (isAuthenticationRequiredError(error)) return { ok: false, authRequired: true };
             setFirstRunError(error?.message || 'Failed to save departments.');
             trackSettingsAction('departments', 'save_result', { result: 'failure', source_surface: 'first_run' });
             return false;

@@ -16,6 +16,14 @@
             white-space: nowrap;
         }
 
+        .group-visible-helper {
+            display: block;
+            margin-top: 0.1rem;
+            color: var(--text-muted);
+            font-size: 0.66rem;
+            white-space: normal;
+        }
+
         .group-editor-actions {
             display: flex;
             align-items: center;

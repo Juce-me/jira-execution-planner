@@ -331,15 +331,18 @@ async function advanceToHeading(page, heading) {
     throw new Error(`Did not reach onboarding heading: ${heading}`);
 }
 
-async function collectTourHeadings(page) {
-    const headings = [];
+async function collectTourSteps(page) {
+    const steps = [];
     for (let index = 0; index < 20; index += 1) {
-        headings.push(await page.getByRole('heading').textContent());
+        steps.push({
+            title: await page.getByRole('heading').textContent(),
+            progress: await page.locator('.onboarding-tour-progress').textContent(),
+        });
         const next = page.getByRole('button', { name: 'Next' });
         if (!await next.count()) break;
         await next.click();
     }
-    return headings;
+    return steps;
 }
 
 test('portal, focus trap, pending Skip and Escape, and focus restoration work together', async ({ page }) => {
@@ -392,6 +395,36 @@ test('root accessibility state restores exact pre-existing attribute values and 
     await expect(page.locator('#root')).toHaveAttribute('inert', 'legacy-inert');
     expect(await page.locator('#root').evaluate((node) => node.inert)).toBe(true);
     await expect(page.locator('#outside-focus')).toBeFocused();
+});
+
+test('readiness mixed tour-owned suppression never bypasses non-owned hidden or aria state', async ({ page }) => {
+    await installHarness(page);
+    await openTour(page);
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+    await page.evaluate(() => { document.getElementById('root').style.display = 'none'; });
+    await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
+    await page.evaluate(() => { document.getElementById('root').style.display = ''; });
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+    await page.getByRole('button', { name: 'Skip onboarding' }).click();
+
+    await page.evaluate(() => {
+        const root = document.getElementById('root');
+        root.setAttribute('aria-hidden', 'true');
+        root.removeAttribute('inert');
+        root.inert = false;
+    });
+    await openTour(page);
+    await expect(page.getByRole('heading')).toHaveText('Choose a sprint');
+    await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
+    await expect(page.locator('#root')).toHaveAttribute('aria-hidden', 'true');
+    await expect(page.locator('#root')).toHaveAttribute('inert', '');
+
+    await page.getByRole('button', { name: 'Skip onboarding' }).click();
+    await expect(page.locator('#root')).toHaveAttribute('aria-hidden', 'true');
+    expect(await page.locator('#root').evaluate((node) => ({
+        hasInert: node.hasAttribute('inert'),
+        inert: node.inert,
+    }))).toEqual({ hasInert: false, inert: false });
 });
 
 test('mutation retargets visible duplicates, removes vanished optional steps, and reopen starts at step one', async ({ page }) => {
@@ -468,7 +501,12 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
             window.__tourHarness.open();
         }, { hierarchyMask: mask });
         await expect(page.getByRole('dialog')).toBeVisible();
-        const hierarchyHeadings = (await collectTourHeadings(page)).filter((title) => (
+        const steps = await collectTourSteps(page);
+        const expectedTotal = mask ? 10 : 8;
+        expect(steps.map((step) => step.progress)).toEqual(
+            Array.from({ length: expectedTotal }, (_value, index) => `Step ${index + 1} of ${expectedTotal}`)
+        );
+        const hierarchyHeadings = steps.map((step) => step.title).filter((title) => (
             hierarchyTitles.includes(title) || title === 'Follow work from goal to delivery'
         ));
         expect(hierarchyHeadings).toEqual(mask ? hierarchyTitles : ['Follow work from goal to delivery']);
@@ -483,7 +521,12 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
             window.__tourHarness.open();
         }, { editingMask: mask });
         await expect(page.getByRole('dialog')).toBeVisible();
-        const editingHeadings = (await collectTourHeadings(page)).filter((title) => (
+        const steps = await collectTourSteps(page);
+        const expectedTotal = mask ? 10 : 8;
+        expect(steps.map((step) => step.progress)).toEqual(
+            Array.from({ length: expectedTotal }, (_value, index) => `Step ${index + 1} of ${expectedTotal}`)
+        );
+        const editingHeadings = steps.map((step) => step.title).filter((title) => (
             editingTitles.includes(title) || title === 'Preview Jira fields safely'
         ));
         expect(editingHeadings).toEqual(mask ? editingTitles : ['Preview Jira fields safely']);

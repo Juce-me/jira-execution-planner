@@ -15,6 +15,7 @@ function element(rect, {
     ariaHidden = null,
     hidden = false,
     inert = false,
+    inertAttribute = inert,
     parentElement = null,
     scrollIntoView = null,
     matchesDisabled = false,
@@ -22,7 +23,7 @@ function element(rect, {
     const attributes = new Map();
     if (ariaDisabled !== null) attributes.set('aria-disabled', ariaDisabled);
     if (ariaHidden !== null) attributes.set('aria-hidden', ariaHidden);
-    if (inert) attributes.set('inert', '');
+    if (inertAttribute) attributes.set('inert', '');
     return {
         disabled,
         hidden,
@@ -271,25 +272,65 @@ test('every hierarchy and editing step resolves loading, visible, offscreen, mis
     }
 });
 
-test('tour-owned inert ancestors can be ignored without admitting pre-existing inert targets', async () => {
+test('attribute-level tour suppression ignores only owned values and always enforces hidden styles', async () => {
     const { resolveOnboardingSnapshot } = await loadModule();
     const selector = '[data-onboarding-target="editing-priority"][data-issue-kind="epic"]';
-    const ownedSuppressedSubtree = element(VISIBLE_RECT, { inert: true });
+    const ownedSuppressedSubtree = element(VISIBLE_RECT, { inert: true, ariaHidden: 'true' });
     const futureTarget = element(VISIBLE_RECT, { parentElement: ownedSuppressedSubtree });
-    const preExistingSuppressedSubtree = element(VISIBLE_RECT, { inert: true });
-    const unavailableTarget = element(VISIBLE_RECT, { parentElement: preExistingSuppressedSubtree });
+    const allOwnedRecord = {
+        node: ownedSuppressedSubtree,
+        owned: { inertAttribute: true, inertProperty: true, ariaHidden: true },
+    };
 
     const retained = resolveOnboardingSnapshot(rootWith({ [selector]: [futureTarget] }), VIEWPORT, {
         engReadiness: 'settled',
-        ignoredAncestors: [ownedSuppressedSubtree],
+        tourOwnedSuppressionRecords: [allOwnedRecord],
     });
     assert.equal(retained.targets['editing-priority'], futureTarget);
 
-    const rejected = resolveOnboardingSnapshot(rootWith({ [selector]: [unavailableTarget] }), VIEWPORT, {
+    const mixedAria = resolveOnboardingSnapshot(rootWith({ [selector]: [futureTarget] }), VIEWPORT, {
         engReadiness: 'settled',
-        ignoredAncestors: [],
+        tourOwnedSuppressionRecords: [{
+            node: ownedSuppressedSubtree,
+            owned: { inertAttribute: true, inertProperty: true, ariaHidden: false },
+        }],
     });
-    assert.equal(rejected.targets['editing-priority'], null);
+    assert.equal(mixedAria.targets['editing-priority'], null, 'pre-existing aria-hidden remains disqualifying');
+
+    const mixedInert = resolveOnboardingSnapshot(rootWith({ [selector]: [futureTarget] }), VIEWPORT, {
+        engReadiness: 'settled',
+        tourOwnedSuppressionRecords: [{
+            node: ownedSuppressedSubtree,
+            owned: { inertAttribute: false, inertProperty: false, ariaHidden: true },
+        }],
+    });
+    assert.equal(mixedInert.targets['editing-priority'], null, 'pre-existing inert remains disqualifying');
+
+    const hiddenOwnedSubtree = element(VISIBLE_RECT, { display: 'none', inert: true, ariaHidden: 'true' });
+    const hiddenTarget = element(VISIBLE_RECT, { parentElement: hiddenOwnedSubtree });
+    const hidden = resolveOnboardingSnapshot(rootWith({ [selector]: [hiddenTarget] }), VIEWPORT, {
+        engReadiness: 'settled',
+        tourOwnedSuppressionRecords: [{
+            node: hiddenOwnedSubtree,
+            owned: { inertAttribute: true, inertProperty: true, ariaHidden: true },
+        }],
+    });
+    assert.equal(hidden.targets['editing-priority'], null, 'owned suppression never bypasses hidden style');
+});
+
+test('mutation filtering ignores only the exact tour-owned suppression attribute', async () => {
+    const { isTourOwnedSuppressionMutation } = await loadModule();
+    const node = element(VISIBLE_RECT);
+    const other = element(VISIBLE_RECT);
+    const records = [{
+        node,
+        owned: { inertAttribute: true, inertProperty: true, ariaHidden: false },
+    }];
+
+    assert.equal(isTourOwnedSuppressionMutation({ type: 'attributes', target: node, attributeName: 'inert' }, records), true);
+    assert.equal(isTourOwnedSuppressionMutation({ type: 'attributes', target: node, attributeName: 'aria-hidden' }, records), false);
+    assert.equal(isTourOwnedSuppressionMutation({ type: 'attributes', target: node, attributeName: 'class' }, records), false);
+    assert.equal(isTourOwnedSuppressionMutation({ type: 'attributes', target: other, attributeName: 'inert' }, records), false);
 });
 
 test('renderable candidate resolution rejects hidden and zero nodes before accepting an offscreen node', async () => {

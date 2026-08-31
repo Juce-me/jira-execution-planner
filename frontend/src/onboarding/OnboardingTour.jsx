@@ -6,6 +6,7 @@ import {
     buildTourProgress,
     buildVisibleOnboardingSteps,
     computeCoachmarkPlacement,
+    isTourOwnedSuppressionMutation,
     isVisibleViewportTarget,
     resolveOnboardingSnapshot,
 } from './onboardingSteps.js';
@@ -36,10 +37,10 @@ function sameSnapshot(left, right) {
     ));
 }
 
-function readSnapshot(eligibleTargets, engReadiness, ignoredAncestors = []) {
+function readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords = []) {
     const raw = resolveOnboardingSnapshot(document, viewportSize(), {
         engReadiness,
-        ignoredAncestors,
+        tourOwnedSuppressionRecords,
     });
     if (!eligibleTargets) return raw;
     const availability = {};
@@ -78,21 +79,21 @@ export default function OnboardingTour({
     });
     const panelRef = React.useRef(null);
     const priorFocusRef = React.useRef(null);
-    const tourOwnedSuppressionRef = React.useRef(new Set());
+    const tourOwnedSuppressionRef = React.useRef([]);
     const scrollEntryRef = React.useRef({ stepId: '', target: null });
     const [geometry, setGeometry] = React.useState({ target: null, targetRect: null, coachmarkSize: DEFAULT_COACHMARK_SIZE });
     const headingId = React.useId();
 
     const measure = React.useCallback(() => {
         if (!tour.isOpen || !tour.currentStep) return;
-        const ignoredAncestors = Array.from(tourOwnedSuppressionRef.current);
-        const nextSnapshot = readSnapshot(eligibleTargets, engReadiness, ignoredAncestors);
+        const tourOwnedSuppressionRecords = tourOwnedSuppressionRef.current;
+        const nextSnapshot = readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords);
         setSnapshot((current) => (sameSnapshot(current, nextSnapshot) ? current : nextSnapshot));
 
         const viewport = viewportSize();
         const candidate = nextSnapshot.targets[tour.currentStep.id] || null;
         const targetOptions = {
-            ignoredAncestors,
+            tourOwnedSuppressionRecords,
             requireEnabled: tour.currentStep.requireEnabled === true,
         };
         const priorEntry = scrollEntryRef.current;
@@ -133,11 +134,8 @@ export default function OnboardingTour({
         const mutationObserver = typeof MutationObserver !== 'undefined'
             ? new MutationObserver((records) => {
                 const owned = tourOwnedSuppressionRef.current;
-                const onlyTourOwnedSuppression = records.length > 0 && records.every((record) => (
-                    record.type === 'attributes'
-                    && (record.attributeName === 'inert' || record.attributeName === 'aria-hidden')
-                    && owned.has(record.target)
-                ));
+                const onlyTourOwnedSuppression = records.length > 0
+                    && records.every((record) => isTourOwnedSuppressionMutation(record, owned));
                 if (!onlyTourOwnedSuppression) measure();
             })
             : null;
@@ -173,9 +171,14 @@ export default function OnboardingTour({
             priorAriaHidden = appRoot.getAttribute('aria-hidden');
             priorInertAttribute = appRoot.getAttribute('inert');
             priorInertProperty = Boolean(appRoot.inert);
-            if (!priorInertProperty && priorInertAttribute === null && priorAriaHidden !== 'true') {
-                tourOwnedSuppressionRef.current.add(appRoot);
-            }
+            tourOwnedSuppressionRef.current = [{
+                node: appRoot,
+                owned: {
+                    inertAttribute: priorInertAttribute === null,
+                    inertProperty: !priorInertProperty,
+                    ariaHidden: priorAriaHidden !== 'true',
+                },
+            }];
             appRoot.setAttribute('aria-hidden', 'true');
             appRoot.setAttribute('inert', '');
             if ('inert' in appRoot) appRoot.inert = true;
@@ -189,7 +192,7 @@ export default function OnboardingTour({
                 if ('inert' in appRoot) appRoot.inert = priorInertProperty;
                 if (priorInertAttribute === null) appRoot.removeAttribute('inert');
                 else appRoot.setAttribute('inert', priorInertAttribute);
-                tourOwnedSuppressionRef.current.delete(appRoot);
+                tourOwnedSuppressionRef.current = [];
             }
             const priorFocus = priorFocusRef.current;
             if (priorFocus?.isConnected && typeof priorFocus.focus === 'function') priorFocus.focus();
@@ -199,7 +202,7 @@ export default function OnboardingTour({
     React.useEffect(() => {
         if (tour.isOpen) return;
         scrollEntryRef.current = { stepId: '', target: null };
-        tourOwnedSuppressionRef.current.clear();
+        tourOwnedSuppressionRef.current = [];
     }, [tour.isOpen]);
 
     if (!tour.isOpen || !tour.currentStep || typeof document === 'undefined') return null;

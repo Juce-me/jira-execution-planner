@@ -285,8 +285,8 @@ function viewportSize(viewport = {}) {
     };
 }
 
-export function isVisibleViewportTarget(node, viewport, { requireEnabled = false, ignoredAncestors = [] } = {}) {
-    if (!isRenderableTarget(node, { requireEnabled, ignoredAncestors })) return false;
+export function isVisibleViewportTarget(node, viewport, options = {}) {
+    if (!isRenderableTarget(node, options)) return false;
     const rect = node.getBoundingClientRect();
     const size = viewportSize(viewport);
     return rect.right > 0
@@ -305,7 +305,19 @@ function isDisabledTarget(node) {
     }
 }
 
-export function isRenderableTarget(node, { requireEnabled = false, ignoredAncestors = [] } = {}) {
+function suppressionOwnership(node, records) {
+    return (records || []).find((record) => record?.node === node)?.owned || {};
+}
+
+export function isTourOwnedSuppressionMutation(record, suppressionRecords = []) {
+    if (record?.type !== 'attributes') return false;
+    const owned = suppressionOwnership(record.target, suppressionRecords);
+    if (record.attributeName === 'inert') return owned.inertAttribute === true;
+    if (record.attributeName === 'aria-hidden') return owned.ariaHidden === true;
+    return false;
+}
+
+export function isRenderableTarget(node, { requireEnabled = false, tourOwnedSuppressionRecords = [] } = {}) {
     if (!node || typeof node.getBoundingClientRect !== 'function') return false;
     if (requireEnabled && isDisabledTarget(node)) return false;
     if (typeof node.checkVisibility === 'function') {
@@ -316,25 +328,23 @@ export function isRenderableTarget(node, { requireEnabled = false, ignoredAncest
         }
     }
 
-    const ignored = new Set(ignoredAncestors);
     let current = node;
     while (current) {
-        if (!ignored.has(current)) {
-            if (current.hidden
-                || current.inert
-                || current.hasAttribute?.('inert')
-                || current.getAttribute?.('aria-hidden') === 'true') {
-                return false;
-            }
-            const style = current.ownerDocument?.defaultView?.getComputedStyle?.(current);
-            if (style && (
-                style.display === 'none'
-                || style.visibility === 'hidden'
-                || style.visibility === 'collapse'
-                || Number(style.opacity) === 0
-            )) {
-                return false;
-            }
+        const owned = suppressionOwnership(current, tourOwnedSuppressionRecords);
+        if (current.hidden
+            || (current.inert && owned.inertProperty !== true)
+            || (current.hasAttribute?.('inert') && owned.inertAttribute !== true)
+            || (current.getAttribute?.('aria-hidden') === 'true' && owned.ariaHidden !== true)) {
+            return false;
+        }
+        const style = current.ownerDocument?.defaultView?.getComputedStyle?.(current);
+        if (style && (
+            style.display === 'none'
+            || style.visibility === 'hidden'
+            || style.visibility === 'collapse'
+            || Number(style.opacity) === 0
+        )) {
+            return false;
         }
         current = current.parentElement;
     }

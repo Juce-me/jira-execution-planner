@@ -351,17 +351,42 @@ async function collectTourSteps(page, { advancePreview } = {}) {
             progress: await page.locator('.onboarding-tour-progress').textContent(),
             state: await page.locator('[data-onboarding-tour]').getAttribute('data-onboarding-state'),
         });
-        const next = page.getByRole('button', { name: 'Next' });
-        if (!await next.count()) break;
         const title = steps.at(-1).title;
-        if (/^Preview (?:Priority|Project Track|Status) options$/.test(title) && advancePreview) {
-            await advancePreview({ page, title, next });
-        } else {
+        const advanceFallback = async () => {
+            const next = page.getByRole('button', { name: 'Next' });
+            if (!await next.count()) return false;
             await next.click();
+            return true;
+        };
+        if (/^Preview (?:Priority|Project Track|Status) options$/.test(title) && advancePreview) {
+            await advancePreview({ page, title, advanceFallback });
+            if (!await page.locator('[data-onboarding-tour]').count()) break;
+        } else {
+            if (!await advanceFallback()) break;
         }
     }
     return steps;
 }
+
+test('step collector delegates preview progression before requiring a Next fallback', async ({ page }) => {
+    await installHarness(page);
+    await openTour(page);
+    await advanceToHeading(page, 'Preview Priority options');
+    await page.getByRole('button', { name: 'Next' }).evaluate((node) => node.remove());
+    await page.evaluate(() => { window.__previewCallbackCount = 0; });
+
+    await collectTourSteps(page, {
+        advancePreview: async ({ page: callbackPage }) => {
+            await callbackPage.evaluate(() => {
+                window.__previewCallbackCount += 1;
+                window.__tourHarness.closeWithDone();
+            });
+            await expect(callbackPage.getByRole('dialog')).toHaveCount(0);
+        },
+    });
+
+    expect(await page.evaluate(() => window.__previewCallbackCount)).toBe(1);
+});
 
 test('portal, focus trap, pending Skip and Escape, and focus restoration work together', async ({ page }) => {
     await installHarness(page);
@@ -554,9 +579,8 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
         }, { hierarchyMask: mask });
         await expect(page.getByRole('dialog')).toBeVisible();
         const steps = await collectTourSteps(page, {
-            advancePreview: async ({ next }) => {
-                await expect(next).toBeVisible();
-                await next.click();
+            advancePreview: async ({ advanceFallback }) => {
+                expect(await advanceFallback()).toBe(true);
             },
         });
         const expectedTotal = mask ? 10 : 8;
@@ -585,9 +609,8 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
         }, { editingMask: mask });
         await expect(page.getByRole('dialog')).toBeVisible();
         const steps = await collectTourSteps(page, {
-            advancePreview: async ({ next }) => {
-                await expect(next).toBeVisible();
-                await next.click();
+            advancePreview: async ({ advanceFallback }) => {
+                expect(await advanceFallback()).toBe(true);
             },
         });
         const expectedTotal = mask ? 10 : 8;

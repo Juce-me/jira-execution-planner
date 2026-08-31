@@ -63,8 +63,8 @@ export const verifyFirstRunGroupsSaveSnapshot = (submitted, response, pendingGro
     if (!response.groups.some(group => String(group?.id || '') === String(pendingGroupId || ''))) {
         return { ok: false, error: 'The saved Department response did not include the Department being configured. Retry saving.' };
     }
-    const baseRevision = Number(submitted.baseRevision);
-    const committedRevision = Number(response.configRevision);
+    const baseRevision = submitted.baseRevision;
+    const committedRevision = response.configRevision;
     if (
         response.source !== 'workspace_db'
         || !Number.isSafeInteger(baseRevision)
@@ -284,6 +284,7 @@ export default function FirstRunGroupConfigurationGuide({
         const isOwned = (node) => (
             node === target
             || target.contains(node)
+            || Boolean(node.closest('.auth-required-dialog'))
             || Boolean(node.closest(`[data-first-run-guide-allow="${step}"]`))
             || Boolean(node.closest('[data-first-run-settings-cancel]'))
             || Boolean(coachmarkRef.current?.contains(node))
@@ -301,12 +302,13 @@ export default function FirstRunGroupConfigurationGuide({
         };
         document.querySelectorAll(focusableSelector).forEach(suppress);
 
-        const ownedCandidates = () => ([
+        const ownedCandidates = () => ([...new Set([
                 target,
+                ...document.querySelectorAll(`[data-first-run-guide-allow="${step}"]`),
                 ...document.querySelectorAll(`[data-first-run-guide-allow="${step}"] ${focusableSelector}`),
                 ...(coachmarkRef.current?.querySelectorAll(focusableSelector) || []),
                 ...document.querySelectorAll('[data-first-run-settings-cancel]'),
-            ].filter(node => node instanceof HTMLElement && !node.disabled && !node.inert));
+            ])].filter(node => node instanceof HTMLElement && !node.disabled && !node.inert));
         const focusOwnedTarget = () => {
             const candidates = ownedCandidates();
             (candidates[0] || target).focus({ preventScroll: true });
@@ -317,6 +319,7 @@ export default function FirstRunGroupConfigurationGuide({
         };
         const handleKeyDown = (event) => {
             if (event.key !== 'Tab') return;
+            if (event.target?.closest?.('.auth-required-dialog')) return;
             const candidates = ownedCandidates();
             if (!candidates.length) return;
             const currentIndex = candidates.indexOf(document.activeElement);
@@ -363,6 +366,10 @@ export default function FirstRunGroupConfigurationGuide({
         viewport?.addEventListener('resize', updatePlacement);
         viewport?.addEventListener('scroll', updatePlacement);
         window.addEventListener('resize', updatePlacement);
+        document.addEventListener('scroll', updatePlacement, true);
+        const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePlacement);
+        resizeObserver?.observe(target);
+        resizeObserver?.observe(coachmarkRef.current);
         return () => {
             observer.disconnect();
             document.removeEventListener('focusin', handleFocusIn, true);
@@ -370,6 +377,8 @@ export default function FirstRunGroupConfigurationGuide({
             viewport?.removeEventListener('resize', updatePlacement);
             viewport?.removeEventListener('scroll', updatePlacement);
             window.removeEventListener('resize', updatePlacement);
+            document.removeEventListener('scroll', updatePlacement, true);
+            resizeObserver?.disconnect();
             suppressed.forEach(({ tabIndex, ariaHidden, inert }, node) => {
                 node.inert = inert;
                 if (tabIndex === null) node.removeAttribute('tabindex');

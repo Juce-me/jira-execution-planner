@@ -3973,7 +3973,9 @@ import {
                     if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
                         event.preventDefault();
                         if (groupManageTab === 'connections') return;
-                        if (!groupSaving && !epmConfigSaving) void saveAllSettings();
+                        if (!groupSaving && !epmConfigSaving) void saveAllSettings({
+                            firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null,
+                        });
                         return;
                     }
                     if (key === 'Escape') {
@@ -4000,7 +4002,7 @@ import {
                 };
                 window.addEventListener('keydown', handleKey);
                 return () => window.removeEventListener('keydown', handleKey);
-            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, firstRunConfigurationActive, firstRunConfigurationSession.guideStep, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveAllSettings]);
+            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, firstRunConfigurationActive, firstRunConfigurationSession, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveAllSettings]);
 
             const fetchJiraProjects = async () => {
                 setLoadingProjects(true);
@@ -5055,8 +5057,11 @@ import {
                     closeGroupManage();
                     return;
                 }
-                await saveAllSettings({ firstRunSession: firstRunConfigurationSession });
-            }, [firstRunConfigurationSession, saveFirstRunGroupPreferences]);
+                await saveAllSettings({
+                    rebaseOnto: groupsConfigConflict?.current || null,
+                    firstRunSession: firstRunConfigurationSession,
+                });
+            }, [firstRunConfigurationSession, groupsConfigConflict, saveFirstRunGroupPreferences]);
 
             const filteredGroupDrafts = React.useMemo(() => {
                 const groups = groupDraft?.groups || [];

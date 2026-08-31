@@ -71,7 +71,7 @@ async function expectContainedInViewport(locator) {
 
 async function expectGuideTargetGeometry(target, guide) {
     await expect(target).toBeVisible();
-    const geometry = await target.evaluate((node, guideSelector) => {
+    const readGeometry = () => target.evaluate((node, guideSelector) => {
         const targetRect = node.getBoundingClientRect();
         const guideRect = document.querySelector(guideSelector)?.getBoundingClientRect();
         const viewport = window.visualViewport;
@@ -83,6 +83,14 @@ async function expectGuideTargetGeometry(target, guide) {
             ? !(targetRect.right <= guideRect.left || targetRect.left >= guideRect.right || targetRect.bottom <= guideRect.top || targetRect.top >= guideRect.bottom)
             : false;
         return {
+            left: targetRect.left,
+            top: targetRect.top,
+            right: targetRect.right,
+            bottom: targetRect.bottom,
+            viewportLeft,
+            viewportTop,
+            viewportRight,
+            viewportBottom,
             width: targetRect.width,
             height: targetRect.height,
             contained: targetRect.left >= viewportLeft && targetRect.top >= viewportTop
@@ -90,10 +98,13 @@ async function expectGuideTargetGeometry(target, guide) {
             overlapsGuide,
         };
     }, '.first-run-configuration-guide');
+    await expect.poll(readGeometry).toEqual(expect.objectContaining({
+        contained: true,
+        overlapsGuide: false,
+    }));
+    const geometry = await readGeometry();
     expect(geometry.width).toBeGreaterThanOrEqual(44);
     expect(geometry.height).toBeGreaterThanOrEqual(44);
-    expect(geometry.contained).toBe(true);
-    expect(geometry.overlapsGuide).toBe(false);
 }
 
 function visibleStoryPayload(project = 'product') {
@@ -166,6 +177,7 @@ async function mockFirstRunDashboard(page, options = {}) {
     let sprintRequestCount = 0;
     let capacityPostCount = 0;
     let epmPostCount = 0;
+    let groupsPostCount = 0;
     let preferencePostCount = 0;
     let latestEpmConfig = structuredClone(options.epmConfig || {});
     await installDashboardShell(page);
@@ -226,22 +238,28 @@ async function mockFirstRunDashboard(page, options = {}) {
         }
         if (url.pathname === '/api/groups-config') {
             if (request.method() === 'POST') {
-                if (options.groupsConfigError) {
-                    return json(options.groupsConfigError.body, options.groupsConfigError.status);
+                const postIndex = groupsPostCount;
+                const plannedConflict = options.groupsConfigConflicts
+                    ? options.groupsConfigConflicts[postIndex]
+                    : options.groupsConfigConflict;
+                const plannedError = options.groupsConfigErrors?.[postIndex] || options.groupsConfigError;
+                groupsPostCount += 1;
+                if (plannedError) {
+                    return json(plannedError.body, plannedError.status);
                 }
-                if (options.groupsConfigConflict) {
+                if (plannedConflict) {
                     return json({
                         error: 'group_config_conflict',
                         message: 'Team groups were changed by another user.',
-                        current: options.groupsConfigConflict,
+                        current: plannedConflict,
                     }, 409);
                 }
                 const body = requestBody(request) || {};
                 latestGroupsConfig = {
-                    ...groupsConfig,
+                    ...latestGroupsConfig,
                     groups: body.groups || groupsConfig.groups,
                     defaultGroupId: body.defaultGroupId || groupsConfig.defaultGroupId,
-                    configRevision: (groupsConfig.configRevision || 0) + 1,
+                    configRevision: Number(body.baseRevision || latestGroupsConfig.configRevision || 0) + 1,
                     preferences,
                 };
                 if (options.groupsConfigResponseTransform) {
@@ -1144,9 +1162,9 @@ test('first-run Add Department keeps the guide and canonical name keyboard-safe 
     await guide.getByRole('button', { name: 'Back' }).click();
     await expect(settingsDialog.locator('.group-pane-left')).toHaveClass(/is-mobile-active/);
     await expect(nameInput).toBeFocused();
+    await expect(nameInput).toBeInViewport({ ratio: 1 });
 
     await page.setViewportSize({ width: 390, height: 520 });
-    await page.evaluate(() => window.visualViewport?.dispatchEvent(new Event('resize')));
     await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="name"]'), guide);
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="teams"]'), guide);
@@ -1642,6 +1660,167 @@ test('first-run postcommit group conflict exposes only recovery Retry and Return
     await retry.evaluate((button) => { button.click(); button.click(); });
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(2);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config')).toHaveLength(1);
+});
+
+test('first-run postcommit group conflict Retry rebases mine and completes private handoff', async ({ page }) => {
+    const current = {
+        version: 1,
+        groups: [{ id: 'platform', name: 'Platform remote', teamIds: ['team-platform'] }],
+        defaultGroupId: 'platform',
+        configRevision: 9,
+        source: 'workspace_db',
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfigConflicts: [current, null],
+        sharedConfig: {
+            projects: { selected: [{ key: 'DEMO', type: 'product' }] },
+            sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+            parentNameField: { fieldId: 'customfield_10014', fieldName: 'Parent' },
+            storyPointsField: { fieldId: 'customfield_10016', fieldName: 'Story points' },
+            teamField: { fieldId: 'customfield_10001', fieldName: 'Team' },
+            deliveryOwnerField: { fieldId: 'customfield_10002', fieldName: 'Delivery owner' },
+            issueTypes: ['Story'],
+            capacity: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    const dialog = page.locator('.group-modal');
+    await dialog.getByPlaceholder('Group name').fill('Platform mine');
+    await finishFirstRunConfigurationGuide(page);
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('button', { name: 'Departments' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    const retry = dialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Retry unsaved settings' });
+    await expect(retry).toBeVisible();
+    await retry.evaluate(button => { button.click(); button.click(); });
+    await expect(dialog).toHaveCount(0);
+    const groupPosts = calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    expect(groupPosts).toHaveLength(2);
+    expect(groupPosts[1].body.baseRevision).toBe(9);
+    expect(groupPosts[1].body.groups.some(group => group.name === 'Platform mine')).toBe(true);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
+});
+
+test('guide-complete Ctrl+S preserves the first-run session through ordered private handoff', async ({ page }) => {
+    const preferenceGate = deferred();
+    const calls = await mockFirstRunDashboard(page, {
+        userCanEditEpmConfig: true,
+        epmConfig: { version: 1, scope: {}, labelPrefix: 'rnd_base_*', issueTypes: {}, projects: [] },
+        preferenceGate,
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await dialog.locator('[data-epm-scope-field="labelPrefix"]').fill('rnd_keyboard_*');
+    await page.keyboard.down(process.platform === 'darwin' ? 'Meta' : 'Control');
+    await page.keyboard.press('s');
+    await page.keyboard.press('s');
+    await page.keyboard.up(process.platform === 'darwin' ? 'Meta' : 'Control');
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/epm/config')).toHaveLength(1);
+    await expect(dialog).toBeVisible();
+    preferenceGate.resolve();
+    await expect(dialog).toHaveCount(0);
+    const orderedPosts = calls.filter(call => call.method === 'POST').map(call => call.pathname);
+    expect(orderedPosts.indexOf('/api/groups-config')).toBeLessThan(orderedPosts.indexOf('/api/epm/config'));
+    expect(orderedPosts.indexOf('/api/epm/config')).toBeLessThan(orderedPosts.indexOf('/api/groups-preferences'));
+});
+
+test('guide 401 yields focus and normal click ownership to the auth recovery link', async ({ page }) => {
+    const current = {
+        version: 1,
+        groups: [{ id: 'platform', name: 'Platform remote', teamIds: ['team-platform'] }],
+        defaultGroupId: 'platform',
+        configRevision: 9,
+        source: 'workspace_db',
+    };
+    await mockFirstRunDashboard(page, {
+        groupsConfigConflicts: [current, null],
+        groupsConfigErrors: [null, { status: 401, body: { error: 'auth_required', loginUrl: '/login?reason=session_expired' } }],
+        sharedConfig: {
+            projects: { selected: [{ key: 'DEMO', type: 'product' }] },
+            sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+            parentNameField: { fieldId: 'customfield_10014', fieldName: 'Parent' },
+            storyPointsField: { fieldId: 'customfield_10016', fieldName: 'Story points' },
+            teamField: { fieldId: 'customfield_10001', fieldName: 'Team' },
+            deliveryOwnerField: { fieldId: 'customfield_10002', fieldName: 'Delivery owner' },
+            issueTypes: ['Story'],
+            capacity: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('button', { name: 'Departments' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    const guide = dialog.locator('.first-run-configuration-guide');
+    await expect(guide.getByRole('button', { name: 'Retry unsaved settings' })).toBeVisible();
+    await guide.getByRole('button', { name: 'Retry unsaved settings' }).click();
+    const authDialog = page.getByRole('alertdialog');
+    const signIn = authDialog.getByRole('link', { name: 'Sign in again' });
+    await expect(signIn).toBeFocused();
+    await expect.poll(() => signIn.evaluate(node => node.inert || Boolean(node.closest('[inert]')))).toBe(false);
+    await page.keyboard.press('Tab');
+    await expect(signIn).toBeFocused();
+    await signIn.evaluate(node => node.addEventListener('click', event => {
+        event.preventDefault();
+        window.__authRecoveryClicks = (window.__authRecoveryClicks || 0) + 1;
+    }));
+    await signIn.click();
+    expect(await page.evaluate(() => window.__authRecoveryClicks)).toBe(1);
+});
+
+test('teams guide Tab reaches the allow-marked Refresh teams control without scripted focus', async ({ page }) => {
+    await mockFirstRunDashboard(page, { teams: [] });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunCreateDepartment(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(dialog.locator('[data-first-run-guide-target="teams"]')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dialog.getByRole('button', { name: 'Refresh teams' })).toBeFocused();
+});
+
+test('guide placement recomputes for Settings scroll and target or coachmark resize', async ({ page }) => {
+    await mockFirstRunDashboard(page);
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunCreateDepartment(page);
+    const dialog = page.locator('.group-modal');
+    const target = dialog.locator('[data-first-run-guide-target="name"]');
+    const guide = dialog.locator('.first-run-configuration-guide');
+    const initial = await guide.getAttribute('style');
+    const initialTargetTop = await target.evaluate(node => node.getBoundingClientRect().top);
+    const list = dialog.locator('.group-pane-list');
+    const scrollTop = await list.evaluate(node => {
+        const spacer = document.createElement('div');
+        spacer.style.flex = '0 0 400px';
+        node.prepend(spacer);
+        node.scrollTop = node.scrollHeight;
+        return node.scrollTop;
+    });
+    expect(scrollTop).toBeGreaterThan(0);
+    await expect.poll(() => target.evaluate(node => node.getBoundingClientRect().top)).not.toBe(initialTargetTop);
+    await expect.poll(() => guide.getAttribute('style')).not.toBe(initial);
+    const afterScrollTop = await guide.evaluate(node => node.style.top);
+    const initialGuideWidth = await guide.evaluate(node => node.getBoundingClientRect().width);
+    await guide.evaluate(node => { node.style.width = '160px'; });
+    await expect.poll(() => guide.evaluate(node => node.getBoundingClientRect().width)).not.toBe(initialGuideWidth);
+    await expect.poll(() => guide.evaluate(node => node.style.top)).not.toBe(afterScrollTop);
+    await expectGuideTargetGeometry(target, guide);
 });
 
 test('first-run group commit followed by EPM failure Return preserves groups and drops the EPM draft', async ({ page }) => {

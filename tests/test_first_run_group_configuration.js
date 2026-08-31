@@ -136,6 +136,20 @@ test('group save snapshot verification compares every shared field but accepts s
     ]) {
         assert.equal(verifyFirstRunGroupsSaveSnapshot(submitted, invalidCommit, 'new-department').ok, false);
     }
+    for (const invalidSubmittedRevision of [undefined, null, '', '3', 3.5]) {
+        assert.equal(verifyFirstRunGroupsSaveSnapshot(
+            { ...submitted, baseRevision: invalidSubmittedRevision },
+            response,
+            'new-department'
+        ).ok, false);
+    }
+    for (const invalidResponseRevision of [undefined, '', '4', 4.5]) {
+        assert.equal(verifyFirstRunGroupsSaveSnapshot(
+            submitted,
+            { ...response, configRevision: invalidResponseRevision },
+            'new-department'
+        ).ok, false);
+    }
 });
 
 test('shouldShowFirstRunGroupSearch hides search for zero through three groups', () => {

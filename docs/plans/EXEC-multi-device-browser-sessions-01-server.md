@@ -4,7 +4,7 @@
 
 **Status:** Ready for execution. Start with Task 0 and stop if the branch no longer contains `b38e8f7` or the current `origin/main` migration head differs from this reviewed baseline.
 
-**Goal:** Replace mutable OAuth `token_version` browser validity with persistent opaque DB browser sessions while preserving cache invalidation, per-browser logout, connection-wide revocation, legacy-cookie compatibility, and existing API contracts.
+**Goal:** Replace mutable OAuth `token_version` browser validity with persistent opaque DB browser-profile sessions while preserving cache invalidation, per-profile logout, connection-wide revocation, legacy-cookie compatibility, and existing API contracts.
 
 **Architecture:** A new `browser_sessions` table links one opaque signed-cookie id to the existing user, workspace, and shared OAuth connection. Request resolution obtains the latest connection token version from the database, while CSRF binds to the stable browser-session id. Callback, logout, refresh-reuse revocation, and Scenario internal reloads use one lifecycle module; no route queries the table directly.
 
@@ -483,7 +483,7 @@ git commit -m "Resolve OAuth requests through browser sessions"
 
 - [ ] **Step 1: Write failing multi-client callback/refresh/logout tests**
 
-Add two Flask clients backed by the same user/connection and assert:
+Add two Flask clients backed by the same user/connection and assert the separate-cookie-jar contract. These clients represent two browser profiles/devices, not two tabs; tabs in one browser profile share one Flask cookie and therefore one browser-session row:
 
 ```python
 self.assertNotEqual(browser_a_id, browser_b_id)
@@ -492,13 +492,18 @@ self.assertEqual(client_a.get('/api/auth/status').get_json()['authenticated'], T
 self.assertEqual(client_b.get('/api/auth/status').get_json()['authenticated'], True)
 ```
 
-After client A refreshes, assert B remains authenticated and its signed payload still contains `browser_b_id`. After B logs out with the existing `X-Requested-With: jira-execution-planner` auth-flow guard, assert A remains authenticated and only B's row is absent; assert the missing header retains the existing `403 csrf_required` response, without introducing token-bound CSRF for this endpoint. Add a reconnect test where a previously revoked connection deletes every old row before creating one new row.
+After client A refreshes, assert B remains authenticated and its signed payload still contains `browser_b_id`. After B logs out with the existing `X-Requested-With: jira-execution-planner` auth-flow guard, assert A remains authenticated and only B's row is absent; assert the missing header retains the existing `403 csrf_required` response, without introducing token-bound CSRF for this endpoint. Add a reconnect test where a previously revoked connection deletes every old row before creating one new row. Do not add a per-tab server row or claim that logout is isolated between tabs sharing one cookie; same-profile tab behavior is verified in the frontend slice.
 
 Add callback failure coverage for the existing distinction: `invalid_oauth_state`, authorization denial, missing code, and missing PKCE verifier leave a current browser row intact because they fail before token exchange; an `AuthError` after exchange begins may delete only the current row. Every failure must leave the other client's row active.
 
 Extend `tests/test_token_refresh_reuse.py` to seed two browser rows and assert committed reuse detection removes both rows while preserving the existing revoked connection, deleted token, and audit assertions.
 
-Extend the existing PostgreSQL harness in `tests/test_token_refresh_race.py`: seed a revoked connection with old browser rows, start two callback-storage transactions against it, hold the first transaction open after it creates its replacement row, and prove the second transaction remains blocked on the connection row. Release the first transaction, then assert both callbacks commit distinct new browser rows and every old row is gone. The test keeps the existing `TEST_DATABASE_URL` PostgreSQL guard; a skipped run does not prove the reconnect race.
+Extend the existing PostgreSQL harness in `tests/test_token_refresh_race.py` with both callback races:
+
+1. Start from no matching user, workspace, connection, token, or browser-session row. Start two first-ever callback-storage transactions for the same Atlassian account/environment/resource, hold the first after it acquires the callback natural-key locks, and prove the second blocks before any select-then-insert upsert. Release the first and assert both callbacks commit: exactly one user, one workspace, one active connection, one active access/refresh token pair, and two distinct browser-session rows remain. No `IntegrityError` or rejected callback is allowed.
+2. Seed a revoked connection with old browser rows, start two callback-storage transactions against it, hold the first transaction open after it creates its replacement row, and prove the second remains blocked. Release the first, then assert both callbacks commit distinct new browser rows and every old row is gone.
+
+The tests keep the existing `TEST_DATABASE_URL` PostgreSQL guard; a skipped run proves neither absent-row creation nor reconnect serialization.
 
 - [ ] **Step 2: Run the focused route and reuse tests to verify they fail**
 
@@ -510,9 +515,40 @@ python3 -m unittest tests.test_auth_routes tests.test_db_oauth_cutover tests.tes
 
 Expected: FAIL because callback/refresh still write connection/token-version cookies and logout does not delete the DB browser row.
 
-- [ ] **Step 3: Carry reconnect state out of the token upsert**
+- [ ] **Step 3: Serialize callback upserts and carry reconnect state out**
 
-Extend `StoredOAuthConnection` with `invalidate_browser_sessions: bool`. In `_upsert_connection`, add `with_for_update()` to the existing-connection lookup before reading its status or incrementing `token_version`, matching the refresh path's row lock. Record whether an existing connection status was not `active` before setting it active. Return that boolean through `store_oauth_callback_tokens`; a normal active callback returns `False`, while revoked/expired/error reconnect returns `True`. Add a source assertion for the lock. The PostgreSQL race test from Step 1 is the required behavioral proof; do not treat its SQLite skip as sufficient evidence.
+Before `_upsert_user`, `_upsert_workspace`, or `_upsert_connection`, acquire PostgreSQL transaction-scoped advisory locks for both stable natural identities involved in callback creation:
+
+- `atlassian-user:<external_provider>:<external_subject>`;
+- `jira-workspace:<environment_key>:<cloud_id-or-normalized-site-url>`.
+
+Derive each signed 64-bit lock key deterministically from SHA-256, sort the two integer keys before acquiring them, and call `SELECT pg_advisory_xact_lock(:lock_key)` for each. Never use Python's randomized `hash()`, emails/display names, tokens, OAuth state, or PKCE data. Keep the helper local to `backend/auth/db_tokens.py`; it is a documented no-op for SQLite test/dev sessions, whose concurrency result is not acceptance evidence. Holding both locks until transaction end makes first-ever user/workspace/connection select-then-insert upserts conflict-safe and gives every same-identity callback an existing row to lock after the first commit. Add focused stable-key, sorted-order, PostgreSQL SQL, and SQLite no-op unit/source assertions.
+
+Implement the boundary explicitly before the three upserts:
+
+```python
+def _callback_lock_key(value):
+    digest = hashlib.sha256(value.encode('utf-8')).digest()
+    return int.from_bytes(digest[:8], byteorder='big', signed=True)
+
+
+def _lock_callback_natural_keys(session, *, user_profile, environment_key, resource, configured_jira_url):
+    if session.get_bind().dialect.name != 'postgresql':
+        return
+    account_id = str((user_profile or {}).get('account_id') or '').strip()
+    cloud_id = str((resource or {}).get('id') or '').strip()
+    site_url = normalize_site_url((resource or {}).get('url') or configured_jira_url)
+    identities = {
+        f'atlassian-user:atlassian:{account_id}',
+        f'jira-workspace:{environment_key}:{cloud_id or site_url}',
+    }
+    for lock_key in sorted(_callback_lock_key(value) for value in identities):
+        session.execute(text('SELECT pg_advisory_xact_lock(:lock_key)'), {'lock_key': lock_key})
+```
+
+Call `_lock_callback_natural_keys(...)` at the start of `store_oauth_callback_tokens`, before `_upsert_user`. Import only standard-library `hashlib` and SQLAlchemy `text`.
+
+Extend `StoredOAuthConnection` with `invalidate_browser_sessions: bool`. In `_upsert_connection`, add `with_for_update()` to the existing-connection lookup before reading its status or incrementing `token_version`, matching the refresh path's row lock. Record whether an existing connection status was not `active` before setting it active. Return that boolean through `store_oauth_callback_tokens`; a normal active callback returns `False`, while revoked/expired/error reconnect returns `True`. Add a source assertion for the row lock and callback advisory-lock call. Both PostgreSQL race tests from Step 1 are required behavioral proof; do not treat their SQLite skips as sufficient evidence.
 
 Use the returned flag inside the existing `session_scope()` in `store_db_oauth_callback_session_metadata`:
 
@@ -558,7 +594,7 @@ Run:
 python3 -m unittest tests.test_auth_routes tests.test_db_oauth_cutover tests.test_token_refresh_reuse tests.test_token_refresh_race tests.test_endpoint_security_matrix
 ```
 
-Expected: PASS. Route JSON/status shapes and unsafe-method guards remain unchanged; only cookie/session lifecycle changes.
+Expected: PASS. Route JSON/status shapes and unsafe-method guards remain unchanged; only cookie/session lifecycle changes. Under PostgreSQL, both first-ever callbacks and reconnect callbacks commit distinct browser sessions without unique-index failures.
 
 - [ ] **Step 8: Commit the callback/logout/revocation slice**
 
@@ -580,7 +616,7 @@ git commit -m "Keep OAuth browser sessions independent"
 
 - [ ] **Step 1: Write failing CSRF and Scenario tests**
 
-Add a CSRF test that issues a token in browser B, rotates the shared connection from A, and proves the token still validates in B but not A. Add a Scenario reload test that patches the real auth resolver and asserts the synthetic request contains the captured browser id:
+Add a CSRF test that issues a token in browser profile B, rotates the shared connection from profile A, and proves the token still validates in B but not A. Add a Scenario reload test that patches the real auth resolver and asserts the synthetic request contains the captured browser id:
 
 ```python
 def resolver(session_data, **_kwargs):
@@ -645,7 +681,7 @@ Run:
 python3 -m unittest tests.test_auth_routes tests.test_scenario_draft_routes
 ```
 
-Expected: PASS, including cross-browser token rejection and no-request-context Scenario coverage through the real resolver.
+Expected: PASS, including cross-profile token rejection and no-request-context Scenario coverage through the real resolver. The existing client-side Flask-cookie hash list retains consume-on-validation behavior, but this plan does not claim atomic one-use consumption for concurrent requests that start from the same cookie; server-side CSRF/session state is separate future scope.
 
 - [ ] **Step 6: Commit the CSRF/internal-context slice**
 
@@ -668,9 +704,28 @@ Run:
 python3 -m unittest tests.test_db_migrations tests.test_db_browser_sessions tests.test_auth_context_db tests.test_auth_routes tests.test_db_oauth_cutover tests.test_token_refresh_reuse tests.test_token_refresh_race tests.test_scenario_draft_routes tests.test_endpoint_security_matrix
 ```
 
-Expected: PASS with no skipped browser-session acceptance cases.
+Expected: PASS for the default focused matrix. The PostgreSQL-only refresh/callback race may skip here when `TEST_DATABASE_URL` is absent; Step 2 must then prove it separately with zero skips.
 
-- [ ] **Step 2: Run startup and structural verification**
+- [ ] **Step 2: Run the mandatory PostgreSQL concurrency proof with zero skips**
+
+In terminal 1, start the repository-owned fixed local PostgreSQL runner:
+
+```bash
+./runners/local/run.sh
+```
+
+Expected: the digest-pinned PostgreSQL service becomes healthy on `127.0.0.1:5432`, Alembic reaches the current head, startup preflight passes, and Flask starts without a dependency/runtime warning. Leave this exact runner active for the next command; do not start an ad-hoc PostgreSQL container.
+
+In terminal 2, run the complete refresh/callback race module against the runner's fixed local database:
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://jep:jep@127.0.0.1:5432/jep_local \
+  .venv/bin/python -m unittest -v tests.test_token_refresh_race
+```
+
+Expected: `OK` with zero skipped tests. The existing refresh serialization test, the new first-ever absent-row callback test, and the concurrent reconnect-callback test all execute against PostgreSQL. A skipped test, SQLite-only pass, unavailable Docker runner, or missing `TEST_DATABASE_URL` is a failed acceptance gate. Stop terminal 1 with `Ctrl+C` after this proof and confirm the runner removes only its owned container/network while retaining its documented volume.
+
+- [ ] **Step 3: Run startup and structural verification**
 
 Run:
 
@@ -681,7 +736,7 @@ python3 -m unittest tests.test_codebase_structure_budgets tests.test_initiative_
 
 Expected: PASS. If the legitimate lifecycle module changes a ratcheted budget, update only the named budget with the measured value and document the reason in the same commit.
 
-- [ ] **Step 3: Run the full Python suite**
+- [ ] **Step 4: Run the full Python suite**
 
 Run:
 
@@ -691,7 +746,7 @@ python3 -m unittest discover -s tests
 
 Expected: PASS.
 
-- [ ] **Step 4: Launch the real server and check its health**
+- [ ] **Step 5: Launch the real server and check its health**
 
 Run in one terminal:
 
@@ -709,7 +764,7 @@ curl http://localhost:5050/api/test
 
 Expected: HTTP `200` with the existing sanitized test payload. Stop the server after the check.
 
-- [ ] **Step 5: Review the diff for scope and secrets**
+- [ ] **Step 6: Review the diff for scope and secrets**
 
 Run:
 
@@ -721,7 +776,7 @@ git grep -n -E "access_token|refresh_token|apiToken|Authorization" -- backend/db
 
 Expected: `git diff --check` passes; changed files match this plan; the final grep returns no browser-session storage of credential material.
 
-- [ ] **Step 6: Commit any verification-only correction**
+- [ ] **Step 7: Commit any verification-only correction**
 
 If verification required a scoped correction, stage only its named files and commit:
 

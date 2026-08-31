@@ -67,16 +67,16 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Design record: `../agents/features/2026-08-27-planned-local-postgresql-runners.md`.
 
 13. `SUPPORT-multi-device-browser-sessions-design.md`
-   - Reviewed design for persistent DB/OAuth browser sessions plus issue #143's per-tab reauthentication resume. The branch now contains global auth lock `b38e8f7` and migration head `20260827_0008`; execution still begins with each plan's Task 0 baseline check.
-   - Expected output after both execution slices: independent per-browser login/logout, shared token refresh without cross-device sign-out, connection-wide revocation that fails closed, lazy upgrade of current legacy cookies, terminal `401` recovery without raw config errors or request replay, and per-tab restoration of available view/Planning scope and selected story checkboxes after same-tab OAuth.
+   - Reviewed design for persistent DB/OAuth browser-profile sessions plus issue #143's per-tab reauthentication resume. The branch contains global auth lock `b38e8f7` and migration head `20260827_0008`; execution still begins with each plan's Task 0 baseline check.
+   - Expected output after both execution slices: independent per-profile/device login/logout, shared token refresh without cross-device sign-out, connection-wide revocation that fails closed, lazy upgrade of current legacy cookies, terminal `401` recovery without raw config errors or request replay, and per-tab restoration of available view/Planning scope and selected story checkboxes after same-tab OAuth. Tabs in one profile share the Flask cookie/browser-session row but retain isolated recovery capsules.
 
 14. `EXEC-multi-device-browser-sessions-01-server.md`
-   - Ready first execution slice. Adds opaque DB browser-session rows, stable request/CSRF resolution, per-browser logout, connection-wide revocation, legacy-cookie upgrade, and Scenario internal-context propagation.
+   - Ready first execution slice. Adds opaque DB browser-profile session rows, stable request/CSRF resolution, per-profile logout, connection-wide revocation, legacy-cookie upgrade, and Scenario internal-context propagation.
    - Adds no frontend UI, Home/Townsquare mutation, Jira mutation, service credential, or device-management endpoint.
 
 15. `EXEC-multi-device-browser-sessions-02-tab-resume.md`
-   - Ready second execution slice after the server plan passes. Adds a strict 30-minute `sessionStorage` recovery capsule and a nonsecret five-minute `localStorage` OAuth leader lease.
-   - Restores each tab's available view, Settings shell, group/sprint/ENG mode, selected teams, and valid Planning story keys in a new authenticated document; it never stores credential inputs, arbitrary drafts, API payloads, or failed request bodies and never unlocks or replays the old document.
+   - Ready second execution slice after the server plan passes. Adds a strict 30-minute `sessionStorage` recovery capsule, atomic Web-Lock acquisition/completion of a nonsecret five-minute `localStorage` OAuth lease, and a request-causal success marker that makes locked sibling tabs reload with their already-shared authenticated cookie.
+   - Restores each tab's available view, Settings shell, group/sprint/ENG mode, selected teams, and valid Planning story keys in a new authenticated document; success publication never waits for Planning hydration, and recovery never stores credential inputs, arbitrary drafts, API payloads, or failed request bodies or unlocks/replays the old document.
 
 ## Completed Scenario Planner Workflow
 

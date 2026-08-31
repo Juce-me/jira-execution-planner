@@ -32,7 +32,7 @@ The global authentication lock correctly keeps the old application mounted and i
 
 Create one server-side browser-session row for every successful DB-backed OAuth login. The Flask cookie contains only its opaque id. Keep shared Atlassian tokens on the connection. Separately, capture a small, schema-validated UI recovery capsule in `sessionStorage` when the global auth lock latches. `sessionStorage` survives same-tab OAuth navigation and is isolated per top-level browser tab.
 
-Use one short-lived, nonsecret `localStorage` lease to serialize OAuth initiation inside a browser profile. The recovering leader tab announces successful authenticated bootstrap; other locked tabs then navigate to a new `/` document and restore their own `sessionStorage` capsules. Different devices have independent storage and authenticate independently.
+Use one short-lived, nonsecret `localStorage` lease to retain the active recovery attempt across navigation. Acquire or adopt that lease inside one origin-scoped exclusive Web Lock so simultaneous clicks in two tabs cannot both start OAuth. The recovering tab announces success immediately after authenticated bootstrap proves the private-view principal; another locked tab already shares the new Flask cookie and navigates to a new `/` document only when that success occurred after its failing request began, then restores its own `sessionStorage` capsule. Different browser profiles and devices have independent cookies/storage and authenticate independently.
 
 ### 2. Connection-wide session epoch
 
@@ -86,7 +86,7 @@ Legacy signed DB cookies containing `db_auth_connection_id` and `db_token_versio
 4. Delete the current browser's previous session id, if present, and create a fresh browser-session row.
 5. Save only the new opaque id in the Flask cookie and redirect to the dashboard.
 
-Atlassian token replacement and browser-session creation occur in the same database transaction. Callback upserts lock an existing shared `auth_connections` row with `SELECT FOR UPDATE`, matching refresh serialization so concurrent reconnects cannot delete the browser row created by the callback that committed first. Preserve the existing callback failure split: validation failures before token exchange (`invalid_oauth_state`, authorization denial, missing code, or missing PKCE verifier) do not mutate an existing browser session; failures after token exchange begins may clear and delete only the current browser session. No callback failure may affect another browser's row.
+Atlassian token replacement and browser-session creation occur in the same database transaction. Before select-then-insert upserts, PostgreSQL callbacks acquire sorted transaction-scoped advisory locks derived from the stable Atlassian external identity and Jira workspace natural identity. This serializes first-ever callbacks even when no row yet exists; the second transaction then observes the committed user/workspace/connection instead of failing a unique index. Callback upserts additionally lock an existing shared `auth_connections` row with `SELECT FOR UPDATE`, matching refresh serialization so concurrent reconnects cannot delete the browser row created by the callback that committed first. Preserve the existing callback failure split: validation failures before token exchange (`invalid_oauth_state`, authorization denial, missing code, or missing PKCE verifier) do not mutate an existing browser session; failures after token exchange begins may clear and delete only the current browser session. No callback failure may affect another browser's row.
 
 ### Request and refresh flow
 
@@ -108,9 +108,9 @@ The feature does not introduce a server-side inactivity timeout. DB-backed sessi
 
 ### CSRF
 
-DB-backed CSRF tokens bind to the stable browser-session id, connection id, and Atlassian account id. They do not bind to mutable OAuth `token_version`; otherwise refresh in browser A would invalidate a CSRF token already issued to browser B.
+DB-backed CSRF tokens bind to the stable browser-session id, connection id, and Atlassian account id. They do not bind to mutable OAuth `token_version`; otherwise refresh in browser profile A would invalidate a CSRF token already issued to browser profile B.
 
-CSRF hashes remain stored only in each signed Flask cookie, remain one-use, and retain the existing maximum-token bound. A token issued in browser A must fail in browser B even when both sessions reference the same user and connection. Legacy cookies retain the old binding until their one-time upgrade.
+CSRF hashes remain stored only in each signed Flask cookie and retain the existing consume-on-validation behavior and maximum-token bound. A token issued in browser profile A must fail in browser profile B even when both sessions reference the same user and connection. Tabs inside one browser profile intentionally share one cookie and browser-session binding. Concurrent requests that start from the same client-side Flask cookie are not an atomic one-use boundary; fixing that pre-existing limitation requires server-side CSRF/session state and is out of scope. Legacy cookies retain the old binding until their one-time upgrade.
 
 ### Internal request contexts
 
@@ -121,6 +121,7 @@ Scenario Planner's in-process reload request propagates `browser_session_id` fro
 The shared HTTP boundary and `AuthRequiredGate` from `b38e8f7` remain authoritative:
 
 - any app API `401` locks only that document's window-backed latch;
+- the HTTP boundary records only the failing request's start timestamp plus the latch timestamp, allowing a delayed `401` to distinguish a recovery that happened while it was in flight from an older stale success marker;
 - the application remains mounted and inert until navigation;
 - no `401` response clears feature state, advances a revision, or replaces a dirty baseline;
 - no successful response unlocks the old document;
@@ -170,25 +171,35 @@ The capsule stores only navigation identifiers and selected Jira issue keys. It 
 5. Validate the capsule against `viewConfig.workspaceId` and `viewConfig.viewConfigId` before applying any value.
 6. Restore the available primary view, Settings shell/tab, active group, sprint, and ENG mode. Invalid or no-longer-visible values fall back to the normal bootstrap selection.
 7. For Planning, hold the capsule in a pending ref until the exact group/sprint task set is loaded. Reconcile task keys and teams through the existing Planning selection helpers, prune values no longer in scope, then apply and persist the reconciled selection.
-8. Clear the capsule only after successful application or a terminal validation rejection. A failed/cancelled OAuth attempt leaves it available until expiry.
+8. Clear the capsule after successful application, a terminal validation rejection, or a non-auth/permission/scope failure of the first post-auth Planning hydration. That hydration failure settles to the ordinary error/default state and later manual reloads must not resurrect stale pre-auth selections. A failed/cancelled OAuth attempt or a new typed auth-required interruption leaves the capsule available until the next recovery outcome or expiry.
 
 The Planning undo baseline is rebuilt from the post-login loaded selection. The old document's undo stack and in-flight requests are never restored.
 
 ### Same-profile multi-tab recovery coordination
 
-Create `frontend/src/api/authRecoveryCoordinator.js` with a five-minute `localStorage` lease containing only a random attempt id and timestamps. The first locked tab whose user chooses **Sign in again** becomes the leader and navigates to its sanitized login URL. Every other locked tab adopts that live attempt from the lease storage event (or from an initial lease read when its gate mounts) without requiring another click. If a user does click while the lease is live, that tab remains a follower instead of starting a competing OAuth state/PKCE flow in the shared cookie.
+Create `frontend/src/api/authRecoveryCoordinator.js` with:
 
-When the leader's new document completes authenticated bootstrap, it writes a matching success marker and clears the lease. Other locked tabs receive the storage event and perform `window.location.assign('/')`; this creates a new document without unlocking or replaying work in place. Each tab then consumes its own isolated `sessionStorage` capsule. If the lease expires without success, any locked tab may claim a new attempt. Different browser profiles and devices do not share the lease.
+- a five-minute `localStorage` lease containing only a random attempt id and start time;
+- an origin-scoped exclusive Web Lock held only while committing claim or completion records;
+- a five-minute `localStorage` success marker containing only the attempt id and completion time;
+- tab-local attempt and consumed-success records in `sessionStorage`.
 
-No identity, login URL, OAuth state, PKCE verifier, issue key, or configuration value enters the shared lease/success records.
+The first locked tab whose user chooses **Sign in again** acquires the Web Lock, samples time only after the lock is granted, claims the absent/expired lease, records its attempt in `sessionStorage`, releases the lock, and navigates to its sanitized login URL. Locked mutations use strict storage reads so an access failure cannot be mistaken for an absent lease. A simultaneous claimant waits for the same Web Lock, then observes the committed lease and remains a follower. A short lock is sufficient because the lease preserves ownership across `/login`, Atlassian, callback, and `/` navigation. If Web Locks or shared storage are unavailable, the clicked tab retains the existing uncoordinated same-tab navigation as a `solo` recovery; the gate does not deadlock, but simultaneous solo flows can still compete in the shared cookie and no cross-tab single-flight/resume guarantee applies.
+
+After the recovering tab's new document completes authenticated config bootstrap and validates the private-view principal, it reacquires the same Web Lock, samples time inside the granted callback, verifies that its tab-local attempt still owns the live lease, removes that lease, and then writes the matching success marker immediately. A solo fallback, expired attempt, superseded leader, strict-read failure, or partial completion failure cannot publish success while leaving a live ghost lease. Completion does not wait for group, sprint, Planning task, or Settings hydration. Other locked tabs already share the new authenticated Flask cookie. Their locked effect installs its `storage` listener first, then synchronously reconciles the persisted lease and success marker. It consumes only a success whose completion time is on or after the failing request's recorded start time; therefore a delayed pre-recovery `401` can use the recovery that happened while it was in flight, while a genuinely newer `401` ignores an older marker. The tab records the attempt as consumed before `window.location.assign('/')` so bootstrap failure cannot create a reload loop. Each new document independently validates and applies its own isolated `sessionStorage` capsule.
+
+Within a tab, the gate serializes click and storage-event paths with `claimPendingRef` and `navigationStartedRef`. A storage handler never consumes while a click is waiting for the lock. When the claim settles, the tab clears the pending flag, reconciles persisted success once, and only then handles the claim result. This prevents one document from scheduling both `/` and `/login`.
+
+If OAuth fails or is cancelled, the lease expires after five minutes and any locked tab may atomically claim a new attempt. A success from an expired or superseded attempt cannot clear a newer lease. No identity, login URL, OAuth state, PKCE verifier, issue key, or configuration value enters the shared lease/success records.
 
 ## Endpoint Contract Matrix
 
 | Endpoint | Method | Mode and workspace/site boundary | Auth/session boundary | Request contract | Success | Failure/recovery contract | Required tests |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `/api/auth/atlassian/callback` | GET | Atlassian OAuth only; accessible resource must match the configured Jira site, and the connection remains keyed by resolved user + workspace + cloud/site. | OAuth state + PKCE; DB callback creates the current browser row and preserves other active devices unless reconnecting a revoked connection. | Existing `state` and `code`; no body, CSRF token, or `X-Requested-With`. | `302 /`; cookie contains only `db_browser_session_id`. | Sanitized `400/401/403`; pre-exchange validation failure leaves the current row intact, while a post-exchange failure may delete only the current row/cookie. | Active-connection callback preserves other rows; revoked reconnect deletes them; invalid state leaves the current row intact; no failure deletes another browser's row. |
+| `/api/auth/atlassian/login` | GET | Atlassian OAuth only; same-origin recovery entry, with the configured Jira site chosen only after callback resource validation. | Stores one OAuth state and PKCE verifier in the shared Flask cookie for the browser profile; frontend single-flight prevents competing same-profile starts when Web Locks/shared storage are available. | Optional existing `prompt=consent`; no body, CSRF token, or `X-Requested-With`. | Existing redirect to Atlassian authorization. | Sanitized `400` for invalid OAuth configuration; no token material in the response. Capability failure retains existing uncoordinated same-tab recovery. | Two simultaneous gate actions with working coordination produce exactly one `/login` navigation and exactly one later OAuth initiation; the follower starts no second flow. |
+| `/api/auth/atlassian/callback` | GET | Atlassian OAuth only; accessible resource must match the configured Jira site, and the connection remains keyed by resolved user + workspace + cloud/site. | OAuth state + PKCE; PostgreSQL natural-key locks serialize absent-row creation, then the DB callback creates the current browser row and preserves other active devices unless reconnecting a revoked connection. | Existing `state` and `code`; no body, CSRF token, or `X-Requested-With`. | `302 /`; cookie contains only `db_browser_session_id`. | Sanitized `400/401/403`; pre-exchange validation failure leaves the current row intact, while a post-exchange failure may delete only the current row/cookie. | Two first-ever concurrent callbacks create one identity/workspace/connection and two browser rows; active-connection callback preserves other rows; revoked reconnect deletes old rows; invalid state leaves the current row intact; no failure deletes another browser's row. |
 | `/api/auth/status` | GET | DB OAuth branch resolves workspace/site only from the browser row and connection; Basic/local branches remain unchanged. | Resolve current browser row without mutation after legacy upgrade. | No body, CSRF, or `X-Requested-With`. | Existing `200 authenticated=true`. | Existing `200 authenticated=false`, `loginRequired=true`, and sanitized login/recovery target. | Two clients remain authenticated after either token rotation; cross-workspace row mismatch fails closed; missing row reports login required. |
-| `/api/auth/csrf` | GET | DB OAuth branch resolves current user/workspace/site from the browser row; non-DB modes remain unchanged. | Bind one-use token to browser-session id + connection + account. | No body, CSRF, or `X-Requested-With`. | Existing `200 {"csrfToken":"..."}`. | Existing structured `401`; global lock captures safe tab state. | Token survives another browser's refresh, fails in the other browser, and cannot cross workspace/account boundaries. |
+| `/api/auth/csrf` | GET | DB OAuth branch resolves current user/workspace/site from the browser row; non-DB modes remain unchanged. | Bind consume-on-validation token to browser-session id + connection + account; no new claim of atomic same-cookie concurrency. | No body, CSRF, or `X-Requested-With`. | Existing `200 {"csrfToken":"..."}`. | Existing structured `401`; global lock captures safe tab state. | Token survives another browser profile's refresh, fails in the other profile, and cannot cross workspace/account boundaries. |
 | `/api/auth/refresh` | POST | DB OAuth branch refreshes only the connection referenced by the current browser row; other auth modes remain unchanged. | Resolve browser row, serialize shared connection refresh, never replace the browser id. | Empty body; require `X-Requested-With: jira-execution-planner`; auth-flow policy does not require token-bound CSRF. | Existing `200 authenticated=true`; no token material. | Structured `401` locks this tab. Connection-level revocation deletes all rows. | Refresh A increments token version while B stays authenticated; wrong-workspace/session rows fail closed; revocation fails both closed. |
 | `/api/auth/logout` | POST | DB OAuth branch may delete only the row identified by the caller's signed cookie; other auth modes retain their existing clear behavior. | Delete only current browser row. | Empty body; retain `X-Requested-With: jira-execution-planner`; auth-flow policy does not require token-bound CSRF. | `200 {"ok":true}`. | Existing `403 csrf_required` when the required header is absent. | Logout B leaves A active; cookie/session row are removed only for B. |
 | `/login?reason=session_expired|missing_scope` | GET | OAuth recovery page on the same origin; no workspace id or external return target is accepted. | Existing sanitized terminal entry contract. | Same-origin navigation only; no body, CSRF, or `X-Requested-With`. | Existing sign-in page and OAuth action. | Unsupported reasons keep existing behavior. | Recovery cannot bounce to the locked document or navigate cross-origin. |
@@ -209,7 +220,7 @@ active browser session
   -> active browser session (current token_version only affects cache keys)
 
 active browser session
-  + per-browser logout
+  + per-browser-profile logout
   -> current row deleted
 
 active browser session(s)
@@ -226,11 +237,20 @@ ready
 
 locked
   + leader Sign in again
-  -> OAuth navigation -> new authenticated document -> restore capsule -> announce success
+  -> atomically claim lease -> OAuth navigation -> new authenticated document
+  -> validate principal -> announce success immediately -> restore capsule independently
 
 locked follower tab
-  + live lease observed + matching leader success
+  + live lease observed + unconsumed success completed after its failing request began
   -> new / document -> restore its own capsule
+
+locked tab with delayed pre-recovery request
+  + delayed 401 arrives after causally matching success
+  -> consume success once -> new / document -> restore its own capsule
+
+locked tab with genuinely newer request
+  + stale success completed before that request began
+  -> remain locked; require a new recovery attempt
 
 locked
   + failed/cancelled OAuth or expired lease
@@ -254,19 +274,21 @@ Automated coverage must prove:
 
 1. Migration upgrade/downgrade, foreign keys, indexes, and absence of token/UI-state columns.
 2. Two Flask clients sign in as the same account, receive distinct browser-session ids, share one OAuth connection, and both remain authenticated.
-3. Existing-connection OAuth callbacks and refreshes serialize on the shared PostgreSQL connection row; concurrent reconnect callbacks leave both newly created browser rows active.
-4. A token refresh from browser A increments the shared token version while browser B remains authenticated.
-5. A CSRF token issued in browser B before browser A refreshes remains valid in B and fails in A.
+3. First-ever OAuth callbacks serialize on stable PostgreSQL advisory locks and commit one user/workspace/connection plus two distinct browser rows; existing-connection callbacks and refreshes serialize on the shared connection row, and concurrent reconnect callbacks leave both newly created browser rows active.
+4. A token refresh from browser profile A increments the shared token version while browser profile B remains authenticated.
+5. A CSRF token issued in browser profile B before browser profile A refreshes remains valid in B and fails in A; tests do not claim atomic consumption across concurrent requests sharing one Flask cookie.
 6. Logout B deletes only B; connection revocation deletes A and B; reconnect cannot revive deleted ids.
 7. A current legacy cookie upgrades once; a stale legacy cookie retains `auth_connection_stale` recovery.
 8. Scenario Planner reload propagates the real browser-session id.
 9. A Planning tab captures its mode, exact scope, selected teams, and selected story keys, then restores valid keys after the mocked same-tab OAuth round trip.
-10. Two Playwright pages in one browser context hold different Planning selections, lock independently, use one OAuth leader, reload into new documents, and each restore its own selection.
-11. Identity mismatch, expiry, malformed/oversized capsules, missing groups/sprints/tasks, and revoked permissions fail closed to normal bootstrap with the capsule cleared.
-12. Settings reopens on its prior safe tab, but connection email/token inputs and all unsaved form values are absent from storage and blank after recovery.
-13. No request is replayed, no old document unlocks, no raw `401` renders, and an older concurrent `200` cannot commit state after lock.
-14. Focused Node/Python/Playwright tests, startup preflight, structure budgets, frontend build, and the full Python suite pass.
-15. Flask starts without dependency/runtime warnings before the banner and `/api/test` succeeds.
+10. Two Playwright pages in one browser context hold different Planning selections, lock independently, click recovery concurrently, produce exactly one `/login` navigation/OAuth initiation, share the resulting authenticated cookie, reload into new documents, and each restore its own selection.
+11. Success is published immediately after authenticated principal bootstrap even when Planning hydration is delayed or fails; the follower reloads without waiting for the leader's task payload, while a non-auth failure abandons and clears only the failed tab's one-shot capsule so a later reload cannot resurrect stale selections.
+12. A follower that mounts after success, a success written during listener setup, and a delayed pre-recovery `401` each consume the causally matching marker and reload exactly once without starting OAuth or looping; a newer request rejects the stale marker.
+13. Identity mismatch, expiry, malformed/oversized capsules, missing groups/sprints/tasks, and revoked permissions fail closed to normal bootstrap with the capsule cleared.
+14. Settings reopens on its prior safe tab, but connection email/token inputs and all unsaved form values are absent from storage and blank after recovery.
+15. No request is replayed, no old document unlocks, no raw `401` renders, and an older concurrent `200` cannot commit state after lock.
+16. Focused Node/Python/Playwright tests, startup preflight, structure budgets, frontend build, the explicit PostgreSQL no-skip race gate, and the full Python suite pass.
+17. Flask starts without dependency/runtime warnings before the banner and `/api/test` succeeds.
 
 ## Analytics Impact
 
@@ -288,5 +310,5 @@ No new event is needed. Continue using the existing one-time `app_error_shown` e
 - Every application API `401` shows the existing sanitized, terminal sign-in recovery screen instead of raw config/feature errors.
 - After same-tab reauthentication, an ENG Planning tab returns to the same available group, sprint, Planning mode, selected teams, and valid selected story checkboxes.
 - Two open tabs with different Planning selections recover their own state rather than whichever tab last wrote shared `localStorage`.
-- Only one same-profile OAuth flow starts at a time; successful recovery navigates other locked tabs to new documents without unlocking them in place.
+- In browsers with Web Locks/shared storage, only one same-profile OAuth flow starts at a time; successful recovery immediately navigates other locked tabs to new documents without unlocking them in place. Capability/storage failure retains existing uncoordinated same-tab recovery without claiming cross-tab coordination or conflict-free simultaneous OAuth.
 - No failed request is replayed, no credential field is persisted, and no browser receives OAuth token material.

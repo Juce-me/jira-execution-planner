@@ -17,6 +17,22 @@ const uniqueGroupIdentity = (baseName, existingGroups) => {
 
 export const shouldShowFirstRunGroupSearch = (groupCount) => Number(groupCount) >= 4;
 
+export const buildPendingFirstRunGroupPreferencesDraft = (visibleGroupIds, favoriteGroupId) => {
+    const favoriteId = String(favoriteGroupId || '').trim();
+    const seen = new Set();
+    const normalizedVisibleGroupIds = [...(visibleGroupIds || []), favoriteId]
+        .map(groupId => String(groupId || '').trim())
+        .filter(groupId => {
+            if (!groupId || seen.has(groupId)) return false;
+            seen.add(groupId);
+            return true;
+        });
+    return {
+        visibleGroupIds: normalizedVisibleGroupIds,
+        favoriteGroupId: favoriteId || null,
+    };
+};
+
 export const beginFirstRunGroupConfiguration = ({
     mode,
     sourceGroupId = null,

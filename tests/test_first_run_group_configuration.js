@@ -19,6 +19,7 @@ function loadFirstRunGroupConfiguration() {
     return new Function(`${source}; return {
         shouldShowFirstRunGroupSearch,
         buildFirstRunGroupDraft,
+        buildPendingFirstRunGroupPreferencesDraft,
         beginFirstRunGroupConfiguration,
     };`)();
 }
@@ -48,6 +49,21 @@ test('beginFirstRunGroupConfiguration returns normalized controlled state', () =
         removeTeams: false,
         removeComponents: false,
     });
+});
+
+test('pending setup records a personal visible favorite without shared configuration fields', () => {
+    const { buildPendingFirstRunGroupPreferencesDraft } = loadFirstRunGroupConfiguration();
+    const visibleGroupIds = ['platform', 'platform'];
+
+    const pending = buildPendingFirstRunGroupPreferencesDraft(visibleGroupIds, 'new-department');
+
+    assert.deepEqual(pending, {
+        visibleGroupIds: ['platform', 'new-department'],
+        favoriteGroupId: 'new-department',
+    });
+    assert.deepEqual(visibleGroupIds, ['platform', 'platform']);
+    assert.equal(Object.hasOwn(pending, 'defaultGroupId'), false);
+    assert.equal(Object.hasOwn(pending, 'onboardingDone'), false);
 });
 
 test('duplicate draft preserves its source and copies unrelated fields', () => {

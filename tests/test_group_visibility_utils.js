@@ -16,7 +16,6 @@ function loadGroupVisibilityUtils() {
         resolveVisibleActiveGroupId,
         buildGroupPreferencesPayload,
         buildFirstRunGroupPreferencesPayload,
-        buildPendingFirstRunGroupPreferencesDraft,
         buildSharedGroupsPayload,
         groupPreferencesSignature,
         safeAppLoginUrl: typeof safeAppLoginUrl === 'function' ? safeAppLoginUrl : undefined
@@ -193,29 +192,14 @@ test('group preferences payloads use visibleGroupIds and activeGroupId', () => {
         buildFirstRunGroupPreferencesPayload('mobile'),
         { visibleGroupIds: ['mobile'], activeGroupId: 'mobile' }
     );
+    const firstRunPayload = buildFirstRunGroupPreferencesPayload('mobile');
+    assert.deepEqual(Object.keys(firstRunPayload).sort(), ['activeGroupId', 'visibleGroupIds']);
+    assert.equal(Object.hasOwn(firstRunPayload, 'defaultGroupId'), false);
+    assert.equal(Object.hasOwn(firstRunPayload, 'onboardingDone'), false);
     assert.deepEqual(
         buildFirstRunGroupPreferencesPayload(''),
         { visibleGroupIds: [], activeGroupId: null }
     );
-});
-
-test('pending first-run setup stages a personal visible favorite without shared defaults or writes', () => {
-    const {
-        buildGroupPreferencesPayload,
-        buildPendingFirstRunGroupPreferencesDraft,
-    } = loadGroupVisibilityUtils();
-
-    const pending = buildPendingFirstRunGroupPreferencesDraft(['platform', 'platform'], 'new-department');
-    assert.deepEqual(pending, {
-        visibleGroupIds: ['platform', 'new-department'],
-        favoriteGroupId: 'new-department',
-    });
-    assert.deepEqual(
-        buildGroupPreferencesPayload(pending.visibleGroupIds, pending.favoriteGroupId),
-        { visibleGroupIds: ['platform', 'new-department'], activeGroupId: 'new-department' }
-    );
-    assert.equal(Object.hasOwn(pending, 'defaultGroupId'), false);
-    assert.equal(Object.hasOwn(pending, 'onboardingDone'), false);
 });
 
 test('group visibility utilities do not own authentication recovery URLs', () => {

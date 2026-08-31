@@ -33,6 +33,15 @@ function deferred() {
     return { promise, resolve };
 }
 
+function expectOnlyFirstRunPreferenceRequest(calls, baseline) {
+    const requestDelta = calls.slice(baseline);
+    expect(requestDelta.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(1);
+    expect(
+        requestDelta.filter(call => !['/api/groups-preferences', '/api/auth/csrf'].includes(call.pathname)),
+        `Unexpected requests before first-run preferences were verified: ${requestDelta.map(call => call.pathname).join(', ')}`
+    ).toEqual([]);
+}
+
 async function expectContainedInViewport(locator) {
     await expect(locator).toBeVisible();
     const geometry = await locator.evaluate((node) => {
@@ -623,11 +632,13 @@ test('first-run department selection blocks group-scoped task loads until prefer
     await page.waitForTimeout(250);
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
 
+    const requestBaseline = calls.length;
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(dialog).toHaveAttribute('aria-busy', 'true');
     await page.getByRole('button', { name: 'Saving...' }).click({ force: true }).catch(() => {});
     await expect.poll(() => calls.filter(call => call.pathname === '/api/groups-preferences').length).toBe(1);
     await page.waitForTimeout(200);
+    expectOnlyFirstRunPreferenceRequest(calls, requestBaseline);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
     expect(calls.filter(call => ['/api/tasks-with-team-name', '/api/sprints', '/api/missing-info'].includes(call.pathname))).toHaveLength(0);
     await expect(page.locator('.group-modal')).toHaveCount(0);
@@ -637,6 +648,9 @@ test('first-run department selection blocks group-scoped task loads until prefer
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toHaveCount(0);
     await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toHaveCount(0);
     await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length).toBeGreaterThanOrEqual(2);
+    expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+    await expect(page.locator('.group-modal')).toHaveCount(0);
     const preferenceSave = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-preferences');
     expect(preferenceSave).toBeTruthy();
     expect(preferenceSave.body.visibleGroupIds).toEqual(['platform']);
@@ -658,9 +672,11 @@ test('successful first-run selection starts the dashboard tour before any onboar
     expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
 
     await page.getByRole('radio', { name: /Platform/ }).check();
+    const requestBaseline = calls.length;
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toHaveAttribute('aria-busy', 'true');
     await expect.poll(() => calls.filter(call => call.pathname === '/api/groups-preferences').length).toBe(1);
+    expectOnlyFirstRunPreferenceRequest(calls, requestBaseline);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
     expect(calls.filter(call => ['/api/tasks-with-team-name', '/api/sprints', '/api/missing-info'].includes(call.pathname))).toHaveLength(0);
     expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
@@ -668,11 +684,17 @@ test('successful first-run selection starts the dashboard tour before any onboar
     await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toHaveCount(0);
     preferenceGate.resolve();
     await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toBeVisible();
+    expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+    await expect(page.locator('.group-modal')).toHaveCount(0);
     expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
     await page.waitForTimeout(250);
     await page.screenshot({ path: testInfo.outputPath('dashboard-onboarding-desktop.png'), animations: 'disabled' });
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
     await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toHaveCount(0);
+    expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+    await expect(page.locator('.group-modal')).toHaveCount(0);
     const writes = calls.filter(call => call.pathname === '/api/me/onboarding');
     expect(writes).toHaveLength(1);
     expect(writes[0].body).toEqual({ onboardingDone: true });
@@ -977,7 +999,7 @@ test('first-run configuration keeps the editor open across validation and a 409 
     await settingsDialog.locator('.group-modal-validation').getByRole('button', { name: 'Discard mine' }).click();
     await expect(settingsDialog).toBeVisible();
     await settingsDialog.getByRole('button', { name: 'Cancel' }).click();
-    await settingsDialog.getByRole('button', { name: 'Discard' }).click();
+    await expect(settingsDialog).toHaveCount(0);
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
 });
 test('first-run invalid snapshot and auth failure keep mandatory selection gated', async ({ page }) => {

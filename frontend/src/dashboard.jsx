@@ -143,6 +143,7 @@ import FirstRunGroupSetupChoice from './settings/FirstRunGroupSetupChoice.jsx';
 import {
     beginFirstRunGroupConfiguration,
     buildFirstRunGroupDraft,
+    buildPendingFirstRunGroupPreferencesDraft,
 } from './settings/firstRunGroupConfiguration.js';
 import {
     applyLocalGroupPreferences,
@@ -542,6 +543,7 @@ import {
             const [firstRunSetupChoice, setFirstRunSetupChoice] = useState(null);
             const [firstRunConfigurationTargetGroupId, setFirstRunConfigurationTargetGroupId] = useState(null);
             const pendingFirstRunConfigurationRef = useRef(null);
+            const pendingFirstRunGroupPreferencesRef = useRef(null);
             const pendingFirstRunSettingsFocusRef = useRef(false);
             // { current, savedSections }: a rejected groups POST, kept so the draft survives it (D45).
             const [groupsConfigConflict, setGroupsConfigConflict] = useState(null);
@@ -1061,7 +1063,6 @@ import {
                 setVisibleGroupDraftIds,
                 favoriteGroupDraftId,
                 setFavoriteGroupDraft,
-                stageFirstRunGroupPreferenceDraft,
                 favoriteGroupValidationError,
                 setGroupPreferencesSaving,
                 groupVisibilitySaving,
@@ -1131,6 +1132,7 @@ import {
             useEffect(() => {
                 if (!showGroupManage && firstRunConfigurationActive) {
                     pendingFirstRunSettingsFocusRef.current = false;
+                    pendingFirstRunGroupPreferencesRef.current = null;
                     clearFirstRunConfigurationActive();
                     setFirstRunConfigurationTargetGroupId(null);
                 }
@@ -1881,7 +1883,10 @@ import {
                     const initialVisibleGroupIds = groupPreferences.customized
                         ? (groupPreferences.visibleGroupIds || [])
                         : (normalized.groups || []).map(group => group.id);
-                    stageFirstRunGroupPreferenceDraft(targetGroupId, initialVisibleGroupIds);
+                    pendingFirstRunGroupPreferencesRef.current = buildPendingFirstRunGroupPreferencesDraft(
+                        initialVisibleGroupIds,
+                        targetGroupId
+                    );
                 }
                 setGroupDraftError('');
                 setGroupImportText('');

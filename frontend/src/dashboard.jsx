@@ -3549,7 +3549,11 @@ import {
                         };
                         const snapshotVerification = verifyFirstRunGroupsSaveSnapshot(
                             normalizedSubmittedPayload,
-                            normalizedPayload,
+                            {
+                                ...normalizedPayload,
+                                configRevision: payload.configRevision,
+                                source: payload.source,
+                            },
                             firstRunConfigurationSession.pendingGroupId
                         );
                         if (firstRunConfigurationActive && !snapshotVerification.ok) {
@@ -5057,11 +5061,16 @@ import {
                     closeGroupManage();
                     return;
                 }
+                if (workspaceConfigConflict?.currentRevision != null) {
+                    sharedConfigRevisionRef.current = Number(workspaceConfigConflict.currentRevision);
+                    setSharedConfigRevision(sharedConfigRevisionRef.current);
+                    setWorkspaceConfigConflict(null);
+                }
                 await saveAllSettings({
                     rebaseOnto: groupsConfigConflict?.current || null,
                     firstRunSession: firstRunConfigurationSession,
                 });
-            }, [firstRunConfigurationSession, groupsConfigConflict, saveFirstRunGroupPreferences]);
+            }, [firstRunConfigurationSession, groupsConfigConflict, workspaceConfigConflict, saveFirstRunGroupPreferences]);
 
             const filteredGroupDrafts = React.useMemo(() => {
                 const groups = groupDraft?.groups || [];

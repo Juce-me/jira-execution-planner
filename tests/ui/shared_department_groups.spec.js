@@ -1261,6 +1261,7 @@ test('first-run rejects a mismatched successful group snapshot and never saves p
 
 for (const invalidCommit of [
     { label: 'missing revision', transform: response => ({ ...response, configRevision: null }) },
+    { label: 'string revision', transform: response => ({ ...response, configRevision: String(response.configRevision) }) },
     { label: 'invalid source', transform: response => ({ ...response, source: 'jsonfile' }) },
 ]) {
     test(`first-run rejects a 2xx group snapshot with ${invalidCommit.label} and never saves preferences`, async ({ page }) => {
@@ -2111,6 +2112,46 @@ test('first-run workspace conflict Keep preserves the session and completes the 
     await expect(dialog).toHaveCount(0);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config')).toHaveLength(2);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
+});
+
+test('first-run partial admin workspace conflict Retry rebases only pending work and completes', async ({ page }) => {
+    const sharedConfig = {
+        projects: { selected: [{ key: 'DEMO', type: 'product' }, { key: 'EXTRA', type: 'product' }] },
+        board: { boardId: '42', boardName: 'Synthetic Board' },
+        capacity: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
+        sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+        parentNameField: { fieldId: 'customfield_10014', fieldName: 'Parent' },
+        storyPointsField: { fieldId: 'customfield_10016', fieldName: 'Story points' },
+        teamField: { fieldId: 'customfield_10001', fieldName: 'Team' },
+        deliveryOwnerField: { fieldId: 'customfield_10002', fieldName: 'Delivery owner' },
+        issueTypes: ['Story'],
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        sharedConfig,
+        capacityErrors: [{ status: 409, body: { error: 'workspace_config_conflict', message: 'Workspace changed.', currentRevision: 8 } }, null],
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Scope projects' }).click();
+    await dialog.getByRole('button', { name: 'Remove product project EXTRA' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('button', { name: 'Departments' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    const guide = dialog.locator('.first-run-configuration-guide');
+    const retry = guide.getByRole('button', { name: 'Retry unsaved settings' });
+    await expect(retry).toBeVisible();
+    await retry.click();
+    await expect(dialog).toHaveCount(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/projects/selected')).toHaveLength(1);
+    const capacityPosts = calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config');
+    expect(capacityPosts).toHaveLength(2);
+    expect(capacityPosts[1].body.baseRevision).toBe(8);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
 });
 

@@ -3445,10 +3445,16 @@ import {
                 setWorkspaceConfigConflict(null);
                 const committedAdminSections = {};
                 let groupsCommitted = false;
+                let analyticsSection = groupManageTab;
+                const suppressRepeatedAdminAnalytics = firstRunConfigurationActive
+                    && savingAdminSettings
+                    && Object.values(firstRunConfigurationSession.committedAdminSections || {}).some(Boolean);
                 try {
                     const savingDepartmentSettings = sharedGroupsChanged || (!firstRunConfigurationActive && isGroupVisibilityDraftDirty);
-                    const analyticsSection = savingAdminSettings ? 'admin' : (savingDepartmentSettings ? 'departments' : groupManageTab);
-                    trackSettingsAction(analyticsSection, 'save', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
+                    analyticsSection = savingAdminSettings ? 'admin' : (savingDepartmentSettings ? 'departments' : groupManageTab);
+                    if (!suppressRepeatedAdminAnalytics) {
+                        trackSettingsAction(analyticsSection, 'save', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
+                    }
 
                     let projectsChanged = false;
                     let priorityWeightsChanged = false;
@@ -3512,7 +3518,8 @@ import {
                     let payload = null;
                     if (sharedGroupsChanged) {
                         const draftPayload = buildSharedGroupsPayload(groupDraft);
-                        const response = await requestSaveGroupsConfig(BACKEND_URL, rebaseOnto ? rebaseSharedGroupsPayload(draftPayload, rebaseOnto) : draftPayload);
+                        const submittedPayload = rebaseOnto ? rebaseSharedGroupsPayload(draftPayload, rebaseOnto) : draftPayload;
+                        const response = await requestSaveGroupsConfig(BACKEND_URL, submittedPayload);
                         if (!response.ok) {
                             const errorPayload = await response.json().catch(() => ({}));
                             const errorMessage = errorPayload.message || (errorPayload.errors || []).join(' ') || errorPayload.error || `Save failed (${response.status})`;
@@ -3531,15 +3538,24 @@ import {
                             throw error;
                         }
                         payload = await response.json();
+                        const normalizedPayload = normalizeGroupsConfig(payload);
+                        const normalizedSubmittedPayload = {
+                            ...normalizeGroupsConfig({
+                                ...submittedPayload,
+                                configRevision: submittedPayload.baseRevision,
+                                source: 'workspace_db',
+                            }),
+                            baseRevision: submittedPayload.baseRevision,
+                        };
                         const snapshotVerification = verifyFirstRunGroupsSaveSnapshot(
-                            rebaseOnto ? rebaseSharedGroupsPayload(draftPayload, rebaseOnto) : draftPayload,
-                            payload,
+                            normalizedSubmittedPayload,
+                            normalizedPayload,
                             firstRunConfigurationSession.pendingGroupId
                         );
                         if (firstRunConfigurationActive && !snapshotVerification.ok) {
                             throw new Error(snapshotVerification.error);
                         }
-                        normalized = applySavedGroupsConfig(payload);
+                        normalized = applySavedGroupsConfig(normalizedPayload);
                         groupsCommitted = true;
                     }
                     const refreshTarget = getConfigSaveRefreshTarget({
@@ -3596,7 +3612,7 @@ import {
                     if (closeOnSuccess) {
                         closeGroupManage();
                     }
-                    trackSettingsAction(analyticsSection, 'save_result', { result: 'success' });
+                    if (!suppressRepeatedAdminAnalytics) trackSettingsAction(analyticsSection, 'save_result', { result: 'success' });
                     lastCommittedWorkspaceSectionsRef.current = committedWorkspaceSectionLabels(committedAdminSections);
                     return buildSettingsSaveOutcome({
                         ok: true,
@@ -3644,14 +3660,18 @@ import {
                             savedSections: committedWorkspaceSectionLabels(committedAdminSections),
                             pendingSections,
                         });
-                        trackSettingsAction('admin', 'save_result', {
-                            result: 'failure',
-                            conflict_state: 'remote',
-                            conflict_count_bucket: '1_5',
-                        });
+                        if (!suppressRepeatedAdminAnalytics) {
+                            trackSettingsAction('admin', 'save_result', {
+                                result: 'failure',
+                                conflict_state: 'remote',
+                                conflict_count_bucket: '1_5',
+                            });
+                        }
                     }
                     setGroupDraftError(err.message || 'Failed to save groups.');
-                    if (err?.status !== 409) trackSettingsAction(groupManageTab, 'save_result', { result: 'failure' });
+                    if (err?.status !== 409 && !suppressRepeatedAdminAnalytics) {
+                        trackSettingsAction(analyticsSection, 'save_result', { result: 'failure' });
+                    }
                     return buildSettingsSaveOutcome({
                         conflict: err?.status === 409 || Boolean(groupsConfigConflict),
                         committedSections,
@@ -3731,6 +3751,7 @@ import {
                                 });
                             }
                             if (firstRunSession) {
+                                setGroupManageTab(activeDepartmentSettingsTab);
                                 dispatchFirstRunConfigurationSession({
                                     type: 'save_sections_failed',
                                     committedSections,
@@ -3738,7 +3759,6 @@ import {
                                     pendingAdminSections: saved.pendingAdminSections,
                                     normalizedGroups,
                                     error: saved.error || 'Settings could not be saved.',
-                                    retryable: !saved.conflict,
                                 });
                             }
                             return buildSettingsSaveOutcome({
@@ -3792,6 +3812,7 @@ import {
                             });
                         }
                         if (!preferenceResult?.ok) {
+                            setGroupManageTab(activeDepartmentSettingsTab);
                             dispatchFirstRunConfigurationSession({
                                 type: 'preference_save_failed', error: 'Your favorite Department could not be saved.',
                             });

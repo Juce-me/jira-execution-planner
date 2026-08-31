@@ -63,6 +63,16 @@ export const verifyFirstRunGroupsSaveSnapshot = (submitted, response, pendingGro
     if (!response.groups.some(group => String(group?.id || '') === String(pendingGroupId || ''))) {
         return { ok: false, error: 'The saved Department response did not include the Department being configured. Retry saving.' };
     }
+    const baseRevision = Number(submitted.baseRevision);
+    const committedRevision = Number(response.configRevision);
+    if (
+        response.source !== 'workspace_db'
+        || !Number.isSafeInteger(baseRevision)
+        || !Number.isSafeInteger(committedRevision)
+        || committedRevision <= baseRevision
+    ) {
+        return { ok: false, error: 'The saved Department response did not identify a valid committed workspace revision. Retry saving.' };
+    }
     const submittedShared = canonicalSharedValue({
         version: submitted.version || 1,
         groups: submitted.groups,
@@ -145,13 +155,13 @@ export function firstRunConfigurationSessionReducer(state, action) {
             const partial = hasCommittedSection(committedSections);
             return {
                 ...current,
-                status: (partial || action.retryable) ? 'sections_pending' : 'editing',
+                status: partial ? 'sections_pending' : 'editing',
                 committedSections,
                 committedAdminSections: mergeFirstRunAdminSections(current.committedAdminSections, action.committedAdminSections),
                 pendingAdminSections: normalizeFirstRunAdminSections(action.pendingAdminSections),
                 latestNormalizedGroups: action.normalizedGroups || current.latestNormalizedGroups,
                 error: action.error || '',
-                recoveryAction: (partial || action.retryable) ? 'retry_sections' : null,
+                recoveryAction: partial ? 'retry_sections' : null,
             };
         }
         case 'sections_saved':

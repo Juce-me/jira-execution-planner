@@ -129,6 +129,13 @@ test('group save snapshot verification compares every shared field but accepts s
         mutate(mismatch);
         assert.equal(verifyFirstRunGroupsSaveSnapshot(submitted, mismatch, 'new-department').ok, false);
     }
+    for (const invalidCommit of [
+        { ...response, configRevision: null },
+        { ...response, configRevision: 3 },
+        { ...response, source: 'jsonfile' },
+    ]) {
+        assert.equal(verifyFirstRunGroupsSaveSnapshot(submitted, invalidCommit, 'new-department').ok, false);
+    }
 });
 
 test('shouldShowFirstRunGroupSearch hides search for zero through three groups', () => {
@@ -286,7 +293,9 @@ test('first-run configuration session follows the exact save recovery states', (
 
     const saving = reduce(started, { type: 'save_sections_started' });
     assert.equal(saving.status, 'saving_sections');
-    assert.equal(reduce(saving, { type: 'save_sections_failed', committedSections: {} }).status, 'editing');
+    const zeroCommitFailure = reduce(saving, { type: 'save_sections_failed', committedSections: {}, retryable: true });
+    assert.equal(zeroCommitFailure.status, 'editing');
+    assert.equal(zeroCommitFailure.recoveryAction, null);
 
     const partial = reduce(saving, {
         type: 'save_sections_failed',

@@ -52,10 +52,10 @@ test('onboarding persistence is available only for Atlassian OAuth workspace DB 
     assert.equal(isOnboardingAvailable('', 'workspace_db'), false);
 });
 
-test('catalog contains the exact 14-step tour and interaction order', async () => {
+test('catalog contains the exact 14-step tour and progression order', async () => {
     const { ONBOARDING_STEP_CATALOG } = await loadModule();
     assert.deepEqual(
-        ONBOARDING_STEP_CATALOG.map((step) => [step.id, step.interaction]),
+        ONBOARDING_STEP_CATALOG.map((step) => [step.id, step.progression]),
         [
             ['sprint', 'manual'],
             ['group', 'manual'],
@@ -73,6 +73,9 @@ test('catalog contains the exact 14-step tour and interaction order', async () =
             ['complete', 'finish'],
         ]
     );
+    ONBOARDING_STEP_CATALOG.forEach((step) => {
+        assert.equal(Object.hasOwn(step, 'interaction'), false, step.id);
+    });
     assert.equal(Object.isFrozen(ONBOARDING_STEP_CATALOG), true);
     const renderedCopy = ONBOARDING_STEP_CATALOG
         .flatMap((step) => [step.title, step.body, step.fallbackBody || ''])
@@ -171,19 +174,26 @@ test('catalog exposes four ordered progress groups', async () => {
     );
 });
 
-test('section skips navigate within the tour without producing Skip or Finish outcomes', async () => {
+test('section skip resolver returns pure in-tour destinations', async () => {
     const { buildVisibleOnboardingSteps, resolveSectionSkipTargetId } = await loadModule();
     const withJira = buildVisibleOnboardingSteps(FULL_AVAILABILITY);
     const withoutJira = buildVisibleOnboardingSteps({ ...FULL_AVAILABILITY, 'jira-export': false });
+    const calls = { skip: 0, finish: 0 };
+    const persistenceCallbacks = {
+        onSkip: () => { calls.skip += 1; },
+        onFinish: () => { calls.finish += 1; },
+    };
 
     for (const id of ['hierarchy-initiative', 'hierarchy-epic', 'hierarchy-story']) {
-        assert.equal(resolveSectionSkipTargetId(withJira, id), 'editing-priority');
+        assert.equal(resolveSectionSkipTargetId(withJira, id, persistenceCallbacks), 'editing-priority');
     }
     for (const id of ['editing-priority', 'editing-track', 'editing-status']) {
-        assert.equal(resolveSectionSkipTargetId(withJira, id), 'jira-export');
-        assert.equal(resolveSectionSkipTargetId(withoutJira, id), 'complete');
+        assert.equal(resolveSectionSkipTargetId(withJira, id, persistenceCallbacks), 'jira-export');
+        assert.equal(resolveSectionSkipTargetId(withoutJira, id, persistenceCallbacks), 'complete');
     }
-    assert.equal(resolveSectionSkipTargetId(withJira, 'sprint'), '');
+    assert.equal(resolveSectionSkipTargetId(withJira, 'sprint', persistenceCallbacks), '');
+    assert.deepEqual(calls, { skip: 0, finish: 0 });
+    // Task 6 owns browser coverage proving section skips do not persist Skip or Finish.
 });
 
 test('search and field preview copy states the exact supported scope without requiring a change', async () => {
@@ -205,7 +215,15 @@ test('search and field preview copy states the exact supported scope without req
     assert.match(status.body, /Status/i);
     assert.match(status.fallbackBody, /Status/i);
     [priority, track, status].forEach((entry) => {
-        assert.doesNotMatch(`${entry.body} ${entry.fallbackBody}`, /must|required to change|have to change/i);
+        assert.match(entry.body, /no value change is required|without changing/i, `${entry.id} body`);
+        assert.match(entry.fallbackBody, /no value change is required|without changing/i, `${entry.id} fallback`);
+        assert.doesNotMatch(
+            `${entry.body} ${entry.fallbackBody}`,
+            /change (?:the|a|this) value to (?:continue|proceed|finish)|must change|have to change|required to change/i
+        );
+        for (const copy of [entry.body, entry.fallbackBody]) {
+            assert.ok((copy.match(/[.!?](?:\s|$)/g) || []).length <= 2, `${entry.id} compact copy`);
+        }
     });
 });
 

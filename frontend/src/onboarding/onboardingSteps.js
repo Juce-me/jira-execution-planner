@@ -40,7 +40,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'sprint',
         presence: 'required',
-        interaction: 'manual',
+        progression: 'manual',
         group: DASHBOARD_BASICS,
         selectors: [target('sprint')],
         title: 'Choose a sprint',
@@ -50,7 +50,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'group',
         presence: 'conditional',
-        interaction: 'manual',
+        progression: 'manual',
         group: DASHBOARD_BASICS,
         selectors: [target('group')],
         title: 'Set your Department scope',
@@ -59,7 +59,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'teams',
         presence: 'conditional',
-        interaction: 'manual',
+        progression: 'manual',
         group: DASHBOARD_BASICS,
         selectors: [target('teams')],
         title: 'Narrow to teams',
@@ -68,7 +68,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'refresh',
         presence: 'required',
-        interaction: 'manual',
+        progression: 'manual',
         group: DASHBOARD_BASICS,
         selectors: [target('refresh')],
         title: 'Request fresh data',
@@ -78,7 +78,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'search',
         presence: 'conditional',
-        interaction: 'manual',
+        progression: 'manual',
         group: DASHBOARD_BASICS,
         selectors: [target('search')],
         title: 'Find work across the hierarchy',
@@ -87,7 +87,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'filters',
         presence: 'conditional',
-        interaction: 'manual',
+        progression: 'manual',
         group: DASHBOARD_BASICS,
         selectors: [target('filters')],
         title: 'Focus the view',
@@ -96,7 +96,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'hierarchy-initiative',
         presence: 'hierarchy',
-        interaction: 'manual',
+        progression: 'manual',
         group: WORK_HIERARCHY,
         selectors: [target('hierarchy-initiative')],
         title: 'Start with the Initiative',
@@ -106,7 +106,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'hierarchy-epic',
         presence: 'hierarchy',
-        interaction: 'manual',
+        progression: 'manual',
         group: WORK_HIERARCHY,
         selectors: [target('hierarchy-epic')],
         title: 'Follow the Epic',
@@ -116,7 +116,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'hierarchy-story',
         presence: 'hierarchy',
-        interaction: 'manual',
+        progression: 'manual',
         group: WORK_HIERARCHY,
         selectors: [target('hierarchy-story')],
         title: 'See the delivery Stories',
@@ -126,7 +126,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'editing-priority',
         presence: 'fallback',
-        interaction: 'menu-preview',
+        progression: 'menu-preview',
         group: FIELD_PREVIEWS,
         requireEnabled: true,
         selectors: [
@@ -135,23 +135,23 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         ],
         title: 'Preview Priority options',
         body: 'Open an Epic or Story Priority menu to preview the available options; you can close it without changing the value.',
-        fallbackBody: 'Priority menus appear on editable Epics and Stories when the current view and your permissions make them available.',
+        fallbackBody: 'Priority menus appear on editable Epics and Stories when the current view and your permissions make them available. No value change is required.',
     }),
     freezeStep({
         id: 'editing-track',
         presence: 'fallback',
-        interaction: 'menu-preview',
+        progression: 'menu-preview',
         group: FIELD_PREVIEWS,
         requireEnabled: true,
         selectors: [target('editing-track')],
         title: 'Preview Project Track options',
         body: 'Open an Epic Project Track menu to preview the available options; you can close it without changing the value.',
-        fallbackBody: 'Project Track menus appear on editable Epics when the current view and your permissions make them available.',
+        fallbackBody: 'Project Track menus appear on editable Epics when the current view and your permissions make them available. No value change is required.',
     }),
     freezeStep({
         id: 'editing-status',
         presence: 'fallback',
-        interaction: 'menu-preview',
+        progression: 'menu-preview',
         group: FIELD_PREVIEWS,
         requireEnabled: true,
         selectors: [
@@ -160,12 +160,12 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         ],
         title: 'Preview Status options',
         body: 'Open an Epic or Story Status menu to preview the available transitions; you can close it without changing the value.',
-        fallbackBody: 'Status menus appear on editable Epics and Stories when the current view and your permissions make them available.',
+        fallbackBody: 'Status menus appear on editable Epics and Stories when the current view and your permissions make them available. No value change is required.',
     }),
     freezeStep({
         id: 'jira-export',
         presence: 'conditional',
-        interaction: 'manual',
+        progression: 'manual',
         group: CONTINUE_IN_JIRA,
         requireEnabled: true,
         selectors: [target('jira-export')],
@@ -175,7 +175,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'complete',
         presence: 'required',
-        interaction: 'finish',
+        progression: 'finish',
         group: CONTINUE_IN_JIRA,
         selectors: [],
         title: 'Tour complete',
@@ -186,7 +186,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
 const HIERARCHY_FALLBACK_STEP = freezeStep({
     id: 'hierarchy',
     presence: 'fallback',
-    interaction: 'manual',
+    progression: 'manual',
     group: WORK_HIERARCHY,
     selectors: [target('hierarchy')],
     title: 'Follow work from goal to delivery',

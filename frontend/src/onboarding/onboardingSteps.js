@@ -309,12 +309,29 @@ function suppressionOwnership(node, records) {
     return (records || []).find((record) => record?.node === node)?.owned || {};
 }
 
-export function isTourOwnedSuppressionMutation(record, suppressionRecords = []) {
-    if (record?.type !== 'attributes') return false;
+export function queueTourOwnedSuppressionMutation(pendingWrites, node, attributeName) {
+    if (!Array.isArray(pendingWrites) || !node || !attributeName) return;
+    pendingWrites.push({ node, attributeName });
+}
+
+export function consumeTourOwnedSuppressionMutation(record, pendingWrites = []) {
+    if (record?.type !== 'attributes' || !Array.isArray(pendingWrites)) return false;
+    const index = pendingWrites.findIndex((entry) => (
+        entry.node === record.target && entry.attributeName === record.attributeName
+    ));
+    if (index < 0) return false;
+    pendingWrites.splice(index, 1);
+    return true;
+}
+
+export function revokeTourOwnedSuppressionForMutation(record, suppressionRecords = []) {
+    if (record?.type !== 'attributes') return;
     const owned = suppressionOwnership(record.target, suppressionRecords);
-    if (record.attributeName === 'inert') return owned.inertAttribute === true;
-    if (record.attributeName === 'aria-hidden') return owned.ariaHidden === true;
-    return false;
+    if (record.attributeName === 'aria-hidden') owned.ariaHidden = false;
+    if (record.attributeName === 'inert') {
+        owned.inertAttribute = false;
+        owned.inertProperty = false;
+    }
 }
 
 export function isRenderableTarget(node, { requireEnabled = false, tourOwnedSuppressionRecords = [] } = {}) {
@@ -363,10 +380,12 @@ export function resolveVisibleTarget(selectors, root, viewport, options = {}) {
     return null;
 }
 
-export function resolveRenderableTarget(selectors, root, options = {}) {
+export function resolveRenderableTarget(selectors, root, viewport, options = {}) {
     if (!root || typeof root.querySelectorAll !== 'function') return null;
     for (const selector of selectors || []) {
         const candidates = Array.from(root.querySelectorAll(selector) || []);
+        const visible = candidates.find((node) => isVisibleViewportTarget(node, viewport, options));
+        if (visible) return visible;
         const renderable = candidates.find((node) => isRenderableTarget(node, options));
         if (renderable) return renderable;
     }
@@ -390,7 +409,7 @@ export function resolveOnboardingSnapshot(root, viewport, options = {}) {
         let resolved;
         if (isOnboardingEngDataStep(step)) {
             resolved = engReadiness === 'settled'
-                ? resolveRenderableTarget(step.selectors, root, targetOptions)
+                ? resolveRenderableTarget(step.selectors, root, viewport, targetOptions)
                 : null;
         } else {
             resolved = resolveVisibleTarget(step.selectors, root, viewport, targetOptions);

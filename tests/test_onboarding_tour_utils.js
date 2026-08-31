@@ -198,6 +198,15 @@ test('dashboard derives and passes the exact onboarding ENG readiness without ad
     assert.doesNotMatch(readinessBlock, /\b(?:fetchTasks|request[A-Z]\w*)\s*\(/);
 });
 
+test('offscreen onboarding targets use exact instant centered scrolling', () => {
+    const source = readFileSync(
+        new URL('../frontend/src/onboarding/OnboardingTour.jsx', `file://${__filename}`),
+        'utf8'
+    );
+    assert.match(source, /scrollIntoView\?\.\(\{ behavior: 'instant', block: 'center', inline: 'nearest' \}\)/);
+    assert.doesNotMatch(source, /scrollIntoView\?\.\(\{ behavior: 'auto'/);
+});
+
 test('loading retains every hierarchy and editing step while settled matrices compact only all-absent groups', async () => {
     const { buildVisibleOnboardingSteps } = await loadModule();
     const loadingIds = buildVisibleOnboardingSteps({}, { engReadiness: 'loading' }).map((step) => step.id);
@@ -319,18 +328,64 @@ test('attribute-level tour suppression ignores only owned values and always enfo
 });
 
 test('mutation filtering ignores only the exact tour-owned suppression attribute', async () => {
-    const { isTourOwnedSuppressionMutation } = await loadModule();
+    const {
+        consumeTourOwnedSuppressionMutation,
+        queueTourOwnedSuppressionMutation,
+        revokeTourOwnedSuppressionForMutation,
+    } = await loadModule();
     const node = element(VISIBLE_RECT);
     const other = element(VISIBLE_RECT);
-    const records = [{
+    const ownershipRecords = [{
         node,
         owned: { inertAttribute: true, inertProperty: true, ariaHidden: false },
     }];
+    const pendingWrites = [];
 
-    assert.equal(isTourOwnedSuppressionMutation({ type: 'attributes', target: node, attributeName: 'inert' }, records), true);
-    assert.equal(isTourOwnedSuppressionMutation({ type: 'attributes', target: node, attributeName: 'aria-hidden' }, records), false);
-    assert.equal(isTourOwnedSuppressionMutation({ type: 'attributes', target: node, attributeName: 'class' }, records), false);
-    assert.equal(isTourOwnedSuppressionMutation({ type: 'attributes', target: other, attributeName: 'inert' }, records), false);
+    queueTourOwnedSuppressionMutation(pendingWrites, node, 'inert');
+    assert.equal(consumeTourOwnedSuppressionMutation({ type: 'attributes', target: node, attributeName: 'inert' }, pendingWrites), true);
+    assert.equal(consumeTourOwnedSuppressionMutation({ type: 'attributes', target: node, attributeName: 'inert' }, pendingWrites), false);
+
+    queueTourOwnedSuppressionMutation(pendingWrites, node, 'aria-hidden');
+    assert.equal(consumeTourOwnedSuppressionMutation({ type: 'attributes', target: other, attributeName: 'aria-hidden' }, pendingWrites), false);
+    assert.equal(consumeTourOwnedSuppressionMutation({ type: 'attributes', target: node, attributeName: 'aria-hidden' }, pendingWrites), true);
+
+    revokeTourOwnedSuppressionForMutation({ type: 'attributes', target: node, attributeName: 'aria-hidden' }, ownershipRecords);
+    assert.equal(ownershipRecords[0].owned.inertAttribute, true);
+    assert.equal(ownershipRecords[0].owned.ariaHidden, false);
+    revokeTourOwnedSuppressionForMutation({ type: 'attributes', target: node, attributeName: 'inert' }, ownershipRecords);
+    assert.deepEqual(ownershipRecords[0].owned, {
+        inertAttribute: false,
+        inertProperty: false,
+        ariaHidden: false,
+    });
+});
+
+test('renderable resolution prefers a later visible duplicate without crossing selector priority', async () => {
+    const { resolveRenderableTarget } = await loadModule();
+    const epicSelector = '[data-onboarding-target="editing-priority"][data-issue-kind="epic"]';
+    const storySelector = '[data-onboarding-target="editing-priority"][data-issue-kind="story"]';
+    const offscreenEpic = element({ left: 50, top: 1200, right: 170, bottom: 1240, width: 120, height: 40 });
+    const visibleEpic = element(VISIBLE_RECT);
+    const visibleStory = element({ left: 300, top: 100, right: 420, bottom: 140, width: 120, height: 40 });
+
+    assert.equal(
+        resolveRenderableTarget(
+            [epicSelector, storySelector],
+            rootWith({ [epicSelector]: [offscreenEpic, visibleEpic], [storySelector]: [visibleStory] }),
+            VIEWPORT
+        ),
+        visibleEpic,
+        'visible duplicate wins inside the preferred Epic selector'
+    );
+    assert.equal(
+        resolveRenderableTarget(
+            [epicSelector, storySelector],
+            rootWith({ [epicSelector]: [offscreenEpic], [storySelector]: [visibleStory] }),
+            VIEWPORT
+        ),
+        offscreenEpic,
+        'Epic selector priority still wins over a visible Story fallback'
+    );
 });
 
 test('renderable candidate resolution rejects hidden and zero nodes before accepting an offscreen node', async () => {

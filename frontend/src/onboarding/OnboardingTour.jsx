@@ -6,9 +6,11 @@ import {
     buildTourProgress,
     buildVisibleOnboardingSteps,
     computeCoachmarkPlacement,
-    isTourOwnedSuppressionMutation,
+    consumeTourOwnedSuppressionMutation,
     isVisibleViewportTarget,
+    queueTourOwnedSuppressionMutation,
     resolveOnboardingSnapshot,
+    revokeTourOwnedSuppressionForMutation,
 } from './onboardingSteps.js';
 import useOnboardingTour from './useOnboardingTour.js';
 
@@ -80,6 +82,7 @@ export default function OnboardingTour({
     const panelRef = React.useRef(null);
     const priorFocusRef = React.useRef(null);
     const tourOwnedSuppressionRef = React.useRef([]);
+    const pendingOwnedMutationsRef = React.useRef([]);
     const scrollEntryRef = React.useRef({ stepId: '', target: null });
     const [geometry, setGeometry] = React.useState({ target: null, targetRect: null, coachmarkSize: DEFAULT_COACHMARK_SIZE });
     const headingId = React.useId();
@@ -101,7 +104,7 @@ export default function OnboardingTour({
         if (isNewEntry) {
             scrollEntryRef.current = { stepId: tour.currentStep.id, target: candidate };
             if (candidate && !isVisibleViewportTarget(candidate, viewport, targetOptions)) {
-                candidate.scrollIntoView?.({ behavior: 'auto', block: 'center', inline: 'nearest' });
+                candidate.scrollIntoView?.({ behavior: 'instant', block: 'center', inline: 'nearest' });
             }
         }
         const target = candidate && isVisibleViewportTarget(candidate, viewportSize(), targetOptions)
@@ -134,8 +137,15 @@ export default function OnboardingTour({
         const mutationObserver = typeof MutationObserver !== 'undefined'
             ? new MutationObserver((records) => {
                 const owned = tourOwnedSuppressionRef.current;
-                const onlyTourOwnedSuppression = records.length > 0
-                    && records.every((record) => isTourOwnedSuppressionMutation(record, owned));
+                const provenance = records.map((record) => {
+                    const tourOwned = consumeTourOwnedSuppressionMutation(
+                        record,
+                        pendingOwnedMutationsRef.current
+                    );
+                    if (!tourOwned) revokeTourOwnedSuppressionForMutation(record, owned);
+                    return tourOwned;
+                });
+                const onlyTourOwnedSuppression = provenance.length > 0 && provenance.every(Boolean);
                 if (!onlyTourOwnedSuppression) measure();
             })
             : null;
@@ -179,7 +189,21 @@ export default function OnboardingTour({
                     ariaHidden: priorAriaHidden !== 'true',
                 },
             }];
+            if (priorAriaHidden !== 'true') {
+                queueTourOwnedSuppressionMutation(
+                    pendingOwnedMutationsRef.current,
+                    appRoot,
+                    'aria-hidden'
+                );
+            }
             appRoot.setAttribute('aria-hidden', 'true');
+            if (priorInertAttribute !== '') {
+                queueTourOwnedSuppressionMutation(
+                    pendingOwnedMutationsRef.current,
+                    appRoot,
+                    'inert'
+                );
+            }
             appRoot.setAttribute('inert', '');
             if ('inert' in appRoot) appRoot.inert = true;
         }
@@ -193,6 +217,7 @@ export default function OnboardingTour({
                 if (priorInertAttribute === null) appRoot.removeAttribute('inert');
                 else appRoot.setAttribute('inert', priorInertAttribute);
                 tourOwnedSuppressionRef.current = [];
+                pendingOwnedMutationsRef.current = [];
             }
             const priorFocus = priorFocusRef.current;
             if (priorFocus?.isConnected && typeof priorFocus.focus === 'function') priorFocus.focus();
@@ -203,6 +228,7 @@ export default function OnboardingTour({
         if (tour.isOpen) return;
         scrollEntryRef.current = { stepId: '', target: null };
         tourOwnedSuppressionRef.current = [];
+        pendingOwnedMutationsRef.current = [];
     }, [tour.isOpen]);
 
     if (!tour.isOpen || !tour.currentStep || typeof document === 'undefined') return null;

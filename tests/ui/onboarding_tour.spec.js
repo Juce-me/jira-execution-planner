@@ -31,12 +31,15 @@ test.beforeAll(() => {
                     const [editingMask, setEditingMask] = React.useState(7);
                     const [priorityVersion, setPriorityVersion] = React.useState(0);
                     const [priorityOffscreen, setPriorityOffscreen] = React.useState(false);
+                    const [showPriorityDuplicate, setShowPriorityDuplicate] = React.useState(false);
                     const scrollCountRef = React.useRef(0);
+                    const scrollOptionsRef = React.useRef([]);
                     const priorityRef = React.useCallback((node) => {
                         if (!node) return;
                         const nativeScrollIntoView = node.scrollIntoView.bind(node);
                         node.scrollIntoView = (options) => {
                             scrollCountRef.current += 1;
+                            scrollOptionsRef.current.push(options);
                             nativeScrollIntoView(options);
                         };
                     }, []);
@@ -53,8 +56,10 @@ test.beforeAll(() => {
                             setHierarchyMask,
                             setEditingMask,
                             setPriorityOffscreen,
+                            setShowPriorityDuplicate,
                             replacePriority: () => setPriorityVersion((value) => value + 1),
                             scrollCount: () => scrollCountRef.current,
+                            scrollOptions: () => [...scrollOptionsRef.current],
                             skipCount,
                         };
                     });
@@ -77,6 +82,13 @@ test.beforeAll(() => {
                             aria-expanded="false"
                             style={{ position: 'absolute', left: 40, top: priorityOffscreen ? 1250 + priorityVersion * 40 : 470 }}
                         >Priority</button>}
+                        {Boolean(editingMask & 4) && showPriorityDuplicate && <button
+                            data-onboarding-target="editing-priority"
+                            data-issue-kind="epic"
+                            aria-haspopup="menu"
+                            aria-expanded="false"
+                            style={{ position: 'absolute', left: 360, top: 470 }}
+                        >Priority visible duplicate</button>}
                         {Boolean(editingMask & 2) && <button
                             data-onboarding-target="editing-track"
                             aria-haspopup="menu"
@@ -331,16 +343,22 @@ async function advanceToHeading(page, heading) {
     throw new Error(`Did not reach onboarding heading: ${heading}`);
 }
 
-async function collectTourSteps(page) {
+async function collectTourSteps(page, { advancePreview } = {}) {
     const steps = [];
     for (let index = 0; index < 20; index += 1) {
         steps.push({
             title: await page.getByRole('heading').textContent(),
             progress: await page.locator('.onboarding-tour-progress').textContent(),
+            state: await page.locator('[data-onboarding-tour]').getAttribute('data-onboarding-state'),
         });
         const next = page.getByRole('button', { name: 'Next' });
         if (!await next.count()) break;
-        await next.click();
+        const title = steps.at(-1).title;
+        if (/^Preview (?:Priority|Project Track|Status) options$/.test(title) && advancePreview) {
+            await advancePreview({ page, title, next });
+        } else {
+            await next.click();
+        }
     }
     return steps;
 }
@@ -404,6 +422,20 @@ test('readiness mixed tour-owned suppression never bypasses non-owned hidden or 
     await page.evaluate(() => { document.getElementById('root').style.display = 'none'; });
     await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
     await page.evaluate(() => { document.getElementById('root').style.display = ''; });
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+
+    await page.evaluate(() => { document.getElementById('root').removeAttribute('aria-hidden'); });
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+    await page.evaluate(() => { document.getElementById('root').setAttribute('aria-hidden', 'true'); });
+    await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
+    await page.evaluate(() => { document.getElementById('root').removeAttribute('aria-hidden'); });
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+
+    await page.evaluate(() => { document.getElementById('root').removeAttribute('inert'); });
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+    await page.evaluate(() => { document.getElementById('root').setAttribute('inert', ''); });
+    await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
+    await page.evaluate(() => { document.getElementById('root').removeAttribute('inert'); });
     await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
 
@@ -474,6 +506,9 @@ test('offscreen target scrolls once on step entry, does not fight user scroll, a
     await advanceToHeading(page, 'Preview Priority options');
     await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
     await expect.poll(() => page.evaluate(() => window.__tourHarness.scrollCount())).toBe(1);
+    expect(await page.evaluate(() => window.__tourHarness.scrollOptions())).toEqual([
+        { behavior: 'instant', block: 'center', inline: 'nearest' },
+    ]);
 
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(100);
@@ -489,6 +524,23 @@ test('offscreen target scrolls once on step entry, does not fight user scroll, a
     await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
 
+test('offscreen duplicate resolution prefers a later visible candidate without needless scrolling', async ({ page }) => {
+    await installHarness(page);
+    await page.evaluate(() => {
+        window.__tourHarness.setPriorityOffscreen(true);
+        window.__tourHarness.setShowPriorityDuplicate(true);
+    });
+    await openTour(page);
+    await advanceToHeading(page, 'Preview Priority options');
+    const duplicateRect = await page.locator('button', { hasText: 'Priority visible duplicate' }).evaluate((node) => ({
+        left: node.getBoundingClientRect().left,
+    }));
+    await expect.poll(() => page.locator('.onboarding-tour-spotlight').evaluate((node, duplicateLeft) => (
+        Math.abs((node.getBoundingClientRect().left + 6) - duplicateLeft)
+    ), duplicateRect.left)).toBeLessThanOrEqual(1);
+    expect(await page.evaluate(() => window.__tourHarness.scrollCount())).toBe(0);
+});
+
 test('hierarchy matrix and editing presence matrix retain deterministic order and compact only all-absent groups', async ({ page }) => {
     await installHarness(page);
     const hierarchyTitles = ['Start with the Initiative', 'Follow the Epic', 'See the delivery Stories'];
@@ -501,7 +553,12 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
             window.__tourHarness.open();
         }, { hierarchyMask: mask });
         await expect(page.getByRole('dialog')).toBeVisible();
-        const steps = await collectTourSteps(page);
+        const steps = await collectTourSteps(page, {
+            advancePreview: async ({ next }) => {
+                await expect(next).toBeVisible();
+                await next.click();
+            },
+        });
         const expectedTotal = mask ? 10 : 8;
         expect(steps.map((step) => step.progress)).toEqual(
             Array.from({ length: expectedTotal }, (_value, index) => `Step ${index + 1} of ${expectedTotal}`)
@@ -510,6 +567,12 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
             hierarchyTitles.includes(title) || title === 'Follow work from goal to delivery'
         ));
         expect(hierarchyHeadings).toEqual(mask ? hierarchyTitles : ['Follow work from goal to delivery']);
+        const hierarchyStates = steps.filter((step) => (
+            hierarchyTitles.includes(step.title) || step.title === 'Follow work from goal to delivery'
+        )).map((step) => step.state);
+        expect(hierarchyStates).toEqual(mask
+            ? [Boolean(mask & 4), Boolean(mask & 2), Boolean(mask & 1)].map((present) => present ? 'target' : 'fallback')
+            : ['fallback']);
         await page.evaluate(() => window.__tourHarness.closeWithDone());
         await expect(page.getByRole('dialog')).toHaveCount(0);
     }
@@ -521,7 +584,12 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
             window.__tourHarness.open();
         }, { editingMask: mask });
         await expect(page.getByRole('dialog')).toBeVisible();
-        const steps = await collectTourSteps(page);
+        const steps = await collectTourSteps(page, {
+            advancePreview: async ({ next }) => {
+                await expect(next).toBeVisible();
+                await next.click();
+            },
+        });
         const expectedTotal = mask ? 10 : 8;
         expect(steps.map((step) => step.progress)).toEqual(
             Array.from({ length: expectedTotal }, (_value, index) => `Step ${index + 1} of ${expectedTotal}`)
@@ -530,6 +598,12 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
             editingTitles.includes(title) || title === 'Preview Jira fields safely'
         ));
         expect(editingHeadings).toEqual(mask ? editingTitles : ['Preview Jira fields safely']);
+        const editingStates = steps.filter((step) => (
+            editingTitles.includes(step.title) || step.title === 'Preview Jira fields safely'
+        )).map((step) => step.state);
+        expect(editingStates).toEqual(mask
+            ? [Boolean(mask & 4), Boolean(mask & 2), Boolean(mask & 1)].map((present) => present ? 'target' : 'fallback')
+            : ['fallback']);
         await page.evaluate(() => window.__tourHarness.closeWithDone());
         await expect(page.getByRole('dialog')).toHaveCount(0);
     }

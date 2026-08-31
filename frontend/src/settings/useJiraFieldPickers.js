@@ -137,6 +137,19 @@ export function useJiraFieldPickers({ backendUrl, jiraFields }) {
         apply(sharedConfig.deliveryOwnerField, setDeliveryOwnerFieldIdDraft, setDeliveryOwnerFieldNameDraft, deliveryOwnerFieldBaselineRef);
     };
 
+    const restoreFieldConfigDrafts = () => {
+        const restore = (baselineRef, setId, setName) => {
+            const baseline = JSON.parse(baselineRef.current || '{}');
+            setId(baseline.fieldId || '');
+            setName(baseline.fieldName || '');
+        };
+        restore(sprintFieldBaselineRef, setSprintFieldIdDraft, setSprintFieldNameDraft);
+        restore(parentNameFieldBaselineRef, setParentNameFieldIdDraft, setParentNameFieldNameDraft);
+        restore(storyPointsFieldBaselineRef, setStoryPointsFieldIdDraft, setStoryPointsFieldNameDraft);
+        restore(teamFieldBaselineRef, setTeamFieldIdDraft, setTeamFieldNameDraft);
+        restore(deliveryOwnerFieldBaselineRef, setDeliveryOwnerFieldIdDraft, setDeliveryOwnerFieldNameDraft);
+    };
+
     const sprintFieldSearch = React.useMemo(() => makeFieldSearchResults(sprintFieldSearchQuery, jiraFields), [sprintFieldSearchQuery, jiraFields]);
     const sprintFieldSearchResults = sprintFieldSearch.items;
     const sprintFieldSearchHidden = sprintFieldSearch.total - sprintFieldSearch.items.length;
@@ -211,6 +224,6 @@ export function useJiraFieldPickers({ backendUrl, jiraFields }) {
         deliveryOwnerFieldSearchIndex, setDeliveryOwnerFieldSearchIndex, deliveryOwnerFieldSearchInputRef, deliveryOwnerFieldSearchResults, deliveryOwnerFieldSearchHidden,
         handleDeliveryOwnerFieldSearchKeyDown, isDeliveryOwnerFieldDirty, saveDeliveryOwnerFieldConfig,
 
-        loadAllFieldConfigs, seedSharedFieldConfigs, anyFieldConfigDirty, dirtyFieldConfigCount,
+        loadAllFieldConfigs, seedSharedFieldConfigs, restoreFieldConfigDrafts, anyFieldConfigDirty, dirtyFieldConfigCount,
     };
 }

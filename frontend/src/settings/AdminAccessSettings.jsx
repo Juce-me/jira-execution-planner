@@ -57,7 +57,12 @@ export function useAdminAccessSettings({ backendUrl, available, active }) {
         applyUsers(users.map(user => updatedById.get(user.id) || user));
     }, [applyUsers, backendUrl, isDirty, selectedUserIds, users]);
 
-    return { users, loading, error, selectedUserIds, isDirty, toggleUser, save };
+    const restoreDraft = React.useCallback(() => {
+        setSelectedUserIds(JSON.parse(baselineRef.current || '[]'));
+        setError('');
+    }, []);
+
+    return { users, loading, error, selectedUserIds, isDirty, toggleUser, save, restoreDraft };
 }
 
 function displayNameForUser(user) {

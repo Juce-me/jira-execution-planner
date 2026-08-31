@@ -9,6 +9,10 @@ const normalizeCommittedSections = (sections = {}) => ({
     preference: Boolean(sections.preference),
 });
 
+const normalizeAdminSections = (sections = {}) => Object.fromEntries(
+    Object.entries(sections || {}).filter(([, committed]) => Boolean(committed))
+);
+
 export const createFirstRunConfigurationSession = (overrides = {}) => ({
     status: 'idle',
     mode: null,
@@ -21,12 +25,16 @@ export const createFirstRunConfigurationSession = (overrides = {}) => ({
     recoveryAction: null,
     ...overrides,
     committedSections: normalizeCommittedSections(overrides.committedSections),
+    committedAdminSections: normalizeAdminSections(overrides.committedAdminSections),
+    pendingAdminSections: normalizeAdminSections(overrides.pendingAdminSections),
 });
 
 const mergeCommittedSections = (current, next) => normalizeCommittedSections({
     ...current,
     ...Object.fromEntries(Object.entries(next || {}).filter(([, value]) => value)),
 });
+
+const mergeAdminSections = (current, next) => normalizeAdminSections({ ...current, ...next });
 
 const hasCommittedSection = (sections) => Object.values(normalizeCommittedSections(sections)).some(Boolean);
 
@@ -51,6 +59,8 @@ export function firstRunConfigurationSessionReducer(state, action) {
             return {
                 ...current,
                 committedSections: mergeCommittedSections(current.committedSections, action.committedSections),
+                committedAdminSections: mergeAdminSections(current.committedAdminSections, action.committedAdminSections),
+                pendingAdminSections: normalizeAdminSections(action.pendingAdminSections),
                 latestNormalizedGroups: action.normalizedGroups || current.latestNormalizedGroups,
             };
         case 'validation_failed':
@@ -69,6 +79,8 @@ export function firstRunConfigurationSessionReducer(state, action) {
                 ...current,
                 status: partial ? 'sections_pending' : 'editing',
                 committedSections,
+                committedAdminSections: mergeAdminSections(current.committedAdminSections, action.committedAdminSections),
+                pendingAdminSections: normalizeAdminSections(action.pendingAdminSections),
                 latestNormalizedGroups: action.normalizedGroups || current.latestNormalizedGroups,
                 error: action.error || '',
                 recoveryAction: partial ? 'retry_sections' : null,
@@ -79,6 +91,8 @@ export function firstRunConfigurationSessionReducer(state, action) {
                 ...current,
                 status: 'preference_pending',
                 committedSections: mergeCommittedSections(current.committedSections, action.committedSections),
+                committedAdminSections: mergeAdminSections(current.committedAdminSections, action.committedAdminSections),
+                pendingAdminSections: {},
                 latestNormalizedGroups: action.normalizedGroups || current.latestNormalizedGroups,
                 error: '',
                 recoveryAction: 'retry_preference',
@@ -193,6 +207,7 @@ export default function FirstRunGroupConfigurationGuide({
             node === target
             || target.contains(node)
             || Boolean(node.closest(`[data-first-run-guide-allow="${step}"]`))
+            || Boolean(node.closest('[data-first-run-settings-cancel]'))
             || Boolean(coachmarkRef.current?.contains(node))
         );
         const suppress = (node) => {
@@ -212,6 +227,7 @@ export default function FirstRunGroupConfigurationGuide({
                 target,
                 ...document.querySelectorAll(`[data-first-run-guide-allow="${step}"] ${focusableSelector}`),
                 ...(coachmarkRef.current?.querySelectorAll(focusableSelector) || []),
+                ...document.querySelectorAll('[data-first-run-settings-cancel]'),
             ].filter(node => node instanceof HTMLElement && !node.disabled && !node.inert));
         const focusOwnedTarget = () => {
             const candidates = ownedCandidates();

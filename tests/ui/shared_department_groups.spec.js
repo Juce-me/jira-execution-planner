@@ -69,6 +69,33 @@ async function expectContainedInViewport(locator) {
     expect(geometry.clipped).toBe(false);
 }
 
+async function expectGuideTargetGeometry(target, guide) {
+    await expect(target).toBeVisible();
+    const geometry = await target.evaluate((node, guideSelector) => {
+        const targetRect = node.getBoundingClientRect();
+        const guideRect = document.querySelector(guideSelector)?.getBoundingClientRect();
+        const viewport = window.visualViewport;
+        const viewportTop = viewport?.offsetTop || 0;
+        const viewportLeft = viewport?.offsetLeft || 0;
+        const viewportRight = viewportLeft + (viewport?.width || window.innerWidth);
+        const viewportBottom = viewportTop + (viewport?.height || window.innerHeight);
+        const overlapsGuide = guideRect
+            ? !(targetRect.right <= guideRect.left || targetRect.left >= guideRect.right || targetRect.bottom <= guideRect.top || targetRect.top >= guideRect.bottom)
+            : false;
+        return {
+            width: targetRect.width,
+            height: targetRect.height,
+            contained: targetRect.left >= viewportLeft && targetRect.top >= viewportTop
+                && targetRect.right <= viewportRight && targetRect.bottom <= viewportBottom,
+            overlapsGuide,
+        };
+    }, '.first-run-configuration-guide');
+    expect(geometry.width).toBeGreaterThanOrEqual(44);
+    expect(geometry.height).toBeGreaterThanOrEqual(44);
+    expect(geometry.contained).toBe(true);
+    expect(geometry.overlapsGuide).toBe(false);
+}
+
 function visibleStoryPayload(project = 'product') {
     const key = project === 'product' ? 'PLAT-1' : 'TECH-1';
     const epicKey = project === 'product' ? 'PLAT-EPIC' : 'TECH-EPIC';
@@ -137,6 +164,8 @@ async function mockFirstRunDashboard(page, options = {}) {
     let onboardingComplete = !preferences.onboardingRequired;
     let sprintFailureCount = 0;
     let sprintRequestCount = 0;
+    let capacityPostCount = 0;
+    let epmPostCount = 0;
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
@@ -183,6 +212,8 @@ async function mockFirstRunDashboard(page, options = {}) {
                 settingsAdminOnly: options.settingsAdminOnly ?? false,
                 userCanEditSettings: options.userCanEditSettings ?? true,
                 userCanEditEpmConfig: options.userCanEditEpmConfig ?? false,
+                ...(options.sharedConfig ? { sharedConfig: options.sharedConfig, sharedConfigRevision: 4 } : {}),
+                ...(options.epmConfig ? { epm: options.epmConfig } : {}),
             });
         }
         if (url.pathname === '/api/groups-config') {
@@ -239,6 +270,14 @@ async function mockFirstRunDashboard(page, options = {}) {
                 }),
             });
         }
+        if (url.pathname === '/api/epm/config') {
+            if (request.method() === 'POST') {
+                const plannedError = options.epmErrors?.[epmPostCount] || options.epmError;
+                epmPostCount += 1;
+                if (plannedError) return json(plannedError.body, plannedError.status);
+            }
+            return json(request.method() === 'POST' ? requestBody(request) : (options.epmConfig || {}));
+        }
         if (url.pathname === '/api/me/onboarding') {
             const body = requestBody(request) || {};
             return json({ onboardingDone: body.onboardingDone });
@@ -287,7 +326,14 @@ async function mockFirstRunDashboard(page, options = {}) {
         if (url.pathname === '/api/board-config') return json({ boardId: '42', boardName: 'Synthetic Board' });
         if (url.pathname === '/api/board-config/statuses') return json({ statuses: [{ name: 'Ready' }] });
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [] });
-        if (url.pathname === '/api/capacity/config') return json({});
+        if (url.pathname === '/api/capacity/config') {
+            if (request.method() === 'POST') {
+                const plannedError = options.capacityErrors?.[capacityPostCount] || options.capacityError;
+                capacityPostCount += 1;
+                if (plannedError) return json(plannedError.body, plannedError.status);
+            }
+            return json(options.capacityConfig || {});
+        }
         if (url.pathname.endsWith('-field/config')) return json({});
         if (url.pathname === '/api/issue-types/config') return json({ issueTypes: ['Story'] });
         return json({});
@@ -320,6 +366,57 @@ async function finishFirstRunConfigurationGuide(page) {
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(guide).toHaveCount(0);
+}
+
+async function finishFirstRunConfigurationGuideWithTeamRepair(page) {
+    const dialog = page.locator('.group-modal');
+    const guide = dialog.locator('.first-run-configuration-guide');
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    if (await guide.getByRole('button', { name: 'Continue', exact: true }).isDisabled()) {
+        await dialog.getByRole('button', { name: 'Refresh teams' }).click();
+        await dialog.getByPlaceholder('Search teams to add...').fill('new');
+        await dialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
+    }
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await guide.getByRole('button', { name: 'Done', exact: true }).click();
+}
+
+for (const mode of ['create', 'duplicate', 'repair']) {
+    for (const onboardingDone of [false, true]) {
+        test(`first-run ${mode} preserves onboardingDone ${onboardingDone} through the private handoff`, async ({ page }) => {
+            const calls = await mockFirstRunDashboard(page, {
+                preferences: defaultGroupPreferences({ onboardingDone }),
+                groupsConfig: {
+                    version: 1,
+                    groups: [
+                        { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+                        { id: 'empty', name: 'Empty', teamIds: [] },
+                    ],
+                    defaultGroupId: 'platform',
+                    configRevision: 2,
+                    source: 'workspace_db',
+                },
+            });
+            await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+            if (mode === 'create') await openFirstRunCreateDepartment(page);
+            if (mode === 'duplicate') await openFirstRunDuplicateDepartment(page, 'platform');
+            if (mode === 'repair') {
+                await page.getByRole('dialog', { name: 'Choose your Department' })
+                    .getByRole('button', { name: 'Configure and use Empty' }).click();
+            }
+            await finishFirstRunConfigurationGuideWithTeamRepair(page);
+            await page.locator('.group-modal').getByRole('button', { name: /Save/ }).click();
+            await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
+            const tour = page.getByRole('dialog', { name: 'Choose a sprint' });
+            if (onboardingDone) await expect(tour).toHaveCount(0);
+            else await expect(tour).toBeVisible();
+            expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+            expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
+            expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/me/onboarding')).toHaveLength(0);
+        });
+    }
 }
 
 test('normal users can edit shared Departments without admin or EPM permission', async ({ page }) => {
@@ -922,7 +1019,14 @@ test('first-run Add Department opens the anchored configuration guide and Cancel
     await expect(canonicalNameInput).toHaveValue('New Department');
 
     const backgroundButton = page.locator('button[aria-label="Manage team groups"]');
+    const footerCancel = settingsDialog.locator('[data-first-run-settings-cancel]');
     await expect(backgroundButton).toHaveAttribute('tabindex', '-1');
+    await footerCancel.focus();
+    await expect(footerCancel).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('.first-run-configuration-guide')))).toBe(true);
+    await page.keyboard.press('Tab');
+    await expect(footerCancel).toBeFocused();
     await page.evaluate(() => {
         const portalButton = document.createElement('button');
         portalButton.id = 'synthetic-unowned-portal-button';
@@ -934,7 +1038,7 @@ test('first-run Add Department opens the anchored configuration guide and Cancel
     await page.keyboard.press('Tab');
     await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('.group-modal-backdrop')))).toBe(true);
 
-    await guide.getByRole('button', { name: 'Cancel' }).click();
+    await footerCancel.click();
     await expect(firstRunDialog).toBeVisible();
     await expect(firstRunDialog.getByRole('radio', { checked: true })).toHaveCount(0);
     await expect(backgroundButton).not.toHaveAttribute('tabindex', '-1');
@@ -946,12 +1050,27 @@ test('first-run configuration guide target loss restores focus state and offers 
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await openFirstRunCreateDepartment(page);
     const guide = page.locator('.first-run-configuration-guide');
+    await page.evaluate(() => {
+        const portalButton = document.createElement('button');
+        portalButton.id = 'target-loss-unowned-portal';
+        portalButton.textContent = 'Dynamic portal';
+        portalButton.setAttribute('tabindex', '7');
+        portalButton.setAttribute('aria-hidden', 'false');
+        document.body.appendChild(portalButton);
+    });
+    const portalButton = page.locator('#target-loss-unowned-portal');
+    await expect(portalButton).toHaveAttribute('tabindex', '-1');
+    await expect(portalButton).toHaveAttribute('aria-hidden', 'true');
+    await expect.poll(() => portalButton.evaluate(node => node.inert)).toBe(true);
     await page.evaluate(() => document.querySelector('[data-first-run-guide-target="name"]')?.remove());
     await expect(guide).toContainText('no longer available');
     await expect(guide.getByRole('button', { name: 'Return' })).toBeVisible();
     await guide.getByRole('button', { name: 'Return' }).click();
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
-    await expect(page.locator('#synthetic-unowned-portal-button')).toHaveCount(0);
+    await expect(portalButton).toHaveAttribute('tabindex', '7');
+    await expect(portalButton).toHaveAttribute('aria-hidden', 'false');
+    await expect.poll(() => portalButton.evaluate(node => node.inert)).toBe(false);
+    await page.evaluate(() => document.querySelector('#target-loss-unowned-portal')?.remove());
 });
 
 test('first-run Add Department keeps the guide and canonical name keyboard-safe in compact layout', async ({ page }) => {
@@ -992,9 +1111,27 @@ test('first-run Add Department keeps the guide and canonical name keyboard-safe 
     await expect(settingsDialog.locator('.group-pane-left')).toHaveClass(/is-mobile-active/);
     await expect(nameInput).toBeFocused();
 
+    await page.setViewportSize({ width: 390, height: 520 });
+    await page.evaluate(() => window.visualViewport?.dispatchEvent(new Event('resize')));
+    await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="name"]'), guide);
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="teams"]'), guide);
+    await settingsDialog.getByRole('button', { name: 'Refresh teams' }).focus();
+    await page.keyboard.press('Enter');
+    await settingsDialog.getByPlaceholder('Search teams to add...').fill('new');
+    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="components"]'), guide);
+    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
+    await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="favorite"]'), guide);
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="visibility"]'), guide);
+    await expect(settingsDialog.getByPlaceholder('Group name')).toHaveCount(1);
+    await guide.getByRole('button', { name: 'Done', exact: true }).click();
+
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
     await page.screenshot({ path: `${screenshotDir}/first-run-configure-compact.png`, fullPage: true });
-    await cancelButton.click();
+    await settingsDialog.locator('[data-first-run-settings-cancel]').click();
 
     await expect(firstRunDialog).toBeVisible();
     await expect(firstRunDialog.getByRole('radio', { checked: true })).toHaveCount(0);
@@ -1036,7 +1173,11 @@ test('first-run no-groups configuration recovers from validation, saves a team g
     await expect(settingsDialog.getByRole('button', { name: /favorite group/ })).toHaveCount(0);
     await expect(settingsDialog.getByRole('checkbox', { name: 'Show in Department selector' })).toHaveCount(0);
     await expect(settingsDialog.getByRole('button', { name: 'Save' })).toBeEnabled();
-    await settingsDialog.getByRole('button', { name: 'Save' }).click();
+    const saveButton = settingsDialog.getByRole('button', { name: 'Save' });
+    await saveButton.evaluate((button) => {
+        button.click();
+        button.click();
+    });
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
     await expect(settingsDialog).toHaveCount(0);
@@ -1151,7 +1292,7 @@ test('first-run preference pending recovery survives Done and retries only the p
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
 
-    await guide.getByRole('button', { name: 'Retry favorite save' }).click();
+    await guide.getByRole('button', { name: 'Retry favorite save' }).evaluate((button) => { button.click(); button.click(); });
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(2);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
 
@@ -1177,6 +1318,76 @@ test('first-run group-save 401 keeps the mounted configuration behind the global
     await expect(settingsDialog).toHaveCount(1);
     await expect(settingsDialog.locator('.first-run-configuration-error')).toHaveCount(0);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(0);
+});
+
+test('first-run admin-save 401 keeps the mounted configuration behind the global auth lock', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        capacityError: { status: 401, body: { error: 'auth_required', loginUrl: '/login?reason=session_expired' } },
+        sharedConfig: {
+            projects: { selected: [{ key: 'DEMO', type: 'product' }] },
+            board: { boardId: '42', boardName: 'Synthetic Board' },
+            capacity: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
+            sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+            parentNameField: { fieldId: 'customfield_10014', fieldName: 'Parent' },
+            storyPointsField: { fieldId: 'customfield_10016', fieldName: 'Story points' },
+            teamField: { fieldId: 'customfield_10001', fieldName: 'Team' },
+            deliveryOwnerField: { fieldId: 'customfield_10002', fieldName: 'Delivery owner' },
+            issueTypes: ['Story'],
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('button', { name: 'Departments' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expect(dialog).toHaveCount(1);
+    await expect(dialog.locator('.first-run-configuration-error')).toHaveCount(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+});
+
+test('first-run EPM-save 401 preserves the committed group behind the global auth lock', async ({ page }) => {
+    const epmConfig = { version: 1, scope: {}, labelPrefix: 'rnd_base_*', issueTypes: {}, projects: [] };
+    const calls = await mockFirstRunDashboard(page, {
+        userCanEditEpmConfig: true,
+        epmConfig,
+        epmError: { status: 401, body: { error: 'auth_required', loginUrl: '/login?reason=session_expired' } },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await dialog.locator('[data-epm-scope-field="labelPrefix"]').fill('rnd_unsaved_*');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expect(dialog).toHaveCount(1);
+    await expect(dialog.locator('.first-run-configuration-error')).toHaveCount(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/epm/config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(0);
+});
+
+test('first-run preference-save 401 preserves all committed sections behind the global auth lock', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        preferenceError: { status: 401, body: { error: 'auth_required', loginUrl: '/login?reason=session_expired' } },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expect(dialog).toHaveCount(1);
+    await expect(dialog.locator('.first-run-configuration-error')).toHaveCount(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
 });
 
 test('first-run configuration keeps the editor open for a 409 choice and Discard returns to the chooser', async ({ page }) => {
@@ -1205,6 +1416,221 @@ test('first-run configuration keeps the editor open for a 409 choice and Discard
     const chooser = page.getByRole('dialog', { name: 'Choose your Department' });
     await expect(chooser).toBeVisible();
     await expect(chooser.getByText('Growth', { exact: true })).toHaveCount(0);
+});
+
+test('first-run postcommit group conflict exposes only recovery Retry and Return', async ({ page }) => {
+    const groupsConfigConflict = {
+        version: 1,
+        groups: [{ id: 'platform', name: 'Platform', teamIds: ['team-platform'] }],
+        defaultGroupId: 'platform',
+        configRevision: 9,
+        source: 'workspace_db',
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfigConflict,
+        sharedConfig: {
+            projects: { selected: [{ key: 'DEMO', type: 'product' }] },
+            board: { boardId: '42', boardName: 'Synthetic Board' },
+            capacity: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
+            sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+            parentNameField: { fieldId: 'customfield_10014', fieldName: 'Parent' },
+            storyPointsField: { fieldId: 'customfield_10016', fieldName: 'Story points' },
+            teamField: { fieldId: 'customfield_10001', fieldName: 'Team' },
+            deliveryOwnerField: { fieldId: 'customfield_10002', fieldName: 'Delivery owner' },
+            issueTypes: ['Story'],
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('button', { name: 'Departments' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(dialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Retry unsaved settings' })).toBeVisible();
+    await expect(dialog.locator('button', { hasText: /^Discard mine$/ })).toHaveCount(0);
+    await expect(dialog.locator('button', { hasText: /^Keep mine$/ })).toHaveCount(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+    const retry = dialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Retry unsaved settings' });
+    await retry.evaluate((button) => { button.click(); button.click(); });
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(2);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config')).toHaveLength(1);
+});
+
+test('first-run group commit followed by EPM failure Return preserves groups and drops the EPM draft', async ({ page }) => {
+    const epmConfig = {
+        version: 1,
+        scope: { rootGoalKey: '', subGoalKey: '' },
+        labelPrefix: 'rnd_base_*',
+        issueTypes: { initiative: 'Initiative', epic: 'Epic', story: 'Story' },
+        projects: [],
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        userCanEditEpmConfig: true,
+        epmConfig,
+        epmError: { status: 500, body: { error: 'epm_save_failed', message: 'Synthetic EPM failure.' } },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await dialog.locator('[data-epm-scope-field="labelPrefix"]').fill('rnd_unsaved_*');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    const guide = dialog.locator('.first-run-configuration-guide');
+    await expect(guide.getByRole('button', { name: 'Return' })).toBeVisible();
+    await guide.getByRole('button', { name: 'Return' }).click();
+    const chooser = page.getByRole('dialog', { name: 'Choose your Department' });
+    await expect(chooser.getByText('Platform Copy', { exact: true })).toBeVisible();
+    await chooser.getByRole('radio', { name: /Platform Copy/ }).check();
+    await chooser.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await page.locator('.group-modal').getByRole('button', { name: 'EPM' }).click();
+    await page.locator('.group-modal').getByRole('tab', { name: 'Scope' }).click();
+    await expect(page.locator('.group-modal').locator('[data-epm-scope-field="labelPrefix"]')).toHaveValue('rnd_base_*');
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/epm/config')).toHaveLength(1);
+});
+
+test('first-run group commit followed by EPM failure Retry skips groups and completes once', async ({ page }) => {
+    const epmConfig = {
+        version: 1,
+        scope: { rootGoalKey: '', subGoalKey: '' },
+        labelPrefix: 'rnd_base_*',
+        issueTypes: { initiative: 'Initiative', epic: 'Epic', story: 'Story' },
+        projects: [],
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        userCanEditEpmConfig: true,
+        epmConfig,
+        epmErrors: [{ status: 500, body: { error: 'epm_save_failed', message: 'Synthetic EPM failure.' } }, null],
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await dialog.locator('[data-epm-scope-field="labelPrefix"]').fill('rnd_saved_*');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    const retry = dialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Retry unsaved settings' });
+    await retry.evaluate((button) => { button.click(); button.click(); });
+    await expect(dialog).toHaveCount(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/epm/config')).toHaveLength(2);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
+});
+
+test('first-run admin commit followed by group failure Return keeps admin and drops the group draft', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfigError: { status: 500, body: { error: 'groups_save_failed', message: 'Synthetic groups failure.' } },
+        sharedConfig: {
+            projects: { selected: [{ key: 'DEMO', type: 'product' }] },
+            board: { boardId: '42', boardName: 'Synthetic Board' },
+            capacity: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
+            sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+            parentNameField: { fieldId: 'customfield_10014', fieldName: 'Parent' },
+            storyPointsField: { fieldId: 'customfield_10016', fieldName: 'Story points' },
+            teamField: { fieldId: 'customfield_10001', fieldName: 'Team' },
+            deliveryOwnerField: { fieldId: 'customfield_10002', fieldName: 'Delivery owner' },
+            issueTypes: ['Story'],
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('button', { name: 'Departments' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await dialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Return' }).click();
+
+    const chooser = page.getByRole('dialog', { name: 'Choose your Department' });
+    await expect(chooser.getByText('Platform Copy', { exact: true })).toHaveCount(0);
+    await chooser.getByRole('radio', { name: /Platform/ }).first().check();
+    await chooser.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const reopened = page.locator('.group-modal');
+    await reopened.getByRole('button', { name: 'Admin' }).click();
+    await reopened.getByRole('tab', { name: 'Capacity' }).click();
+    await expect(reopened.getByRole('button', { name: 'Remove capacity field' })).toHaveCount(0);
+    await expect(reopened.getByRole('button', { name: 'Remove capacity project' })).toHaveCount(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+});
+
+test('first-run workspace conflict Keep preserves the session and completes the private handoff', async ({ page }) => {
+    const sharedConfig = {
+        projects: { selected: [{ key: 'DEMO', type: 'product' }] },
+        board: { boardId: '42', boardName: 'Synthetic Board' },
+        capacity: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
+        sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+        parentNameField: { fieldId: 'customfield_10014', fieldName: 'Parent' },
+        storyPointsField: { fieldId: 'customfield_10016', fieldName: 'Story points' },
+        teamField: { fieldId: 'customfield_10001', fieldName: 'Team' },
+        deliveryOwnerField: { fieldId: 'customfield_10002', fieldName: 'Delivery owner' },
+        issueTypes: ['Story'],
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        sharedConfig,
+        capacityErrors: [{ status: 409, body: { error: 'workspace_config_conflict', message: 'Workspace changed.', currentRevision: 8 } }, null],
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('button', { name: 'Departments' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await dialog.locator('[data-testid="workspace-config-conflict-actions"]').getByRole('button', { name: 'Keep mine' }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config')).toHaveLength(2);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
+});
+
+test('first-run workspace conflict Use latest exits through explicit recovery', async ({ page }) => {
+    const sharedConfig = {
+        projects: { selected: [{ key: 'DEMO', type: 'product' }] },
+        board: { boardId: '42', boardName: 'Synthetic Board' },
+        capacity: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
+        sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+        parentNameField: { fieldId: 'customfield_10014', fieldName: 'Parent' },
+        storyPointsField: { fieldId: 'customfield_10016', fieldName: 'Story points' },
+        teamField: { fieldId: 'customfield_10001', fieldName: 'Team' },
+        deliveryOwnerField: { fieldId: 'customfield_10002', fieldName: 'Delivery owner' },
+        issueTypes: ['Story'],
+    };
+    const calls = await mockFirstRunDashboard(page, {
+        sharedConfig,
+        capacityError: { status: 409, body: { error: 'workspace_config_conflict', message: 'Workspace changed.', currentRevision: 8 } },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('button', { name: 'Departments' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await dialog.locator('[data-testid="workspace-config-conflict-actions"]').getByRole('button', { name: 'Use latest' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(0);
 });
 test('first-run invalid snapshot and auth failure keep mandatory selection gated', async ({ page }) => {
     const calls = await mockFirstRunDashboard(page, { omitPreferenceSnapshot: true });

@@ -232,6 +232,26 @@ test('first-run session keeps committed flags and rebased snapshot across recove
     assert.equal(firstRunConfigurationSessionReducer(rebased, { type: 'discard' }), rebased);
 });
 
+test('first-run session tracks exact committed and pending admin subsections', () => {
+    const { createFirstRunConfigurationSession, firstRunConfigurationSessionReducer } = loadFirstRunGroupConfiguration();
+    const started = createFirstRunConfigurationSession({ status: 'saving_sections' });
+    const progressed = firstRunConfigurationSessionReducer(started, {
+        type: 'sections_progress',
+        committedSections: { admin: true },
+        committedAdminSections: { projects: true, priorityWeights: true },
+    });
+    const failed = firstRunConfigurationSessionReducer(progressed, {
+        type: 'save_sections_failed',
+        committedSections: { admin: true },
+        committedAdminSections: { projects: true, priorityWeights: true },
+        pendingAdminSections: { board: true, capacity: true },
+        error: 'Synthetic failure',
+    });
+    assert.deepEqual(failed.committedAdminSections, { projects: true, priorityWeights: true });
+    assert.deepEqual(failed.pendingAdminSections, { board: true, capacity: true });
+    assert.equal(failed.status, 'sections_pending');
+});
+
 test('Task 2 session contracts live with the guide and expose no generic discard transition', () => {
     const configurationSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'firstRunGroupConfiguration.js'), 'utf8');
     const guideSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'FirstRunGroupConfigurationGuide.jsx'), 'utf8');
@@ -296,7 +316,8 @@ test('dashboard owns one reducer session and ordered first-run preference handof
     const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
     const preferences = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'useGroupVisibilityPreferences.js'), 'utf8');
     assert.match(dashboard, /React\.useReducer\(\s*firstRunConfigurationSessionReducer/);
-    assert.ok(dashboard.includes('saveAllSettings = async ({ rebaseOnto = null, firstRunSession = null } = {})'));
+    assert.ok(dashboard.includes('saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {})'));
+    assert.ok(dashboard.includes('if (settingsSaveInFlightRef.current) return buildSettingsSaveOutcome({ inFlight: true })'));
     assert.ok(dashboard.includes('saveFirstRunGroupPreferences({'));
     assert.ok(dashboard.includes('groupsSnapshot:'));
     assert.ok(dashboard.includes('selectedGroupId: firstRunSession.pendingGroupId'));
@@ -319,6 +340,7 @@ test('group save returns the normalized committed snapshot to first-run preferen
     assert.ok(saveGroupsSource.includes('authRequired: true'));
     assert.ok(saveGroupsSource.includes('committedSections'));
     assert.ok(saveGroupsSource.includes('pendingSections'));
+    assert.ok(saveGroupsSource.includes('admin: Object.keys(pendingAdminSections).length > 0'));
     assert.equal(saveGroupsSource.includes('isAuthenticationRequiredError(err)) return false'), false);
 });
 
@@ -333,7 +355,7 @@ test('conflict exits preserve the first-run session through Keep and Discard', (
 
 test('first-run save validates the pending name and teams immediately before writes', () => {
     const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
-    const saveStart = dashboard.indexOf('const saveAllSettings = async');
+    const saveStart = dashboard.indexOf('const saveAllSettingsOnce = async');
     const saveEnd = dashboard.indexOf('const keepMineOnGroupsConfigConflict', saveStart);
     const source = dashboard.slice(saveStart, saveEnd);
     assert.ok(source.includes('validateFirstRunPendingGroup'));

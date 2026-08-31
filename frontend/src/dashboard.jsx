@@ -557,6 +557,7 @@ import {
             const pendingFirstRunConfigurationRef = useRef(null);
             const pendingFirstRunGroupPreferencesRef = useRef(null);
             const pendingFirstRunSettingsFocusRef = useRef(false);
+            const settingsSaveInFlightRef = useRef(false);
             // { current, savedSections }: a rejected groups POST, kept so the draft survives it (D45).
             const [groupsConfigConflict, setGroupsConfigConflict] = useState(null);
             const [workspaceConfigConflict, setWorkspaceConfigConflict] = useState(null);
@@ -705,7 +706,7 @@ import {
                 deliveryOwnerFieldSearchQuery, setDeliveryOwnerFieldSearchQuery, deliveryOwnerFieldSearchOpen, setDeliveryOwnerFieldSearchOpen,
                 deliveryOwnerFieldSearchIndex, setDeliveryOwnerFieldSearchIndex, deliveryOwnerFieldSearchInputRef, deliveryOwnerFieldSearchResults, deliveryOwnerFieldSearchHidden,
                 handleDeliveryOwnerFieldSearchKeyDown, isDeliveryOwnerFieldDirty, saveDeliveryOwnerFieldConfig,
-                loadAllFieldConfigs, seedSharedFieldConfigs, anyFieldConfigDirty, dirtyFieldConfigCount,
+                loadAllFieldConfigs, seedSharedFieldConfigs, restoreFieldConfigDrafts, anyFieldConfigDirty, dirtyFieldConfigCount,
             } = useJiraFieldPickers({ backendUrl: BACKEND_URL, jiraFields });
             const [issueTypesDraft, setIssueTypesDraft] = useState(['Story']);
             const issueTypesBaselineRef = useRef(JSON.stringify(['Story']));
@@ -3388,23 +3389,39 @@ import {
             const buildSettingsSaveOutcome = (overrides = {}) => ({
                 ok: false,
                 authRequired: false,
+                inFlight: false,
                 conflict: false,
                 normalizedGroups: null,
                 committedSections: { admin: false, groups: false, epm: false, preference: false },
                 pendingSections: { admin: false, groups: false, epm: false, preference: false },
+                committedAdminSections: {},
+                pendingAdminSections: {},
                 error: '',
                 ...overrides,
             });
 
-            const saveGroupsConfig = async ({ closeOnSuccess = true, rebaseOnto = null } = {}) => {
-                const savingAdminSettings = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
+            const saveGroupsConfig = async ({ closeOnSuccess = true, rebaseOnto = null, skipAdminSections = {} } = {}) => {
+                const adminSectionsToSave = {
+                    projects: canEditSharedConfiguration && isProjectsDraftDirty && !skipAdminSections.projects,
+                    priorityWeights: canEditSharedConfiguration && isPriorityWeightsDirty && !skipAdminSections.priorityWeights,
+                    board: canEditSharedConfiguration && isBoardConfigDirty && !skipAdminSections.board,
+                    capacity: canEditSharedConfiguration && isCapacityDraftDirty && !skipAdminSections.capacity,
+                    sprintField: canEditSharedConfiguration && isSprintFieldDirty && !skipAdminSections.sprintField,
+                    parentNameField: canEditSharedConfiguration && isParentNameFieldDirty && !skipAdminSections.parentNameField,
+                    storyPointsField: canEditSharedConfiguration && isStoryPointsFieldDirty && !skipAdminSections.storyPointsField,
+                    teamField: canEditSharedConfiguration && isTeamFieldDirty && !skipAdminSections.teamField,
+                    deliveryOwnerField: canEditSharedConfiguration && isDeliveryOwnerFieldDirty && !skipAdminSections.deliveryOwnerField,
+                    issueTypes: canEditSharedConfiguration && isIssueTypesDraftDirty && !skipAdminSections.issueTypes,
+                    adminAccess: canEditSharedConfiguration && isAdminAccessDirty && !skipAdminSections.adminAccess,
+                };
+                const savingAdminSettings = Object.values(adminSectionsToSave).some(Boolean);
                 const sharedGroupsChanged = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current);
                 const pendingSections = { admin: savingAdminSettings, groups: sharedGroupsChanged, epm: false, preference: false };
-                if (!groupDraft) return buildSettingsSaveOutcome({ pendingSections, error: 'Group settings are unavailable.' });
+                if (!groupDraft) return buildSettingsSaveOutcome({ pendingSections, pendingAdminSections: adminSectionsToSave, error: 'Group settings are unavailable.' });
                 if (groupConfigValidationErrors.length > 0) {
                     setGroupDraftError(groupConfigValidationErrors[0]);
                     trackSettingsAction(groupManageTab, 'save_result', { result: 'failure', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
-                    return buildSettingsSaveOutcome({ pendingSections, error: groupConfigValidationErrors[0] });
+                    return buildSettingsSaveOutcome({ pendingSections, pendingAdminSections: adminSectionsToSave, error: groupConfigValidationErrors[0] });
                 }
                 setGroupSaving(true);
                 setGroupDraftError('');
@@ -3426,49 +3443,50 @@ import {
 
                     if (savingAdminSettings) {
                         // Save project selection if changed
-                        projectsChanged = isProjectsDraftDirty;
+                        projectsChanged = adminSectionsToSave.projects;
                         if (projectsChanged) {
                             await saveProjectSelection();
                             committedAdminSections.projects = true;
                         }
 
-                        priorityWeightsChanged = isPriorityWeightsDirty;
+                        priorityWeightsChanged = adminSectionsToSave.priorityWeights;
                         if (priorityWeightsChanged) {
                             await savePriorityWeightsConfig();
                             committedAdminSections.priorityWeights = true;
                         }
 
-                        boardChanged = isBoardConfigDirty;
+                        boardChanged = adminSectionsToSave.board;
                         if (boardChanged) {
                             await saveBoardConfig();
                             committedAdminSections.board = true;
                         }
 
                         // Save capacity config if changed
-                        capacityChanged = isCapacityDraftDirty;
+                        capacityChanged = adminSectionsToSave.capacity;
                         if (capacityChanged) {
                             await saveCapacityConfig();
                             committedAdminSections.capacity = true;
                         }
 
                         // Save custom field configs if changed
-                        if (isSprintFieldDirty) commitSharedConfigRevision(await saveSprintFieldConfig(sharedConfigRevisionRef.current));
-                        if (isParentNameFieldDirty) commitSharedConfigRevision(await saveParentNameFieldConfig(sharedConfigRevisionRef.current));
-                        if (isStoryPointsFieldDirty) commitSharedConfigRevision(await saveStoryPointsFieldConfig(sharedConfigRevisionRef.current));
-                        if (isTeamFieldDirty) commitSharedConfigRevision(await saveTeamFieldConfig(sharedConfigRevisionRef.current));
-                        if (isDeliveryOwnerFieldDirty) commitSharedConfigRevision(await saveDeliveryOwnerFieldConfig(sharedConfigRevisionRef.current));
-                        fieldConfigsChanged = isSprintFieldDirty || isParentNameFieldDirty || isStoryPointsFieldDirty || isTeamFieldDirty || isDeliveryOwnerFieldDirty;
+                        if (adminSectionsToSave.sprintField) { commitSharedConfigRevision(await saveSprintFieldConfig(sharedConfigRevisionRef.current)); committedAdminSections.sprintField = true; }
+                        if (adminSectionsToSave.parentNameField) { commitSharedConfigRevision(await saveParentNameFieldConfig(sharedConfigRevisionRef.current)); committedAdminSections.parentNameField = true; }
+                        if (adminSectionsToSave.storyPointsField) { commitSharedConfigRevision(await saveStoryPointsFieldConfig(sharedConfigRevisionRef.current)); committedAdminSections.storyPointsField = true; }
+                        if (adminSectionsToSave.teamField) { commitSharedConfigRevision(await saveTeamFieldConfig(sharedConfigRevisionRef.current)); committedAdminSections.teamField = true; }
+                        if (adminSectionsToSave.deliveryOwnerField) { commitSharedConfigRevision(await saveDeliveryOwnerFieldConfig(sharedConfigRevisionRef.current)); committedAdminSections.deliveryOwnerField = true; }
+                        fieldConfigsChanged = adminSectionsToSave.sprintField || adminSectionsToSave.parentNameField || adminSectionsToSave.storyPointsField || adminSectionsToSave.teamField || adminSectionsToSave.deliveryOwnerField;
                         if (fieldConfigsChanged) committedAdminSections.fieldConfigs = true;
 
                         // Save issue types config if changed
-                        issueTypesChanged = isIssueTypesDraftDirty;
+                        issueTypesChanged = adminSectionsToSave.issueTypes;
                         if (issueTypesChanged) {
                             await saveIssueTypesConfig();
                             committedAdminSections.issueTypes = true;
                         }
 
-                        if (isAdminAccessDirty) {
+                        if (adminSectionsToSave.adminAccess) {
                             await adminAccess.save();
+                            committedAdminSections.adminAccess = true;
                         }
                     }
 
@@ -3567,6 +3585,8 @@ import {
                             preference: false,
                         },
                         pendingSections: { admin: false, groups: false, epm: false, preference: false },
+                        committedAdminSections,
+                        pendingAdminSections: {},
                     });
                 } catch (err) {
                     const committedSections = {
@@ -3575,14 +3595,16 @@ import {
                         epm: false,
                         preference: false,
                     };
+                    const pendingAdminSections = Object.fromEntries(Object.entries(adminSectionsToSave)
+                        .filter(([key, pending]) => pending && !committedAdminSections[key]));
                     const remainingSections = {
-                        admin: savingAdminSettings && !committedSections.admin,
+                        admin: Object.keys(pendingAdminSections).length > 0,
                         groups: sharedGroupsChanged && !groupsCommitted,
                         epm: false,
                         preference: false,
                     };
                     if (isAuthenticationRequiredError(err)) {
-                        return buildSettingsSaveOutcome({ authRequired: true, committedSections, pendingSections: remainingSections });
+                        return buildSettingsSaveOutcome({ authRequired: true, committedSections, pendingSections: remainingSections, committedAdminSections, pendingAdminSections });
                     }
                     if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict') {
                         const pendingSections = committedWorkspaceSectionLabels({
@@ -3610,6 +3632,8 @@ import {
                         conflict: err?.status === 409 || Boolean(groupsConfigConflict),
                         committedSections,
                         pendingSections: remainingSections,
+                        committedAdminSections,
+                        pendingAdminSections,
                         error: err.message || 'Failed to save groups.',
                     });
                 } finally {
@@ -3618,7 +3642,7 @@ import {
                 }
             };
 
-            const saveAllSettings = async ({ rebaseOnto = null, firstRunSession = null } = {}) => {
+            const saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {}) => {
                 if (groupManageTab === 'connections') return;
                 if (firstRunSession) {
                     const validation = validateFirstRunPendingGroup(groupDraft?.groups || [], firstRunSession.pendingGroupId);
@@ -3648,17 +3672,27 @@ import {
                     epm: Boolean(firstRunSession?.committedSections?.epm),
                     preference: Boolean(firstRunSession?.committedSections?.preference),
                 };
+                let committedAdminSections = { ...(firstRunSession?.committedAdminSections || {}) };
                 try {
                     let epmDraftUnchanged = true;
                     if (hasSharedSettingsChanges || hasDepartmentSettingsChanges) {
-                        const saved = await saveGroupsConfig({ closeOnSuccess: false, rebaseOnto });
+                        const saved = await saveGroupsConfig({
+                            closeOnSuccess: false,
+                            rebaseOnto,
+                            skipAdminSections: firstRunSession?.committedAdminSections || {},
+                        });
                         normalizedGroups = saved.normalizedGroups || normalizedGroups;
                         committedSections = { ...committedSections, ...Object.fromEntries(
                             Object.entries(saved.committedSections || {}).map(([key, value]) => [key, Boolean(committedSections[key] || value)])
                         ) };
+                        committedAdminSections = { ...committedAdminSections, ...(saved.committedAdminSections || {}) };
                         if (firstRunSession && Object.values(saved.committedSections || {}).some(Boolean)) {
                             dispatchFirstRunConfigurationSession({
-                                type: 'sections_progress', committedSections: saved.committedSections, normalizedGroups,
+                                type: 'sections_progress',
+                                committedSections: saved.committedSections,
+                                committedAdminSections: saved.committedAdminSections,
+                                pendingAdminSections: saved.pendingAdminSections,
+                                normalizedGroups,
                             });
                         }
                         if (!saved.ok) {
@@ -3668,12 +3702,16 @@ import {
                                     normalizedGroups,
                                     committedSections,
                                     pendingSections: { ...saved.pendingSections, epm: hasEpmSettingsChanges, preference: Boolean(firstRunSession) },
+                                    committedAdminSections,
+                                    pendingAdminSections: saved.pendingAdminSections,
                                 });
                             }
                             if (firstRunSession) {
                                 dispatchFirstRunConfigurationSession({
                                     type: 'save_sections_failed',
                                     committedSections,
+                                    committedAdminSections,
+                                    pendingAdminSections: saved.pendingAdminSections,
                                     normalizedGroups,
                                     error: saved.error || 'Settings could not be saved.',
                                 });
@@ -3683,15 +3721,20 @@ import {
                                 normalizedGroups,
                                 committedSections,
                                 pendingSections: { ...saved.pendingSections, epm: hasEpmSettingsChanges, preference: Boolean(firstRunSession) },
+                                committedAdminSections,
+                                pendingAdminSections: saved.pendingAdminSections,
                                 error: saved.error,
                             });
                         }
                     }
                     if (hasEpmSettingsChanges) epmDraftUnchanged = await saveEpmConfig();
                     if (hasEpmSettingsChanges && !epmDraftUnchanged) {
-                        if (firstRunSession) dispatchFirstRunConfigurationSession({
-                            type: 'save_sections_failed', committedSections, error: 'EPM settings could not be saved.',
-                        });
+                        if (firstRunSession) {
+                            setGroupManageTab(activeDepartmentSettingsTab);
+                            dispatchFirstRunConfigurationSession({
+                                type: 'save_sections_failed', committedSections, committedAdminSections, error: 'EPM settings could not be saved.',
+                            });
+                        }
                         return buildSettingsSaveOutcome({
                             normalizedGroups,
                             committedSections,
@@ -3708,6 +3751,7 @@ import {
                     if (firstRunSession) {
                         dispatchFirstRunConfigurationSession({
                             type: 'sections_saved', committedSections, normalizedGroups,
+                            committedAdminSections,
                         });
                         const preferenceResult = await saveFirstRunGroupPreferences({
                             groupsSnapshot: normalizedGroups,
@@ -3719,6 +3763,7 @@ import {
                                 normalizedGroups,
                                 committedSections,
                                 pendingSections: { preference: true },
+                                committedAdminSections,
                             });
                         }
                         if (!preferenceResult?.ok) {
@@ -3729,6 +3774,7 @@ import {
                                 normalizedGroups,
                                 committedSections,
                                 pendingSections: { preference: true },
+                                committedAdminSections,
                                 error: 'Your favorite Department could not be saved.',
                             });
                         }
@@ -3738,6 +3784,7 @@ import {
                             ok: true,
                             normalizedGroups,
                             committedSections: { ...committedSections, preference: true },
+                            committedAdminSections,
                         });
                     }
                     if (hasSharedSettingsChanges || hasDepartmentSettingsChanges || hasEpmSettingsChanges) closeGroupManage();
@@ -3749,34 +3796,71 @@ import {
                             normalizedGroups,
                             committedSections,
                             pendingSections: { epm: hasEpmSettingsChanges && !committedSections.epm, preference: Boolean(firstRunSession) },
+                            committedAdminSections,
                         });
                     }
                     if (firstRunSession) {
+                        setGroupManageTab(activeDepartmentSettingsTab);
                         dispatchFirstRunConfigurationSession({
                             type: 'save_sections_failed', committedSections, normalizedGroups, error: error?.message,
+                            committedAdminSections,
                         });
                     }
                     return buildSettingsSaveOutcome({
                         normalizedGroups,
                         committedSections,
                         pendingSections: { epm: hasEpmSettingsChanges && !committedSections.epm, preference: Boolean(firstRunSession) },
+                        committedAdminSections,
                         error: error?.message || 'Settings could not be saved.',
                     });
                 }
             };
+
+            const saveAllSettings = async (options = {}) => {
+                if (settingsSaveInFlightRef.current) return buildSettingsSaveOutcome({ inFlight: true });
+                settingsSaveInFlightRef.current = true;
+                try {
+                    return await saveAllSettingsOnce(options);
+                } finally {
+                    settingsSaveInFlightRef.current = false;
+                }
+            };
+
+            const restoreSettingsDraftsToCommittedBaselines = React.useCallback(() => {
+                try { setSelectedProjectsDraft(JSON.parse(selectedProjectsBaselineRef.current || '[]')); } catch (_) { /* internal baseline */ }
+                try { setPriorityWeightsDraft(JSON.parse(priorityWeightsBaselineRef.current || '[]')); } catch (_) { /* internal baseline */ }
+                try {
+                    const board = JSON.parse(boardConfigBaselineRef.current || '{}');
+                    setBoardIdDraft(board.boardId || '');
+                    setBoardNameDraft(board.boardName || '');
+                } catch (_) { /* internal baseline */ }
+                try {
+                    const capacity = JSON.parse(capacityBaselineRef.current || '{}');
+                    setCapacityProjectDraft(capacity.project || '');
+                    setCapacityFieldIdDraft(capacity.fieldId || '');
+                    setCapacityFieldNameDraft(capacity.fieldName || '');
+                } catch (_) { /* internal baseline */ }
+                try { setIssueTypesDraft(JSON.parse(issueTypesBaselineRef.current || '[]')); } catch (_) { /* internal baseline */ }
+                try { setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}')); } catch (_) { /* internal baseline */ }
+                restoreFieldConfigDrafts();
+                adminAccess.restoreDraft();
+                const capturedPrivate = firstRunConfigurationSession.capturedDrafts?.private;
+                if (capturedPrivate) setGroupPreferences(capturedPrivate);
+            }, [adminAccess, firstRunConfigurationSession.capturedDrafts, restoreFieldConfigDrafts]);
 
             const returnFromFirstRunConfigurationRecovery = React.useCallback((snapshotOverride = null) => {
                 const snapshot = Array.isArray(snapshotOverride?.groups)
                     ? snapshotOverride
                     : firstRunConfigurationSession.latestNormalizedGroups;
                 if (snapshot) applySavedGroupsConfig(snapshot);
+                restoreSettingsDraftsToCommittedBaselines();
                 dispatchFirstRunConfigurationSession({
                     type: firstRunConfigurationSession.status === 'preference_pending'
                         ? 'return_after_preference'
                         : 'return_after_sections',
                 });
                 closeGroupManage();
-            }, [firstRunConfigurationSession]);
+            }, [firstRunConfigurationSession, restoreSettingsDraftsToCommittedBaselines]);
 
             // The two exits from a rejected groups POST. Keep mine re-runs the same unified save on
             // the revision the server reported, so the user's groups win and the re-POST cannot be
@@ -3807,13 +3891,16 @@ import {
                 sharedConfigRevisionRef.current = Number(workspaceConfigConflict.currentRevision || 0);
                 setSharedConfigRevision(sharedConfigRevisionRef.current);
                 setWorkspaceConfigConflict(null);
-                await saveAllSettings();
+                await saveAllSettings({
+                    firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null,
+                });
             };
 
             const useLatestWorkspaceConfig = async () => {
                 setWorkspaceConfigConflict(null);
                 setGroupDraftError('');
                 await loadConfig({ preserveEpmDraft: isEpmConfigDirty });
+                if (firstRunConfigurationActive) returnFromFirstRunConfigurationRecovery();
             };
 
             useEffect(() => {
@@ -13659,6 +13746,8 @@ import {
                 && activeGroupDraft
                 && (!firstRunConfigurationSession.guideComplete
                     || ['sections_pending', 'preference_pending'].includes(firstRunConfigurationSession.status));
+            const firstRunHasCommittedSection = firstRunConfigurationActive
+                && Object.values(firstRunConfigurationSession.committedSections || {}).some(Boolean);
             const settingsHeaderAction = onboardingAvailable
                 && groupPreferences.onboardingRequired === false
                 && !firstRunConfigurationActive ? (
@@ -16177,7 +16266,7 @@ import {
                                     <button className="secondary compact" onClick={useLatestWorkspaceConfig} type="button">Use latest</button>
                                     <button className="compact" onClick={keepMineOnWorkspaceConfigConflict} type="button">Keep mine</button>
                                 </div>
-                            ) : groupManageTab !== 'connections' && groupsConfigConflict ? (
+                            ) : groupManageTab !== 'connections' && groupsConfigConflict && !firstRunHasCommittedSection ? (
                                 <div className="group-modal-button-row">
                                     <button className="secondary compact" onClick={discardMineOnGroupsConfigConflict} type="button">Discard mine</button>
                                     <button className="compact" onClick={keepMineOnGroupsConfigConflict} type="button">Keep mine</button>

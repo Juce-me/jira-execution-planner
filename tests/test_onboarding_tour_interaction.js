@@ -18,6 +18,8 @@ function fakeElement({
     disabled = false,
     inert = false,
     isConnected = true,
+    matchesDisabled = null,
+    matchesThrows = false,
 } = {}) {
     const attributes = new Map(Object.entries(attrs));
     const node = {
@@ -47,6 +49,12 @@ function fakeElement({
             attributes.delete(name);
         },
     };
+    if (matchesDisabled !== null || matchesThrows) {
+        node.matches = (selector) => {
+            if (matchesThrows) throw new Error('matches unavailable');
+            return selector === ':disabled' && matchesDisabled;
+        };
+    }
     return node;
 }
 
@@ -98,6 +106,18 @@ test('menu trigger eligibility rejects disabled, disconnected, and non-boolean e
     [disabled, ariaDisabled, disconnected, missingPopup, missingExpanded, mixedCaseExpanded, invalidExpanded]
         .forEach((node) => assert.equal(isExactMenuButtonTrigger(node, node), false));
     assert.equal(isExactMenuButtonTrigger(null, null), false);
+});
+
+test('menu trigger eligibility includes inherited native disabled semantics and fails closed on matches errors', async () => {
+    const { isExactMenuButtonTrigger } = await loadModule();
+    const simpleEnabledDouble = nativeMenuButton();
+    const fieldsetDisabled = nativeMenuButton({ disabled: false, matchesDisabled: true });
+    const matchesThrows = nativeMenuButton({ disabled: false, matchesThrows: true });
+
+    assert.equal(isExactMenuButtonTrigger(simpleEnabledDouble, simpleEnabledDouble), true);
+    assert.equal(isExactMenuButtonTrigger(fieldsetDisabled, fieldsetDisabled), false);
+    assert.doesNotThrow(() => isExactMenuButtonTrigger(matchesThrows, matchesThrows));
+    assert.equal(isExactMenuButtonTrigger(matchesThrows, matchesThrows), false);
 });
 
 test('isolation targets contain each non-path sibling through root and unrelated body containers', async () => {

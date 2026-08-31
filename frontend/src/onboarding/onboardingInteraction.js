@@ -3,13 +3,23 @@ function hasBooleanExpandedState(node) {
     return expanded === 'true' || expanded === 'false';
 }
 
+function isNativelyDisabled(node) {
+    if (node.disabled === true) return true;
+    if (typeof node.matches !== 'function') return false;
+    try {
+        return node.matches(':disabled');
+    } catch (_error) {
+        return true;
+    }
+}
+
 export function isExactMenuButtonTrigger(candidate, expectedTarget) {
     return Boolean(
         candidate
         && candidate === expectedTarget
         && candidate.isConnected === true
         && candidate.tagName === 'BUTTON'
-        && candidate.disabled !== true
+        && !isNativelyDisabled(candidate)
         && candidate.getAttribute?.('aria-disabled') !== 'true'
         && candidate.getAttribute?.('aria-haspopup') === 'menu'
         && hasBooleanExpandedState(candidate)

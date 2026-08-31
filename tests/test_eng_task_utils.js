@@ -80,3 +80,27 @@ test('ENG search expands Initiative and Epic matches to loaded descendant storie
     assert.deepEqual(matchingKeys(''), ['PROD-1', 'PROD-2', 'PROD-3', 'PROD-4', 'TECH-1']);
     assert.equal(matchesEngTaskSearch({ key: 'SAFE-1', fields: {} }, 'missing', {}), false);
 });
+
+test('ENG search independently covers hierarchy text and supported assignees', async () => {
+    const { matchesEngTaskSearch } = await import('../frontend/src/eng/engTaskUtils.js');
+    const story = {
+        key: 'STORY-7',
+        fields: {
+            summary: 'Story summary',
+            epicKey: 'EPIC-3',
+            assignee: { displayName: 'Story Owner' },
+        },
+    };
+    const epicDetails = {
+        'EPIC-3': {
+            summary: 'Epic summary',
+            assignee: { displayName: 'Epic Owner' },
+            initiative: { key: 'INIT-1', summary: 'Initiative summary' },
+        },
+    };
+
+    assert.equal(matchesEngTaskSearch(story, 'INIT-1', epicDetails), true, 'Initiative key');
+    assert.equal(matchesEngTaskSearch(story, 'Initiative summary', epicDetails), true, 'Initiative summary');
+    assert.equal(matchesEngTaskSearch(story, 'Epic Owner', epicDetails), true, 'Epic assignee');
+    assert.equal(matchesEngTaskSearch(story, 'Story Owner', epicDetails), true, 'Story assignee');
+});

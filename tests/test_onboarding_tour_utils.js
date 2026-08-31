@@ -26,6 +26,20 @@ function rootWith(selectors = {}) {
 
 const VIEWPORT = { width: 1000, height: 700 };
 const VISIBLE_RECT = { left: 100, top: 100, right: 220, bottom: 140, width: 120, height: 40 };
+const FULL_AVAILABILITY = {
+    group: true,
+    teams: true,
+    refresh: true,
+    search: true,
+    filters: true,
+    'hierarchy-initiative': true,
+    'hierarchy-epic': true,
+    'hierarchy-story': true,
+    'editing-priority': true,
+    'editing-track': true,
+    'editing-status': true,
+    'jira-export': true,
+};
 
 test('onboarding persistence is available only for Atlassian OAuth workspace DB mode', async () => {
     const { isOnboardingAvailable } = await loadModule();
@@ -38,11 +52,26 @@ test('onboarding persistence is available only for Atlassian OAuth workspace DB 
     assert.equal(isOnboardingAvailable('', 'workspace_db'), false);
 });
 
-test('catalog contains the required product steps in deterministic order', async () => {
+test('catalog contains the exact 14-step tour and interaction order', async () => {
     const { ONBOARDING_STEP_CATALOG } = await loadModule();
     assert.deepEqual(
-        ONBOARDING_STEP_CATALOG.map((step) => step.id),
-        ['sprint', 'group', 'teams', 'search', 'jira-export', 'refresh', 'filters', 'hierarchy', 'editing']
+        ONBOARDING_STEP_CATALOG.map((step) => [step.id, step.interaction]),
+        [
+            ['sprint', 'manual'],
+            ['group', 'manual'],
+            ['teams', 'manual'],
+            ['refresh', 'manual'],
+            ['search', 'manual'],
+            ['filters', 'manual'],
+            ['hierarchy-initiative', 'manual'],
+            ['hierarchy-epic', 'manual'],
+            ['hierarchy-story', 'manual'],
+            ['editing-priority', 'menu-preview'],
+            ['editing-track', 'menu-preview'],
+            ['editing-status', 'menu-preview'],
+            ['jira-export', 'manual'],
+            ['complete', 'finish'],
+        ]
     );
     assert.equal(Object.isFrozen(ONBOARDING_STEP_CATALOG), true);
     const renderedCopy = ONBOARDING_STEP_CATALOG
@@ -51,35 +80,133 @@ test('catalog contains the required product steps in deterministic order', async
     assert.doesNotMatch(renderedCopy, /data-onboarding-target|hierarchy-epic|editing-priority/);
 });
 
-test('conditional steps are omitted while required and fallback-capable steps remain', async () => {
-    const { buildVisibleOnboardingSteps } = await loadModule();
-    const steps = buildVisibleOnboardingSteps({
-        sprint: true,
-        group: false,
-        teams: false,
-        search: false,
-        'jira-export': false,
-        refresh: true,
-        filters: false,
-        hierarchy: false,
-        editing: false,
-    });
-    assert.deepEqual(steps.map((step) => step.id), ['sprint', 'refresh', 'hierarchy', 'editing']);
+test('all eligible steps are included in catalog order', async () => {
+    const { buildVisibleOnboardingSteps, ONBOARDING_STEP_CATALOG } = await loadModule();
+    const steps = buildVisibleOnboardingSteps(FULL_AVAILABILITY);
+    assert.deepEqual(
+        steps.map((step) => step.id),
+        ONBOARDING_STEP_CATALOG.map((step) => step.id)
+    );
 });
 
-test('conditional steps are included in catalog order when eligible', async () => {
+test('seven non-empty hierarchy combinations preserve all three ordered catalog steps with distinct fallbacks', async () => {
+    const { buildStepPresentation, buildVisibleOnboardingSteps } = await loadModule();
+    const hierarchyIds = ['hierarchy-initiative', 'hierarchy-epic', 'hierarchy-story'];
+
+    for (let mask = 1; mask < 8; mask += 1) {
+        const availability = {
+            ...FULL_AVAILABILITY,
+            'hierarchy-initiative': Boolean(mask & 4),
+            'hierarchy-epic': Boolean(mask & 2),
+            'hierarchy-story': Boolean(mask & 1),
+        };
+        const hierarchySteps = buildVisibleOnboardingSteps(availability)
+            .filter((step) => step.id.startsWith('hierarchy'));
+        assert.deepEqual(hierarchySteps.map((step) => step.id), hierarchyIds, `mask ${mask}`);
+        hierarchySteps.forEach((step) => {
+            const hasTarget = availability[step.id];
+            const presentation = buildStepPresentation(step, hasTarget ? element(VISIBLE_RECT) : null);
+            assert.equal(presentation.fallback, !hasTarget, `${step.id} mask ${mask}`);
+        });
+        assert.equal(new Set(hierarchySteps.map((step) => step.fallbackBody)).size, 3);
+    }
+});
+
+test('all-absent hierarchy compacts to one aggregate fallback before field previews', async () => {
     const { buildVisibleOnboardingSteps } = await loadModule();
     const steps = buildVisibleOnboardingSteps({
-        group: true,
-        teams: true,
-        search: true,
-        'jira-export': true,
-        filters: true,
+        ...FULL_AVAILABILITY,
+        'hierarchy-initiative': false,
+        'hierarchy-epic': false,
+        'hierarchy-story': false,
+        'jira-export': false,
     });
     assert.deepEqual(
         steps.map((step) => step.id),
-        ['sprint', 'group', 'teams', 'search', 'jira-export', 'refresh', 'filters', 'hierarchy', 'editing']
+        [
+            'sprint', 'group', 'teams', 'refresh', 'search', 'filters',
+            'hierarchy',
+            'editing-priority', 'editing-track', 'editing-status',
+            'complete',
+        ]
     );
+});
+
+test('complete is always present while optional dashboard and Jira controls can be omitted', async () => {
+    const { buildVisibleOnboardingSteps } = await loadModule();
+    const ids = buildVisibleOnboardingSteps({}).map((step) => step.id);
+    assert.equal(ids.at(-1), 'complete');
+    assert.equal(ids.includes('group'), false);
+    assert.equal(ids.includes('jira-export'), false);
+});
+
+test('hierarchy and field selectors encode exact and deterministic target preference', async () => {
+    const { ONBOARDING_STEP_CATALOG } = await loadModule();
+    const step = (id) => ONBOARDING_STEP_CATALOG.find((entry) => entry.id === id);
+    assert.deepEqual(step('hierarchy-initiative').selectors, ['[data-onboarding-target="hierarchy-initiative"]']);
+    assert.deepEqual(step('hierarchy-epic').selectors, ['[data-onboarding-target="hierarchy-epic"]']);
+    assert.deepEqual(step('hierarchy-story').selectors, ['[data-onboarding-target="hierarchy-story"]']);
+    assert.deepEqual(step('editing-priority').selectors, [
+        '[data-onboarding-target="editing-priority"][data-issue-kind="epic"]',
+        '[data-onboarding-target="editing-priority"][data-issue-kind="story"]',
+    ]);
+    assert.deepEqual(step('editing-track').selectors, ['[data-onboarding-target="editing-track"]']);
+    assert.deepEqual(step('editing-status').selectors, [
+        '[data-onboarding-target="editing-status"][data-issue-kind="epic"]',
+        '[data-onboarding-target="editing-status"][data-issue-kind="story"]',
+    ]);
+});
+
+test('catalog exposes four ordered progress groups', async () => {
+    const { ONBOARDING_PROGRESS_GROUPS, ONBOARDING_STEP_CATALOG } = await loadModule();
+    assert.deepEqual(ONBOARDING_PROGRESS_GROUPS, [
+        'Dashboard basics',
+        'Work hierarchy',
+        'Field previews',
+        'Continue in Jira',
+    ]);
+    assert.deepEqual(
+        [...new Set(ONBOARDING_STEP_CATALOG.map((step) => step.group))],
+        ONBOARDING_PROGRESS_GROUPS
+    );
+});
+
+test('section skips navigate within the tour without producing Skip or Finish outcomes', async () => {
+    const { buildVisibleOnboardingSteps, resolveSectionSkipTargetId } = await loadModule();
+    const withJira = buildVisibleOnboardingSteps(FULL_AVAILABILITY);
+    const withoutJira = buildVisibleOnboardingSteps({ ...FULL_AVAILABILITY, 'jira-export': false });
+
+    for (const id of ['hierarchy-initiative', 'hierarchy-epic', 'hierarchy-story']) {
+        assert.equal(resolveSectionSkipTargetId(withJira, id), 'editing-priority');
+    }
+    for (const id of ['editing-priority', 'editing-track', 'editing-status']) {
+        assert.equal(resolveSectionSkipTargetId(withJira, id), 'jira-export');
+        assert.equal(resolveSectionSkipTargetId(withoutJira, id), 'complete');
+    }
+    assert.equal(resolveSectionSkipTargetId(withJira, 'sprint'), '');
+});
+
+test('search and field preview copy states the exact supported scope without requiring a change', async () => {
+    const { ONBOARDING_STEP_CATALOG } = await loadModule();
+    const step = (id) => ONBOARDING_STEP_CATALOG.find((entry) => entry.id === id);
+    assert.match(step('search').body, /key or summary/i);
+    assert.match(step('search').body, /Initiatives, Epics, and Stories/i);
+    assert.match(step('search').body, /assignee.*Epics and Stories/i);
+    assert.match(step('search').body, /not Initiatives/i);
+
+    const priority = step('editing-priority');
+    const track = step('editing-track');
+    const status = step('editing-status');
+    assert.match(priority.body, /Priority/i);
+    assert.match(priority.fallbackBody, /Priority/i);
+    assert.match(track.body, /Project Track/i);
+    assert.match(track.body, /Epic/i);
+    assert.match(track.fallbackBody, /Project Track/i);
+    assert.match(status.body, /Status/i);
+    assert.match(status.fallbackBody, /Status/i);
+    [priority, track, status].forEach((entry) => {
+        assert.doesNotMatch(`${entry.body} ${entry.fallbackBody}`, /must|required to change|have to change/i);
+    });
 });
 
 test('visible target resolution chooses the intersecting duplicate instead of the off-screen first match', async () => {
@@ -111,24 +238,22 @@ test('visible target resolution skips a positive-rect duplicate hidden by an anc
     assert.equal(resolveVisibleTarget([selector], rootWith({ [selector]: [hiddenChild, visible] }), VIEWPORT), visible);
 });
 
-test('hierarchy and editing resolve the first visible candidate selector in preference order', async () => {
+test('field previews resolve Epic controls before Story fallbacks', async () => {
     const { ONBOARDING_STEP_CATALOG, resolveStepTarget } = await loadModule();
-    const hierarchy = ONBOARDING_STEP_CATALOG.find((step) => step.id === 'hierarchy');
-    const editing = ONBOARDING_STEP_CATALOG.find((step) => step.id === 'editing');
-    const epic = element(VISIBLE_RECT);
-    const track = element({ left: 300, top: 200, right: 360, bottom: 240, width: 60, height: 40 });
+    const priority = ONBOARDING_STEP_CATALOG.find((step) => step.id === 'editing-priority');
+    const epicPriority = element(VISIBLE_RECT);
+    const storyPriority = element({ left: 300, top: 200, right: 360, bottom: 240, width: 60, height: 40 });
     const root = rootWith({
-        '[data-onboarding-target="hierarchy-epic"]': [epic],
-        '[data-onboarding-target="editing-track"]': [track],
+        '[data-onboarding-target="editing-priority"][data-issue-kind="epic"]': [epicPriority],
+        '[data-onboarding-target="editing-priority"][data-issue-kind="story"]': [storyPriority],
     });
-    assert.equal(resolveStepTarget(hierarchy, root, VIEWPORT), epic);
-    assert.equal(resolveStepTarget(editing, root, VIEWPORT), track);
+    assert.equal(resolveStepTarget(priority, root, VIEWPORT), epicPriority);
 });
 
 test('progress is renumbered from the filtered visible list', async () => {
     const { buildVisibleOnboardingSteps, buildTourProgress } = await loadModule();
     const steps = buildVisibleOnboardingSteps({ group: false, teams: true, search: false, filters: true });
-    assert.deepEqual(buildTourProgress(steps, 2), { current: 3, total: 6, label: 'Step 3 of 6' });
+    assert.deepEqual(buildTourProgress(steps, 2), { current: 3, total: 9, label: 'Step 3 of 9' });
 });
 
 test('placement below a target remains viewport bounded', async () => {
@@ -208,22 +333,19 @@ test('target disappearance advances to the item at the old index, then clamps at
     );
 });
 
-test('fallback-capable steps return explanatory cards without claiming unavailable editing', async () => {
+test('fallback-capable hierarchy and field steps return explanatory cards', async () => {
     const { ONBOARDING_STEP_CATALOG, buildStepPresentation } = await loadModule();
-    const hierarchy = ONBOARDING_STEP_CATALOG.find((step) => step.id === 'hierarchy');
-    const editing = ONBOARDING_STEP_CATALOG.find((step) => step.id === 'editing');
-    assert.equal(buildStepPresentation(hierarchy, null).fallback, true);
-    const editingFallback = buildStepPresentation(editing, null);
-    assert.equal(editingFallback.fallback, true);
-    assert.doesNotMatch(editingFallback.body, /you can edit|edit here|change this field/i);
-});
-
-test('editing copy describes editing only when an editable control is visible', async () => {
-    const { ONBOARDING_STEP_CATALOG, buildStepPresentation } = await loadModule();
-    const editing = ONBOARDING_STEP_CATALOG.find((step) => step.id === 'editing');
-    const presentation = buildStepPresentation(editing, element(VISIBLE_RECT));
-    assert.equal(presentation.fallback, false);
-    assert.match(presentation.body, /change/i);
+    for (const id of [
+        'hierarchy-initiative', 'hierarchy-epic', 'hierarchy-story',
+        'editing-priority', 'editing-track', 'editing-status',
+    ]) {
+        const presentation = buildStepPresentation(
+            ONBOARDING_STEP_CATALOG.find((step) => step.id === id),
+            null
+        );
+        assert.equal(presentation.fallback, true, id);
+        assert.ok(presentation.body, id);
+    }
 });
 
 test('navigation clamps bounds and exposes Back, Next, and Finish states', async () => {

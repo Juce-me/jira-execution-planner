@@ -8,6 +8,10 @@ function target(name) {
     return `${TARGET_PREFIX}"${name}"]`;
 }
 
+function issueKindTarget(name, issueKind) {
+    return `${target(name)}[data-issue-kind="${issueKind}"]`;
+}
+
 function freezeStep(step) {
     return Object.freeze({
         ...step,
@@ -15,10 +19,29 @@ function freezeStep(step) {
     });
 }
 
+export const ONBOARDING_PROGRESS_GROUPS = Object.freeze([
+    'Dashboard basics',
+    'Work hierarchy',
+    'Field previews',
+    'Continue in Jira',
+]);
+
+const DASHBOARD_BASICS = ONBOARDING_PROGRESS_GROUPS[0];
+const WORK_HIERARCHY = ONBOARDING_PROGRESS_GROUPS[1];
+const FIELD_PREVIEWS = ONBOARDING_PROGRESS_GROUPS[2];
+const CONTINUE_IN_JIRA = ONBOARDING_PROGRESS_GROUPS[3];
+const HIERARCHY_STEP_IDS = Object.freeze([
+    'hierarchy-initiative',
+    'hierarchy-epic',
+    'hierarchy-story',
+]);
+
 export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'sprint',
         presence: 'required',
+        interaction: 'manual',
+        group: DASHBOARD_BASICS,
         selectors: [target('sprint')],
         title: 'Choose a sprint',
         body: 'Use Sprint to choose the delivery window shown across the dashboard.',
@@ -27,6 +50,8 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'group',
         presence: 'conditional',
+        interaction: 'manual',
+        group: DASHBOARD_BASICS,
         selectors: [target('group')],
         title: 'Set your Department scope',
         body: 'Switch the Department in view without changing your saved favorite.',
@@ -34,73 +59,171 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
         id: 'teams',
         presence: 'conditional',
+        interaction: 'manual',
+        group: DASHBOARD_BASICS,
         selectors: [target('teams')],
         title: 'Narrow to teams',
         body: 'Focus the current Department view on one or more teams.',
     }),
     freezeStep({
-        id: 'search',
-        presence: 'conditional',
-        selectors: [target('search')],
-        title: 'Find an issue',
-        body: 'Search the current view by supported issue key or summary text.',
-    }),
-    freezeStep({
-        id: 'jira-export',
-        presence: 'conditional',
-        requireEnabled: true,
-        selectors: [target('jira-export')],
-        title: 'Continue in Jira',
-        body: 'Open the current issue set in Jira when you need its full issue tools.',
-    }),
-    freezeStep({
         id: 'refresh',
         presence: 'required',
+        interaction: 'manual',
+        group: DASHBOARD_BASICS,
         selectors: [target('refresh')],
         title: 'Request fresh data',
         body: 'Refresh asks the dashboard for the latest available Jira data.',
         fallbackBody: 'Refreshing asks the dashboard for the latest available Jira data.',
     }),
     freezeStep({
+        id: 'search',
+        presence: 'conditional',
+        interaction: 'manual',
+        group: DASHBOARD_BASICS,
+        selectors: [target('search')],
+        title: 'Find work across the hierarchy',
+        body: 'Search by key or summary across Initiatives, Epics, and Stories. Assignee search covers Epics and Stories, not Initiatives.',
+    }),
+    freezeStep({
         id: 'filters',
         presence: 'conditional',
+        interaction: 'manual',
+        group: DASHBOARD_BASICS,
         selectors: [target('filters')],
         title: 'Focus the view',
         body: 'Use the available Show only and Display controls to focus what is on screen.',
     }),
     freezeStep({
-        id: 'hierarchy',
-        presence: 'fallback',
-        selectors: [
-            target('hierarchy-initiative'),
-            target('hierarchy-epic'),
-            target('hierarchy-story'),
-            target('hierarchy'),
-        ],
-        title: 'Follow work from goal to delivery',
-        body: 'The visible work connects Initiatives to Epics and the Stories that deliver them.',
-        fallbackBody: 'Work is organized from Initiatives to Epics and then to the Stories that deliver them. This structure appears when issue data is available.',
+        id: 'hierarchy-initiative',
+        presence: 'hierarchy',
+        interaction: 'manual',
+        group: WORK_HIERARCHY,
+        selectors: [target('hierarchy-initiative')],
+        title: 'Start with the Initiative',
+        body: 'An Initiative groups related Epics around a broader outcome.',
+        fallbackBody: 'Initiatives sit above Epics in the work hierarchy, even when no Initiative is visible in the current result set.',
     }),
     freezeStep({
-        id: 'editing',
+        id: 'hierarchy-epic',
+        presence: 'hierarchy',
+        interaction: 'manual',
+        group: WORK_HIERARCHY,
+        selectors: [target('hierarchy-epic')],
+        title: 'Follow the Epic',
+        body: 'An Epic groups the Stories that contribute to a larger delivery outcome.',
+        fallbackBody: 'Epics connect Initiatives to delivery Stories, even when no Epic is visible in the current result set.',
+    }),
+    freezeStep({
+        id: 'hierarchy-story',
+        presence: 'hierarchy',
+        interaction: 'manual',
+        group: WORK_HIERARCHY,
+        selectors: [target('hierarchy-story')],
+        title: 'See the delivery Stories',
+        body: 'Stories are the delivery work grouped under an Epic.',
+        fallbackBody: 'Stories are the delivery level beneath Epics, even when no Story is visible in the current result set.',
+    }),
+    freezeStep({
+        id: 'editing-priority',
         presence: 'fallback',
+        interaction: 'menu-preview',
+        group: FIELD_PREVIEWS,
         requireEnabled: true,
         selectors: [
-            target('editing-priority'),
-            target('editing-track'),
-            target('editing-status'),
-            target('editing'),
+            issueKindTarget('editing-priority', 'epic'),
+            issueKindTarget('editing-priority', 'story'),
         ],
-        title: 'Keep delivery details current',
-        body: 'When an editable control is available, you can change its priority, Product Track, or status here.',
-        fallbackBody: 'Priority, Product Track, and status controls appear only where the current view and your permissions allow changes.',
+        title: 'Preview Priority options',
+        body: 'Open an Epic or Story Priority menu to preview the available options; you can close it without changing the value.',
+        fallbackBody: 'Priority menus appear on editable Epics and Stories when the current view and your permissions make them available.',
+    }),
+    freezeStep({
+        id: 'editing-track',
+        presence: 'fallback',
+        interaction: 'menu-preview',
+        group: FIELD_PREVIEWS,
+        requireEnabled: true,
+        selectors: [target('editing-track')],
+        title: 'Preview Project Track options',
+        body: 'Open an Epic Project Track menu to preview the available options; you can close it without changing the value.',
+        fallbackBody: 'Project Track menus appear on editable Epics when the current view and your permissions make them available.',
+    }),
+    freezeStep({
+        id: 'editing-status',
+        presence: 'fallback',
+        interaction: 'menu-preview',
+        group: FIELD_PREVIEWS,
+        requireEnabled: true,
+        selectors: [
+            issueKindTarget('editing-status', 'epic'),
+            issueKindTarget('editing-status', 'story'),
+        ],
+        title: 'Preview Status options',
+        body: 'Open an Epic or Story Status menu to preview the available transitions; you can close it without changing the value.',
+        fallbackBody: 'Status menus appear on editable Epics and Stories when the current view and your permissions make them available.',
+    }),
+    freezeStep({
+        id: 'jira-export',
+        presence: 'conditional',
+        interaction: 'manual',
+        group: CONTINUE_IN_JIRA,
+        requireEnabled: true,
+        selectors: [target('jira-export')],
+        title: 'Continue in Jira',
+        body: 'Open the current issue set in Jira when you need its full issue tools.',
+    }),
+    freezeStep({
+        id: 'complete',
+        presence: 'required',
+        interaction: 'finish',
+        group: CONTINUE_IN_JIRA,
+        selectors: [],
+        title: 'Tour complete',
+        body: 'Finish the tour to return to the dashboard.',
     }),
 ]);
 
+const HIERARCHY_FALLBACK_STEP = freezeStep({
+    id: 'hierarchy',
+    presence: 'fallback',
+    interaction: 'manual',
+    group: WORK_HIERARCHY,
+    selectors: [target('hierarchy')],
+    title: 'Follow work from goal to delivery',
+    body: 'Work is organized from Initiatives to Epics and then to the Stories that deliver them.',
+    fallbackBody: 'Work is organized from Initiatives to Epics and then to the Stories that deliver them. This structure appears when issue data is available.',
+});
+
 export function buildVisibleOnboardingSteps(availability = {}) {
-    return ONBOARDING_STEP_CATALOG.filter((step) => (
-        step.presence !== 'conditional' || availability[step.id] === true
-    ));
+    const hasVisibleHierarchy = HIERARCHY_STEP_IDS.some((id) => availability[id] === true);
+    const steps = [];
+    ONBOARDING_STEP_CATALOG.forEach((step) => {
+        if (step.presence === 'hierarchy') {
+            if (hasVisibleHierarchy) {
+                steps.push(step);
+            } else if (step.id === HIERARCHY_STEP_IDS[0]) {
+                steps.push(HIERARCHY_FALLBACK_STEP);
+            }
+            return;
+        }
+        if (step.presence !== 'conditional' || availability[step.id] === true) {
+            steps.push(step);
+        }
+    });
+    return steps;
+}
+
+export function resolveSectionSkipTargetId(steps = [], currentStepId = '') {
+    const current = steps.find((step) => step.id === currentStepId);
+    if (current?.group === WORK_HIERARCHY) {
+        return steps.find((step) => step.group === FIELD_PREVIEWS)?.id || '';
+    }
+    if (current?.group === FIELD_PREVIEWS) {
+        return steps.find((step) => step.id === 'jira-export')?.id
+            || steps.find((step) => step.id === 'complete')?.id
+            || '';
+    }
+    return '';
 }
 
 function viewportSize(viewport = {}) {

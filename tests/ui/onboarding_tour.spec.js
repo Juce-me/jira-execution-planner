@@ -26,6 +26,20 @@ test.beforeAll(() => {
                     const [showPrimary, setShowPrimary] = React.useState(true);
                     const [showGroup, setShowGroup] = React.useState(true);
                     const [skipCount, setSkipCount] = React.useState(0);
+                    const [engReadiness, setEngReadiness] = React.useState('settled');
+                    const [hierarchyMask, setHierarchyMask] = React.useState(7);
+                    const [editingMask, setEditingMask] = React.useState(7);
+                    const [priorityVersion, setPriorityVersion] = React.useState(0);
+                    const [priorityOffscreen, setPriorityOffscreen] = React.useState(false);
+                    const scrollCountRef = React.useRef(0);
+                    const priorityRef = React.useCallback((node) => {
+                        if (!node) return;
+                        const nativeScrollIntoView = node.scrollIntoView.bind(node);
+                        node.scrollIntoView = (options) => {
+                            scrollCountRef.current += 1;
+                            nativeScrollIntoView(options);
+                        };
+                    }, []);
 
                     React.useLayoutEffect(() => {
                         window.__tourHarness = {
@@ -35,6 +49,12 @@ test.beforeAll(() => {
                             setPending,
                             removePrimary: () => setShowPrimary(false),
                             removeGroup: () => setShowGroup(false),
+                            setReadiness: setEngReadiness,
+                            setHierarchyMask,
+                            setEditingMask,
+                            setPriorityOffscreen,
+                            replacePriority: () => setPriorityVersion((value) => value + 1),
+                            scrollCount: () => scrollCountRef.current,
                             skipCount,
                         };
                     });
@@ -45,11 +65,35 @@ test.beforeAll(() => {
                         <button data-onboarding-target="sprint" style={{ position: 'fixed', left: 520, top: 30 }}>Sprint compact</button>
                         {showGroup && <button data-onboarding-target="group" style={{ position: 'fixed', left: 40, top: 120 }}>Department</button>}
                         <button data-onboarding-target="refresh" style={{ position: 'fixed', left: 40, top: 210 }}>Refresh</button>
-                        <div data-onboarding-target="hierarchy-epic" style={{ position: 'fixed', left: 40, top: 300, width: 180, height: 40 }}>Epic and stories</div>
-                        <button data-onboarding-target="editing-priority" style={{ position: 'fixed', left: 40, top: 390 }}>Priority</button>
+                        {Boolean(hierarchyMask & 4) && <div data-onboarding-target="hierarchy-initiative" style={{ position: 'absolute', left: 40, top: 300, width: 180, height: 40 }}>Initiative</div>}
+                        {Boolean(hierarchyMask & 2) && <div data-onboarding-target="hierarchy-epic" style={{ position: 'absolute', left: 40, top: 350, width: 180, height: 40 }}>Epic</div>}
+                        {Boolean(hierarchyMask & 1) && <div data-onboarding-target="hierarchy-story" style={{ position: 'absolute', left: 40, top: 400, width: 180, height: 40 }}>Story</div>}
+                        {Boolean(editingMask & 4) && <button
+                            key={priorityVersion}
+                            ref={priorityRef}
+                            data-onboarding-target="editing-priority"
+                            data-issue-kind="epic"
+                            aria-haspopup="menu"
+                            aria-expanded="false"
+                            style={{ position: 'absolute', left: 40, top: priorityOffscreen ? 1250 + priorityVersion * 40 : 470 }}
+                        >Priority</button>}
+                        {Boolean(editingMask & 2) && <button
+                            data-onboarding-target="editing-track"
+                            aria-haspopup="menu"
+                            aria-expanded="false"
+                            style={{ position: 'absolute', left: 140, top: 470 }}
+                        >Project Track</button>}
+                        {Boolean(editingMask & 1) && <button
+                            data-onboarding-target="editing-status"
+                            data-issue-kind="epic"
+                            aria-haspopup="menu"
+                            aria-expanded="false"
+                            style={{ position: 'absolute', left: 280, top: 470 }}
+                        >Status</button>}
                         <OnboardingTour
                             run={run}
                             onboardingDone={done}
+                            engReadiness={engReadiness}
                             actionPending={pending}
                             onSkip={() => { setSkipCount((count) => count + 1); setRun(false); }}
                             onFinish={() => setRun(false)}
@@ -279,6 +323,25 @@ async function openTour(page) {
     await expect(page.getByRole('dialog')).toBeVisible();
 }
 
+async function advanceToHeading(page, heading) {
+    for (let index = 0; index < 20; index += 1) {
+        if (await page.getByRole('heading', { name: heading }).count()) return;
+        await page.getByRole('button', { name: 'Next' }).click();
+    }
+    throw new Error(`Did not reach onboarding heading: ${heading}`);
+}
+
+async function collectTourHeadings(page) {
+    const headings = [];
+    for (let index = 0; index < 20; index += 1) {
+        headings.push(await page.getByRole('heading').textContent());
+        const next = page.getByRole('button', { name: 'Next' });
+        if (!await next.count()) break;
+        await next.click();
+    }
+    return headings;
+}
+
 test('portal, focus trap, pending Skip and Escape, and focus restoration work together', async ({ page }) => {
     await installHarness(page);
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -351,6 +414,82 @@ test('mutation retargets visible duplicates, removes vanished optional steps, an
     });
     await expect(page.getByRole('heading')).toHaveText('Choose a sprint');
     await expect.poll(() => page.evaluate(() => window.__tourLifecycle.headings[0])).toBe('Choose a sprint');
+});
+
+test('readiness holds hierarchy and editing steps during loading and terminal errors expose fallback only', async ({ page }) => {
+    await installHarness(page);
+    await page.evaluate(() => window.__tourHarness.setReadiness('loading'));
+    await openTour(page);
+    await advanceToHeading(page, 'Start with the Initiative');
+    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
+
+    await page.evaluate(() => window.__tourHarness.setReadiness('settled'));
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+
+    await advanceToHeading(page, 'Preview Priority options');
+    await page.evaluate(() => window.__tourHarness.setReadiness('terminal-error'));
+    await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+});
+
+test('offscreen target scrolls once on step entry, does not fight user scroll, and scrolls on replacement', async ({ page }) => {
+    await installHarness(page);
+    await page.evaluate(() => window.__tourHarness.setPriorityOffscreen(true));
+    await openTour(page);
+    await advanceToHeading(page, 'Preview Priority options');
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.__tourHarness.scrollCount())).toBe(1);
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => window.__tourHarness.scrollCount())).toBe(1);
+
+    await page.evaluate(() => window.__tourHarness.replacePriority());
+    await expect.poll(() => page.evaluate(() => window.__tourHarness.scrollCount())).toBe(2);
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+
+    await page.evaluate(() => window.__tourHarness.setEditingMask(3));
+    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+    await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+});
+
+test('hierarchy matrix and editing presence matrix retain deterministic order and compact only all-absent groups', async ({ page }) => {
+    await installHarness(page);
+    const hierarchyTitles = ['Start with the Initiative', 'Follow the Epic', 'See the delivery Stories'];
+    const editingTitles = ['Preview Priority options', 'Preview Project Track options', 'Preview Status options'];
+    for (let mask = 0; mask < 8; mask += 1) {
+        await page.evaluate(({ hierarchyMask }) => {
+            window.__tourHarness.setPriorityOffscreen(false);
+            window.__tourHarness.setHierarchyMask(hierarchyMask);
+            window.__tourHarness.setEditingMask(7);
+            window.__tourHarness.open();
+        }, { hierarchyMask: mask });
+        await expect(page.getByRole('dialog')).toBeVisible();
+        const hierarchyHeadings = (await collectTourHeadings(page)).filter((title) => (
+            hierarchyTitles.includes(title) || title === 'Follow work from goal to delivery'
+        ));
+        expect(hierarchyHeadings).toEqual(mask ? hierarchyTitles : ['Follow work from goal to delivery']);
+        await page.evaluate(() => window.__tourHarness.closeWithDone());
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+    }
+
+    for (let mask = 0; mask < 8; mask += 1) {
+        await page.evaluate(({ editingMask }) => {
+            window.__tourHarness.setHierarchyMask(7);
+            window.__tourHarness.setEditingMask(editingMask);
+            window.__tourHarness.open();
+        }, { editingMask: mask });
+        await expect(page.getByRole('dialog')).toBeVisible();
+        const editingHeadings = (await collectTourHeadings(page)).filter((title) => (
+            editingTitles.includes(title) || title === 'Preview Jira fields safely'
+        ));
+        expect(editingHeadings).toEqual(mask ? editingTitles : ['Preview Jira fields safely']);
+        await page.evaluate(() => window.__tourHarness.closeWithDone());
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+    }
 });
 
 test('active observers and window listeners clean up on unmount', async ({ page }) => {

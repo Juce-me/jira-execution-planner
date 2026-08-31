@@ -16,7 +16,7 @@ import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import OnboardingTour from './onboarding/OnboardingTour.jsx';
-import { isOnboardingAvailable } from './onboarding/onboardingSteps.js';
+import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
 import { useOnboardingController } from './onboarding/useOnboardingTour.js';
 import AuthRequiredGate from './components/AuthRequiredGate.jsx';
 import { AUTH_REQUIRED_EVENT, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './api/authRequired.js';
@@ -11286,6 +11286,13 @@ import {
             // out here explicitly or the whole task list renders underneath the board.
             const shouldRenderEngTaskList = selectedView === 'eng' && !showBoard && !isStatsSourceOnlyStatsView;
             const displayedEngError = sprintError || error;
+            const onboardingEngReadiness = deriveOnboardingEngReadiness({
+                tasksFetched,
+                loading,
+                productTasksLoading,
+                techTasksLoading,
+                displayedEngError
+            });
             const retryEngLoad = sprintError ? () => loadSprints(true) : fetchTasks;
             const groupTasksByEpic = (taskList) => {
                 const grouped = {};
@@ -16979,6 +16986,7 @@ import {
                     <OnboardingTour
                         run={onboarding.run}
                         onboardingDone={groupPreferences.onboardingDone}
+                        engReadiness={onboardingEngReadiness}
                         onSkip={onboarding.skip}
                         onFinish={onboarding.finish}
                         actionPending={onboarding.pending}

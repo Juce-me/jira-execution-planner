@@ -1,15 +1,38 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 
 async function loadModule() {
     return import('../frontend/src/onboarding/onboardingSteps.js');
 }
 
-function element(rect, { display = 'block', visibility = 'visible', opacity = '1', disabled = false, ariaHidden = null } = {}) {
+function element(rect, {
+    display = 'block',
+    visibility = 'visible',
+    opacity = '1',
+    disabled = false,
+    ariaDisabled = null,
+    ariaHidden = null,
+    hidden = false,
+    inert = false,
+    parentElement = null,
+    scrollIntoView = null,
+    matchesDisabled = false,
+} = {}) {
+    const attributes = new Map();
+    if (ariaDisabled !== null) attributes.set('aria-disabled', ariaDisabled);
+    if (ariaHidden !== null) attributes.set('aria-hidden', ariaHidden);
+    if (inert) attributes.set('inert', '');
     return {
         disabled,
+        hidden,
+        inert,
+        parentElement,
         getBoundingClientRect: () => ({ ...rect }),
-        getAttribute: (name) => (name === 'aria-hidden' ? ariaHidden : null),
+        getAttribute: (name) => attributes.get(name) ?? null,
+        hasAttribute: (name) => attributes.has(name),
+        matches: (selector) => selector === ':disabled' && matchesDisabled,
+        scrollIntoView,
         ownerDocument: {
             defaultView: {
                 getComputedStyle: () => ({ display, visibility, opacity }),
@@ -40,6 +63,15 @@ const FULL_AVAILABILITY = {
     'editing-status': true,
     'jira-export': true,
 };
+
+const ENG_STEP_IDS = [
+    'hierarchy-initiative',
+    'hierarchy-epic',
+    'hierarchy-story',
+    'editing-priority',
+    'editing-track',
+    'editing-status',
+];
 
 test('onboarding persistence is available only for Atlassian OAuth workspace DB mode', async () => {
     const { isOnboardingAvailable } = await loadModule();
@@ -133,6 +165,167 @@ test('all-absent hierarchy compacts to one aggregate fallback before field previ
             'complete',
         ]
     );
+});
+
+test('readiness enum uses only the exact ENG loading flags and terminal error', async () => {
+    const { deriveOnboardingEngReadiness } = await loadModule();
+    const settled = {
+        tasksFetched: true,
+        loading: false,
+        productTasksLoading: false,
+        techTasksLoading: false,
+        displayedEngError: '',
+    };
+    assert.equal(deriveOnboardingEngReadiness(settled), 'settled');
+    for (const key of ['loading', 'productTasksLoading', 'techTasksLoading']) {
+        assert.equal(deriveOnboardingEngReadiness({ ...settled, [key]: true }), 'loading', key);
+    }
+    assert.equal(deriveOnboardingEngReadiness({ ...settled, tasksFetched: false }), 'loading');
+    assert.equal(deriveOnboardingEngReadiness({ ...settled, tasksFetched: false, displayedEngError: 'failed' }), 'loading');
+    assert.equal(deriveOnboardingEngReadiness({ ...settled, displayedEngError: 'failed' }), 'terminal-error');
+    assert.equal(deriveOnboardingEngReadiness({ ...settled, displayedEngError: '   ' }), 'terminal-error');
+});
+
+test('dashboard derives and passes the exact onboarding ENG readiness without adding a fetch', () => {
+    const source = readFileSync(
+        new URL('../frontend/src/dashboard.jsx', `file://${__filename}`),
+        'utf8'
+    );
+    assert.match(source, /deriveOnboardingEngReadiness\(\{\s*tasksFetched,\s*loading,\s*productTasksLoading,\s*techTasksLoading,\s*displayedEngError\s*\}\)/s);
+    assert.match(source, /<OnboardingTour[\s\S]*?engReadiness=\{onboardingEngReadiness\}/);
+    const readinessBlock = source.match(/const onboardingEngReadiness = deriveOnboardingEngReadiness\([\s\S]*?\);/)?.[0] || '';
+    assert.doesNotMatch(readinessBlock, /\b(?:fetchTasks|request[A-Z]\w*)\s*\(/);
+});
+
+test('loading retains every hierarchy and editing step while settled matrices compact only all-absent groups', async () => {
+    const { buildVisibleOnboardingSteps } = await loadModule();
+    const loadingIds = buildVisibleOnboardingSteps({}, { engReadiness: 'loading' }).map((step) => step.id);
+    ENG_STEP_IDS.forEach((id) => assert.equal(loadingIds.includes(id), true, id));
+
+    for (let mask = 0; mask < 8; mask += 1) {
+        const hierarchyAvailability = {
+            'hierarchy-initiative': Boolean(mask & 4),
+            'hierarchy-epic': Boolean(mask & 2),
+            'hierarchy-story': Boolean(mask & 1),
+        };
+        const hierarchyIds = buildVisibleOnboardingSteps(hierarchyAvailability)
+            .map((step) => step.id)
+            .filter((id) => id.startsWith('hierarchy'));
+        assert.deepEqual(
+            hierarchyIds,
+            mask ? ['hierarchy-initiative', 'hierarchy-epic', 'hierarchy-story'] : ['hierarchy'],
+            `hierarchy mask ${mask}`
+        );
+
+        const editingAvailability = {
+            'editing-priority': Boolean(mask & 4),
+            'editing-track': Boolean(mask & 2),
+            'editing-status': Boolean(mask & 1),
+        };
+        const editingIds = buildVisibleOnboardingSteps(editingAvailability)
+            .map((step) => step.id)
+            .filter((id) => id.startsWith('editing'));
+        assert.deepEqual(
+            editingIds,
+            mask ? ['editing-priority', 'editing-track', 'editing-status'] : ['editing'],
+            `editing mask ${mask}`
+        );
+    }
+});
+
+test('every hierarchy and editing step resolves loading, visible, offscreen, missing, disabled, and terminal-error states', async () => {
+    const {
+        ONBOARDING_STEP_CATALOG,
+        buildStepPresentation,
+        resolveOnboardingSnapshot,
+    } = await loadModule();
+    for (const id of ENG_STEP_IDS) {
+        const step = ONBOARDING_STEP_CATALOG.find((entry) => entry.id === id);
+        const selector = step.selectors[0];
+        const visible = element(VISIBLE_RECT);
+        const offscreen = element({ left: 100, top: 1400, right: 220, bottom: 1440, width: 120, height: 40 });
+        const disabled = element(VISIBLE_RECT, { disabled: true });
+        const inheritedDisabled = element(VISIBLE_RECT, { matchesDisabled: true });
+
+        const loading = resolveOnboardingSnapshot(rootWith({ [selector]: [visible] }), VIEWPORT, { engReadiness: 'loading' });
+        assert.equal(loading.targets[id], null, `${id} loading target`);
+        assert.equal(loading.steps.some((entry) => entry.id === id), true, `${id} retained while loading`);
+        assert.equal(buildStepPresentation(step, null, { engReadiness: 'loading' }).loading, true, `${id} loading presentation`);
+
+        const visibleSnapshot = resolveOnboardingSnapshot(rootWith({ [selector]: [visible] }), VIEWPORT, { engReadiness: 'settled' });
+        assert.equal(visibleSnapshot.targets[id], visible, `${id} visible`);
+        const offscreenSnapshot = resolveOnboardingSnapshot(rootWith({ [selector]: [offscreen] }), VIEWPORT, { engReadiness: 'settled' });
+        assert.equal(offscreenSnapshot.targets[id], offscreen, `${id} offscreen-rendered`);
+        const missing = resolveOnboardingSnapshot(rootWith({}), VIEWPORT, { engReadiness: 'settled' });
+        assert.equal(missing.targets[id], null, `${id} missing`);
+
+        if (step.requireEnabled) {
+            const preDisabled = resolveOnboardingSnapshot(rootWith({ [selector]: [disabled] }), VIEWPORT, { engReadiness: 'settled' });
+            assert.equal(preDisabled.targets[id], null, `${id} pre-disabled`);
+            const fieldsetDisabled = resolveOnboardingSnapshot(rootWith({ [selector]: [inheritedDisabled] }), VIEWPORT, { engReadiness: 'settled' });
+            assert.equal(fieldsetDisabled.targets[id], null, `${id} inherited pre-disabled`);
+        }
+
+        const terminal = resolveOnboardingSnapshot(rootWith({ [selector]: [visible] }), VIEWPORT, { engReadiness: 'terminal-error' });
+        assert.equal(terminal.targets[id], null, `${id} terminal error`);
+    }
+});
+
+test('tour-owned inert ancestors can be ignored without admitting pre-existing inert targets', async () => {
+    const { resolveOnboardingSnapshot } = await loadModule();
+    const selector = '[data-onboarding-target="editing-priority"][data-issue-kind="epic"]';
+    const ownedSuppressedSubtree = element(VISIBLE_RECT, { inert: true });
+    const futureTarget = element(VISIBLE_RECT, { parentElement: ownedSuppressedSubtree });
+    const preExistingSuppressedSubtree = element(VISIBLE_RECT, { inert: true });
+    const unavailableTarget = element(VISIBLE_RECT, { parentElement: preExistingSuppressedSubtree });
+
+    const retained = resolveOnboardingSnapshot(rootWith({ [selector]: [futureTarget] }), VIEWPORT, {
+        engReadiness: 'settled',
+        ignoredAncestors: [ownedSuppressedSubtree],
+    });
+    assert.equal(retained.targets['editing-priority'], futureTarget);
+
+    const rejected = resolveOnboardingSnapshot(rootWith({ [selector]: [unavailableTarget] }), VIEWPORT, {
+        engReadiness: 'settled',
+        ignoredAncestors: [],
+    });
+    assert.equal(rejected.targets['editing-priority'], null);
+});
+
+test('renderable candidate resolution rejects hidden and zero nodes before accepting an offscreen node', async () => {
+    const { resolveRenderableTarget } = await loadModule();
+    const selector = '[data-onboarding-target="hierarchy-story"]';
+    const hidden = element(VISIBLE_RECT, { visibility: 'hidden' });
+    const zero = element({ left: 10, top: 10, right: 10, bottom: 10, width: 0, height: 0 });
+    const inertParent = element(VISIBLE_RECT, { inert: true });
+    const inert = element(VISIBLE_RECT, { parentElement: inertParent });
+    const offscreen = element({ left: 80, top: 1600, right: 200, bottom: 1640, width: 120, height: 40 });
+    assert.equal(resolveRenderableTarget([selector], rootWith({ [selector]: [hidden, zero, inert, offscreen] })), offscreen);
+});
+
+test('every hierarchy and editing step resolves disappearance and replacement without changing target preference', async () => {
+    const { ONBOARDING_STEP_CATALOG, resolveOnboardingSnapshot } = await loadModule();
+    for (const id of ENG_STEP_IDS) {
+        const step = ONBOARDING_STEP_CATALOG.find((entry) => entry.id === id);
+        const selector = step.selectors[0];
+        const original = element(VISIBLE_RECT);
+        const replacement = element({ left: 260, top: 900, right: 380, bottom: 940, width: 120, height: 40 });
+        assert.equal(
+            resolveOnboardingSnapshot(rootWith({ [selector]: [original] }), VIEWPORT, { engReadiness: 'settled' }).targets[id],
+            original,
+            `${id} original`
+        );
+        assert.equal(
+            resolveOnboardingSnapshot(rootWith({ [selector]: [] }), VIEWPORT, { engReadiness: 'settled' }).targets[id],
+            null,
+            `${id} disappeared`
+        );
+        assert.equal(
+            resolveOnboardingSnapshot(rootWith({ [selector]: [replacement] }), VIEWPORT, { engReadiness: 'settled' }).targets[id],
+            replacement,
+            `${id} replacement`
+        );
+    }
 });
 
 test('complete is always present while optional dashboard and Jira controls can be omitted', async () => {
@@ -271,7 +464,7 @@ test('field previews resolve Epic controls before Story fallbacks', async () => 
 test('progress is renumbered from the filtered visible list', async () => {
     const { buildVisibleOnboardingSteps, buildTourProgress } = await loadModule();
     const steps = buildVisibleOnboardingSteps({ group: false, teams: true, search: false, filters: true });
-    assert.deepEqual(buildTourProgress(steps, 2), { current: 3, total: 9, label: 'Step 3 of 9' });
+    assert.deepEqual(buildTourProgress(steps, 2), { current: 3, total: 7, label: 'Step 3 of 7' });
 });
 
 test('placement below a target remains viewport bounded', async () => {
@@ -336,6 +529,23 @@ test('target disappearance keeps the same step when it remains eligible', async 
     const { reconcileCurrentStepId } = await loadModule();
     const steps = [{ id: 'sprint' }, { id: 'refresh' }, { id: 'hierarchy' }];
     assert.equal(reconcileCurrentStepId({ previousSteps: steps, nextSteps: steps, currentStepId: 'refresh' }), 'refresh');
+});
+
+test('readiness compaction keeps the current hierarchy or field section instead of jumping ahead', async () => {
+    const { buildStepPresentation, buildVisibleOnboardingSteps, reconcileCurrentStepId } = await loadModule();
+    const previousSteps = buildVisibleOnboardingSteps(FULL_AVAILABILITY);
+    const nextSteps = buildVisibleOnboardingSteps({}, { engReadiness: 'terminal-error' });
+    assert.equal(reconcileCurrentStepId({ previousSteps, nextSteps, currentStepId: 'hierarchy-epic' }), 'hierarchy');
+    assert.equal(reconcileCurrentStepId({ previousSteps, nextSteps, currentStepId: 'editing-priority' }), 'editing');
+    for (const id of ['hierarchy', 'editing']) {
+        const presentation = buildStepPresentation(
+            nextSteps.find((step) => step.id === id),
+            null,
+            { engReadiness: 'terminal-error' }
+        );
+        assert.match(presentation.body, /could not be loaded/i, id);
+        assert.equal(presentation.fallback, true, id);
+    }
 });
 
 test('target disappearance advances to the item at the old index, then clamps at the end', async () => {

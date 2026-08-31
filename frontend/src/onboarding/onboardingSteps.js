@@ -35,6 +35,29 @@ const HIERARCHY_STEP_IDS = Object.freeze([
     'hierarchy-epic',
     'hierarchy-story',
 ]);
+const EDITING_STEP_IDS = Object.freeze([
+    'editing-priority',
+    'editing-track',
+    'editing-status',
+]);
+const ENG_DATA_STEP_IDS = new Set([...HIERARCHY_STEP_IDS, ...EDITING_STEP_IDS]);
+
+export function deriveOnboardingEngReadiness({
+    tasksFetched = false,
+    loading = false,
+    productTasksLoading = false,
+    techTasksLoading = false,
+    displayedEngError = '',
+} = {}) {
+    if (!tasksFetched || loading || productTasksLoading || techTasksLoading) return 'loading';
+    if (String(displayedEngError || '')) return 'terminal-error';
+    return 'settled';
+}
+
+export function isOnboardingEngDataStep(stepOrId) {
+    const id = typeof stepOrId === 'string' ? stepOrId : stepOrId?.id;
+    return ENG_DATA_STEP_IDS.has(id);
+}
 
 export const ONBOARDING_STEP_CATALOG = Object.freeze([
     freezeStep({
@@ -101,6 +124,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         selectors: [target('hierarchy-initiative')],
         title: 'Start with the Initiative',
         body: 'An Initiative groups related Epics around a broader outcome.',
+        loadingBody: 'Loading Initiative data for this dashboard view.',
         fallbackBody: 'Initiatives sit above Epics in the work hierarchy, even when no Initiative is visible in the current result set.',
     }),
     freezeStep({
@@ -111,6 +135,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         selectors: [target('hierarchy-epic')],
         title: 'Follow the Epic',
         body: 'An Epic groups the Stories that contribute to a larger delivery outcome.',
+        loadingBody: 'Loading Epic data for this dashboard view.',
         fallbackBody: 'Epics connect Initiatives to delivery Stories, even when no Epic is visible in the current result set.',
     }),
     freezeStep({
@@ -121,6 +146,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         selectors: [target('hierarchy-story')],
         title: 'See the delivery Stories',
         body: 'Stories are the delivery work grouped under an Epic.',
+        loadingBody: 'Loading Story data for this dashboard view.',
         fallbackBody: 'Stories are the delivery level beneath Epics, even when no Story is visible in the current result set.',
     }),
     freezeStep({
@@ -135,6 +161,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         ],
         title: 'Preview Priority options',
         body: 'Open an Epic or Story Priority menu to preview the available options; you can close it without changing the value.',
+        loadingBody: 'Loading Priority controls for this dashboard view.',
         fallbackBody: 'Priority menus appear on editable Epics and Stories when the current view and your permissions make them available. No value change is required.',
     }),
     freezeStep({
@@ -146,6 +173,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         selectors: [target('editing-track')],
         title: 'Preview Project Track options',
         body: 'Open an Epic Project Track menu to preview the available options; you can close it without changing the value.',
+        loadingBody: 'Loading Project Track controls for this dashboard view.',
         fallbackBody: 'Project Track menus appear on editable Epics when the current view and your permissions make them available. No value change is required.',
     }),
     freezeStep({
@@ -160,6 +188,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         ],
         title: 'Preview Status options',
         body: 'Open an Epic or Story Status menu to preview the available transitions; you can close it without changing the value.',
+        loadingBody: 'Loading Status controls for this dashboard view.',
         fallbackBody: 'Status menus appear on editable Epics and Stories when the current view and your permissions make them available. No value change is required.',
     }),
     freezeStep({
@@ -192,17 +221,40 @@ const HIERARCHY_FALLBACK_STEP = freezeStep({
     title: 'Follow work from goal to delivery',
     body: 'Work is organized from Initiatives to Epics and then to the Stories that deliver them.',
     fallbackBody: 'Work is organized from Initiatives to Epics and then to the Stories that deliver them. This structure appears when issue data is available.',
+    terminalErrorBody: 'Hierarchy examples could not be loaded for this dashboard view. Continue with the tour or retry the dashboard later.',
 });
 
-export function buildVisibleOnboardingSteps(availability = {}) {
+const EDITING_FALLBACK_STEP = freezeStep({
+    id: 'editing',
+    presence: 'fallback',
+    progression: 'manual',
+    group: FIELD_PREVIEWS,
+    selectors: [target('editing')],
+    title: 'Preview Jira fields safely',
+    body: 'Priority, Project Track, and Status previews appear when matching editable work is available. No value change is required.',
+    fallbackBody: 'Priority, Project Track, and Status previews appear when matching editable work is available. No value change is required.',
+    terminalErrorBody: 'Field previews could not be loaded for this dashboard view. Continue with the tour or retry the dashboard later.',
+});
+
+export function buildVisibleOnboardingSteps(availability = {}, { engReadiness = 'settled' } = {}) {
+    const engLoading = engReadiness === 'loading';
     const hasVisibleHierarchy = HIERARCHY_STEP_IDS.some((id) => availability[id] === true);
+    const hasVisibleEditing = EDITING_STEP_IDS.some((id) => availability[id] === true);
     const steps = [];
     ONBOARDING_STEP_CATALOG.forEach((step) => {
         if (step.presence === 'hierarchy') {
-            if (hasVisibleHierarchy) {
+            if (engLoading || hasVisibleHierarchy) {
                 steps.push(step);
             } else if (step.id === HIERARCHY_STEP_IDS[0]) {
                 steps.push(HIERARCHY_FALLBACK_STEP);
+            }
+            return;
+        }
+        if (EDITING_STEP_IDS.includes(step.id)) {
+            if (engLoading || hasVisibleEditing) {
+                steps.push(step);
+            } else if (step.id === EDITING_STEP_IDS[0]) {
+                steps.push(EDITING_FALLBACK_STEP);
             }
             return;
         }
@@ -234,8 +286,28 @@ function viewportSize(viewport = {}) {
 }
 
 export function isVisibleViewportTarget(node, viewport, { requireEnabled = false, ignoredAncestors = [] } = {}) {
+    if (!isRenderableTarget(node, { requireEnabled, ignoredAncestors })) return false;
+    const rect = node.getBoundingClientRect();
+    const size = viewportSize(viewport);
+    return rect.right > 0
+        && rect.bottom > 0
+        && rect.left < size.width
+        && rect.top < size.height;
+}
+
+function isDisabledTarget(node) {
+    if (node.disabled || node.getAttribute?.('aria-disabled') === 'true') return true;
+    if (typeof node.matches !== 'function') return false;
+    try {
+        return node.matches(':disabled');
+    } catch (_error) {
+        return true;
+    }
+}
+
+export function isRenderableTarget(node, { requireEnabled = false, ignoredAncestors = [] } = {}) {
     if (!node || typeof node.getBoundingClientRect !== 'function') return false;
-    if (requireEnabled && (node.disabled || node.getAttribute?.('aria-disabled') === 'true')) return false;
+    if (requireEnabled && isDisabledTarget(node)) return false;
     if (typeof node.checkVisibility === 'function') {
         try {
             if (!node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
@@ -268,13 +340,7 @@ export function isVisibleViewportTarget(node, viewport, { requireEnabled = false
     }
 
     const rect = node.getBoundingClientRect();
-    const size = viewportSize(viewport);
-    return rect.width > 0
-        && rect.height > 0
-        && rect.right > 0
-        && rect.bottom > 0
-        && rect.left < size.width
-        && rect.top < size.height;
+    return rect.width > 0 && rect.height > 0;
 }
 
 export function resolveVisibleTarget(selectors, root, viewport, options = {}) {
@@ -287,24 +353,43 @@ export function resolveVisibleTarget(selectors, root, viewport, options = {}) {
     return null;
 }
 
+export function resolveRenderableTarget(selectors, root, options = {}) {
+    if (!root || typeof root.querySelectorAll !== 'function') return null;
+    for (const selector of selectors || []) {
+        const candidates = Array.from(root.querySelectorAll(selector) || []);
+        const renderable = candidates.find((node) => isRenderableTarget(node, options));
+        if (renderable) return renderable;
+    }
+    return null;
+}
+
 export function resolveStepTarget(step, root, viewport) {
     if (!step) return null;
     return resolveVisibleTarget(step.selectors, root, viewport, { requireEnabled: step.requireEnabled === true });
 }
 
 export function resolveOnboardingSnapshot(root, viewport, options = {}) {
+    const engReadiness = options.engReadiness || 'settled';
     const targets = {};
     const availability = {};
     ONBOARDING_STEP_CATALOG.forEach((step) => {
-        const resolved = resolveVisibleTarget(step.selectors, root, viewport, {
+        const targetOptions = {
             ...options,
             requireEnabled: step.requireEnabled === true,
-        });
+        };
+        let resolved;
+        if (isOnboardingEngDataStep(step)) {
+            resolved = engReadiness === 'settled'
+                ? resolveRenderableTarget(step.selectors, root, targetOptions)
+                : null;
+        } else {
+            resolved = resolveVisibleTarget(step.selectors, root, viewport, targetOptions);
+        }
         targets[step.id] = resolved;
         availability[step.id] = Boolean(resolved);
     });
     return {
-        steps: buildVisibleOnboardingSteps(availability),
+        steps: buildVisibleOnboardingSteps(availability, { engReadiness }),
         targets,
     };
 }
@@ -366,6 +451,12 @@ export function computeCoachmarkPlacement({
 export function reconcileCurrentStepId({ previousSteps = [], nextSteps = [], currentStepId = '' } = {}) {
     if (!nextSteps.length) return '';
     if (nextSteps.some((step) => step.id === currentStepId)) return currentStepId;
+    if (currentStepId.startsWith('hierarchy-') && nextSteps.some((step) => step.id === 'hierarchy')) {
+        return 'hierarchy';
+    }
+    if (currentStepId.startsWith('editing-') && nextSteps.some((step) => step.id === 'editing')) {
+        return 'editing';
+    }
     const previousIndex = Math.max(0, previousSteps.findIndex((step) => step.id === currentStepId));
     return nextSteps[Math.min(previousIndex, nextSteps.length - 1)].id;
 }
@@ -382,12 +473,30 @@ export function reconcileTourSessionState(state = {}, { isOpen = false, steps = 
     return state;
 }
 
-export function buildStepPresentation(step, targetNode) {
+export function buildStepPresentation(step, targetNode, { engReadiness = 'settled' } = {}) {
+    const loading = engReadiness === 'loading' && isOnboardingEngDataStep(step);
+    if (loading) {
+        return {
+            title: step?.title || '',
+            body: step?.loadingBody || 'Loading dashboard data.',
+            fallback: false,
+            loading: true,
+        };
+    }
+    if (engReadiness === 'terminal-error' && step?.terminalErrorBody) {
+        return {
+            title: step.title || '',
+            body: step.terminalErrorBody,
+            fallback: true,
+            loading: false,
+        };
+    }
     const fallback = !targetNode;
     return {
         title: step?.title || '',
         body: fallback ? (step?.fallbackBody || step?.body || '') : (step?.body || ''),
         fallback,
+        loading: false,
     };
 }
 

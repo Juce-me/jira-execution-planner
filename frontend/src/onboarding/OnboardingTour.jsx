@@ -6,8 +6,8 @@ import {
     buildTourProgress,
     buildVisibleOnboardingSteps,
     computeCoachmarkPlacement,
+    isVisibleViewportTarget,
     resolveOnboardingSnapshot,
-    resolveVisibleTarget,
 } from './onboardingSteps.js';
 import useOnboardingTour from './useOnboardingTour.js';
 
@@ -36,10 +36,10 @@ function sameSnapshot(left, right) {
     ));
 }
 
-function readSnapshot(eligibleTargets) {
-    const appRoot = document.getElementById('root');
+function readSnapshot(eligibleTargets, engReadiness, ignoredAncestors = []) {
     const raw = resolveOnboardingSnapshot(document, viewportSize(), {
-        ignoredAncestors: appRoot ? [appRoot] : [],
+        engReadiness,
+        ignoredAncestors,
     });
     if (!eligibleTargets) return raw;
     const availability = {};
@@ -48,7 +48,7 @@ function readSnapshot(eligibleTargets) {
         availability[step.id] = explicitlyEligible && Boolean(raw.targets[step.id]);
     });
     return {
-        steps: buildVisibleOnboardingSteps(availability),
+        steps: buildVisibleOnboardingSteps(availability, { engReadiness }),
         targets: raw.targets,
     };
 }
@@ -62,11 +62,12 @@ export default function OnboardingTour({
     actionPending = false,
     actionError = '',
     returnFocusRef = null,
+    engReadiness = 'settled',
 } = {}) {
     const [snapshot, setSnapshot] = React.useState(() => (
         typeof document === 'undefined'
-            ? { steps: buildVisibleOnboardingSteps(), targets: {} }
-            : readSnapshot(eligibleTargets)
+            ? { steps: buildVisibleOnboardingSteps({}, { engReadiness }), targets: {} }
+            : readSnapshot(eligibleTargets, engReadiness)
     ));
     const tour = useOnboardingTour({
         steps: snapshot.steps,
@@ -77,20 +78,34 @@ export default function OnboardingTour({
     });
     const panelRef = React.useRef(null);
     const priorFocusRef = React.useRef(null);
+    const tourOwnedSuppressionRef = React.useRef(new Set());
+    const scrollEntryRef = React.useRef({ stepId: '', target: null });
     const [geometry, setGeometry] = React.useState({ target: null, targetRect: null, coachmarkSize: DEFAULT_COACHMARK_SIZE });
     const headingId = React.useId();
 
     const measure = React.useCallback(() => {
         if (!tour.isOpen || !tour.currentStep) return;
-        const nextSnapshot = readSnapshot(eligibleTargets);
+        const ignoredAncestors = Array.from(tourOwnedSuppressionRef.current);
+        const nextSnapshot = readSnapshot(eligibleTargets, engReadiness, ignoredAncestors);
         setSnapshot((current) => (sameSnapshot(current, nextSnapshot) ? current : nextSnapshot));
 
         const viewport = viewportSize();
-        const appRoot = document.getElementById('root');
-        const target = resolveVisibleTarget(tour.currentStep.selectors, document, viewport, {
-            ignoredAncestors: appRoot ? [appRoot] : [],
+        const candidate = nextSnapshot.targets[tour.currentStep.id] || null;
+        const targetOptions = {
+            ignoredAncestors,
             requireEnabled: tour.currentStep.requireEnabled === true,
-        });
+        };
+        const priorEntry = scrollEntryRef.current;
+        const isNewEntry = priorEntry.stepId !== tour.currentStep.id || priorEntry.target !== candidate;
+        if (isNewEntry) {
+            scrollEntryRef.current = { stepId: tour.currentStep.id, target: candidate };
+            if (candidate && !isVisibleViewportTarget(candidate, viewport, targetOptions)) {
+                candidate.scrollIntoView?.({ behavior: 'auto', block: 'center', inline: 'nearest' });
+            }
+        }
+        const target = candidate && isVisibleViewportTarget(candidate, viewportSize(), targetOptions)
+            ? candidate
+            : null;
         const rect = target?.getBoundingClientRect?.() || null;
         const panelRect = panelRef.current?.getBoundingClientRect?.();
         setGeometry({
@@ -100,7 +115,7 @@ export default function OnboardingTour({
                 ? { width: panelRect.width, height: panelRect.height }
                 : DEFAULT_COACHMARK_SIZE,
         });
-    }, [eligibleTargets, tour.currentStep, tour.isOpen]);
+    }, [eligibleTargets, engReadiness, tour.currentStep, tour.isOpen]);
 
     React.useLayoutEffect(() => {
         if (!tour.isOpen) return undefined;
@@ -116,13 +131,21 @@ export default function OnboardingTour({
 
         const mutationRoot = document.getElementById('root') || document.body;
         const mutationObserver = typeof MutationObserver !== 'undefined'
-            ? new MutationObserver(measure)
+            ? new MutationObserver((records) => {
+                const owned = tourOwnedSuppressionRef.current;
+                const onlyTourOwnedSuppression = records.length > 0 && records.every((record) => (
+                    record.type === 'attributes'
+                    && (record.attributeName === 'inert' || record.attributeName === 'aria-hidden')
+                    && owned.has(record.target)
+                ));
+                if (!onlyTourOwnedSuppression) measure();
+            })
             : null;
         mutationObserver?.observe(mutationRoot, {
             subtree: true,
             childList: true,
             attributes: true,
-            attributeFilter: ['class', 'style', 'hidden', 'disabled', 'aria-hidden', 'aria-disabled'],
+            attributeFilter: ['class', 'style', 'hidden', 'disabled', 'inert', 'aria-hidden', 'aria-disabled'],
         });
 
         return () => {
@@ -150,6 +173,9 @@ export default function OnboardingTour({
             priorAriaHidden = appRoot.getAttribute('aria-hidden');
             priorInertAttribute = appRoot.getAttribute('inert');
             priorInertProperty = Boolean(appRoot.inert);
+            if (!priorInertProperty && priorInertAttribute === null && priorAriaHidden !== 'true') {
+                tourOwnedSuppressionRef.current.add(appRoot);
+            }
             appRoot.setAttribute('aria-hidden', 'true');
             appRoot.setAttribute('inert', '');
             if ('inert' in appRoot) appRoot.inert = true;
@@ -163,16 +189,23 @@ export default function OnboardingTour({
                 if ('inert' in appRoot) appRoot.inert = priorInertProperty;
                 if (priorInertAttribute === null) appRoot.removeAttribute('inert');
                 else appRoot.setAttribute('inert', priorInertAttribute);
+                tourOwnedSuppressionRef.current.delete(appRoot);
             }
             const priorFocus = priorFocusRef.current;
             if (priorFocus?.isConnected && typeof priorFocus.focus === 'function') priorFocus.focus();
         };
     }, [tour.isOpen]);
 
+    React.useEffect(() => {
+        if (tour.isOpen) return;
+        scrollEntryRef.current = { stepId: '', target: null };
+        tourOwnedSuppressionRef.current.clear();
+    }, [tour.isOpen]);
+
     if (!tour.isOpen || !tour.currentStep || typeof document === 'undefined') return null;
 
     const target = geometry.target;
-    const presentation = buildStepPresentation(tour.currentStep, target);
+    const presentation = buildStepPresentation(tour.currentStep, target, { engReadiness });
     const progress = buildTourProgress(snapshot.steps, tour.index);
     const placement = computeCoachmarkPlacement({
         targetRect: geometry.targetRect,
@@ -213,15 +246,16 @@ export default function OnboardingTour({
 
     return createPortal(
         <div
-            className={`onboarding-tour-layer${presentation.fallback || placement.mode === 'fallback' ? ' is-fallback' : ''}`}
+            className={`onboarding-tour-layer${presentation.fallback || presentation.loading || placement.mode === 'fallback' ? ' is-fallback' : ''}`}
             data-onboarding-tour
+            data-onboarding-state={presentation.loading ? 'loading' : (presentation.fallback ? 'fallback' : 'target')}
         >
             {spotlightStyle && placement.mode === 'target' && (
                 <div className="onboarding-tour-spotlight" style={spotlightStyle} aria-hidden="true" />
             )}
             <section
                 ref={panelRef}
-                className={`onboarding-tour-card${presentation.fallback || placement.mode === 'fallback' ? ' is-fallback' : ''}`}
+                className={`onboarding-tour-card${presentation.fallback || presentation.loading || placement.mode === 'fallback' ? ' is-fallback' : ''}`}
                 style={{ left: placement.left, top: placement.top }}
                 role="dialog"
                 aria-modal="true"
@@ -248,7 +282,7 @@ export default function OnboardingTour({
                         {tour.isLast ? (
                             <button type="button" className="primary" onClick={tour.finish} disabled={actionPending}>Finish</button>
                         ) : (
-                            <button type="button" className="primary" onClick={tour.goNext} disabled={!tour.canGoNext || actionPending}>Next</button>
+                            <button type="button" className="primary" onClick={tour.goNext} disabled={!tour.canGoNext || actionPending || presentation.loading}>Next</button>
                         )}
                     </div>
                 </div>

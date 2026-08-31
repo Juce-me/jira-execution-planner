@@ -2,6 +2,20 @@ import * as React from 'react';
 
 export const FIRST_RUN_CONFIGURATION_GUIDE_STEPS = ['name', 'teams', 'components', 'favorite', 'visibility'];
 
+export const FIRST_RUN_ADMIN_SECTION_KEYS = [
+    'projects',
+    'priorityWeights',
+    'board',
+    'capacity',
+    'sprintField',
+    'parentNameField',
+    'storyPointsField',
+    'teamField',
+    'deliveryOwnerField',
+    'issueTypes',
+    'adminAccess',
+];
+
 const normalizeCommittedSections = (sections = {}) => ({
     admin: Boolean(sections.admin),
     groups: Boolean(sections.groups),
@@ -9,9 +23,61 @@ const normalizeCommittedSections = (sections = {}) => ({
     preference: Boolean(sections.preference),
 });
 
-const normalizeAdminSections = (sections = {}) => Object.fromEntries(
-    Object.entries(sections || {}).filter(([, committed]) => Boolean(committed))
+export const normalizeFirstRunAdminSections = (sections = {}) => Object.fromEntries(
+    FIRST_RUN_ADMIN_SECTION_KEYS.map(key => [key, Boolean(sections?.[key])])
 );
+
+export const buildFirstRunSettingsSaveOutcome = (overrides = {}) => ({
+    ok: Boolean(overrides.ok),
+    authRequired: Boolean(overrides.authRequired),
+    inFlight: Boolean(overrides.inFlight),
+    conflict: Boolean(overrides.conflict),
+    normalizedGroups: overrides.normalizedGroups || null,
+    committedSections: normalizeCommittedSections(overrides.committedSections),
+    pendingSections: normalizeCommittedSections(overrides.pendingSections),
+    committedAdminSections: normalizeFirstRunAdminSections(overrides.committedAdminSections),
+    pendingAdminSections: normalizeFirstRunAdminSections(overrides.pendingAdminSections),
+    error: overrides.error || '',
+});
+
+const UNORDERED_SHARED_ARRAY_KEYS = new Set([
+    'teamIds', 'teamLabels', 'missingInfoComponents', 'excludedCapacityEpics',
+    'adHocCapacityEpics', 'statuses', 'labels',
+]);
+
+const canonicalSharedValue = (value, key = '') => {
+    if (Array.isArray(value)) {
+        const normalized = value.map(item => canonicalSharedValue(item));
+        if (key === 'groups') return normalized.sort((left, right) => String(left?.id || '').localeCompare(String(right?.id || '')));
+        if (UNORDERED_SHARED_ARRAY_KEYS.has(key)) return normalized.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+        return normalized;
+    }
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.keys(value).sort().map(childKey => [childKey, canonicalSharedValue(value[childKey], childKey)]));
+};
+
+export const verifyFirstRunGroupsSaveSnapshot = (submitted, response, pendingGroupId) => {
+    if (!submitted || !response || !Array.isArray(submitted.groups) || !Array.isArray(response.groups)) {
+        return { ok: false, error: 'The saved Department response was malformed. Retry saving.' };
+    }
+    if (!response.groups.some(group => String(group?.id || '') === String(pendingGroupId || ''))) {
+        return { ok: false, error: 'The saved Department response did not include the Department being configured. Retry saving.' };
+    }
+    const submittedShared = canonicalSharedValue({
+        version: submitted.version || 1,
+        groups: submitted.groups,
+        defaultGroupId: submitted.defaultGroupId || '',
+    });
+    const responseShared = canonicalSharedValue({
+        version: response.version || 1,
+        groups: response.groups,
+        defaultGroupId: response.defaultGroupId || '',
+    });
+    if (JSON.stringify(submittedShared) !== JSON.stringify(responseShared)) {
+        return { ok: false, error: 'The saved Department response did not match the submitted shared settings. Retry saving.' };
+    }
+    return { ok: true, error: '' };
+};
 
 export const createFirstRunConfigurationSession = (overrides = {}) => ({
     status: 'idle',
@@ -25,8 +91,8 @@ export const createFirstRunConfigurationSession = (overrides = {}) => ({
     recoveryAction: null,
     ...overrides,
     committedSections: normalizeCommittedSections(overrides.committedSections),
-    committedAdminSections: normalizeAdminSections(overrides.committedAdminSections),
-    pendingAdminSections: normalizeAdminSections(overrides.pendingAdminSections),
+    committedAdminSections: normalizeFirstRunAdminSections(overrides.committedAdminSections),
+    pendingAdminSections: normalizeFirstRunAdminSections(overrides.pendingAdminSections),
 });
 
 const mergeCommittedSections = (current, next) => normalizeCommittedSections({
@@ -34,7 +100,9 @@ const mergeCommittedSections = (current, next) => normalizeCommittedSections({
     ...Object.fromEntries(Object.entries(next || {}).filter(([, value]) => value)),
 });
 
-const mergeAdminSections = (current, next) => normalizeAdminSections({ ...current, ...next });
+export const mergeFirstRunAdminSections = (current, next) => Object.fromEntries(
+    FIRST_RUN_ADMIN_SECTION_KEYS.map(key => [key, Boolean(current?.[key] || next?.[key])])
+);
 
 const hasCommittedSection = (sections) => Object.values(normalizeCommittedSections(sections)).some(Boolean);
 
@@ -59,8 +127,8 @@ export function firstRunConfigurationSessionReducer(state, action) {
             return {
                 ...current,
                 committedSections: mergeCommittedSections(current.committedSections, action.committedSections),
-                committedAdminSections: mergeAdminSections(current.committedAdminSections, action.committedAdminSections),
-                pendingAdminSections: normalizeAdminSections(action.pendingAdminSections),
+                committedAdminSections: mergeFirstRunAdminSections(current.committedAdminSections, action.committedAdminSections),
+                pendingAdminSections: normalizeFirstRunAdminSections(action.pendingAdminSections),
                 latestNormalizedGroups: action.normalizedGroups || current.latestNormalizedGroups,
             };
         case 'validation_failed':
@@ -77,13 +145,13 @@ export function firstRunConfigurationSessionReducer(state, action) {
             const partial = hasCommittedSection(committedSections);
             return {
                 ...current,
-                status: partial ? 'sections_pending' : 'editing',
+                status: (partial || action.retryable) ? 'sections_pending' : 'editing',
                 committedSections,
-                committedAdminSections: mergeAdminSections(current.committedAdminSections, action.committedAdminSections),
-                pendingAdminSections: normalizeAdminSections(action.pendingAdminSections),
+                committedAdminSections: mergeFirstRunAdminSections(current.committedAdminSections, action.committedAdminSections),
+                pendingAdminSections: normalizeFirstRunAdminSections(action.pendingAdminSections),
                 latestNormalizedGroups: action.normalizedGroups || current.latestNormalizedGroups,
                 error: action.error || '',
-                recoveryAction: partial ? 'retry_sections' : null,
+                recoveryAction: (partial || action.retryable) ? 'retry_sections' : null,
             };
         }
         case 'sections_saved':
@@ -91,8 +159,8 @@ export function firstRunConfigurationSessionReducer(state, action) {
                 ...current,
                 status: 'preference_pending',
                 committedSections: mergeCommittedSections(current.committedSections, action.committedSections),
-                committedAdminSections: mergeAdminSections(current.committedAdminSections, action.committedAdminSections),
-                pendingAdminSections: {},
+                committedAdminSections: mergeFirstRunAdminSections(current.committedAdminSections, action.committedAdminSections),
+                pendingAdminSections: normalizeFirstRunAdminSections(),
                 latestNormalizedGroups: action.normalizedGroups || current.latestNormalizedGroups,
                 error: '',
                 recoveryAction: 'retry_preference',

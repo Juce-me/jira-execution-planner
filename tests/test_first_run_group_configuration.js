@@ -31,8 +31,105 @@ function loadFirstRunGroupConfiguration() {
         firstRunConfigurationSessionReducer,
         FIRST_RUN_CONFIGURATION_GUIDE_STEPS,
         canAdvanceFirstRunConfigurationGuide,
+        FIRST_RUN_ADMIN_SECTION_KEYS,
+        buildFirstRunSettingsSaveOutcome,
+        verifyFirstRunGroupsSaveSnapshot,
+        mergeFirstRunAdminSections,
     };`)();
 }
+
+test('settings save outcomes deep-normalize every section and exact admin subsection', () => {
+    const { FIRST_RUN_ADMIN_SECTION_KEYS, buildFirstRunSettingsSaveOutcome } = loadFirstRunGroupConfiguration();
+    const paths = [
+        {},
+        { ok: true, committedSections: { groups: 1 }, committedAdminSections: { projects: 1, fieldConfigs: true } },
+        { authRequired: true, pendingSections: { preference: 1 }, pendingAdminSections: { capacity: 1 } },
+        { conflict: true, pendingSections: { admin: 1 }, pendingAdminSections: { board: 1 } },
+        { inFlight: true },
+        { error: 'failed', committedSections: { epm: true }, pendingSections: { groups: true } },
+    ];
+    for (const input of paths) {
+        const outcome = buildFirstRunSettingsSaveOutcome(input);
+        assert.deepEqual(Object.keys(outcome.committedSections), ['admin', 'groups', 'epm', 'preference']);
+        assert.deepEqual(Object.keys(outcome.pendingSections), ['admin', 'groups', 'epm', 'preference']);
+        assert.deepEqual(Object.keys(outcome.committedAdminSections), FIRST_RUN_ADMIN_SECTION_KEYS);
+        assert.deepEqual(Object.keys(outcome.pendingAdminSections), FIRST_RUN_ADMIN_SECTION_KEYS);
+        assert.equal(Object.hasOwn(outcome.committedAdminSections, 'fieldConfigs'), false);
+        assert.equal(Object.hasOwn(outcome.pendingAdminSections, 'fieldConfigs'), false);
+    }
+});
+
+test('admin progress merge never clears a committed subsection on retry', () => {
+    const { FIRST_RUN_ADMIN_SECTION_KEYS, mergeFirstRunAdminSections } = loadFirstRunGroupConfiguration();
+    const merged = mergeFirstRunAdminSections(
+        { board: true },
+        Object.fromEntries(FIRST_RUN_ADMIN_SECTION_KEYS.map(key => [key, key === 'capacity']))
+    );
+    assert.equal(merged.board, true);
+    assert.equal(merged.capacity, true);
+    assert.deepEqual(Object.keys(merged), FIRST_RUN_ADMIN_SECTION_KEYS);
+});
+
+test('dashboard-owned Return capture and restoration cover every settings section', () => {
+    const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+    const captureStart = dashboard.indexOf('const captureFirstRunSettingsDrafts');
+    const captureEnd = dashboard.indexOf('const configureFirstRunGroup', captureStart);
+    const restoreStart = dashboard.indexOf('const restoreSettingsDraftsToCommittedBaselines');
+    const restoreEnd = dashboard.indexOf('const returnFromFirstRunConfigurationRecovery', restoreStart);
+    const capture = dashboard.slice(captureStart, captureEnd);
+    const restore = dashboard.slice(restoreStart, restoreEnd);
+    for (const key of [
+        'projects', 'priorityWeights', 'board', 'capacity', 'sprintField', 'parentNameField',
+        'storyPointsField', 'teamField', 'deliveryOwnerField', 'issueTypes', 'adminAccess',
+    ]) {
+        assert.match(capture, new RegExp(`\\b${key}:`));
+        assert.ok(restore.includes(`committed.${key}`) || restore.includes(`restoreField('${key}'`));
+    }
+    assert.ok(capture.includes('shared: groupsConfig'));
+    assert.ok(capture.includes('private: groupPreferences'));
+    assert.ok(capture.includes('epm: epmConfigDraft'));
+    assert.ok(restore.includes('latestNormalizedGroups') === false, 'group restoration belongs to the recovery caller');
+    assert.ok(restore.includes('committedSections?.epm'));
+    assert.ok(restore.includes('setGroupPreferences(capturedPrivate)'));
+    assert.equal(dashboard.includes('restoreFieldConfigDrafts'), false);
+    assert.equal(dashboard.includes('adminAccess.restoreDraft'), false);
+});
+
+test('group save snapshot verification compares every shared field but accepts set ordering', () => {
+    const { verifyFirstRunGroupsSaveSnapshot } = loadFirstRunGroupConfiguration();
+    const submitted = {
+        version: 1,
+        baseRevision: 3,
+        defaultGroupId: '',
+        groups: [{
+            id: 'new-department', name: 'Growth', teamIds: ['b', 'a'], teamLabels: ['B', 'A'],
+            missingInfoComponents: ['mobile', 'web'], excludedCapacityEpics: ['TWO', 'ONE'],
+            adHocCapacityEpics: ['AD-2', 'AD-1'], board: { columns: [{ id: 'todo', statuses: ['Open', 'Ready'] }] },
+        }],
+    };
+    const response = {
+        version: 1,
+        configRevision: 4,
+        defaultGroupId: '',
+        groups: [{
+            id: 'new-department', name: 'Growth', teamIds: ['a', 'b'], teamLabels: ['A', 'B'],
+            missingInfoComponents: ['web', 'mobile'], excludedCapacityEpics: ['ONE', 'TWO'],
+            adHocCapacityEpics: ['AD-1', 'AD-2'], board: { columns: [{ id: 'todo', statuses: ['Ready', 'Open'] }] },
+        }],
+        source: 'workspace_db', preferences: { visibleGroupIds: [] },
+    };
+    assert.equal(verifyFirstRunGroupsSaveSnapshot(submitted, response, 'new-department').ok, true);
+    for (const mutate of [
+        value => { value.groups[0].name = 'Wrong'; },
+        value => { value.groups[0].missingInfoComponents = ['wrong']; },
+        value => { value.groups[0].board.columns[0].statuses = ['Wrong']; },
+        value => { delete value.groups; },
+    ]) {
+        const mismatch = structuredClone(response);
+        mutate(mismatch);
+        assert.equal(verifyFirstRunGroupsSaveSnapshot(submitted, mismatch, 'new-department').ok, false);
+    }
+});
 
 test('shouldShowFirstRunGroupSearch hides search for zero through three groups', () => {
     const { shouldShowFirstRunGroupSearch } = loadFirstRunGroupConfiguration();
@@ -247,8 +344,11 @@ test('first-run session tracks exact committed and pending admin subsections', (
         pendingAdminSections: { board: true, capacity: true },
         error: 'Synthetic failure',
     });
-    assert.deepEqual(failed.committedAdminSections, { projects: true, priorityWeights: true });
-    assert.deepEqual(failed.pendingAdminSections, { board: true, capacity: true });
+    assert.equal(failed.committedAdminSections.projects, true);
+    assert.equal(failed.committedAdminSections.priorityWeights, true);
+    assert.equal(failed.pendingAdminSections.board, true);
+    assert.equal(failed.pendingAdminSections.capacity, true);
+    assert.equal(Object.hasOwn(failed.committedAdminSections, 'fieldConfigs'), false);
     assert.equal(failed.status, 'sections_pending');
 });
 
@@ -340,7 +440,8 @@ test('group save returns the normalized committed snapshot to first-run preferen
     assert.ok(saveGroupsSource.includes('authRequired: true'));
     assert.ok(saveGroupsSource.includes('committedSections'));
     assert.ok(saveGroupsSource.includes('pendingSections'));
-    assert.ok(saveGroupsSource.includes('admin: Object.keys(pendingAdminSections).length > 0'));
+    assert.ok(saveGroupsSource.includes('admin: Object.values(pendingAdminSections).some(Boolean)'));
+    assert.ok(saveGroupsSource.includes('verifyFirstRunGroupsSaveSnapshot('));
     assert.equal(saveGroupsSource.includes('isAuthenticationRequiredError(err)) return false'), false);
 });
 

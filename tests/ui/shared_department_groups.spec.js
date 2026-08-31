@@ -236,6 +236,9 @@ async function mockFirstRunDashboard(page, options = {}) {
                     configRevision: (groupsConfig.configRevision || 0) + 1,
                     preferences,
                 };
+                if (options.groupsConfigResponseTransform) {
+                    latestGroupsConfig = options.groupsConfigResponseTransform(structuredClone(latestGroupsConfig), body);
+                }
                 return json(latestGroupsConfig);
             }
             return json({
@@ -1184,6 +1187,28 @@ test('first-run no-groups configuration recovers from validation, saves a team g
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toHaveCount(0);
 });
 
+test('first-run rejects a mismatched successful group snapshot and never saves preferences', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfigResponseTransform: (response) => ({
+            ...response,
+            groups: response.groups.map((group, index) => index === response.groups.length - 1
+                ? { ...group, name: 'Wrong server name', missingInfoComponents: ['wrong-component'] }
+                : group),
+        }),
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(dialog.locator('.first-run-configuration-guide')).toContainText('did not match the submitted shared settings');
+    await expect(dialog.getByRole('button', { name: 'Retry unsaved settings' })).toBeVisible();
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(0);
+});
+
 test('first-run shared board validation keeps configuration open until corrected and saved', async ({ page }) => {
     const calls = await mockFirstRunDashboard(page, {
         groupsConfig: {
@@ -1566,6 +1591,52 @@ test('first-run admin commit followed by group failure Return keeps admin and dr
     await expect(reopened.getByRole('button', { name: 'Remove capacity project' })).toHaveCount(0);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config')).toHaveLength(1);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(1);
+});
+
+test('first-run two-admin partial failure retry sends only the pending subsection', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        capacityErrors: [{ status: 500, body: { error: 'capacity_save_failed', message: 'Synthetic capacity failure.' } }, null],
+        sharedConfig: {
+            projects: { selected: [{ key: 'DEMO', type: 'product' }] },
+            board: { boardId: '42', boardName: 'Synthetic Board' },
+            capacity: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
+            sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+            parentNameField: { fieldId: 'customfield_10014', fieldName: 'Parent' },
+            storyPointsField: { fieldId: 'customfield_10016', fieldName: 'Story points' },
+            teamField: { fieldId: 'customfield_10001', fieldName: 'Team' },
+            deliveryOwnerField: { fieldId: 'customfield_10002', fieldName: 'Delivery owner' },
+            issueTypes: ['Story'],
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    await finishFirstRunConfigurationGuide(page);
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Jira source' }).click();
+    await dialog.getByRole('button', { name: 'Clear sprint board' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('button', { name: 'Departments' }).click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    const retry = dialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Retry unsaved settings' });
+    await expect(retry).toBeVisible();
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/board-config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+    const retryBaseline = calls.length;
+    await retry.evaluate((button) => { button.click(); button.click(); });
+    await expect(dialog).toHaveCount(0);
+
+    const retryDelta = calls.slice(retryBaseline);
+    const settingsPostPaths = new Set(['/api/board-config', '/api/capacity/config', '/api/groups-config', '/api/groups-preferences']);
+    expect(retryDelta.filter(call => call.method === 'POST' && settingsPostPaths.has(call.pathname)).map(call => call.pathname)).toEqual([
+        '/api/capacity/config', '/api/groups-config', '/api/groups-preferences',
+    ]);
+    expect(retryDelta.filter(call => call.pathname === '/api/config')).toHaveLength(0);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/board-config')).toHaveLength(1);
 });
 
 test('first-run workspace conflict Keep preserves the session and completes the private handoff', async ({ page }) => {

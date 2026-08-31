@@ -144,7 +144,10 @@ import FirstRunGroupConfigurationGuide, {
     createFirstRunConfigurationSession,
     firstRunConfigurationSessionReducer,
     FIRST_RUN_CONFIGURATION_GUIDE_STEPS,
+    buildFirstRunSettingsSaveOutcome,
+    mergeFirstRunAdminSections,
     validateFirstRunPendingGroup,
+    verifyFirstRunGroupsSaveSnapshot,
 } from './settings/FirstRunGroupConfigurationGuide.jsx';
 import {
     beginFirstRunGroupConfiguration,
@@ -706,7 +709,7 @@ import {
                 deliveryOwnerFieldSearchQuery, setDeliveryOwnerFieldSearchQuery, deliveryOwnerFieldSearchOpen, setDeliveryOwnerFieldSearchOpen,
                 deliveryOwnerFieldSearchIndex, setDeliveryOwnerFieldSearchIndex, deliveryOwnerFieldSearchInputRef, deliveryOwnerFieldSearchResults, deliveryOwnerFieldSearchHidden,
                 handleDeliveryOwnerFieldSearchKeyDown, isDeliveryOwnerFieldDirty, saveDeliveryOwnerFieldConfig,
-                loadAllFieldConfigs, seedSharedFieldConfigs, restoreFieldConfigDrafts, anyFieldConfigDirty, dirtyFieldConfigCount,
+                loadAllFieldConfigs, seedSharedFieldConfigs, anyFieldConfigDirty, dirtyFieldConfigCount,
             } = useJiraFieldPickers({ backendUrl: BACKEND_URL, jiraFields });
             const [issueTypesDraft, setIssueTypesDraft] = useState(['Story']);
             const issueTypesBaselineRef = useRef(JSON.stringify(['Story']));
@@ -1118,6 +1121,31 @@ import {
             const closeFirstRunSetupChoice = React.useCallback(() => {
                 setFirstRunSetupChoice(null);
             }, []);
+            const captureFirstRunSettingsDrafts = React.useCallback(() => ({
+                shared: groupsConfig,
+                private: groupPreferences,
+                activeGroupId,
+                admin: {
+                    projects: selectedProjectsDraft,
+                    priorityWeights: priorityWeightsDraft,
+                    board: { boardId: boardIdDraft, boardName: boardNameDraft },
+                    capacity: { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft },
+                    sprintField: { fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft },
+                    parentNameField: { fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft },
+                    storyPointsField: { fieldId: storyPointsFieldIdDraft, fieldName: storyPointsFieldNameDraft },
+                    teamField: { fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft },
+                    deliveryOwnerField: { fieldId: deliveryOwnerFieldIdDraft, fieldName: deliveryOwnerFieldNameDraft },
+                    issueTypes: issueTypesDraft,
+                    adminAccess: adminAccess.selectedUserIds,
+                },
+                epm: epmConfigDraft,
+            }), [
+                activeGroupId, adminAccess.selectedUserIds, boardIdDraft, boardNameDraft, capacityFieldIdDraft,
+                capacityFieldNameDraft, capacityProjectDraft, deliveryOwnerFieldIdDraft, deliveryOwnerFieldNameDraft,
+                epmConfigDraft, groupPreferences, groupsConfig, issueTypesDraft, parentNameFieldIdDraft,
+                parentNameFieldNameDraft, priorityWeightsDraft, selectedProjectsDraft, sprintFieldIdDraft,
+                sprintFieldNameDraft, storyPointsFieldIdDraft, storyPointsFieldNameDraft, teamFieldIdDraft, teamFieldNameDraft,
+            ]);
             const configureFirstRunGroup = React.useCallback((sourceGroupId) => {
                 pendingFirstRunConfigurationRef.current = beginFirstRunGroupConfiguration({
                     mode: 'repair',
@@ -1130,10 +1158,10 @@ import {
                     type: 'start',
                     mode: 'repair',
                     pendingGroupId: sourceGroupId,
-                    drafts: { shared: groupsConfig, private: groupPreferences, activeGroupId },
+                    drafts: captureFirstRunSettingsDrafts(),
                 });
                 openFirstRunConfigurationSettings();
-            }, [activeGroupId, groupPreferences, groupsConfig, openFirstRunConfigurationSettings]);
+            }, [captureFirstRunSettingsDrafts, openFirstRunConfigurationSettings]);
             const continueFirstRunSetupChoice = React.useCallback(() => {
                 if (!firstRunSetupChoice) return;
                 const sourceGroup = (groupsConfig.groups || []).find(group => group.id === firstRunSetupChoice.sourceGroupId) || null;
@@ -1154,10 +1182,10 @@ import {
                     type: 'start',
                     mode: firstRunSetupChoice.mode,
                     pendingGroupId: draft.id,
-                    drafts: { shared: groupsConfig, private: groupPreferences, activeGroupId },
+                    drafts: captureFirstRunSettingsDrafts(),
                 });
                 openFirstRunConfigurationSettings();
-            }, [activeGroupId, firstRunSetupChoice, groupPreferences, groupsConfig, openFirstRunConfigurationSettings]);
+            }, [captureFirstRunSettingsDrafts, firstRunSetupChoice, groupsConfig.groups, openFirstRunConfigurationSettings]);
             useEffect(() => {
                 if (!showGroupManage && firstRunConfigurationActive) {
                     pendingFirstRunSettingsFocusRef.current = false;
@@ -3386,19 +3414,7 @@ import {
                 return normalized;
             };
 
-            const buildSettingsSaveOutcome = (overrides = {}) => ({
-                ok: false,
-                authRequired: false,
-                inFlight: false,
-                conflict: false,
-                normalizedGroups: null,
-                committedSections: { admin: false, groups: false, epm: false, preference: false },
-                pendingSections: { admin: false, groups: false, epm: false, preference: false },
-                committedAdminSections: {},
-                pendingAdminSections: {},
-                error: '',
-                ...overrides,
-            });
+            const buildSettingsSaveOutcome = (overrides = {}) => buildFirstRunSettingsSaveOutcome(overrides);
 
             const saveGroupsConfig = async ({ closeOnSuccess = true, rebaseOnto = null, skipAdminSections = {} } = {}) => {
                 const adminSectionsToSave = {
@@ -3475,8 +3491,6 @@ import {
                         if (adminSectionsToSave.teamField) { commitSharedConfigRevision(await saveTeamFieldConfig(sharedConfigRevisionRef.current)); committedAdminSections.teamField = true; }
                         if (adminSectionsToSave.deliveryOwnerField) { commitSharedConfigRevision(await saveDeliveryOwnerFieldConfig(sharedConfigRevisionRef.current)); committedAdminSections.deliveryOwnerField = true; }
                         fieldConfigsChanged = adminSectionsToSave.sprintField || adminSectionsToSave.parentNameField || adminSectionsToSave.storyPointsField || adminSectionsToSave.teamField || adminSectionsToSave.deliveryOwnerField;
-                        if (fieldConfigsChanged) committedAdminSections.fieldConfigs = true;
-
                         // Save issue types config if changed
                         issueTypesChanged = adminSectionsToSave.issueTypes;
                         if (issueTypesChanged) {
@@ -3517,6 +3531,14 @@ import {
                             throw error;
                         }
                         payload = await response.json();
+                        const snapshotVerification = verifyFirstRunGroupsSaveSnapshot(
+                            rebaseOnto ? rebaseSharedGroupsPayload(draftPayload, rebaseOnto) : draftPayload,
+                            payload,
+                            firstRunConfigurationSession.pendingGroupId
+                        );
+                        if (firstRunConfigurationActive && !snapshotVerification.ok) {
+                            throw new Error(snapshotVerification.error);
+                        }
                         normalized = applySavedGroupsConfig(payload);
                         groupsCommitted = true;
                     }
@@ -3548,26 +3570,27 @@ import {
                         groupStateRef.current.clear();
                     }
 
-                    // Re-fetch config to update capacityEnabled and other derived state
-                    try {
-                        const cfg = await fetchAppConfig(BACKEND_URL);
-                        setAuthMode(cfg.authMode || '');
-                        setCapacityEnabled(Boolean(cfg.capacityProject));
-                        setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
-                        setUserCanEditSettings(cfg.userCanEditSettings === true);
-                        setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
-                        setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
-                        setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
-                    } catch (err) {
-                        if (isAuthenticationRequiredError(err)) throw err;
-                        /* best-effort */
-                    }
+                    if (!firstRunConfigurationActive) {
+                        // Ordinary settings saves refresh derived configuration and dashboard data.
+                        // First-run waits for the private handoff so retries never refetch committed sections.
+                        try {
+                            const cfg = await fetchAppConfig(BACKEND_URL);
+                            setAuthMode(cfg.authMode || '');
+                            setCapacityEnabled(Boolean(cfg.capacityProject));
+                            setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
+                            setUserCanEditSettings(cfg.userCanEditSettings === true);
+                            setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
+                            setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
+                            setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
+                        } catch (err) {
+                            if (isAuthenticationRequiredError(err)) throw err;
+                            /* best-effort */
+                        }
 
-                    invalidateSprintDataForConfigSave(refreshTarget);
-                    queueConfigSaveRefresh(refreshTarget);
+                        invalidateSprintDataForConfigSave(refreshTarget);
+                        queueConfigSaveRefresh(refreshTarget);
 
-                    if (boardChanged) {
-                        loadSprints(true, { queueIfBusy: true });
+                        if (boardChanged) loadSprints(true, { queueIfBusy: true });
                     }
 
                     if (closeOnSuccess) {
@@ -3598,7 +3621,7 @@ import {
                     const pendingAdminSections = Object.fromEntries(Object.entries(adminSectionsToSave)
                         .filter(([key, pending]) => pending && !committedAdminSections[key]));
                     const remainingSections = {
-                        admin: Object.keys(pendingAdminSections).length > 0,
+                        admin: Object.values(pendingAdminSections).some(Boolean),
                         groups: sharedGroupsChanged && !groupsCommitted,
                         epm: false,
                         preference: false,
@@ -3612,7 +3635,8 @@ import {
                             priorityWeights: isPriorityWeightsDirty && !committedAdminSections.priorityWeights,
                             board: isBoardConfigDirty && !committedAdminSections.board,
                             capacity: isCapacityDraftDirty && !committedAdminSections.capacity,
-                            fieldConfigs: anyFieldConfigDirty && !committedAdminSections.fieldConfigs,
+                            fieldConfigs: ['sprintField', 'parentNameField', 'storyPointsField', 'teamField', 'deliveryOwnerField']
+                                .some(key => adminSectionsToSave[key] && !committedAdminSections[key]),
                             issueTypes: isIssueTypesDraftDirty && !committedAdminSections.issueTypes,
                         });
                         setWorkspaceConfigConflict({
@@ -3685,7 +3709,7 @@ import {
                         committedSections = { ...committedSections, ...Object.fromEntries(
                             Object.entries(saved.committedSections || {}).map(([key, value]) => [key, Boolean(committedSections[key] || value)])
                         ) };
-                        committedAdminSections = { ...committedAdminSections, ...(saved.committedAdminSections || {}) };
+                        committedAdminSections = mergeFirstRunAdminSections(committedAdminSections, saved.committedAdminSections);
                         if (firstRunSession && Object.values(saved.committedSections || {}).some(Boolean)) {
                             dispatchFirstRunConfigurationSession({
                                 type: 'sections_progress',
@@ -3714,6 +3738,7 @@ import {
                                     pendingAdminSections: saved.pendingAdminSections,
                                     normalizedGroups,
                                     error: saved.error || 'Settings could not be saved.',
+                                    retryable: !saved.conflict,
                                 });
                             }
                             return buildSettingsSaveOutcome({
@@ -3827,26 +3852,42 @@ import {
             };
 
             const restoreSettingsDraftsToCommittedBaselines = React.useCallback(() => {
-                try { setSelectedProjectsDraft(JSON.parse(selectedProjectsBaselineRef.current || '[]')); } catch (_) { /* internal baseline */ }
-                try { setPriorityWeightsDraft(JSON.parse(priorityWeightsBaselineRef.current || '[]')); } catch (_) { /* internal baseline */ }
-                try {
-                    const board = JSON.parse(boardConfigBaselineRef.current || '{}');
-                    setBoardIdDraft(board.boardId || '');
-                    setBoardNameDraft(board.boardName || '');
-                } catch (_) { /* internal baseline */ }
-                try {
-                    const capacity = JSON.parse(capacityBaselineRef.current || '{}');
-                    setCapacityProjectDraft(capacity.project || '');
-                    setCapacityFieldIdDraft(capacity.fieldId || '');
-                    setCapacityFieldNameDraft(capacity.fieldName || '');
-                } catch (_) { /* internal baseline */ }
-                try { setIssueTypesDraft(JSON.parse(issueTypesBaselineRef.current || '[]')); } catch (_) { /* internal baseline */ }
-                try { setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}')); } catch (_) { /* internal baseline */ }
-                restoreFieldConfigDrafts();
-                adminAccess.restoreDraft();
-                const capturedPrivate = firstRunConfigurationSession.capturedDrafts?.private;
+                const captured = firstRunConfigurationSession.capturedDrafts || {};
+                const admin = captured.admin || {};
+                const committed = firstRunConfigurationSession.committedAdminSections || {};
+                if (!committed.projects && admin.projects) setSelectedProjectsDraft(admin.projects);
+                if (!committed.priorityWeights && admin.priorityWeights) setPriorityWeightsDraft(admin.priorityWeights);
+                if (!committed.board && admin.board) {
+                    setBoardIdDraft(admin.board.boardId || '');
+                    setBoardNameDraft(admin.board.boardName || '');
+                }
+                if (!committed.capacity && admin.capacity) {
+                    setCapacityProjectDraft(admin.capacity.project || '');
+                    setCapacityFieldIdDraft(admin.capacity.fieldId || '');
+                    setCapacityFieldNameDraft(admin.capacity.fieldName || '');
+                }
+                const restoreField = (key, setId, setName) => {
+                    if (committed[key] || !admin[key]) return;
+                    setId(admin[key].fieldId || '');
+                    setName(admin[key].fieldName || '');
+                };
+                restoreField('sprintField', setSprintFieldIdDraft, setSprintFieldNameDraft);
+                restoreField('parentNameField', setParentNameFieldIdDraft, setParentNameFieldNameDraft);
+                restoreField('storyPointsField', setStoryPointsFieldIdDraft, setStoryPointsFieldNameDraft);
+                restoreField('teamField', setTeamFieldIdDraft, setTeamFieldNameDraft);
+                restoreField('deliveryOwnerField', setDeliveryOwnerFieldIdDraft, setDeliveryOwnerFieldNameDraft);
+                if (!committed.issueTypes && admin.issueTypes) setIssueTypesDraft(admin.issueTypes);
+                if (!committed.adminAccess && admin.adminAccess) {
+                    const capturedIds = new Set(admin.adminAccess);
+                    const currentIds = new Set(adminAccess.selectedUserIds);
+                    new Set([...capturedIds, ...currentIds]).forEach(userId => {
+                        if (capturedIds.has(userId) !== currentIds.has(userId)) adminAccess.toggleUser(userId);
+                    });
+                }
+                if (!firstRunConfigurationSession.committedSections?.epm && captured.epm) setEpmConfigDraft(captured.epm);
+                const capturedPrivate = captured.private;
                 if (capturedPrivate) setGroupPreferences(capturedPrivate);
-            }, [adminAccess, firstRunConfigurationSession.capturedDrafts, restoreFieldConfigDrafts]);
+            }, [adminAccess, firstRunConfigurationSession]);
 
             const returnFromFirstRunConfigurationRecovery = React.useCallback((snapshotOverride = null) => {
                 const snapshot = Array.isArray(snapshotOverride?.groups)

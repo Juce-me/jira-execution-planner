@@ -93,7 +93,7 @@
             padding: 0.55rem 0.6rem;
             background: #fff;
             text-align: left;
-            cursor: pointer;
+            cursor: default;
         }
 
         .department-first-run-option:hover,
@@ -120,11 +120,30 @@
             margin: 0;
         }
 
+        .department-first-run-option input:not(:disabled) {
+            cursor: pointer;
+        }
+
         .department-first-run-option-main {
             display: flex;
             flex-direction: column;
             min-width: 0;
             flex: 1 1 auto;
+        }
+
+        .department-first-run-option-main.eligible {
+            grid-column: 2 / -1;
+            align-self: stretch;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            gap: 0.65rem;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .department-first-run-option.saving,
+        .department-first-run-option.saving .department-first-run-option-main.eligible {
+            cursor: default;
         }
 
         .department-first-run-option-name {

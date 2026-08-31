@@ -14,6 +14,12 @@ const dashboardSourceBundle = esbuild.buildSync({
     loader: { '.css': 'empty' },
     define: { 'process.env.NODE_ENV': '"production"' },
 }).outputFiles[0].text;
+const dashboardSourceCss = esbuild.buildSync({
+    entryPoints: [path.join(__dirname, '..', '..', 'frontend', 'src', 'styles', 'dashboard.css')],
+    bundle: true,
+    write: false,
+    outfile: 'dashboard.css',
+}).outputFiles.find(output => output.path.endsWith('.css')).text;
 
 test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
@@ -135,6 +141,11 @@ async function mockFirstRunDashboard(page, options = {}) {
         status: 200,
         contentType: 'application/javascript',
         body: dashboardSourceBundle,
+    }));
+    await page.route('**/frontend/dist/dashboard.css', route => route.fulfill({
+        status: 200,
+        contentType: 'text/css',
+        body: dashboardSourceCss,
     }));
     const savedSprintId = Object.prototype.hasOwnProperty.call(options, 'savedSprintId')
         ? options.savedSprintId
@@ -366,10 +377,22 @@ test('first-run search threshold keeps Add Department available for small and em
 
         const dialog = page.getByRole('dialog', { name: 'Choose your Department' });
         await expect(dialog).toBeVisible();
+        if (count === 0) {
+            await expect(dialog).toHaveCSS('position', 'fixed');
+            await expect(dialog.locator('.department-first-run-modal')).toHaveCSS('display', 'flex');
+        }
         await expect(dialog.getByRole('searchbox', { name: 'Search Departments' })).toHaveCount(0);
         await expect(dialog.getByRole('button', { name: 'Add Department' })).toBeVisible();
         if (count > 0) {
             await expect(dialog.getByText(`All available Departments are shown · ${count}`)).toBeVisible();
+            if (count === 2) {
+                const firstOption = dialog.locator('.department-first-run-option', { hasText: 'Department 1' });
+                const secondOption = dialog.locator('.department-first-run-option', { hasText: 'Department 2' });
+                await firstOption.getByText('Department 1', { exact: true }).click();
+                await expect(firstOption.getByRole('radio')).toBeChecked();
+                await secondOption.getByText('1 team', { exact: true }).click();
+                await expect(secondOption.getByRole('radio')).toBeChecked();
+            }
         } else {
             await dialog.getByRole('button', { name: 'Add Department' }).click();
             const choice = page.getByRole('dialog', { name: 'Add a Department' });
@@ -658,6 +681,67 @@ test('first-run department selection blocks group-scoped task loads until prefer
     expect(taskCalls.every(call => call.params.groupId === 'platform')).toBe(true);
     expect(taskCalls.every(call => call.params.teamIds === 'team-platform')).toBe(true);
     await expect(page.getByText('PLAT-1', { exact: true })).toBeVisible();
+});
+
+test('first-run saving locks every picker mutation and restores controls after failure', async ({ page }) => {
+    const preferenceGate = deferred();
+    const calls = await mockFirstRunDashboard(page, {
+        preferenceGate,
+        preferenceError: {
+            status: 500,
+            body: { error: 'preference_save_failed', message: 'Try choosing your Department again.' },
+        },
+        groupsConfig: {
+            version: 1,
+            groups: [
+                { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+                { id: 'growth', name: 'Growth Department', teamIds: ['team-growth'] },
+                { id: 'empty', name: 'Empty Department', teamIds: [] },
+                { id: 'mobile', name: 'Mobile Department', teamIds: ['team-mobile'] },
+            ],
+            defaultGroupId: 'platform',
+            configRevision: 2,
+            source: 'workspace_db',
+        },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+
+    const picker = page.getByRole('dialog', { name: 'Choose your Department' });
+    const search = picker.getByRole('searchbox', { name: 'Search Departments' });
+    await picker.getByRole('radio', { name: /Platform/ }).check();
+    await search.fill('Department');
+    await expect(picker.getByText('Selected: Platform')).toBeVisible();
+
+    await picker.getByRole('button', { name: 'Continue' }).click();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/groups-preferences').length).toBe(1);
+    await expect(search).toBeDisabled();
+    await expect(search).toHaveValue('Department');
+    await expect(picker.getByRole('button', { name: 'Clear selection' })).toBeDisabled();
+    await expect(picker.getByRole('radio', { name: /Growth Department/ })).toBeDisabled();
+    await expect(picker.getByRole('button', { name: 'Configure and use Empty Department' })).toBeDisabled();
+    await expect(picker.getByRole('button', { name: 'Add Department' })).toBeDisabled();
+    await expect(picker.getByRole('button', { name: 'Saving...' })).toBeDisabled();
+    await expect(page.getByRole('dialog', { name: 'Add a Department' })).toHaveCount(0);
+    await expect(page.locator('.group-modal')).toHaveCount(0);
+    expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(1);
+    expect(calls.find(call => call.pathname === '/api/groups-preferences').body).toEqual({
+        visibleGroupIds: ['platform'],
+        activeGroupId: 'platform',
+    });
+
+    preferenceGate.resolve();
+    const alert = picker.getByRole('alert');
+    await expect(alert).toHaveText('Try choosing your Department again.');
+    await expect(alert).toBeFocused();
+    await expect(search).toBeEnabled();
+    await expect(picker.getByRole('button', { name: 'Clear selection' })).toBeEnabled();
+    await expect(picker.getByRole('radio', { name: /Growth Department/ })).toBeEnabled();
+    await expect(picker.getByRole('button', { name: 'Configure and use Empty Department' })).toBeEnabled();
+    await expect(picker.getByRole('button', { name: 'Add Department' })).toBeEnabled();
+    await expect(picker.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    await expect(page.getByRole('dialog', { name: 'Add a Department' })).toHaveCount(0);
+    await expect(page.locator('.group-modal')).toHaveCount(0);
+    expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(1);
 });
 
 test('successful first-run selection starts the dashboard tour before any onboarding write', async ({ page }, testInfo) => {

@@ -85,14 +85,14 @@ export default function FirstRunGroupSelectionModal(props) {
                     </div>
                 </div>
                 {showSearch ? (
-                    <input type="search" className="group-filter-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Departments..." aria-label="Search Departments" />
+                    <input type="search" className="group-filter-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Departments..." aria-label="Search Departments" disabled={saving} />
                 ) : groups.length > 0 ? (
                     <div className="department-first-run-catalog-summary">All available Departments are shown · {groups.length}</div>
                 ) : null}
                 {selectedIsHidden && (
                     <div className="department-first-run-selected-summary" role="status">
                         <span>Selected: {selectedGroup.name || selectedGroup.id}</span>
-                        <button className="secondary compact" type="button" onClick={() => setSelectionCleared(true)}>Clear selection</button>
+                        <button className="secondary compact" type="button" onClick={() => setSelectionCleared(true)} disabled={saving}>Clear selection</button>
                     </div>
                 )}
                 <div className="department-first-run-list">
@@ -105,17 +105,23 @@ export default function FirstRunGroupSelectionModal(props) {
                         const selected = effectiveSelectedGroupId === group.id;
                         const radioId = `first-run-radio-${group.id}`;
                         return (
-                            <div key={group.id} className={`department-first-run-option${selected ? ' selected' : ''}${hasTeams ? '' : ' disabled'}`}>
-                                <input id={radioId} type="radio" name="first-run-favorite-group" checked={selected} disabled={!hasTeams} onChange={() => { setSelectionCleared(false); onSelectGroup(group.id); }} />
-                                <label className="department-first-run-option-main" htmlFor={radioId}>
-                                    <span className="department-first-run-option-name">{group.name || group.id}</span>
-                                    {!hasTeams && <span className="department-first-run-option-help">Add at least one team before choosing this Department</span>}
-                                </label>
-                                <span className="department-first-run-option-meta">{(group.teamIds || []).length} team{(group.teamIds || []).length === 1 ? '' : 's'}</span>
+                            <div key={group.id} className={`department-first-run-option${selected ? ' selected' : ''}${hasTeams ? '' : ' disabled'}${saving ? ' saving' : ''}`}>
+                                <input id={radioId} type="radio" name="first-run-favorite-group" checked={selected} disabled={saving || !hasTeams} onChange={() => { setSelectionCleared(false); onSelectGroup(group.id); }} />
                                 {hasTeams ? (
-                                    <span className="department-first-run-star group-list-star" aria-hidden="true">{selected ? '★' : '☆'}</span>
+                                    <label className="department-first-run-option-main eligible" htmlFor={radioId}>
+                                        <span className="department-first-run-option-name">{group.name || group.id}</span>
+                                        <span className="department-first-run-option-meta">{(group.teamIds || []).length} team{(group.teamIds || []).length === 1 ? '' : 's'}</span>
+                                        <span className="department-first-run-star group-list-star" aria-hidden="true">{selected ? '★' : '☆'}</span>
+                                    </label>
                                 ) : (
-                                    <button className="secondary compact department-first-run-configure" type="button" onClick={() => onConfigureGroup(group.id)}>Configure and use {group.name || group.id}</button>
+                                    <>
+                                        <label className="department-first-run-option-main" htmlFor={radioId}>
+                                            <span className="department-first-run-option-name">{group.name || group.id}</span>
+                                            <span className="department-first-run-option-help">Add at least one team before choosing this Department</span>
+                                        </label>
+                                        <span className="department-first-run-option-meta">{(group.teamIds || []).length} teams</span>
+                                        <button className="secondary compact department-first-run-configure" type="button" onClick={() => onConfigureGroup(group.id)} disabled={saving}>Configure and use {group.name || group.id}</button>
+                                    </>
                                 )}
                             </div>
                         );
@@ -123,7 +129,7 @@ export default function FirstRunGroupSelectionModal(props) {
                 </div>
                 {error && <div className="group-modal-warning" role="alert" tabIndex={-1} ref={errorRef}>{error}</div>}
                 <div className="department-first-run-actions">
-                    <button className="secondary compact" type="button" onClick={onAddDepartment} ref={addButtonRef}>Add Department</button>
+                    <button className="secondary compact" type="button" onClick={onAddDepartment} ref={addButtonRef} disabled={saving}>Add Department</button>
                     <button className="compact" type="button" onClick={onContinue} disabled={saving || !effectiveSelectedGroupId}>{saving ? 'Saving...' : 'Continue'}</button>
                 </div>
             </div>

@@ -74,8 +74,8 @@ assert(
 );
 assert(
   source.includes('getAuthRecoveryStores(window)')
-    && source.includes('await completeAuthRecovery(recoveryStores.sharedStorage, recoveryStores.tabStorage);'),
-  'authenticated config bootstrap must publish coordinator success through guarded stores'
+    && source.includes('canComplete: () => !readPendingAuthenticationRequired(),'),
+  'authenticated config bootstrap must recheck its terminal latch inside coordinator completion'
 );
 const configFetchIndex = source.indexOf('const config = await fetchAppConfig(BACKEND_URL);');
 const completionIndex = source.indexOf('await completeAuthRecovery(', configFetchIndex);

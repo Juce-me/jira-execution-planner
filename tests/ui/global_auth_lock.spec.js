@@ -581,6 +581,119 @@ test('same-profile Planning tabs elect one OAuth leader and reload independently
     await expect.poll(() => pageB.evaluate(key => sessionStorage.getItem(key), authResumeKey)).toBeNull();
 });
 
+test('a bootstrap 401 queued ahead of completion cannot publish false recovery success', async ({ context }) => {
+    const leader = await context.newPage();
+    const follower = await context.newPage();
+    const completionQueued = deferred();
+    const leaderDocuments = observeDocuments(leader);
+    const followerDocuments = observeDocuments(follower);
+    const attemptId = 'attempt-bootstrap-race';
+    const capturedAt = Date.now();
+    const capsule = JSON.stringify({
+        version: 1,
+        capturedAt,
+        principal: { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
+        view: {
+            selectedView: 'eng',
+            activeGroupId: groupId,
+            selectedSprint: String(futureSprintId),
+            engMode: 'planning',
+            settingsOpen: false,
+            settingsTab: 'teams',
+        },
+        planning: {
+            scopeKey: `planning::${futureSprintId}::${groupId}`,
+            selectedTaskKeys: ['PLAN-2'],
+            selectedTeams: [teamId],
+            selectionMode: 'manual',
+        },
+    });
+
+    await leader.exposeFunction('__notifyAuthCompletionQueued', () => completionQueued.resolve());
+    await leader.addInitScript(({
+        attemptId,
+        authResumeKey,
+        capsule,
+        capturedAt,
+        recoveryAttemptKey,
+        recoveryLeaseKey,
+    }) => {
+        localStorage.setItem(recoveryLeaseKey, JSON.stringify({ attemptId, startedAt: capturedAt }));
+        sessionStorage.setItem(recoveryAttemptKey, JSON.stringify({ attemptId, startedAt: capturedAt }));
+        sessionStorage.setItem(authResumeKey, capsule);
+        window.__leaderOldDocumentMarker = true;
+
+        const lockName = 'jira-dashboard-auth-recovery-v1';
+        const nativeRequest = navigator.locks.request.bind(navigator.locks);
+        let releaseHeldLock;
+        const held = new Promise(resolve => { releaseHeldLock = resolve; });
+        window.__releaseAuthCompletionLock = releaseHeldLock;
+        void nativeRequest(lockName, { mode: 'exclusive' }, () => held);
+        Object.defineProperty(navigator.locks, 'request', {
+            configurable: true,
+            value: (name, options, callback) => {
+                if (name === lockName) void window.__notifyAuthCompletionQueued();
+                return nativeRequest(name, options, callback);
+            },
+        });
+    }, {
+        attemptId,
+        authResumeKey,
+        capsule,
+        capturedAt,
+        recoveryAttemptKey,
+        recoveryLeaseKey,
+    });
+    await installFreshDashboard(leader);
+    let configCalls = 0;
+    let group401Calls = 0;
+    await leader.route('**/api/config**', route => {
+        configCalls += 1;
+        return json(route, configPayload());
+    });
+    await leader.route('**/api/groups-config', async route => {
+        await completionQueued.promise;
+        group401Calls += 1;
+        return json(route, { error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
+    });
+
+    await leader.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+    await completionQueued.promise;
+    await expect(leader.getByRole('alertdialog')).toBeVisible();
+    expect(configCalls).toBe(1);
+    expect(group401Calls).toBe(1);
+    expect(await leader.evaluate(key => sessionStorage.getItem(key), authResumeKey)).toBe(capsule);
+
+    await follower.addInitScript(() => {
+        window.__JEP_AUTH_REQUIRED__ = Object.freeze({
+            locked: true,
+            loginUrl: '/login?reason=session_expired',
+            reason: 'session_expired',
+            requestStartedAt: Date.now() - 10,
+            lockedAt: Date.now() - 5,
+        });
+        window.__followerOldDocumentMarker = true;
+    });
+    await installFreshDashboard(follower);
+    await follower.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+    await expect(follower.getByRole('alertdialog')).toBeVisible();
+    expect(followerDocuments.filter(pathname => pathname === '/')).toHaveLength(1);
+
+    await leader.evaluate(async () => {
+        window.__releaseAuthCompletionLock();
+        await navigator.locks.request('jira-dashboard-auth-recovery-v1', { mode: 'exclusive' }, () => undefined);
+    });
+    await follower.waitForTimeout(250);
+
+    expect(await leader.evaluate(key => localStorage.getItem(key), recoverySuccessKey)).toBeNull();
+    expect(await leader.evaluate(key => sessionStorage.getItem(key), authResumeKey)).toBe(capsule);
+    expect(await leader.evaluate(() => window.__leaderOldDocumentMarker)).toBe(true);
+    await expect(leader.getByRole('alertdialog')).toBeVisible();
+    expect(leaderDocuments.filter(pathname => pathname === '/')).toHaveLength(1);
+    expect(followerDocuments.filter(pathname => pathname === '/')).toHaveLength(1);
+    expect(await follower.evaluate(() => window.__followerOldDocumentMarker)).toBe(true);
+});
+
 async function installPrelockedRecovery(page, mode) {
     await page.addInitScript(({ mode, recoverySuccessKey }) => {
         const seedKey = `auth_recovery_${mode}_seeded`;

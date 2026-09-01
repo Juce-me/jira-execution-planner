@@ -120,6 +120,7 @@ export async function claimAuthRecovery(sharedStorage, tabStorage, {
 export async function completeAuthRecovery(sharedStorage, tabStorage, {
     lockManager = globalThis.navigator?.locks,
     clock = () => Date.now(),
+    canComplete = () => true,
 } = {}) {
     if (!lockManager?.request) return null;
     try {
@@ -129,6 +130,7 @@ export async function completeAuthRecovery(sharedStorage, tabStorage, {
             () => {
                 const now = clock();
                 if (!validNow(now)) return null;
+                if (canComplete() !== true) return null;
                 const tabAttempt = parseRecord(
                     tabStorage.getItem(AUTH_RECOVERY_TAB_ATTEMPT_KEY),
                 );

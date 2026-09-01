@@ -5755,7 +5755,13 @@ import {
                     if (resumePrincipal.workspaceId && resumePrincipal.viewConfigId) {
                         const recoveryStores = getAuthRecoveryStores(window);
                         if (recoveryStores) {
-                            await completeAuthRecovery(recoveryStores.sharedStorage, recoveryStores.tabStorage);
+                            await completeAuthRecovery(
+                                recoveryStores.sharedStorage,
+                                recoveryStores.tabStorage,
+                                {
+                                    canComplete: () => !readPendingAuthenticationRequired(),
+                                },
+                            );
                         }
                     }
                     authResumePrincipalRef.current = resumePrincipal;

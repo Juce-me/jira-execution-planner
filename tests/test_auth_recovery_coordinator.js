@@ -240,6 +240,62 @@ test('invalid completion clocks preserve all recovery records before storage acc
     }
 });
 
+test('completion eligibility is rechecked inside the lock before any storage access', async () => {
+    const leaseRaw = JSON.stringify({ attemptId: 'attempt-a', startedAt: 1_000 });
+    const successRaw = JSON.stringify({ attemptId: 'attempt-prior', completedAt: 900 });
+    const tabAttemptRaw = JSON.stringify({ attemptId: 'attempt-a', startedAt: 1_000 });
+    const ineligibleCases = [
+        ['false', () => false],
+        ['null', () => null],
+        ['truthy non-true', () => 'true'],
+        ['throwing', () => { throw new Error('document_became_ineligible'); }],
+    ];
+
+    for (const [label, eligibility] of ineligibleCases) {
+        const shared = createObservedStorage({
+            [EXPECTED_LEASE_KEY]: leaseRaw,
+            [EXPECTED_SUCCESS_KEY]: successRaw,
+        });
+        const tab = createObservedStorage({
+            [EXPECTED_TAB_ATTEMPT_KEY]: tabAttemptRaw,
+            [EXPECTED_CONSUMED_KEY]: 'attempt-prior',
+        });
+        let insideExclusiveLock = false;
+        let eligibilityCalls = 0;
+        const lockManager = {
+            request(name, options, callback) {
+                assert.equal(name, EXPECTED_LOCK_NAME);
+                assert.deepEqual(json(options), { mode: 'exclusive' });
+                insideExclusiveLock = true;
+                try {
+                    return Promise.resolve(callback());
+                } finally {
+                    insideExclusiveLock = false;
+                }
+            },
+        };
+
+        const completion = await api.completeAuthRecovery(shared.storage, tab.storage, {
+            lockManager,
+            clock: () => 2_000,
+            canComplete: () => {
+                eligibilityCalls += 1;
+                assert.equal(insideExclusiveLock, true, label);
+                return eligibility();
+            },
+        });
+
+        assert.equal(completion, null, label);
+        assert.equal(eligibilityCalls, 1, label);
+        assert.deepEqual(shared.operations, [], label);
+        assert.deepEqual(tab.operations, [], label);
+        assert.equal(shared.storage.peek(EXPECTED_LEASE_KEY), leaseRaw, label);
+        assert.equal(shared.storage.peek(EXPECTED_SUCCESS_KEY), successRaw, label);
+        assert.equal(tab.storage.peek(EXPECTED_TAB_ATTEMPT_KEY), tabAttemptRaw, label);
+        assert.equal(tab.storage.peek(EXPECTED_CONSUMED_KEY), 'attempt-prior', label);
+    }
+});
+
 test('a queued replacement wins before late completion without being cleared or overwritten', async () => {
     const shared = createStorage();
     const oldLeaderTab = createStorage();

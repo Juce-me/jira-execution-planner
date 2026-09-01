@@ -1,3 +1,4 @@
+const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
@@ -6,12 +7,14 @@ const { installDashboardShell } = require('./epm_home_token_fixture');
 const repoRoot = path.join(__dirname, '..', '..');
 const harnessUrl = 'http://onboarding-tour.test/';
 const controllerHarnessUrl = 'http://onboarding-controller.test/';
+const onboardingScreenshotDir = path.join(repoRoot, 'test-results', 'onboarding-tour-qa');
 let harnessJs;
 let controllerHarnessJs;
 let productionDashboardJs;
 let dashboardCss;
 
 test.beforeAll(() => {
+    fs.mkdirSync(onboardingScreenshotDir, { recursive: true });
     harnessJs = esbuild.buildSync({
         stdin: {
             resolveDir: repoRoot,
@@ -503,6 +506,17 @@ async function installHarness(page) {
 async function openTour(page) {
     await page.evaluate(() => window.__tourHarness.open());
     await expect(page.getByRole('dialog')).toBeVisible();
+}
+
+async function captureSettledOnboardingScreenshot(page, name, { fullPage = false } = {}) {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.addStyleTag({
+        content: '*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }',
+    });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const screenshotPath = path.join(onboardingScreenshotDir, name);
+    await page.screenshot({ path: screenshotPath, animations: 'disabled', fullPage });
+    expect(fs.existsSync(screenshotPath), `${name} was not produced`).toBe(true);
 }
 
 async function advanceToHeading(page, heading) {
@@ -1096,6 +1110,7 @@ test('production Catch Up Priority preview owns only the exact Epic control and 
     await expect(siblingIssue).toHaveAttribute('aria-expanded', 'false');
     await expect(siblingIssue).not.toHaveAttribute('aria-describedby', /.+/);
     await expect(productionMenu(page, 'priority', 'SYN-EPIC-B')).toHaveCount(0);
+    await captureSettledOnboardingScreenshot(page, 'priority-preview-desktop.png');
     await exerciseReadOnlyPreviewInputs(page, 'priority');
     expect(await productionIssueSnapshot(page)).toEqual(before);
     assertProductionRequestSafety(calls);
@@ -1385,6 +1400,7 @@ test('production Status preview reaches the open terminal step and only explicit
     await expect(page.getByRole('button', { name: 'Finish' })).toBeVisible();
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
     assertProductionRequestSafety(calls);
+    await captureSettledOnboardingScreenshot(page, 'complete-desktop.png');
 
     await page.getByRole('button', { name: 'Finish' }).click();
     await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
@@ -2491,6 +2507,22 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
             window.__tourHarness.open();
         }, { hierarchyMask: mask });
         await expect(page.getByRole('dialog')).toBeVisible();
+        if (mask === 5) {
+            await advanceToHeading(page, 'Follow the Epic');
+            await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
+            await captureSettledOnboardingScreenshot(page, 'hierarchy-partial-desktop.png');
+            await page.evaluate(() => window.__tourHarness.closeWithDone());
+            await page.evaluate(() => window.__tourHarness.open());
+            await expect(page.getByRole('dialog')).toBeVisible();
+        }
+        if (mask === 0) {
+            await advanceToHeading(page, 'Follow work from goal to delivery');
+            await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
+            await captureSettledOnboardingScreenshot(page, 'hierarchy-all-absent-desktop.png');
+            await page.evaluate(() => window.__tourHarness.closeWithDone());
+            await page.evaluate(() => window.__tourHarness.open());
+            await expect(page.getByRole('dialog')).toBeVisible();
+        }
         const steps = await collectTourSteps(page, {
             advancePreview: async ({ page: callbackPage, title, advanceFallback }) => {
                 await advancePreviewOrFallback(callbackPage, title, advanceFallback);
@@ -2732,6 +2764,7 @@ test('mobile dashboard tour stays closed and desktop-to-mobile resize cleans an 
         skipped: window.__tourHarness.skipCount,
         finished: window.__tourHarness.finishCount(),
     }))).toEqual({ skipped: 0, finished: 0 });
+    await captureSettledOnboardingScreenshot(page, 'interactive-mobile.png');
     await page.screenshot({
         path: testInfo.outputPath('onboarding-tour-mobile.png'),
         animations: 'disabled',
@@ -2755,6 +2788,7 @@ test('mobile dashboard tour stays closed and desktop-to-mobile resize cleans an 
     await expect(page.locator('[data-priority-transition-menu]')).toHaveCount(0);
     await expect(page.locator('.onboarding-tour-preview-portal')).toHaveCount(0);
     await expect(page.locator('[data-priority-transition-trigger]')).not.toHaveAttribute('aria-describedby', /.+/);
+    await captureSettledOnboardingScreenshot(page, 'fallback-mobile.png');
     expect(await page.locator('#unrelated-portal').evaluate((node) => ({
         ariaHidden: node.getAttribute('aria-hidden'),
         inert: node.getAttribute('inert'),

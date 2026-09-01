@@ -6,6 +6,7 @@ const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = '/tmp/shared-department-groups-qa';
+const onboardingScreenshotDir = path.join(__dirname, '..', '..', 'test-results', 'onboarding-tour-qa');
 const dashboardSourceBundle = esbuild.buildSync({
     entryPoints: [path.join(__dirname, '..', '..', 'frontend', 'src', 'dashboard.jsx')],
     bundle: true,
@@ -23,6 +24,7 @@ const dashboardSourceCss = esbuild.buildSync({
 
 test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
+    fs.mkdirSync(onboardingScreenshotDir, { recursive: true });
 });
 
 function requestBody(request) {
@@ -105,6 +107,17 @@ async function expectGuideTargetGeometry(target, guide) {
     const geometry = await readGeometry();
     expect(geometry.width).toBeGreaterThanOrEqual(44);
     expect(geometry.height).toBeGreaterThanOrEqual(44);
+}
+
+async function captureSettledOnboardingScreenshot(page, name, { fullPage = false } = {}) {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.addStyleTag({
+        content: '*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }',
+    });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const screenshotPath = path.join(onboardingScreenshotDir, name);
+    await page.screenshot({ path: screenshotPath, animations: 'disabled', fullPage });
+    expect(fs.existsSync(screenshotPath), `${name} was not produced`).toBe(true);
 }
 
 function visibleStoryPayload(project = 'product') {
@@ -434,6 +447,110 @@ async function finishFirstRunConfigurationGuideWithTeamRepair(page) {
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
 }
+
+test('Task 9 writes settled Department and Settings onboarding screenshots', async ({ page }) => {
+    const resetDashboard = async ({ groupsConfig, preferences, viewport = { width: 1440, height: 1000 } } = {}) => {
+        await page.unrouteAll({ behavior: 'wait' });
+        await page.setViewportSize(viewport);
+        await mockFirstRunDashboard(page, { groupsConfig, preferences });
+        await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    };
+
+    const twoGroups = {
+        version: 1,
+        groups: [
+            { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
+            { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+        ],
+        defaultGroupId: 'platform',
+        configRevision: 2,
+        source: 'workspace_db',
+    };
+    await resetDashboard({ groupsConfig: twoGroups });
+    let picker = page.getByRole('dialog', { name: 'Choose your Department' });
+    await expect(picker.getByRole('searchbox', { name: 'Search Departments' })).toHaveCount(0);
+    await expect(picker.getByRole('button', { name: 'Add Department' })).toBeVisible();
+    await captureSettledOnboardingScreenshot(page, 'first-run-two-groups-desktop.png');
+
+    const fourGroups = {
+        ...twoGroups,
+        groups: [
+            ...twoGroups.groups,
+            { id: 'mobile', name: 'Mobile', teamIds: ['team-mobile'] },
+            { id: 'data', name: 'Data', teamIds: ['team-data'] },
+        ],
+    };
+    await resetDashboard({ groupsConfig: fourGroups });
+    picker = page.getByRole('dialog', { name: 'Choose your Department' });
+    await expect(picker.getByRole('searchbox', { name: 'Search Departments' })).toBeVisible();
+    await expect(picker.getByRole('button', { name: 'Add Department' })).toBeVisible();
+    await captureSettledOnboardingScreenshot(page, 'first-run-four-groups-desktop.png');
+
+    await picker.getByRole('button', { name: 'Add Department' }).click();
+    let choice = page.getByRole('dialog', { name: 'Add a Department' });
+    await expect(choice.getByRole('radio', { name: 'Create clean Department' })).toBeChecked();
+    await captureSettledOnboardingScreenshot(page, 'first-run-add-choice-desktop.png');
+    await choice.getByRole('radio', { name: 'Duplicate existing Department' }).check();
+    await choice.getByRole('combobox', { name: 'Department to duplicate' }).selectOption('platform');
+    await expect(choice.getByRole('checkbox', { name: 'Remove existing teams' })).not.toBeChecked();
+    await expect(choice.getByRole('checkbox', { name: 'Remove existing components' })).not.toBeChecked();
+    await captureSettledOnboardingScreenshot(page, 'first-run-duplicate-defaults-desktop.png');
+
+    await resetDashboard({ groupsConfig: twoGroups });
+    await openFirstRunCreateDepartment(page);
+    let settings = page.locator('.group-modal');
+    let guide = settings.locator('.first-run-configuration-guide');
+    await expect(guide).toContainText('Name your Department');
+    await expect(settings.getByPlaceholder('Group name')).toHaveCount(1);
+    await captureSettledOnboardingScreenshot(page, 'first-run-guide-name-desktop.png');
+
+    await resetDashboard({ groupsConfig: twoGroups, viewport: { width: 390, height: 844 } });
+    await openFirstRunCreateDepartment(page);
+    settings = page.locator('.group-modal');
+    guide = settings.locator('.first-run-configuration-guide');
+    await expect(settings.locator('.group-pane-left')).toHaveClass(/is-mobile-active/);
+    await expect(settings.getByPlaceholder('Group name')).toHaveCount(1);
+    await expectGuideTargetGeometry(settings.locator('[data-first-run-guide-target="name"]'), guide);
+    await captureSettledOnboardingScreenshot(page, 'first-run-guide-name-mobile.png');
+
+    const existingPreferences = defaultGroupPreferences({
+        customized: true,
+        preferenceExists: true,
+        onboardingRequired: false,
+        onboardingDone: true,
+        visibleGroupIds: ['platform', 'growth', 'mobile', 'data'],
+        activeGroupId: 'platform',
+        effectiveVisibleGroupIds: ['platform', 'growth', 'mobile', 'data'],
+    });
+    await resetDashboard({ groupsConfig: fourGroups, preferences: existingPreferences });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    settings = page.locator('.group-modal');
+    await settings.locator('.group-list-item', { hasText: 'Growth' }).click();
+    await settings.getByRole('button', { name: 'Set Growth as my favorite group' }).click();
+    await expect(settings.getByRole('button', { name: 'Growth is my favorite group' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(settings.getByRole('checkbox', { name: 'Show in Department selector' })).toBeDisabled();
+    await expect(settings.locator('.group-visible-helper')).toHaveText('Your favorite Department is always shown');
+    await captureSettledOnboardingScreenshot(page, 'first-run-preferences-desktop.png');
+
+    await settings.getByRole('button', { name: 'Connections', exact: true }).click();
+    await expect(settings.getByRole('button', { name: 'Run onboarding again' })).toBeVisible();
+    await expect(settings.getByRole('button', { name: 'Run onboarding again' })).toBeDisabled();
+    await captureSettledOnboardingScreenshot(page, 'settings-replay-header-desktop.png');
+
+    await resetDashboard({
+        groupsConfig: fourGroups,
+        preferences: existingPreferences,
+        viewport: { width: 390, height: 844 },
+    });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    settings = page.locator('.group-modal');
+    await settings.getByRole('button', { name: 'Groups', exact: true }).click();
+    await settings.locator('.group-list-item', { hasText: 'Growth' }).locator('.group-list-star').click();
+    await expect(settings.locator('.group-modal-dirty')).toContainText('Unsaved changes');
+    await expect(settings.getByRole('button', { name: 'Run onboarding again' })).toBeDisabled();
+    await expect(settings.getByText('Save or discard changes before replaying onboarding.')).toBeVisible();
+    await captureSettledOnboardingScreenshot(page, 'settings-replay-header-mobile.png');
+});
 
 for (const mode of ['create', 'duplicate', 'repair']) {
     for (const onboardingDone of [false, true]) {

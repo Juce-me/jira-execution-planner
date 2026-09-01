@@ -424,7 +424,12 @@ test('Department editor exposes one canonical inline name and guide targets', ()
     assert.ok(source.includes('data-first-run-guide-target="favorite"'));
     assert.ok(source.includes('data-first-run-guide-target="visibility"'));
     assert.ok(source.includes('Show in Department selector'));
+    assert.ok(source.includes('Controls whether this Department appears in the dashboard Department menu.'));
     assert.ok(source.includes('Your favorite Department is always shown'));
+    assert.ok(source.includes('aria-label="Favorite Department, selected pending save"'));
+    assert.ok(source.includes('aria-label="Show in Department selector, checked. Your favorite Department is always shown"'));
+    assert.match(source, /type="checkbox"[\s\S]*aria-describedby=\{visibilityDescriptionIds\}/);
+    assert.match(source, /className="group-list-star"[\s\S]*onClick=\{\(event\) => \{[\s\S]*event\.stopPropagation\(\);/);
     assert.equal((source.match(/className="group-name-input"/g) || []).length, 0);
     assert.equal(source.includes('Show in my controls'), false);
 });
@@ -442,6 +447,7 @@ test('dashboard owns one reducer session and ordered first-run preference handof
     assert.ok(dashboard.includes('saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {})'));
     assert.ok(dashboard.includes('if (settingsSaveInFlightRef.current) return buildSettingsSaveOutcome({ inFlight: true })'));
     assert.ok(dashboard.includes('saveFirstRunGroupPreferences({'));
+    assert.equal(dashboard.includes("document.querySelector('.group-modal .group-editor .group-name-input')"), false);
     assert.ok(dashboard.includes('groupsSnapshot:'));
     assert.ok(dashboard.includes('selectedGroupId: firstRunSession.pendingGroupId'));
     assert.ok(preferences.includes('saveFirstRunGroupPreferences = React.useCallback(async ({ groupsSnapshot = groupsConfig, selectedGroupId = firstRunFavoriteGroupId } = {})'));

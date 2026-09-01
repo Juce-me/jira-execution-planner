@@ -76,7 +76,11 @@ function captureAttribute(node, name) {
     };
 }
 
-function restoreAttribute(node, name, snapshot) {
+function restoreAttribute(node, name, snapshot, beforeAttributeWrite) {
+    const currentPresent = node.hasAttribute(name);
+    const currentValue = node.getAttribute(name);
+    if (currentPresent === snapshot.present && currentValue === snapshot.value) return;
+    beforeAttributeWrite?.(node, name);
     if (snapshot.present) {
         node.setAttribute(name, snapshot.value);
     } else {
@@ -84,7 +88,8 @@ function restoreAttribute(node, name, snapshot) {
     }
 }
 
-export function suppressForInteraction(node) {
+export function suppressForInteraction(node, beforeAttributeWrite) {
+    const recordWrite = typeof beforeAttributeWrite === 'function' ? beforeAttributeWrite : null;
     const snapshot = {
         inertAttribute: captureAttribute(node, 'inert'),
         inertProperty: node.inert,
@@ -97,19 +102,32 @@ export function suppressForInteraction(node) {
         ariaHidden: snapshot.ariaHidden.value !== 'true',
     };
 
-    if (owned.inertAttribute) node.setAttribute('inert', '');
-    if (owned.inertProperty) node.inert = true;
-    if (owned.ariaHidden) node.setAttribute('aria-hidden', 'true');
+    if (owned.inertAttribute) {
+        recordWrite?.(node, 'inert');
+        node.setAttribute('inert', '');
+    }
+    if (owned.inertProperty && node.inert !== true) {
+        recordWrite?.(node, 'inert');
+        node.inert = true;
+    }
+    if (owned.ariaHidden) {
+        recordWrite?.(node, 'aria-hidden');
+        node.setAttribute('aria-hidden', 'true');
+    }
 
     return { node, snapshot, owned };
 }
 
-export function restoreInteractionSuppression(record) {
+export function restoreInteractionSuppression(record, beforeAttributeWrite) {
     if (!record?.node || !record.snapshot) return;
+    const recordWrite = typeof beforeAttributeWrite === 'function' ? beforeAttributeWrite : null;
     const { node, snapshot } = record;
-    node.inert = snapshot.inertProperty;
-    restoreAttribute(node, 'inert', snapshot.inertAttribute);
-    restoreAttribute(node, 'aria-hidden', snapshot.ariaHidden);
+    if (node.inert !== snapshot.inertProperty) {
+        recordWrite?.(node, 'inert');
+        node.inert = snapshot.inertProperty;
+    }
+    restoreAttribute(node, 'inert', snapshot.inertAttribute, recordWrite);
+    restoreAttribute(node, 'aria-hidden', snapshot.ariaHidden, recordWrite);
     restoreAttribute(node, 'aria-describedby', snapshot.ariaDescribedBy);
 }
 

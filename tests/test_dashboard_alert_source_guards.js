@@ -188,7 +188,7 @@ test('future planning epic alerts group by all matched team labels', () => {
 
     assert.match(
         source,
-        /import \{ epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel \}/
+        /import \{ epicHasExplicitlyEmptySprintValue, epicHasSelectedSprintLabel, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint \}/
     );
     assert.match(
         source,
@@ -204,6 +204,14 @@ test('future planning epic alerts group by all matched team labels', () => {
     assert.match(
         source,
         /const needsStoriesTeams = groupAlertsByTeam\(needsStoriesEntries, \(entry\) => entry\.team,/
+    );
+    assert.match(
+        source,
+        /const epicHasPlanningSprintLabel = React\.useCallback\([\s\S]*epicHasSelectedSprintLabel\(epic, selectedSprintInfo\?\.name \|\| ''\)/
+    );
+    assert.match(
+        source,
+        /if \(!teamLabel \|\| !epicHasPlanningSprintLabel\(epic\) \|\| !epicHasLabel\(epic, teamLabel\)\)/
     );
 });
 

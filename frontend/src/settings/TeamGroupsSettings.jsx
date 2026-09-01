@@ -96,6 +96,14 @@ export default function TeamGroupsSettings(props) {
 
     const hasDuplicableGroup = (groupDraft?.groups || []).some(group => String(group?.id || '').trim());
     const nameFocusValueRef = React.useRef(new Map());
+    const visibilityHelperId = React.useId();
+    const favoriteVisibilityHelperId = React.useId();
+    const activeGroupIsFavorite = Boolean(activeGroupDraft && (
+        personalGroupPreferencesEnabled ? favoriteGroupDraftId : groupDraft?.defaultGroupId
+    ) === activeGroupDraft.id);
+    const visibilityDescriptionIds = activeGroupIsFavorite
+        ? `${visibilityHelperId} ${favoriteVisibilityHelperId}`
+        : visibilityHelperId;
 
     return (
         <>
@@ -211,9 +219,11 @@ export default function TeamGroupsSettings(props) {
                                                             className="group-list-star"
                                                             aria-pressed={isDefault}
                                                             aria-label={isDefault ? `${group.name || 'Department'} is your favorite Department` : `Set ${group.name || 'Department'} as your favorite Department`}
-                                                            onClick={() => personalGroupPreferencesEnabled
-                                                                ? setFavoriteGroupDraft(group.id)
-                                                                : toggleDefaultGroupDraft(group.id)}
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                if (personalGroupPreferencesEnabled) setFavoriteGroupDraft(group.id);
+                                                                else toggleDefaultGroupDraft(group.id);
+                                                            }}
                                                             disabled={firstRunConfigurationActive || groupVisibilitySaving || !(group.teamIds || []).some(teamId => String(teamId || '').trim())}
                                                         >
                                                             {isDefault ? '★' : '☆'}
@@ -319,6 +329,7 @@ export default function TeamGroupsSettings(props) {
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isGroupVisibleInControls(activeGroupDraft.id)}
+                                                                    aria-describedby={visibilityDescriptionIds}
                                                                     disabled={groupVisibilitySaving || (personalGroupPreferencesEnabled
                                                                         ? favoriteGroupDraftId === activeGroupDraft.id
                                                                         : groupDraft?.defaultGroupId === activeGroupDraft.id)}
@@ -326,21 +337,24 @@ export default function TeamGroupsSettings(props) {
                                                                 />
                                                                 <span>
                                                                     Show in Department selector
-                                                                    <span className="group-visible-helper">
-                                                                        {(personalGroupPreferencesEnabled ? favoriteGroupDraftId : groupDraft?.defaultGroupId) === activeGroupDraft.id
-                                                                            ? 'Your favorite Department is always shown'
-                                                                            : 'Choose whether this Department appears in the selector'}
+                                                                    <span id={visibilityHelperId} className="group-visible-helper">
+                                                                        Controls whether this Department appears in the dashboard Department menu.
                                                                     </span>
+                                                                    {activeGroupIsFavorite && (
+                                                                        <span id={favoriteVisibilityHelperId} className="group-visible-helper group-visible-favorite-helper">
+                                                                            Your favorite Department is always shown
+                                                                        </span>
+                                                                    )}
                                                                 </span>
                                                             </label>
                                                         </>
                                                     )}
                                                     {firstRunConfigurationActive && (
                                                         <>
-                                                            <div className="first-run-preference-status" data-first-run-guide-target="favorite" tabIndex={0} aria-label="Favorite Department selected">
+                                                            <div className="first-run-preference-status" data-first-run-guide-target="favorite" tabIndex={0} aria-label="Favorite Department, selected pending save">
                                                                 <span aria-hidden="true">★</span> Your favorite Department
                                                             </div>
-                                                            <div className="first-run-preference-status" data-first-run-guide-target="visibility" tabIndex={0} aria-label="Shown in Department selector">
+                                                            <div className="first-run-preference-status" data-first-run-guide-target="visibility" tabIndex={0} role="status" aria-label="Show in Department selector, checked. Your favorite Department is always shown">
                                                                 Shown in Department selector
                                                                 <span>Your favorite Department is always shown</span>
                                                             </div>

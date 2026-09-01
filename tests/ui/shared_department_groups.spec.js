@@ -529,7 +529,8 @@ test('Task 9 writes settled Department and Settings onboarding screenshots', asy
     await settings.getByRole('button', { name: 'Set Growth as my favorite group' }).click();
     await expect(settings.getByRole('button', { name: 'Growth is my favorite group' })).toHaveAttribute('aria-pressed', 'true');
     await expect(settings.getByRole('checkbox', { name: 'Show in Department selector' })).toBeDisabled();
-    await expect(settings.locator('.group-visible-helper')).toHaveText('Your favorite Department is always shown');
+    await expect(settings.locator('.group-visible-helper:not(.group-visible-favorite-helper)')).toHaveText('Controls whether this Department appears in the dashboard Department menu.');
+    await expect(settings.locator('.group-visible-favorite-helper')).toHaveText('Your favorite Department is always shown');
     await captureSettledOnboardingScreenshot(page, 'first-run-preferences-desktop.png');
 
     await settings.getByRole('button', { name: 'Connections', exact: true }).click();
@@ -1309,9 +1310,14 @@ test('first-run Add Department keeps the guide and canonical name keyboard-safe 
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="components"]'), guide);
     await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
-    await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="favorite"]'), guide);
+    const favoriteStatus = settingsDialog.locator('[data-first-run-guide-target="favorite"]');
+    await expectGuideTargetGeometry(favoriteStatus, guide);
+    await expect(favoriteStatus).toHaveAccessibleName('Favorite Department, selected pending save');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="visibility"]'), guide);
+    const visibilityStatus = settingsDialog.locator('[data-first-run-guide-target="visibility"]');
+    await expectGuideTargetGeometry(visibilityStatus, guide);
+    await expect(visibilityStatus).toHaveAttribute('role', 'status');
+    await expect(visibilityStatus).toHaveAccessibleName('Show in Department selector, checked. Your favorite Department is always shown');
     await expect(settingsDialog.getByPlaceholder('Group name')).toHaveCount(1);
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
 
@@ -2404,15 +2410,21 @@ test('personal favorite star is separate from shared default and temporary group
     await dialog.locator('.group-list-item', { hasText: 'Empty' }).click();
     await expect(dialog.getByRole('button', { name: 'Configure teams before setting as favorite' })).toBeDisabled();
 
-    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
-    const growthStar = dialog.getByRole('button', { name: 'Set Growth as my favorite group' });
-    await expect(growthStar).toHaveCSS('width', '44px');
-    await expect(growthStar).toHaveCSS('height', '44px');
+    const growthStar = dialog.locator('.group-list-item', { hasText: 'Growth' })
+        .getByRole('button', { name: 'Set Growth as your favorite Department' });
+    await expect(growthStar).toBeVisible();
+    const growthStarBox = await growthStar.boundingBox();
+    expect(growthStarBox.width).toBeGreaterThanOrEqual(44);
+    expect(growthStarBox.height).toBeGreaterThanOrEqual(44);
     await expect(growthStar).toHaveAttribute('aria-pressed', 'false');
     await growthStar.click();
+    await expect(dialog.locator('.group-list-item.active .group-list-name-input')).toHaveValue('Empty');
+    await expect(dialog.locator('.group-editor-name')).toHaveText('Empty');
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
     await expect(dialog.getByRole('button', { name: 'Growth is my favorite group' })).toHaveAttribute('aria-pressed', 'true');
     await expect(dialog.getByRole('checkbox', { name: 'Show in Department selector' })).toBeDisabled();
-    await expect(dialog.locator('.group-visible-helper')).toHaveText('Your favorite Department is always shown');
+    await expect(dialog.locator('.group-visible-helper:not(.group-visible-favorite-helper)')).toHaveText('Controls whether this Department appears in the dashboard Department menu.');
+    await expect(dialog.locator('.group-visible-favorite-helper')).toHaveText('Your favorite Department is always shown');
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${screenshotDir}/personal-favorite-settings.png`, fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });

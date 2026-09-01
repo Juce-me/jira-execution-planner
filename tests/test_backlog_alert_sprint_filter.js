@@ -86,6 +86,27 @@ test('selected sprint label keeps empty-sprint planning epics out of backlog', (
     });
 });
 
+test('future sprint readiness requires the exact selected sprint label', () => {
+    return import('../frontend/src/backlogAlertSprintUtils.mjs').then(({
+        epicHasSelectedSprintLabel
+    }) => {
+        const epicWithOnlyJiraSprint = {
+            key: 'EPIC-4',
+            labels: ['team_alpha_label'],
+            fields: {
+                customfield_10101: [{ id: 123, name: '2026Q3' }]
+            }
+        };
+        const epicWithSelectedSprintLabel = {
+            ...epicWithOnlyJiraSprint,
+            labels: ['team_alpha_label', '2026Q3']
+        };
+
+        assert.equal(epicHasSelectedSprintLabel(epicWithOnlyJiraSprint, '2026Q3'), false);
+        assert.equal(epicHasSelectedSprintLabel(epicWithSelectedSprintLabel, '2026Q3'), true);
+    });
+});
+
 test('selected sprint matching accepts raw Jira sprint strings on child stories', () => {
     return import('../frontend/src/backlogAlertSprintUtils.mjs').then(({
         issueMatchesSelectedSprint

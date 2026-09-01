@@ -106,7 +106,7 @@ import ProjectTrackPhaseChart from './stats/ProjectTrackPhaseChart.jsx';
 import StatsRangeControl from './stats/StatsRangeControl.jsx';
 import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, inScopeEpicKeys as projectTrackInScopeEpicKeys } from './stats/projectTrackStats.js';
 import { summarizeTrackPhaseDurations } from './stats/projectTrackPhaseStats.js';
-import { epicHasExplicitlyEmptySprintValue, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
+import { epicHasExplicitlyEmptySprintValue, epicHasSelectedSprintLabel, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { buildNeedsStoriesTeamEntries, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
@@ -559,7 +559,6 @@ import {
             const firstRunConfigurationActive = !['idle', 'complete'].includes(firstRunConfigurationSession.status);
             const pendingFirstRunConfigurationRef = useRef(null);
             const pendingFirstRunGroupPreferencesRef = useRef(null);
-            const pendingFirstRunSettingsFocusRef = useRef(false);
             const settingsSaveInFlightRef = useRef(false);
             // { current, savedSections }: a rejected groups POST, kept so the draft survives it (D45).
             const [groupsConfigConflict, setGroupsConfigConflict] = useState(null);
@@ -1152,7 +1151,6 @@ import {
                     sourceGroupId,
                 });
                 setFirstRunConfigurationTargetGroupId(sourceGroupId);
-                pendingFirstRunSettingsFocusRef.current = true;
                 setFirstRunSetupChoice(null);
                 dispatchFirstRunConfigurationSession({
                     type: 'start',
@@ -1176,7 +1174,6 @@ import {
                     draft,
                 };
                 setFirstRunConfigurationTargetGroupId(draft.id);
-                pendingFirstRunSettingsFocusRef.current = true;
                 setFirstRunSetupChoice(null);
                 dispatchFirstRunConfigurationSession({
                     type: 'start',
@@ -1188,7 +1185,6 @@ import {
             }, [captureFirstRunSettingsDrafts, firstRunSetupChoice, groupsConfig.groups, openFirstRunConfigurationSettings]);
             useEffect(() => {
                 if (!showGroupManage && firstRunConfigurationActive) {
-                    pendingFirstRunSettingsFocusRef.current = false;
                     pendingFirstRunGroupPreferencesRef.current = null;
                     setFirstRunConfigurationTargetGroupId(null);
                 }
@@ -1973,15 +1969,6 @@ import {
                 setLoadingTeams(false);
                 loadTeamCatalog();
             }, [showGroupManage]);
-
-            useEffect(() => {
-                if (!showGroupManage || !firstRunConfigurationActive || !pendingFirstRunSettingsFocusRef.current) return;
-                if (!activeGroupDraftId || activeGroupDraftId !== firstRunConfigurationTargetGroupId) return;
-                const groupNameInput = document.querySelector('.group-modal .group-editor .group-name-input');
-                if (!groupNameInput?.isConnected) return;
-                pendingFirstRunSettingsFocusRef.current = false;
-                groupNameInput.focus();
-            }, [showGroupManage, firstRunConfigurationActive, activeGroupDraftId, firstRunConfigurationTargetGroupId, groupDraft]);
 
             useEffect(() => {
                 if (!showGroupManage || groupManageTab !== 'epm') return;
@@ -12607,6 +12594,9 @@ import {
                     selectedSprintName: selectedSprintInfo?.name || ''
                 });
             }, [selectedSprint, selectedSprintInfo?.name]);
+            const epicHasPlanningSprintLabel = React.useCallback((epic) => {
+                return epicHasSelectedSprintLabel(epic, selectedSprintInfo?.name || '');
+            }, [selectedSprintInfo?.name]);
             const planningCandidateEpics = React.useMemo(() => {
                 return epicsInScope.filter((epic) => {
                     if (!epic?.key) return false;
@@ -12664,9 +12654,9 @@ import {
                     if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key)) return false;
                     if (!epicMatchesPlanningSprintValue(epic)) return false;
                     const teamLabel = getFuturePlanningTeamLabel(epic);
-                    return !teamLabel || !epicHasLabel(epic, teamLabel);
+                    return !epicHasPlanningSprintLabel(epic) || !teamLabel || !epicHasLabel(epic, teamLabel);
                 });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasLabel]);
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasPlanningSprintLabel, epicHasLabel]);
             const missingLabelEpicKeySet = React.useMemo(
                 () => new Set(missingLabelEpics.map(epic => epic.key).filter(Boolean)),
                 [missingLabelEpics]
@@ -12678,7 +12668,7 @@ import {
                         return entries;
                     }
                     const teamLabel = getFuturePlanningTeamLabel(epic);
-                    if (!teamLabel || !epicMatchesPlanningSprintValue(epic) || !epicHasLabel(epic, teamLabel)) {
+                    if (!teamLabel || !epicHasPlanningSprintLabel(epic) || !epicHasLabel(epic, teamLabel)) {
                         return entries;
                     }
                     // One entry per labeled team that still owes a sprint story; a team
@@ -12693,7 +12683,7 @@ import {
                     }));
                     return entries;
                 }, []);
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasLabel, storiesByEpicKey, isTaskInSelectedSprint, getFuturePlanningTeamInfos]);
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, getFuturePlanningTeamLabel, epicHasPlanningSprintLabel, epicHasLabel, storiesByEpicKey, isTaskInSelectedSprint, getFuturePlanningTeamInfos]);
             const needsStoriesEpics = React.useMemo(() => {
                 const seen = new Set();
                 const epics = [];

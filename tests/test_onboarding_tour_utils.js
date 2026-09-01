@@ -621,6 +621,19 @@ test('placement centers a bounded fallback when the target is absent', async () 
     );
 });
 
+test('interactive coachmarks downgrade to manual mode when placement falls back', async () => {
+    const { shouldUseInteractiveCoachmark } = await loadModule();
+    assert.equal(shouldUseInteractiveCoachmark(true, { mode: 'target' }), true);
+    assert.equal(shouldUseInteractiveCoachmark(true, { mode: 'fallback' }), false);
+    assert.equal(shouldUseInteractiveCoachmark(false, { mode: 'target' }), false);
+
+    const source = readFileSync(
+        new URL('../frontend/src/onboarding/OnboardingTour.jsx', `file://${__filename}`),
+        'utf8'
+    );
+    assert.match(source, /shouldUseInteractiveCoachmark\(interactiveEligible, rawPlacement\)/);
+});
+
 test('target disappearance keeps the same step when it remains eligible', async () => {
     const { reconcileCurrentStepId } = await loadModule();
     const steps = [{ id: 'sprint' }, { id: 'refresh' }, { id: 'hierarchy' }];

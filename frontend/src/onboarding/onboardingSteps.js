@@ -477,6 +477,10 @@ export function computeCoachmarkPlacement({
     return fallback;
 }
 
+export function shouldUseInteractiveCoachmark(eligible, placement) {
+    return Boolean(eligible && placement?.mode === 'target');
+}
+
 export function reconcileCurrentStepId({ previousSteps = [], nextSteps = [], currentStepId = '' } = {}) {
     if (!nextSteps.length) return '';
     if (nextSteps.some((step) => step.id === currentStepId)) return currentStepId;

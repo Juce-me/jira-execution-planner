@@ -12,6 +12,7 @@ import {
     resolveSectionSkipTargetId,
     resolveOnboardingSnapshot,
     revokeTourOwnedSuppressionForMutation,
+    shouldUseInteractiveCoachmark,
 } from './onboardingSteps.js';
 import {
     appendAriaDescribedByToken,
@@ -461,13 +462,27 @@ export default function OnboardingTour({
     const previewForcedFallback = previewFallbackStepId === tour.currentStep?.id
         && previewFallbackTargetIdentity === targetIdentity;
     const unsafeForcedFallback = Boolean(targetIdentity && unsafeTargetIdentity === targetIdentity);
-    const interactive = Boolean(exactPreviewTarget
+    const viewport = geometry.viewport || (typeof document === 'undefined'
+        ? { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }
+        : viewportSize());
+    const rawPlacement = computeCoachmarkPlacement({
+        targetRect: translateRect(rectUnion(geometry.targetRect, geometry.previewRect), -viewport.left, -viewport.top),
+        coachmarkSize: geometry.coachmarkSize,
+        viewport,
+    });
+    const placement = {
+        ...rawPlacement,
+        left: rawPlacement.left + viewport.left,
+        top: rawPlacement.top + viewport.top,
+    };
+    const interactiveEligible = Boolean(exactPreviewTarget
         && !authLocked
         && !mobileSuppressed
         && !basePresentation.loading
         && !basePresentation.fallback
         && !previewForcedFallback);
-    const presentation = previewForcedFallback || unsafeForcedFallback
+    const interactive = shouldUseInteractiveCoachmark(interactiveEligible, rawPlacement);
+    const presentation = previewForcedFallback || unsafeForcedFallback || rawPlacement.mode === 'fallback'
         ? buildStepPresentation(tour.currentStep, null, { engReadiness })
         : basePresentation;
     const matchedPreviewSession = descriptorsMatch(previewDescriptorRef.current, previewSession)
@@ -494,14 +509,11 @@ export default function OnboardingTour({
         if (!appRoot) return undefined;
 
         const records = [];
+        const recordOwnedMutation = (node, attributeName) => {
+            queueTourOwnedSuppressionMutation(pendingOwnedMutationsRef.current, node, attributeName);
+        };
         const suppress = (node) => {
-            if (!node.hasAttribute('inert')) {
-                queueTourOwnedSuppressionMutation(pendingOwnedMutationsRef.current, node, 'inert');
-            }
-            if (node.getAttribute('aria-hidden') !== 'true') {
-                queueTourOwnedSuppressionMutation(pendingOwnedMutationsRef.current, node, 'aria-hidden');
-            }
-            records.push(suppressForInteraction(node));
+            records.push(suppressForInteraction(node, recordOwnedMutation));
         };
         let describedBySnapshot = null;
         let targetAncestorScrollRecords = [];
@@ -535,16 +547,7 @@ export default function OnboardingTour({
 
         return () => {
             records.slice().reverse().forEach((record) => {
-                const { node, snapshot } = record;
-                if (node.hasAttribute('inert') !== snapshot.inertAttribute.present
-                    || node.getAttribute('inert') !== snapshot.inertAttribute.value) {
-                    queueTourOwnedSuppressionMutation(pendingOwnedMutationsRef.current, node, 'inert');
-                }
-                if (node.hasAttribute('aria-hidden') !== snapshot.ariaHidden.present
-                    || node.getAttribute('aria-hidden') !== snapshot.ariaHidden.value) {
-                    queueTourOwnedSuppressionMutation(pendingOwnedMutationsRef.current, node, 'aria-hidden');
-                }
-                restoreInteractionSuppression(record);
+                restoreInteractionSuppression(record, recordOwnedMutation);
             });
             if (describedBySnapshot && target) {
                 if (describedBySnapshot.present) target.setAttribute('aria-describedby', describedBySnapshot.value);
@@ -777,17 +780,6 @@ export default function OnboardingTour({
     if (!tour.isOpen || !tour.currentStep || authLocked || mobileSuppressed || typeof document === 'undefined') return null;
 
     const progress = buildTourProgress(snapshot.steps, tour.index);
-    const viewport = geometry.viewport || viewportSize();
-    const rawPlacement = computeCoachmarkPlacement({
-        targetRect: translateRect(rectUnion(geometry.targetRect, geometry.previewRect), -viewport.left, -viewport.top),
-        coachmarkSize: geometry.coachmarkSize,
-        viewport,
-    });
-    const placement = {
-        ...rawPlacement,
-        left: rawPlacement.left + viewport.left,
-        top: rawPlacement.top + viewport.top,
-    };
     const spotlightBounds = geometry.targetRect ? {
         left: Math.max(viewport.left, geometry.targetRect.left - SPOTLIGHT_PADDING),
         top: Math.max(viewport.top, geometry.targetRect.top - SPOTLIGHT_PADDING),

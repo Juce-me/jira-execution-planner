@@ -1064,6 +1064,7 @@ async function advanceProductionTourTo(page, heading) {
         await productionTrigger(page, field).click();
         const menu = productionMenu(page, field);
         await expect(menu).toBeFocused();
+        await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', /preview_(?:ready|empty)/);
         await menu.press('Escape');
     }
     throw new Error(`Production tour did not reach ${heading}.`);
@@ -1799,6 +1800,11 @@ test('interactive Escape closes the exact preview once from every focus-island l
         if (state !== 'loading') await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
         if (state === 'error') await page.evaluate(() => window.__tourHarness.setPreviewError('Priority options failed.'));
         await expect(page.locator('[data-priority-transition-menu]')).toBeFocused();
+        if (state === 'ready' || state === 'empty') {
+            await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', `preview_${state}`);
+        } else if (state === 'error') {
+            await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'preview_error');
+        }
     };
     const resetHarness = async () => {
         await page.reload();
@@ -2162,9 +2168,12 @@ test('interactive preview uses an honest manual fallback when no non-overlapping
         window.visualViewport.dispatchEvent(new Event('resize'));
     });
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
+    await expect(page.locator('[data-onboarding-tour]')).not.toHaveClass(/is-interactive/);
+    await expect(page.locator('.onboarding-tour-shield')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
     await expect(page.locator('#root')).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('#root')).toHaveAttribute('inert', '');
+    await expect(page.locator('[data-priority-transition-trigger]')).not.toHaveAttribute('aria-describedby', /.+/);
 });
 
 test('interactive late lifecycle responses and stale session descriptors are ignored after close', async ({ page }) => {

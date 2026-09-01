@@ -3287,6 +3287,34 @@ test('Finish persists completion before closing and emits completed once', async
     ]);
 });
 
+test('rejected terminal Finish preserves the completed session for a successful retry', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => {
+        window.__onboardingController.setBehavior({ type: 'error' });
+        window.__onboardingController.setBootstrap(true, false);
+    });
+    await expect(page.getByRole('dialog')).toBeVisible();
+    while (await page.getByRole('button', { name: 'Next' }).count()) {
+        await page.getByRole('button', { name: 'Next' }).click();
+    }
+
+    await expect(page.getByRole('heading', { name: 'Tour complete' })).toBeVisible();
+    await page.getByRole('button', { name: 'Finish' }).click();
+    await expect(page.getByRole('alert')).toHaveText('Save failed.');
+    await expect(page.getByRole('heading', { name: 'Tour complete' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Finish' })).toBeEnabled();
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([true]);
+
+    await page.evaluate(() => window.__onboardingController.setBehavior({ type: 'success' }));
+    await page.getByRole('button', { name: 'Finish' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const state = await page.evaluate(() => window.__onboardingController.snapshot());
+    expect(state.writes).toEqual([true, true]);
+    expect(state.events.filter(event => event.workflowAction === 'completed')).toEqual([
+        { section: 'onboarding', workflowAction: 'completed', params: { source_surface: 'first_run', result: 'success' } },
+    ]);
+});
+
 test('interrupted reload restarts at the first eligible step', async ({ page }) => {
     await installControllerHarness(page);
     await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));

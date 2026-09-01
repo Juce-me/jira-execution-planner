@@ -99,13 +99,15 @@ export function useOnboardingController({
         }
     }, [savePreference, setOnboardingDone, sourceSurface, trackSettingsAction]);
 
-    const skip = React.useCallback(() => {
-        resetModuleRequests();
-        return persist(true, 'skipped');
+    const skip = React.useCallback(async () => {
+        const saved = await persist(true, 'skipped');
+        if (saved) resetModuleRequests();
+        return saved;
     }, [persist, resetModuleRequests]);
-    const finish = React.useCallback(() => {
-        resetModuleRequests();
-        return persist(true, 'completed');
+    const finish = React.useCallback(async () => {
+        const saved = await persist(true, 'completed');
+        if (saved) resetModuleRequests();
+        return saved;
     }, [persist, resetModuleRequests]);
     const replay = React.useCallback(async () => {
         replayPendingRef.current = true;
@@ -329,18 +331,20 @@ export default function useOnboardingTour({
         setModuleSession(createOnboardingModuleSession());
     }, [clearStepUnlock]);
 
-    const skip = React.useCallback(() => {
-        if (navigation.isOpen) {
-            resetSession();
-            onSkip?.();
-        }
+    const skip = React.useCallback(async () => {
+        if (!navigation.isOpen) return false;
+        const saved = await onSkip?.();
+        if (saved === false) return false;
+        resetSession();
+        return true;
     }, [navigation.isOpen, onSkip, resetSession]);
 
-    const finish = React.useCallback(() => {
-        if (navigation.isOpen && navigation.isLast && allRequiredOnboardingModulesComplete(moduleSession)) {
-            resetSession();
-            onFinish?.();
-        }
+    const finish = React.useCallback(async () => {
+        if (!navigation.isOpen || !navigation.isLast || !allRequiredOnboardingModulesComplete(moduleSession)) return false;
+        const saved = await onFinish?.();
+        if (saved === false) return false;
+        resetSession();
+        return true;
     }, [moduleSession, navigation.isLast, navigation.isOpen, onFinish, resetSession]);
 
     return {

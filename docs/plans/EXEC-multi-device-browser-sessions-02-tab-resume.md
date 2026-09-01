@@ -27,6 +27,7 @@
 - Modify: `tests/test_auth_required.js`
 - Modify: `tests/test_planning_selection_state.js`
 - Modify: `tests/test_auth_isolation_source_guard.js`
+- Modify: `tests/ui/epm_home_token_fixture.js`
 - Modify: `tests/ui/global_auth_lock.spec.js`
 - Modify: `tests/ui/planning_selection_defaults.spec.js`
 - Modify generated build outputs under `frontend/dist/` through `npm run build`
@@ -51,7 +52,7 @@ Expected: every command exits `0`. If any check fails, stop; do not recreate the
 
 **Observed evidence (2026-09-01):** `git merge-base --is-ancestor b38e8f7 HEAD` exited `0`; all four `test -f` checks exited `0`.
 
-- [ ] **Step 2: Run the existing lock and Planning baselines**
+- [x] **Step 2: Run the existing lock and Planning baselines**
 
 Run:
 
@@ -63,6 +64,8 @@ npx playwright test tests/ui/global_auth_lock.spec.js tests/ui/planning_selectio
 Expected: PASS before the new behavior. Preserve these contracts: one terminal gate, same-tab sanitized navigation, no in-place unlock, no failed-request replay, no raw `401`, and existing Planning selection persistence.
 
 **Observed evidence (2026-09-01):** the pinned Node 20 command exited `0` with 34/34 tests passing. The pinned Playwright command exited `1`: 15/16 passed and 1 failed reproducibly (`global_auth_lock.spec.js:130`, expected `alertdialog` not found); the isolated retry also exited `1`. The initial sandbox attempt was unable to launch Chromium due to macOS `MachPortRendezvousServer` permission denial; the elevated retry launched normally.
+
+**Final observed evidence (2026-09-01):** the fixture now serves the existing `frontend/dist/auth-focus-refresh.js` bundle for its exact script route. With no listener on port 5050, the isolated regression exited `0` with 1/1 passing. The exact pinned Node 20 baseline exited `0` with 34/34 passing. The exact pinned Playwright baseline exited `0` with 16/16 passing.
 
 ### Task 1: Implement the tab-local recovery capsule as a pure module
 

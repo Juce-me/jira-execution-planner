@@ -255,7 +255,7 @@ node --test tests/test_auth_resume_state.js
 
 Expected: PASS, including privacy and size bounds.
 
-**Observed evidence (2026-09-01):** `fnm exec --using 20 -- node --test tests/test_auth_resume_state.js` exited `0` with 15/15 tests passing, including exact recursive read-schema rejection, legacy identifier compatibility, empty shell scope, canonical Jira-key validation, atomic mismatched-principal replacement, oversized/write-failure preservation, embedded-email/control/payload rejection, opaque `STATE-*` preservation, null list-member rejection, privacy, non-mutating write, clock, list-shape, and UTF-8 size regressions.
+**Observed evidence (2026-09-01):** `fnm exec --using 20 -- node --test tests/test_auth_resume_state.js` exited `0` with 16/16 tests passing, including exact recursive read-schema rejection, canonical no-space UUID/slash/colon identifier validation, empty shell scope, canonical Jira-key validation, atomic mismatched-principal replacement, oversized/write-failure preservation, prose/payload rejection, opaque `STATE-*` preservation, null list-member rejection, privacy, non-mutating write, clock, list-shape, and UTF-8 size regressions.
 
 - [x] **Step 5: Commit the capsule module**
 

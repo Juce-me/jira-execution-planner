@@ -21,7 +21,7 @@ const cleanString = (value, max = 255) => typeof value === 'string'
 
 const JIRA_ISSUE_KEY = /^[A-Z][A-Z0-9_]*-\d+$/;
 const isLegacyId = value => typeof value === 'string' && value.trim().length > 0
-    && value.trim().length <= 255 && !/[\u0000-\u001f\u007f@={}\[\]<>]/.test(value);
+    && value.trim().length <= 255 && /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(value.trim());
 const isOptionalLegacyId = value => value == null || value === '' || isLegacyId(value);
 const isScopeKey = value => {
     if (value === '') return true;

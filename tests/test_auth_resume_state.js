@@ -83,7 +83,13 @@ test('invalid incoming captures do not clear or mutate an existing capsule', () 
     const before = storage.getItem(api.AUTH_RESUME_STORAGE_KEY);
     assert.equal(api.writeAuthResumeState(storage, { principal: {}, view: {}, planning: {} }, 2_000), false);
     assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), before);
-    assert.equal(api.writeAuthResumeState(storage, { ...planningSnapshot(), principal: { workspaceId: 'other', viewConfigId: 'other' } }, 2_000), true);
+    const replacement = { ...planningSnapshot(), principal: { workspaceId: 'other', viewConfigId: 'other' }, view: { ...planningSnapshot().view, activeGroupId: 'new-group' } };
+    assert.equal(api.writeAuthResumeState(storage, replacement, 2_000), true);
+    const stored = JSON.parse(storage.getItem(api.AUTH_RESUME_STORAGE_KEY));
+    assert.deepEqual(stored.principal, replacement.principal);
+    assert.equal(stored.capturedAt, 2_000);
+    assert.equal(stored.view.activeGroupId, 'new-group');
+    assert.equal(stored.planning.selectedTaskKeys.includes('TASK-2'), true);
     assert.notEqual(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), before);
 });
 
@@ -204,13 +210,29 @@ test('rejects embedded emails but preserves opaque STATE identifiers', () => {
     assert.equal(api.readAuthResumeState(storage, snapshot.principal, 2_000).view.activeGroupId, 'STATE-123');
 });
 
-test('preserves legacy whitespace-separated opaque identifiers', () => {
+test('accepts canonical opaque identifiers and empty shell scope', () => {
     const api = loadModule();
     const valid = planningSnapshot();
-    valid.view.activeGroupId = 'Group / Legacy:1';
-    valid.view.selectedSprint = 'Sprint / Legacy:2';
-    valid.planning.selectedTeams = ['Team / Legacy:1'];
+    valid.principal = { workspaceId: '123e4567-e89b-12d3-a456-426614174000', viewConfigId: 'view/legacy:2' };
+    valid.view.activeGroupId = 'group/legacy:1';
+    valid.view.selectedSprint = 'sprint/legacy:2';
+    valid.planning.scopeKey = '';
+    valid.planning.selectedTeams = ['all', 'team/legacy:1'];
     assert.equal(api.writeAuthResumeState(createStorage(), valid, 1_000), true);
+});
+
+test('rejects prose and payload-shaped identifiers structurally', () => {
+    const api = loadModule();
+    const cases = [
+        ['principal', 'workspaceId', 'Person Name'], ['view', 'activeGroupId', 'Authorization: bearer secret'],
+        ['view', 'selectedSprint', 'response body secret'], ['planning', 'scopeKey', 'planning::config draft::oauth state'],
+        ['planning', 'selectedTeams', ['person name']],
+    ];
+    for (const [section, key, value] of cases) {
+        const snapshot = planningSnapshot();
+        snapshot[section][key] = value;
+        assert.equal(api.writeAuthResumeState(createStorage(), snapshot, 1_000), false, `${section}.${key}`);
+    }
 });
 
 test('read rejects any extra top-level or nested capsule keys and clears', () => {
@@ -239,14 +261,14 @@ test('accepts canonical opaque IDs and Jira keys without vocabulary blacklisting
     assert.equal(api.writeAuthResumeState(createStorage(), snapshot, 1_000), true);
 });
 
-test('allows empty shell scope and legacy group, team, and principal identifiers', () => {
+test('allows empty shell scope with canonical group, team, and principal identifiers', () => {
     const api = loadModule();
     const snapshot = planningSnapshot();
     snapshot.principal = { workspaceId: 'cloud/site:legacy', viewConfigId: 'view/legacy' };
-    snapshot.view.activeGroupId = 'Group / Legacy:1';
-    snapshot.view.selectedSprint = 'Sprint / Legacy:2';
+    snapshot.view.activeGroupId = 'group/legacy:1';
+    snapshot.view.selectedSprint = 'sprint/legacy:2';
     snapshot.planning.scopeKey = '';
-    snapshot.planning.selectedTeams = ['Team / Legacy:1'];
+    snapshot.planning.selectedTeams = ['all', 'team/legacy:1'];
     const storage = createStorage();
     assert.equal(api.writeAuthResumeState(storage, snapshot, 1_000), true);
     assert.equal(api.readAuthResumeState(storage, snapshot.principal, 2_000).planning.scopeKey, '');

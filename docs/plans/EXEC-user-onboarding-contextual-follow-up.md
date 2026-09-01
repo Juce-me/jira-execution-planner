@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 0–8 and the final whole-branch review fixes are implemented and verified on `feature/user-onboarding-tour` through build commit `d27d449`; awaiting explicit remote-integration direction. Do not rename this execution plan to `DONE-*` until that integration is authorized and complete.
+**Status:** Tasks 0–8 and the final whole-branch review fixes are implemented and verified on `feature/user-onboarding-tour` through build commit `02f75e1`; awaiting explicit remote-integration direction. Do not rename this execution plan to `DONE-*` until that integration is authorized and complete.
 
 **Goal:** Correct the desktop coachmark and Department Settings regressions, require explicit **Next** after safe field previews, and add contextual Configuration, Planning, Board, and Statistics onboarding that starts from the real user-clicked launcher.
 
@@ -1005,6 +1005,19 @@ The committed Task 8 evidence is this section, the executed design, and the plan
 - Scope remained frontend-only: no backend, schema, ownership, persistence-shape, dependency, Jira-mutation, mobile-tour, or analytics-event change. Visual proof still uses synthetic Chromium fixtures rather than production Jira data; the two existing EPM screenshot cases remain skipped; remote integration remains intentionally unperformed.
 
 The ignored local final-fix report is `.superpowers/sdd/EXEC-user-onboarding-contextual-follow-up/final-fix-report.md`. It is verification provenance only and is not committed project evidence.
+
+#### Residual re-review fix evidence
+
+- A scoped re-review confirmed the persistence and destination-focus fixes, then identified two remaining launcher-boundary cases. Both received focused real-behavior RED tests before implementation.
+- Centered placement could overlap the enabled Planning launcher and leave the coachmark as the hit-test owner. The strengthened geometry case failed with `onboarding-tour-progress` at the launcher point, then passed after the exact target stacking path was temporarily raised while sibling isolation remained inert (`585438a`).
+- Mobile-suppressed onboarding still requested Configuration before opening ordinary Settings, which selected Departments in an unconfigured workspace. The new mobile case failed on the Departments tab, then passed after contextual module request/routing was gated by the existing dashboard mobile predicate and by an accepted request (`ef56947`).
+- Pinned Node `v20.20.0` and npm `10.8.2` verification after these fixes: Node onboarding `96 passed`, `0 failed`, `0 skipped`; onboarding/Settings Playwright `151 passed`, `0 failed`, `0 skipped`; the unchanged onboarding ready-lifecycle and future-planning sprint select-all baselines each passed individually (`1 passed` each).
+- Final complete suites: Python `1,396 run`, `1,389 passed`, `0 failed`, `7 skipped`; frontend unit `1,044 passed`, `0 failed`, `0 skipped`; Playwright `587 passed`, `0 failed`, `2 skipped` (`589` total). The two skips remain the existing desktop/mobile EPM Settings loading-skeleton cases.
+- Pinned `npm run build` regenerated `frontend/dist/dashboard.js`, `dashboard.js.map`, and `dashboard.css` from source in `02f75e1620e1c8cf18952b50fef3ca7edd305f7e`. The authorized detached verification worktree at that exact commit ran `npm ci` (`9 packages`) and `npm run build`; post-build Git status was empty, and the temporary worktree was removed and confirmed absent and unregistered.
+- The final full UI run regenerated all 11 required screenshots. Original-resolution inspection accepted their action hierarchy, locked/ready Next states, unobscured contextual surfaces, compact Department editor, and sole left-row favorite control.
+- Scope remains frontend-only: no backend, schema, ownership, persistence-shape, dependency, Jira-mutation, mobile-tour, or analytics-event change. Residual risks remain synthetic Chromium fixtures rather than production Jira data, two existing skipped EPM screenshot cases, existing runtime warnings, and intentionally pending remote integration.
+
+The ignored local residual-fix report is `.superpowers/sdd/EXEC-user-onboarding-contextual-follow-up/residual-fix-report.md`. It is verification provenance only and is not committed project evidence.
 
 ---
 

@@ -1436,7 +1436,7 @@ test('production launcher fallback acknowledges disabled Planning without bypass
     await expect(page.getByRole('heading', { name: 'Open Board' })).toBeVisible();
 });
 
-test('enabled Planning launcher stays required and natively activatable when coachmark placement falls back', async ({ page }) => {
+test('enabled Planning launcher stays required and natively activatable when a centered fallback card would overlap it', async ({ page }) => {
     await installProductionOnboardingFixture(page);
     await completeConfigurationModule(page, 'pointer');
 
@@ -1448,7 +1448,7 @@ test('enabled Planning launcher stays required and natively activatable when coa
         Object.assign(node.style, {
             position: 'fixed',
             left: '320px',
-            top: `${Math.ceil(height) + 22}px`,
+            top: '40px',
             width: '60px',
             height: '20px',
             minHeight: '20px',
@@ -1471,11 +1471,31 @@ test('enabled Planning launcher stays required and natively activatable when coa
     await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
     await expect(launcher).toBeFocused();
     await expect(launcher).toHaveAttribute('aria-describedby', /.+/);
-    expect(await launcher.evaluate((node) => {
+    const hitEvidence = await launcher.evaluate((node) => {
         const rect = node.getBoundingClientRect();
         const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-        return hit === node || node.contains(hit);
-    })).toBe(true);
+        const stack = [];
+        let current = node;
+        while (current && stack.length < 8) {
+            const style = getComputedStyle(current);
+            stack.push({
+                tag: current.tagName,
+                className: String(current.className || ''),
+                position: style.position,
+                zIndex: style.zIndex,
+                transform: style.transform,
+                isolation: style.isolation,
+            });
+            current = current.parentElement;
+        }
+        return {
+            targetReceivesHit: hit === node || node.contains(hit),
+            hitTag: hit?.tagName || '',
+            hitClassName: String(hit?.className || ''),
+            stack,
+        };
+    });
+    expect(hitEvidence, JSON.stringify(hitEvidence, null, 2)).toMatchObject({ targetReceivesHit: true });
 
     await expectSingleLauncherTransition(page, 'planning', () => launcher.click());
     await expect(page.locator('[data-onboarding-module="planning"]')).toBeVisible();

@@ -727,6 +727,19 @@ export default function OnboardingTour({
     }, [authLocked, interactive, mobileSuppressed, target, tour.currentStep, tour.isOpen, tour.suspended]);
 
     React.useLayoutEffect(() => {
+        if (!interactive || !moduleLaunchStep || rawPlacement.mode !== 'fallback' || !target) return undefined;
+        const root = document.getElementById('root');
+        const raisedPath = [];
+        let node = target;
+        while (node && node !== root) {
+            node.classList.add('onboarding-tour-raised-path');
+            raisedPath.push(node);
+            node = node.parentElement;
+        }
+        return () => raisedPath.forEach((entry) => entry.classList.remove('onboarding-tour-raised-path'));
+    }, [interactive, moduleLaunchStep, rawPlacement.mode, target]);
+
+    React.useLayoutEffect(() => {
         if (!interactive || !target) return;
         const frame = window.requestAnimationFrame(() => {
             if (!exactTargetHitTest(target, viewportSize())) setUnsafeTargetIdentity(targetIdentity);

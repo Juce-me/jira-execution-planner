@@ -64,6 +64,11 @@
     min-height: 44px !important;
 }
 
+.onboarding-tour-raised-path {
+    position: relative;
+    z-index: 12001 !important;
+}
+
 .onboarding-tour-preview-note {
     color: var(--text-primary);
     font-weight: 600;

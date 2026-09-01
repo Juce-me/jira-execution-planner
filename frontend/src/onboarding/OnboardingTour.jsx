@@ -33,6 +33,7 @@ const FOCUSABLE = [
 ].join(',');
 const DEFAULT_COACHMARK_SIZE = { width: 380, height: 250 };
 const SPOTLIGHT_PADDING = 6;
+const DASHBOARD_MOBILE_QUERY = '(max-width: 760px)';
 const PREVIEW_STATES = new Set(['loading', 'ready', 'empty', 'error']);
 const PROGRESS_CLOSE_REASONS = new Set(['same_trigger', 'escape']);
 
@@ -81,6 +82,18 @@ function rectUnion(first, second) {
     return { left, top, right, bottom, width: right - left, height: bottom - top };
 }
 
+function translateRect(rect, deltaLeft, deltaTop) {
+    if (!rect) return null;
+    return {
+        left: rect.left + deltaLeft,
+        top: rect.top + deltaTop,
+        right: rect.right + deltaLeft,
+        bottom: rect.bottom + deltaTop,
+        width: rect.width,
+        height: rect.height,
+    };
+}
+
 function lockOverflow(node) {
     const properties = ['overflow', 'overflow-x', 'overflow-y'].map((property) => ({
         property,
@@ -125,7 +138,7 @@ function restoreTargetAncestorScroll(records) {
     records.slice().reverse().forEach(restoreOverflow);
 }
 
-function exactTargetHitTest(target) {
+function exactTargetHitTest(target, viewport = viewportSize()) {
     const rect = target?.getBoundingClientRect?.();
     if (!rect || rect.width <= 0 || rect.height <= 0) return false;
     const points = [
@@ -136,16 +149,40 @@ function exactTargetHitTest(target) {
         [rect.left + rect.width / 2, rect.bottom - 1],
     ];
     return points.every(([x, y]) => {
+        if (x < viewport.left || x > viewport.right || y < viewport.top || y > viewport.bottom) return false;
         const hit = document.elementFromPoint(x, y);
         return hit === target || target.contains(hit);
     });
 }
 
 function viewportSize() {
+    const visualViewport = window.visualViewport;
+    const left = Math.max(0, Number(visualViewport?.offsetLeft) || 0);
+    const top = Math.max(0, Number(visualViewport?.offsetTop) || 0);
+    const width = Math.max(0, Number(visualViewport?.width) || document.documentElement.clientWidth);
+    const height = Math.max(0, Number(visualViewport?.height) || window.innerHeight);
     return {
-        width: document.documentElement.clientWidth,
-        height: window.innerHeight,
+        left,
+        top,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
     };
+}
+
+function isDashboardMobileViewport() {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia?.(DASHBOARD_MOBILE_QUERY).matches ?? window.innerWidth <= 760;
+}
+
+function isVisibleInViewport(node, viewport, options) {
+    if (!isVisibleViewportTarget(node, { width: viewport.right, height: viewport.bottom }, options)) return false;
+    const rect = node.getBoundingClientRect();
+    return rect.right > viewport.left
+        && rect.bottom > viewport.top
+        && rect.left < viewport.right
+        && rect.top < viewport.bottom;
 }
 
 function sameSnapshot(left, right) {
@@ -155,8 +192,34 @@ function sameSnapshot(left, right) {
     ));
 }
 
+function sameRect(left, right) {
+    if (left === right) return true;
+    if (!left || !right) return false;
+    return left.left === right.left
+        && left.top === right.top
+        && left.right === right.right
+        && left.bottom === right.bottom
+        && left.width === right.width
+        && left.height === right.height;
+}
+
+function sameGeometry(left, right) {
+    return left.target === right.target
+        && sameRect(left.targetRect, right.targetRect)
+        && sameRect(left.previewRect, right.previewRect)
+        && left.viewport?.left === right.viewport?.left
+        && left.viewport?.top === right.viewport?.top
+        && left.viewport?.width === right.viewport?.width
+        && left.viewport?.height === right.viewport?.height
+        && left.viewport?.right === right.viewport?.right
+        && left.viewport?.bottom === right.viewport?.bottom
+        && left.coachmarkSize.width === right.coachmarkSize.width
+        && left.coachmarkSize.height === right.coachmarkSize.height;
+}
+
 function readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords = []) {
-    const raw = resolveOnboardingSnapshot(document, viewportSize(), {
+    const viewport = viewportSize();
+    const raw = resolveOnboardingSnapshot(document, { width: viewport.right, height: viewport.bottom }, {
         engReadiness,
         tourOwnedSuppressionRecords,
     });
@@ -198,6 +261,8 @@ export default function OnboardingTour({
         onSkip,
         onFinish,
     });
+    const advanceFromStep = tour.advanceFromStep;
+    const skipTour = tour.skip;
     const panelRef = React.useRef(null);
     const layerRef = React.useRef(null);
     const shieldRefs = React.useRef([]);
@@ -214,16 +279,19 @@ export default function OnboardingTour({
     const previewSettledStateRef = React.useRef('');
     const previewFocusedRef = React.useRef(false);
     const cleanupLatchRef = React.useRef(false);
+    const progressCloseLatchRef = React.useRef(false);
     const requestPreviewCloseRef = React.useRef(onRequestPreviewClose);
     requestPreviewCloseRef.current = onRequestPreviewClose;
     const [previewFallbackStepId, setPreviewFallbackStepId] = React.useState('');
     const [previewFallbackTargetIdentity, setPreviewFallbackTargetIdentity] = React.useState('');
     const [unsafeTargetIdentity, setUnsafeTargetIdentity] = React.useState('');
     const [authLocked, setAuthLocked] = React.useState(false);
+    const [mobileSuppressed, setMobileSuppressed] = React.useState(isDashboardMobileViewport);
     const [geometry, setGeometry] = React.useState({
         target: null,
         targetRect: null,
         previewRect: null,
+        viewport: null,
         coachmarkSize: DEFAULT_COACHMARK_SIZE,
     });
     const headingId = React.useId();
@@ -238,6 +306,18 @@ export default function OnboardingTour({
     }, []);
 
     React.useEffect(() => {
+        const media = window.matchMedia?.(DASHBOARD_MOBILE_QUERY);
+        const update = () => setMobileSuppressed(media?.matches ?? window.innerWidth <= 760);
+        update();
+        if (typeof media?.addEventListener === 'function') {
+            media.addEventListener('change', update);
+            return () => media.removeEventListener('change', update);
+        }
+        media?.addListener?.(update);
+        return () => media?.removeListener?.(update);
+    }, []);
+
+    React.useEffect(() => {
         if (!tour.isOpen) return undefined;
         const handleAuthenticationRequired = () => {
             cleanupLatchRef.current = true;
@@ -246,12 +326,25 @@ export default function OnboardingTour({
             previewDescriptorRef.current = null;
             previewSettledStateRef.current = '';
             previewFocusedRef.current = false;
+            progressCloseLatchRef.current = false;
             onPreviewTargetChange?.(null);
             setAuthLocked(true);
         };
         window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthenticationRequired);
         return () => window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthenticationRequired);
     }, [onPreviewTargetChange, tour.isOpen]);
+
+    React.useEffect(() => {
+        if (!mobileSuppressed || !tour.isOpen) return;
+        cleanupLatchRef.current = true;
+        const descriptor = previewDescriptorRef.current;
+        if (descriptor) requestPreviewCloseRef.current?.(descriptor, 'target_loss');
+        previewDescriptorRef.current = null;
+        previewSettledStateRef.current = '';
+        previewFocusedRef.current = false;
+        progressCloseLatchRef.current = false;
+        onPreviewTargetChange?.(null);
+    }, [mobileSuppressed, onPreviewTargetChange, tour.isOpen]);
 
     if (tour.isOpen && !sessionOpenRef.current) {
         sessionCounterRef.current += 1;
@@ -261,7 +354,7 @@ export default function OnboardingTour({
     }
 
     const measure = React.useCallback(() => {
-        if (!tour.isOpen || !tour.currentStep || authLocked) return;
+        if (!tour.isOpen || !tour.currentStep || authLocked || mobileSuppressed) return;
         const tourOwnedSuppressionRecords = tourOwnedSuppressionRef.current;
         const nextSnapshot = readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords);
         setSnapshot((current) => {
@@ -272,7 +365,7 @@ export default function OnboardingTour({
             return sameSnapshot(current, reconciledSnapshot) ? current : reconciledSnapshot;
         });
 
-        const viewport = viewportSize();
+        const entryViewport = viewportSize();
         const candidate = nextSnapshot.targets[tour.currentStep.id] || null;
         const targetOptions = {
             tourOwnedSuppressionRecords,
@@ -282,11 +375,12 @@ export default function OnboardingTour({
         const isNewEntry = priorEntry.stepId !== tour.currentStep.id || priorEntry.target !== candidate;
         if (isNewEntry) {
             scrollEntryRef.current = { stepId: tour.currentStep.id, target: candidate };
-            if (candidate && !isVisibleViewportTarget(candidate, viewport, targetOptions)) {
+            if (candidate && !isVisibleInViewport(candidate, entryViewport, targetOptions)) {
                 candidate.scrollIntoView?.({ behavior: 'instant', block: 'center', inline: 'nearest' });
             }
         }
-        const target = candidate && isVisibleViewportTarget(candidate, viewportSize(), targetOptions)
+        const measuredViewport = viewportSize();
+        const target = candidate && isVisibleInViewport(candidate, measuredViewport, targetOptions)
             ? candidate
             : null;
         const rect = target?.getBoundingClientRect?.() || null;
@@ -295,18 +389,20 @@ export default function OnboardingTour({
             : null;
         const previewRect = previewMenu?.getBoundingClientRect?.() || null;
         const panelRect = panelRef.current?.getBoundingClientRect?.();
-        setGeometry({
+        const nextGeometry = {
             target,
             targetRect: rect,
             previewRect,
+            viewport: measuredViewport,
             coachmarkSize: panelRect?.width && panelRect?.height
                 ? { width: panelRect.width, height: panelRect.height }
                 : DEFAULT_COACHMARK_SIZE,
-        });
-    }, [authLocked, eligibleTargets, engReadiness, tour.currentStep, tour.isOpen]);
+        };
+        setGeometry((current) => sameGeometry(current, nextGeometry) ? current : nextGeometry);
+    }, [authLocked, eligibleTargets, engReadiness, mobileSuppressed, tour.currentStep, tour.isOpen]);
 
     React.useLayoutEffect(() => {
-        if (!tour.isOpen || authLocked) return undefined;
+        if (!tour.isOpen || authLocked || mobileSuppressed) return undefined;
         measure();
         window.addEventListener('resize', measure);
         window.addEventListener('scroll', measure, true);
@@ -350,7 +446,7 @@ export default function OnboardingTour({
             resizeObserver?.disconnect();
             mutationObserver?.disconnect();
         };
-    }, [authLocked, geometry.target, measure, tour.isOpen]);
+    }, [authLocked, geometry.target, measure, mobileSuppressed, tour.isOpen]);
 
     const target = geometry.target;
     const basePresentation = tour.currentStep
@@ -367,6 +463,7 @@ export default function OnboardingTour({
     const unsafeForcedFallback = Boolean(targetIdentity && unsafeTargetIdentity === targetIdentity);
     const interactive = Boolean(exactPreviewTarget
         && !authLocked
+        && !mobileSuppressed
         && !basePresentation.loading
         && !basePresentation.fallback
         && !previewForcedFallback);
@@ -380,7 +477,7 @@ export default function OnboardingTour({
     const previewOpen = PREVIEW_STATES.has(previewState);
 
     React.useEffect(() => {
-        if (!tour.isOpen || authLocked) return undefined;
+        if (!tour.isOpen || authLocked || mobileSuppressed) return undefined;
         const preferredReturnFocus = returnFocusRef?.current;
         priorFocusRef.current = preferredReturnFocus?.isConnected
             ? preferredReturnFocus
@@ -389,10 +486,10 @@ export default function OnboardingTour({
             const priorFocus = priorFocusRef.current;
             if (priorFocus?.isConnected && typeof priorFocus.focus === 'function') priorFocus.focus();
         };
-    }, [authLocked, returnFocusRef, tour.isOpen]);
+    }, [authLocked, mobileSuppressed, returnFocusRef, tour.isOpen]);
 
     React.useLayoutEffect(() => {
-        if (!tour.isOpen || !tour.currentStep || authLocked) return undefined;
+        if (!tour.isOpen || !tour.currentStep || authLocked || mobileSuppressed) return undefined;
         const appRoot = document.getElementById('root');
         if (!appRoot) return undefined;
 
@@ -461,6 +558,7 @@ export default function OnboardingTour({
     }, [
         descriptionId,
         authLocked,
+        mobileSuppressed,
         interactive,
         interactive ? previewState : '',
         interactive ? target : null,
@@ -488,6 +586,7 @@ export default function OnboardingTour({
             previewSettledStateRef.current = '';
             previewFocusedRef.current = false;
             cleanupLatchRef.current = false;
+            progressCloseLatchRef.current = false;
             previewDescriptorRef.current = descriptor;
             onPreviewTargetChange?.(descriptor);
         }
@@ -519,6 +618,7 @@ export default function OnboardingTour({
             return;
         }
         if (previewState !== 'closed') return;
+        progressCloseLatchRef.current = false;
         const reason = matchedPreviewSession.reason || '';
         if (cleanupLatchRef.current || !PROGRESS_CLOSE_REASONS.has(reason)) {
             cleanupLatchRef.current = false;
@@ -537,11 +637,11 @@ export default function OnboardingTour({
             previewDescriptorRef.current = null;
             onPreviewTargetChange?.(null);
             target?.focus?.();
-            tour.advanceFromStep(tour.currentStepId);
+            advanceFromStep(tour.currentStepId);
         }
         previewSettledStateRef.current = '';
         previewFocusedRef.current = false;
-    }, [matchedPreviewSession, measure, onPreviewTargetChange, previewState, target, tour]);
+    }, [advanceFromStep, matchedPreviewSession, measure, onPreviewTargetChange, previewState, target, tour.currentStepId]);
 
     React.useEffect(() => {
         setPreviewFallbackStepId('');
@@ -550,16 +650,16 @@ export default function OnboardingTour({
     }, [tour.currentStepId]);
 
     React.useEffect(() => {
-        if (!tour.isOpen || !tour.currentStep || authLocked) return undefined;
+        if (!tour.isOpen || !tour.currentStep || authLocked || mobileSuppressed) return undefined;
         if (interactive) target?.focus?.();
         else panelRef.current?.focus();
         return undefined;
-    }, [authLocked, interactive, target, tour.currentStep, tour.isOpen]);
+    }, [authLocked, interactive, mobileSuppressed, target, tour.currentStep, tour.isOpen]);
 
     React.useLayoutEffect(() => {
         if (!interactive || !target) return;
         const frame = window.requestAnimationFrame(() => {
-            if (!exactTargetHitTest(target)) setUnsafeTargetIdentity(targetIdentity);
+            if (!exactTargetHitTest(target, viewportSize())) setUnsafeTargetIdentity(targetIdentity);
         });
         return () => window.cancelAnimationFrame(frame);
     }, [interactive, target, targetIdentity]);
@@ -588,8 +688,9 @@ export default function OnboardingTour({
                     && expandedRect.top < rect.bottom
                     && expandedRect.bottom > rect.top;
             });
-        const outsideViewport = expandedRect.left < 0 || expandedRect.top < 0
-            || expandedRect.right > viewportSize().width || expandedRect.bottom > viewportSize().height;
+        const viewport = viewportSize();
+        const outsideViewport = expandedRect.left < viewport.left || expandedRect.top < viewport.top
+            || expandedRect.right > viewport.right || expandedRect.bottom > viewport.bottom;
         if (overlapsControl || outsideViewport) {
             target.classList.remove('onboarding-tour-coarse-target');
             if (styleSnapshot === null) target.removeAttribute('style');
@@ -626,9 +727,22 @@ export default function OnboardingTour({
             }
         };
         const handleKeyDown = (event) => {
-            if (event.key === 'Escape' && !previewOpen && !actionPending) {
-                event.preventDefault();
-                tour.skip();
+            if (event.key === 'Escape') {
+                if (event.defaultPrevented) return;
+                if (previewOpen) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const descriptor = previewDescriptorRef.current;
+                    if (descriptor && !progressCloseLatchRef.current) {
+                        progressCloseLatchRef.current = true;
+                        requestPreviewCloseRef.current?.(descriptor, 'escape');
+                    }
+                    return;
+                }
+                if (!actionPending) {
+                    event.preventDefault();
+                    skipTour();
+                }
                 return;
             }
             if (event.key !== 'Tab') return;
@@ -645,7 +759,7 @@ export default function OnboardingTour({
             document.removeEventListener('focusin', handleFocusIn);
             document.removeEventListener('keydown', handleKeyDown);
         };
-    }, [actionPending, interactive, previewOpen, target, tour]);
+    }, [actionPending, interactive, previewOpen, skipTour, target, tour.isOpen]);
 
     React.useEffect(() => {
         if (tour.isOpen) return;
@@ -656,30 +770,42 @@ export default function OnboardingTour({
         previewSettledStateRef.current = '';
         previewFocusedRef.current = false;
         cleanupLatchRef.current = false;
+        progressCloseLatchRef.current = false;
         onPreviewTargetChange?.(null);
     }, [onPreviewTargetChange, tour.isOpen]);
 
-    if (!tour.isOpen || !tour.currentStep || authLocked || typeof document === 'undefined') return null;
+    if (!tour.isOpen || !tour.currentStep || authLocked || mobileSuppressed || typeof document === 'undefined') return null;
 
     const progress = buildTourProgress(snapshot.steps, tour.index);
-    const placement = computeCoachmarkPlacement({
-        targetRect: rectUnion(geometry.targetRect, geometry.previewRect),
+    const viewport = geometry.viewport || viewportSize();
+    const rawPlacement = computeCoachmarkPlacement({
+        targetRect: translateRect(rectUnion(geometry.targetRect, geometry.previewRect), -viewport.left, -viewport.top),
         coachmarkSize: geometry.coachmarkSize,
-        viewport: viewportSize(),
+        viewport,
     });
-    const spotlightStyle = geometry.targetRect ? {
-        left: Math.max(0, geometry.targetRect.left - SPOTLIGHT_PADDING),
-        top: Math.max(0, geometry.targetRect.top - SPOTLIGHT_PADDING),
-        width: geometry.targetRect.width + SPOTLIGHT_PADDING * 2,
-        height: geometry.targetRect.height + SPOTLIGHT_PADDING * 2,
+    const placement = {
+        ...rawPlacement,
+        left: rawPlacement.left + viewport.left,
+        top: rawPlacement.top + viewport.top,
+    };
+    const spotlightBounds = geometry.targetRect ? {
+        left: Math.max(viewport.left, geometry.targetRect.left - SPOTLIGHT_PADDING),
+        top: Math.max(viewport.top, geometry.targetRect.top - SPOTLIGHT_PADDING),
+        right: Math.min(viewport.right, geometry.targetRect.right + SPOTLIGHT_PADDING),
+        bottom: Math.min(viewport.bottom, geometry.targetRect.bottom + SPOTLIGHT_PADDING),
     } : null;
-    const viewport = viewportSize();
+    const spotlightStyle = spotlightBounds ? {
+        left: spotlightBounds.left,
+        top: spotlightBounds.top,
+        width: Math.max(0, spotlightBounds.right - spotlightBounds.left),
+        height: Math.max(0, spotlightBounds.bottom - spotlightBounds.top),
+    } : null;
     const exactRect = geometry.targetRect;
     const shieldStyles = exactRect ? [
-        { left: 0, top: 0, width: viewport.width, height: Math.max(0, exactRect.top) },
-        { left: 0, top: exactRect.top, width: Math.max(0, exactRect.left), height: exactRect.height },
-        { left: exactRect.right, top: exactRect.top, width: Math.max(0, viewport.width - exactRect.right), height: exactRect.height },
-        { left: 0, top: exactRect.bottom, width: viewport.width, height: Math.max(0, viewport.height - exactRect.bottom) },
+        { left: viewport.left, top: viewport.top, width: viewport.width, height: Math.max(0, exactRect.top - viewport.top) },
+        { left: viewport.left, top: exactRect.top, width: Math.max(0, exactRect.left - viewport.left), height: exactRect.height },
+        { left: exactRect.right, top: exactRect.top, width: Math.max(0, viewport.right - exactRect.right), height: exactRect.height },
+        { left: viewport.left, top: exactRect.bottom, width: viewport.width, height: Math.max(0, viewport.bottom - exactRect.bottom) },
     ] : [];
     const interactiveState = previewOpen ? `preview_${previewState}` : 'interactive_closed';
     const sectionSkipTargetId = resolveSectionSkipTargetId(snapshot.steps, tour.currentStepId);
@@ -767,7 +893,7 @@ export default function OnboardingTour({
                 tabIndex={-1}
                 onKeyDown={handleKeyDown}
             >
-                <div className="onboarding-tour-progress" aria-live="polite">{progress.label}</div>
+                <div className="onboarding-tour-progress" aria-live={previewOpen ? undefined : 'polite'}>{progress.label}</div>
                 <h2 id={headingId}>{presentation.title}</h2>
                 <p id={descriptionId}>{interactive
                     ? 'Activate the highlighted control to preview its choices; no value change is required. Close the preview or press Escape to continue.'

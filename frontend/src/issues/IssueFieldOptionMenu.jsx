@@ -98,16 +98,21 @@ export default function IssueFieldOptionMenu({
 
         const positionMenu = () => {
             const triggerRect = trigger.getBoundingClientRect();
-            const viewportWidth = document.documentElement.clientWidth;
-            const viewportHeight = window.innerHeight;
+            const visualViewport = preview ? window.visualViewport : null;
+            const viewportLeft = Math.max(0, Number(visualViewport?.offsetLeft) || 0);
+            const viewportTop = Math.max(0, Number(visualViewport?.offsetTop) || 0);
+            const viewportWidth = Math.max(0, Number(visualViewport?.width) || document.documentElement.clientWidth);
+            const viewportHeight = Math.max(0, Number(visualViewport?.height) || window.innerHeight);
+            const viewportRight = viewportLeft + viewportWidth;
+            const viewportBottom = viewportTop + viewportHeight;
 
             menu.style.left = `${triggerRect.left}px`;
             menu.style.top = `${triggerRect.bottom + MENU_TRIGGER_GAP}px`;
             menu.style.maxHeight = `${Math.max(0, viewportHeight - MENU_EDGE_GAP * 2)}px`;
 
             const naturalHeight = Math.min(menu.scrollHeight, viewportHeight - MENU_EDGE_GAP * 2);
-            const belowSpace = viewportHeight - MENU_EDGE_GAP - triggerRect.bottom - MENU_TRIGGER_GAP;
-            const aboveSpace = triggerRect.top - MENU_TRIGGER_GAP - MENU_EDGE_GAP;
+            const belowSpace = viewportBottom - MENU_EDGE_GAP - triggerRect.bottom - MENU_TRIGGER_GAP;
+            const aboveSpace = triggerRect.top - MENU_TRIGGER_GAP - viewportTop - MENU_EDGE_GAP;
             const placeBelow = belowSpace >= naturalHeight || belowSpace >= aboveSpace;
             const availableHeight = Math.max(0, placeBelow ? belowSpace : aboveSpace);
             menu.style.maxHeight = `${availableHeight}px`;
@@ -115,19 +120,28 @@ export default function IssueFieldOptionMenu({
             const height = Math.min(naturalHeight, availableHeight);
             menu.style.top = placeBelow
                 ? `${triggerRect.bottom + MENU_TRIGGER_GAP}px`
-                : `${Math.max(MENU_EDGE_GAP, triggerRect.top - MENU_TRIGGER_GAP - height)}px`;
+                : `${Math.max(viewportTop + MENU_EDGE_GAP, triggerRect.top - MENU_TRIGGER_GAP - height)}px`;
 
             const menuRect = menu.getBoundingClientRect();
-            const maxLeft = Math.max(MENU_EDGE_GAP, viewportWidth - MENU_EDGE_GAP - menuRect.width);
-            menu.style.left = `${Math.min(Math.max(MENU_EDGE_GAP, triggerRect.left), maxLeft)}px`;
+            const minLeft = viewportLeft + MENU_EDGE_GAP;
+            const maxLeft = Math.max(minLeft, viewportRight - MENU_EDGE_GAP - menuRect.width);
+            menu.style.left = `${Math.min(Math.max(minLeft, triggerRect.left), maxLeft)}px`;
         };
 
         positionMenu();
         window.addEventListener('resize', positionMenu);
         window.addEventListener('scroll', positionMenu, true);
+        if (preview) {
+            window.visualViewport?.addEventListener('resize', positionMenu);
+            window.visualViewport?.addEventListener('scroll', positionMenu);
+        }
         return () => {
             window.removeEventListener('resize', positionMenu);
             window.removeEventListener('scroll', positionMenu, true);
+            if (preview) {
+                window.visualViewport?.removeEventListener('resize', positionMenu);
+                window.visualViewport?.removeEventListener('scroll', positionMenu);
+            }
         };
     }, [blockClass, dismissRef, effectivePortalTarget, loading, list.length, error, preview, result]);
 

@@ -50,6 +50,7 @@ test.beforeAll(() => {
                     const selectionRef = React.useRef([]);
                     const cleanupOrderRef = React.useRef([]);
                     const interactionOrderRef = React.useRef([]);
+                    const finishCountRef = React.useRef(0);
                     const descriptorMatches = (left, right) => Boolean(left && right
                         && left.sessionId === right.sessionId
                         && left.stepId === right.stepId
@@ -87,16 +88,31 @@ test.beforeAll(() => {
                         setPreviewLoading(true);
                         setPreviewError('');
                     }, []);
+                    const skipTour = React.useCallback(() => {
+                        setSkipCount((count) => count + 1);
+                        setRun(false);
+                    }, []);
+                    const finishTour = React.useCallback(() => {
+                        finishCountRef.current += 1;
+                        setRun(false);
+                    }, []);
                     const scrollCountRef = React.useRef(0);
                     const scrollOptionsRef = React.useRef([]);
+                    const targetMeasureCountRef = React.useRef(0);
+                    const tourRenderCountRef = React.useRef(0);
                     const priorityRef = React.useCallback((node) => {
                         if (!node) return;
                         const target = node.querySelector('[data-priority-transition-trigger]') || node;
                         const nativeScrollIntoView = target.scrollIntoView.bind(target);
+                        const nativeGetBoundingClientRect = target.getBoundingClientRect.bind(target);
                         target.scrollIntoView = (options) => {
                             scrollCountRef.current += 1;
                             scrollOptionsRef.current.push(options);
                             nativeScrollIntoView(options);
+                        };
+                        target.getBoundingClientRect = () => {
+                            targetMeasureCountRef.current += 1;
+                            return nativeGetBoundingClientRect();
                         };
                     }, []);
 
@@ -129,6 +145,8 @@ test.beforeAll(() => {
                             },
                             scrollCount: () => scrollCountRef.current,
                             scrollOptions: () => [...scrollOptionsRef.current],
+                            targetMeasureCount: () => targetMeasureCountRef.current,
+                            tourRenderCount: () => tourRenderCountRef.current,
                             lifecycle: () => [...lifecycleRef.current],
                             selections: () => [...selectionRef.current],
                             cleanupOrder: () => [...cleanupOrderRef.current],
@@ -137,6 +155,7 @@ test.beforeAll(() => {
                             emitLifecycle: reportLifecycle,
                             requireAuthentication: () => publishAuthenticationRequired({ loginUrl: '/login?reason=session_expired' }),
                             skipCount,
+                            finishCount: () => finishCountRef.current,
                         };
                     });
 
@@ -207,18 +226,20 @@ test.beforeAll(() => {
                         /></span>}
                         <button id="neighbour-control" style={{ position: 'absolute', left: neighbourLeft, top: dashboardFieldTop }}>Neighbour</button>
                         <div id="unrelated-portal" aria-hidden="mixed" inert="legacy"><button>Portal action</button></div>
-                        <OnboardingTour
-                            run={run}
-                            onboardingDone={done}
-                            engReadiness={engReadiness}
-                            actionPending={pending}
-                            onSkip={() => { setSkipCount((count) => count + 1); setRun(false); }}
-                            onFinish={() => setRun(false)}
-                            previewSession={previewSession}
-                            onPreviewTargetChange={targetChanged}
-                            onPreviewLifecycleChange={reportLifecycle}
-                            onRequestPreviewClose={requestPreviewClose}
-                        />
+                        <React.Profiler id="onboarding-tour" onRender={() => { tourRenderCountRef.current += 1; }}>
+                            <OnboardingTour
+                                run={run}
+                                onboardingDone={done}
+                                engReadiness={engReadiness}
+                                actionPending={pending}
+                                onSkip={skipTour}
+                                onFinish={finishTour}
+                                previewSession={previewSession}
+                                onPreviewTargetChange={targetChanged}
+                                onPreviewLifecycleChange={reportLifecycle}
+                                onRequestPreviewClose={requestPreviewClose}
+                            />
+                        </React.Profiler>
                     </>;
                 }
 
@@ -535,6 +556,8 @@ async function advancePreviewOrFallback(page, title, advanceFallback) {
 test('step collector delegates preview progression before requiring a Next fallback', async ({ page }) => {
     await installHarness(page);
     await openTour(page);
+    await expect(page.locator('[aria-live="polite"]')).toHaveCount(1);
+    await expect(page.locator('.onboarding-tour-progress')).toHaveAttribute('aria-live', 'polite');
     await advanceToHeading(page, 'Preview Priority options');
     await expect(page.getByRole('button', { name: 'Next' })).toHaveCount(0);
     await page.evaluate(() => { window.__previewCallbackCount = 0; });
@@ -663,6 +686,9 @@ test('interactive preview announces loading, ready, empty, and error through one
         await expect(liveStatus).toHaveAttribute('aria-atomic', 'true');
         await expect(liveStatus).toContainText(text);
         await expect(menu.getByRole('alert')).toHaveCount(0);
+        await expect(page.locator('[aria-live="polite"]')).toHaveCount(1);
+        expect(await page.locator('[aria-live="polite"]').evaluate((node) => node === document.querySelector('[data-priority-transition-menu] [role="status"]'))).toBe(true);
+        await expect(page.locator('.onboarding-tour-progress')).not.toHaveAttribute('aria-live', /.+/);
     };
 
     await assertSingleStatus('Loading choices.');
@@ -672,6 +698,66 @@ test('interactive preview announces loading, ready, empty, and error through one
     await assertSingleStatus('0 choices available.');
     await page.evaluate(() => window.__tourHarness.setPreviewError('Priority options failed.'));
     await assertSingleStatus('Choices could not be loaded.');
+});
+
+test('interactive ready lifecycle stays render, measure, and focus-listener stable across repeated focus paths', async ({ page }) => {
+    await installHarness(page);
+    await openTour(page);
+    await advanceToHeading(page, 'Preview Priority options');
+    const trigger = page.locator('[data-priority-transition-trigger]');
+    await trigger.click();
+    await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+    const menu = page.locator('[data-priority-transition-menu]');
+    await expect(menu).toBeFocused();
+    await page.waitForTimeout(50);
+
+    const beforeDuplicate = await page.evaluate(() => ({
+        renders: window.__tourHarness.tourRenderCount(),
+        measures: window.__tourHarness.targetMeasureCount(),
+        focusAdds: window.__tourLifecycle.documentListenerAdds.focusin,
+        focusRemoves: window.__tourLifecycle.documentListenerRemoves.focusin,
+        keyAdds: window.__tourLifecycle.documentListenerAdds.keydown,
+        keyRemoves: window.__tourLifecycle.documentListenerRemoves.keydown,
+    }));
+    const descriptor = await page.evaluate(() => window.__tourHarness.previewSession());
+    for (let index = 0; index < 5; index += 1) {
+        await page.evaluate((ownedDescriptor) => {
+            window.__tourHarness.emitLifecycle(ownedDescriptor, { state: 'ready', reason: '' });
+        }, descriptor);
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+    }
+    for (let index = 0; index < 5; index += 1) {
+        await menu.focus();
+        await menu.press('Tab');
+        await expect(trigger).toBeFocused();
+        await trigger.press('Shift+Tab');
+        await expect(menu).toBeFocused();
+    }
+    await page.waitForTimeout(100);
+    const afterDuplicate = await page.evaluate(() => ({
+        renders: window.__tourHarness.tourRenderCount(),
+        measures: window.__tourHarness.targetMeasureCount(),
+        focusAdds: window.__tourLifecycle.documentListenerAdds.focusin,
+        focusRemoves: window.__tourLifecycle.documentListenerRemoves.focusin,
+        keyAdds: window.__tourLifecycle.documentListenerAdds.keydown,
+        keyRemoves: window.__tourLifecycle.documentListenerRemoves.keydown,
+    }));
+    expect(afterDuplicate.renders - beforeDuplicate.renders).toBeLessThanOrEqual(6);
+    expect(afterDuplicate.measures - beforeDuplicate.measures).toBeLessThanOrEqual(30);
+    expect(afterDuplicate.focusAdds).toBe(beforeDuplicate.focusAdds);
+    expect(afterDuplicate.focusRemoves).toBe(beforeDuplicate.focusRemoves);
+    expect(afterDuplicate.keyAdds).toBe(beforeDuplicate.keyAdds);
+    expect(afterDuplicate.keyRemoves).toBe(beforeDuplicate.keyRemoves);
+
+    const stableCounts = await page.evaluate(() => ({
+        renders: window.__tourHarness.tourRenderCount(),
+        measures: window.__tourHarness.targetMeasureCount(),
+    }));
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => ({
+        renders: window.__tourHarness.tourRenderCount(),
+        measures: window.__tourHarness.targetMeasureCount(),
+    }))).toEqual(stableCounts);
 });
 
 test('interactive sibling issue and different field owners cannot become preview or progression evidence', async ({ page }) => {
@@ -810,6 +896,7 @@ test('interactive focus islands, native keyboard activation, section cleanup, an
     await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
     const menu = page.locator('[data-priority-transition-menu]');
     await expect(menu).toBeFocused();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-preview-settled', 'ready');
     await menu.press('Tab');
     await expect(trigger).toBeFocused();
     await trigger.press('Tab');
@@ -823,6 +910,63 @@ test('interactive focus islands, native keyboard activation, section cleanup, an
     const cleanup = await page.evaluate(() => window.__tourHarness.cleanupOrder());
     expect(cleanup).toContainEqual({ phase: 'request', reason: 'cleanup' });
     expect(cleanup.filter((entry) => entry.phase === 'request' && entry.reason === 'cleanup')).toHaveLength(1);
+});
+
+test('interactive Escape closes the exact preview once from every focus-island location and advances only settled states', async ({ page }) => {
+    await installHarness(page);
+    const openPriorityPreview = async (state = 'ready') => {
+        await openTour(page);
+        if (state === 'empty') await page.evaluate(() => window.__tourHarness.setPreviewOptions('empty'));
+        await advanceToHeading(page, 'Preview Priority options');
+        await page.locator('[data-priority-transition-trigger]').click();
+        if (state !== 'loading') await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+        if (state === 'error') await page.evaluate(() => window.__tourHarness.setPreviewError('Priority options failed.'));
+        await expect(page.locator('[data-priority-transition-menu]')).toBeFocused();
+    };
+    const resetHarness = async () => {
+        await page.reload();
+        await page.waitForFunction(() => Boolean(window.__tourHarness));
+    };
+    const readyFocusLocations = [
+        '[data-priority-transition-menu]',
+        '[data-priority-transition-trigger]',
+        'button:has-text("Back")',
+        'button:has-text("Skip this section")',
+        'button:has-text("Skip onboarding")',
+    ];
+    for (let index = 0; index < readyFocusLocations.length; index += 1) {
+        if (index) await resetHarness();
+        await openPriorityPreview('ready');
+        const location = page.locator(readyFocusLocations[index]).first();
+        await location.focus();
+        await location.press('Escape');
+        await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
+        await expect(page.locator('[data-priority-transition-menu]')).toHaveCount(0);
+        expect((await page.evaluate(() => window.__tourHarness.lifecycle()))
+            .filter((entry) => entry.state === 'closed' && entry.reason === 'escape')).toHaveLength(1);
+    }
+
+    await resetHarness();
+    await openPriorityPreview('loading');
+    await page.locator('[data-priority-transition-trigger]').focus();
+    await page.locator('[data-priority-transition-trigger]').press('Escape');
+    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+    await expect(page.locator('[data-priority-transition-menu]')).toHaveCount(0);
+
+    await resetHarness();
+    await openPriorityPreview('empty');
+    await page.getByRole('button', { name: 'Back' }).focus();
+    await page.getByRole('button', { name: 'Back' }).press('Escape');
+    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
+
+    await resetHarness();
+    await openPriorityPreview('error');
+    await page.getByRole('button', { name: 'Skip onboarding' }).focus();
+    await page.getByRole('button', { name: 'Skip onboarding' }).press('Escape');
+    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+    await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
+    expect((await page.evaluate(() => window.__tourHarness.lifecycle()))
+        .filter((entry) => entry.state === 'closed' && entry.reason === 'escape')).toHaveLength(1);
 });
 
 test('interactive Back and tour Skip latch cleanup before the owned close callback and never advance', async ({ page }) => {
@@ -982,6 +1126,103 @@ test('interactive geometry follows visual viewport events and wheel and touch pa
     expect(overlaps(rects.coachmark, rects.menu)).toBe(false);
 });
 
+test('interactive visual viewport offsets bound target, menu, coachmark, spotlight, and shields with balanced listeners', async ({ page }) => {
+    await installHarness(page);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openTour(page);
+    await advanceToHeading(page, 'Preview Priority options');
+    await page.evaluate(() => {
+        const state = { width: 800, height: 620, offsetLeft: 10, offsetTop: 20 };
+        ['width', 'height', 'offsetLeft', 'offsetTop'].forEach((key) => {
+            Object.defineProperty(window.visualViewport, key, {
+                configurable: true,
+                get: () => state[key],
+            });
+        });
+        window.__setTourVisualViewport = (next) => Object.assign(state, next);
+        window.visualViewport.dispatchEvent(new Event('scroll'));
+        window.visualViewport.dispatchEvent(new Event('resize'));
+    });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const listenersBeforeMenu = await page.evaluate(() => ({ ...window.__tourLifecycle.visualViewportAdds }));
+    const trigger = page.locator('[data-priority-transition-trigger]');
+    await expect.poll(() => trigger.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return hit === node || node.contains(hit);
+    })).toBe(true);
+    await trigger.click();
+    await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+    const menu = page.locator('[data-priority-transition-menu]');
+    await expect(menu).toBeFocused();
+    await expect.poll(() => page.evaluate(() => window.__tourLifecycle.visualViewportAdds.resize))
+        .toBeGreaterThan(listenersBeforeMenu.resize);
+    await expect.poll(() => page.evaluate(() => window.__tourLifecycle.visualViewportAdds.scroll))
+        .toBeGreaterThan(listenersBeforeMenu.scroll);
+
+    const before = await page.evaluate(() => ({
+        shieldLeft: document.querySelector('.onboarding-tour-shield').getBoundingClientRect().left,
+        shieldTop: document.querySelector('.onboarding-tour-shield').getBoundingClientRect().top,
+    }));
+    await page.evaluate(() => {
+        window.__setTourVisualViewport({ width: 760, height: 600, offsetLeft: 20, offsetTop: 40 });
+        window.visualViewport.dispatchEvent(new Event('scroll'));
+        window.visualViewport.dispatchEvent(new Event('resize'));
+    });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+    const geometry = await page.evaluate(() => {
+        const readRect = (selector) => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+        };
+        return {
+            viewport: {
+                left: window.visualViewport.offsetLeft,
+                top: window.visualViewport.offsetTop,
+                right: window.visualViewport.offsetLeft + window.visualViewport.width,
+                bottom: window.visualViewport.offsetTop + window.visualViewport.height,
+            },
+            target: readRect('[data-priority-transition-trigger]'),
+            menu: readRect('[data-priority-transition-menu]'),
+            coachmark: readRect('.onboarding-tour-card'),
+            spotlight: readRect('.onboarding-tour-spotlight'),
+            shields: Array.from(document.querySelectorAll('.onboarding-tour-shield')).map((node) => {
+                const rect = node.getBoundingClientRect();
+                return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+            }),
+        };
+    });
+    const contained = (rect) => rect.left >= geometry.viewport.left && rect.top >= geometry.viewport.top
+        && rect.right <= geometry.viewport.right && rect.bottom <= geometry.viewport.bottom;
+    const overlaps = (left, right) => left.left < right.right && left.right > right.left
+        && left.top < right.bottom && left.bottom > right.top;
+    expect(contained(geometry.target)).toBe(true);
+    expect(contained(geometry.menu)).toBe(true);
+    expect(contained(geometry.coachmark)).toBe(true);
+    expect(contained(geometry.spotlight)).toBe(true);
+    geometry.shields.forEach((shield) => {
+        expect(contained(shield)).toBe(true);
+        expect(overlaps(shield, geometry.target)).toBe(false);
+    });
+    expect(geometry.shields[0].left).toBe(geometry.viewport.left);
+    expect(geometry.shields[0].top).toBe(geometry.viewport.top);
+    expect(geometry.shields[3].left).toBe(geometry.viewport.left);
+    expect(geometry.shields[3].bottom).toBe(geometry.viewport.bottom);
+    expect(overlaps(geometry.coachmark, geometry.target)).toBe(false);
+    expect(overlaps(geometry.coachmark, geometry.menu)).toBe(false);
+    expect(geometry.shields[0].left === before.shieldLeft && geometry.shields[0].top === before.shieldTop).toBe(false);
+    expect(await trigger.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return hit === node || node.contains(hit);
+    })).toBe(true);
+
+    await page.evaluate(() => window.__unmountTourHarness());
+    await expect.poll(() => page.evaluate(() => window.__tourLifecycle.visualViewportRemoves))
+        .toEqual(await page.evaluate(() => window.__tourLifecycle.visualViewportAdds));
+});
+
 test('interactive target ancestor scroll lock restores exact prior overflow state', async ({ page }) => {
     await installHarness(page);
     await page.evaluate(() => {
@@ -1031,9 +1272,18 @@ test('interactive target ancestor scroll lock restores exact prior overflow stat
 
 test('interactive preview uses an honest manual fallback when no non-overlapping coachmark placement fits', async ({ page }) => {
     await installHarness(page);
-    await page.setViewportSize({ width: 320, height: 240 });
     await openTour(page);
     await advanceToHeading(page, 'Preview Priority options');
+    await page.evaluate(() => {
+        const state = { width: 320, height: 240, offsetLeft: 0, offsetTop: 0 };
+        ['width', 'height', 'offsetLeft', 'offsetTop'].forEach((key) => {
+            Object.defineProperty(window.visualViewport, key, {
+                configurable: true,
+                get: () => state[key],
+            });
+        });
+        window.visualViewport.dispatchEvent(new Event('resize'));
+    });
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
     await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
     await expect(page.locator('#root')).toHaveAttribute('aria-hidden', 'true');
@@ -1625,24 +1875,58 @@ test('interrupted reload restarts at the first eligible step', async ({ page }) 
     await expect(page.getByRole('heading')).toHaveText('Choose a sprint');
 });
 
-test('mobile coachmark and spotlight stay within the viewport', async ({ page }, testInfo) => {
+test('mobile dashboard tour stays closed and desktop-to-mobile resize cleans an active preview without persistence', async ({ page }, testInfo) => {
     await installHarness(page);
     await page.setViewportSize({ width: 390, height: 700 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await openTour(page);
-
-    for (const selector of ['.onboarding-tour-card', '.onboarding-tour-spotlight']) {
-        const rect = await page.locator(selector).evaluate((node) => {
-            const bounds = node.getBoundingClientRect();
-            return { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom };
-        });
-        expect(rect.left).toBeGreaterThanOrEqual(0);
-        expect(rect.top).toBeGreaterThanOrEqual(0);
-        expect(rect.right).toBeLessThanOrEqual(390);
-        expect(rect.bottom).toBeLessThanOrEqual(700);
-    }
+    await page.evaluate(() => window.__tourHarness.open());
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    await expect(page.locator('.onboarding-tour-card')).toHaveCount(0);
+    await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
+    expect(await page.evaluate(() => ({
+        skipped: window.__tourHarness.skipCount,
+        finished: window.__tourHarness.finishCount(),
+    }))).toEqual({ skipped: 0, finished: 0 });
     await page.screenshot({
         path: testInfo.outputPath('onboarding-tour-mobile.png'),
         animations: 'disabled',
     });
+
+    await page.setViewportSize({ width: 900, height: 700 });
+    await expect(page.getByRole('heading')).toHaveText('Choose a sprint');
+    const portalSnapshot = await page.locator('#unrelated-portal').evaluate((node) => ({
+        ariaHidden: node.getAttribute('aria-hidden'),
+        inert: node.getAttribute('inert'),
+        inertProperty: node.inert,
+    }));
+    await advanceToHeading(page, 'Preview Priority options');
+    await page.locator('[data-priority-transition-trigger]').click();
+    await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+    await expect(page.locator('[data-priority-transition-menu]')).toBeFocused();
+    const headingsBeforeResize = await page.evaluate(() => [...window.__tourLifecycle.headings]);
+
+    await page.setViewportSize({ width: 760, height: 700 });
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    await expect(page.locator('[data-priority-transition-menu]')).toHaveCount(0);
+    await expect(page.locator('.onboarding-tour-preview-portal')).toHaveCount(0);
+    await expect(page.locator('[data-priority-transition-trigger]')).not.toHaveAttribute('aria-describedby', /.+/);
+    expect(await page.locator('#unrelated-portal').evaluate((node) => ({
+        ariaHidden: node.getAttribute('aria-hidden'),
+        inert: node.getAttribute('inert'),
+        inertProperty: node.inert,
+    }))).toEqual(portalSnapshot);
+    expect((await page.evaluate(() => window.__tourHarness.cleanupOrder())).slice(-2)).toEqual([
+        { phase: 'request', reason: 'target_loss' },
+        { phase: 'lifecycle', reason: 'target_loss' },
+    ]);
+    expect(await page.evaluate(() => window.__tourLifecycle.headings)).toEqual(headingsBeforeResize);
+    expect(await page.evaluate(() => ({
+        skipped: window.__tourHarness.skipCount,
+        finished: window.__tourHarness.finishCount(),
+        state: window.__tourHarness.previewSession()?.state ?? null,
+    }))).toEqual({ skipped: 0, finished: 0, state: null });
+    const lifecycle = await page.evaluate(() => window.__tourLifecycle);
+    expect(lifecycle.listenerRemoves).toEqual(lifecycle.listenerAdds);
+    expect(lifecycle.visualViewportRemoves).toEqual(lifecycle.visualViewportAdds);
+    expect(lifecycle.documentListenerRemoves).toEqual(lifecycle.documentListenerAdds);
 });

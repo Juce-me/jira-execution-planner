@@ -18,6 +18,7 @@
 - Create: `backend/auth/db_browser_sessions.py`
 - Create: `tests/test_db_browser_sessions.py`
 - Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
+- Modify: `docs/plans/SUPPORT-multi-device-browser-sessions-design.md`
 - Modify: `backend/db/models.py`
 - Modify: `backend/auth/context.py`
 - Modify: `backend/auth/db_context.py`
@@ -704,7 +705,9 @@ git commit -m "Bind OAuth CSRF to browser sessions"
 - Modify: `jira_server.py`
 - Modify: `tests/test_db_oauth_cutover.py`
 - Modify: `tests/test_codebase_structure_budgets.py`
+- Modify: `tests/test_endpoint_security_matrix.py`
 - Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
+- Modify: `docs/plans/SUPPORT-multi-device-browser-sessions-design.md`
 - Modify only if verification identifies a direct regression: files listed in Tasks 1-5
 
 - [ ] **Step 1: Run focused auth, migration, revocation, and Scenario coverage**
@@ -734,7 +737,7 @@ TEST_DATABASE_URL=postgresql+psycopg://jep:jep@127.0.0.1:5432/jep_local \
   .venv/bin/python -m unittest -v tests.test_token_refresh_race
 ```
 
-Expected: `OK` with zero skipped tests. The existing refresh serialization test, the new first-ever absent-row callback test, and the concurrent reconnect-callback test all execute against PostgreSQL. A skipped test, SQLite-only pass, unavailable Docker runner, or missing `TEST_DATABASE_URL` is a failed acceptance gate. Stop terminal 1 with `Ctrl+C` after this proof and confirm the runner removes only its owned container/network while retaining its documented volume.
+Expected: `OK` with zero skipped tests. The existing refresh serialization test, the new first-ever absent-row callback test, and the concurrent reconnect-callback test all execute against PostgreSQL. A skipped test, SQLite-only pass, unavailable Docker runner, or missing `TEST_DATABASE_URL` is a failed acceptance gate. Keep terminal 1 active through Step 5 so startup, full-suite, and HTTP verification use the same fixed migrated DB/OAuth runner environment.
 
 - [ ] **Step 3: Run startup and structural verification**
 
@@ -757,23 +760,22 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 5: Launch the real server and check its health**
+- [ ] **Step 5: Verify cookie-free OAuth health and authentication boundaries**
 
-Run in one terminal:
-
-```bash
-.venv/bin/python jira_server.py
-```
-
-Expected: Flask starts on port `5050` with no dependency/runtime warning before the startup banner.
-
-Run in another terminal:
+With the exact repository runner from Step 2 still active on port `5050`, run in another terminal:
 
 ```bash
-curl http://localhost:5050/api/test
+curl --disable --silent --show-error --include http://127.0.0.1:5050/health
+curl --disable --silent --show-error --include http://127.0.0.1:5050/api/test
 ```
 
-Expected: HTTP `200` with the existing sanitized test payload. Stop the server after the check.
+Expected in this DB-backed Atlassian OAuth runner environment:
+
+- Flask has started with no dependency/runtime warning before the startup banner.
+- Cookie-free `GET /health` returns HTTP `200` with exactly the existing safe JSON shape `{"message":"Jira proxy server is running","status":"OK"}`.
+- Cookie-free `GET /api/test` returns HTTP `401` with exactly the existing sanitized recovery payload `{"error":"auth_required","loginUrl":"/login?reason=session_expired","message":"Your Jira sign-in expired. Sign in again to continue."}`.
+
+This is an OAuth-specific anonymous boundary check. Do not authenticate curl, forge or reuse a cookie, seed an OAuth token, or make this gate depend on live Jira. Basic-auth loopback behavior is outside this slice. Stop terminal 1 with `Ctrl+C` after the check and confirm the runner removes only its owned container/network while retaining its documented volume.
 
 - [ ] **Step 6: Review the diff for scope and secrets**
 
@@ -792,7 +794,7 @@ Expected: `git diff --check` passes; changed files match this plan; the final gr
 If verification required a scoped correction, stage only its named files and commit:
 
 ```bash
-git add backend/db/migrations/versions/20260830_0009_browser_sessions.py jira_server.py tests/test_db_oauth_cutover.py tests/test_codebase_structure_budgets.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md
+git add backend/db/migrations/versions/20260830_0009_browser_sessions.py jira_server.py tests/test_db_oauth_cutover.py tests/test_codebase_structure_budgets.py tests/test_endpoint_security_matrix.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md docs/plans/SUPPORT-multi-device-browser-sessions-design.md
 git commit -m "Verify DB browser session lifecycle"
 ```
 

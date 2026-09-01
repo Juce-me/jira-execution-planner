@@ -288,7 +288,7 @@ Automated coverage must prove:
 14. Settings reopens on its prior safe tab, but connection email/token inputs and all unsaved form values are absent from storage and blank after recovery.
 15. No request is replayed, no old document unlocks, no raw `401` renders, and an older concurrent `200` cannot commit state after lock.
 16. Focused Node/Python/Playwright tests, startup preflight, structure budgets, frontend build, the explicit PostgreSQL no-skip race gate, and the full Python suite pass.
-17. Flask starts without dependency/runtime warnings before the banner and `/api/test` succeeds.
+17. In the DB-backed Atlassian OAuth runner environment, Flask starts without dependency/runtime warnings before the banner; cookie-free `GET /health` returns HTTP `200` with exactly `{"message":"Jira proxy server is running","status":"OK"}`; and cookie-free `GET /api/test` returns HTTP `401` with exactly `{"error":"auth_required","loginUrl":"/login?reason=session_expired","message":"Your Jira sign-in expired. Sign in again to continue."}`. This anonymous OAuth boundary proof must not authenticate curl, forge or reuse a cookie, seed an OAuth token, or depend on live Jira. Basic-auth loopback behavior is outside these execution slices.
 
 ## Analytics Impact
 
@@ -312,3 +312,4 @@ No new event is needed. Continue using the existing one-time `app_error_shown` e
 - Two open tabs with different Planning selections recover their own state rather than whichever tab last wrote shared `localStorage`.
 - In browsers with Web Locks/shared storage, only one same-profile OAuth flow starts at a time; successful recovery immediately navigates other locked tabs to new documents without unlocking them in place. Capability/storage failure retains existing uncoordinated same-tab recovery without claiming cross-tab coordination or conflict-free simultaneous OAuth.
 - No failed request is replayed, no credential field is persisted, and no browser receives OAuth token material.
+- In the DB-backed Atlassian OAuth runner, cookie-free `/health` returns only the existing safe HTTP `200` health shape and cookie-free `/api/test` returns the existing sanitized HTTP `401 auth_required` recovery shape without invoking Jira; authenticated curl, forged or reused cookies, seeded tokens, and Basic-auth loopback behavior are outside this acceptance gate.

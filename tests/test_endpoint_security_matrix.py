@@ -10,6 +10,7 @@ SECURITY_SAMPLES = {
     "public_page": [("GET", "/health"), ("GET", "/jira-dashboard.html")],
     "public_context": [("GET", "/api/analytics/context")],
     "authenticated_read": [
+        ("GET", "/api/test"),
         ("GET", "/api/config"),
         ("GET", "/api/projects/selected"),
         ("GET", "/api/tasks"),
@@ -102,7 +103,8 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
             "shared_admin_write",
             "tool_admin",
         ]
-        with self._oauth_mode():
+        with self._oauth_mode(), \
+             patch.object(jira_server, "current_jira_get", side_effect=AssertionError("Jira boundary reached")):
             for policy_class in protected_classes:
                 for method, path in SECURITY_SAMPLES[policy_class]:
                     with self.subTest(policy_class=policy_class, path=path):

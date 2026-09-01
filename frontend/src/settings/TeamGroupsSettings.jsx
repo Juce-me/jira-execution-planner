@@ -218,7 +218,7 @@ export default function TeamGroupsSettings(props) {
                                                                 tabIndex={0}
                                                                 role="status"
                                                                 aria-label="Favorite Department, selected pending save"
-                                                            >★</span>
+                                                            >♥</span>
                                                         ) : (
                                                             <button
                                                                 type="button"
@@ -233,7 +233,7 @@ export default function TeamGroupsSettings(props) {
                                                                     else toggleDefaultGroupDraft(group.id);
                                                                 }}
                                                                 disabled={groupVisibilitySaving || !(group.teamIds || []).some(teamId => String(teamId || '').trim())}
-                                                            >{isDefault ? '★' : '☆'}</button>
+                                                            >{isDefault ? '♥' : '♡'}</button>
                                                         )}
                                                         {isActive && nameConflict && (
                                                             <span id={`group-name-error-${group.id}`} className="group-list-name-error" role="alert">
@@ -301,9 +301,6 @@ export default function TeamGroupsSettings(props) {
                                         )}
                                         {activeGroupDraft ? (
                                             <div className="group-editor">
-                                                <div className="group-editor-header">
-                                                    <h3 className="group-editor-name">{activeGroupDraft.name || 'Untitled Department'}</h3>
-                                                </div>
                                                 <div className="group-preference-row">
                                                     {firstRunConfigurationActive ? (
                                                         <div

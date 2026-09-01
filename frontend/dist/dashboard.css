@@ -1620,8 +1620,18 @@ h1 {
   font-size: 0.7rem;
 }
 .group-list-star {
-  font-size: 0.85rem;
-  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border-radius: 10px;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-muted);
+  box-shadow: none;
+  transform: none;
+  transition: color 0.15s, background-color 0.15s;
 }
 .group-list-select,
 .group-list-star {
@@ -1629,12 +1639,27 @@ h1 {
   min-height: 44px;
   border: 0;
   background: transparent;
-  color: inherit;
+}
+.group-list-star[aria-pressed=true],
+.group-list-star-status {
+  color: var(--accent);
+}
+.group-list-star:not(:disabled):hover,
+.group-list-star:not(:disabled):focus-visible {
+  background: rgba(212, 56, 13, 0.08);
+  color: var(--accent);
+  box-shadow: none;
+  transform: none;
+}
+.group-list-star:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .group-list-select {
   min-width: 0;
   padding: 0;
   text-align: left;
+  color: inherit;
 }
 .group-list-name-input {
   min-width: 0;
@@ -1652,12 +1677,6 @@ h1 {
   grid-column: 1 / -1;
   color: #b42318;
   font-size: 0.68rem;
-}
-.group-editor-name {
-  min-width: 0;
-  flex: 1 1 12rem;
-  margin: 0;
-  font-size: 0.95rem;
 }
 .first-run-preference-status {
   display: inline-flex;
@@ -2225,9 +2244,6 @@ h1 {
 }
 
 /* frontend/src/styles/settings/group-editor.css */
-.group-editor-header {
-  min-width: 0;
-}
 .group-preference-row {
   display: flex;
   flex-direction: column;

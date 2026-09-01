@@ -1418,7 +1418,7 @@ test('first-run preferences favorite reuses the active row slot and keeps the ed
             await expect(favorite).toHaveAttribute('role', 'status');
             await expect(favorite).toHaveAccessibleName('Favorite Department, selected pending save');
             await expect(favorite).not.toHaveAttribute('disabled');
-            await expect(favorite).toHaveText('★');
+            await expect(favorite).toHaveText('♥');
         } else {
             await expect(favorite).toHaveJSProperty('tagName', 'BUTTON');
             await expect(favorite).toHaveAttribute('type', 'button');
@@ -1437,10 +1437,10 @@ test('first-run preferences favorite reuses the active row slot and keeps the ed
     await page.keyboard.press('Shift+Tab');
     await expect(favoriteTarget).toBeFocused();
 
-    const header = editor.locator(':scope > .group-editor-header');
     const preference = editor.locator(':scope > .group-preference-row');
     const actions = editor.locator(':scope > .group-editor-actions');
-    await expect(editor.locator(':scope > .group-editor-header + .group-preference-row + .group-editor-actions')).toHaveCount(1);
+    await expect(editor.locator(':scope > .group-editor-header')).toHaveCount(0);
+    await expect(editor.locator(':scope > .group-preference-row + .group-editor-actions')).toHaveCount(1);
     const duplicateButton = actions.locator('button', { hasText: 'Duplicate' });
     await expect(duplicateButton).toHaveCount(1);
     await expect(duplicateButton).toHaveAttribute('type', 'button');
@@ -1449,13 +1449,11 @@ test('first-run preferences favorite reuses the active row slot and keeps the ed
     await expect(visibilityStatus).toHaveAttribute('aria-label', 'Show in Department selector, checked. Favorite Departments are always shown');
     await expect(preference.locator('.group-visible-favorite-helper')).toHaveText('Favorite Departments are always shown.');
 
-    const titleGeometry = await expectTextBearingGeometry(header.locator('.group-editor-name'), editor);
-    const visibilityGeometry = await expectTextBearingGeometry(visibilityStatus, editor);
+    await expectTextBearingGeometry(visibilityStatus, editor);
     const helperGeometry = await expectTextBearingGeometry(preference.locator('.group-visible-favorite-helper'), editor);
     const duplicateGeometry = await expectTextBearingGeometry(duplicateButton, editor);
-    const rowLefts = await Promise.all([header, preference, actions].map(locator => locator.evaluate(node => node.getBoundingClientRect().left)));
+    const rowLefts = await Promise.all([preference, actions].map(locator => locator.evaluate(node => node.getBoundingClientRect().left)));
     expect(Math.max(...rowLefts) - Math.min(...rowLefts)).toBeLessThanOrEqual(1);
-    expect(titleGeometry.bottom).toBeLessThanOrEqual(visibilityGeometry.top);
     expect(helperGeometry.bottom).toBeLessThanOrEqual(duplicateGeometry.top);
 
     await captureSettledDepartmentScreenshot(page, 'department-row-favorite-first-run.png');
@@ -2556,6 +2554,7 @@ test('personal favorite star is separate from shared default and temporary group
         await expect(favorite).toHaveJSProperty('tagName', 'BUTTON');
         await expect(favorite).toHaveAttribute('type', 'button');
         await expect(favorite).toHaveAttribute('aria-pressed', String(expectation.pressed));
+        await expect(favorite).toHaveText(expectation.pressed ? '♥' : '♡');
         await expect(favorite).toHaveAccessibleName(expectation.pressed
             ? `${expectation.name} is your favorite Department`
             : `Set ${expectation.name} as your favorite Department`);
@@ -2567,11 +2566,28 @@ test('personal favorite star is separate from shared default and temporary group
     }
     await expect(dialog.getByTitle('Default group')).toHaveCount(0);
 
+    const defaultHeart = rows.nth(0).getByRole('button', { name: 'Set Default as your favorite Department' });
+    await defaultHeart.hover();
+    await expect.poll(() => defaultHeart.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return {
+            backgroundColor: style.backgroundColor,
+            boxShadow: style.boxShadow,
+            color: style.color,
+            transform: style.transform,
+        };
+    })).toEqual({
+        backgroundColor: 'rgba(212, 56, 13, 0.08)',
+        boxShadow: 'none',
+        color: 'rgb(212, 56, 13)',
+        transform: 'none',
+    });
+
     const growthStar = rows.nth(2)
         .getByRole('button', { name: 'Set Growth as your favorite Department' });
     await growthStar.click();
     await expect(dialog.locator('.group-list-item.active .group-list-name-input')).toHaveValue('Platform');
-    await expect(dialog.locator('.group-editor-name')).toHaveText('Platform');
+    await expect(dialog.locator('.group-editor-name')).toHaveCount(0);
     await expect(rows.nth(2).getByRole('button', { name: 'Growth is your favorite Department' })).toHaveAttribute('aria-pressed', 'true');
     await captureSettledDepartmentScreenshot(page, 'department-row-favorite-ordinary.png');
 
@@ -2582,19 +2598,16 @@ test('personal favorite star is separate from shared default and temporary group
     await expect(dialog.locator('.group-visible-favorite-helper')).toHaveText('Favorite Departments are always shown.');
     await expect(dialog.getByText('Controls whether this Department appears in the dashboard Department menu.')).toHaveCount(0);
 
-    const header = editor.locator(':scope > .group-editor-header');
     const preference = editor.locator(':scope > .group-preference-row');
     const actions = editor.locator(':scope > .group-editor-actions');
-    await expect(editor.locator(':scope > .group-editor-header + .group-preference-row + .group-editor-actions')).toHaveCount(1);
+    await expect(editor.locator(':scope > .group-editor-header')).toHaveCount(0);
+    await expect(editor.locator(':scope > .group-preference-row + .group-editor-actions')).toHaveCount(1);
     await expect(actions.getByRole('button', { name: 'Duplicate', exact: true })).toHaveCount(1);
-    await expect(header.locator('.group-star-button')).toHaveCount(0);
-    const titleGeometry = await expectTextBearingGeometry(header.locator('.group-editor-name'), editor);
-    const visibilityGeometry = await expectTextBearingGeometry(preference.locator('.group-visible-control > span'), editor);
+    await expectTextBearingGeometry(preference.locator('.group-visible-control > span'), editor);
     const helperGeometry = await expectTextBearingGeometry(preference.locator('.group-visible-favorite-helper'), editor);
     const duplicateGeometry = await expectTextBearingGeometry(actions.getByRole('button', { name: 'Duplicate', exact: true }), editor);
-    const rowLefts = await Promise.all([header, preference, actions].map(locator => locator.evaluate(node => node.getBoundingClientRect().left)));
+    const rowLefts = await Promise.all([preference, actions].map(locator => locator.evaluate(node => node.getBoundingClientRect().left)));
     expect(Math.max(...rowLefts) - Math.min(...rowLefts)).toBeLessThanOrEqual(1);
-    expect(titleGeometry.bottom).toBeLessThanOrEqual(visibilityGeometry.top);
     expect(helperGeometry.bottom).toBeLessThanOrEqual(duplicateGeometry.top);
     await captureSettledDepartmentScreenshot(page, 'department-editor-preferences-desktop.png');
 

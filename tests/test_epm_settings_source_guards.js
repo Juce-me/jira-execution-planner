@@ -784,7 +784,8 @@ test('department visibility controls are prop-owned and share one canonical row 
     assert.ok(teamGroupsSettingsSource.includes('disabled={groupVisibilitySaving || activeGroupIsFavorite}'), 'Expected favorite visibility to stay immutable in the editor');
     assert.ok(teamGroupsSettingsSource.includes('Set ${group.name || \'Department\'} as your favorite Department'), 'Expected canonical row favorite accessible label');
     assert.ok(!teamGroupsSettingsSource.includes('group-star-button'), 'Expected no duplicate right-pane favorite control');
-    assert.ok(!teamGroupsSettingsSource.includes('<input') || teamGroupsSettingsSource.indexOf('className="group-visible-control"') > teamGroupsSettingsSource.indexOf('className="group-editor-header"'), 'Expected visibility input in editor header, not group list row');
+    assert.ok(!teamGroupsSettingsSource.includes('className="group-editor-header"'), 'Expected redundant editor header to be removed');
+    assert.ok(teamGroupsSettingsSource.indexOf('className="group-visible-control"') > teamGroupsSettingsSource.indexOf('className="group-editor"'), 'Expected visibility input in the editor, not the group list row');
 });
 
 test('group labels tab is available for the current group draft', () => {

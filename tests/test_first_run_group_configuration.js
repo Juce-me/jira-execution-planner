@@ -433,12 +433,14 @@ test('Department editor exposes one canonical row favorite and ordered preferenc
     assert.equal(source.includes('className="group-star-button'), false);
     assert.equal(source.includes('Controls whether this Department appears in the dashboard Department menu.'), false);
     assert.equal(source.includes('Your favorite Department is always shown'), false);
-    const headerIndex = source.indexOf('<div className="group-editor-header">');
-    const preferenceIndex = source.indexOf('<div className="group-preference-row">', headerIndex);
+    assert.equal(source.includes('className="group-editor-header"'), false);
+    assert.equal(source.includes('className="group-editor-name"'), false);
+    assert.ok(source.includes('>♥</span>'));
+    assert.ok(source.includes("{isDefault ? '♥' : '♡'}</button>"));
+    const preferenceIndex = source.indexOf('<div className="group-preference-row">');
     const actionsIndex = source.indexOf('<div className="group-editor-actions">', preferenceIndex);
     const teamsIndex = source.indexOf('className="team-selector"', actionsIndex);
-    assert.ok(headerIndex >= 0 && headerIndex < preferenceIndex);
-    assert.ok(preferenceIndex < actionsIndex && actionsIndex < teamsIndex);
+    assert.ok(preferenceIndex >= 0 && preferenceIndex < actionsIndex && actionsIndex < teamsIndex);
     assert.match(source.slice(actionsIndex, teamsIndex), /className="group-editor-actions"[\s\S]*>\s*Duplicate\s*<\/button>/);
     assert.equal((source.match(/className="group-name-input"/g) || []).length, 0);
     assert.equal(source.includes('Show in my controls'), false);

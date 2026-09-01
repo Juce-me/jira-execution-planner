@@ -1,8 +1,4 @@
 
-        .group-editor-header {
-            min-width: 0;
-        }
-
         .group-preference-row {
             display: flex;
             flex-direction: column;

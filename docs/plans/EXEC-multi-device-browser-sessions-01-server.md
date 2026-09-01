@@ -205,6 +205,7 @@ git commit -m "Add persistent DB browser sessions"
 
 - Create: `backend/auth/db_browser_sessions.py`
 - Create: `tests/test_db_browser_sessions.py`
+- Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
 
 - [ ] **Step 1: Write failing lifecycle tests**
 

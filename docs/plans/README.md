@@ -144,7 +144,12 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented output includes direct existing-Department selection or persistent **Add Department**, guided create/duplicate/repair in the real Team Groups editor, automatic pending favorite/visibility with ordered shared/private save recovery, a single left-list name input, Settings-header replay, safe target-driven Priority/Project Track/Status previews, deterministic hierarchy fallbacks, analytics review, source guards, and operational guidance.
    - Task 9 used the authorized fresh Node 20 verification worktree. The clean final ref passed 1,396 Python tests with 7 skips, 1,027 frontend unit tests, and 563 Playwright tests with 2 skips; reproducible generated output and all 15 settled screenshots were verified and inspected. The branch awaits explicit push approval.
 
-14. `EXEC-hide-single-option-view-mode-control.md`
+14. `EXEC-user-onboarding-contextual-follow-up.md`
+   - Ready for execution on `feature/user-onboarding-tour` after the pushed plan commit. Continue from the completed Tasks 0–9 above; do not reconstruct them.
+   - Expected output: a wider desktop coachmark with clear blue/red/neutral action hierarchy, explicit Next after each safe field preview, contextual Configuration/Planning/Board/Statistics modules launched by the real user-clicked controls, one canonical left-row Department favorite star, and a compact right-pane visibility layout.
+   - Mobile dashboard onboarding remains deferred to issue #151. No backend, ownership, persistence-schema, Jira-mutation, or new analytics-event change is allowed.
+
+15. `EXEC-hide-single-option-view-mode-control.md`
    - Ready for execution as a small frontend-only task suitable for a 5.3 coding model.
    - Expected output: the ENG/EPM segmented control is absent when EPM navigation is unavailable, remains a two-option control when EPM is available, and updates correctly after Home-token connection, revocation, or backend prerequisite changes. Existing availability, analytics, auth, request, and shared-control contracts remain unchanged.
 

@@ -31,7 +31,7 @@ Each successful shared save is verified against the returned workspace configura
 
 ## Phase 4: dashboard tour
 
-After Department setup succeeds, an incomplete user can start the guided ENG Catch Up tour. It covers dashboard controls, hierarchy, Jira handoff, and read-only Priority, Project Track, and Status menu previews. Opening a highlighted field control advances the preview without choosing a value or mutating Jira. Missing or unavailable targets use explanatory fallback steps with manual navigation.
+After Department setup succeeds, an incomplete user can start the guided ENG Catch Up tour. It covers dashboard controls, hierarchy, Jira handoff, and read-only Priority, Project Track, and Status menu previews. Opening a highlighted field control keeps **Next** disabled while the read-only preview is open. Closing a settled preview restores focus and enables **Next**; the tour never advances until the user explicitly chooses **Next**, and no preview chooses a value or mutates Jira. Missing or unavailable targets use explanatory fallback steps with manual navigation.
 
 The dashboard tour is desktop only. At viewport widths of 760px or less it stays closed, while the first-run Department chooser and configuration continue to work. Mobile dashboard-tour work is deferred in GitHub issue #151.
 

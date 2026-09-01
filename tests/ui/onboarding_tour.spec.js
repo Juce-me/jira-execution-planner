@@ -1519,6 +1519,8 @@ test('production contextual module uses an honest fallback when the Board destin
     await expect(page.locator('[data-onboarding-target="board-overview"]')).toBeHidden();
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
     await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: 'Open Statistics' })).toBeVisible();
 });
 
 test('production Configuration contextual module defers to dirty Settings state', async ({ page }) => {
@@ -1941,7 +1943,7 @@ test('production Status preview reaches required contextual modules before expli
     );
 });
 
-test('step collector delegates preview progression before requiring a Next fallback', async ({ page }) => {
+test('step collector delegates preview lifecycle while explicit Next remains disabled', async ({ page }) => {
     await installHarness(page);
     await openTour(page);
     await expect(page.locator('[aria-live="polite"]')).toHaveCount(1);
@@ -1953,6 +1955,7 @@ test('step collector delegates preview progression before requiring a Next fallb
 
     await collectTourSteps(page, {
         advancePreview: async ({ page: callbackPage }) => {
+            await expect(callbackPage.getByRole('button', { name: 'Next' })).toBeDisabled();
             await callbackPage.evaluate(() => {
                 window.__previewCallbackCount += 1;
                 window.__tourHarness.closeWithDone();
@@ -2773,7 +2776,7 @@ test('interactive target ancestor scroll lock restores exact prior overflow stat
     });
 });
 
-test('interactive preview uses an honest manual fallback when no non-overlapping coachmark placement fits', async ({ page }) => {
+test('preview placement fallback preserves modal isolation without unlocking Next', async ({ page }) => {
     await installHarness(page);
     await openTour(page);
     await advanceToHeading(page, 'Preview Priority options');
@@ -2791,6 +2794,7 @@ test('interactive preview uses an honest manual fallback when no non-overlapping
     await expect(page.locator('[data-onboarding-tour]')).not.toHaveClass(/is-interactive/);
     await expect(page.locator('.onboarding-tour-shield')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
     await expect(page.locator('#root')).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('#root')).toHaveAttribute('inert', '');
     await expect(page.locator('[data-priority-transition-trigger]')).not.toHaveAttribute('aria-describedby', /.+/);

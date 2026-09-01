@@ -29,6 +29,7 @@
 - Modify: `tests/test_db_migrations.py`
 - Modify: `tests/test_auth_context_db.py`
 - Modify: `tests/test_auth_routes.py`
+- Modify: `tests/test_codebase_structure_budgets.py`
 - Modify: `tests/test_db_oauth_cutover.py`
 - Modify: `tests/test_token_refresh_reuse.py`
 - Modify: `tests/test_token_refresh_race.py`

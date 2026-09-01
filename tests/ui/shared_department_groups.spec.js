@@ -810,7 +810,7 @@ test('create clean Department ignores the empty-search query when staging its dr
     expect(calls.filter(call => call.method === 'POST' && ['/api/groups-config', '/api/groups-preferences', '/api/me/onboarding'].includes(call.pathname))).toHaveLength(0);
 });
 
-test('duplicate existing Department submits one cleaned copy and preserves its source', async ({ page }) => {
+test('duplicate existing Department stages one cleaned copy and preserves its source row', async ({ page }) => {
     const calls = await mockFirstRunDashboard(page, {
         groupsConfig: {
             version: 1,
@@ -842,13 +842,14 @@ test('duplicate existing Department submits one cleaned copy and preserves its s
     await expect(settings.getByPlaceholder('Group name')).toHaveValue('Source Copy');
     await expect(settings.getByPlaceholder('Group name')).toBeFocused();
     await expect(settings.locator('.group-list-item')).toHaveCount(2);
-    await expect(settings.locator('.group-list-item', { hasText: 'Source Copy' })).toHaveCount(1);
-    await expect(settings.getByText('No teams selected. Search and add teams below.')).toBeVisible();
+    await expect(settings.locator('.group-list-item:has(input[placeholder="Group name"])')).toHaveCount(1);
+    await expect(settings.getByText('No teams available. Load tasks first or refresh teams above.')).toBeVisible();
     await expect(settings.getByText('Backend', { exact: true })).toHaveCount(0);
-    await settings.locator('.group-list-item', { hasText: 'Source', hasNotText: 'Source Copy' }).click();
-    await expect(settings.getByPlaceholder('Group name')).toHaveValue('Source');
-    await expect(settings.locator('.selected-team-chip')).toContainText('team-source');
-    await expect(settings.getByText('Backend', { exact: true })).toBeVisible();
+    const sourceRow = settings.locator('.group-list-item', { hasText: 'Source', hasNotText: 'Source Copy' });
+    await expect(sourceRow).toHaveCount(1);
+    await expect(sourceRow).toContainText('1 team');
+    await expect(sourceRow.locator('.group-list-select')).toHaveText('Source');
+    await expect(sourceRow.locator('.group-list-select')).toBeDisabled();
     expect(calls.filter(call => call.method === 'POST' && ['/api/groups-config', '/api/groups-preferences', '/api/me/onboarding'].includes(call.pathname))).toHaveLength(0);
 });
 

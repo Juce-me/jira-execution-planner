@@ -19,7 +19,7 @@ import OnboardingTour from './onboarding/OnboardingTour.jsx';
 import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
 import { useOnboardingController } from './onboarding/useOnboardingTour.js';
 import AuthRequiredGate from './components/AuthRequiredGate.jsx';
-import { AUTH_REQUIRED_EVENT, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './api/authRequired.js';
+import { AUTH_REQUIRED_EVENT, AUTHENTICATION_REQUIRED_CODE, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './api/authRequired.js';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
@@ -3610,7 +3610,9 @@ import {
                         invalidateSprintDataForConfigSave(refreshTarget);
                         queueConfigSaveRefresh(refreshTarget);
 
-                        if (boardChanged) loadSprints(true, { queueIfBusy: true });
+                        if (boardChanged) {
+                            loadSprints(true, { queueIfBusy: true });
+                        }
                     }
 
                     if (closeOnSuccess) {
@@ -11817,7 +11819,7 @@ import {
             const handleOnboardingPreviewLifecycleChange = React.useCallback((descriptor, lifecycle) => {
                 setOnboardingPreviewSession((current) => (
                     !onboardingPreviewDescriptorMatches(current, descriptor)
-                        || (current.state === 'closed' && !['loading', 'auth_required'].includes(lifecycle?.state))
+                        || (current.state === 'closed' && !['loading', AUTHENTICATION_REQUIRED_CODE].includes(lifecycle?.state))
                         ? current
                         : { ...current, state: lifecycle?.state || current.state, reason: lifecycle?.reason || '' }
                 ));

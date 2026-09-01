@@ -1,4 +1,5 @@
 export const AUTH_REQUIRED_EVENT = 'jep:authentication-required';
+export const AUTHENTICATION_REQUIRED_CODE = 'auth_required';
 
 const AUTH_REQUIRED_SLOT = '__JEP_AUTH_REQUIRED__';
 const FALLBACK_LOGIN_URL = '/login?reason=session_expired';
@@ -39,7 +40,7 @@ export class AuthenticationRequiredError extends Error {
     constructor(state = null, status = 401) {
         super('Authentication is required to continue.');
         this.name = 'AuthenticationRequiredError';
-        this.code = 'auth_required';
+        this.code = AUTHENTICATION_REQUIRED_CODE;
         const normalizedStatus = Number(status);
         this.status = Number.isFinite(normalizedStatus) ? normalizedStatus : 401;
         this.loginUrl = state?.loginUrl || FALLBACK_LOGIN_URL;

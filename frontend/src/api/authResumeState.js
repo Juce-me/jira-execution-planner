@@ -15,39 +15,51 @@ const SETTINGS_TABS = new Set([
 ]);
 const SELECTION_MODES = new Set(['manual', 'default_all']);
 
-const SENSITIVE_TEXT = /(?<![a-z])(?:api[\s_-]*token|access[\s_-]*token|refresh[\s_-]*token|authorization|bearer|response[\s_-]*(?:body|data)|config[\s_-]*draft|oauth[\s_-]*state|pkce|code[\s_-]*(?:verifier|challenge))(?![a-z])/i;
-const EMAIL_TEXT = /[^\s@]+@[^\s@]+\.[^\s@]+/;
-
 const cleanString = (value, max = 255) => typeof value === 'string'
     ? value.trim().slice(0, max)
     : '';
 
-const isSafeString = value => value == null || (typeof value === 'string'
-    && !EMAIL_TEXT.test(value.trim())
-    && !SENSITIVE_TEXT.test(value));
+const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/;
+const JIRA_ISSUE_KEY = /^[A-Z][A-Z0-9_]*-\d+$/;
+const isOpaqueId = value => typeof value === 'string' && OPAQUE_ID.test(value.trim());
+const isOptionalOpaqueId = value => value == null || value === '' || isOpaqueId(value);
+const isScopeKey = value => {
+    if (typeof value !== 'string') return false;
+    const parts = value.trim().split('::');
+    return parts.length === 3 && parts[0] === 'planning' && isOpaqueId(parts[1]) && isOpaqueId(parts[2]);
+};
 
-const cleanList = (values, maxItems) => {
-    if (!Array.isArray(values) || values.length > maxItems || values.some(value => typeof value !== 'string' || !isSafeString(value))) {
+const cleanList = (values, maxItems, validator = isOpaqueId) => {
+    if (!Array.isArray(values) || values.length > maxItems || values.some(value => typeof value !== 'string' || !validator(value))) {
         return null;
     }
     return [...new Set(values.map(value => cleanString(value)).filter(Boolean))];
 };
 
 function normalizePrincipal(value) {
-    if (!isSafeString(value?.workspaceId) || !isSafeString(value?.viewConfigId)) return null;
+    if (!isOpaqueId(value?.workspaceId) || !isOpaqueId(value?.viewConfigId)) return null;
     const workspaceId = cleanString(value?.workspaceId);
     const viewConfigId = cleanString(value?.viewConfigId);
     return workspaceId && viewConfigId ? { workspaceId, viewConfigId } : null;
 }
 
-function normalizeSnapshot(value, capturedAt) {
+function hasExactKeys(value, keys) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+}
+
+function normalizeSnapshot(value, capturedAt, strict = false) {
+    if (strict && (!hasExactKeys(value, ['version', 'capturedAt', 'principal', 'view', 'planning'])
+        || !hasExactKeys(value.principal, ['workspaceId', 'viewConfigId'])
+        || !hasExactKeys(value.view, ['selectedView', 'activeGroupId', 'selectedSprint', 'engMode', 'settingsOpen', 'settingsTab'])
+        || !hasExactKeys(value.planning, ['scopeKey', 'selectedTaskKeys', 'selectedTeams', 'selectionMode']))) return null;
     const principal = normalizePrincipal(value?.principal);
     if (!principal) return null;
     const selectedView = value?.view?.selectedView;
     const engMode = value?.view?.engMode;
     const settingsTab = value?.view?.settingsTab;
     const selectionMode = value?.planning?.selectionMode;
-    const selectedTaskKeys = cleanList(value?.planning?.selectedTaskKeys, 500);
+    const selectedTaskKeys = cleanList(value?.planning?.selectedTaskKeys, 500, value => JIRA_ISSUE_KEY.test(value.trim()));
     const selectedTeams = cleanList(value?.planning?.selectedTeams, 200);
     const activeGroupId = cleanString(value?.view?.activeGroupId);
     const selectedSprint = cleanString(value?.view?.selectedSprint);
@@ -60,9 +72,9 @@ function normalizeSnapshot(value, capturedAt) {
         || typeof value?.view?.settingsOpen !== 'boolean'
         || selectedTaskKeys === null
         || selectedTeams === null
-        || !isSafeString(value?.view?.activeGroupId)
-        || !isSafeString(value?.view?.selectedSprint)
-        || !isSafeString(value?.planning?.scopeKey)
+        || !isOptionalOpaqueId(value?.view?.activeGroupId)
+        || !isOptionalOpaqueId(value?.view?.selectedSprint)
+        || !isScopeKey(value?.planning?.scopeKey)
     ) return null;
     return {
         version: AUTH_RESUME_VERSION,
@@ -99,7 +111,10 @@ export function writeAuthResumeState(storage, snapshot, now = Date.now()) {
         if (existing) {
             let existingPrincipal;
             try { existingPrincipal = JSON.parse(existing)?.principal; } catch (error) { existingPrincipal = null; }
-            if (existingPrincipal && readAuthResumeState(storage, existingPrincipal, now)) return false;
+            const existingState = existingPrincipal && readAuthResumeState(storage, existingPrincipal, now);
+            if (existingState && existingState.principal.workspaceId === normalized.principal.workspaceId
+                && existingState.principal.viewConfigId === normalized.principal.viewConfigId) return false;
+            if (existingState) clearAuthResumeState(storage);
         }
         const serialized = JSON.stringify(normalized);
         if (new TextEncoder().encode(serialized).byteLength > AUTH_RESUME_MAX_BYTES) return false;
@@ -122,7 +137,7 @@ export function readAuthResumeState(storage, principal, now = Date.now()) {
         const parsed = JSON.parse(raw);
         const expected = normalizePrincipal(principal);
         const capturedAt = parsed?.capturedAt;
-        const normalized = normalizeSnapshot(parsed, capturedAt);
+        const normalized = normalizeSnapshot(parsed, capturedAt, true);
         const validAge = typeof capturedAt === 'number'
             && Number.isFinite(capturedAt)
             && capturedAt >= 0

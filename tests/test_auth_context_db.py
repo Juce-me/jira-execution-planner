@@ -103,7 +103,7 @@ class DbAuthContextTests(unittest.TestCase):
             connection.token_version = token_version
             session.commit()
 
-    def _seed_mismatched_browser_session(self):
+    def _seed_browser_session_with_mismatched_user(self):
         first_id, _, connection_id = self._seed_browser_sessions()
         with self.factory() as session:
             other_user = models.User(
@@ -115,6 +115,16 @@ class DbAuthContextTests(unittest.TestCase):
                 status='active',
                 created_by='test',
             )
+            session.add(other_user)
+            session.flush()
+            connection = session.get(models.AuthConnection, connection_id)
+            connection.user_id = other_user.id
+            session.commit()
+        return first_id
+
+    def _seed_browser_session_with_mismatched_workspace(self):
+        first_id, _, connection_id = self._seed_browser_sessions()
+        with self.factory() as session:
             other_workspace = models.Workspace(
                 environment_key='other',
                 name='Other Example',
@@ -122,10 +132,9 @@ class DbAuthContextTests(unittest.TestCase):
                 jira_cloud_id='cloud-456',
                 created_by='test',
             )
-            session.add_all([other_user, other_workspace])
+            session.add(other_workspace)
             session.flush()
             connection = session.get(models.AuthConnection, connection_id)
-            connection.user_id = other_user.id
             connection.workspace_id = other_workspace.id
             session.commit()
         return first_id
@@ -221,8 +230,20 @@ class DbAuthContextTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 'auth_required')
 
-    def test_browser_session_cannot_cross_workspace_or_connection_owner(self):
-        browser_session_id = self._seed_mismatched_browser_session()
+    def test_browser_session_rejects_user_owner_mismatch(self):
+        browser_session_id = self._seed_browser_session_with_mismatched_user()
+
+        with self.assertRaises(AuthError) as raised:
+            resolve_db_request_auth_context(
+                {'db_browser_session_id': browser_session_id},
+                database_url=self.database_url,
+                required_scopes=FULL_SCOPE,
+            )
+
+        self.assertEqual(raised.exception.code, 'auth_required')
+
+    def test_browser_session_rejects_workspace_owner_mismatch(self):
+        browser_session_id = self._seed_browser_session_with_mismatched_workspace()
 
         with self.assertRaises(AuthError) as raised:
             resolve_db_request_auth_context(

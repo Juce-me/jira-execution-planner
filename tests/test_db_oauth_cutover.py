@@ -234,13 +234,19 @@ class DbOauthCutoverTests(unittest.TestCase):
             'CONFIG_STORAGE_BACKEND': 'db',
             'DATABASE_URL': self.database_url,
         }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'ATLASSIAN_SCOPES', jira_server.ATLASSIAN_SCOPES):
+             patch.object(jira_server, 'ATLASSIAN_SCOPES', jira_server.ATLASSIAN_SCOPES), \
+             patch.object(
+                 jira_server,
+                 'create_browser_session',
+                 side_effect=AssertionError('stale legacy cookies must not create browser sessions'),
+             ) as create_session:
             response = self.client.get('/api/auth/status')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertTrue(response.get_json()['loginRequired'])
         with self.client.session_transaction() as session:
             self.assertEqual(session['db_oauth_session'], legacy_payload)
+        create_session.assert_not_called()
 
     def test_opaque_cookie_resolution_does_not_rewrite_the_flask_session(self):
         result = self._store_callback()

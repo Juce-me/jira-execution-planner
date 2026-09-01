@@ -308,12 +308,38 @@ test('onboarding operational guidance documents the shipped workflow boundaries'
         /requires both the configured mapped team label and the selected-sprint-name label/i,
         'Future sprint-ready guidance must not claim that both labels are required',
     );
+    assert.ok(
+        guide.includes('opens a menu with separate **Open epics** and **Open stories** choices'),
+        'Expected the Jira handoff guide to document the two shipped issue-scope choices',
+    );
+    assert.ok(
+        guide.includes('opens only that currently scoped subset in Jira'),
+        'Expected the Jira handoff guide to preserve the selected Epic-or-Story scope',
+    );
+    assert.doesNotMatch(
+        guide,
+        /opens the currently scoped issue set in Jira/i,
+        'The Jira control must not be documented as directly opening a combined issue set',
+    );
     assert.ok(onboardingDoc.includes('four phases'));
     assert.ok(onboardingDoc.includes('configuration guide and dashboard tour never run together'));
     assert.ok(onboardingDoc.includes('shared Department configuration'));
     assert.ok(onboardingDoc.includes('private preferences'));
     assert.ok(onboardingDoc.includes('preference-only retry'));
     assert.ok(onboardingDoc.includes('desktop only'));
+    assert.ok(
+        onboardingDoc.includes('marks onboarding as incomplete and closes Settings, but no tour is shown'),
+        'Expected the mobile replay guide to document successful incomplete persistence and Settings close',
+    );
+    assert.ok(
+        onboardingDoc.includes('begins at the first eligible step when the dashboard is next opened at desktop width'),
+        'Expected the mobile replay guide to document deferred desktop start',
+    );
+    assert.doesNotMatch(
+        onboardingDoc,
+        /Starting replay first persists incomplete onboarding, closes Settings, prepares ENG Catch Up, and opens the desktop tour\./,
+        'Replay guidance must not claim that a mobile invocation immediately opens the desktop tour',
+    );
     assert.ok(onboardingDoc.includes('not replayed automatically'));
     assert.ok(onboardingDoc.includes('[ENG Workflows](eng-workflows.md)'));
     assert.ok(favoriteDoc.includes('Direct picker selection'));

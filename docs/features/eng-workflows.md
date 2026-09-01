@@ -75,4 +75,4 @@ Board search is separate and Epic-only. It matches Epic key, summary, assignee, 
 
 ## Continue in Jira
 
-The blue Jira control opens the currently scoped issue set in Jira. From there, Jira provides its bulk-operation tools. The app does not perform an in-app bulk mutation from this control.
+The blue Jira control opens a menu with separate **Open epics** and **Open stories** choices. Choosing one opens only that currently scoped subset in Jira, where Jira provides its bulk-operation tools. The app does not perform an in-app bulk mutation from this control.

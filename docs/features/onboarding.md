@@ -41,7 +41,9 @@ Tour progress is session-only. Reloading an unfinished tour restarts at its firs
 
 ## Replay from Settings
 
-In Atlassian OAuth workspace-database mode, **Run onboarding again** remains at the right of the Settings header across tabs. It is disabled while any Settings section is dirty or saving. Starting replay first persists incomplete onboarding, closes Settings, prepares ENG Catch Up, and opens the desktop tour. A failed write keeps Settings open and leaves the previous state unchanged.
+In Atlassian OAuth workspace-database mode, **Run onboarding again** remains at the right of the Settings header across tabs. It is disabled while any Settings section is dirty or saving. Starting replay first marks onboarding as incomplete. If that save succeeds, Settings closes and ENG Catch Up becomes active. On a desktop-width dashboard, the tour opens immediately. A failed write keeps Settings open and leaves the previous state unchanged.
+
+On a mobile-width dashboard, choosing **Run onboarding again** still marks onboarding as incomplete and closes Settings, but no tour is shown. It begins at the first eligible step when the dashboard is next opened at desktop width. Mobile dashboard-tour work remains deferred in GitHub issue #151.
 
 Replay does not alter Department visibility, the saved favorite, dashboard scope, sprint, or Team selection. Users who have already completed onboarding are not replayed automatically.
 

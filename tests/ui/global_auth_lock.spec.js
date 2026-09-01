@@ -147,7 +147,7 @@ async function installPlanningRecoveryPage(page, label, shared) {
     const state = {
         label,
         documents: observeDocuments(page),
-        auth401Calls: 0,
+        authTriggerRequestIds: [],
         oauthRequests: 0,
         authStatusCookies: [],
         armAuth401: false,
@@ -155,6 +155,22 @@ async function installPlanningRecoveryPage(page, label, shared) {
     };
     shared.pages[label] = state;
     await installFreshDashboard(page);
+    await page.addInitScript(() => {
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = (input, options = {}) => {
+            const requestUrl = input instanceof Request ? input.url : String(input);
+            if (
+                window.__authTriggerRequestId
+                && new URL(requestUrl, window.location.href).pathname === '/api/analytics/context'
+            ) {
+                const headers = new Headers(input instanceof Request ? input.headers : undefined);
+                new Headers(options.headers || {}).forEach((value, name) => headers.set(name, value));
+                headers.set('X-JEP-Test-Request-Id', window.__authTriggerRequestId);
+                return nativeFetch(input, { ...options, headers });
+            }
+            return nativeFetch(input, options);
+        };
+    });
     await page.route('**/api/config**', route => {
         const cookie = route.request().headers().cookie || '';
         if (shared.authenticated && !cookie.includes('jep_auth=shared')) {
@@ -193,9 +209,10 @@ async function installPlanningRecoveryPage(page, label, shared) {
         });
     });
     await page.route('**/api/analytics/context', route => {
+        const requestId = route.request().headers()['x-jep-test-request-id'];
+        if (requestId) state.authTriggerRequestIds.push(requestId);
         if (state.armAuth401) {
             state.armAuth401 = false;
-            state.auth401Calls += 1;
             return json(route, { error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
         }
         return json(route, { enabled: false });
@@ -249,6 +266,7 @@ async function triggerAuth401(page, state) {
     state.armAuth401 = true;
     await page.evaluate((label) => {
         window.__oldDocumentMarker = label;
+        window.__authTriggerRequestId = `auth-trigger-${label}`;
         return window.JepAnalytics.refreshAnalyticsContext().catch(() => null);
     }, state.label);
     await expect(page.getByRole('alertdialog')).toBeVisible();
@@ -550,8 +568,8 @@ test('same-profile Planning tabs elect one OAuth leader and reload independently
     await expect.poll(() => followerState.authStatusCookies.length).toBeGreaterThan(0);
     expect(followerState.authStatusCookies.at(-1)).toContain('jep_auth=shared');
 
-    expect(stateA.auth401Calls).toBe(1);
-    expect(stateB.auth401Calls).toBe(1);
+    expect(stateA.authTriggerRequestIds).toEqual(['auth-trigger-A']);
+    expect(stateB.authTriggerRequestIds).toEqual(['auth-trigger-B']);
     expect(shared.oauthRequests).toBe(1);
     expect(stateA.documents.filter(pathname => pathname === '/')).toHaveLength(2);
     expect(stateB.documents.filter(pathname => pathname === '/')).toHaveLength(2);

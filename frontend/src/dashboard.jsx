@@ -2497,8 +2497,9 @@ import {
                 }
             };
 
-            const openGroupManage = () => {
-                setGroupManageTab(preferredSettingsTab);
+            const openGroupManage = ({ contextualOnboarding = false } = {}) => {
+                setGroupManageTab(contextualOnboarding ? 'teams' : preferredSettingsTab);
+                if (contextualOnboarding) setDepartmentSettingsTab('teams');
                 setShowGroupManage(true);
             };
 
@@ -13997,7 +13998,7 @@ import {
                                             onClick={(event) => {
                                                 event.stopPropagation();
                                                 trackSettingsAction('teams', 'open', { source_surface: 'dashboard' });
-                                                openGroupManage();
+                                                openGroupManage({ contextualOnboarding: onboarding.run });
                                                 onboarding.requestModule('configuration');
                                             }}
                                             disabled={groupsLoading}

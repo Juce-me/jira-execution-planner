@@ -886,6 +886,8 @@ async function installProductionOnboardingFixture(page, {
     sprintState = 'active',
     hideBoardTarget = false,
     deferGroupSave = false,
+    projectsConfigured = true,
+    environmentConfigExists = true,
 } = {}) {
     const calls = [];
     let releaseGroupSave = () => {};
@@ -976,8 +978,8 @@ async function installProductionOnboardingFixture(page, {
                 jiraUrl: 'https://jira.example.invalid',
                 capacityProject: '',
                 authMode: 'atlassian_oauth',
-                projectsConfigured: true,
-                environmentConfigExists: true,
+                projectsConfigured,
+                environmentConfigExists,
                 userCanEditSettings: true,
                 groupQueryTemplateEnabled: false,
                 epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
@@ -1547,6 +1549,34 @@ test('production Configuration contextual module defers to Settings while it is 
     await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
     await expect(page.locator('.onboarding-tour-card')).toContainText('Save or discard the current Settings changes before continuing.');
     releaseGroupSave();
+});
+
+test('contextual Configuration routes editable unconfigured workspaces to the real Team target only for that launch', async ({ page }) => {
+    const { calls } = await installProductionOnboardingFixture(page, {
+        projectsConfigured: false,
+        environmentConfigExists: false,
+    });
+    await advanceProductionTourTo(page, 'Configure this Department');
+
+    const settingsLauncher = page.getByRole('button', { name: 'Manage team groups' });
+    await settingsLauncher.click();
+    await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
+    await expect(page.locator('.group-modal > .group-modal-tabs > .group-modal-tab.active')).toHaveText('Departments');
+    await expect(page.getByRole('tab', { name: 'Team groups' })).toHaveAttribute('aria-selected', 'true');
+    const teamTarget = page.locator('[data-onboarding-target="configuration-team-add"]');
+    await expect(teamTarget).toBeVisible();
+    await expect(teamTarget).toBeFocused();
+    await expect(teamTarget).toHaveAttribute('aria-describedby', /.+/);
+    expect(calls.filter(call => call.pathname === '/api/groups-config' && call.method !== 'GET')).toEqual([]);
+
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.locator('[data-first-run-settings-cancel]').click();
+    await page.getByRole('button', { name: 'Skip onboarding' }).click();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    await settingsLauncher.click();
+    await expect(page.locator('.group-modal > .group-modal-tabs > .group-modal-tab.active')).toHaveText('Admin');
+    await expect(page.getByRole('tab', { name: 'Scope projects' })).toHaveAttribute('aria-selected', 'true');
+    expect(calls.filter(call => call.pathname === '/api/groups-config' && call.method !== 'GET')).toEqual([]);
 });
 
 test('production Catch Up Priority preview owns only the exact Epic control and never writes Jira', async ({ page }) => {

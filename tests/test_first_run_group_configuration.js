@@ -415,7 +415,7 @@ test('configuration guide is a non-modal anchored coachmark with real-target foc
     assert.ok(source.includes('Continue without components'));
 });
 
-test('Department editor exposes one canonical inline name and guide targets', () => {
+test('Department editor exposes one canonical row favorite and ordered preference actions', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx'), 'utf8');
     assert.ok(source.includes('className="group-list-name-input"'));
     assert.ok(source.includes('data-first-run-guide-target="name"'));
@@ -424,12 +424,22 @@ test('Department editor exposes one canonical inline name and guide targets', ()
     assert.ok(source.includes('data-first-run-guide-target="favorite"'));
     assert.ok(source.includes('data-first-run-guide-target="visibility"'));
     assert.ok(source.includes('Show in Department selector'));
-    assert.ok(source.includes('Controls whether this Department appears in the dashboard Department menu.'));
-    assert.ok(source.includes('Your favorite Department is always shown'));
+    assert.ok(source.includes('Favorite Departments are always shown.'));
     assert.ok(source.includes('aria-label="Favorite Department, selected pending save"'));
-    assert.ok(source.includes('aria-label="Show in Department selector, checked. Your favorite Department is always shown"'));
+    assert.ok(source.includes('aria-label="Show in Department selector, checked. Favorite Departments are always shown"'));
     assert.match(source, /type="checkbox"[\s\S]*aria-describedby=\{visibilityDescriptionIds\}/);
-    assert.match(source, /className="group-list-star"[\s\S]*onClick=\{\(event\) => \{[\s\S]*event\.stopPropagation\(\);/);
+    assert.match(source, /firstRunConfigurationActive && isActive[\s\S]*className="group-list-star group-list-star-status"[\s\S]*data-first-run-guide-target="favorite"[\s\S]*role="status"[\s\S]*aria-label="Favorite Department, selected pending save"/);
+    assert.match(source, /<button[\s\S]*type="button"[\s\S]*className="group-list-star"[\s\S]*aria-pressed=\{isDefault\}[\s\S]*onClick=\{\(event\) => \{[\s\S]*event\.stopPropagation\(\);[\s\S]*setFavoriteGroupDraft\(group\.id\)[\s\S]*toggleDefaultGroupDraft\(group\.id\)[\s\S]*disabled=\{groupVisibilitySaving \|\| !\(group\.teamIds \|\| \[\]\)\.some/);
+    assert.equal(source.includes('className="group-star-button'), false);
+    assert.equal(source.includes('Controls whether this Department appears in the dashboard Department menu.'), false);
+    assert.equal(source.includes('Your favorite Department is always shown'), false);
+    const headerIndex = source.indexOf('<div className="group-editor-header">');
+    const preferenceIndex = source.indexOf('<div className="group-preference-row">', headerIndex);
+    const actionsIndex = source.indexOf('<div className="group-editor-actions">', preferenceIndex);
+    const teamsIndex = source.indexOf('className="team-selector"', actionsIndex);
+    assert.ok(headerIndex >= 0 && headerIndex < preferenceIndex);
+    assert.ok(preferenceIndex < actionsIndex && actionsIndex < teamsIndex);
+    assert.match(source.slice(actionsIndex, teamsIndex), /className="group-editor-actions"[\s\S]*>\s*Duplicate\s*<\/button>/);
     assert.equal((source.match(/className="group-name-input"/g) || []).length, 0);
     assert.equal(source.includes('Show in my controls'), false);
 });

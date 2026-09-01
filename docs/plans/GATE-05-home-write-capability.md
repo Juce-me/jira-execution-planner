@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-08-31. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-09-01. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,8 +15,8 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-08-31 |
-| Last result | FAIL insufficient_home_write_probe_input (probe not re-run: all four operator inputs and an approved disposable Home project were unavailable; the implementation-readiness revision adds no Home write path) |
+| Checked on | 2026-09-01 |
+| Last result | FAIL insufficient_home_write_probe_input (probe not run: all four operator inputs and an approved disposable Home project were unavailable; this plan adds no Home write path) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -128,6 +128,8 @@ Required tests after the gate passes:
 - Playwright coverage proving failed-write recovery opens Settings -> Connections, connects the token, retries the original update once, and clears the token input after the connect request completes.
 
 ## Last Check Notes
+
+- 2026-09-01: Execution baseline sweep confirmed the four `HOME_WRITE_PROBE_*` variables are not present, so no Home write mutation probe was run. This plan adds no Home/Townsquare write path or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 
 - 2026-08-31: Startup sweep rechecked the gate while making the multi-device browser-session and per-tab reauthentication plans implementation-ready. All four required `HOME_WRITE_PROBE_*` inputs and an approved disposable Home project remain unavailable, and the revision adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-30: Startup sweep rechecked the gate while revising the multi-device browser-session design for issue #143. All four required `HOME_WRITE_PROBE_*` inputs and an approved disposable Home project remain unavailable, and the revised work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.

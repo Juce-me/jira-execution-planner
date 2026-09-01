@@ -38,7 +38,7 @@ No frontend source, generated asset, Home/Townsquare route, Jira mutation route,
 
 ### Task 0: Verify the execution baseline and gate
 
-- [ ] **Step 1: Confirm the branch contains the global auth-lock prerequisite**
+- [x] **Step 1: Confirm the branch contains the global auth-lock prerequisite**
 
 Run:
 
@@ -49,12 +49,12 @@ git merge-base --is-ancestor b38e8f7 HEAD
 
 Expected: both commands exit `0`. If the ancestry check fails, stop; update the execution branch from `origin/main` before editing. Do not reimplement `frontend/src/api/authRequired.js` in this slice.
 
-- [ ] **Step 2: Confirm the migration head and planned file map**
+- [x] **Step 2: Confirm the migration head and planned file map**
 
 Run:
 
 ```bash
-.venv/bin/python -m alembic heads
+.venv/bin/python -m alembic -c backend/db/alembic.ini heads
 test -f backend/db/migrations/versions/20260827_0008_remove_workspace_epm.py
 test -f backend/auth/db_context.py
 test -f backend/routes/scenario_draft_routes.py
@@ -63,7 +63,7 @@ test -f tests/test_db_migrations.py
 
 Expected at the reviewed baseline: one head, `20260827_0008 (head)`, and every `test -f` exits `0`. If the migration head differs, stop and update this plan's migration filename, `revision`, and `down_revision` before implementation.
 
-- [ ] **Step 3: Recheck the unrelated Home write gate without executing it**
+- [x] **Step 3: Recheck the unrelated Home write gate without executing it**
 
 Run:
 

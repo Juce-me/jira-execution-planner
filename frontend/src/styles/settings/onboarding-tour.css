@@ -39,7 +39,7 @@
 .onboarding-tour-card {
     position: fixed;
     box-sizing: border-box;
-    width: min(380px, calc(100vw - 24px));
+    width: min(560px, calc(100vw - 32px));
     max-height: calc(100vh - 24px);
     overflow: auto;
     padding: 1rem;
@@ -101,31 +101,104 @@
     line-height: 1.5;
 }
 
-.onboarding-tour-actions,
-.onboarding-tour-navigation {
-    display: flex;
+.onboarding-tour-actions {
+    display: grid;
+    grid-template-columns: max-content 1fr;
     align-items: center;
-    flex-wrap: wrap;
     gap: 0.55rem;
 }
 
-.onboarding-tour-actions {
-    justify-content: space-between;
-}
-
 .onboarding-tour-navigation {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.55rem;
     justify-content: flex-end;
+    min-width: 0;
 }
 
 .onboarding-tour-actions button {
     margin-right: 0;
-    padding-right: 1rem;
-    padding-left: 1rem;
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+    white-space: nowrap;
+}
+
+.onboarding-tour-action-next {
+    border: 1px solid #69c0ff;
+    background: #69c0ff;
+    color: #1f1f1f;
+}
+
+.onboarding-tour-action-next:hover {
+    border-color: #40a9ff;
+    background: #40a9ff;
+    color: #1f1f1f;
+}
+
+.onboarding-tour-action-skip-all.secondary {
+    border: 1px solid #ff4d4f;
+    background: #ff4d4f;
+    color: #fff;
+}
+
+.onboarding-tour-action-skip-all.secondary:hover {
+    border-color: #d9363e;
+    background: #d9363e;
+    color: #fff;
+}
+
+.onboarding-tour-action-skip-section.secondary {
+    border-color: #ff4d4f;
+    background: transparent;
+    color: #cf1322;
+}
+
+.onboarding-tour-action-skip-section.secondary:hover {
+    border-color: #d9363e;
+    background: #fff1f0;
+    color: #a8071a;
+}
+
+.onboarding-tour-action-next:disabled {
+    border-color: #91caff;
+    background: #bae0ff;
+    color: #434d56;
+    opacity: 1;
+}
+
+.onboarding-tour-action-skip-all.secondary:disabled {
+    border-color: #ffccc7;
+    background: #ffccc7;
+    color: #714342;
+    opacity: 1;
+}
+
+.onboarding-tour-action-skip-section.secondary:disabled {
+    border-color: #ffb3b4;
+    background: transparent;
+    color: #8c4646;
+    opacity: 1;
 }
 
 .onboarding-tour-card button:focus-visible {
-    outline: 2px solid #597ef7;
+    outline: 2px solid #1d39c4;
     outline-offset: 2px;
+}
+
+@media (min-width: 761px) and (max-width: 820px) {
+    .onboarding-tour-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .onboarding-tour-action-skip-all {
+        justify-self: start;
+    }
+
+    .onboarding-tour-navigation {
+        grid-column: 1;
+        justify-content: flex-end;
+    }
 }
 
 @media (max-width: 520px) {

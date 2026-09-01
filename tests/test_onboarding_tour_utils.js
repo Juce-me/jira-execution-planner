@@ -603,6 +603,28 @@ test('section skip resolver returns pure in-tour destinations', async () => {
     // Task 6 owns browser coverage proving section skips do not persist Skip or Finish.
 });
 
+test('coachmark action hierarchy uses stable role classes and a 560px placement default', () => {
+    const source = readFileSync(
+        new URL('../frontend/src/onboarding/OnboardingTour.jsx', `file://${__filename}`),
+        'utf8'
+    );
+    const styles = readFileSync(
+        new URL('../frontend/src/styles/settings/onboarding-tour.css', `file://${__filename}`),
+        'utf8'
+    );
+
+    assert.match(source, /DEFAULT_COACHMARK_SIZE = \{ width: 560, height: 250 \}/);
+    assert.match(source, /className="secondary onboarding-tour-action-skip-all"[\s\S]*?>\s*Skip onboarding/);
+    assert.match(source, /className="secondary onboarding-tour-action-back"[\s\S]*?>\s*Back/);
+    assert.match(source, /className="secondary onboarding-tour-action-skip-section"[\s\S]*?>\s*Skip this section/);
+    assert.match(source, /className="primary onboarding-tour-action-next"[\s\S]*?>Next<\/button>/);
+    assert.match(styles, /\.onboarding-tour-card\s*\{[\s\S]*?width:\s*min\(560px, calc\(100vw - 32px\)\)/);
+    assert.match(styles, /\.onboarding-tour-actions\s*\{[\s\S]*?display:\s*grid[\s\S]*?grid-template-columns:\s*max-content 1fr/);
+    assert.match(styles, /\.onboarding-tour-navigation\s*\{[\s\S]*?display:\s*flex[\s\S]*?flex-wrap:\s*nowrap/);
+    assert.match(styles, /\.onboarding-tour-card button:focus-visible\s*\{[\s\S]*?outline:\s*2px solid #1d39c4/);
+    assert.match(styles, /\.onboarding-tour-action-next:disabled\s*\{[\s\S]*?opacity:\s*1/);
+});
+
 test('search and field preview copy states the exact supported scope without requiring a change', async () => {
     const { ONBOARDING_STEP_CATALOG } = await loadModule();
     const step = (id) => ONBOARDING_STEP_CATALOG.find((entry) => entry.id === id);

@@ -33,7 +33,7 @@ const FOCUSABLE = [
     'textarea:not([disabled])',
     '[tabindex]:not([tabindex="-1"])',
 ].join(',');
-const DEFAULT_COACHMARK_SIZE = { width: 380, height: 250 };
+const DEFAULT_COACHMARK_SIZE = { width: 560, height: 250 };
 const SPOTLIGHT_PADDING = 6;
 const DASHBOARD_MOBILE_QUERY = '(max-width: 760px)';
 const PREVIEW_STATES = new Set(['loading', 'ready', 'empty', 'error']);
@@ -980,15 +980,15 @@ export default function OnboardingTour({
                     </div>
                 )}
                 <div className="onboarding-tour-actions">
-                    <button ref={skipButtonRef} type="button" className="secondary" onClick={handleSkip} disabled={actionPending}>
+                    <button ref={skipButtonRef} type="button" className="secondary onboarding-tour-action-skip-all" onClick={handleSkip} disabled={actionPending}>
                         Skip onboarding
                     </button>
                     <div className="onboarding-tour-navigation">
-                        <button ref={backButtonRef} type="button" className="secondary" onClick={handleBack} disabled={!tour.canGoBack || actionPending}>
+                        <button ref={backButtonRef} type="button" className="secondary onboarding-tour-action-back" onClick={handleBack} disabled={!tour.canGoBack || actionPending}>
                             Back
                         </button>
                         {sectionSkipTargetId && (
-                            <button ref={sectionSkipButtonRef} type="button" className="secondary" onClick={handleSectionSkip} disabled={actionPending}>
+                            <button ref={sectionSkipButtonRef} type="button" className="secondary onboarding-tour-action-skip-section" onClick={handleSectionSkip} disabled={actionPending}>
                                 Skip this section
                             </button>
                         )}
@@ -1000,7 +1000,7 @@ export default function OnboardingTour({
                             <button
                                 ref={nextButtonRef}
                                 type="button"
-                                className="primary"
+                                className="primary onboarding-tour-action-next"
                                 onClick={handleNext}
                                 disabled={actionPending
                                     || presentation.loading

@@ -535,6 +535,167 @@ async function expectCoachmarkContentContained(page) {
     expect(containment.actionsContained).toBe(true);
 }
 
+async function readCoachmarkActionGeometry(page) {
+    return page.getByRole('dialog').evaluate((card) => {
+        const rectJson = (rect) => ({
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+        });
+        const cardRect = card.getBoundingClientRect();
+        const buttons = Array.from(card.querySelectorAll('.onboarding-tour-actions button')).map((button) => {
+            const range = document.createRange();
+            range.selectNodeContents(button);
+            const style = window.getComputedStyle(button);
+            return {
+                name: button.textContent.trim(),
+                classes: Array.from(button.classList),
+                rect: rectJson(button.getBoundingClientRect()),
+                textRect: rectJson(range.getBoundingClientRect()),
+                scrollWidth: button.scrollWidth,
+                clientWidth: button.clientWidth,
+                backgroundColor: style.backgroundColor,
+                color: style.color,
+                borderColor: style.borderColor,
+                outlineColor: style.outlineColor,
+                outlineStyle: style.outlineStyle,
+                outlineWidth: style.outlineWidth,
+                opacity: style.opacity,
+            };
+        });
+        return {
+            card: rectJson(cardRect),
+            cardScrollWidth: card.scrollWidth,
+            cardClientWidth: card.clientWidth,
+            buttons,
+        };
+    });
+}
+
+function expectActionElementsContainedAndSeparate(geometry) {
+    expect(geometry.cardScrollWidth).toBeLessThanOrEqual(geometry.cardClientWidth);
+    for (const button of geometry.buttons) {
+        expect(button.rect.left, `${button.name} left edge`).toBeGreaterThanOrEqual(geometry.card.left);
+        expect(button.rect.right, `${button.name} right edge`).toBeLessThanOrEqual(geometry.card.right);
+        expect(button.rect.top, `${button.name} top edge`).toBeGreaterThanOrEqual(geometry.card.top);
+        expect(button.rect.bottom, `${button.name} bottom edge`).toBeLessThanOrEqual(geometry.card.bottom);
+        expect(button.textRect.left, `${button.name} text left edge`).toBeGreaterThanOrEqual(button.rect.left);
+        expect(button.textRect.right, `${button.name} text right edge`).toBeLessThanOrEqual(button.rect.right);
+        expect(button.textRect.top, `${button.name} text top edge`).toBeGreaterThanOrEqual(button.rect.top);
+        expect(button.textRect.bottom, `${button.name} text bottom edge`).toBeLessThanOrEqual(button.rect.bottom);
+        expect(button.scrollWidth, `${button.name} text clipping`).toBeLessThanOrEqual(button.clientWidth);
+    }
+    for (let leftIndex = 0; leftIndex < geometry.buttons.length; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < geometry.buttons.length; rightIndex += 1) {
+            const left = geometry.buttons[leftIndex];
+            const right = geometry.buttons[rightIndex];
+            const overlaps = left.rect.left < right.rect.right && left.rect.right > right.rect.left
+                && left.rect.top < right.rect.bottom && left.rect.bottom > right.rect.top;
+            expect(overlaps, `${left.name} overlaps ${right.name}`).toBe(false);
+        }
+    }
+}
+
+function contrastRatio(first, second) {
+    const luminance = (color) => {
+        const channels = color.match(/[\d.]+/g).slice(0, 3).map((value) => Number(value) / 255);
+        const linear = channels.map((value) => value <= 0.04045
+            ? value / 12.92
+            : ((value + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+    };
+    const firstLuminance = luminance(first);
+    const secondLuminance = luminance(second);
+    return (Math.max(firstLuminance, secondLuminance) + 0.05)
+        / (Math.min(firstLuminance, secondLuminance) + 0.05);
+}
+
+test('coachmark action hierarchy gives every action a distinct accessible role and treatment', async ({ page }) => {
+    await installHarness(page);
+    await page.setViewportSize({ width: 1200, height: 760 });
+    await openTour(page);
+    await advanceToHeading(page, 'Start with the Initiative');
+
+    const skipAll = page.getByRole('button', { name: 'Skip onboarding', exact: true });
+    const back = page.getByRole('button', { name: 'Back', exact: true });
+    const skipSection = page.getByRole('button', { name: 'Skip this section', exact: true });
+    const next = page.getByRole('button', { name: 'Next', exact: true });
+    for (const action of [skipAll, back, skipSection, next]) await expect(action).toBeVisible();
+    expect(new Set(await page.getByRole('dialog').getByRole('button').allTextContents()).size).toBe(4);
+    await expect(skipAll).toHaveClass(/onboarding-tour-action-skip-all/);
+    await expect(back).toHaveClass(/secondary/);
+    await expect(back).toHaveClass(/onboarding-tour-action-back/);
+    await expect(skipSection).toHaveClass(/onboarding-tour-action-skip-section/);
+    await expect(next).toHaveClass(/onboarding-tour-action-next/);
+
+    const geometry = await readCoachmarkActionGeometry(page);
+    expect(geometry.card.width).toBeGreaterThanOrEqual(540);
+    expect(geometry.card.width).toBeLessThanOrEqual(560);
+    expect(geometry.card.width).toBeLessThanOrEqual(1200 - 32);
+    expectActionElementsContainedAndSeparate(geometry);
+    const byName = Object.fromEntries(geometry.buttons.map((button) => [button.name, button]));
+    expect(byName.Next.backgroundColor).toBe('rgb(105, 192, 255)');
+    expect(byName.Next.color).toBe('rgb(31, 31, 31)');
+    expect(byName['Skip onboarding'].backgroundColor).toBe('rgb(255, 77, 79)');
+    expect(byName['Skip onboarding'].color).toBe('rgb(255, 255, 255)');
+    expect(byName['Skip this section'].backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(byName['Skip this section'].borderColor).toBe('rgb(255, 77, 79)');
+    expect(byName['Skip this section'].color).toBe('rgb(207, 19, 34)');
+    expect(byName.Back.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+
+    await skipSection.focus();
+    await page.keyboard.press('Tab');
+    await expect(next).toBeFocused();
+    const focusedNext = (await readCoachmarkActionGeometry(page)).buttons.find((button) => button.name === 'Next');
+    expect(focusedNext.outlineStyle).toBe('solid');
+    expect(Number.parseFloat(focusedNext.outlineWidth)).toBeGreaterThanOrEqual(2);
+    expect(contrastRatio(focusedNext.outlineColor, focusedNext.backgroundColor)).toBeGreaterThanOrEqual(3);
+    await captureSettledOnboardingScreenshot(page, 'coachmark-actions-desktop.png');
+
+    await advanceToHeading(page, 'Preview Priority options');
+    await expect(next).toBeDisabled();
+    const lockedNext = (await readCoachmarkActionGeometry(page)).buttons.find((button) => button.name === 'Next');
+    expect(lockedNext.opacity).toBe('1');
+    expect(lockedNext.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(contrastRatio(lockedNext.color, lockedNext.backgroundColor)).toBeGreaterThanOrEqual(4.5);
+    await captureSettledOnboardingScreenshot(page, 'preview-next-locked.png');
+
+    await page.locator('[data-priority-transition-trigger]').click();
+    await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+    const menu = page.locator('[data-priority-transition-menu]');
+    await expect(menu).toBeFocused();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-preview-settled', 'ready');
+    await menu.press('Escape');
+    await expect(next).toBeEnabled();
+    await captureSettledOnboardingScreenshot(page, 'preview-next-ready.png');
+});
+
+test('coachmark geometry uses two deterministic action rows on narrow desktop', async ({ page }) => {
+    await installHarness(page);
+    await page.setViewportSize({ width: 768, height: 760 });
+    await openTour(page);
+    await advanceToHeading(page, 'Start with the Initiative');
+
+    const geometry = await readCoachmarkActionGeometry(page);
+    expect(geometry.card.width).toBeGreaterThanOrEqual(540);
+    expect(geometry.card.width).toBeLessThanOrEqual(560);
+    expect(geometry.card.width).toBeLessThanOrEqual(768 - 32);
+    expect(geometry.buttons.map((button) => button.name).sort()).toEqual([
+        'Back', 'Next', 'Skip onboarding', 'Skip this section',
+    ]);
+    expectActionElementsContainedAndSeparate(geometry);
+    const rowTops = new Set(geometry.buttons.map((button) => Math.round(button.rect.top)));
+    expect(rowTops.size).toBe(2);
+    const skipAll = geometry.buttons.find((button) => button.name === 'Skip onboarding');
+    const navigation = geometry.buttons.filter((button) => button.name !== 'Skip onboarding');
+    expect(navigation.every((button) => Math.abs(button.rect.top - navigation[0].rect.top) <= 1)).toBe(true);
+    expect(skipAll.rect.bottom).toBeLessThanOrEqual(navigation[0].rect.top);
+    await captureSettledOnboardingScreenshot(page, 'coachmark-actions-narrow-desktop.png');
+});
+
 async function advanceToHeading(page, heading) {
     for (let index = 0; index < 20; index += 1) {
         if (await page.getByRole('heading', { name: heading }).count()) return;
@@ -2343,6 +2504,7 @@ test('interactive geometry follows visual viewport events and wheel and touch pa
     await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
     const menu = page.locator('[data-priority-transition-menu]');
     await expect(menu).toBeFocused();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const rects = await page.evaluate(() => {
         const rect = (selector) => document.querySelector(selector).getBoundingClientRect().toJSON();
         return {

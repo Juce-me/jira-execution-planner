@@ -248,7 +248,9 @@ class TestAuthRoutes(unittest.TestCase):
             'csrf_session_data_for_auth_context',
             wraps=csrf_session_data_for_auth_context,
         ) as shared_mapper:
-            with jira_server.app.test_request_context('/api/scenario', method='POST'):
+            with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                 patch.object(jira_server, 'database_storage_enabled', return_value=True), \
+                 jira_server.app.test_request_context('/api/scenario', method='POST'):
                 with patch.object(
                     jira_server,
                     'scenario_draft_request_auth_context',

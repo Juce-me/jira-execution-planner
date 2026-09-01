@@ -70,6 +70,17 @@ test('a matching capsule is not overwritten by a second capture', () => {
     assert.equal(JSON.parse(storage.getItem(api.AUTH_RESUME_STORAGE_KEY)).capturedAt, 1_000);
 });
 
+test('invalid incoming captures do not clear or mutate an existing capsule', () => {
+    const api = loadModule();
+    const storage = createStorage();
+    assert.equal(api.writeAuthResumeState(storage, planningSnapshot(), 1_000), true);
+    const before = storage.getItem(api.AUTH_RESUME_STORAGE_KEY);
+    assert.equal(api.writeAuthResumeState(storage, { principal: {}, view: {}, planning: {} }, 2_000), false);
+    assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), before);
+    assert.equal(api.writeAuthResumeState(storage, { ...planningSnapshot(), principal: { workspaceId: 'other', viewConfigId: 'other' } }, 2_000), false);
+    assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), before);
+});
+
 test('malformed, expired, oversized, and invalid capsules are rejected and cleared', () => {
     const api = loadModule();
     const principal = { workspaceId: 'w', viewConfigId: 'v' };
@@ -99,9 +110,33 @@ test('malformed, expired, oversized, and invalid capsules are rejected and clear
     assert.equal(invalid, false);
     assert.equal(api.writeAuthResumeState(createStorage(), {
         principal: { workspaceId: 'w', viewConfigId: 'v' }, view: { selectedView: 'eng', engMode: 'catch-up', settingsOpen: false, settingsTab: 'scope' },
-        planning: { selectedTaskKeys: [], selectedTeams: [], selectionMode: 'manual' },
         planning: { selectedTaskKeys: Array.from({ length: 501 }, (_, i) => `T-${i}`) },
     }, 1_000), false);
+});
+
+test('rejects malformed list shapes, invalid clocks, and UTF-8 payloads without mutation', () => {
+    const api = loadModule();
+    const base = planningSnapshot();
+    for (const now of [NaN, Infinity, -1, '1000']) {
+        const storage = createStorage();
+        assert.equal(api.writeAuthResumeState(storage, base, now), false);
+        assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), null);
+    }
+    for (const planning of [
+        { ...base.planning, selectedTaskKeys: 'TASK-1' },
+        { ...base.planning, selectedTaskKeys: [1] },
+        { ...base.planning, selectedTeams: 'team-1' },
+        { ...base.planning, selectedTeams: [1] },
+    ]) {
+        const storage = createStorage();
+        assert.equal(api.writeAuthResumeState(storage, { ...base, planning }, 1_000), false);
+        assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), null);
+    }
+    const storage = createStorage('keep');
+    assert.equal(api.writeAuthResumeState(storage, {
+        ...base, planning: { ...base.planning, selectedTaskKeys: Array.from({ length: 500 }, (_, i) => `${'é'.repeat(250)}-${i}`) },
+    }, 1_000), false);
+    assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), 'keep');
 });
 
 test('capsule serialization excludes credentials, PII, bodies, drafts, and OAuth state', () => {
@@ -116,6 +151,29 @@ test('capsule serialization excludes credentials, PII, bodies, drafts, and OAuth
     const raw = storage.getItem(api.AUTH_RESUME_STORAGE_KEY);
     for (const secret of ['apiToken', 'access_token', 'refresh_token', 'Authorization', 'person@example.test', 'body', 'draft', 'state']) {
         assert.equal(raw.includes(secret), false, secret);
+    }
+});
+
+test('rejects sensitive markers even when placed in allowlisted fields', () => {
+    const api = loadModule();
+    const fields = [
+        ['view', 'activeGroupId', 'person@example.test'], ['view', 'selectedSprint', 'Authorization: bearer secret'],
+        ['planning', 'scopeKey', 'configDraft secret'], ['planning', 'selectedTaskKeys', ['responseBody']],
+        ['planning', 'selectedTeams', ['oauth_pkce_state']], ['principal', 'workspaceId', 'access_token=secret'],
+    ];
+    for (const [section, key, value] of fields) {
+        const snapshot = planningSnapshot();
+        snapshot[section][key] = value;
+        const storage = createStorage();
+        assert.equal(api.writeAuthResumeState(storage, snapshot, 1_000), false, `${section}.${key}`);
+        assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), null);
+        const validStorage = createStorage();
+        assert.equal(api.writeAuthResumeState(validStorage, planningSnapshot(), 1_000), true);
+        const parsed = JSON.parse(validStorage.getItem(api.AUTH_RESUME_STORAGE_KEY));
+        parsed[section][key] = value;
+        validStorage.setItem(api.AUTH_RESUME_STORAGE_KEY, JSON.stringify(parsed));
+        assert.equal(api.readAuthResumeState(validStorage, planningSnapshot().principal, 2_000), null, `${section}.${key} read`);
+        assert.equal(validStorage.getItem(api.AUTH_RESUME_STORAGE_KEY), null);
     }
 });
 

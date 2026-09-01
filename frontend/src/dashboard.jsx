@@ -2499,7 +2499,6 @@ import {
 
             const openGroupManage = ({ contextualOnboarding = false } = {}) => {
                 setGroupManageTab(contextualOnboarding ? 'teams' : preferredSettingsTab);
-                if (contextualOnboarding) setDepartmentSettingsTab('teams');
                 setShowGroupManage(true);
             };
 

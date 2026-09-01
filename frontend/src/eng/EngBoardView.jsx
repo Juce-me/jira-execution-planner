@@ -726,7 +726,7 @@ export default function EngBoardView({
                 onHeightChange={onFilterBarHeightChange}
                 viewControls={<EngBoardHelp scaleMax={scaleMax} />}
             />
-            <div className="eng-board" role="region" aria-label="Group board" data-onboarding-target="board-overview">
+            <div className="eng-board" role="region" aria-label="Group board" data-onboarding-target="board-overview" tabIndex={-1}>
                 {firstRun && (
                     <div className="board-head">
                         <div>

@@ -14475,7 +14475,7 @@ import {
                     )}
 
                     {selectedView === 'eng' && showStats && (
-                    <div className={`stats-panel ${showStats ? 'open' : ''}`} data-onboarding-target="statistics-overview">
+                    <div className={`stats-panel ${showStats ? 'open' : ''}`} data-onboarding-target="statistics-overview" tabIndex={-1}>
                         {showStats && !canRenderStatsPanel && (
                             <div className="stats-note">Load stats for the selected sprint.</div>
                         )}
@@ -16103,7 +16103,7 @@ import {
                     )}
 
                     {selectedView === 'eng' && showPlanning && (
-                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`} data-onboarding-target="planning-overview">
+                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`} data-onboarding-target="planning-overview" tabIndex={-1}>
                         {/* --- Planning Actions (top of panel) --- */}
                         <PlanningActionBar
                             isAcceptedIncluded={isAcceptedIncluded}

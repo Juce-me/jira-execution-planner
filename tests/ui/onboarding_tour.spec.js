@@ -1374,6 +1374,30 @@ for (const inputPath of ['pointer', 'keyboard']) {
     });
 }
 
+for (const inputPath of ['pointer', 'keyboard']) {
+    test(`production ${inputPath} contextual launches focus and describe each real destination region`, async ({ page }) => {
+        await installProductionOnboardingFixture(page);
+        await completeConfigurationModule(page, inputPath);
+
+        const labels = { planning: 'Planning', board: 'Board', statistics: 'Statistics' };
+        for (const moduleId of ['planning', 'board', 'statistics']) {
+            const launcher = page.getByRole('radio', { name: labels[moduleId] });
+            await expectSingleLauncherTransition(page, moduleId, () => activateLauncher(launcher, inputPath));
+            const destination = page.locator(`[data-onboarding-target="${moduleId}-overview"]`);
+            const description = page.locator('.onboarding-tour-card p');
+            await expect(destination).toBeVisible();
+            await expect(destination).toHaveAttribute('tabindex', '-1');
+            await expect(destination).toBeFocused();
+            const descriptionId = await description.getAttribute('id');
+            expect(descriptionId).toBeTruthy();
+            expect(await destination.evaluate((node, token) => (
+                String(node.getAttribute('aria-describedby') || '').split(/\s+/).includes(token)
+            ), descriptionId)).toBe(true);
+            await page.getByRole('button', { name: 'Next' }).click();
+        }
+    });
+}
+
 test('production contextual module keeps Configuration incomplete across close and does not replay it after completion', async ({ page }) => {
     await installProductionOnboardingFixture(page);
     await advanceProductionTourTo(page, 'Configure this Department');

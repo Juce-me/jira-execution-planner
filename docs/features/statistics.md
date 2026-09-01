@@ -4,6 +4,8 @@ The Statistics panel summarizes sprint execution and epic flow for the currently
 
 It is available for active and completed sprints. Future sprints do not use the Statistics panel.
 
+Use the current UI names when translating older meeting language: **Burndown** is the remaining-work chart; **Lead Times** contains the cohort heatmap and open/completed Epic views; **Excluded Capacity** reports configured excluded work; **Mono vs Cross** reports whether Epic work spans teams; and **Project Track** contains the Epic-mode assignee view and Team-mode team view.
+
 ## Views
 
 ### Teams
@@ -18,12 +20,12 @@ Shows done vs incomplete work grouped by priority instead of by team.
 
 Use it when you want to understand delivery mix and whether high-priority work is closing as expected.
 
-### Burnout
+### Burndown
 
 Shows the remaining open work across the sprint as a team-stacked area chart.
 
 Behavior:
-- opening Burnout triggers an on-demand changelog fetch
+- opening Burndown triggers an on-demand changelog fetch
 - start = stories already present on sprint start day
 - added = stories created after sprint start
 - closed = stories that reach `Done`, `Killed`, or `Incomplete`
@@ -56,6 +58,21 @@ Main parts:
 - Excluded Epics filter: controls which configured excluded epics count as Excluded Capacity
 
 The Effort Split chart and Excluded Capacity trend both use the Start Sprint and End Sprint controls inside the Statistics panel.
+
+### Mono vs Cross
+
+Shows how much scoped Epic work stays within one Team versus spanning multiple Teams over the selected sprint range. An Epic/sprint bucket is **Cross** when that Epic has Stories from more than one Team in the same sprint; otherwise it is mono-team.
+
+Summary cards:
+- **Cross Epic SP**: Story points in multi-Team Epic/sprint buckets
+- **Total SP**: all scoped Story points attached to Epic/sprint buckets
+- **Cross Share**: Cross Epic SP divided by Total SP
+
+Main parts:
+- **Cross-Team Epic Footprint** shows the overall and per-sprint Cross SP, Total SP, and percentage.
+- **Team Cross Share** is a per-sprint, per-Team line graph. Its percentage is team cross SP / total team story points in that sprint.
+
+This view uses the same Start Sprint and End Sprint range as Excluded Capacity and Project Track. It describes aggregate Epic/Team allocation; it does not claim per-task hover details.
 
 ### Project Track
 
@@ -100,8 +117,9 @@ Statistics use the currently selected sprint and active team scope.
 
 Important behavior:
 - Teams and Priority derive from the already loaded sprint task data
-- Burnout uses a separate on-demand API call
+- Burndown uses a separate on-demand API call
 - Lead Times uses a separate on-demand cohort API call
 - Excluded Capacity uses cached progressive stats-source requests for the Start Sprint / End Sprint range
+- Mono vs Cross reuses the cached progressive stats-source data and the same sprint range
 - Project Track reuses that same cached stats-source data and sprint range (no second fetch); only its time-in-phase section makes a separate, bounded, client-cached changelog request per distinct in-scope epic set
 - changing UI-only controls such as row selection or view grouping does not refetch the lead-time dataset

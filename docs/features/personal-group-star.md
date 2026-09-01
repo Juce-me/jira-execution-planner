@@ -1,29 +1,39 @@
 # Personal Group Favorite
 
-In authenticated workspace-database mode, every user chooses one personal favorite Department group. The filled star identifies the group used when their dashboard starts or reloads. It is a user preference, not the workspace's shared `defaultGroupId`.
+In authenticated workspace-database mode, every user has exactly one private favorite Department. The filled star identifies the Department used when their dashboard starts or reloads. It is a user preference, not the workspace's shared `defaultGroupId`.
 
 ## First run
 
-The dashboard does not preselect a group. The user must choose exactly one known group that has at least one configured team. Continue stays disabled for empty-team groups and while the preference save is running. Until a valid server response and its canonical group snapshot are applied, Product and Tech requests remain blocked and old scoped rows, loading states, and errors are cleared.
+Direct picker selection remains explicit. The dashboard does not preselect a Department: choose one known Department with at least one configured Team, then choose **Continue**. Continue stays disabled for an ineligible Department and while the preference save is running.
 
-After a successful save, the dashboard applies the returned group configuration and favorite before starting scoped requests. A delayed response from an older group scope cannot replace the new scope. If the selected sprint resolves later, the normal sprint loader uses the saved favorite and its teams.
+Create, duplicate, and **Configure and use {Department}** are intentionally different. Before Team Groups opens, the edited Department becomes the pending private favorite and is added to the pending visible set. This staging happens before any shared save and sends no premature preference request. The pending choice is committed only by **Save and continue**, after shared Department configuration succeeds.
+
+Until a valid preference response and its canonical Department snapshot are applied, Product and Tech requests remain blocked and old scoped rows, loading states, and errors are cleared. After success, the dashboard applies the returned Department configuration and favorite before starting scoped requests. A delayed response from an older Department scope cannot replace the new scope.
+
+## Cancel and recovery
+
+Before any shared section is committed, **Cancel** restores the captured Settings drafts and returns to the picker without saving the pending favorite. Once a shared section has committed, the UI stays in recovery instead of claiming that Cancel can undo the saved work.
+
+Shared Department edits are saved before private preferences. If a later shared section fails, retry continues with the remaining sections. If the shared configuration succeeds but the private favorite/visibility save fails, the shared revision remains committed and the private draft stays available for a preference-only retry. The preference request is never sent before the shared Department snapshot is verified.
 
 ## Settings and dashboard scope
 
-The Department settings list and editor show the personal favorite in workspace-database mode. Starring another eligible group moves the single star and automatically keeps that group visible in the user's controls. The favorite cannot be hidden, clicking its filled star is a no-op, and a group with no configured teams cannot be starred.
+The Department settings list shows the user's private favorite in workspace-database mode. Starring another eligible Department moves the single star and automatically keeps that Department visible. The favorite cannot be hidden, clicking its filled star is a no-op, and a Department with no configured Team cannot be starred.
 
-The header Group dropdown controls only the current dashboard scope. Switching it does not write preferences or move the Settings star. Reloading starts from the persisted favorite.
+The header Department dropdown controls only the current dashboard scope. Switching it does not write preferences or move the Settings star. Reloading starts from the persisted favorite.
 
-Shared group edits and personal preferences keep their existing ordered Save flow. If the shared configuration succeeds but the personal preference fails, the shared revision remains committed while the favorite draft stays dirty for a preference-only retry. A safe app-relative `/login` recovery link may be shown for an expired session; external and lookalike URLs are ignored.
-
-If a favorite is deleted, hidden, or loses all teams, the backend returns mandatory selection again without inventing a replacement. Active scoped requests are aborted or ignored, rendered group data is cleared, and the user must explicitly choose another eligible group.
+If a favorite is deleted, hidden, or loses all Teams, the backend requires selection again rather than inventing a replacement. Active scoped requests are aborted or ignored, rendered Department data is cleared, and the user must explicitly choose another eligible Department.
 
 Preferences are isolated by both workspace and authenticated user. One user's star never changes another user's star.
 
+## Shared and private ownership
+
+Department names, Team membership, mapped team labels, Components, and Board layouts are shared workspace configuration. Favorite, visibility, and active Department are private per-user preferences. Creating or duplicating a Department never writes a shared `defaultGroupId` as a substitute for the user's favorite.
+
 ## File and JSON compatibility
 
-File, environment, and automatic configuration sources retain the legacy shared-default behavior. Their `defaultGroupId` remains visible and preferred, and the existing browser-local visibility behavior continues unchanged. The personal-star labels and persistence contract apply only when the group source is `workspace_db`.
+File, environment, and automatic configuration sources retain the legacy shared-default behavior. Their `defaultGroupId` remains visible and preferred, and the existing browser-local visibility behavior continues unchanged. The private-star labels and persistence contract apply only when the Department source is `workspace_db`.
 
 ## Analytics
 
-No event is emitted merely for rendering a star. First-run selection and Settings preference persistence reuse `settings_action(section=departments)` with fixed workflow actions and count buckets only. Temporary header scope changes retain `filter_changed(filter_type=group)`. Group ids and names are never sent.
+No event is emitted merely for rendering a star or staging create/duplicate/repair. First-run completion and Settings preference persistence reuse `settings_action(section=departments)` with fixed workflow actions and count buckets only. Temporary header scope changes retain `filter_changed(filter_type=group)`. Department ids and names are never sent.

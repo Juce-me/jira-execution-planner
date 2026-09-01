@@ -256,6 +256,107 @@ test('onboarding step navigation is untracked and its analytics contract is docu
     assert.ok(featureDoc.includes('do not write onboarding state'));
 });
 
+test('onboarding operational guidance documents the shipped workflow boundaries', () => {
+    assert.ok(
+        fs.existsSync(path.join(repoRoot, 'docs/features/eng-workflows.md')),
+        'Expected docs/features/eng-workflows.md to exist',
+    );
+    const guide = read('docs/features/eng-workflows.md');
+    const onboardingDoc = read('docs/features/onboarding.md');
+    const favoriteDoc = read('docs/features/personal-group-star.md');
+    const featureIndex = read('docs/features/README.md');
+
+    for (const heading of [
+        'Choose or add a Department',
+        'Configure the Department',
+        'Make expected Epics and Stories visible',
+        'Planning',
+        'Board (Kanban)',
+        'Filters and search',
+        'Continue in Jira',
+    ]) {
+        assert.ok(guide.includes(`## ${heading}`), `Expected operational heading: ${heading}`);
+    }
+    for (const required of [
+        'zero through three Departments',
+        'four or more',
+        '**Add Department**',
+        '**Save and continue**',
+        '**Continue without components**',
+        '**Show in Department selector**',
+        'Missing Information and Lead Times',
+        'Story Team',
+        'mapped team label',
+        'selected-sprint-name label',
+        '`Accepted`, `To Do`, `Postponed`, `Awaiting Val.`, and `Select All`',
+        'permission-gated Jira workflow transition',
+        'session-only',
+        'Delivery Owner',
+        'Initiative, Epic, and Story',
+        'Epic and Story only',
+        'does not perform an in-app bulk mutation',
+        'desktop only',
+    ]) {
+        assert.ok(guide.includes(required), `Expected operational guidance for: ${required}`);
+    }
+    assert.ok(onboardingDoc.includes('four phases'));
+    assert.ok(onboardingDoc.includes('configuration guide and dashboard tour never run together'));
+    assert.ok(onboardingDoc.includes('shared Department configuration'));
+    assert.ok(onboardingDoc.includes('private preferences'));
+    assert.ok(onboardingDoc.includes('preference-only retry'));
+    assert.ok(onboardingDoc.includes('desktop only'));
+    assert.ok(onboardingDoc.includes('not replayed automatically'));
+    assert.ok(onboardingDoc.includes('[ENG Workflows](eng-workflows.md)'));
+    assert.ok(favoriteDoc.includes('Direct picker selection'));
+    assert.ok(favoriteDoc.includes('Configure and use'));
+    assert.ok(favoriteDoc.includes('pending private favorite'));
+    assert.ok(favoriteDoc.includes('before any shared save'));
+    assert.ok(favoriteDoc.includes('preference-only retry'));
+    assert.ok(featureIndex.includes('[ENG Workflows](eng-workflows.md)'));
+});
+
+test('Statistics guide uses shipped labels and accurately defines Mono vs Cross', () => {
+    const statisticsDoc = read('docs/features/statistics.md');
+    for (const term of [
+        '### Burndown',
+        '### Lead Times',
+        '### Excluded Capacity',
+        '### Mono vs Cross',
+        '### Project Track',
+        'Cross Epic SP',
+        'Total SP',
+        'Cross Share',
+        'Cross-Team Epic Footprint',
+        'Team Cross Share',
+        'team cross SP / total team story points',
+        'assignee',
+    ]) {
+        assert.ok(statisticsDoc.includes(term), `Expected Statistics documentation for: ${term}`);
+    }
+    assert.doesNotMatch(statisticsDoc, /^### Burnout$/m);
+    assert.doesNotMatch(statisticsDoc, /hover[^.\n]*(?:task key|task summary|individual task|assignee detail)/i);
+});
+
+test('tour target activation adds no onboarding event and retains safe field options-open analytics', () => {
+    const tourSource = read('frontend/src/onboarding/OnboardingTour.jsx');
+    const onboardingAnalyticsSource = read('frontend/src/onboarding/onboardingAnalytics.js');
+    const prioritySource = read('frontend/src/eng/useEngPriorityTransitions.js');
+    const trackSource = read('frontend/src/eng/useEngProjectTrackTransitions.js');
+    const statusSource = read('frontend/src/eng/useEngStatusTransitions.js');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+
+    assert.doesNotMatch(tourSource, /track(?:OnboardingAnalytics|SettingsAction|Event|ProductEvent)/);
+    assert.match(onboardingAnalyticsSource, /new Set\(\['started', 'completed', 'skipped'\]\)/);
+    assert.match(prioritySource, /trackIssuePriorityAction\('priority_options_open'/);
+    assert.match(trackSource, /trackIssueProjectTrackAction\('project_track_options_open'/);
+    assert.match(statusSource, /trackIssueStatusAction\('status_options_open'/);
+    assert.ok(analyticsDoc.includes('Dashboard tour target activation'));
+    assert.ok(analyticsDoc.includes('no new onboarding event'));
+    for (const token of ['priority_options_open', 'project_track_options_open', 'status_options_open']) {
+        assert.ok(analyticsDoc.includes(`\`${token}\``), `Expected safe options-open documentation for ${token}`);
+    }
+});
+
 test('first-run guide recovery and focus ownership add no new analytics surface', () => {
     const guide = read('frontend/src/settings/FirstRunGroupConfigurationGuide.jsx');
     const dashboard = read('frontend/src/dashboard.jsx');

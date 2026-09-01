@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Ready for execution on `feature/user-onboarding-tour` after Task 0. Continue from the pushed plan commit; do not restart or reconstruct the already implemented Tasks 0–9 from `EXEC-user-onboarding-tour-improvements.md`.
+**Status:** Tasks 0–8 implemented and verified on `feature/user-onboarding-tour` through build commit `b4d0c83`; awaiting explicit remote-integration direction. Do not rename this execution plan to `DONE-*` until that integration is authorized and complete.
 
 **Goal:** Correct the desktop coachmark and Department Settings regressions, require explicit **Next** after safe field previews, and add contextual Configuration, Planning, Board, and Statistics onboarding that starts from the real user-clicked launcher.
 
@@ -10,7 +10,7 @@
 
 **Tech Stack:** React 19, React DOM portals, native button/radio keyboard behavior, DOM `inert` and ARIA restoration, Node 20 test runner, Playwright, esbuild, Python `unittest`.
 
-**Approved design:** `docs/agents/bugfixes/2026-09-01-planned-user-onboarding-contextual-follow-up.md`
+**Executed design:** `docs/agents/bugfixes/2026-09-01-executed-user-onboarding-contextual-follow-up.md`
 
 **Branch and build policy:** Work only in the existing `feature/user-onboarding-tour` checkout. Preserve unrelated `.env.example` changes. Do not switch to `main`. Do not create an implementation worktree. The previously authorized temporary verification worktree is allowed only for the final clean Node 20 generated-output check, at the concrete implementation ref produced in Task 8. Never hand-edit `frontend/dist`.
 
@@ -877,7 +877,7 @@ git commit -m "docs: describe contextual desktop onboarding"
 - Modify: `docs/plans/EXEC-user-onboarding-contextual-follow-up.md`
 - Modify: `docs/plans/README.md`
 
-- [ ] **Step 1: Run all focused onboarding tests together**
+- [x] **Step 1: Run all focused onboarding tests together**
 
 ```bash
 node --test tests/test_onboarding_modules.js tests/test_onboarding_tour_utils.js tests/test_onboarding_tour_interaction.js tests/test_first_run_group_configuration.js tests/test_onboarding_analytics.js
@@ -886,7 +886,7 @@ npx playwright test tests/ui/onboarding_tour.spec.js tests/ui/shared_department_
 
 Expected: PASS. Confirm no test uses `force: true` as hit-testing evidence.
 
-- [ ] **Step 2: Run the complete Python and frontend suites under Node 20**
+- [x] **Step 2: Run the complete Python and frontend suites under Node 20**
 
 ```bash
 .venv/bin/python -m unittest discover -s tests
@@ -896,7 +896,7 @@ npm run test:frontend:ui
 
 Expected: all pass. Record exact totals and skips; do not copy the baseline totals if they changed.
 
-- [ ] **Step 3: Build generated output in the implementation checkout**
+- [x] **Step 3: Build generated output in the implementation checkout**
 
 ```bash
 npm run build
@@ -906,7 +906,7 @@ git diff --check
 
 Expected: only intended source/docs/tests plus generated `frontend/dist` files are changed; `.env.example` remains unstaged and untouched.
 
-- [ ] **Step 4: Commit source plus generated output**
+- [x] **Step 4: Commit source plus generated output**
 
 ```bash
 git add frontend/src frontend/dist tests docs/features/onboarding.md docs/README_ANALYTICS.md
@@ -915,7 +915,7 @@ git commit -m "build: finalize contextual onboarding follow-up"
 
 Before committing, inspect `git diff --cached --name-only` and unstage anything not named by this plan. Never add `.env.example`.
 
-- [ ] **Step 5: Prove reproducible generated output in the authorized temporary worktree**
+- [x] **Step 5: Prove reproducible generated output in the authorized temporary worktree**
 
 Use the concrete implementation commit from Step 4:
 
@@ -932,7 +932,7 @@ git status --short
 
 Expected: Node `v20.x`; `npm ci` succeeds; the post-build worktree is clean. If not clean, copy no files manually—fix source/build inputs in the implementation checkout and repeat from a new concrete commit. Remove the temporary worktree only after recording evidence.
 
-- [ ] **Step 6: Inspect every required screenshot**
+- [x] **Step 6: Inspect every required screenshot**
 
 Inspect these settled files at original resolution:
 
@@ -952,7 +952,7 @@ test-results/onboarding-tour-qa/context-statistics.png
 
 Reject clipping, overlap, scattered whitespace, duplicate star controls, hidden Next, incorrect tones, obscured targets, unsettled animation, or stale UI.
 
-- [ ] **Step 7: Review the final diff line by line**
+- [x] **Step 7: Review the final diff line by line**
 
 ```bash
 git diff 40b7ccf..HEAD -- frontend/src tests docs frontend/dist
@@ -963,7 +963,7 @@ git log --oneline -10
 
 Verify every changed line maps to this plan, negative Jira mutation guards remain, mobile tour behavior is unchanged, and `.env.example` is not in any commit.
 
-- [ ] **Step 8: Finalize artifacts and commit evidence**
+- [x] **Step 8: Finalize artifacts and commit evidence**
 
 Rename the design artifact to `2026-09-01-executed-user-onboarding-contextual-follow-up.md`; set `Status: executed`; add **Outcome** and **Current Accuracy**. Update this plan with the implementation commit, exact test totals, reproducible-build result, screenshot locations, residual risks, and any baseline failure. Update `docs/plans/README.md` with the same status.
 
@@ -972,9 +972,23 @@ git add docs/agents/bugfixes/2026-09-01-executed-user-onboarding-contextual-foll
 git commit -m "docs: record onboarding follow-up verification"
 ```
 
-- [ ] **Step 9: Stop before remote integration changes**
+- [x] **Step 9: Stop before remote integration changes**
 
 Do not push additional implementation commits, create a pull request, merge, or rename this `EXEC-*` plan to `DONE-*` without fresh explicit user direction. Report implemented tasks, changed files, exact verification totals, screenshot locations, residual risks, the final commit, and any blocked gate.
+
+#### Task 8 verification evidence
+
+- Runtime: pinned Node `v20.20.0` with npm `10.8.2`; checkout-local `.venv` was absent, so Python verification used the existing external project virtual environment (`Python 3.14.7`, OpenSSL `3.6.3`). The exact local interpreter path is supplied in the Task 8 handoff rather than committed, per repository privacy rules.
+- Required individual baselines passed unchanged before complete suites: onboarding ready-lifecycle stability `1 passed`; future-planning sprint select-all scoping `1 passed`.
+- Focused Node onboarding tests: `96 passed`, `0 failed`, `0 skipped`. Combined onboarding/Settings Playwright: `145 passed`, `0 failed`, `0 skipped`. Scoped onboarding tests contain no `force: true`; the two force-clicks in the combined Settings file are negative disabled-Save probes, not hit-testing evidence.
+- First complete-suite run exposed two honest maintenance REDs: Python `1,396 run`, `1 failed`, `7 skipped` because planned `dashboard.jsx` growth was 17,076 lines against a 17,074 legacy-entrypoint budget; frontend unit `1,044 run`, `2 failed`, `0 skipped` because the same source build was not yet committed and a Task 6 source guard still expected the removed duplicate favorite. The budget was minimally ratcheted to 17,076 with its growth reason, and the source guard was updated to assert the canonical row favorite without production changes.
+- Final complete suites: Python `1,396 passed`, `0 failed`, `7 skipped`; frontend unit `1,044 passed`, `0 failed`, `0 skipped`; Playwright `581 passed`, `0 failed`, `2 skipped` (`583` total). The two Playwright skips are the existing desktop/mobile EPM Settings loading-skeleton cases.
+- Generated output: pinned `npm run build` rebuilt `frontend/dist/dashboard.js`, `dashboard.js.map`, and `dashboard.css`; implementation/build commit is `b4d0c83fac0397bf81facdda7b4d59faf6db932f`. A detached worktree at `/tmp/jira-planning-onboarding-follow-up-verify` on that exact commit ran pinned Node/npm, `npm ci` (`0 vulnerabilities`), and `npm run build`; post-build `git status --short` was empty. No files were copied manually, and the exact worktree was removed only after proof was recorded.
+- Original-resolution visual inspection accepted all eleven required screenshots: coachmark desktop `1200x760`, narrow desktop `768x760`, preview locked/ready `1200x760` each, Configuration/Planning/Board/Statistics `1280x900` each, Department editor `1280x720`, first-run favorite `1280x900`, and ordinary favorite `1280x720`. Actions were unclipped and correctly differentiated, preview Next changed only from disabled to enabled, contextual targets were unobscured, the editor stayed compact, and only the canonical row favorite appeared.
+- Final diff audit from `40b7ccf` confirmed every source, test, documentation, and generated change maps to the plan; preview request guards still record zero Jira mutations; native launcher handlers remain the only navigation path; mobile suppression, authentication abort, focus restoration, portal ownership, inert/ARIA restoration, and duplicate-event idempotence remain covered and passing. `git diff --check` was clean, and neither `.env` nor `.env.example` appears in the commit range.
+- Residual risks: visual proof uses synthetic Chromium fixtures rather than production Jira data; the two pre-existing EPM loading-skeleton cases remain skipped; Node reports existing typeless-package warnings for ESM onboarding modules; and remote integration is intentionally not performed. No in-scope gate is blocked.
+
+Detailed command output, screenshot-by-screenshot assessment, audit inventory, warnings, and RED-to-GREEN history are recorded in `.superpowers/sdd/EXEC-user-onboarding-contextual-follow-up/task-8-report.md`. The evidence commit is the commit containing that report with subject `docs: record onboarding follow-up verification`; its exact SHA is recorded in the Task 8 handoff because a commit cannot embed its own hash.
 
 ---
 

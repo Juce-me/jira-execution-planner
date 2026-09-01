@@ -145,9 +145,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Task 9 used the authorized fresh Node 20 verification worktree. The clean final ref passed 1,396 Python tests with 7 skips, 1,027 frontend unit tests, and 563 Playwright tests with 2 skips; reproducible generated output and all 15 settled screenshots were verified and inspected. The branch awaits explicit push approval.
 
 14. `EXEC-user-onboarding-contextual-follow-up.md`
-   - Ready for execution on `feature/user-onboarding-tour` after the pushed plan commit. Continue from the completed Tasks 0–9 above; do not reconstruct them.
-   - Expected output: a wider desktop coachmark with clear blue/red/neutral action hierarchy, explicit Next after each safe field preview, contextual Configuration/Planning/Board/Statistics modules launched by the real user-clicked controls, one canonical left-row Department favorite star, and a compact right-pane visibility layout.
-   - Mobile dashboard onboarding remains deferred to issue #151. No backend, ownership, persistence-schema, Jira-mutation, or new analytics-event change is allowed.
+   - Tasks 0–8 are implemented and verified on `feature/user-onboarding-tour` through implementation/build commit `b4d0c83`. The plan remains `EXEC-*` and remote integration awaits explicit direction.
+   - Delivered output: a wider desktop coachmark with blue/red/neutral action hierarchy, explicit Next after safe field previews, contextual Configuration/Planning/Board/Statistics modules launched by native activation of the real controls, one canonical left-row Department favorite, and a compact right-pane visibility layout.
+   - Verification under pinned Node 20: 96 focused Node tests; both named baseline cases; 145 combined onboarding/Settings Playwright tests; 1,396 Python tests with 7 skips; 1,044 frontend unit tests; and 583 full Playwright tests with 2 skips. Generated output reproduced cleanly from the concrete build commit, and all 11 required screenshots passed original-resolution inspection.
+   - Mobile dashboard onboarding remains deferred to issue #151. The final audit found no backend, ownership, persistence-schema, Jira-mutation, or new analytics-event change; no in-scope gate is blocked. See the plan's Task 8 evidence and `.superpowers/sdd/EXEC-user-onboarding-contextual-follow-up/task-8-report.md` for RED-to-GREEN history and residual risks.
 
 15. `EXEC-hide-single-option-view-mode-control.md`
    - Ready for execution as a small frontend-only task suitable for a 5.3 coding model.

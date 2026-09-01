@@ -1,6 +1,6 @@
 # User Onboarding Contextual Follow-up Design
 
-Status: planned
+Status: executed
 Type: bugfix
 
 ## Outcome sought
@@ -100,4 +100,8 @@ Use repository-pinned Node 20 and test-driven development for every slice. Requi
 
 ## Current accuracy
 
-Accurate as the approved design. Implementation has not started.
+Accurate as executed on `feature/user-onboarding-tour` through implementation/build commit `b4d0c83`. The shipped behavior follows the approved contextual-module, explicit-Next, single-favorite-control, accessibility-restoration, analytics, and no-mutation contracts. Verification required two test-contract maintenance changes: the documented `dashboard.jsx` legacy-entrypoint budget was ratcheted by the observed planned growth from 17,074 to 17,076 lines, and a stale Department-favorite source guard was updated to assert the canonical left-row control. Neither change altered production behavior.
+
+## Outcome
+
+The desktop follow-up is implemented and verified. Catch Up now hands off to Configuration, Planning, Board, and Statistics only through native user activation of the real launchers; interactive Jira-field previews keep Next locked until an exact settled preview closes and never auto-advance; the coachmark action hierarchy is stable at normal and narrow desktop widths; and Department Settings has one left-row favorite control plus a compact right-pane visibility row. Full Python, frontend unit, and Playwright suites passed under the pinned runtimes, generated output reproduced cleanly from the implementation commit, and all required settled screenshots passed original-resolution inspection. Remote integration remains intentionally pending explicit user direction.

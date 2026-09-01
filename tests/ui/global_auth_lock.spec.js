@@ -544,7 +544,14 @@ test('same-profile Planning tabs elect one OAuth leader and reload independently
     await shared.leaderHydrationStarted.promise;
 
     await expect.poll(() => followerState.documents.filter(pathname => pathname === '/').length).toBe(2);
-    await expect.poll(() => follower.evaluate(() => window.__oldDocumentMarker)).toBeUndefined();
+    await expect.poll(async () => {
+        try {
+            return await follower.evaluate(() => window.__oldDocumentMarker);
+        } catch (error) {
+            if (/Execution context was destroyed/.test(error.message)) return 'navigating';
+            throw error;
+        }
+    }).toBeUndefined();
     expect(leaderState.heldHydration).toBe(true);
     expect(await leader.evaluate(key => localStorage.getItem(key), recoveryLeaseKey)).toBeNull();
     const publishedSuccess = JSON.parse(await follower.evaluate(key => localStorage.getItem(key), recoverySuccessKey));

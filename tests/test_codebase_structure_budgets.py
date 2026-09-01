@@ -105,7 +105,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # private-view contract while preserving unified Settings save behavior (+36). Task 5
     # integrates the terminal global authentication gate across existing async consumers,
     # keyboard handlers, Scenario polling/SSE, and removes feature-local recovery UI (+43).
-    "frontend/src/dashboard.jsx": 16375,
+    # bugfix/multidevice-sessions-continuation adds per-tab auth-resume capture/restore,
+    # staged Planning hydration, and terminal bootstrap-safe recovery wiring (+249).
+    "frontend/src/dashboard.jsx": 16624,
 }
 
 

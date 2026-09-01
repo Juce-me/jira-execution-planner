@@ -2064,6 +2064,30 @@ test('interactive loading, error fallback, duplicate lifecycle, and replacement 
     await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
 });
 
+test('interactive error preview target loss relocks Next while another field keeps the preview step mounted', async ({ page }) => {
+    await installHarness(page);
+    await openTour(page);
+    await advanceToHeading(page, 'Preview Priority options');
+    await page.locator('[data-priority-transition-trigger][data-issue-key="EPIC-1"]').click();
+    await page.evaluate(() => {
+        window.__tourHarness.setPreviewLoading(false);
+        window.__tourHarness.setPreviewError('Options unavailable.');
+    });
+    await expect(page.locator('[data-priority-transition-menu]')).toContainText('Options unavailable.');
+    await page.locator('[data-priority-transition-menu]').press('Escape');
+
+    const next = page.getByRole('button', { name: 'Next' });
+    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+    await expect(next).toBeEnabled();
+
+    await page.evaluate(() => window.__tourHarness.setEditingMask(3));
+    await expect(page.locator('[data-priority-transition-trigger]')).toHaveCount(0);
+    await expect(page.locator('[data-project-track-transition-trigger]')).toBeVisible();
+    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+    await expect(page.locator('[data-onboarding-tour]')).toBeVisible();
+    await expect(next).toBeDisabled();
+});
+
 test('interactive focus islands, native keyboard activation, section cleanup, and manual fallback isolation remain exact', async ({ page }) => {
     await installHarness(page);
     await openTour(page);

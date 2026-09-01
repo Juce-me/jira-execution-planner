@@ -624,6 +624,11 @@ export default function OnboardingTour({
     ]);
 
     React.useEffect(() => {
+        if (previewFallbackStepId === tour.currentStep?.id
+            && previewFallbackTargetIdentity
+            && previewFallbackTargetIdentity !== targetIdentity) {
+            tour.clearStepUnlock();
+        }
         if (!interactive || !target || !tour.currentStep) {
             if (previewDescriptorRef.current) {
                 cleanupLatchRef.current = true;
@@ -633,11 +638,6 @@ export default function OnboardingTour({
                 onPreviewTargetChange?.(null);
             }
             return undefined;
-        }
-        if (previewFallbackStepId === tour.currentStep.id
-            && previewFallbackTargetIdentity
-            && previewFallbackTargetIdentity !== targetIdentity) {
-            tour.clearStepUnlock();
         }
         const descriptor = buildPreviewDescriptor(tour.sessionId, tour.currentStep, target);
         if (!descriptor) return undefined;

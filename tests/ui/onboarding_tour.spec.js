@@ -1,12 +1,14 @@
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
+const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const harnessUrl = 'http://onboarding-tour.test/';
 const controllerHarnessUrl = 'http://onboarding-controller.test/';
 let harnessJs;
 let controllerHarnessJs;
+let productionDashboardJs;
 let dashboardCss;
 
 test.beforeAll(() => {
@@ -370,6 +372,14 @@ test.beforeAll(() => {
         format: 'iife',
         define: { 'process.env.NODE_ENV': '"test"' },
     }).outputFiles[0].text;
+    productionDashboardJs = esbuild.buildSync({
+        entryPoints: [path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx')],
+        bundle: true,
+        write: false,
+        format: 'iife',
+        loader: { '.css': 'empty' },
+        define: { 'process.env.NODE_ENV': '"test"' },
+    }).outputFiles[0].text;
     dashboardCss = esbuild.buildSync({
         entryPoints: [path.join(repoRoot, 'frontend', 'src', 'styles', 'dashboard.css')],
         bundle: true,
@@ -552,6 +562,609 @@ async function advancePreviewOrFallback(page, title, advanceFallback) {
     await menu.press('Escape');
     await expect(page.getByRole('heading')).not.toHaveText(title);
 }
+
+const productionFixtureUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
+const productionSprintId = 7301;
+const productionSprintName = '2026Q3 Sprint 7';
+const productionFieldContracts = {
+    priority: {
+        heading: 'Preview Priority options',
+        nextHeading: 'Preview Project Track options',
+        triggerHook: 'priority',
+        menuHook: 'priority',
+        optionRoute: '/api/issues/priorities/options',
+        mutationRoute: '/api/issues/priorities',
+        analyticsEventName: 'issue_priority_action',
+        analyticsAction: 'priority_options_open',
+        analyticsFeatureName: 'eng_priority_changes',
+        errorMessage: 'Priority choices are unavailable.',
+    },
+    track: {
+        heading: 'Preview Project Track options',
+        nextHeading: 'Preview Status options',
+        triggerHook: 'project-track',
+        menuHook: 'project-track',
+        optionRoute: '/api/issues/project-track/options',
+        mutationRoute: '/api/issues/project-track',
+        analyticsEventName: 'issue_project_track_action',
+        analyticsAction: 'project_track_options_open',
+        analyticsFeatureName: 'eng_project_track_changes',
+        errorMessage: 'Project Track choices are unavailable.',
+    },
+    status: {
+        heading: 'Preview Status options',
+        nextHeading: 'Continue in Jira',
+        triggerHook: 'status',
+        menuHook: 'status',
+        optionRoute: '/api/issues/transitions/options',
+        mutationRoute: '/api/issues/transitions',
+        analyticsEventName: 'issue_status_action',
+        analyticsAction: 'status_options_open',
+        analyticsFeatureName: 'eng_status_transitions',
+        errorMessage: 'Status choices are unavailable.',
+    },
+};
+
+function productionStory(key, epicKey, priority = 'High') {
+    return {
+        id: key,
+        key,
+        fields: {
+            summary: `${key} synthetic story`,
+            status: { name: 'To Do' },
+            priority: { name: priority },
+            issuetype: { name: 'Story' },
+            assignee: { displayName: 'Synthetic Owner' },
+            updated: '2026-08-01T00:00:00.000+0000',
+            customfield_10004: 3,
+            epicKey,
+            parentSummary: `${epicKey} synthetic epic`,
+            projectKey: 'SYN',
+            teamId: 'team-synthetic',
+            teamName: 'Synthetic Team',
+            sprint: [{ id: productionSprintId, name: productionSprintName, state: 'active' }],
+            subtaskSummary: null,
+        },
+    };
+}
+
+function productionEpic(key, priority, projectTrack) {
+    return {
+        key,
+        summary: `${key} synthetic epic`,
+        status: { name: 'In Progress' },
+        priority: { name: priority },
+        projectTrack,
+        assignee: { displayName: 'Synthetic Lead' },
+        teamId: 'team-synthetic',
+        teamName: 'Synthetic Team',
+        labels: ['synthetic_team_label'],
+        sprint: [{ id: productionSprintId, name: productionSprintName, state: 'active' }],
+    };
+}
+
+function optionResponse(field, mode) {
+    if (field === 'priority') {
+        return mode === 'empty'
+            ? { priorities: [{ id: '2', name: 'High', rank: 20 }], source: 'jira' }
+            : { priorities: [{ id: '1', name: 'Highest', rank: 10 }, { id: '2', name: 'High', rank: 20 }, { id: '3', name: 'Medium', rank: 30 }], source: 'jira' };
+    }
+    if (field === 'track') {
+        return mode === 'empty'
+            ? { options: [{ value: 'Flexible' }], source: 'jira' }
+            : { options: [{ value: 'Flexible' }, { value: 'Committed' }], source: 'jira' };
+    }
+    return mode === 'empty'
+        ? { issues: [], targetStatuses: [] }
+        : {
+            issues: [{ key: 'SYN-EPIC-A', issueType: 'Epic', currentStatus: 'In Progress', transitions: [] }],
+            targetStatuses: [{ name: 'To Do', availableCount: 1, blockedCount: 0 }, { name: 'Done', availableCount: 1, blockedCount: 0 }],
+        };
+}
+
+async function installProductionOnboardingFixture(page, {
+    field = 'priority',
+    mode = 'success',
+    errorStatus = 403,
+} = {}) {
+    const calls = [];
+    const stories = [
+        productionStory('SYN-STORY-A', 'SYN-EPIC-A', 'High'),
+        productionStory('SYN-STORY-B', 'SYN-EPIC-B', 'Medium'),
+    ];
+    const epics = {
+        'SYN-EPIC-A': productionEpic('SYN-EPIC-A', 'High', 'Flexible'),
+        'SYN-EPIC-B': productionEpic('SYN-EPIC-B', 'Medium', 'Committed'),
+    };
+    const groupsPayload = {
+        version: 1,
+        configRevision: 1,
+        source: 'workspace_db',
+        defaultGroupId: 'group-synthetic',
+        groups: [{
+            id: 'group-synthetic',
+            name: 'Synthetic Department',
+            teamIds: ['team-synthetic'],
+            teamLabels: { 'team-synthetic': 'synthetic_team_label' },
+            labels: ['synthetic_team_label'],
+            excludedCapacityEpics: [],
+        }],
+        preferences: {
+            onboardingRequired: false,
+            onboardingDone: false,
+            customized: true,
+            visibleGroupIds: ['group-synthetic'],
+            effectiveVisibleGroupIds: ['group-synthetic'],
+            activeGroupId: 'group-synthetic',
+        },
+    };
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await installDashboardShell(page);
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: productionDashboardJs,
+    }));
+    await page.route('**/frontend/dist/dashboard.css', route => route.fulfill({
+        status: 200,
+        contentType: 'text/css',
+        body: dashboardCss,
+    }));
+    await page.route('https://www.googletagmanager.com/**', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: '',
+    }));
+    await page.route('**/api/**', async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        let body = null;
+        try {
+            body = request.postDataJSON();
+        } catch (_error) {
+            body = request.postData() || null;
+        }
+        calls.push({
+            method: request.method(),
+            pathname: url.pathname,
+            params: Object.fromEntries(url.searchParams.entries()),
+            body,
+        });
+        const json = (payload, status = 200) => route.fulfill({
+            status,
+            contentType: 'application/json',
+            body: JSON.stringify(payload),
+        });
+
+        if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
+        if (url.pathname === '/api/auth/status') {
+            return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'synthetic@example.invalid' });
+        }
+        if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'synthetic-csrf' });
+        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
+        if (url.pathname === '/api/analytics/context') {
+            return json({ enabled: true, gtmContainerId: 'GTM-SYNTHETIC', measurementId: 'G-SYNTHETIC', ga4UserId: 'synthetic-user' });
+        }
+        if (url.pathname === '/api/config') {
+            return json({
+                jiraUrl: 'https://jira.example.invalid',
+                capacityProject: '',
+                authMode: 'atlassian_oauth',
+                projectsConfigured: true,
+                environmentConfigExists: true,
+                userCanEditSettings: true,
+                groupQueryTemplateEnabled: false,
+                epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
+            });
+        }
+        if (url.pathname === '/api/version') return json({ enabled: false });
+        if (url.pathname === '/api/groups-config') return json(groupsPayload);
+        if (url.pathname === '/api/projects/selected') return json({ selected: [] });
+        if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
+        if (url.pathname === '/api/sprints') {
+            return json({ sprints: [{ id: productionSprintId, name: productionSprintName, state: 'active' }] });
+        }
+        if (url.pathname === '/api/tasks-with-team-name') {
+            const purpose = url.searchParams.get('purpose');
+            const project = url.searchParams.get('project');
+            if (purpose || project === 'tech') return json({ issues: [], epics: {}, epicsInScope: [], names: {} });
+            return json({ issues: stories, epics, epicsInScope: Object.values(epics), names: {} });
+        }
+        if (url.pathname === '/api/issues/subtasks') return json({ parentKey: '', sprint: '', cached: false, summary: null, subtasks: [] });
+        if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
+        if (url.pathname === '/api/backlog-epics') return json({ epics: [] });
+        if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
+        if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
+        if (url.pathname === '/api/me/onboarding' && request.method() === 'POST') {
+            return json({ onboardingDone: true });
+        }
+
+        const contract = productionFieldContracts[field];
+        if (url.pathname === contract.optionRoute) {
+            if (mode === 'auth') {
+                return json({ error: 'authentication_required', loginUrl: '/login?reason=session_expired' }, 401);
+            }
+            if (mode === 'error') {
+                return json({ error: `${field}_options_failed`, message: contract.errorMessage }, errorStatus);
+            }
+            return json(optionResponse(field, mode));
+        }
+        if (url.pathname === '/api/issues/priorities/options') return json(optionResponse('priority', 'success'));
+        if (url.pathname === '/api/issues/project-track/options') return json(optionResponse('track', 'success'));
+        if (url.pathname === '/api/issues/transitions/options') return json(optionResponse('status', 'success'));
+        if (url.pathname === '/api/issues/priorities' || url.pathname === '/api/issues/project-track' || url.pathname === '/api/issues/transitions') {
+            return json({ error: 'forbidden_test_mutation' }, 500);
+        }
+        return json({});
+    });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: productionSprintId,
+        sprintName: productionSprintName,
+        activeGroupId: 'group-synthetic',
+        showPlanning: false,
+        showBoard: false,
+        showScenario: false,
+        showStats: false,
+        showAlertsPanel: false,
+    });
+    await page.goto(`${productionFixtureUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible({ timeout: 15000 });
+    return { calls };
+}
+
+function productionTrigger(page, field, issueKey = 'SYN-EPIC-A') {
+    const hook = productionFieldContracts[field].triggerHook;
+    return page.locator(`[data-${hook}-transition-trigger][data-issue-key="${issueKey}"]`);
+}
+
+function productionMenu(page, field, issueKey = 'SYN-EPIC-A') {
+    const hook = productionFieldContracts[field].menuHook;
+    return page.locator(`[data-${hook}-transition-menu][data-issue-key="${issueKey}"]`);
+}
+
+function fieldCalls(calls, pathname, method) {
+    return calls.filter(call => call.pathname === pathname && (!method || call.method === method));
+}
+
+async function productionFieldValueSnapshot(page, field, issueKey = 'SYN-EPIC-A') {
+    const trigger = productionTrigger(page, field, issueKey);
+    return trigger.evaluate(node => ({
+        ariaLabel: node.getAttribute('aria-label'),
+        text: node.textContent.trim(),
+    }));
+}
+
+async function productionIssueSnapshot(page, issueKey = 'SYN-EPIC-A') {
+    return page.locator(`.epic-block:has([data-issue-key="${issueKey}"])`).first().evaluate((node, key) => {
+        const trigger = hook => node.querySelector(`[data-${hook}-transition-trigger][data-issue-key="${key}"]`);
+        return {
+            key,
+            summary: node.querySelector('.epic-link')?.getAttribute('aria-label') || '',
+            priority: trigger('priority')?.getAttribute('aria-label') || '',
+            track: trigger('project-track')?.getAttribute('aria-label') || '',
+            status: trigger('status')?.textContent.trim() || '',
+            storyKeys: Array.from(node.querySelectorAll('.task-item[data-task-key]')).map(story => story.dataset.taskKey),
+        };
+    }, issueKey);
+}
+
+async function advanceProductionTourTo(page, heading) {
+    for (let index = 0; index < 20; index += 1) {
+        if (await page.getByRole('heading', { name: heading }).count()) return;
+        const next = page.getByRole('button', { name: 'Next' });
+        if (await next.count()) {
+            await next.click();
+            continue;
+        }
+        const currentHeading = await page.locator('.onboarding-tour-card h2').textContent();
+        const field = Object.keys(productionFieldContracts).find(candidate => (
+            productionFieldContracts[candidate].heading === currentHeading
+        ));
+        if (!field) throw new Error(`Production tour could not reach ${heading}.`);
+        await productionTrigger(page, field).click();
+        const menu = productionMenu(page, field);
+        await expect(menu).toBeFocused();
+        await menu.press('Escape');
+    }
+    throw new Error(`Production tour did not reach ${heading}.`);
+}
+
+function assertNoUnsafePreviewAnalytics(events, contract) {
+    const actionEvents = events.filter(entry => entry?.event_name === contract.analyticsEventName);
+    expect(actionEvents.filter(entry => entry.workflow_action === contract.analyticsAction)).toHaveLength(1);
+    expect(actionEvents.some(entry => /change_(?:submit|result)$/.test(entry.workflow_action || ''))).toBe(false);
+    expect(events.some(entry => /onboarding.*(?:step|view|click)/i.test(`${entry?.event_name || ''} ${entry?.workflow_action || ''}`))).toBe(false);
+    actionEvents.forEach((entry) => {
+        expect(entry).toMatchObject({
+            event: 'userevent',
+            trigger: 'userevent',
+            event_type: 'event',
+            event_name: contract.analyticsEventName,
+            workflow_action: contract.analyticsAction,
+            feature_name: contract.analyticsFeatureName,
+            source_surface: 'catch_up',
+            selected_count_bucket: '1_5',
+        });
+        expect(['epics', 'stories']).toContain(entry.issue_type_mix);
+        expect(entry).not.toHaveProperty('issue_key');
+        expect(entry).not.toHaveProperty('issue_keys');
+        expect(entry).not.toHaveProperty('step_id');
+        expect(entry).not.toHaveProperty('raw_content');
+        expect(entry).not.toHaveProperty('priority_bucket');
+        expect(entry).not.toHaveProperty('value_state');
+        expect(entry).not.toHaveProperty('status_bucket');
+        expect(JSON.stringify(entry)).not.toMatch(/SYN-(?:EPIC|STORY)|Highest|Medium|Committed|Flexible|To Do|Done/);
+    });
+}
+
+test('production Catch Up Priority preview owns only the exact Epic control and never writes Jira', async ({ page }) => {
+    const { calls } = await installProductionOnboardingFixture(page, { field: 'priority', mode: 'success' });
+    const contract = productionFieldContracts.priority;
+    await advanceProductionTourTo(page, contract.heading);
+
+    const target = productionTrigger(page, 'priority');
+    const siblingIssue = productionTrigger(page, 'priority', 'SYN-EPIC-B');
+    const siblingKind = productionTrigger(page, 'track');
+    const identity = await target.getAttribute('data-onboarding-target-identity');
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
+    await expect.poll(() => page.locator('.onboarding-tour-spotlight').evaluate((spotlight, selector) => {
+        const trigger = document.querySelector(selector);
+        if (!trigger) return false;
+        const triggerRect = trigger.getBoundingClientRect();
+        const spotlightRect = spotlight.getBoundingClientRect();
+        return Math.abs(spotlightRect.left + 6 - triggerRect.left) <= 1
+            && Math.abs(spotlightRect.top + 6 - triggerRect.top) <= 1;
+    }, '[data-priority-transition-trigger][data-issue-key="SYN-EPIC-A"]')).toBe(true);
+
+    await siblingKind.evaluate(node => node.click());
+    await expect(page.getByRole('heading')).toHaveText(contract.heading);
+    await expect(productionMenu(page, 'track')).not.toHaveAttribute('data-onboarding-preview-owner', /.+/);
+    await siblingKind.evaluate(node => node.click());
+    await expect(productionMenu(page, 'track')).toHaveCount(0);
+    await expect(page.getByRole('heading')).toHaveText(contract.heading);
+
+    const before = await productionIssueSnapshot(page);
+    await target.click();
+    const menu = productionMenu(page, 'priority');
+    await expect(menu).toBeFocused();
+    await expect(menu).toHaveAttribute('data-onboarding-preview-owner', identity);
+    await expect(menu.locator('[role="menuitem"]')).toHaveCount(2);
+    await expect(menu.locator('button[role="menuitem"]')).toHaveCount(0);
+    await expect(menu.locator('[role="menuitem"]:focus')).toHaveCount(0);
+    await expect(siblingIssue).toHaveAttribute('aria-expanded', 'false');
+    await expect(siblingIssue).not.toHaveAttribute('aria-describedby', /.+/);
+    await expect(productionMenu(page, 'priority', 'SYN-EPIC-B')).toHaveCount(0);
+    expect(await productionIssueSnapshot(page)).toEqual(before);
+    expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+
+    await menu.press('Escape');
+    await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
+    await expect(menu).toHaveCount(0);
+    expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+    assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
+});
+
+for (const field of ['track', 'status']) {
+    const label = field === 'track' ? 'Project Track' : 'Status';
+    test(`production Catch Up ${label} preview resolves its exact Epic owner and never writes Jira`, async ({ page }) => {
+        const { calls } = await installProductionOnboardingFixture(page, { field, mode: 'success' });
+        const contract = productionFieldContracts[field];
+        await advanceProductionTourTo(page, contract.heading);
+
+        const target = productionTrigger(page, field);
+        const wrongField = field === 'track' ? 'status' : 'priority';
+        const wrongTrigger = productionTrigger(page, wrongField);
+        const identity = await target.getAttribute('data-onboarding-target-identity');
+        await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
+        await wrongTrigger.evaluate(node => node.click());
+        await expect(page.getByRole('heading')).toHaveText(contract.heading);
+        await expect(productionMenu(page, wrongField)).not.toHaveAttribute('data-onboarding-preview-owner', /.+/);
+        await wrongTrigger.evaluate(node => node.click());
+        await expect(productionMenu(page, wrongField)).toHaveCount(0);
+
+        const before = await productionIssueSnapshot(page);
+        await target.click();
+        const menu = productionMenu(page, field);
+        await expect(menu).toBeFocused();
+        await expect(menu).toHaveAttribute('data-onboarding-preview-owner', identity);
+        await expect(menu.locator('[role="menuitem"]')).toHaveCount(field === 'track' ? 1 : 2);
+        await expect(menu.locator('button[role="menuitem"]')).toHaveCount(0);
+        await expect(menu.locator('[role="menuitem"]:focus')).toHaveCount(0);
+        expect(await productionIssueSnapshot(page)).toEqual(before);
+        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+
+        await menu.press('Escape');
+        await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
+        await expect(menu).toHaveCount(0);
+        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
+    });
+}
+
+test('production dashboard reaches IssueCard Story preview owners when the Epic field target is unavailable', async ({ page }) => {
+    const { calls } = await installProductionOnboardingFixture(page, { field: 'priority', mode: 'success' });
+    await advanceProductionTourTo(page, 'See the delivery Stories');
+    await page.locator('.epic-header [data-priority-transition-trigger]').evaluateAll(nodes => {
+        nodes.forEach(node => { node.disabled = true; });
+    });
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+
+    const storyPriority = productionTrigger(page, 'priority', 'SYN-STORY-A');
+    await expect(storyPriority).toHaveAttribute('aria-describedby', /.+/);
+    await expect(storyPriority.locator('xpath=ancestor::*[@data-task-key="SYN-STORY-A"]')).toHaveCount(1);
+    await storyPriority.click();
+    const storyPriorityMenu = productionMenu(page, 'priority', 'SYN-STORY-A');
+    await expect(storyPriorityMenu).toBeFocused();
+    await expect(storyPriorityMenu).toHaveAttribute(
+        'data-onboarding-preview-owner',
+        await storyPriority.getAttribute('data-onboarding-target-identity'),
+    );
+    await expect(productionMenu(page, 'priority', 'SYN-STORY-B')).toHaveCount(0);
+    await expect(productionTrigger(page, 'priority', 'SYN-STORY-B')).not.toHaveAttribute('aria-describedby', /.+/);
+    await storyPriorityMenu.press('Escape');
+
+    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
+    const epicTrack = productionTrigger(page, 'track', 'SYN-EPIC-A');
+    await expect(epicTrack).toHaveAttribute('aria-describedby', /.+/);
+    await epicTrack.click();
+    const trackMenu = productionMenu(page, 'track', 'SYN-EPIC-A');
+    await expect(trackMenu).toBeFocused();
+    await page.locator('.epic-header [data-status-transition-trigger]').evaluateAll(nodes => {
+        nodes.forEach(node => { node.disabled = true; });
+    });
+    await trackMenu.press('Escape');
+
+    await expect(page.getByRole('heading')).toHaveText('Preview Status options');
+    const storyStatus = productionTrigger(page, 'status', 'SYN-STORY-A');
+    await expect(storyStatus).toHaveAttribute('aria-describedby', /.+/);
+    await expect(storyStatus.locator('xpath=ancestor::*[@data-task-key="SYN-STORY-A"]')).toHaveCount(1);
+    await storyStatus.click();
+    const storyStatusMenu = productionMenu(page, 'status', 'SYN-STORY-A');
+    await expect(storyStatusMenu).toBeFocused();
+    await expect(storyStatusMenu).toHaveAttribute(
+        'data-onboarding-preview-owner',
+        await storyStatus.getAttribute('data-onboarding-target-identity'),
+    );
+    await expect(productionMenu(page, 'status', 'SYN-STORY-B')).toHaveCount(0);
+    await storyStatusMenu.press('Escape');
+
+    expect(fieldCalls(calls, '/api/issues/priorities', 'POST')).toEqual([]);
+    expect(fieldCalls(calls, '/api/issues/project-track', 'POST')).toEqual([]);
+    expect(fieldCalls(calls, '/api/issues/transitions', 'POST')).toEqual([]);
+});
+
+for (const field of ['priority', 'track', 'status']) {
+    const contract = productionFieldContracts[field];
+    const label = field === 'track' ? 'Project Track' : field[0].toUpperCase() + field.slice(1);
+
+    test(`production ${label} explicit-empty preview advances only after close with zero Jira mutation`, async ({ page }) => {
+        const { calls } = await installProductionOnboardingFixture(page, { field, mode: 'empty' });
+        await advanceProductionTourTo(page, contract.heading);
+        const before = await productionFieldValueSnapshot(page, field);
+        await productionTrigger(page, field).click();
+        const menu = productionMenu(page, field);
+        await expect(menu).toBeFocused();
+        await expect(menu.locator('[role="menuitem"]')).toHaveCount(0);
+        await expect(menu.getByRole('status')).toContainText('0 choices available.');
+        await expect(page.getByRole('heading')).toHaveText(contract.heading);
+        await expect(page.getByRole('button', { name: 'Next' })).toHaveCount(0);
+        expect(await productionFieldValueSnapshot(page, field)).toEqual(before);
+        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+
+        await menu.press('Escape');
+        await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
+        await expect(menu).toHaveCount(0);
+        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
+    });
+
+    test(`production ${label} options error closes to an honest fallback Next with zero Jira mutation`, async ({ page }) => {
+        const errorStatus = field === 'track' ? 500 : 403;
+        const { calls } = await installProductionOnboardingFixture(page, { field, mode: 'error', errorStatus });
+        await advanceProductionTourTo(page, contract.heading);
+        const before = await productionFieldValueSnapshot(page, field);
+        await productionTrigger(page, field).click();
+        const menu = productionMenu(page, field);
+        await expect(menu).toBeFocused();
+        await expect(menu).toContainText(contract.errorMessage);
+        await expect(menu.getByRole('status')).toContainText('Choices could not be loaded.');
+        await expect(page.getByRole('button', { name: 'Next' })).toHaveCount(0);
+        expect(fieldCalls(calls, contract.optionRoute)).toHaveLength(1);
+        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+
+        await menu.press('Escape');
+        await expect(page.getByRole('heading')).toHaveText(contract.heading);
+        await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
+        await expect(menu).toHaveCount(0);
+        expect(await productionFieldValueSnapshot(page, field)).toEqual(before);
+        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
+        await page.getByRole('button', { name: 'Next' }).click();
+        await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
+    });
+
+    test(`production ${label} options 401 enters the global auth lock and cleans preview state`, async ({ page }) => {
+        const { calls } = await installProductionOnboardingFixture(page, { field, mode: 'auth' });
+        await advanceProductionTourTo(page, contract.heading);
+        await productionTrigger(page, field).click();
+
+        const lock = page.getByRole('alertdialog', { name: 'Sign in required' });
+        await expect(lock).toBeVisible();
+        await expect(lock.getByRole('link', { name: 'Sign in again' })).toBeFocused();
+        await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+        await expect(productionMenu(page, field)).toHaveCount(0);
+        await expect(page.locator('.onboarding-tour-preview-portal')).toHaveCount(0);
+        expect(fieldCalls(calls, contract.optionRoute)).toHaveLength(1);
+        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
+    });
+}
+
+test('production cached Priority and Status repeat previews stay read-only without duplicate options-open events', async ({ page }) => {
+    const { calls } = await installProductionOnboardingFixture(page, { field: 'priority', mode: 'success' });
+    await advanceProductionTourTo(page, 'Preview Priority options');
+    const openClose = async (field) => {
+        await productionTrigger(page, field).click();
+        const menu = productionMenu(page, field);
+        await expect(menu).toBeFocused();
+        await menu.press('Escape');
+    };
+
+    await openClose('priority');
+    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
+    await page.getByRole('button', { name: 'Back' }).click();
+    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+    await openClose('priority');
+    expect(fieldCalls(calls, '/api/issues/priorities/options')).toHaveLength(1);
+    expect((await page.evaluate(() => window.dataLayer || [])).filter(entry => (
+        entry?.event_name === 'issue_priority_action' && entry.workflow_action === 'priority_options_open'
+    ))).toHaveLength(1);
+
+    await openClose('track');
+    await expect(page.getByRole('heading')).toHaveText('Preview Status options');
+    await openClose('status');
+    await expect(page.getByRole('heading')).toHaveText('Continue in Jira');
+    await page.getByRole('button', { name: 'Back' }).click();
+    await expect(page.getByRole('heading')).toHaveText('Preview Status options');
+    await openClose('status');
+    expect(fieldCalls(calls, '/api/issues/transitions/options')).toHaveLength(1);
+    expect((await page.evaluate(() => window.dataLayer || [])).filter(entry => (
+        entry?.event_name === 'issue_status_action' && entry.workflow_action === 'status_options_open'
+    ))).toHaveLength(1);
+    expect(fieldCalls(calls, '/api/issues/priorities', 'POST')).toEqual([]);
+    expect(fieldCalls(calls, '/api/issues/project-track', 'POST')).toEqual([]);
+    expect(fieldCalls(calls, '/api/issues/transitions', 'POST')).toEqual([]);
+});
+
+test('production Status preview reaches the open terminal step and only explicit Finish persists once', async ({ page }) => {
+    const { calls } = await installProductionOnboardingFixture(page, { field: 'status', mode: 'success' });
+    await advanceProductionTourTo(page, 'Preview Status options');
+    await productionTrigger(page, 'status').click();
+    const menu = productionMenu(page, 'status');
+    await expect(menu).toBeFocused();
+    await menu.press('Escape');
+    await expect(page.getByRole('heading')).toHaveText('Continue in Jira');
+    expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
+
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading')).toHaveText('Tour complete');
+    await expect(page.locator('[data-onboarding-tour]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Finish' })).toBeVisible();
+    expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
+    expect(fieldCalls(calls, '/api/issues/transitions', 'POST')).toEqual([]);
+
+    await page.getByRole('button', { name: 'Finish' }).click();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toHaveLength(1);
+    expect(fieldCalls(calls, '/api/me/onboarding', 'POST')[0].body).toEqual({ onboardingDone: true });
+    expect(fieldCalls(calls, '/api/issues/transitions', 'POST')).toEqual([]);
+});
 
 test('step collector delegates preview progression before requiring a Next fallback', async ({ page }) => {
     await installHarness(page);

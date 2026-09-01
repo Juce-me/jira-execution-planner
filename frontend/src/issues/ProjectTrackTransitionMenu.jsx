@@ -9,9 +9,15 @@ import { filterProjectTrackOptions } from '../eng/engProjectTrackTransitionUtils
 export default function ProjectTrackTransitionMenu({
     epicKey, currentTrack = '', isOpen = false, options = null,
     optionsLoading = false, submitting = false, error = '', result = null,
-    onOpen, onClose, onSubmit,
+    onOpen, onClose, onSubmit, previewOnly = null, onPreviewLifecycleChange,
 }) {
     const fieldRef = useRef(null);
+    const targetIdentity = React.useId().replace(/:/g, '');
+    const previewDescriptor = previewOnly?.fieldKind === 'track'
+        && previewOnly?.issueKey === epicKey
+        && previewOnly?.targetIdentity === targetIdentity
+        ? { ...previewOnly, targetIdentity }
+        : null;
     const stateLabel = getProjectTrackLabel(currentTrack);
     const visibleOptions = filterProjectTrackOptions(options && options.options, currentTrack);
     return (
@@ -22,12 +28,22 @@ export default function ProjectTrackTransitionMenu({
                 data-project-track-transition-trigger="true"
                 data-onboarding-target="editing-track"
                 data-issue-key={epicKey}
+                data-issue-kind="epic"
+                data-onboarding-target-identity={targetIdentity}
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
                 aria-label={`Project Track: ${stateLabel}. Change Project Track`}
                 title={`Project Track: ${stateLabel}. Change Project Track`}
                 disabled={submitting && !isOpen}
-                onClick={() => (isOpen ? onClose?.() : onOpen?.(epicKey, currentTrack))}
+                onClick={() => {
+                    if (isOpen) {
+                        onClose?.();
+                        if (previewDescriptor) onPreviewLifecycleChange?.(previewDescriptor, { state: 'closed', reason: 'same_trigger' });
+                    } else {
+                        onOpen?.(epicKey, currentTrack);
+                        if (previewDescriptor) onPreviewLifecycleChange?.(previewDescriptor, { state: 'loading', reason: '' });
+                    }
+                }}
             >
                 {getProjectTrackEmoji(currentTrack)}
             </button>
@@ -49,11 +65,16 @@ export default function ProjectTrackTransitionMenu({
                             {getProjectTrackEmoji(option.value)}
                         </span>
                     )}
-                    onSelect={option => onSubmit?.(option.value, epicKey)}
+                    onSelect={option => { if (!previewDescriptor) onSubmit?.(option.value, epicKey); }}
                     disabled={submitting}
                     result={result === 'success' ? 'Updated Project Track.' : ''}
-                    onEscape={() => onClose?.()}
+                    onEscape={(reason) => {
+                        onClose?.();
+                        if (previewDescriptor) onPreviewLifecycleChange?.(previewDescriptor, { state: 'closed', reason: reason || 'escape' });
+                    }}
                     dismissRef={fieldRef}
+                    previewOnly={previewDescriptor}
+                    onPreviewLifecycleChange={onPreviewLifecycleChange}
                 />
             )}
         </span>

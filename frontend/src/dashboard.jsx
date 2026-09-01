@@ -11804,6 +11804,24 @@ import {
                 selectedView, showPlanning, showStats, showScenario,
             }) && !showGroupManage;
             const [statusTransitionSubmitting, setStatusTransitionSubmitting] = useState(false);
+            const [onboardingPreviewSession, setOnboardingPreviewSession] = useState(null);
+            const onboardingPreviewDescriptorMatches = React.useCallback((left, right) => Boolean(left && right
+                && left.sessionId === right.sessionId
+                && left.stepId === right.stepId
+                && left.fieldKind === right.fieldKind
+                && left.issueKey === right.issueKey
+                && left.targetIdentity === right.targetIdentity), []);
+            const handleOnboardingPreviewTargetChange = React.useCallback((descriptor) => {
+                setOnboardingPreviewSession(descriptor ? { ...descriptor, state: 'closed', reason: '' } : null);
+            }, []);
+            const handleOnboardingPreviewLifecycleChange = React.useCallback((descriptor, lifecycle) => {
+                setOnboardingPreviewSession((current) => (
+                    !onboardingPreviewDescriptorMatches(current, descriptor)
+                        || (current.state === 'closed' && !['loading', 'auth_required'].includes(lifecycle?.state))
+                        ? current
+                        : { ...current, state: lifecycle?.state || current.state, reason: lifecycle?.reason || '' }
+                ));
+            }, [onboardingPreviewDescriptorMatches]);
 
             const applyLocalEngIssueField = React.useCallback((issueKey, fieldName, fieldValue) => {
                 const patchList = prev => applyLocalIssueFieldUpdate(prev, issueKey, fieldName, fieldValue);
@@ -11913,6 +11931,17 @@ import {
                 pendingProjectTrackIssueKeys, submitProjectTrackChange,
             } = projectTrackTransitions;
             const projectTrackTransitionActiveKey = activeProjectTrackTarget?.key || null;
+            const handleOnboardingPreviewCloseRequest = React.useCallback((descriptor, reason) => {
+                if (!onboardingPreviewDescriptorMatches(onboardingPreviewSession, descriptor)) return;
+                if (descriptor.fieldKind === 'priority') closePriorityControl();
+                else if (descriptor.fieldKind === 'track') closeProjectTrackControl();
+                else if (descriptor.fieldKind === 'status') closeSingleIssueStatusControl();
+                setOnboardingPreviewSession((current) => (
+                    onboardingPreviewDescriptorMatches(current, descriptor)
+                        ? { ...current, state: 'closed', reason }
+                        : current
+                ));
+            }, [closePriorityControl, closeProjectTrackControl, closeSingleIssueStatusControl, onboardingPreviewDescriptorMatches, onboardingPreviewSession]);
 
             // Planning composed target list (selected Stories + marked Epics + marked
             // Subtasks) drives the "Apply to selected targets (N)" count and the action
@@ -13604,6 +13633,8 @@ import {
                                                         onOpen={openPriorityControl}
                                                         onClose={closePriorityControl}
                                                         onSubmit={submitPriorityChange}
+                                                        previewOnly={onboardingPreviewSession}
+                                                        onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
                                                     />
                                                 ) : (
                                                     renderPriorityIcon(effectivePriority.name, epicGroup.key)
@@ -13623,6 +13654,8 @@ import {
                                                         onOpen={openProjectTrackControl}
                                                         onClose={closeProjectTrackControl}
                                                         onSubmit={submitProjectTrackChange}
+                                                        previewOnly={onboardingPreviewSession}
+                                                        onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
                                                     />
                                                 ) : (
                                                     <span
@@ -13693,6 +13726,8 @@ import {
                                                         onClose={closeSingleIssueStatusControl}
                                                         onToggleTargetSet={() => toggleEpicStatusTarget(epicGroup.key)}
                                                         onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
+                                                        previewOnly={onboardingPreviewSession}
+                                                        onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
                                                     />
                                                 ) : (
                                                     <StatusPill
@@ -13764,6 +13799,8 @@ import {
                                             onOpenPriorityTransition={openPriorityControl}
                                             onClosePriorityTransition={closePriorityControl}
                                             onSubmitPriorityTransition={submitPriorityChange}
+                                            onboardingPreviewSession={onboardingPreviewSession}
+                                            onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
                                         />
                                     );
                                 })}
@@ -16992,6 +17029,9 @@ import {
                         actionPending={onboarding.pending}
                         actionError={onboarding.error}
                         returnFocusRef={onboarding.sourceSurface === 'settings' ? groupManageButtonRef : null}
+                        previewSession={onboardingPreviewSession}
+                        onPreviewTargetChange={handleOnboardingPreviewTargetChange}
+                        onRequestPreviewClose={handleOnboardingPreviewCloseRequest}
                     />
                     {showUpdateModal && updateNoticeVisible && (
                         <div

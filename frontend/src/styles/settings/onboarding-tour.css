@@ -9,6 +9,19 @@
     background: rgba(19, 16, 12, 0.62);
 }
 
+.onboarding-tour-layer.is-interactive {
+    background: transparent;
+    pointer-events: none;
+}
+
+.onboarding-tour-shield {
+    position: fixed;
+    z-index: 0;
+    background: rgba(19, 16, 12, 0.62);
+    pointer-events: auto;
+    touch-action: none;
+}
+
 .onboarding-tour-spotlight {
     position: fixed;
     border: 2px solid #fff;
@@ -16,6 +29,11 @@
     box-shadow: 0 0 0 9999px rgba(19, 16, 12, 0.62), 0 0 0 4px rgba(89, 126, 247, 0.65);
     pointer-events: none;
     transition: left 140ms ease, top 140ms ease, width 140ms ease, height 140ms ease;
+}
+
+.onboarding-tour-layer.is-interactive .onboarding-tour-spotlight {
+    z-index: 1;
+    box-shadow: 0 0 0 4px rgba(89, 126, 247, 0.65);
 }
 
 .onboarding-tour-card {
@@ -30,6 +48,33 @@
     color: var(--text-primary);
     box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
     outline: none;
+    z-index: 2;
+    pointer-events: auto;
+}
+
+.onboarding-tour-preview-portal {
+    position: relative;
+    z-index: 12003;
+}
+
+.onboarding-tour-coarse-target {
+    box-sizing: border-box !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+}
+
+.onboarding-tour-preview-note {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.is-preview-only [role="menuitem"] {
+    cursor: default;
+}
+
+.is-preview-only [role="menuitem"].is-preview-active {
+    outline: 2px solid #597ef7;
+    outline-offset: -2px;
 }
 
 .onboarding-tour-progress {

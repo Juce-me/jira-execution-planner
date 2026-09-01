@@ -32,11 +32,55 @@ export default function IssueFieldOptionMenu({
     onEscape,
     dismissRef = null,
     portalTarget = null,
+    previewOnly = null,
+    onPreviewLifecycleChange,
 }) {
     const firstOptionRef = React.useRef(null);
     const menuRef = React.useRef(null);
     const key = String(issueKey || '').trim();
     const list = Array.isArray(options) ? options : [];
+    const preview = Boolean(previewOnly);
+    const previewDescriptor = React.useMemo(() => previewOnly ? ({
+        sessionId: previewOnly.sessionId,
+        stepId: previewOnly.stepId,
+        fieldKind: previewOnly.fieldKind,
+        issueKey: previewOnly.issueKey,
+        targetIdentity: previewOnly.targetIdentity,
+    }) : null, [
+        previewOnly?.sessionId,
+        previewOnly?.stepId,
+        previewOnly?.fieldKind,
+        previewOnly?.issueKey,
+        previewOnly?.targetIdentity,
+    ]);
+    const previewId = React.useId().replace(/:/g, '');
+    const [activePreviewIndex, setActivePreviewIndex] = React.useState(0);
+    const [previewPortalTarget, setPreviewPortalTarget] = React.useState(null);
+    const effectivePortalTarget = preview ? (portalTarget || previewPortalTarget) : portalTarget;
+    const previewStatusLabel = loading
+        ? 'Loading choices.'
+        : error
+            ? 'Choices could not be loaded.'
+            : `${list.length} ${list.length === 1 ? 'choice' : 'choices'} available.`;
+    const lifecycleRef = React.useRef(onPreviewLifecycleChange);
+    lifecycleRef.current = onPreviewLifecycleChange;
+
+    React.useEffect(() => {
+        if (preview) setActivePreviewIndex(0);
+    }, [list.length, preview, previewDescriptor?.sessionId, previewDescriptor?.targetIdentity]);
+
+    React.useLayoutEffect(() => {
+        if (!preview || portalTarget) return undefined;
+        const container = document.createElement('div');
+        container.className = 'onboarding-tour-preview-portal';
+        container.dataset.onboardingPreviewPortal = String(previewDescriptor?.targetIdentity || '');
+        document.body.appendChild(container);
+        setPreviewPortalTarget(container);
+        return () => {
+            container.remove();
+            setPreviewPortalTarget(null);
+        };
+    }, [portalTarget, preview, previewDescriptor?.targetIdentity]);
 
     // A menu inside the Board epic panel cannot remain under its trigger in the DOM: story
     // triggers live in the panel's overflow-y:auto body, which clips a full workflow list, and
@@ -45,7 +89,7 @@ export default function IssueFieldOptionMenu({
     // The menu flips above when that side has more room and scrolls internally when neither side
     // can fit it; resize and scroll keep it attached to the live trigger.
     React.useLayoutEffect(() => {
-        if (!portalTarget) return undefined;
+        if (!effectivePortalTarget) return undefined;
         const menu = menuRef.current;
         const wrapper = dismissRef && dismissRef.current;
         const trigger = wrapper?.querySelector(`[data-${blockClass}-trigger]`);
@@ -84,15 +128,24 @@ export default function IssueFieldOptionMenu({
             window.removeEventListener('resize', positionMenu);
             window.removeEventListener('scroll', positionMenu, true);
         };
-    }, [blockClass, dismissRef, portalTarget, loading, list.length, error, result]);
+    }, [blockClass, dismissRef, effectivePortalTarget, loading, list.length, error, result]);
 
     // Move focus into the menu once options are available (mirrors status behavior). The menu
     // mounts only while open, so this runs on open and whenever loading flips to false.
     React.useEffect(() => {
-        if (!loading && firstOptionRef.current) {
+        if (preview) {
+            menuRef.current?.focus();
+        } else if (!loading && firstOptionRef.current) {
             firstOptionRef.current.focus();
         }
-    }, [loading]);
+    }, [loading, preview, effectivePortalTarget]);
+
+    React.useEffect(() => {
+        if (!preview || !effectivePortalTarget) return undefined;
+        const state = loading ? 'loading' : error ? 'error' : list.length ? 'ready' : 'empty';
+        lifecycleRef.current?.(previewDescriptor, { state, reason: '' });
+        return undefined;
+    }, [effectivePortalTarget, error, list.length, loading, preview, previewDescriptor]);
 
     // Keep the latest onEscape in a ref so the outside-click listener attaches ONCE for the
     // menu's open lifetime (below) rather than re-attaching on every re-render — otherwise the
@@ -110,7 +163,7 @@ export default function IssueFieldOptionMenu({
     // toggle, option select) are left to their own handlers. Escape is handled below.
     React.useEffect(() => {
         const wrapper = dismissRef && dismissRef.current;
-        if (!wrapper) return undefined;
+        if (!wrapper || preview) return undefined;
         const handlePointerDown = (event) => {
             if (!wrapper.contains(event.target) && !menuRef.current?.contains(event.target)) {
                 onEscapeRef.current?.();
@@ -125,7 +178,7 @@ export default function IssueFieldOptionMenu({
             window.clearTimeout(timer);
             document.removeEventListener('pointerdown', handlePointerDown, true);
         };
-    }, [dismissRef]);
+    }, [dismissRef, preview]);
 
     // Escape closes the menu, so focus must go back to the trigger that opened it. Without this
     // the focused option simply unmounts and focus falls to <body>: the keyboard user loses their
@@ -143,8 +196,24 @@ export default function IssueFieldOptionMenu({
             event.stopPropagation();
             // Restore before closing, so focus never passes through <body> at all.
             focusTrigger();
-            onEscape?.();
+            onEscape?.('escape');
+            return;
         }
+        if (!preview || loading || error || !list.length) return;
+        let nextIndex = activePreviewIndex;
+        if (event.key === 'ArrowDown') nextIndex = (activePreviewIndex + 1) % list.length;
+        else if (event.key === 'ArrowUp') nextIndex = (activePreviewIndex - 1 + list.length) % list.length;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = list.length - 1;
+        else if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        } else {
+            return;
+        }
+        event.preventDefault();
+        setActivePreviewIndex(nextIndex);
     };
 
     const resolveKey = (option, index) => {
@@ -155,14 +224,23 @@ export default function IssueFieldOptionMenu({
 
     const menu = (
         <div
-            className={`${blockClass}-menu${portalTarget ? ' is-portalled' : ''}`}
+            className={`${blockClass}-menu${effectivePortalTarget ? ' is-portalled' : ''}${preview ? ' is-preview-only' : ''}`}
             role="menu"
             data-issue-key={key}
             onKeyDown={handleMenuKeyDown}
             ref={menuRef}
+            tabIndex={preview ? -1 : undefined}
+            aria-label={preview ? `${menuLabel}. Read-only preview. ${previewStatusLabel}` : undefined}
+            aria-activedescendant={preview && !loading && !error && list.length ? `${previewId}-option-${activePreviewIndex}` : undefined}
+            data-onboarding-preview-owner={preview ? String(previewDescriptor?.targetIdentity || '') : undefined}
             {...{ [`data-${blockClass}-menu`]: 'true' }}
         >
                 {leadingContent}
+                {preview && (
+                    <div className={`${blockClass}-menu-note onboarding-tour-preview-note`}>
+                        Read-only preview. {previewStatusLabel}
+                    </div>
+                )}
                 {loading && (
                     <div className={`${blockClass}-menu-note ${blockClass}-menu-loading`}>{loadingLabel}</div>
                 )}
@@ -179,7 +257,18 @@ export default function IssueFieldOptionMenu({
                 )}
                 {!loading && list.length > 0 && (
                     <div className={`${blockClass}-menu-options`} aria-label={menuLabel}>
-                        {list.map((option, index) => (
+                        {list.map((option, index) => preview ? (
+                            <div
+                                key={resolveKey(option, index)}
+                                id={`${previewId}-option-${index}`}
+                                className={`${blockClass}-option${index === activePreviewIndex ? ' is-preview-active' : ''}`}
+                                role="menuitem"
+                                aria-disabled="true"
+                            >
+                                {renderMarker ? renderMarker(option) : null}
+                                <span className={`${blockClass}-option-label`}>{optionLabel ? optionLabel(option) : ''}</span>
+                            </div>
+                        ) : (
                             <button
                                 key={resolveKey(option, index)}
                                 ref={index === 0 ? firstOptionRef : null}
@@ -201,5 +290,6 @@ export default function IssueFieldOptionMenu({
         </div>
     );
 
-    return portalTarget ? createPortal(menu, portalTarget) : menu;
+    if (preview && !effectivePortalTarget) return null;
+    return effectivePortalTarget ? createPortal(menu, effectivePortalTarget) : menu;
 }

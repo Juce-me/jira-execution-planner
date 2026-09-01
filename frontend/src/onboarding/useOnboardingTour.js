@@ -145,6 +145,22 @@ export default function useOnboardingTour({
         setSessionState((state) => ({ ...state, currentStepId: steps[navigation.index + 1].id }));
     }, [navigation.canGoNext, navigation.index, steps]);
 
+    const advanceFromStep = React.useCallback((stepId) => {
+        setSessionState((state) => {
+            if (!state.sessionOpen || state.currentStepId !== stepId) return state;
+            const index = steps.findIndex((step) => step.id === stepId);
+            if (index < 0 || index >= steps.length - 1) return state;
+            return { ...state, currentStepId: steps[index + 1].id };
+        });
+    }, [steps]);
+
+    const goToStep = React.useCallback((stepId) => {
+        setSessionState((state) => {
+            if (!state.sessionOpen || !steps.some((step) => step.id === stepId)) return state;
+            return state.currentStepId === stepId ? state : { ...state, currentStepId: stepId };
+        });
+    }, [steps]);
+
     const skip = React.useCallback(() => {
         if (navigation.isOpen) onSkip?.();
     }, [navigation.isOpen, onSkip]);
@@ -159,6 +175,8 @@ export default function useOnboardingTour({
         currentStepId: steps[navigation.index]?.id || '',
         goBack,
         goNext,
+        advanceFromStep,
+        goToStep,
         skip,
         finish,
     };

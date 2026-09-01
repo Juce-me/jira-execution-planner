@@ -1,6 +1,6 @@
 # Multi-Device Browser Sessions And Per-Tab Reauthentication Design
 
-**Status:** Ready for execution. Run `EXEC-multi-device-browser-sessions-01-server.md`, then `EXEC-multi-device-browser-sessions-02-tab-resume.md`.
+**Status:** Server slice accepted on 2026-09-01. Continue with `EXEC-multi-device-browser-sessions-02-tab-resume.md`; keep both plans as `EXEC-*` pending merge.
 
 ## Goal
 

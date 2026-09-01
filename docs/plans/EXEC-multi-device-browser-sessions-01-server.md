@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Holistic server review fixes implemented on 2026-09-01; Task 6 acceptance rerun pending. Kept as `EXEC-*` pending acceptance or merge; the frontend slice remains gated.
+**Status:** Server slice accepted on 2026-09-01 after holistic review and Task 6 verification. Kept as `EXEC-*` pending merge; the frontend slice may begin.
 
 **Goal:** Replace mutable OAuth `token_version` browser validity with persistent opaque DB browser-profile sessions while preserving cache invalidation, per-profile logout, connection-wide revocation, legacy-cookie compatibility, and existing API contracts.
 
@@ -806,7 +806,7 @@ git commit -m "Bind OAuth CSRF to browser sessions"
 - Modify: `docs/plans/SUPPORT-multi-device-browser-sessions-design.md`
 - Modify only if verification identifies a direct regression: files listed in Tasks 1-5
 
-- [ ] **Step 1: Run focused auth, migration, revocation, and Scenario coverage**
+- [x] **Step 1: Run focused auth, migration, revocation, and Scenario coverage**
 
 Run:
 
@@ -816,7 +816,7 @@ Run:
 
 Expected: PASS for the default focused matrix. The PostgreSQL-only refresh/callback race may skip here when `TEST_DATABASE_URL` is absent; Step 2 must then prove it separately with zero skips.
 
-- [ ] **Step 2: Run the mandatory PostgreSQL concurrency proof with zero skips**
+- [x] **Step 2: Run the mandatory PostgreSQL concurrency proof with zero skips**
 
 In terminal 1, start the repository-owned fixed local PostgreSQL runner:
 
@@ -838,7 +838,7 @@ TEST_DATABASE_URL=postgresql+psycopg://jep:jep@127.0.0.1:5432/jep_local \
 
 Expected: `OK` with zero skipped tests. The existing refresh serialization test, the new first-ever absent-row callback test, and the concurrent reconnect-callback test all execute against PostgreSQL. A skipped test, SQLite-only pass, unavailable Docker runner, or missing `TEST_DATABASE_URL` is a failed acceptance gate. Keep terminal 1 active through Step 5 so startup, full-suite, and HTTP verification use the same fixed migrated DB/OAuth runner environment.
 
-- [ ] **Step 3: Run startup and structural verification**
+- [x] **Step 3: Run startup and structural verification**
 
 Run:
 
@@ -860,7 +860,7 @@ env \
 
 Expected: PASS. The preflight process receives the runner's fixed DB/OAuth/config/bind environment explicitly; a separate terminal does not inherit exports from `run.sh`. Required local encryption configuration may still load from `.env`, but the command must not print or copy it. If the legitimate lifecycle module changes a ratcheted budget, update only the named budget with the measured value and document the reason in the same commit.
 
-- [ ] **Step 4: Run the full Python suite**
+- [x] **Step 4: Run the full Python suite**
 
 Run:
 
@@ -882,7 +882,7 @@ env \
 
 Expected: PASS against the runner's fixed migrated database. The explicit `TEST_DATABASE_URL` makes the Task 6 PostgreSQL race cases execute in the complete suite. Do not substitute or print any user-configured `.env` database URL or secret.
 
-- [ ] **Step 5: Verify cookie-free OAuth health and authentication boundaries**
+- [x] **Step 5: Verify cookie-free OAuth health and authentication boundaries**
 
 With the exact repository runner from Step 2 still active on port `5050`, run in another terminal:
 
@@ -899,7 +899,7 @@ Expected in this DB-backed Atlassian OAuth runner environment:
 
 This is an OAuth-specific anonymous boundary check. Do not authenticate curl, forge or reuse a cookie, seed an OAuth token, or make this gate depend on live Jira. Basic-auth loopback behavior is outside this slice. Stop terminal 1 with `Ctrl+C` after the check and confirm the runner removes only its owned container/network while retaining its documented volume.
 
-- [ ] **Step 6: Review the diff for scope and secrets**
+- [x] **Step 6: Review the diff for scope and secrets**
 
 Run:
 
@@ -911,7 +911,7 @@ git grep -n -E "access_token|refresh_token|apiToken|Authorization" -- backend/db
 
 Expected: `git diff --check` passes; changed files match this plan; the final grep returns no browser-session storage of credential material.
 
-- [ ] **Step 7: Commit any verification-only correction**
+- [x] **Step 7: Commit any verification-only correction**
 
 If verification required a scoped correction, stage only its named files and commit:
 
@@ -921,3 +921,14 @@ git commit -m "Verify DB browser session lifecycle"
 ```
 
 If no correction was required, do not create an empty commit.
+
+#### Task 6 verification evidence (2026-09-01)
+
+- Focused auth/migration/revocation/Scenario matrix: 168 tests passed; the three PostgreSQL opt-in cases skipped before `TEST_DATABASE_URL` was supplied, as expected for Step 1.
+- Repository runner: digest-pinned PostgreSQL became healthy on `127.0.0.1:5432`; Alembic reported `20260830_0009 (head)`; runner startup preflight passed 8/8 checks; Flask started on loopback with no dependency/runtime warning.
+- PostgreSQL refresh/callback race module: 11 tests passed with zero skips, including first-callback, reconnect-callback, and refresh serialization races against the runner database.
+- Explicit startup/structure verification: startup preflight passed 8/8 checks; codebase-structure and initiative-extraction coverage passed 5/5 tests.
+- Full Python suite with explicit DB/OAuth environment and `TEST_DATABASE_URL`: 1,410 tests passed with 6 unrelated opt-in skips; the PostgreSQL race module was separately proven with zero skips above.
+- Cookie-free runner smoke: `GET /health` returned `200` with exactly `{"message":"Jira proxy server is running","status":"OK"}`; `GET /api/test` returned `401` with exactly `{"error":"auth_required","loginUrl":"/login?reason=session_expired","message":"Your Jira sign-in expired. Sign in again to continue."}`.
+- Runner cleanup removed its owned container and network, retained volume `jira-planning-local-postgres`, and released ports `5050` and `5432`.
+- `git diff --check` passed; the aggregate diff matched the plan file map; the browser-session migration/lifecycle privacy grep found no credential-bearing fields or headers.

@@ -1,7 +1,258 @@
+const path = require('node:path');
+const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { activeHomeTokenConnection, installDashboardFixture } = require('./epm_home_token_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
+const repoRoot = path.join(__dirname, '..', '..');
+const recoveryLeaseKey = 'jira_dashboard_auth_recovery_lease_v1';
+const recoverySuccessKey = 'jira_dashboard_auth_recovery_success_v1';
+const recoveryAttemptKey = 'jira_dashboard_auth_recovery_attempt_v1';
+const recoveryConsumedKey = 'jira_dashboard_auth_recovery_consumed_v1';
+const authResumeKey = 'jira_dashboard_auth_resume_v1';
+const activeSprintId = 3001;
+const activeSprintName = '2026Q2 Sprint 42';
+const futureSprintId = 4002;
+const futureSprintName = '2026Q3 Sprint 1';
+const groupId = 'group-alpha';
+const teamId = 'team-alpha';
+let freshDashboardJs;
+
+test.beforeAll(() => {
+    freshDashboardJs = esbuild.buildSync({
+        entryPoints: [path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx')],
+        bundle: true,
+        write: false,
+        format: 'iife',
+        loader: { '.css': 'empty' },
+        define: { 'process.env.NODE_ENV': '"test"' },
+    }).outputFiles[0].text;
+});
+
+function json(route, body, status = 200) {
+    return route.fulfill({
+        status,
+        contentType: 'application/json',
+        body: JSON.stringify(body),
+    });
+}
+
+function deferred() {
+    let resolve;
+    const promise = new Promise(next => { resolve = next; });
+    return { promise, resolve };
+}
+
+function configPayload() {
+    return {
+        jiraUrl: 'https://jira.example',
+        capacityProject: '',
+        authMode: 'atlassian_oauth',
+        projectsConfigured: true,
+        userCanEditSettings: true,
+        userCanEditEpmConfig: true,
+        environmentConfigExists: true,
+        viewConfig: {
+            workspaceId: 'workspace-test',
+            viewConfigId: 'view-test',
+            version: 1,
+            view: {
+                selectedView: 'eng',
+                selectedSprint: activeSprintId,
+                sprintName: activeSprintName,
+                activeGroupId: groupId,
+                showPlanning: false,
+                showScenario: false,
+            },
+        },
+    };
+}
+
+function groupsPayload() {
+    return {
+        version: 1,
+        configRevision: 1,
+        source: 'workspace_db',
+        defaultGroupId: groupId,
+        groups: [{
+            id: groupId,
+            name: 'Alpha Department',
+            teamIds: [teamId],
+            labels: ['alpha_label'],
+            excludedCapacityEpics: [],
+        }],
+        preferences: {
+            onboardingRequired: false,
+            customized: true,
+            visibleGroupIds: [groupId],
+            effectiveVisibleGroupIds: [groupId],
+            activeGroupId: groupId,
+        },
+    };
+}
+
+function planningStories() {
+    return ['PLAN-1', 'PLAN-2', 'PLAN-3'].map((key, index) => ({
+        id: key,
+        key,
+        fields: {
+            summary: `${key} synthetic planning story`,
+            status: { name: ['To Do', 'Pending', 'Accepted'][index] },
+            priority: { name: 'Major' },
+            issuetype: { name: 'Story' },
+            assignee: { displayName: 'Alpha Owner' },
+            customfield_10004: 1,
+            epicKey: 'PLAN-EPIC',
+            parentSummary: 'Synthetic planning epic',
+            projectKey: 'PLAN',
+            teamId,
+            teamName: 'Alpha Team',
+            sprint: [{ id: futureSprintId, name: futureSprintName, state: 'future' }],
+        },
+    }));
+}
+
+function planningEpic() {
+    return {
+        key: 'PLAN-EPIC',
+        summary: 'Synthetic planning epic',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Alpha Lead' },
+        teamId,
+        teamName: 'Alpha Team',
+        labels: ['alpha_label'],
+        sprint: [{ id: futureSprintId, name: futureSprintName, state: 'future' }],
+    };
+}
+
+async function installFreshDashboard(page) {
+    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: freshDashboardJs,
+    }));
+}
+
+function observeDocuments(page) {
+    const documents = [];
+    page.on('request', request => {
+        if (request.resourceType() !== 'document') return;
+        documents.push(new URL(request.url()).pathname);
+    });
+    return documents;
+}
+
+async function installPlanningRecoveryPage(page, label, shared) {
+    const state = {
+        label,
+        documents: observeDocuments(page),
+        auth401Calls: 0,
+        oauthRequests: 0,
+        authStatusCookies: [],
+        armAuth401: false,
+        heldHydration: false,
+    };
+    shared.pages[label] = state;
+    await installFreshDashboard(page);
+    await page.route('**/api/config**', route => {
+        const cookie = route.request().headers().cookie || '';
+        if (shared.authenticated && !cookie.includes('jep_auth=shared')) {
+            return json(route, { error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
+        }
+        return json(route, configPayload());
+    });
+    await page.route('**/api/groups-config', route => json(route, groupsPayload()));
+    await page.route('**/api/sprints**', route => json(route, {
+        sprints: [
+            { id: activeSprintId, name: activeSprintName, state: 'active', startDate: '2026-05-01' },
+            { id: futureSprintId, name: futureSprintName, state: 'future', startDate: '2026-07-01' },
+        ],
+    }));
+    await page.route('**/api/tasks-with-team-name**', async route => {
+        const url = new URL(route.request().url());
+        const isFutureProductHydration = url.searchParams.get('project') === 'product'
+            && !url.searchParams.get('purpose')
+            && url.searchParams.get('sprint') === String(futureSprintId);
+        if (
+            shared.authenticated
+            && shared.leaderLabel === label
+            && isFutureProductHydration
+            && !state.heldHydration
+        ) {
+            state.heldHydration = true;
+            shared.leaderHydrationStarted.resolve();
+            await shared.releaseLeaderHydration.promise;
+        }
+        const epic = planningEpic();
+        return json(route, {
+            issues: url.searchParams.get('project') === 'product' ? planningStories() : [],
+            epics: { [epic.key]: epic },
+            epicsInScope: url.searchParams.get('project') === 'product' ? [epic] : [],
+            names: {},
+        });
+    });
+    await page.route('**/api/analytics/context', route => {
+        if (state.armAuth401) {
+            state.armAuth401 = false;
+            state.auth401Calls += 1;
+            return json(route, { error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
+        }
+        return json(route, { enabled: false });
+    });
+    await page.route('**/api/auth/status', route => {
+        const cookie = route.request().headers().cookie || '';
+        state.authStatusCookies.push(cookie);
+        return json(route, {
+            authMode: 'atlassian_oauth',
+            authenticated: cookie.includes('jep_auth=shared'),
+            email: 'profile@example.test',
+            profile: { email: 'profile@example.test' },
+        });
+    });
+    await page.route('**/login?reason=session_expired', route => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><title>Sign in</title><a href="/api/auth/atlassian/login">Sign in with Atlassian</a>',
+    }));
+    await page.route('**/api/auth/atlassian/login', route => {
+        state.oauthRequests += 1;
+        shared.oauthRequests += 1;
+        return route.fulfill({
+            status: 200,
+            contentType: 'text/html',
+            body: '<!doctype html><title>Atlassian authorization</title>',
+        });
+    });
+    await page.route(/\/api\/auth\/atlassian\/callback(?:\?.*)?$/, route => route.fulfill({
+        status: 302,
+        headers: { location: '/' },
+        body: '',
+    }));
+    return state;
+}
+
+async function openFuturePlanning(page) {
+    const sprintDropdown = page.locator('.sprint-dropdown').first();
+    await sprintDropdown.locator('.sprint-dropdown-toggle').click();
+    await sprintDropdown.locator('.sprint-dropdown-option', { hasText: futureSprintName }).click();
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(page.locator('.task-item[data-task-key="PLAN-1"]')).toBeVisible();
+}
+
+function storyCheckbox(page, key) {
+    return page.locator(`.task-item[data-task-key="${key}"] input.task-checkbox`);
+}
+
+async function triggerAuth401(page, state) {
+    state.armAuth401 = true;
+    await page.evaluate((label) => {
+        window.__oldDocumentMarker = label;
+        return window.JepAnalytics.refreshAnalyticsContext().catch(() => null);
+    }, state.label);
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+}
 
 test('bootstrap 401 locks the mounted app behind one accessible sanitized recovery gate', async ({ page }) => {
     await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
@@ -206,4 +457,445 @@ test('an initialized disabled analytics session emits no auth event', async ({ p
     await page.getByRole('radio', { name: 'EPM', exact: true }).click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
     expect(await page.evaluate(() => (window.dataLayer || []).filter(entry => entry?.error_code === 'auth_required'))).toEqual([]);
+});
+
+test('same-profile Planning tabs elect one OAuth leader and reload independently from the shared cookie', async ({ context }) => {
+    const pageA = await context.newPage();
+    const pageB = await context.newPage();
+    const shared = {
+        authenticated: false,
+        leaderLabel: '',
+        oauthRequests: 0,
+        pages: {},
+        leaderHydrationStarted: deferred(),
+        releaseLeaderHydration: deferred(),
+    };
+    const stateA = await installPlanningRecoveryPage(pageA, 'A', shared);
+    const stateB = await installPlanningRecoveryPage(pageB, 'B', shared);
+
+    await Promise.all([
+        pageA.goto(appBaseUrl, { waitUntil: 'domcontentloaded' }),
+        pageB.goto(appBaseUrl, { waitUntil: 'domcontentloaded' }),
+    ]);
+    await Promise.all([openFuturePlanning(pageA), openFuturePlanning(pageB)]);
+    await storyCheckbox(pageA, 'PLAN-2').click();
+    await storyCheckbox(pageB, 'PLAN-1').click();
+
+    await Promise.all([
+        triggerAuth401(pageA, stateA),
+        triggerAuth401(pageB, stateB),
+    ]);
+    const [capsuleA, capsuleB] = await Promise.all([
+        pageA.evaluate(key => sessionStorage.getItem(key), authResumeKey),
+        pageB.evaluate(key => sessionStorage.getItem(key), authResumeKey),
+    ]);
+    expect(capsuleA).not.toBeNull();
+    expect(capsuleB).not.toBeNull();
+    expect(capsuleA).not.toEqual(capsuleB);
+
+    await Promise.all([
+        pageA.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' }).click(),
+        pageB.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' }).click(),
+    ]);
+    await expect.poll(() => [pageA, pageB].filter(page => (
+        new URL(page.url()).pathname === '/login'
+    )).length).toBe(1);
+
+    const leader = new URL(pageA.url()).pathname === '/login' ? pageA : pageB;
+    const follower = leader === pageA ? pageB : pageA;
+    const leaderState = leader === pageA ? stateA : stateB;
+    const followerState = follower === pageA ? stateA : stateB;
+    shared.leaderLabel = leaderState.label;
+    expect(stateA.documents.filter(pathname => pathname === '/login')).toHaveLength(leader === pageA ? 1 : 0);
+    expect(stateB.documents.filter(pathname => pathname === '/login')).toHaveLength(leader === pageB ? 1 : 0);
+
+    const liveLease = JSON.parse(await follower.evaluate(key => localStorage.getItem(key), recoveryLeaseKey));
+    expect(Object.keys(liveLease).sort()).toEqual(['attemptId', 'startedAt']);
+    const leaderAttempt = JSON.parse(await leader.evaluate(key => sessionStorage.getItem(key), recoveryAttemptKey));
+    expect(leaderAttempt.attemptId).toBe(liveLease.attemptId);
+    await expect(follower.getByText('Sign-in is continuing in another tab. This tab will resume automatically.')).toBeVisible();
+
+    await leader.getByRole('link', { name: 'Sign in with Atlassian' }).click();
+    expect(shared.oauthRequests).toBe(1);
+    expect(leaderState.oauthRequests).toBe(1);
+    expect(followerState.oauthRequests).toBe(0);
+
+    await context.addCookies([{ name: 'jep_auth', value: 'shared', url: appBaseUrl }]);
+    shared.authenticated = true;
+    await leader.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+    await shared.leaderHydrationStarted.promise;
+
+    await expect.poll(() => followerState.documents.filter(pathname => pathname === '/').length).toBe(2);
+    await expect.poll(() => follower.evaluate(() => window.__oldDocumentMarker)).toBeUndefined();
+    expect(leaderState.heldHydration).toBe(true);
+    expect(await leader.evaluate(key => localStorage.getItem(key), recoveryLeaseKey)).toBeNull();
+    const publishedSuccess = JSON.parse(await follower.evaluate(key => localStorage.getItem(key), recoverySuccessKey));
+    expect(publishedSuccess.attemptId).toBe(liveLease.attemptId);
+
+    await expect(storyCheckbox(follower, follower === pageA ? 'PLAN-1' : 'PLAN-2')).toBeChecked();
+    await expect(storyCheckbox(follower, follower === pageA ? 'PLAN-2' : 'PLAN-1')).not.toBeChecked();
+    expect(shared.oauthRequests).toBe(1);
+
+    shared.releaseLeaderHydration.resolve();
+    await expect(storyCheckbox(pageA, 'PLAN-1')).toBeChecked();
+    await expect(storyCheckbox(pageA, 'PLAN-2')).not.toBeChecked();
+    await expect(storyCheckbox(pageA, 'PLAN-3')).toBeChecked();
+    await expect(storyCheckbox(pageB, 'PLAN-1')).not.toBeChecked();
+    await expect(storyCheckbox(pageB, 'PLAN-2')).toBeChecked();
+    await expect(storyCheckbox(pageB, 'PLAN-3')).toBeChecked();
+
+    await follower.getByRole('button', { name: 'Manage team groups' }).click();
+    const settings = follower.getByRole('dialog').first();
+    await settings.getByRole('button', { name: 'Connections', exact: true }).click();
+    await expect.poll(() => followerState.authStatusCookies.length).toBeGreaterThan(0);
+    expect(followerState.authStatusCookies.at(-1)).toContain('jep_auth=shared');
+
+    expect(stateA.auth401Calls).toBe(1);
+    expect(stateB.auth401Calls).toBe(1);
+    expect(shared.oauthRequests).toBe(1);
+    expect(stateA.documents.filter(pathname => pathname === '/')).toHaveLength(2);
+    expect(stateB.documents.filter(pathname => pathname === '/')).toHaveLength(2);
+    expect(await pageA.evaluate(() => window.__oldDocumentMarker)).toBeUndefined();
+    expect(await pageB.evaluate(() => window.__oldDocumentMarker)).toBeUndefined();
+    expect(await pageA.evaluate(key => sessionStorage.getItem(key), recoveryConsumedKey)).toBe(liveLease.attemptId);
+    expect(await pageB.evaluate(key => sessionStorage.getItem(key), recoveryConsumedKey)).toBe(liveLease.attemptId);
+    await expect.poll(() => pageA.evaluate(key => sessionStorage.getItem(key), authResumeKey)).toBeNull();
+    await expect.poll(() => pageB.evaluate(key => sessionStorage.getItem(key), authResumeKey)).toBeNull();
+});
+
+async function installPrelockedRecovery(page, mode) {
+    await page.addInitScript(({ mode, recoverySuccessKey }) => {
+        const seedKey = `auth_recovery_${mode}_seeded`;
+        const firstDocument = !window.sessionStorage.getItem(seedKey);
+        if (firstDocument) {
+            window.sessionStorage.setItem(seedKey, 'true');
+            const now = Date.now();
+            window.__JEP_AUTH_REQUIRED__ = Object.freeze({
+                locked: true,
+                loginUrl: '/login?reason=session_expired',
+                reason: 'session_expired',
+                requestStartedAt: now - 10,
+                lockedAt: now - 5,
+            });
+            window.__oldDocumentMarker = mode;
+            if (mode === 'success-before-effect') {
+                window.localStorage.setItem(recoverySuccessKey, JSON.stringify({
+                    attemptId: 'attempt-before-effect',
+                    completedAt: now,
+                }));
+            }
+        }
+        if (mode === 'success-after-listener') {
+            const nativeAdd = window.addEventListener.bind(window);
+            window.addEventListener = (type, listener, options) => {
+                const result = nativeAdd(type, listener, options);
+                if (type === 'storage'
+                    && firstDocument
+                    && !window.__successInjectedAfterListener) {
+                    window.__successInjectedAfterListener = true;
+                    const value = JSON.stringify({
+                        attemptId: 'attempt-after-listener',
+                        completedAt: Date.now(),
+                    });
+                    window.localStorage.setItem(recoverySuccessKey, value);
+                    window.dispatchEvent(new StorageEvent('storage', {
+                        key: recoverySuccessKey,
+                        newValue: value,
+                        storageArea: window.localStorage,
+                    }));
+                }
+                return result;
+            };
+        }
+    }, { mode, recoverySuccessKey });
+    const documents = observeDocuments(page);
+    let oauthRequests = 0;
+    await installFreshDashboard(page);
+    await page.route('**/api/auth/atlassian/login', route => {
+        oauthRequests += 1;
+        return route.fulfill({ status: 204, body: '' });
+    });
+    return { documents, getOauthRequests: () => oauthRequests };
+}
+
+async function assertPrelockedRecovery(page, mode, attemptId) {
+    const state = await installPrelockedRecovery(page, mode);
+    await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+
+    await expect.poll(() => state.documents.filter(pathname => pathname === '/').length).toBe(2);
+    await expect.poll(async () => {
+        try { return await page.evaluate(() => window.__oldDocumentMarker); } catch (error) { return 'navigating'; }
+    }).toBeUndefined();
+    expect(await page.evaluate(key => sessionStorage.getItem(key), recoveryConsumedKey)).toBe(attemptId);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    expect(state.getOauthRequests()).toBe(0);
+    await page.waitForTimeout(150);
+    expect(state.documents.filter(pathname => pathname === '/')).toHaveLength(2);
+}
+
+test('a success marker present before the locked effect installs resumes exactly once', async ({ page }) => {
+    await assertPrelockedRecovery(page, 'success-before-effect', 'attempt-before-effect');
+});
+
+test('a success written immediately after listener installation resumes exactly once', async ({ page }) => {
+    await assertPrelockedRecovery(page, 'success-after-listener', 'attempt-after-listener');
+});
+
+test('a delayed 401 consumes success completed after that request started', async ({ page }) => {
+    const requestStarted = deferred();
+    const release401 = deferred();
+    const documents = observeDocuments(page);
+    let arm401 = false;
+    let auth401Calls = 0;
+    let oauthRequests = 0;
+    await installFreshDashboard(page);
+    await page.route('**/api/analytics/context', async route => {
+        if (!arm401) return json(route, { enabled: false });
+        arm401 = false;
+        auth401Calls += 1;
+        requestStarted.resolve();
+        await release401.promise;
+        return json(route, { error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
+    });
+    await page.route('**/api/auth/atlassian/login', route => {
+        oauthRequests += 1;
+        return route.fulfill({ status: 204, body: '' });
+    });
+    await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => page.evaluate(() => Boolean(window.JepAnalytics))).toBe(true);
+
+    arm401 = true;
+    const refresh = page.evaluate(() => {
+        window.__oldDocumentMarker = 'delayed-401';
+        return window.JepAnalytics.refreshAnalyticsContext().catch(() => null);
+    }).catch(error => {
+        if (/Execution context was destroyed/.test(error.message)) return null;
+        throw error;
+    });
+    await requestStarted.promise;
+    await page.evaluate(key => {
+        localStorage.setItem(key, JSON.stringify({
+            attemptId: 'attempt-delayed-401',
+            completedAt: Date.now(),
+        }));
+    }, recoverySuccessKey);
+    release401.resolve();
+    await refresh;
+
+    await expect.poll(() => documents.filter(pathname => pathname === '/').length).toBe(2);
+    expect(await page.evaluate(key => sessionStorage.getItem(key), recoveryConsumedKey)).toBe('attempt-delayed-401');
+    expect(await page.evaluate(() => window.__oldDocumentMarker)).toBeUndefined();
+    expect(auth401Calls).toBe(1);
+    expect(oauthRequests).toBe(0);
+    await page.waitForTimeout(150);
+    expect(documents.filter(pathname => pathname === '/')).toHaveLength(2);
+});
+
+test('a genuinely newer failed request does not consume an earlier success marker', async ({ page }) => {
+    const documents = observeDocuments(page);
+    let arm401 = false;
+    let auth401Calls = 0;
+    await installFreshDashboard(page);
+    await page.route('**/api/analytics/context', route => {
+        if (!arm401) return json(route, { enabled: false });
+        arm401 = false;
+        auth401Calls += 1;
+        return json(route, { error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
+    });
+    await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+    await page.evaluate(key => {
+        localStorage.setItem(key, JSON.stringify({
+            attemptId: 'attempt-stale',
+            completedAt: Date.now() - 1_000,
+        }));
+        window.__oldDocumentMarker = 'stale-success';
+    }, recoverySuccessKey);
+
+    arm401 = true;
+    await page.evaluate(() => window.JepAnalytics.refreshAnalyticsContext().catch(() => null));
+
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toBeVisible();
+    expect(documents.filter(pathname => pathname === '/')).toHaveLength(1);
+    expect(await page.evaluate(key => sessionStorage.getItem(key), recoveryConsumedKey)).toBeNull();
+    expect(await page.evaluate(() => window.__oldDocumentMarker)).toBe('stale-success');
+    expect(auth401Calls).toBe(1);
+});
+
+async function installBootstrapLockedPage(page, label, shared) {
+    const state = {
+        label,
+        documents: observeDocuments(page),
+        oauthRequests: 0,
+    };
+    await installFreshDashboard(page);
+    await page.route('**/api/config**', route => {
+        if (!shared.authenticated) {
+            return json(route, { error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
+        }
+        return json(route, configPayload());
+    });
+    await page.route('**/login?reason=session_expired', route => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><title>Sign in</title><a href="/api/auth/atlassian/login">Sign in with Atlassian</a>',
+    }));
+    await page.route('**/api/auth/atlassian/login', route => {
+        state.oauthRequests += 1;
+        shared.oauthRequests += 1;
+        return route.fulfill({
+            status: 200,
+            contentType: 'text/html',
+            body: '<!doctype html><title>Atlassian authorization</title>',
+        });
+    });
+    await page.route(/\/api\/auth\/atlassian\/callback(?:\?.*)?$/, route => route.fulfill({
+        status: 302,
+        headers: { location: '/' },
+        body: '',
+    }));
+    return state;
+}
+
+test('a queued claim reconciles success once after its pending Web Lock settles', async ({ context }) => {
+    const pageA = await context.newPage();
+    const pageB = await context.newPage();
+    const shared = { authenticated: false, oauthRequests: 0 };
+    const stateA = await installBootstrapLockedPage(pageA, 'A', shared);
+    const stateB = await installBootstrapLockedPage(pageB, 'B', shared);
+    await Promise.all([
+        pageA.goto(appBaseUrl, { waitUntil: 'domcontentloaded' }),
+        pageB.goto(appBaseUrl, { waitUntil: 'domcontentloaded' }),
+    ]);
+    await expect(pageA.getByRole('alertdialog')).toBeVisible();
+    await expect(pageB.getByRole('alertdialog')).toBeVisible();
+    await pageA.evaluate(() => { window.__oldDocumentMarker = 'pending-leader'; });
+    await pageB.evaluate(() => { window.__oldDocumentMarker = 'pending-follower'; });
+    await pageB.evaluate(() => {
+        const nativeRequest = navigator.locks.request.bind(navigator.locks);
+        let releaseQueuedClaim;
+        const queuedClaim = new Promise(resolve => { releaseQueuedClaim = resolve; });
+        let holdNextRequest = true;
+        Object.defineProperty(navigator.locks, 'request', {
+            configurable: true,
+            value: (...args) => {
+                if (!holdNextRequest) return nativeRequest(...args);
+                holdNextRequest = false;
+                return queuedClaim.then(() => nativeRequest(...args));
+            },
+        });
+        window.__releaseQueuedAuthClaim = releaseQueuedClaim;
+    });
+
+    await pageA.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' }).click();
+    await expect(pageA).toHaveURL(/\/login\?reason=session_expired$/);
+    await pageB.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' }).click();
+    await expect(pageB.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toHaveAttribute('aria-disabled', 'true');
+
+    await pageA.getByRole('link', { name: 'Sign in with Atlassian' }).click();
+    expect(shared.oauthRequests).toBe(1);
+    await context.addCookies([{ name: 'jep_auth', value: 'shared', url: appBaseUrl }]);
+    shared.authenticated = true;
+    await pageA.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+
+    await expect.poll(() => pageA.evaluate(key => localStorage.getItem(key), recoverySuccessKey)).not.toBeNull();
+    expect(await pageB.evaluate(() => window.__oldDocumentMarker)).toBe('pending-follower');
+    expect(stateB.documents.filter(pathname => pathname === '/')).toHaveLength(1);
+
+    await pageB.evaluate(() => window.__releaseQueuedAuthClaim());
+    await expect.poll(() => stateB.documents.filter(pathname => pathname === '/').length).toBe(2);
+    await expect.poll(() => pageB.evaluate(() => window.__oldDocumentMarker)).toBeUndefined();
+    expect(stateB.documents.filter(pathname => pathname === '/login')).toHaveLength(0);
+    expect(stateB.oauthRequests).toBe(0);
+    expect(await pageB.evaluate(key => sessionStorage.getItem(key), recoveryConsumedKey)).not.toBeNull();
+    await pageB.waitForTimeout(150);
+    expect(stateB.documents.filter(pathname => pathname === '/')).toHaveLength(2);
+    expect(stateA.oauthRequests).toBe(1);
+});
+
+test('blocked storage getters preserve the gate and use sanitized same-tab recovery', async ({ page, context }) => {
+    const pageErrors = [];
+    const documents = observeDocuments(page);
+    let authenticated = false;
+    let configCalls = 0;
+    let analyticsCalls = 0;
+    let armAuth401 = false;
+    const blockNextStorageReads = () => page.evaluate(() => {
+        const values = {};
+        for (const property of ['localStorage', 'sessionStorage']) {
+            const value = window[property];
+            values[property] = value;
+            Object.defineProperty(window, property, {
+                configurable: true,
+                get() {
+                    Object.defineProperty(window, property, { configurable: true, value });
+                    throw new DOMException('blocked', 'SecurityError');
+                },
+            });
+        }
+        window.__restoreBlockedStorage = () => {
+            for (const [property, value] of Object.entries(values)) {
+                Object.defineProperty(window, property, { configurable: true, value });
+            }
+        };
+    });
+    page.on('pageerror', error => pageErrors.push(error.stack || error.message));
+    await installFreshDashboard(page);
+    await page.route('**/api/config**', async route => {
+        configCalls += 1;
+        if (authenticated) await blockNextStorageReads();
+        return json(route, { ...configPayload(), authMode: 'basic' });
+    });
+    await page.route('**/api/analytics/context', route => {
+        analyticsCalls += 1;
+        if (!armAuth401) return json(route, { enabled: false });
+        armAuth401 = false;
+        return json(route, { error: 'auth_required', loginUrl: 'https://evil.example.test/login' }, 401);
+    });
+    await page.route('**/login?reason=session_expired', route => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><title>Sign in</title><a href="/api/auth/atlassian/login">Sign in with Atlassian</a>',
+    }));
+    await page.route('**/api/auth/atlassian/login', route => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><title>Atlassian authorization</title>',
+    }));
+    await page.route(/\/api\/auth\/atlassian\/callback(?:\?.*)?$/, route => route.fulfill({
+        status: 302,
+        headers: { location: '/' },
+        body: '',
+    }));
+
+    await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('button', { name: 'Manage team groups' })).toBeVisible();
+    await expect.poll(() => analyticsCalls).toBeGreaterThan(0);
+    await blockNextStorageReads();
+    armAuth401 = true;
+    await page.evaluate(() => window.JepAnalytics.refreshAnalyticsContext().catch(() => null));
+    await expect.poll(() => page.evaluate(() => window.__JEP_AUTH_REQUIRED__?.locked)).toBe(true);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => {
+        window.__restoreBlockedStorage();
+        resolve();
+    })));
+    expect(pageErrors).toEqual([]);
+    const gate = page.getByRole('alertdialog');
+    await expect(gate).toBeVisible();
+    expect(await page.evaluate(key => sessionStorage.getItem(key), authResumeKey)).toBeNull();
+    await blockNextStorageReads();
+    const action = gate.getByRole('link', { name: 'Sign in again' });
+    await expect(action).toHaveAttribute('href', '/login?reason=session_expired');
+    await action.click();
+    await expect(page).toHaveURL(/\/login\?reason=session_expired$/);
+    expect(context.pages()).toEqual([page]);
+
+    await page.getByRole('link', { name: 'Sign in with Atlassian' }).click();
+    await context.addCookies([{ name: 'jep_auth', value: 'shared', url: appBaseUrl }]);
+    authenticated = true;
+    await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('button', { name: 'Manage team groups' })).toBeVisible();
+    expect(configCalls).toBe(2);
+    expect(documents.filter(pathname => pathname === '/')).toHaveLength(2);
+    expect(pageErrors).toEqual([]);
 });

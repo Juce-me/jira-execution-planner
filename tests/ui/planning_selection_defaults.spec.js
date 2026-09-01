@@ -273,11 +273,16 @@ async function seedPlanningAuthResume(page, {
     sprintId = futureSprintId,
     engMode = 'planning',
     selectionMode = 'manual',
+    principal = { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
+    capturedAtOffsetMs = 0,
+    settingsOpen = false,
+    settingsTab = 'teams',
     seedUiPrefs = false,
     throwPlanningPersistence = false,
     capturePlanningWrites = false,
+    seedRecoveryAttempt = false,
 } = {}) {
-    await page.addInitScript(({ sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, seedUiPrefs, throwPlanningPersistence, capturePlanningWrites }) => {
+    await page.addInitScript(({ sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, throwPlanningPersistence, capturePlanningWrites, seedRecoveryAttempt }) => {
         const installPlanningPersistenceProbe = () => {
             if (!throwPlanningPersistence && !capturePlanningWrites) return;
             window.__planningPersistenceWrites = [];
@@ -297,17 +302,18 @@ async function seedPlanningAuthResume(page, {
         }
         window.sessionStorage.setItem(seedMarker, 'true');
         const scopeKey = `planning::${sprintId}::group-alpha`;
+        const capturedAt = Date.now() + capturedAtOffsetMs;
         window.sessionStorage.setItem('jira_dashboard_auth_resume_v1', JSON.stringify({
             version: 1,
-            capturedAt: Date.now(),
-            principal: { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
+            capturedAt,
+            principal,
             view: {
                 selectedView: 'eng',
                 activeGroupId: 'group-alpha',
                 selectedSprint: String(sprintId),
                 engMode,
-                settingsOpen: false,
-                settingsTab: 'teams',
+                settingsOpen,
+                settingsTab,
             },
             planning: {
                 scopeKey,
@@ -324,6 +330,17 @@ async function seedPlanningAuthResume(page, {
                 selectionMode: 'manual',
             },
         }));
+        if (seedRecoveryAttempt) {
+            const attemptId = 'attempt-planning-hydration';
+            window.localStorage.setItem('jira_dashboard_auth_recovery_lease_v1', JSON.stringify({
+                attemptId,
+                startedAt: capturedAt,
+            }));
+            window.sessionStorage.setItem('jira_dashboard_auth_recovery_attempt_v1', JSON.stringify({
+                attemptId,
+                startedAt: capturedAt,
+            }));
+        }
         if (seedUiPrefs) {
             window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
                 selectedView: 'eng',
@@ -333,7 +350,7 @@ async function seedPlanningAuthResume(page, {
             }));
         }
         installPlanningPersistenceProbe();
-    }, { sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, seedUiPrefs, throwPlanningPersistence, capturePlanningWrites });
+    }, { sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, throwPlanningPersistence, capturePlanningWrites, seedRecoveryAttempt });
 }
 
 async function openFuturePlanning(page) {
@@ -492,6 +509,79 @@ test('matching auth resume overrides shared Planning state after exact-scope hyd
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
 });
 
+test('a principal-mismatched capsule is rejected before shell or Planning restore', async ({ page }) => {
+    await seedPlanningAuthResume(page, {
+        principal: { workspaceId: 'workspace-other', viewConfigId: 'view-other' },
+    });
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+
+    await expect(page.locator('.planning-panel.open')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+    await openFuturePlanning(page);
+    await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-2')).not.toBeChecked();
+});
+
+test('an expired capsule is pruned before shell or Planning restore', async ({ page }) => {
+    await seedPlanningAuthResume(page, { capturedAtOffsetMs: -(30 * 60 * 1000 + 1) });
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+
+    await expect(page.locator('.planning-panel.open')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+    await openFuturePlanning(page);
+    await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-2')).not.toBeChecked();
+});
+
+test('missing recovered task keys are pruned after exact-scope hydration', async ({ page }) => {
+    await seedPlanningAuthResume(page, { selectedTaskKeys: ['PLAN-2', 'PLAN-999'] });
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(storyCheckbox(page, 'PLAN-1')).not.toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
+    await expect(page.locator('.task-item[data-task-key="PLAN-999"]')).toHaveCount(0);
+    await expect.poll(() => page.evaluate((scopeKey) => JSON.parse(
+        window.localStorage.getItem('jira_dashboard_planning_state_v1')
+    )[scopeKey].selectedTaskKeys, `planning::${futureSprintId}::group-alpha`)).toEqual(['PLAN-2']);
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+});
+
+test('Connections Settings reopens after recovery without retaining the token input', async ({ page }) => {
+    await installPlanningFixture(page);
+    await page.route('**/api/auth/status', route => json(route, {
+        authMode: 'atlassian_oauth',
+        authenticated: true,
+        email: 'profile@example.test',
+        profile: { email: 'profile@example.test' },
+    }));
+    await page.goto(appBaseUrl);
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const settings = page.getByRole('dialog').first();
+    await settings.getByRole('button', { name: 'Connections', exact: true }).click();
+    const tokenInput = settings.getByLabel('Atlassian API token');
+    await tokenInput.fill('transient-form-value');
+
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('jep:authentication-required')));
+    await expect.poll(() => page.evaluate(() => {
+        const raw = window.sessionStorage.getItem('jira_dashboard_auth_resume_v1');
+        return raw ? JSON.parse(raw) : null;
+    })).toMatchObject({
+        view: { settingsOpen: true, settingsTab: 'connections' },
+    });
+    expect(await page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).not.toContain('transient-form-value');
+
+    await page.reload();
+    const restoredSettings = page.getByRole('dialog').first();
+    await expect(restoredSettings).toBeVisible();
+    await expect(restoredSettings.getByRole('button', { name: 'Connections', exact: true })).toHaveClass(/active/);
+    await expect(restoredSettings.getByLabel('Atlassian API token')).toHaveValue('');
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+});
+
 test('failed Planning recovery persistence keeps the capsule retryable without freezing Undo baseline', async ({ page }) => {
     await seedPlanningAuthResume(page, { throwPlanningPersistence: true });
     await installPlanningFixture(page);
@@ -542,10 +632,14 @@ test('default-all recovery includes newly loaded tasks and freezes the full Undo
 });
 
 test('non-auth Planning hydration failure abandons recovery without resurrecting it on reload', async ({ page }) => {
-    await seedPlanningAuthResume(page);
+    await seedPlanningAuthResume(page, { seedRecoveryAttempt: true });
     const fixture = await installPlanningFixture(page, { taskFailureMode: 'non-auth-once' });
     await page.goto(appBaseUrl);
 
+    await expect.poll(() => page.evaluate(() => {
+        const raw = window.localStorage.getItem('jira_dashboard_auth_recovery_success_v1');
+        return raw ? JSON.parse(raw) : null;
+    })).toMatchObject({ attemptId: 'attempt-planning-hydration' });
     await expect(page.getByText(/Failed to load tasks:/)).toBeVisible();
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
     expect(fixture.getFutureProductTaskAttempts()).toBe(1);

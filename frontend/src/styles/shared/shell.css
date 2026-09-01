@@ -93,3 +93,9 @@
     font-weight: 700;
     text-decoration: none;
 }
+
+.auth-required-action[aria-disabled='true'] {
+    cursor: wait;
+    opacity: .65;
+    pointer-events: none;
+}

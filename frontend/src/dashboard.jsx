@@ -17,6 +17,7 @@ import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import AuthRequiredGate from './components/AuthRequiredGate.jsx';
 import { AUTH_REQUIRED_EVENT, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './api/authRequired.js';
+import { completeAuthRecovery, getAuthRecoveryStores } from './api/authRecoveryCoordinator.js';
 import { clearAuthResumeState, getAuthResumeStorage, readAuthResumeState, writeAuthResumeState } from './api/authResumeState.js';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
@@ -5751,6 +5752,12 @@ import {
                         workspaceId: String(config.viewConfig?.workspaceId || ''),
                         viewConfigId: String(config.viewConfig?.viewConfigId || ''),
                     };
+                    if (resumePrincipal.workspaceId && resumePrincipal.viewConfigId) {
+                        const recoveryStores = getAuthRecoveryStores(window);
+                        if (recoveryStores) {
+                            await completeAuthRecovery(recoveryStores.sharedStorage, recoveryStores.tabStorage);
+                        }
+                    }
                     authResumePrincipalRef.current = resumePrincipal;
                     const resumeStorage = getAuthResumeStorage(window);
                     const resume = resumeStorage && !planningAuthResumePersistenceFailedRef.current

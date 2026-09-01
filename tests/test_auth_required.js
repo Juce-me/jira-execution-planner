@@ -72,6 +72,25 @@ test('publishing is terminal, idempotent, and shares only the first sanitized ta
     assert.deepEqual(Object.keys(first).sort(), ['locked', 'lockedAt', 'loginUrl', 'reason', 'requestStartedAt']);
 });
 
+test('the terminal latch stays window-local when both storage property getters are blocked', () => {
+    const harness = createHarness(AUTH_REQUIRED_PATH, undefined, () => 2_000);
+    Object.defineProperty(harness.window, 'localStorage', {
+        get() { throw new Error('shared_storage_must_not_be_read'); },
+    });
+    Object.defineProperty(harness.window, 'sessionStorage', {
+        get() { throw new Error('tab_storage_must_not_be_read'); },
+    });
+
+    const state = harness.exports.publishAuthenticationRequired({
+        loginUrl: '/login?reason=session_expired',
+        requestStartedAt: 1_500,
+    });
+
+    assert.equal(harness.exports.readPendingAuthenticationRequired(), state);
+    assert.equal(harness.events.length, 1);
+    assert.deepEqual(Object.keys(state).sort(), ['locked', 'lockedAt', 'loginUrl', 'reason', 'requestStartedAt']);
+});
+
 test('invalid injected auth timestamps fall back to the current clock', () => {
     for (const requestStartedAt of [NaN, Infinity, -1, '1500', null]) {
         const harness = createHarness(AUTH_REQUIRED_PATH, undefined, () => 4_000);

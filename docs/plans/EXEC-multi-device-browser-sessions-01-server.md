@@ -245,7 +245,7 @@ Assert the module never serializes tokens, email, user agent, IP, or callback va
 Run:
 
 ```bash
-python3 -m unittest tests.test_db_browser_sessions
+.venv/bin/python -m unittest tests.test_db_browser_sessions
 ```
 
 Expected: FAIL with `ModuleNotFoundError: backend.auth.db_browser_sessions`.
@@ -327,7 +327,7 @@ def delete_browser_sessions_for_connection(session, auth_connection_id: str) -> 
 Run:
 
 ```bash
-python3 -m unittest tests.test_db_browser_sessions
+.venv/bin/python -m unittest tests.test_db_browser_sessions
 ```
 
 Expected: PASS with no token-bearing field in the handle or table.

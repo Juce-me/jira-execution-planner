@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Final cross-slice verification passed; whole-branch review pending. Keep this plan under `EXEC-*` until whole-branch acceptance.
+**Status:** Execution and verification complete; integration awaits explicit user approval. Keep this plan under `EXEC-*`; no push, merge, PR, or `DONE-*` rename has been performed.
 
-**Holistic frontend review (2026-09-01):** Standards/security approved with no findings. Spec approved after docs-only execution-record correction `d021cac`; whole-branch review remains pending.
+**Holistic frontend review (2026-09-01):** Standards/security approved with no findings. Spec approved after docs-only execution-record correction `d021cac`.
+
+**Whole-branch review (2026-09-01, HEAD `37acf6f`):** Spec and standards/security both approved with no findings.
 
 **Final cross-slice verification (2026-09-01):** Alembic reached `20260830_0009 (head)`; runner preflight passed 8/8; the PostgreSQL race module passed 11/11 with zero skips; structure-budget and initiative-extraction coverage passed 5/5. The full Python suite reported `Ran 1410 tests` / `OK (skipped=6)` with zero failures; the six unrelated `PostgresUserViewConcurrencyGateTests` opt-in skips were `test_advisory_lock_serializes_same_scope_without_row_contention`, `test_selected_view_for_update_blocks_stale_service_read_on_raw_row_lock`, `test_first_default_race_and_complete_last_write_winner`, `test_stale_replacement_waits_for_overlapping_epm_save_then_conflicts`, `test_advisory_scope_same_workspace_different_owner_does_not_block`, and `test_advisory_scope_same_owner_different_workspace_does_not_block`.
 

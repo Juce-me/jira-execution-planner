@@ -45,7 +45,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # bugfix/user-owned-epm-config Task 2 routes every runtime EPM consumer through one
     # authenticated user's private-view config snapshot, threads its generation into cache
     # dependencies, and scopes post-commit cache invalidation to that user's partition (+46).
-    "jira_server.py": 6360,
+    # bugfix/review-multidevice-sessions-plan adds the persistent DB browser-session lifecycle
+    # entrypoint wiring for callback creation/replacement, failure-safe legacy-cookie upgrade,
+    # sanitized upgrade-failure logging, revocation, logout, and browser-bound CSRF/Scenario
+    # context propagation (+24).
+    "jira_server.py": 6384,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -101,7 +105,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # private-view contract while preserving unified Settings save behavior (+36). Task 5
     # integrates the terminal global authentication gate across existing async consumers,
     # keyboard handlers, Scenario polling/SSE, and removes feature-local recovery UI (+43).
-    "frontend/src/dashboard.jsx": 16375,
+    # bugfix/multidevice-sessions-continuation adds per-tab auth-resume capture/restore,
+    # staged Planning hydration, and terminal bootstrap-safe recovery wiring (+249).
+    "frontend/src/dashboard.jsx": 16624,
 }
 
 

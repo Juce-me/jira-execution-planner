@@ -6,6 +6,7 @@ import argparse
 import base64
 import copy
 import csv
+import dataclasses
 import logging
 import os
 import re
@@ -26,6 +27,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
+from sqlalchemy.exc import OperationalError
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from backend.epm import config as epm_config
 from backend.epm import home as epm_home
@@ -43,7 +45,8 @@ from backend.auth.cache_policy import (
 )
 from backend.auth.context import RequestAuthContext, build_auth_cache_key, stable_local_workspace_id
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
-from backend.auth.csrf import validate_csrf_token
+from backend.auth.db_browser_sessions import create_browser_session, delete_browser_session, delete_browser_sessions_for_connection
+from backend.auth.csrf import csrf_session_data_for_auth_context, validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
@@ -365,6 +368,7 @@ def is_pre_db_tool_admin_account(atlassian_account_id):
 def store_db_oauth_callback_session_metadata(token_data, resource, user_profile):
     if not database_storage_enabled():
         return {}
+    previous_browser_session_id = str(db_oauth_browser_session_data().get('db_browser_session_id') or '').strip()
     with session_scope() as db_session:
         stored = store_oauth_callback_tokens(
             db_session,
@@ -382,8 +386,17 @@ def store_db_oauth_callback_session_metadata(token_data, resource, user_profile)
             user_id=stored.user_id,
             atlassian_account_id=(user_profile or {}).get('account_id'),
         )
+        if stored.invalidate_browser_sessions:
+            delete_browser_sessions_for_connection(db_session, stored.connection_id)
+        delete_browser_session(db_session, previous_browser_session_id)
+        handle = create_browser_session(
+            db_session,
+            user_id=stored.user_id,
+            workspace_id=stored.workspace_id,
+            auth_connection_id=stored.connection_id,
+        )
         clear_auth_sensitive_caches('oauth_reconnect')
-        return stored.session_metadata
+        return {'db_browser_session_id': handle.id}
 
 
 def current_auth_config():
@@ -433,6 +446,9 @@ def _oauth_token_store_persistence_enabled():
 def _db_oauth_browser_session_payload(data):
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or not database_storage_enabled():
         return {}
+    browser_session_id = str((data or {}).get('db_browser_session_id') or '').strip()
+    if browser_session_id:
+        return {'db_browser_session_id': browser_session_id}
     connection_id = str((data or {}).get('db_auth_connection_id') or '').strip()
     if not connection_id:
         return {}
@@ -441,14 +457,6 @@ def _db_oauth_browser_session_payload(data):
     if token_version:
         payload['db_token_version'] = token_version
     return payload
-
-
-def remember_db_oauth_browser_session(data):
-    payload = _db_oauth_browser_session_payload(data)
-    if payload:
-        session['db_oauth_session'] = payload
-    else:
-        session.pop('db_oauth_session', None)
 
 
 def db_oauth_browser_session_data():
@@ -524,13 +532,18 @@ def oauth_session_data_for_auth_context(context):
 
 def db_oauth_session_data_for_auth_context(context):
     with session_scope() as db_session:
-        return db_oauth_session_data(
-            db_session,
-            context,
-            config=current_auth_config(),
-            key_provider=key_provider_from_env(),
-            http_post=HTTP_SESSION.post,
-        )
+        try:
+            return db_oauth_session_data(
+                db_session,
+                context,
+                config=current_auth_config(),
+                key_provider=key_provider_from_env(),
+                http_post=HTTP_SESSION.post,
+            )
+        except AuthError as error:
+            if error.code == 'auth_connection_revoked':
+                db_session.commit()
+            raise
 
 
 def save_oauth_session_for_auth_context(context, data):
@@ -555,10 +568,25 @@ def current_request_auth_context():
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
         db_session_data = db_oauth_browser_session_data()
         if db_session_data:
-            return resolve_db_request_auth_context(
+            context = resolve_db_request_auth_context(
                 db_session_data,
                 required_scopes=ATLASSIAN_SCOPES,
             )
+            if context.browser_session_id:
+                return context
+            try:
+                with session_scope() as db_session:
+                    browser_session = create_browser_session(
+                        db_session,
+                        user_id=context.user_id,
+                        workspace_id=context.workspace_id,
+                        auth_connection_id=context.auth_connection_id,
+                    )
+            except OperationalError:
+                log_warning('DB browser session upgrade unavailable; retaining validated legacy session.')
+                return context
+            session['db_oauth_session'] = {'db_browser_session_id': browser_session.id}
+            return dataclasses.replace(context, browser_session_id=browser_session.id)
     session_data = jira_session_data()
     site_url = (session_data.get('site_url') or JIRA_URL or '').strip().rstrip('/')
     cloud_id = session_data.get('cloudid', '')
@@ -606,11 +634,7 @@ def oauth_auth_required_payload():
 def csrf_session_data_for_request():
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
         context = scenario_draft_request_auth_context()
-        return {
-            'db_auth_connection_id': context.auth_connection_id,
-            'db_token_version': context.token_version,
-            'account_id': context.atlassian_account_id,
-        }
+        return csrf_session_data_for_auth_context(context)
     return oauth_session_data()
 
 

@@ -17,7 +17,7 @@ function bundle(entryPoint) {
     }).outputFiles[0].text;
 }
 
-function createHarness(entryPoint = AUTH_REQUIRED_PATH, fetchImpl = async () => ({ ok: true, status: 200 })) {
+function createHarness(entryPoint = AUTH_REQUIRED_PATH, fetchImpl = async () => ({ ok: true, status: 200 }), now = () => Date.now()) {
     const events = [];
     const fetchCalls = [];
     const apiResults = [];
@@ -26,8 +26,12 @@ function createHarness(entryPoint = AUTH_REQUIRED_PATH, fetchImpl = async () => 
         CustomEvent,
         dispatchEvent(event) { events.push(event); return true; },
     };
+    class HarnessDate extends Date {
+        static now() { return now(); }
+    }
     const sandbox = {
         window: fakeWindow, location: fakeWindow.location, CustomEvent, URL, Headers, Request, Response,
+        Date: HarnessDate,
         performance: { now: () => 1 },
         fetch: async (...args) => { fetchCalls.push(args); return fetchImpl(...args); },
         JepAnalytics: { trackApiResult: (surface, params) => apiResults.push({ surface, params }) },
@@ -49,14 +53,73 @@ test('login URL sanitizer accepts only exact same-origin recovery entry URLs', (
 });
 
 test('publishing is terminal, idempotent, and shares only the first sanitized target', () => {
-    const harness = createHarness();
-    const first = harness.exports.publishAuthenticationRequired({ loginUrl: '/login?reason=missing_scope' });
-    const second = harness.exports.publishAuthenticationRequired({ loginUrl: '/login' });
-    assert.equal(JSON.stringify(first), JSON.stringify({ locked: true, loginUrl: '/login?reason=missing_scope', reason: 'missing_scope' }));
+    let now = 2_000;
+    const harness = createHarness(AUTH_REQUIRED_PATH, undefined, () => now);
+    const first = harness.exports.publishAuthenticationRequired({ loginUrl: '/login?reason=missing_scope', requestStartedAt: 1_500 });
+    now = 3_000;
+    const second = harness.exports.publishAuthenticationRequired({ loginUrl: '/login', requestStartedAt: 2_500 });
+    assert.equal(JSON.stringify(first), JSON.stringify({
+        locked: true,
+        loginUrl: '/login?reason=missing_scope',
+        reason: 'missing_scope',
+        requestStartedAt: 1_500,
+        lockedAt: 2_000,
+    }));
     assert.equal(second, first);
     assert.equal(harness.exports.readPendingAuthenticationRequired(), first);
     assert.equal(harness.events.length, 1);
     assert.equal(JSON.stringify(harness.window).includes('token'), false);
+    assert.deepEqual(Object.keys(first).sort(), ['locked', 'lockedAt', 'loginUrl', 'reason', 'requestStartedAt']);
+});
+
+test('the terminal latch stays window-local when both storage property getters are blocked', () => {
+    const harness = createHarness(AUTH_REQUIRED_PATH, undefined, () => 2_000);
+    Object.defineProperty(harness.window, 'localStorage', {
+        get() { throw new Error('shared_storage_must_not_be_read'); },
+    });
+    Object.defineProperty(harness.window, 'sessionStorage', {
+        get() { throw new Error('tab_storage_must_not_be_read'); },
+    });
+
+    const state = harness.exports.publishAuthenticationRequired({
+        loginUrl: '/login?reason=session_expired',
+        requestStartedAt: 1_500,
+    });
+
+    assert.equal(harness.exports.readPendingAuthenticationRequired(), state);
+    assert.equal(harness.events.length, 1);
+    assert.deepEqual(Object.keys(state).sort(), ['locked', 'lockedAt', 'loginUrl', 'reason', 'requestStartedAt']);
+});
+
+test('invalid injected auth timestamps fall back to the current clock', () => {
+    for (const requestStartedAt of [NaN, Infinity, -1, '1500', null]) {
+        const harness = createHarness(AUTH_REQUIRED_PATH, undefined, () => 4_000);
+        assert.deepEqual(
+            JSON.parse(JSON.stringify(harness.exports.publishAuthenticationRequired({ requestStartedAt }))),
+            {
+                locked: true,
+                loginUrl: '/login?reason=session_expired',
+                reason: 'session_expired',
+                requestStartedAt: 4_000,
+                lockedAt: 4_000,
+            },
+        );
+    }
+});
+
+test('apiFetch preserves a delayed 401 request start captured before fetch', async () => {
+    let now = 1_000;
+    let resolveResponse;
+    const harness = createHarness(HTTP_PATH, () => new Promise(resolve => { resolveResponse = resolve; }), () => now);
+    const request = harness.exports.apiFetch('/api/delayed');
+    assert.equal(harness.fetchCalls.length, 1);
+
+    now = 5_000;
+    resolveResponse(new Response(JSON.stringify({ error: 'auth_required' }), { status: 401 }));
+
+    await assert.rejects(() => request, harness.exports.AuthenticationRequiredError);
+    assert.equal(harness.events[0].detail.requestStartedAt, 1_000);
+    assert.equal(harness.events[0].detail.lockedAt, 5_000);
 });
 
 test('apiFetch locks on every 401 including malformed bodies', async () => {

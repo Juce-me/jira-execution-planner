@@ -78,11 +78,13 @@ function readPlanningScopeMap(storage) {
 }
 
 function writePlanningScopeMap(storage, nextMap) {
-    if (!storage?.setItem) return;
+    if (!storage?.setItem) return false;
     try {
         storage.setItem(PLANNING_STORAGE_KEY, JSON.stringify(nextMap || {}));
+        return true;
     } catch (err) {
         // ignore storage failures
+        return false;
     }
 }
 
@@ -131,11 +133,10 @@ export function hasPlanningState(storage, scopeKey) {
 }
 
 export function savePlanningState(storage, scopeKey, state) {
-    if (!scopeKey) return null;
+    if (!scopeKey) return false;
     const stateMap = readPlanningScopeMap(storage);
     stateMap[scopeKey] = normalizeStoredScopeState(state);
-    writePlanningScopeMap(storage, stateMap);
-    return stateMap[scopeKey];
+    return writePlanningScopeMap(storage, stateMap) ? stateMap[scopeKey] : false;
 }
 
 export function resolvePlanningTeamSelection({

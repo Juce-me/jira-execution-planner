@@ -7,6 +7,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 
+from backend.auth.db_browser_sessions import resolve_browser_session
 from backend.auth.context import ProjectAccessSnapshot, RequestAuthContext
 from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError, missing_oauth_scopes
 from backend.db import engine as db_engine
@@ -101,12 +102,27 @@ def resolve_db_request_auth_context(
 ) -> RequestAuthContext:
     current_time = time.time() if now is None else now
     with db_engine.session_factory(database_url)() as session:
-        connection = _find_connection(session, session_data)
-        if connection is None:
+        browser_session_id = str((session_data or {}).get('db_browser_session_id') or '').strip()
+        browser_session = (
+            resolve_browser_session(session, browser_session_id) if browser_session_id else None
+        )
+        if browser_session_id and browser_session is None:
+            raise AuthError('auth_required', 'Atlassian authentication is required.')
+        connection = (
+            session.get(models.AuthConnection, browser_session.auth_connection_id)
+            if browser_session else _find_connection(session, session_data)
+        )
+        if connection is None or connection.provider != 'atlassian_oauth':
             raise AuthError('auth_required', 'Atlassian authentication is required.')
         user = session.get(models.User, connection.user_id)
         workspace = session.get(models.Workspace, connection.workspace_id)
         if user is None or workspace is None:
+            raise AuthError('auth_required', 'Atlassian authentication is required.')
+        if browser_session and (
+            browser_session.user_id != user.id
+            or browser_session.workspace_id != workspace.id
+            or browser_session.auth_connection_id != connection.id
+        ):
             raise AuthError('auth_required', 'Atlassian authentication is required.')
 
         user_status, connection_status = _status_for(user, connection, current_time)
@@ -116,7 +132,7 @@ def resolve_db_request_auth_context(
             raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
 
         session_token_version = str((session_data or {}).get('db_token_version') or '')
-        if session_token_version and session_token_version != str(connection.token_version):
+        if not browser_session_id and session_token_version != str(connection.token_version):
             raise AuthError('auth_connection_stale', 'Your Jira connection changed. Reconnect to continue.')
         if missing_oauth_scopes({'scope': ' '.join(connection.scopes or [])}, required_scopes):
             raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
@@ -134,4 +150,5 @@ def resolve_db_request_auth_context(
             account_status=user_status,
             is_admin=user.account_type == 'admin',
             project_access=_project_access(session, connection),
+            browser_session_id=browser_session_id,
         )

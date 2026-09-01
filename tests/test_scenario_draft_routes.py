@@ -3,6 +3,7 @@ import tempfile
 import threading
 import time
 import unittest
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -10,9 +11,16 @@ from flask import jsonify, request
 
 from backend.auth.context import RequestAuthContext
 from backend.auth.csrf import issue_csrf_token
+from backend.auth.db_browser_sessions import create_browser_session
 from backend.db import engine as db_engine
 from backend.db import models
-from backend.scenario_drafts import acquire_lock, append_event, save_draft
+from backend.routes import scenario_draft_routes
+from backend.scenario_drafts import (
+    ScenarioDraftReloadUnavailable,
+    acquire_lock,
+    append_event,
+    save_draft,
+)
 import jira_server
 
 
@@ -42,9 +50,25 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         self.factory = db_engine.session_factory(self.database_url)
         self.workspace_id, self.user_id, self.connection_id = self._seed_user('account-1')
         self.other_workspace_id, self.other_user_id, self.other_connection_id = self._seed_user('account-2', site='https://other.atlassian.net', cloud='cloud-2')
-        self.context = self._context(self.workspace_id, self.user_id, self.connection_id, account_id='account-1')
-        self.other_context = self._context(self.other_workspace_id, self.other_user_id, self.other_connection_id, account_id='account-2', site='https://other.atlassian.net', cloud='cloud-2')
-        self._install_session('session-1', 'account-1', self.connection_id)
+        self.browser_session_id = self._seed_browser_session(self.workspace_id, self.user_id, self.connection_id)
+        self.other_browser_session_id = self._seed_browser_session(self.other_workspace_id, self.other_user_id, self.other_connection_id)
+        self.context = self._context(
+            self.workspace_id,
+            self.user_id,
+            self.connection_id,
+            account_id='account-1',
+            browser_session_id=self.browser_session_id,
+        )
+        self.other_context = self._context(
+            self.other_workspace_id,
+            self.other_user_id,
+            self.other_connection_id,
+            account_id='account-2',
+            site='https://other.atlassian.net',
+            cloud='cloud-2',
+            browser_session_id=self.other_browser_session_id,
+        )
+        self._install_session('session-1', 'account-1', self.connection_id, self.browser_session_id)
 
     def tearDown(self):
         db_engine.dispose_engines()
@@ -86,7 +110,18 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             session.commit()
             return workspace.id, user.id, connection.id
 
-    def _context(self, workspace_id, user_id, connection_id, *, account_id='account-1', site='https://example.atlassian.net', cloud='cloud-1'):
+    def _seed_browser_session(self, workspace_id, user_id, connection_id):
+        with self.factory() as session:
+            handle = create_browser_session(
+                session,
+                user_id=user_id,
+                workspace_id=workspace_id,
+                auth_connection_id=connection_id,
+            )
+            session.commit()
+            return handle.id
+
+    def _context(self, workspace_id, user_id, connection_id, *, account_id='account-1', site='https://example.atlassian.net', cloud='cloud-1', browser_session_id=''):
         return RequestAuthContext(
             auth_mode='atlassian_oauth',
             user_id=user_id,
@@ -99,12 +134,17 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             token_version='1',
             account_status='active',
             is_admin=True,
+            browser_session_id=browser_session_id,
         )
 
-    def _install_session(self, session_id, account_id, connection_id):
+    def _install_session(self, session_id, account_id, connection_id, browser_session_id=''):
         with self.client.session_transaction() as flask_session:
             flask_session['atlassian_oauth_session_id'] = session_id
-            flask_session['db_oauth_session'] = {'db_auth_connection_id': connection_id}
+            flask_session['db_oauth_session'] = (
+                {'db_browser_session_id': browser_session_id}
+                if browser_session_id
+                else {'db_auth_connection_id': connection_id}
+            )
         jira_server.OAUTH_TOKEN_STORE[session_id] = {
             'access_token': 'access-123',
             'refresh_token': 'refresh-123',
@@ -135,9 +175,12 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         context = context or self.context
         data = {
             'db_auth_connection_id': context.auth_connection_id,
-            'db_token_version': context.token_version,
             'account_id': context.atlassian_account_id,
         }
+        if context.browser_session_id:
+            data['db_browser_session_id'] = context.browser_session_id
+        else:
+            data['db_token_version'] = context.token_version
         with self.client.session_transaction() as flask_session:
             return issue_csrf_token(flask_session, data)
 
@@ -181,8 +224,23 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             )
             session.add(connection)
             session.commit()
-            self.context = self._context(workspace.id, user.id, connection.id)
-        self._install_session('session-only', 'account-only', self.context.auth_connection_id)
+            workspace_id = workspace.id
+            user_id = user.id
+            connection_id = connection.id
+        browser_session_id = self._seed_browser_session(workspace_id, user_id, connection_id)
+        self.context = self._context(
+            workspace_id,
+            user_id,
+            connection_id,
+            account_id='account-only',
+            browser_session_id=browser_session_id,
+        )
+        self._install_session(
+            'session-only',
+            'account-only',
+            self.context.auth_connection_id,
+            browser_session_id,
+        )
 
         legacy = {'version': 1, 'scenarios': {'scope-legacy': {'name': 'Legacy', 'overrides': {'ENG-1': {'start': '2026-05-18'}}}}}
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
@@ -221,6 +279,33 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['activeDraft']['draftRevision'], 1)
         self.assertNotIn('revision', response.get_json()['activeDraft'])
+
+    def test_draft_write_uses_upgraded_browser_session_csrf_binding(self):
+        """Draft writes use the upgraded browser-session CSRF binding."""
+        context = replace(self.context, browser_session_id='browser-1')
+        with self.client.session_transaction() as flask_session:
+            flask_session['db_oauth_session'] = {
+                'db_browser_session_id': context.browser_session_id,
+            }
+            token = issue_csrf_token(flask_session, {
+                'db_browser_session_id': context.browser_session_id,
+                'db_auth_connection_id': context.auth_connection_id,
+                'account_id': context.atlassian_account_id,
+            })
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
+             self._route_patch(context):
+            response = self.client.post(
+                '/api/scenario/drafts',
+                json={'scope_key': 'scope-browser-csrf', 'name': 'Browser CSRF', 'overrides': {}},
+                headers={
+                    'X-Requested-With': 'jira-execution-planner',
+                    'X-CSRF-Token': token,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
     def test_post_update_requires_base_draft_revision(self):
         save_draft(self.context, 'scope-update', 'Update', {'ENG-1': {'start': '2026-05-18'}})
@@ -711,6 +796,61 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             ).one()
             self.assertEqual(event.draft_revision, 2)
 
+    def test_reload_source_loader_resolves_captured_browser_session_without_creating_rows(self):
+        """Reload resolves the captured browser session without creating rows."""
+        context = replace(self.context, browser_session_id='browser-1')
+        draft = {
+            'scopePayload': {
+                'config': {'lane_mode': 'team'},
+                'filters': {'sprint': '2026Q2'},
+            },
+        }
+
+        def resolver(session_data, **_kwargs):
+            self.assertEqual(session_data, {
+                'db_browser_session_id': context.browser_session_id,
+            })
+            return context
+
+        def planner():
+            self.assertIs(jira_server.current_request_auth_context(), context)
+            return jsonify({
+                'config': {},
+                'filters': {},
+                'issues': [],
+                'dependencies': [],
+            })
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'resolve_db_request_auth_context', side_effect=resolver), \
+             patch.object(jira_server, 'create_browser_session', side_effect=AssertionError('reload must not create browser sessions')), \
+             patch.object(jira_server, 'scenario_planner', side_effect=planner):
+            result = scenario_draft_routes.scenario_draft_reload_source_loader(
+                context,
+                draft,
+                timeout_seconds=20,
+            )
+
+        self.assertEqual(result['issues'], [])
+
+    def test_reload_source_loader_rejects_context_without_browser_session(self):
+        """Reload rejects an auth context without a browser session."""
+        context = replace(self.context, browser_session_id='')
+        with patch.object(
+            jira_server,
+            'scenario_planner',
+            side_effect=AssertionError('planner must not run without a browser session'),
+        ):
+            with self.assertRaisesRegex(
+                ScenarioDraftReloadUnavailable,
+                'browser session is required for DB OAuth Scenario reload',
+            ):
+                scenario_draft_routes.scenario_draft_reload_source_loader(
+                    context,
+                    {'scopePayload': {}},
+                    timeout_seconds=20,
+                )
+
     def test_reload_from_jira_timeout_returns_503_and_preserves_draft_state(self):
         saved = save_draft(self.context, 'scope-reload-timeout', 'Reload timeout', {'ENG-1': {'start': '2026-05-18'}})
         draft_id = saved['activeDraft']['draftId']
@@ -758,10 +898,12 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             client = jira_server.app.test_client()
             with client.session_transaction() as flask_session:
                 flask_session['atlassian_oauth_session_id'] = 'thread-session'
-                flask_session['db_oauth_session'] = {'db_auth_connection_id': self.connection_id}
+                flask_session['db_oauth_session'] = {
+                    'db_browser_session_id': self.context.browser_session_id,
+                }
                 token = issue_csrf_token(flask_session, {
+                    'db_browser_session_id': self.context.browser_session_id,
                     'db_auth_connection_id': self.context.auth_connection_id,
-                    'db_token_version': self.context.token_version,
                     'account_id': self.context.atlassian_account_id,
                 })
             started = time.monotonic()

@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-08-29. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-09-01. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,8 +15,8 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-08-29 |
-| Last result | FAIL insufficient_home_write_probe_input (probe not re-run: all required operator inputs and an approved disposable Home project were unavailable; this integration adds no Home write path or mutation) |
+| Checked on | 2026-09-01 |
+| Last result | FAIL insufficient_home_write_probe_input (probe not run: all four operator inputs and an approved disposable Home project were unavailable; this plan adds no Home write path) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -129,6 +129,10 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-09-01: Execution baseline sweep confirmed the four `HOME_WRITE_PROBE_*` variables are not present, so no Home write mutation probe was run. This plan adds no Home/Townsquare write path or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+
+- 2026-08-31: Startup sweep rechecked the gate while making the multi-device browser-session and per-tab reauthentication plans implementation-ready. All four required `HOME_WRITE_PROBE_*` inputs and an approved disposable Home project remain unavailable, and the revision adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-30: Startup sweep rechecked the gate while revising the multi-device browser-session design for issue #143. All four required `HOME_WRITE_PROBE_*` inputs and an approved disposable Home project remain unavailable, and the revised work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-29: Acceptance/integration sweep confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this integration adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-28: Startup sweep rechecked the gate while running the localhost PostgreSQL runner work and planning removal of the redundant single-option ENG/EPM view control. The required operator inputs and an approved disposable Home project remain unavailable, and this frontend work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-27: Final execution sweep for workspace-shared admin configuration confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this implementation adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
@@ -136,6 +140,7 @@ Required tests after the gate passes:
 - 2026-08-26: Startup sweep rechecked the gate while validating workspace-shared admin configuration persistence. The required operator inputs and an approved disposable Home project remain unavailable, and this plan adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-26: Startup sweep rechecked the gate while executing the personal-group-star prerequisite. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and the implementation adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-26: Startup sweep rechecked the gate while splitting personal-group-star behavior from onboarding. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and neither plan adds a Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-25: Startup sweep rechecked the gate while designing multi-device DB/OAuth browser sessions. The required operator inputs and an approved disposable Home project remain unavailable, and this work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-25: Startup sweep rechecked the gate while planning per-user onboarding. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and the plan adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-08: Startup sweep rechecked the gate while continuing the ENG Group Board execution plan. The required operator inputs and an approved disposable Home project remain unavailable, and this work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-07-27: Startup sweep rechecked the gate while designing Cloud SQL IAM database connectivity. The required disposable-project probe inputs remain unavailable, and this database-connection-only work adds no Home/Townsquare route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.

@@ -29,10 +29,14 @@ export function sanitizeLoginUrl(value) {
     }
 }
 
-function stateFor(loginUrl) {
+function stateFor(loginUrl, requestStartedAt) {
+    const lockedAt = Date.now();
+    const safeRequestStartedAt = Number.isFinite(requestStartedAt) && requestStartedAt >= 0
+        ? requestStartedAt
+        : lockedAt;
     const safeUrl = sanitizeLoginUrl(loginUrl);
     const reason = safeUrl.includes('reason=missing_scope') ? 'missing_scope' : 'session_expired';
-    return Object.freeze({ locked: true, loginUrl: safeUrl, reason });
+    return Object.freeze({ locked: true, loginUrl: safeUrl, reason, requestStartedAt: safeRequestStartedAt, lockedAt });
 }
 
 export class AuthenticationRequiredError extends Error {
@@ -58,10 +62,10 @@ export function readPendingAuthenticationRequired() {
 
 export function publishAuthenticationRequired(payload = {}) {
     const win = browserWindow();
-    if (!win) return stateFor(payload?.loginUrl);
+    if (!win) return stateFor(payload?.loginUrl, payload?.requestStartedAt);
     const existing = readPendingAuthenticationRequired();
     if (existing) return existing;
-    const next = stateFor(payload?.loginUrl);
+    const next = stateFor(payload?.loginUrl, payload?.requestStartedAt);
     win[AUTH_REQUIRED_SLOT] = next;
     win.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, { detail: next }));
     return next;

@@ -19,6 +19,26 @@ export const selectedTaskKeysFromMap = (selectedTasks, validTaskKeySet = null) =
     .filter(key => selectedTasks[key] && (!validTaskKeySet || validTaskKeySet.has(key)))
     .sort();
 
+export function resolvePlanningAuthResume({ resume, planningScopeKey, validTaskKeys, validTeamIds } = {}) {
+    if (!resume || resume.scopeKey !== planningScopeKey) return null;
+    const selectionMode = resume.selectionMode === PLANNING_SELECTION_MODE_DEFAULT_ALL
+        ? PLANNING_SELECTION_MODE_DEFAULT_ALL
+        : PLANNING_SELECTION_MODE_MANUAL;
+    const tasks = selectionMode === PLANNING_SELECTION_MODE_DEFAULT_ALL
+        ? [...new Set([...validTaskKeys].map(key => String(key || '').trim()).filter(Boolean))].sort()
+        : [...new Set(resume.selectedTaskKeys || [])]
+            .filter(key => validTaskKeys.has(key))
+            .sort();
+    const teams = [...new Set(resume.selectedTeams || [])]
+        .filter(teamId => validTeamIds.has(teamId))
+        .sort();
+    return {
+        selectedTaskKeys: tasks,
+        selectedTeams: teams,
+        selectionMode,
+    };
+}
+
 export function resolvePlanningSelectionForDashboard({
     selectedTasks,
     selectedTeams,
@@ -60,12 +80,12 @@ export function persistPlanningSelectionState({
     selectedTeams,
     normalizeSelectedTeams
 } = {}) {
-    if (!scopeKey) return;
-    savePlanningState(storage, scopeKey, {
+    if (!scopeKey) return false;
+    return Boolean(savePlanningState(storage, scopeKey, {
         selectedTaskKeys: selectedTaskKeysFromMap(selectedTasks),
         selectedTeams: normalizeSelectedTeams(selectedTeams),
         selectionMode
-    });
+    }));
 }
 
 export function toggleTaskSelectionMap(selectedTasks, taskKey) {

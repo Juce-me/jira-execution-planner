@@ -22,6 +22,7 @@ export async function apiFetch(url, options = {}) {
     const pending = readPendingAuthenticationRequired();
     if (pending) throw new AuthenticationRequiredError(pending);
     let response;
+    const requestStartedAt = Date.now();
     try {
         response = await fetch(url, options);
     } catch (error) {
@@ -32,7 +33,7 @@ export async function apiFetch(url, options = {}) {
     if (!response.ok) {
         const payload = await authenticationPayload(response);
         if (response.status === 401 || payload?.error === 'auth_required') {
-            const state = publishAuthenticationRequired(payload || {});
+            const state = publishAuthenticationRequired({ ...(payload || {}), requestStartedAt });
             throw new AuthenticationRequiredError(state, response.status);
         }
     }

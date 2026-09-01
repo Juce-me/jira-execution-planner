@@ -117,7 +117,7 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
     );
     assert.match(
         sprintDataSource,
-        /if \(options\.shouldApplyResult\?\.\(\) === false\) return \[\];[\s\S]*if \(options\.updateEpics !== false\)/
+        /if \(options\.shouldApplyResult\?\.\(\) === false\) return IGNORED_RESULT;[\s\S]*if \(options\.updateEpics !== false\)/
     );
     assert.match(sprintDataSource, /const loadAlertEpics = async \(\{ forceRefresh = false, shouldApplyResult, signal \} = \{\}\)/);
     assert.match(sprintDataSource, /purpose: 'alerts',[\s\S]*shouldApplyResult/);
@@ -155,7 +155,7 @@ test('primary ENG loads reject stale group scope completions', () => {
     assert.match(sprintDataSource, /fetchTasks\('tech', \{ forceRefresh, shouldApplyResult \}\)/);
     assert.match(
         sprintDataSource,
-        /catch \(err\) \{[\s\S]*if \(options\.shouldApplyResult\?\.\(\) === false\) return \[\];[\s\S]*finally \{[\s\S]*if \(useLoading && options\.shouldApplyResult\?\.\(\) !== false\)/
+        /catch \(err\) \{[\s\S]*if \(options\.shouldApplyResult\?\.\(\) === false\) return IGNORED_RESULT;[\s\S]*finally \{[\s\S]*if \(useLoading && options\.shouldApplyResult\?\.\(\) !== false\)/
     );
 });
 
@@ -391,7 +391,7 @@ test('dashboard delegates ENG data loading and view rendering to ENG modules', (
     assert.equal(fs.existsSync(engAlertsPanelPath), true, 'Expected ENG alerts panel module');
 
     assert.match(source, /import EngView from '\.\/eng\/EngView\.jsx';/);
-    assert.match(source, /import \{ useEngSprintData \} from '\.\/eng\/useEngSprintData\.js';/);
+    assert.match(source, /import \{ ENG_TASK_LOAD_OUTCOME, useEngSprintData \} from '\.\/eng\/useEngSprintData\.js';/);
     assert.match(source, /import \{[\s\S]*getTaskTeamInfo[\s\S]*resetEngFilters[\s\S]*\} from '\.\/eng\/engTaskUtils\.js';/);
     assert.match(source, /<EngView[\s>]/);
     assert.match(source, /<EngAlertsPanel[\s>]/);

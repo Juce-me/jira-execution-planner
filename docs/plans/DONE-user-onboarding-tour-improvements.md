@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Ready for implementation in the current dedicated feature checkout after the Task 0 baseline. Final build verification is gated: repository policy requires `npm ci` in a fresh git worktree, so Task 9 must stop for explicit user authorization of a temporary verification worktree (and a commit/ref containing the implementation) before it can claim completion. Preserve unrelated worktree changes.
+> **Status:** Done. Executed on `feature/user-onboarding-tour` through verification commit `06bb1fd`. Kept for audit context only.
 
 **Goal:** Split first-run onboarding into a direct existing-Department path and an optional **Add Department** path, guide create/duplicate users through the real Team Groups editor without a picker round trip, then make the dashboard tour teach users through safe interaction with every current inline Jira delivery-field type, clarify search contracts by surface, split Initiative → Epic → Story into distinct educational steps, and document the operational material from the 1:1 without overstating current product behavior.
 
@@ -10,7 +10,7 @@
 
 **Tech Stack:** React 19, React DOM portals, DOM `inert`/ARIA state, CSS spotlight shields, Node 20 test runner, Playwright, esbuild, and the existing GA4/GTM analytics contracts.
 
-**Dependency:** `EXEC-user-onboarding-tour.md` is implemented and verified on the same branch. This plan supersedes that plan's return-to-picker configure flow and its “highlighted element is visual context only while the whole background stays inert” interaction contract. It reuses the existing shared-group and private first-run preference endpoints without changing their schemas, ownership, CSRF/auth rules, onboarding persistence, replay behavior, or analytics event taxonomy.
+**Dependency:** `DONE-user-onboarding-tour.md` is implemented and verified on the same branch. This plan supersedes that plan's return-to-picker configure flow and its “highlighted element is visual context only while the whole background stays inert” interaction contract. It reuses the existing shared-group and private first-run preference endpoints without changing their schemas, ownership, CSRF/auth rules, onboarding persistence, replay behavior, or analytics event taxonomy.
 
 ---
 

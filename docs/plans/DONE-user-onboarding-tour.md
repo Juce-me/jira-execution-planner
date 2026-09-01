@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** Implementation and verification complete on `feature/user-onboarding-tour`; awaiting integration approval.
+> **Status:** Done. Executed on `feature/user-onboarding-tour` through verification commit `06bb1fd`. Kept for audit context only.
 
 **Goal:** After mandatory personal-group selection succeeds, teach the dashboard's scope controls, actions, filters, issue hierarchy, and editable Jira fields through a guided tour that users may skip and replay from Settings.
 

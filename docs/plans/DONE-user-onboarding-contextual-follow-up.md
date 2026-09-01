@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 0–8 and the final whole-branch review fixes are implemented and verified on `feature/user-onboarding-tour` through build commit `02f75e1`; awaiting explicit remote-integration direction. Do not rename this execution plan to `DONE-*` until that integration is authorized and complete.
+> **Status:** Done. Executed on `feature/user-onboarding-tour` through verification commit `06bb1fd` with reproducible build commit `02f75e1`. Kept for audit context only.
 
 **Goal:** Correct the desktop coachmark and Department Settings regressions, require explicit **Next** after safe field previews, and add contextual Configuration, Planning, Board, and Statistics onboarding that starts from the real user-clicked launcher.
 
@@ -109,7 +109,7 @@ Unavailable or disabled launchers use a truthful fallback. Manual **Next** ackno
 - `docs/README_ANALYTICS.md` — explicit no-new-event allowlist reason.
 - `docs/plans/README.md` — execution status and result totals.
 - `docs/agents/bugfixes/2026-09-01-planned-user-onboarding-contextual-follow-up.md` — rename to `executed` and add outcome during finalization.
-- `docs/plans/EXEC-user-onboarding-contextual-follow-up.md` — record task evidence, final ref, outcome, and current accuracy.
+- `docs/plans/DONE-user-onboarding-contextual-follow-up.md` — record task evidence, final ref, outcome, and current accuracy.
 - `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, `frontend/dist/dashboard.css` — generated only by `npm run build` under pinned Node 20.
 
 ---
@@ -874,7 +874,7 @@ git commit -m "docs: describe contextual desktop onboarding"
 - Modify generated: `frontend/dist/dashboard.js.map`
 - Modify generated: `frontend/dist/dashboard.css`
 - Rename: `docs/agents/bugfixes/2026-09-01-planned-user-onboarding-contextual-follow-up.md` → `docs/agents/bugfixes/2026-09-01-executed-user-onboarding-contextual-follow-up.md`
-- Modify: `docs/plans/EXEC-user-onboarding-contextual-follow-up.md`
+- Modify: `docs/plans/DONE-user-onboarding-contextual-follow-up.md`
 - Modify: `docs/plans/README.md`
 
 - [x] **Step 1: Run all focused onboarding tests together**
@@ -968,13 +968,13 @@ Verify every changed line maps to this plan, negative Jira mutation guards remai
 Rename the design artifact to `2026-09-01-executed-user-onboarding-contextual-follow-up.md`; set `Status: executed`; add **Outcome** and **Current Accuracy**. Update this plan with the implementation commit, exact test totals, reproducible-build result, screenshot locations, residual risks, and any baseline failure. Update `docs/plans/README.md` with the same status.
 
 ```bash
-git add docs/agents/bugfixes/2026-09-01-executed-user-onboarding-contextual-follow-up.md docs/plans/EXEC-user-onboarding-contextual-follow-up.md docs/plans/README.md
+git add docs/agents/bugfixes/2026-09-01-executed-user-onboarding-contextual-follow-up.md docs/plans/DONE-user-onboarding-contextual-follow-up.md docs/plans/README.md
 git commit -m "docs: record onboarding follow-up verification"
 ```
 
 - [x] **Step 9: Stop before remote integration changes**
 
-Do not push additional implementation commits, create a pull request, merge, or rename this `EXEC-*` plan to `DONE-*` without fresh explicit user direction. Report implemented tasks, changed files, exact verification totals, screenshot locations, residual risks, the final commit, and any blocked gate.
+The implementation remained unpushed and this plan remained `EXEC-*` until fresh explicit user direction authorized finalization and remote integration. Report implemented tasks, changed files, exact verification totals, screenshot locations, residual risks, the final commit, and any blocked gate.
 
 #### Task 8 verification evidence
 

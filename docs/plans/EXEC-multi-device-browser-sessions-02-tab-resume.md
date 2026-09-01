@@ -57,8 +57,8 @@ Expected: every command exits `0`. If any check fails, stop; do not recreate the
 Run:
 
 ```bash
-node --test tests/test_auth_required.js tests/test_planning_selection_state.js tests/test_auth_focus_refresh.js
-npx playwright test tests/ui/global_auth_lock.spec.js tests/ui/planning_selection_defaults.spec.js
+fnm exec --using 20 -- node --test tests/test_auth_required.js tests/test_planning_selection_state.js tests/test_auth_focus_refresh.js
+fnm exec --using 20 -- npx playwright test tests/ui/global_auth_lock.spec.js tests/ui/planning_selection_defaults.spec.js
 ```
 
 Expected: PASS before the new behavior. Preserve these contracts: one terminal gate, same-tab sanitized navigation, no in-place unlock, no failed-request replay, no raw `401`, and existing Planning selection persistence.

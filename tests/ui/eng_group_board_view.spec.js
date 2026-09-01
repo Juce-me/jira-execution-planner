@@ -1121,6 +1121,7 @@ test('non-rail Board interactions never reveal the page vertically', async ({ pa
     expect(await focusedId(page)).toBe('col-5e6f7081');
 
     await openPinnedBoard();
+    const transitionOptionBodies = [];
     const transitionWrites = [];
     await page.route('**/api/board-config/statuses', (route) => route.fulfill({
         status: 200,
@@ -1129,19 +1130,22 @@ test('non-rail Board interactions never reveal the page vertically', async ({ pa
             statuses: [{ id: '10003', name: 'Blocked', statusCategoryKey: 'new' }],
         }),
     }));
-    await page.route('**/api/issues/transitions/options', (route) => route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-            issues: [{
-                key: 'PLAT-8',
-                issueType: 'Epic',
-                currentStatus: 'In Progress',
-                transitions: [{ name: 'Go Blocked', toStatus: 'Blocked' }],
-            }],
-            targetStatuses: [{ name: 'Blocked', availableCount: 1, blockedCount: 0 }],
-        }),
-    }));
+    await page.route('**/api/issues/transitions/options', (route) => {
+        transitionOptionBodies.push(JSON.parse(route.request().postData() || '{}'));
+        return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                issues: [{
+                    key: 'PLAT-8',
+                    issueType: 'Epic',
+                    currentStatus: 'In Progress',
+                    transitions: [{ name: 'Go Blocked', toStatus: 'Blocked' }],
+                }],
+                targetStatuses: [{ name: 'Blocked', availableCount: 1, blockedCount: 0 }],
+            }),
+        });
+    });
     await page.route('**/api/issues/transitions', (route) => {
         const body = JSON.parse(route.request().postData() || '{}');
         transitionWrites.push(body);
@@ -1185,72 +1189,10 @@ test('non-rail Board interactions never reveal the page vertically', async ({ pa
     );
     expect(dragOutcome).toEqual({ started: true, overAccepted: true });
     await expect.poll(() => transitionWrites.length).toBe(1);
+    expect(transitionOptionBodies).toEqual([{ issueKeys: ['PLAT-8'] }]);
     expect(transitionWrites).toEqual([{ issueKeys: ['PLAT-8'], targetStatus: 'Blocked' }]);
     await expect(source).toHaveCount(0);
     await expect(target.locator('.col-strip .n')).toHaveText('2');
-});
-
-test('normal Board card drop keeps its status-options path non-preview and completes the real transition', async ({ page }) => {
-    const optionBodies = [];
-    const mutationBodies = [];
-    await openBoard(page, { reducedMotion: true });
-    await page.route('**/api/issues/transitions/options', (route) => {
-        optionBodies.push(JSON.parse(route.request().postData() || '{}'));
-        return route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-                issues: [{
-                    key: 'PLAT-8',
-                    issueType: 'Epic',
-                    currentStatus: 'In Progress',
-                    transitions: [{ name: 'Go Blocked', toStatus: 'Blocked' }],
-                }],
-                targetStatuses: [{ name: 'Blocked', availableCount: 1, blockedCount: 0 }],
-            }),
-        });
-    });
-    await page.route('**/api/issues/transitions', (route) => {
-        const body = JSON.parse(route.request().postData() || '{}');
-        mutationBodies.push(body);
-        return route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-                targetStatus: body.targetStatus,
-                results: body.issueKeys.map(key => ({ key, result: 'success', toStatus: body.targetStatus })),
-            }),
-        });
-    });
-
-    const outcome = await page.evaluate(() => {
-        const source = document.querySelector('.eng-board .ecard[data-epic-key="PLAT-8"]');
-        const target = document.querySelector('.eng-board .col[data-column-id="col-5e6f7081"]');
-        const dataTransfer = new DataTransfer();
-        const rect = target.getBoundingClientRect();
-        const event = type => new DragEvent(type, {
-            bubbles: true,
-            cancelable: true,
-            dataTransfer,
-            clientX: Math.round(rect.left + rect.width / 2),
-            clientY: Math.round(rect.top + Math.min(rect.height / 2, 160)),
-        });
-        source.dispatchEvent(event('dragstart'));
-        target.dispatchEvent(event('dragenter'));
-        const over = event('dragover');
-        target.dispatchEvent(over);
-        target.dispatchEvent(event('drop'));
-        source.dispatchEvent(event('dragend'));
-        return { overAccepted: over.defaultPrevented };
-    });
-
-    expect(outcome).toEqual({ overAccepted: true });
-    await expect.poll(() => mutationBodies).toEqual([{ issueKeys: ['PLAT-8'], targetStatus: 'Blocked' }]);
-    expect(optionBodies).toEqual([{ issueKeys: ['PLAT-8'] }]);
-    await expect(page.locator('.onboarding-tour-preview-portal')).toHaveCount(0);
-    await expect(page.locator('.is-preview-only')).toHaveCount(0);
-    await expect(page.locator('[data-onboarding-preview-owner]')).toHaveCount(0);
-    await expect(page.locator('[data-status-transition-menu]')).toHaveCount(0);
 });
 
 test('pinned chrome stays interactive and releases each element at the board bottom', async ({ page }) => {

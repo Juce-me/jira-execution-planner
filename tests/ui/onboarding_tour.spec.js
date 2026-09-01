@@ -857,9 +857,20 @@ function assertProductionRequestSafety(calls) {
     });
 }
 
-function assertNoPreviewMutationAnalytics(events) {
+const productionOnboardingActionAllowlist = new Set(['started', 'completed', 'skipped']);
+
+function assertNoPreviewMutationAnalytics(events, {
+    expectedOnboardingActions = [],
+} = {}) {
     expect(events.some(entry => /_change_(?:submit|result)$/.test(entry?.workflow_action || ''))).toBe(false);
-    expect(events.some(entry => /onboarding.*(?:step|view|click)/i.test(`${entry?.event_name || ''} ${entry?.workflow_action || ''}`))).toBe(false);
+    const onboardingEvents = events.filter(entry => (
+        entry?.event_name === 'settings_action'
+        && entry?.section === 'onboarding'
+    ));
+    onboardingEvents.forEach((entry) => {
+        expect(productionOnboardingActionAllowlist.has(entry.workflow_action)).toBe(true);
+    });
+    expect(onboardingEvents.map(entry => entry.workflow_action)).toEqual(expectedOnboardingActions);
     events.forEach((entry) => {
         expect(entry).not.toHaveProperty('issue_key');
         expect(entry).not.toHaveProperty('issue_keys');
@@ -868,6 +879,28 @@ function assertNoPreviewMutationAnalytics(events) {
         expect(JSON.stringify(entry)).not.toMatch(/SYN-(?:EPIC|STORY)|Highest|Medium|Committed|Flexible|To Do|Done/);
     });
 }
+
+test('production analytics guard rejects non-taxonomy onboarding step events', () => {
+    const allowedActions = ['started', 'completed', 'skipped'];
+    const allowedEvents = allowedActions.map(workflowAction => ({
+        event_name: 'settings_action',
+        section: 'onboarding',
+        workflow_action: workflowAction,
+    }));
+    expect(() => assertNoPreviewMutationAnalytics(allowedEvents, {
+        expectedOnboardingActions: allowedActions,
+    })).not.toThrow();
+    expect(() => assertNoPreviewMutationAnalytics([
+        ...allowedEvents,
+        {
+            event_name: 'settings_action',
+            section: 'onboarding',
+            workflow_action: 'step_view',
+        },
+    ], {
+        expectedOnboardingActions: [...allowedActions, 'step_view'],
+    })).toThrow();
+});
 
 async function expectProductionSpotlightAligned(page, field, issueKey = 'SYN-EPIC-A') {
     const hook = productionFieldContracts[field].triggerHook;
@@ -932,14 +965,19 @@ async function exerciseReadOnlyPreviewInputs(page, field, issueKey = 'SYN-EPIC-A
 
 async function invokeProductionOwnerBridge(page, field, descriptorOverride) {
     return productionTrigger(page, field).evaluate((node, override) => {
+        // Intentional white-box boundary: production exposes no lifecycle event, so this one
+        // helper walks the shipped React prop chain to exercise the real dashboard owner bridge.
         const fiberKey = Object.keys(node).find(key => key.startsWith('__reactFiber$'));
         const queue = fiberKey ? [node[fiberKey]] : [];
         const visited = new Set();
+        const ownerTrace = [];
         while (queue.length) {
             const fiber = queue.shift();
             if (!fiber || visited.has(fiber)) continue;
             visited.add(fiber);
             const props = fiber.memoizedProps;
+            const ownerName = fiber.type?.displayName || fiber.type?.name || String(fiber.elementType || fiber.tag);
+            ownerTrace.push(`${ownerName}[preview=${Boolean(props?.previewOnly)},lifecycle=${typeof props?.onPreviewLifecycleChange === 'function'}]`);
             if (props?.previewOnly && typeof props.onPreviewLifecycleChange === 'function') {
                 const descriptor = { ...props.previewOnly, ...override };
                 props.onPreviewLifecycleChange(descriptor, { state: 'ready', reason: '' });
@@ -954,7 +992,7 @@ async function invokeProductionOwnerBridge(page, field, descriptorOverride) {
             }
             queue.push(fiber.return, fiber.alternate, fiber.alternate?.return);
         }
-        throw new Error('Production onboarding owner bridge was not found.');
+        throw new Error(`Production onboarding owner bridge was not found. Owner trace: ${ownerTrace.slice(0, 24).join(' > ') || 'empty'}`);
     }, descriptorOverride);
 }
 
@@ -1001,8 +1039,8 @@ async function advanceProductionTourTo(page, heading) {
     throw new Error(`Production tour did not reach ${heading}.`);
 }
 
-function assertNoUnsafePreviewAnalytics(events, contract) {
-    assertNoPreviewMutationAnalytics(events);
+function assertNoUnsafePreviewAnalytics(events, contract, analyticsOptions) {
+    assertNoPreviewMutationAnalytics(events, analyticsOptions);
     const actionEvents = events.filter(entry => entry?.event_name === contract.analyticsEventName);
     expect(actionEvents.filter(entry => entry.workflow_action === contract.analyticsAction)).toHaveLength(1);
     actionEvents.forEach((entry) => {
@@ -1353,7 +1391,11 @@ test('production Status preview reaches the open terminal step and only explicit
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toHaveLength(1);
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')[0].body).toEqual({ onboardingDone: true });
     assertProductionRequestSafety(calls);
-    assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), productionFieldContracts.status);
+    assertNoUnsafePreviewAnalytics(
+        await page.evaluate(() => window.dataLayer || []),
+        productionFieldContracts.status,
+        { expectedOnboardingActions: ['completed'] },
+    );
 });
 
 test('step collector delegates preview progression before requiring a Next fallback', async ({ page }) => {

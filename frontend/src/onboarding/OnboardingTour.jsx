@@ -21,6 +21,7 @@ import {
     suppressForInteraction,
 } from './onboardingInteraction.js';
 import useOnboardingTour from './useOnboardingTour.js';
+import { AUTH_REQUIRED_EVENT } from '../api/authRequired.js';
 
 const FOCUSABLE = [
     'button:not([disabled])',
@@ -218,6 +219,7 @@ export default function OnboardingTour({
     const [previewFallbackStepId, setPreviewFallbackStepId] = React.useState('');
     const [previewFallbackTargetIdentity, setPreviewFallbackTargetIdentity] = React.useState('');
     const [unsafeTargetIdentity, setUnsafeTargetIdentity] = React.useState('');
+    const [authLocked, setAuthLocked] = React.useState(false);
     const [geometry, setGeometry] = React.useState({
         target: null,
         targetRect: null,
@@ -235,6 +237,22 @@ export default function OnboardingTour({
         requestPreviewCloseRef.current?.(descriptor, 'unmount');
     }, []);
 
+    React.useEffect(() => {
+        if (!tour.isOpen) return undefined;
+        const handleAuthenticationRequired = () => {
+            cleanupLatchRef.current = true;
+            const descriptor = previewDescriptorRef.current;
+            if (descriptor) requestPreviewCloseRef.current?.(descriptor, 'auth_required');
+            previewDescriptorRef.current = null;
+            previewSettledStateRef.current = '';
+            previewFocusedRef.current = false;
+            onPreviewTargetChange?.(null);
+            setAuthLocked(true);
+        };
+        window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthenticationRequired);
+        return () => window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthenticationRequired);
+    }, [onPreviewTargetChange, tour.isOpen]);
+
     if (tour.isOpen && !sessionOpenRef.current) {
         sessionCounterRef.current += 1;
         sessionOpenRef.current = true;
@@ -243,7 +261,7 @@ export default function OnboardingTour({
     }
 
     const measure = React.useCallback(() => {
-        if (!tour.isOpen || !tour.currentStep) return;
+        if (!tour.isOpen || !tour.currentStep || authLocked) return;
         const tourOwnedSuppressionRecords = tourOwnedSuppressionRef.current;
         const nextSnapshot = readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords);
         setSnapshot((current) => {
@@ -285,10 +303,10 @@ export default function OnboardingTour({
                 ? { width: panelRect.width, height: panelRect.height }
                 : DEFAULT_COACHMARK_SIZE,
         });
-    }, [eligibleTargets, engReadiness, tour.currentStep, tour.isOpen]);
+    }, [authLocked, eligibleTargets, engReadiness, tour.currentStep, tour.isOpen]);
 
     React.useLayoutEffect(() => {
-        if (!tour.isOpen) return undefined;
+        if (!tour.isOpen || authLocked) return undefined;
         measure();
         window.addEventListener('resize', measure);
         window.addEventListener('scroll', measure, true);
@@ -332,7 +350,7 @@ export default function OnboardingTour({
             resizeObserver?.disconnect();
             mutationObserver?.disconnect();
         };
-    }, [geometry.target, measure, tour.isOpen]);
+    }, [authLocked, geometry.target, measure, tour.isOpen]);
 
     const target = geometry.target;
     const basePresentation = tour.currentStep
@@ -348,6 +366,7 @@ export default function OnboardingTour({
         && previewFallbackTargetIdentity === targetIdentity;
     const unsafeForcedFallback = Boolean(targetIdentity && unsafeTargetIdentity === targetIdentity);
     const interactive = Boolean(exactPreviewTarget
+        && !authLocked
         && !basePresentation.loading
         && !basePresentation.fallback
         && !previewForcedFallback);
@@ -361,7 +380,7 @@ export default function OnboardingTour({
     const previewOpen = PREVIEW_STATES.has(previewState);
 
     React.useEffect(() => {
-        if (!tour.isOpen) return undefined;
+        if (!tour.isOpen || authLocked) return undefined;
         const preferredReturnFocus = returnFocusRef?.current;
         priorFocusRef.current = preferredReturnFocus?.isConnected
             ? preferredReturnFocus
@@ -370,10 +389,10 @@ export default function OnboardingTour({
             const priorFocus = priorFocusRef.current;
             if (priorFocus?.isConnected && typeof priorFocus.focus === 'function') priorFocus.focus();
         };
-    }, [returnFocusRef, tour.isOpen]);
+    }, [authLocked, returnFocusRef, tour.isOpen]);
 
     React.useLayoutEffect(() => {
-        if (!tour.isOpen || !tour.currentStep) return undefined;
+        if (!tour.isOpen || !tour.currentStep || authLocked) return undefined;
         const appRoot = document.getElementById('root');
         if (!appRoot) return undefined;
 
@@ -441,6 +460,7 @@ export default function OnboardingTour({
         };
     }, [
         descriptionId,
+        authLocked,
         interactive,
         interactive ? previewState : '',
         interactive ? target : null,
@@ -530,11 +550,11 @@ export default function OnboardingTour({
     }, [tour.currentStepId]);
 
     React.useEffect(() => {
-        if (!tour.isOpen || !tour.currentStep) return undefined;
+        if (!tour.isOpen || !tour.currentStep || authLocked) return undefined;
         if (interactive) target?.focus?.();
         else panelRef.current?.focus();
         return undefined;
-    }, [interactive, target, tour.currentStep, tour.isOpen]);
+    }, [authLocked, interactive, target, tour.currentStep, tour.isOpen]);
 
     React.useLayoutEffect(() => {
         if (!interactive || !target) return;
@@ -639,7 +659,7 @@ export default function OnboardingTour({
         onPreviewTargetChange?.(null);
     }, [onPreviewTargetChange, tour.isOpen]);
 
-    if (!tour.isOpen || !tour.currentStep || typeof document === 'undefined') return null;
+    if (!tour.isOpen || !tour.currentStep || authLocked || typeof document === 'undefined') return null;
 
     const progress = buildTourProgress(snapshot.steps, tour.index);
     const placement = computeCoachmarkPlacement({

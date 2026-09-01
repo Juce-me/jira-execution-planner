@@ -94,6 +94,7 @@ export default function IssueFieldOptionMenu({
         const wrapper = dismissRef && dismissRef.current;
         const trigger = wrapper?.querySelector(`[data-${blockClass}-trigger]`);
         if (!menu || !trigger) return undefined;
+        if (preview) menu.style.position = 'fixed';
 
         const positionMenu = () => {
             const triggerRect = trigger.getBoundingClientRect();
@@ -128,7 +129,7 @@ export default function IssueFieldOptionMenu({
             window.removeEventListener('resize', positionMenu);
             window.removeEventListener('scroll', positionMenu, true);
         };
-    }, [blockClass, dismissRef, effectivePortalTarget, loading, list.length, error, result]);
+    }, [blockClass, dismissRef, effectivePortalTarget, loading, list.length, error, preview, result]);
 
     // Move focus into the menu once options are available (mirrors status behavior). The menu
     // mounts only while open, so this runs on open and whenever loading flips to false.
@@ -230,14 +231,19 @@ export default function IssueFieldOptionMenu({
             onKeyDown={handleMenuKeyDown}
             ref={menuRef}
             tabIndex={preview ? -1 : undefined}
-            aria-label={preview ? `${menuLabel}. Read-only preview. ${previewStatusLabel}` : undefined}
+            aria-label={preview ? `${menuLabel}. Read-only preview.` : undefined}
             aria-activedescendant={preview && !loading && !error && list.length ? `${previewId}-option-${activePreviewIndex}` : undefined}
             data-onboarding-preview-owner={preview ? String(previewDescriptor?.targetIdentity || '') : undefined}
             {...{ [`data-${blockClass}-menu`]: 'true' }}
         >
                 {leadingContent}
                 {preview && (
-                    <div className={`${blockClass}-menu-note onboarding-tour-preview-note`}>
+                    <div
+                        className={`${blockClass}-menu-note onboarding-tour-preview-note`}
+                        role="status"
+                        aria-live="polite"
+                        aria-atomic="true"
+                    >
                         Read-only preview. {previewStatusLabel}
                     </div>
                 )}
@@ -247,7 +253,7 @@ export default function IssueFieldOptionMenu({
                 {!loading && error && (
                     <div
                         className={`${blockClass}-menu-note ${blockClass}-menu-error${errorTooMany ? ' is-too-many' : ''}`}
-                        role="alert"
+                        role={preview ? undefined : 'alert'}
                     >
                         {error}
                     </div>
@@ -285,7 +291,7 @@ export default function IssueFieldOptionMenu({
                     </div>
                 )}
                 {result && (
-                    <div className={`${blockClass}-menu-result`} role="status">{result}</div>
+                    <div className={`${blockClass}-menu-result`} role={preview ? undefined : 'status'}>{result}</div>
                 )}
         </div>
     );

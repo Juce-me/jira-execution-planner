@@ -18,6 +18,8 @@ test.beforeAll(() => {
                 import * as React from 'react';
                 import { createRoot } from 'react-dom/client';
                 import OnboardingTour from './frontend/src/onboarding/OnboardingTour.jsx';
+                import AuthRequiredGate from './frontend/src/components/AuthRequiredGate.jsx';
+                import { publishAuthenticationRequired } from './frontend/src/api/authRequired.js';
                 import PriorityTransitionMenu from './frontend/src/issues/PriorityTransitionMenu.jsx';
                 import ProjectTrackTransitionMenu from './frontend/src/issues/ProjectTrackTransitionMenu.jsx';
                 import StatusTransitionMenu from './frontend/src/issues/StatusTransitionMenu.jsx';
@@ -35,6 +37,7 @@ test.beforeAll(() => {
                     const [priorityVersion, setPriorityVersion] = React.useState(0);
                     const [showPriority, setShowPriority] = React.useState(true);
                     const [priorityOffscreen, setPriorityOffscreen] = React.useState(false);
+                    const [dashboardFieldTop, setDashboardFieldTop] = React.useState(470);
                     const [showPriorityDuplicate, setShowPriorityDuplicate] = React.useState(false);
                     const [showSiblingPriority, setShowSiblingPriority] = React.useState(false);
                     const [previewSession, setPreviewSession] = React.useState(null);
@@ -109,6 +112,7 @@ test.beforeAll(() => {
                             setHierarchyMask,
                             setEditingMask,
                             setPriorityOffscreen,
+                            setDashboardFieldTop,
                             setShowPriorityDuplicate,
                             setShowSiblingPriority,
                             setPreviewLoading,
@@ -131,6 +135,7 @@ test.beforeAll(() => {
                             interactionOrder: () => [...interactionOrderRef.current],
                             previewSession: () => previewSession,
                             emitLifecycle: reportLifecycle,
+                            requireAuthentication: () => publishAuthenticationRequired({ loginUrl: '/login?reason=session_expired' }),
                             skipCount,
                         };
                     });
@@ -147,7 +152,7 @@ test.beforeAll(() => {
                         {Boolean(editingMask & 4) && showPriority && <span
                             key={priorityVersion}
                             ref={priorityRef}
-                            style={{ position: 'absolute', left: 40, top: priorityOffscreen ? 1250 + priorityVersion * 900 : 470 }}
+                            style={{ position: 'absolute', left: 40, top: priorityOffscreen ? 1250 + priorityVersion * 900 : dashboardFieldTop }}
                         ><PriorityTransitionMenu
                             issue={{ key: 'EPIC-1' }} fallbackIssueType="Epic" priorityLabel="High"
                             renderPriorityIcon={() => <span className="task-priority-icon high">Priority</span>}
@@ -181,7 +186,7 @@ test.beforeAll(() => {
                             previewOnly={previewFor('priority', 'EPIC-2')}
                             onPreviewLifecycleChange={reportLifecycle}
                         /></span>}
-                        {Boolean(editingMask & 2) && <span style={{ position: 'absolute', left: 140, top: 470 }}><ProjectTrackTransitionMenu
+                        {Boolean(editingMask & 2) && <span style={{ position: 'absolute', left: 140, top: dashboardFieldTop }}><ProjectTrackTransitionMenu
                             epicKey="EPIC-1" currentTrack="Flexible" isOpen={openField === 'track'}
                             options={previewOptions === 'empty' ? { options: [{ value: 'Flexible' }] } : { options: [{ value: 'Committed' }, { value: 'Flexible' }] }}
                             optionsLoading={previewLoading} error={previewError}
@@ -190,7 +195,7 @@ test.beforeAll(() => {
                             previewOnly={previewFor('track', 'EPIC-1')}
                             onPreviewLifecycleChange={reportLifecycle}
                         /></span>}
-                        {Boolean(editingMask & 1) && <span style={{ position: 'absolute', left: 280, top: 470 }}><StatusTransitionMenu
+                        {Boolean(editingMask & 1) && <span style={{ position: 'absolute', left: 280, top: dashboardFieldTop }}><StatusTransitionMenu
                             issue={{ key: 'EPIC-1' }} fallbackIssueType="Epic" statusLabel="To Do"
                             isOpen={openField === 'status'}
                             options={previewOptions === 'empty' ? { targetStatuses: [{ name: 'To Do' }] } : { targetStatuses: [{ name: 'In Progress' }, { name: 'Done' }] }}
@@ -200,7 +205,7 @@ test.beforeAll(() => {
                             previewOnly={previewFor('status', 'EPIC-1')}
                             onPreviewLifecycleChange={reportLifecycle}
                         /></span>}
-                        <button id="neighbour-control" style={{ position: 'absolute', left: neighbourLeft, top: 470 }}>Neighbour</button>
+                        <button id="neighbour-control" style={{ position: 'absolute', left: neighbourLeft, top: dashboardFieldTop }}>Neighbour</button>
                         <div id="unrelated-portal" aria-hidden="mixed" inert="legacy"><button>Portal action</button></div>
                         <OnboardingTour
                             run={run}
@@ -218,7 +223,7 @@ test.beforeAll(() => {
                 }
 
                 const root = createRoot(document.getElementById('root'));
-                root.render(<Harness />);
+                root.render(<AuthRequiredGate><Harness /></AuthRequiredGate>);
                 window.__unmountTourHarness = () => root.unmount();
             `,
         },
@@ -367,6 +372,8 @@ async function installHarness(page) {
         const lifecycle = {
             listenerAdds: { resize: 0, scroll: 0 },
             listenerRemoves: { resize: 0, scroll: 0 },
+            authRequiredAdds: 0,
+            authRequiredRemoves: 0,
             visualViewportAdds: { resize: 0, scroll: 0 },
             visualViewportRemoves: { resize: 0, scroll: 0 },
             documentListenerAdds: { pointerdown: 0, focusin: 0, keydown: 0 },
@@ -380,10 +387,12 @@ async function installHarness(page) {
         const remove = window.removeEventListener.bind(window);
         window.addEventListener = (type, listener, options) => {
             if (type === 'resize' || type === 'scroll') lifecycle.listenerAdds[type] += 1;
+            if (type === 'jep:authentication-required') lifecycle.authRequiredAdds += 1;
             return add(type, listener, options);
         };
         window.removeEventListener = (type, listener, options) => {
             if (type === 'resize' || type === 'scroll') lifecycle.listenerRemoves[type] += 1;
+            if (type === 'jep:authentication-required') lifecycle.authRequiredRemoves += 1;
             return remove(type, listener, options);
         };
         const addDocument = document.addEventListener.bind(document);
@@ -575,7 +584,7 @@ test('interactive preview uses an exact clickable hole, real owner lifecycle, an
     ]);
     const loadingMenu = page.locator('[data-priority-transition-menu]');
     await expect(loadingMenu).toBeFocused();
-    await expect(loadingMenu).toHaveAttribute('aria-label', /Read-only preview\. Loading choices\./);
+    await expect(loadingMenu).toHaveAttribute('aria-label', 'Change priority. Read-only preview.');
     await expect(loadingMenu).not.toHaveAttribute('aria-activedescendant', /.+/);
 
     await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
@@ -583,7 +592,7 @@ test('interactive preview uses an exact clickable hole, real owner lifecycle, an
     await expect(menu).toBeVisible();
     expect(await page.evaluate(() => window.__tourLifecycle.documentListenerAdds.pointerdown)).toBe(pointerAddsBeforeOpen);
     await expect(menu).toContainText('Read-only preview');
-    await expect(menu).toHaveAttribute('aria-label', /Change priority\. Read-only preview\. 2 choices available\./);
+    await expect(menu).toHaveAttribute('aria-label', 'Change priority. Read-only preview.');
     await expect(menu).toBeFocused();
     const items = menu.getByRole('menuitem');
     await expect(items).toHaveCount(2);
@@ -635,10 +644,34 @@ test('interactive explicit-empty preview is labelled, focused, and advances once
     const menu = page.locator('[data-priority-transition-menu]');
     await expect(menu).toBeFocused();
     await expect(menu).toContainText('No other priorities available.');
-    await expect(menu).toHaveAttribute('aria-label', /Read-only preview\. 0 choices available\./);
+    await expect(menu).toHaveAttribute('aria-label', 'Change priority. Read-only preview.');
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-preview-settled', 'empty');
     await menu.press('Escape');
     await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
+});
+
+test('interactive preview announces loading, ready, empty, and error through one polite atomic status', async ({ page }) => {
+    await installHarness(page);
+    await openTour(page);
+    await advanceToHeading(page, 'Preview Priority options');
+    await page.locator('[data-priority-transition-trigger]').click();
+    const menu = page.locator('[data-priority-transition-menu]');
+    const liveStatus = menu.getByRole('status');
+    const assertSingleStatus = async (text) => {
+        await expect(liveStatus).toHaveCount(1);
+        await expect(liveStatus).toHaveAttribute('aria-live', 'polite');
+        await expect(liveStatus).toHaveAttribute('aria-atomic', 'true');
+        await expect(liveStatus).toContainText(text);
+        await expect(menu.getByRole('alert')).toHaveCount(0);
+    };
+
+    await assertSingleStatus('Loading choices.');
+    await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+    await assertSingleStatus('2 choices available.');
+    await page.evaluate(() => window.__tourHarness.setPreviewOptions('empty'));
+    await assertSingleStatus('0 choices available.');
+    await page.evaluate(() => window.__tourHarness.setPreviewError('Priority options failed.'));
+    await assertSingleStatus('Choices could not be loaded.');
 });
 
 test('interactive sibling issue and different field owners cannot become preview or progression evidence', async ({ page }) => {
@@ -1059,21 +1092,46 @@ test('interactive target replacement closes old ownership before rebinding and i
     await expect(page.getByRole('button', { name: 'Next' })).toHaveCount(0);
 });
 
-test('interactive auth lock lifecycle closes with cleanup provenance and never advances', async ({ page }) => {
+test('real authentication-required event performs owned preview cleanup without advancing and removes the tour surface', async ({ page }) => {
     await installHarness(page);
     await openTour(page);
     await advanceToHeading(page, 'Preview Priority options');
     await page.locator('[data-priority-transition-trigger]').click();
-    const descriptor = await page.evaluate(() => window.__tourHarness.previewSession());
-    await page.evaluate((ownedDescriptor) => {
-        window.__tourHarness.emitLifecycle(ownedDescriptor, { state: 'auth_required', reason: '' });
-    }, descriptor);
+    await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+    await expect(page.locator('[data-priority-transition-menu]')).toBeFocused();
+    const headingCount = await page.evaluate(() => window.__tourLifecycle.headings.length);
+
+    await page.evaluate(() => window.__tourHarness.requireAuthentication());
+
+    const authDialog = page.getByRole('alertdialog');
+    await expect(authDialog).toBeVisible();
+    await expect(authDialog.getByRole('heading', { name: 'Sign in required' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Sign in again' })).toBeFocused();
     await expect(page.locator('[data-priority-transition-menu]')).toHaveCount(0);
-    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
-    expect(await page.evaluate(() => window.__tourHarness.cleanupOrder()))
-        .toContainEqual({ phase: 'request', reason: 'auth_required' });
+    await expect(page.locator('.onboarding-tour-preview-portal')).toHaveCount(0);
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    await expect(page.locator('[data-onboarding-preview-owner]')).toHaveCount(0);
+    await expect(page.locator('[data-priority-transition-trigger]')).not.toHaveAttribute('aria-describedby', /.+/);
+    await expect(page.locator('#root > div').first()).toHaveAttribute('aria-hidden', 'true');
+    expect((await page.evaluate(() => window.__tourHarness.cleanupOrder())).slice(-2)).toEqual([
+        { phase: 'request', reason: 'auth_required' },
+        { phase: 'lifecycle', reason: 'auth_required' },
+    ]);
     expect((await page.evaluate(() => window.__tourHarness.lifecycle()))
         .filter((entry) => entry.state === 'closed' && entry.reason === 'auth_required')).toHaveLength(1);
+    expect(await page.evaluate(() => window.__tourLifecycle.headings.length)).toBe(headingCount);
+    expect(await page.evaluate(() => window.__tourHarness.skipCount)).toBe(0);
+
+    const listenersBeforeUnmount = await page.evaluate(() => ({
+        adds: window.__tourLifecycle.authRequiredAdds,
+        removes: window.__tourLifecycle.authRequiredRemoves,
+    }));
+    expect(listenersBeforeUnmount.adds).toBeGreaterThan(listenersBeforeUnmount.removes);
+    await page.evaluate(() => window.__unmountTourHarness());
+    expect(await page.evaluate(() => ({
+        adds: window.__tourLifecycle.authRequiredAdds,
+        removes: window.__tourLifecycle.authRequiredRemoves,
+    }))).toEqual({ adds: listenersBeforeUnmount.adds, removes: listenersBeforeUnmount.adds });
 });
 
 test('portal, focus trap, pending Skip and Escape, and focus restoration work together', async ({ page }) => {
@@ -1238,6 +1296,75 @@ test('offscreen target scrolls once on step entry, does not fight user scroll, a
     await page.evaluate(() => window.__tourHarness.setEditingMask(7));
     await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Next' })).toHaveCount(0);
+});
+
+test('interactive Priority, Project Track, and Status previews stay viewport-fixed on a scrolled dashboard', async ({ page }) => {
+    await installHarness(page);
+    await page.evaluate(() => window.__tourHarness.setDashboardFieldTop(1400));
+    await openTour(page);
+    await advanceToHeading(page, 'Preview Priority options');
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+    const fields = [
+        {
+            heading: 'Preview Priority options',
+            trigger: '[data-priority-transition-trigger]',
+            menu: '[data-priority-transition-menu]',
+            nextHeading: 'Preview Project Track options',
+        },
+        {
+            heading: 'Preview Project Track options',
+            trigger: '[data-project-track-transition-trigger]',
+            menu: '[data-project-track-transition-menu]',
+            nextHeading: 'Preview Status options',
+        },
+        {
+            heading: 'Preview Status options',
+            trigger: '[data-status-transition-trigger]',
+            menu: '[data-status-transition-menu]',
+            nextHeading: 'Tour complete',
+        },
+    ];
+    const assertViewportContainedWithoutOverlap = async ({ trigger, menu }) => {
+        await expect(page.locator(menu)).toHaveCSS('position', 'fixed');
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const geometry = await page.evaluate(({ triggerSelector, menuSelector }) => {
+            const readRect = (selector) => {
+                const rect = document.querySelector(selector).getBoundingClientRect();
+                return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+            };
+            return {
+                viewport: { width: document.documentElement.clientWidth, height: window.innerHeight },
+                target: readRect(triggerSelector),
+                menu: readRect(menuSelector),
+                coachmark: readRect('.onboarding-tour-card'),
+            };
+        }, { triggerSelector: trigger, menuSelector: menu });
+        const isContained = (rect) => rect.left >= 0 && rect.top >= 0
+            && rect.right <= geometry.viewport.width && rect.bottom <= geometry.viewport.height;
+        const overlaps = (left, right) => left.left < right.right && left.right > right.left
+            && left.top < right.bottom && left.bottom > right.top;
+        expect(isContained(geometry.target)).toBe(true);
+        expect(isContained(geometry.menu)).toBe(true);
+        expect(isContained(geometry.coachmark)).toBe(true);
+        expect(overlaps(geometry.coachmark, geometry.target)).toBe(false);
+        expect(overlaps(geometry.coachmark, geometry.menu)).toBe(false);
+    };
+
+    for (const field of fields) {
+        await expect(page.getByRole('heading')).toHaveText(field.heading);
+        await expect.poll(() => page.locator(field.trigger).evaluate((node) => {
+            const rect = node.getBoundingClientRect();
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return hit === node || node.contains(hit);
+        })).toBe(true);
+        await page.locator(field.trigger).click();
+        await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+        await expect(page.locator(field.menu)).toBeFocused();
+        await assertViewportContainedWithoutOverlap(field);
+        await page.locator(field.menu).press('Escape');
+        await expect(page.getByRole('heading')).toHaveText(field.nextHeading);
+    }
 });
 
 test('offscreen duplicate resolution prefers a later visible candidate without needless scrolling', async ({ page }) => {

@@ -350,6 +350,7 @@ git commit -m "Add browser session lifecycle boundary"
 - Modify: `jira_server.py`
 - Modify: `tests/test_auth_context_db.py`
 - Modify: `tests/test_db_oauth_cutover.py`
+- Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
 
 - [ ] **Step 1: Write failing request-context tests**
 
@@ -380,7 +381,7 @@ Retain the existing legacy exact-version tests. Add a Flask test proving one val
 Run:
 
 ```bash
-python3 -m unittest tests.test_auth_context_db tests.test_db_oauth_cutover
+.venv/bin/python -m unittest tests.test_auth_context_db tests.test_db_oauth_cutover
 ```
 
 Expected: FAIL because `RequestAuthContext` has no `browser_session_id` and resolver still rejects shared token rotation as stale.
@@ -458,7 +459,7 @@ After a successful legacy resolution in `current_request_auth_context`, create o
 Run:
 
 ```bash
-python3 -m unittest tests.test_auth_context_db tests.test_db_oauth_cutover
+.venv/bin/python -m unittest tests.test_auth_context_db tests.test_db_oauth_cutover
 ```
 
 Expected: PASS. Existing stale legacy-cookie tests still return `auth_connection_stale`; opaque rows follow current token version.
@@ -466,7 +467,7 @@ Expected: PASS. Existing stale legacy-cookie tests still return `auth_connection
 - [ ] **Step 7: Commit the request-resolution slice**
 
 ```bash
-git add backend/auth/context.py backend/auth/db_context.py jira_server.py tests/test_auth_context_db.py tests/test_db_oauth_cutover.py
+git add backend/auth/context.py backend/auth/db_context.py jira_server.py tests/test_auth_context_db.py tests/test_db_oauth_cutover.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md
 git commit -m "Resolve OAuth requests through browser sessions"
 ```
 

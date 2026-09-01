@@ -24,6 +24,7 @@ class RequestAuthContext:
     account_status: str
     is_admin: bool
     project_access: tuple[ProjectAccessSnapshot, ...] = field(default_factory=tuple)
+    browser_session_id: str = ''
 
 
 def stable_local_workspace_id(environment_key, jira_site_url, cloud_id=""):

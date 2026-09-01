@@ -6,6 +6,7 @@ import argparse
 import base64
 import copy
 import csv
+import dataclasses
 import logging
 import os
 import re
@@ -43,6 +44,7 @@ from backend.auth.cache_policy import (
 )
 from backend.auth.context import RequestAuthContext, build_auth_cache_key, stable_local_workspace_id
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
+from backend.auth.db_browser_sessions import create_browser_session
 from backend.auth.csrf import validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
@@ -433,6 +435,9 @@ def _oauth_token_store_persistence_enabled():
 def _db_oauth_browser_session_payload(data):
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or not database_storage_enabled():
         return {}
+    browser_session_id = str((data or {}).get('db_browser_session_id') or '').strip()
+    if browser_session_id:
+        return {'db_browser_session_id': browser_session_id}
     connection_id = str((data or {}).get('db_auth_connection_id') or '').strip()
     if not connection_id:
         return {}
@@ -555,10 +560,21 @@ def current_request_auth_context():
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
         db_session_data = db_oauth_browser_session_data()
         if db_session_data:
-            return resolve_db_request_auth_context(
+            context = resolve_db_request_auth_context(
                 db_session_data,
                 required_scopes=ATLASSIAN_SCOPES,
             )
+            if context.browser_session_id:
+                return context
+            with session_scope() as db_session:
+                browser_session = create_browser_session(
+                    db_session,
+                    user_id=context.user_id,
+                    workspace_id=context.workspace_id,
+                    auth_connection_id=context.auth_connection_id,
+                )
+            session['db_oauth_session'] = {'db_browser_session_id': browser_session.id}
+            return dataclasses.replace(context, browser_session_id=browser_session.id)
     session_data = jira_session_data()
     site_url = (session_data.get('site_url') or JIRA_URL or '').strip().rstrip('/')
     cloud_id = session_data.get('cloudid', '')

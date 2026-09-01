@@ -5,6 +5,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from backend.auth.jira_auth import AuthError
+from backend.auth.db_browser_sessions import create_browser_session
 from backend.auth.db_context import (
     invalidate_auth_status_cache,
     resolve_db_request_auth_context,
@@ -78,6 +79,57 @@ class DbAuthContextTests(unittest.TestCase):
             session.commit()
             return user.id, workspace.id, connection.id
 
+    def _seed_browser_sessions(self, *, token_version=3):
+        user_id, workspace_id, connection_id = self._seed_connection(token_version=token_version)
+        with self.factory() as session:
+            first = create_browser_session(
+                session,
+                user_id=user_id,
+                workspace_id=workspace_id,
+                auth_connection_id=connection_id,
+            )
+            second = create_browser_session(
+                session,
+                user_id=user_id,
+                workspace_id=workspace_id,
+                auth_connection_id=connection_id,
+            )
+            session.commit()
+        return first.id, second.id, connection_id
+
+    def _set_connection_token_version(self, connection_id, token_version):
+        with self.factory() as session:
+            connection = session.get(models.AuthConnection, connection_id)
+            connection.token_version = token_version
+            session.commit()
+
+    def _seed_mismatched_browser_session(self):
+        first_id, _, connection_id = self._seed_browser_sessions()
+        with self.factory() as session:
+            other_user = models.User(
+                external_provider='atlassian',
+                external_subject='account-456',
+                email='other@example.com',
+                display_name='Other User',
+                account_type='user',
+                status='active',
+                created_by='test',
+            )
+            other_workspace = models.Workspace(
+                environment_key='other',
+                name='Other Example',
+                jira_site_url='https://other.atlassian.net',
+                jira_cloud_id='cloud-456',
+                created_by='test',
+            )
+            session.add_all([other_user, other_workspace])
+            session.flush()
+            connection = session.get(models.AuthConnection, connection_id)
+            connection.user_id = other_user.id
+            connection.workspace_id = other_workspace.id
+            session.commit()
+        return first_id
+
     def test_resolves_active_user_and_connection_from_database(self):
         user_id, workspace_id, connection_id = self._seed_connection()
 
@@ -132,6 +184,54 @@ class DbAuthContextTests(unittest.TestCase):
             )
 
         self.assertEqual(raised.exception.code, 'auth_connection_stale')
+
+    def test_browser_sessions_ignore_cookie_token_version_and_return_current_connection_version(self):
+        first_id, second_id, connection_id = self._seed_browser_sessions(token_version=3)
+        self._set_connection_token_version(connection_id, 4)
+
+        first_context = resolve_db_request_auth_context(
+            {'db_browser_session_id': first_id, 'db_token_version': '3'},
+            database_url=self.database_url,
+            required_scopes=FULL_SCOPE,
+        )
+        second_context = resolve_db_request_auth_context(
+            {'db_browser_session_id': second_id, 'db_token_version': '3'},
+            database_url=self.database_url,
+            required_scopes=FULL_SCOPE,
+        )
+
+        self.assertEqual(first_context.browser_session_id, first_id)
+        self.assertEqual(second_context.browser_session_id, second_id)
+        self.assertEqual(first_context.token_version, '4')
+        self.assertEqual(second_context.token_version, '4')
+
+    def test_missing_browser_session_is_rejected_without_legacy_connection_fallback(self):
+        _, _, connection_id = self._seed_connection()
+
+        with self.assertRaises(AuthError) as raised:
+            resolve_db_request_auth_context(
+                {
+                    'db_browser_session_id': 'missing-browser-session',
+                    'db_auth_connection_id': connection_id,
+                    'db_token_version': '3',
+                },
+                database_url=self.database_url,
+                required_scopes=FULL_SCOPE,
+            )
+
+        self.assertEqual(raised.exception.code, 'auth_required')
+
+    def test_browser_session_cannot_cross_workspace_or_connection_owner(self):
+        browser_session_id = self._seed_mismatched_browser_session()
+
+        with self.assertRaises(AuthError) as raised:
+            resolve_db_request_auth_context(
+                {'db_browser_session_id': browser_session_id},
+                database_url=self.database_url,
+                required_scopes=FULL_SCOPE,
+            )
+
+        self.assertEqual(raised.exception.code, 'auth_required')
 
     def test_missing_required_scopes_are_rejected(self):
         _, _, connection_id = self._seed_connection(scopes='read:me offline_access')

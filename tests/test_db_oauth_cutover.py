@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from backend.auth.key_provider import key_provider_from_env
 from backend.auth.token_crypto import decrypt_token
+from backend.auth.db_browser_sessions import create_browser_session, resolve_browser_session
 from backend.auth.db_tokens import store_oauth_callback_tokens
 from backend.db import engine as db_engine
 from backend.db import models
@@ -194,6 +195,83 @@ class DbOauthCutoverTests(unittest.TestCase):
         self.assertEqual(context.user_id, result.user_id)
         self.assertEqual(context.auth_connection_id, result.connection_id)
         self.assertEqual(context.workspace_id, result.workspace_id)
+
+    def test_valid_legacy_cookie_is_replaced_with_opaque_browser_session(self):
+        result = self._store_callback()
+        with self.client.session_transaction() as session:
+            session['db_oauth_session'] = {
+                'db_auth_connection_id': result.connection_id,
+                'db_token_version': result.session_metadata['db_token_version'],
+            }
+
+        with patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_URL': self.database_url,
+        }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'ATLASSIAN_SCOPES', jira_server.ATLASSIAN_SCOPES):
+            response = self.client.get('/api/auth/status')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        with self.client.session_transaction() as session:
+            payload = session['db_oauth_session']
+        self.assertEqual(set(payload), {'db_browser_session_id'})
+        browser_session_id = payload['db_browser_session_id']
+        with self.factory() as session:
+            handle = resolve_browser_session(session, browser_session_id)
+        self.assertIsNotNone(handle)
+        self.assertEqual(handle.auth_connection_id, result.connection_id)
+
+    def test_stale_legacy_cookie_is_not_upgraded(self):
+        result = self._store_callback()
+        legacy_payload = {
+            'db_auth_connection_id': result.connection_id,
+            'db_token_version': '0',
+        }
+        with self.client.session_transaction() as session:
+            session['db_oauth_session'] = legacy_payload
+
+        with patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_URL': self.database_url,
+        }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'ATLASSIAN_SCOPES', jira_server.ATLASSIAN_SCOPES):
+            response = self.client.get('/api/auth/status')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertTrue(response.get_json()['loginRequired'])
+        with self.client.session_transaction() as session:
+            self.assertEqual(session['db_oauth_session'], legacy_payload)
+
+    def test_opaque_cookie_resolution_does_not_rewrite_the_flask_session(self):
+        result = self._store_callback()
+        with self.factory() as session:
+            handle = create_browser_session(
+                session,
+                user_id=result.user_id,
+                workspace_id=result.workspace_id,
+                auth_connection_id=result.connection_id,
+            )
+            session.commit()
+
+        with jira_server.app.test_request_context('/'):
+            jira_server.session['db_oauth_session'] = {'db_browser_session_id': handle.id}
+            jira_server.session.modified = False
+            with patch.dict(os.environ, {
+                'CONFIG_STORAGE_BACKEND': 'db',
+                'DATABASE_URL': self.database_url,
+            }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                 patch.object(jira_server, 'ATLASSIAN_SCOPES', jira_server.ATLASSIAN_SCOPES), \
+                 patch.object(
+                     jira_server,
+                     'create_browser_session',
+                     side_effect=AssertionError('opaque cookies must not create browser sessions'),
+                 ) as create_session:
+                context = jira_server.current_request_auth_context()
+                session_was_modified = jira_server.session.modified
+
+        self.assertEqual(context.browser_session_id, handle.id)
+        self.assertFalse(session_was_modified)
+        create_session.assert_not_called()
 
     def test_oauth_callback_writes_db_rows_while_storing_db_browser_session(self):
         result = self._store_callback_through_route()

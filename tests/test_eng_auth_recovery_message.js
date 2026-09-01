@@ -12,6 +12,7 @@ function loadUseEngSprintData(fetchEngTasks, refreshAuthSession = async () => ({
         .replace(/import\s+\{[\s\S]*?\}\s+from\s+'..\/api\/authApi\.js';\n/, '')
         .replace(/import\s+\{[\s\S]*?\}\s+from\s+'..\/api\/authRequired\.js';\n/, '')
         .replace(/import\s+\{[\s\S]*?\}\s+from\s+'.\/engTaskUtils\.js';\n/, '')
+        .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
 
     const dependencies = {
@@ -176,11 +177,11 @@ test('ENG task 401 responses are not retried by a feature hook', async () => {
             },
         });
 
-        const tasks = await api.fetchTasks('product');
+        const outcome = await api.fetchTasks('product');
 
         assert.equal(refreshCalls.length, 0);
         assert.equal(calls.length, 1);
-        assert.deepEqual(tasks, []);
+        assert.equal(outcome, 'non_auth_failure');
     } finally {
         console.log = previousConsoleLog;
         console.error = previousConsoleError;
@@ -216,9 +217,9 @@ test('ENG task stale auth errors show reconnect text after refresh cannot recove
 });
 
 test('ENG loaders use an auth sentinel before replacing task and sprint state', () => {
-    assert.ok(hookSource.includes("const AUTHENTICATION_REQUIRED_RESULT = Symbol('authentication-required')"));
-    assert.ok(hookSource.includes('if (data === AUTHENTICATION_REQUIRED_RESULT) return;'));
-    assert.ok(hookSource.indexOf('if (data === AUTHENTICATION_REQUIRED_RESULT) return;') < hookSource.indexOf('setProductTasks(data);'));
+    assert.ok(hookSource.includes("AUTH_REQUIRED: 'auth_required'"));
+    assert.ok(hookSource.includes('if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;'));
+    assert.ok(hookSource.indexOf('if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;') < hookSource.indexOf('setProductTasks(data);'));
 });
 
 test('ENG product loader preserves task and sprint markers on typed auth', async () => {
@@ -235,10 +236,54 @@ test('ENG product loader preserves task and sprint markers on typed auth', async
             setTasksFetched: value => mutations.push(['fetched', value]),
         },
     });
-    await api.loadProductTasks();
+    const outcome = await api.loadProductTasks();
+    assert.equal(outcome, 'auth_required');
     assert.deepEqual(mutations, []);
     assert.deepEqual(sprintLoadRef.current, { sprintId: 'old', product: true, tech: true });
     assert.equal(lastLoadedSprintRef.current, 'old');
+});
+
+test('ENG product loader reports applied success for a legitimate empty result', async () => {
+    const { api } = createHarness(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ issues: [], epics: {}, epicsInScope: [] }),
+    }));
+
+    assert.equal(await api.loadProductTasks(), 'applied');
+});
+
+test('ENG product loader reports a non-auth failure', async () => {
+    const previousConsoleError = console.error;
+    console.error = () => {};
+    try {
+        const { api } = createHarness(async () => {
+            throw new Error('offline');
+        });
+
+        assert.equal(await api.loadProductTasks(), 'non_auth_failure');
+    } finally {
+        console.error = previousConsoleError;
+    }
+});
+
+test('ENG product loader reports a typed auth interruption', async () => {
+    const authError = Object.assign(new Error('auth'), { name: 'AuthenticationRequiredError' });
+    const { api } = createHarness(async () => {
+        throw authError;
+    });
+
+    assert.equal(await api.loadProductTasks(), 'auth_required');
+});
+
+test('ENG product loader reports a stale ignored result', async () => {
+    const { api } = createHarness(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ issues: [{ key: 'PROD-1' }], epics: {}, epicsInScope: [] }),
+    }));
+
+    assert.equal(await api.loadProductTasks({ shouldApplyResult: () => false }), 'ignored');
 });
 
 for (const project of ['product', 'tech']) {

@@ -19,6 +19,23 @@ export const selectedTaskKeysFromMap = (selectedTasks, validTaskKeySet = null) =
     .filter(key => selectedTasks[key] && (!validTaskKeySet || validTaskKeySet.has(key)))
     .sort();
 
+export function resolvePlanningAuthResume({ resume, planningScopeKey, validTaskKeys, validTeamIds } = {}) {
+    if (!resume || resume.scopeKey !== planningScopeKey) return null;
+    const tasks = [...new Set(resume.selectedTaskKeys || [])]
+        .filter(key => validTaskKeys.has(key))
+        .sort();
+    const teams = [...new Set(resume.selectedTeams || [])]
+        .filter(teamId => validTeamIds.has(teamId))
+        .sort();
+    return {
+        selectedTaskKeys: tasks,
+        selectedTeams: teams,
+        selectionMode: resume.selectionMode === PLANNING_SELECTION_MODE_DEFAULT_ALL
+            ? PLANNING_SELECTION_MODE_DEFAULT_ALL
+            : PLANNING_SELECTION_MODE_MANUAL,
+    };
+}
+
 export function resolvePlanningSelectionForDashboard({
     selectedTasks,
     selectedTeams,

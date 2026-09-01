@@ -22,10 +22,13 @@
 - Modify: `frontend/src/api/http.js`
 - Modify: `frontend/src/components/AuthRequiredGate.jsx`
 - Modify: `frontend/src/dashboard.jsx`
+- Modify: `frontend/src/eng/useEngSprintData.js`
 - Modify: `frontend/src/eng/planningSelectionActions.js`
 - Modify: `frontend/src/styles/shared/shell.css`
 - Modify: `tests/test_auth_required.js`
 - Modify: `tests/test_planning_selection_state.js`
+- Modify: `tests/test_eng_auth_recovery_message.js`
+- Modify: `tests/test_dashboard_alert_source_guards.js`
 - Modify: `tests/test_auth_isolation_source_guard.js`
 - Modify: `tests/ui/epm_home_token_fixture.js`
 - Modify: `tests/ui/global_auth_lock.spec.js`
@@ -271,12 +274,15 @@ git commit -m "Add tab-local auth recovery capsule"
 - Modify: `frontend/src/api/authRequired.js`
 - Modify: `frontend/src/api/http.js`
 - Modify: `frontend/src/dashboard.jsx`
+- Modify: `frontend/src/eng/useEngSprintData.js`
 - Modify: `frontend/src/eng/planningSelectionActions.js`
 - Modify: `tests/test_auth_required.js`
+- Modify: `tests/test_eng_auth_recovery_message.js`
+- Modify: `tests/test_dashboard_alert_source_guards.js`
 - Modify: `tests/test_planning_selection_state.js`
 - Modify: `tests/ui/planning_selection_defaults.spec.js`
 
-- [ ] **Step 1: Write failing capture and reconciliation tests**
+- [x] **Step 1: Write failing capture and reconciliation tests**
 
 Extend the auth-required unit harness to prove the event carries both a stable `requestStartedAt` captured before `fetch()` and a stable `lockedAt` captured when the first auth failure latches, but still stores no identity or feature state in the shared window latch. Prove a delayed `401` preserves its earlier request start, repeated publications retain the first frozen state/timestamps, and invalid injected timestamps fall back to the current clock. Extend Planning tests with an explicit recovery override:
 
@@ -303,17 +309,22 @@ test('recovered selection overrides shared storage only for its exact loaded sco
 
 Assert a mismatched scope returns `null`, default-all mode remains valid, and recovered keys are deterministically sorted.
 
-- [ ] **Step 2: Run focused tests to verify they fail**
+Add narrow loader-outcome coverage proving that a legitimate empty task response reports applied success, a non-auth failure reports terminal failure, a typed auth interruption reports auth-required, and an aborted or stale response reports ignored without applying state.
+
+- [x] **Step 2: Run focused tests to verify they fail**
 
 Run:
 
 ```bash
-node --test tests/test_auth_required.js tests/test_planning_selection_state.js
+fnm exec --using 20 -- node --test tests/test_auth_required.js tests/test_planning_selection_state.js
+fnm exec --using 20 -- node --test tests/test_eng_auth_recovery_message.js
 ```
 
 Expected: FAIL because request causality, `lockedAt`, and `resolvePlanningAuthResume` do not exist.
 
-- [ ] **Step 3: Carry request causality into the deterministic auth latch and add Planning reconciliation**
+**Observed evidence (2026-09-01):** the first command exited `1` with 17/22 passing and the five intended request-causality/Planning-helper failures. After those seams were implemented, the additive loader-outcome RED command exited `1` with 8/12 passing and the four intended missing-outcome failures.
+
+- [x] **Step 3: Carry request causality into the deterministic auth latch and add Planning reconciliation**
 
 In `apiFetch`, capture `requestStartedAt = Date.now()` immediately before calling `fetch()`. Pass it to `publishAuthenticationRequired` for every `401`/`auth_required` response from that request. Extend `stateFor` in `authRequired.js` to include the sanitized finite nonnegative `requestStartedAt` and `lockedAt: Date.now()` only when creating the first latched state. Repeated publications return the existing frozen state and timestamps. This timestamp is causality metadata only: it contains no URL, payload, identity, or response data.
 
@@ -338,7 +349,7 @@ export function resolvePlanningAuthResume({ resume, planningScopeKey, validTaskK
 }
 ```
 
-- [ ] **Step 4: Capture the latest safe App snapshot once on lock**
+- [x] **Step 4: Capture the latest safe App snapshot once on lock**
 
 In `dashboard.jsx`, keep `authResumePrincipalRef`, `authResumeSnapshotRef`, `pendingShellAuthResumeRef`, and `pendingPlanningAuthResumeRef`. Update the snapshot ref each render with only:
 
@@ -364,7 +375,7 @@ authResumeSnapshotRef.current = {
 
 Install one `AUTH_REQUIRED_EVENT` listener that obtains storage through `getAuthResumeStorage(window)` and calls `writeAuthResumeState(tabStorage, authResumeSnapshotRef.current)` only when storage and both principal ids exist. If the latch existed before listener installation, perform the same one-time call after mount. A blocked storage getter skips capsule capture without breaking the terminal gate. Never capture config drafts, task objects, Scenario data, connection inputs, or error bodies.
 
-- [ ] **Step 5: Validate and stage restore after authenticated config bootstrap**
+- [x] **Step 5: Validate and stage restore after authenticated config bootstrap**
 
 After `fetchAppConfig(BACKEND_URL)` succeeds, derive the principal only from the authenticated private view:
 
@@ -382,27 +393,32 @@ const resume = resumeStorage
 
 If `resume` exists, stage `resume.view` in `pendingShellAuthResumeRef` and `resume.planning` in `pendingPlanningAuthResumeRef`; do not clear or apply dependent values directly inside the config fetch. Missing storage continues ordinary bootstrap without recovery. Apply only safe shell values when their owning bootstrap data is ready: an active visible group after groups finish loading, an available sprint after `availableSprints` loads, a permitted Settings tab after edit/connection gates resolve, and EPM only after `homeTokenConnectionLoaded && showEpmNavigation`. Resolve the sprint with `availableSprints.find(sprint => String(sprint.id) === resume.view.selectedSprint)` and apply that row's original `id` so numeric/string id behavior remains unchanged. Restore the canonical ENG mode (`catch-up`, `planning`, `statistics`, `scenario`, or `board`) without emitting a user-selection analytics event. Invalid or unavailable values use the ordinary bootstrap fallback. Do not apply task keys before the exact scoped task payload arrives.
 
-- [ ] **Step 6: Apply Planning restore after exact scope hydration**
+- [x] **Step 6: Apply Planning restore after exact scope hydration**
 
 At the existing Planning reconciliation effect, give a matching pending recovery state precedence over shared `localStorage` for one pass. Reconcile it against the loaded task/team sets with `resolvePlanningAuthResume`, apply the maps/mode, persist the reconciled state through `persistPlanningSelectionState`, rebuild `planningLoadedSelectionRef`, clear undo, then clear the pending Planning ref. Clear `sessionStorage` only after every staged shell dependency has either applied or resolved to its normal fallback and Planning has reconciled when requested.
 
 Treat the first post-auth Planning hydration as a one-shot terminal decision. If its matching task payload succeeds, reconcile as above. If it rejects for a non-auth reason, or permission/scope resolution proves the requested Planning scope unavailable, abandon the pending Planning restore, clear the capsule, retain the ordinary visible error/default state, and let later manual retry/reload use normal persisted selection only. A new `AuthenticationRequiredError` is another recovery interruption rather than a settled hydration failure, so keep the capsule until that recovery succeeds/fails or the 30-minute TTL expires. For non-Planning recovery, clear the capsule after the staged shell state settles. For invalid group/sprint/view values, apply normal defaults and mark that dependency settled. Never retry an abandoned restore on a later ordinary load.
 
-- [ ] **Step 7: Run focused capture/restore tests**
+`fetchTasks`, `loadProductTasks`, and `loadTechTasks` expose distinct additive outcomes for applied success (including a legitimate empty payload), non-auth failure, typed auth-required interruption, and ignored/aborted/stale work. Before starting the two exact-scope loads, the dashboard records a pending recovery load. It publishes a current-scope settled outcome only after `Promise.all` completes and triggers a minimal reconciliation revision. Planning remains pending while either result is ignored or auth-required; only two applied results reconcile, while either non-auth failure abandons recovery. Delayed React error state is not a recovery signal.
+
+- [x] **Step 7: Run focused capture/restore tests**
 
 Run:
 
 ```bash
-node --test tests/test_auth_required.js tests/test_auth_resume_state.js tests/test_planning_selection_state.js
-npx playwright test tests/ui/planning_selection_defaults.spec.js
+fnm exec --using 20 -- node --test tests/test_auth_required.js tests/test_auth_resume_state.js tests/test_planning_selection_state.js tests/test_eng_auth_recovery_message.js
+fnm exec --using 20 -- node --test tests/test_dashboard_alert_source_guards.js tests/test_auth_isolation_source_guard.js
+fnm exec --using 20 -- npx playwright test tests/ui/planning_selection_defaults.spec.js
 ```
 
 Expected: PASS. Existing normal `localStorage` selection behavior remains unchanged outside one-shot recovery. Add a non-auth Planning hydration failure assertion that clears the capsule/pending ref and prove a later manual reload cannot resurrect the pre-auth task keys; retain the capsule only when hydration is interrupted by a new typed auth-required error.
 
-- [ ] **Step 8: Commit the capture/restore slice**
+**Observed evidence (2026-09-01):** the pinned Node 20 focused command exited `0` with 50/50 passing; the adjacent source-guard command exited `0` with 16/16 passing; and the pinned Planning Playwright command exited `0` with 12/12 passing. The three decisive exact-scope success, non-auth abandonment/reload, and typed-auth retention browser cases also passed together 3/3.
+
+- [x] **Step 8: Commit the capture/restore slice**
 
 ```bash
-git add frontend/src/api/authRequired.js frontend/src/api/http.js frontend/src/dashboard.jsx frontend/src/eng/planningSelectionActions.js tests/test_auth_required.js tests/test_planning_selection_state.js tests/ui/planning_selection_defaults.spec.js
+git add frontend/src/api/authRequired.js frontend/src/api/http.js frontend/src/dashboard.jsx frontend/src/eng/useEngSprintData.js frontend/src/eng/planningSelectionActions.js tests/test_auth_required.js tests/test_eng_auth_recovery_message.js tests/test_dashboard_alert_source_guards.js tests/test_planning_selection_state.js tests/ui/planning_selection_defaults.spec.js docs/plans/EXEC-multi-device-browser-sessions-02-tab-resume.md
 git commit -m "Restore Planning state after reauthentication"
 ```
 

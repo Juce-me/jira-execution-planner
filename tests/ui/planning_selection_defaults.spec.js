@@ -86,8 +86,9 @@ const secondFutureStories = [
     makeStory('PLAN-5', 'Accepted', secondFutureSprintId, secondFutureSprintName, 'PLAN-EPIC-2'),
 ];
 
-async function installPlanningFixture(page) {
+async function installPlanningFixture(page, { taskFailureMode = '' } = {}) {
     const calls = [];
+    let futureProductTaskAttempts = 0;
     let groupsConfigPayload = {
         version: 1,
         configRevision: 1,
@@ -146,6 +147,8 @@ async function installPlanningFixture(page) {
                 userCanEditSettings: true,
                 environmentConfigExists: true,
                 viewConfig: {
+                    workspaceId: 'workspace-test',
+                    viewConfigId: 'view-test',
                     version: 1,
                     view: {
                         selectedView: 'eng',
@@ -192,6 +195,18 @@ async function installPlanningFixture(page) {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
             const sprint = url.searchParams.get('sprint');
+            if (project === 'product' && !purpose && String(sprint) === String(futureSprintId)) {
+                futureProductTaskAttempts += 1;
+                if (taskFailureMode === 'non-auth-once' && futureProductTaskAttempts === 1) {
+                    return json(route, { error: 'synthetic_task_failure' }, 500);
+                }
+                if (taskFailureMode === 'auth-required') {
+                    return json(route, {
+                        error: 'auth_required',
+                        loginUrl: '/login?reason=session_expired',
+                    }, 401);
+                }
+            }
             const issues = project === 'product' && !purpose
                 ? (String(sprint) === String(secondFutureSprintId) ? secondFutureStories : futureStories)
                 : [];
@@ -211,7 +226,50 @@ async function installPlanningFixture(page) {
         if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
         return json(route, { error: `Unexpected ${request.method()} ${url.pathname}` }, 404);
     });
-    return { calls, getGroupsConfig: () => groupsConfigPayload };
+    return {
+        calls,
+        getGroupsConfig: () => groupsConfigPayload,
+        getFutureProductTaskAttempts: () => futureProductTaskAttempts,
+    };
+}
+
+async function seedPlanningAuthResume(page, {
+    selectedTaskKeys = ['PLAN-2'],
+    localSelectedTaskKeys = ['PLAN-1'],
+} = {}) {
+    await page.addInitScript(({ sprintId, selectedTaskKeys, localSelectedTaskKeys }) => {
+        const seedMarker = 'planning_auth_resume_fixture_seeded';
+        if (window.sessionStorage.getItem(seedMarker)) return;
+        window.sessionStorage.setItem(seedMarker, 'true');
+        const scopeKey = `planning::${sprintId}::group-alpha`;
+        window.sessionStorage.setItem('jira_dashboard_auth_resume_v1', JSON.stringify({
+            version: 1,
+            capturedAt: Date.now(),
+            principal: { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
+            view: {
+                selectedView: 'eng',
+                activeGroupId: 'group-alpha',
+                selectedSprint: String(sprintId),
+                engMode: 'planning',
+                settingsOpen: false,
+                settingsTab: 'teams',
+            },
+            planning: {
+                scopeKey,
+                selectedTaskKeys,
+                selectedTeams: ['team-alpha'],
+                selectionMode: 'manual',
+            },
+        }));
+        window.localStorage.setItem('jira_dashboard_planning_state_v1', JSON.stringify({
+            [scopeKey]: {
+                selectedTaskKeys: localSelectedTaskKeys,
+                selectedTeams: ['team-alpha'],
+                selectedTeamId: 'team-alpha',
+                selectionMode: 'manual',
+            },
+        }));
+    }, { sprintId: futureSprintId, selectedTaskKeys, localSelectedTaskKeys });
 }
 
 async function openFuturePlanning(page) {
@@ -305,6 +363,99 @@ test('new future planning sprint defaults to all selected stories', async ({ pag
 
     await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
     await expect(page.getByRole('button', { name: 'Select All' })).toHaveClass(/active/);
+});
+
+test('auth lock captures only the latest safe dashboard and Planning snapshot', async ({ page }) => {
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+    await openFuturePlanning(page);
+    await storyCheckbox(page, 'PLAN-2').click();
+    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
+
+    await page.evaluate(() => {
+        window.dispatchEvent(new CustomEvent('jep:authentication-required'));
+    });
+
+    await expect.poll(() => page.evaluate(() => {
+        const raw = window.sessionStorage.getItem('jira_dashboard_auth_resume_v1');
+        return raw ? JSON.parse(raw) : null;
+    })).toMatchObject({
+        principal: { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
+        view: {
+            selectedView: 'eng',
+            activeGroupId: 'group-alpha',
+            selectedSprint: String(futureSprintId),
+            engMode: 'planning',
+            settingsOpen: false,
+            settingsTab: 'scope',
+        },
+        planning: {
+            scopeKey: `planning::${futureSprintId}::group-alpha`,
+            selectedTaskKeys: ['PLAN-1', 'PLAN-3'],
+            selectedTeams: ['all'],
+            selectionMode: 'manual',
+        },
+    });
+    const storedKeys = await page.evaluate(() => {
+        const value = JSON.parse(window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'));
+        return {
+            top: Object.keys(value).sort(),
+            principal: Object.keys(value.principal).sort(),
+            view: Object.keys(value.view).sort(),
+            planning: Object.keys(value.planning).sort(),
+            raw: JSON.stringify(value),
+        };
+    });
+    expect(storedKeys.top).toEqual(['capturedAt', 'planning', 'principal', 'version', 'view']);
+    expect(storedKeys.principal).toEqual(['viewConfigId', 'workspaceId']);
+    expect(storedKeys.view).toEqual(['activeGroupId', 'engMode', 'selectedSprint', 'selectedView', 'settingsOpen', 'settingsTab']);
+    expect(storedKeys.planning).toEqual(['scopeKey', 'selectedTaskKeys', 'selectedTeams', 'selectionMode']);
+    expect(storedKeys.raw).not.toContain('summary');
+    expect(storedKeys.raw).not.toContain('response');
+    expect(storedKeys.raw).not.toContain('token');
+});
+
+test('matching auth resume overrides shared Planning state after exact-scope hydration', async ({ page }) => {
+    await seedPlanningAuthResume(page);
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(page.locator('.sprint-dropdown-toggle').first()).toContainText(futureSprintName);
+    await expect(selectedStat(page)).toContainText('1 · 1.0 SP');
+    await expect(storyCheckbox(page, 'PLAN-1')).not.toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+});
+
+test('non-auth Planning hydration failure abandons recovery without resurrecting it on reload', async ({ page }) => {
+    await seedPlanningAuthResume(page);
+    const fixture = await installPlanningFixture(page, { taskFailureMode: 'non-auth-once' });
+    await page.goto(appBaseUrl);
+
+    await expect(page.getByText(/Failed to load tasks:/)).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+    expect(fixture.getFutureProductTaskAttempts()).toBe(1);
+
+    await page.reload();
+    await openFuturePlanning(page);
+    await expect(selectedStat(page)).toContainText('1 · 1.0 SP');
+    await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-2')).not.toBeChecked();
+    expect(fixture.getFutureProductTaskAttempts()).toBeGreaterThan(1);
+});
+
+test('a new typed auth interruption retains the staged Planning capsule', async ({ page }) => {
+    await seedPlanningAuthResume(page);
+    await installPlanningFixture(page, { taskFailureMode: 'auth-required' });
+    await page.goto(appBaseUrl);
+
+    await expect(page.getByRole('alertdialog', { name: 'Sign in required' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).not.toBe(null);
+    const stagedKeys = await page.evaluate(() => JSON.parse(
+        window.sessionStorage.getItem('jira_dashboard_auth_resume_v1')
+    ).planning.selectedTaskKeys);
+    expect(stagedKeys).toEqual(['PLAN-2']);
 });
 
 test('planning story selection controls align with story-point metadata', async ({ page }) => {

@@ -17,6 +17,7 @@ import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import AuthRequiredGate from './components/AuthRequiredGate.jsx';
 import { AUTH_REQUIRED_EVENT, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './api/authRequired.js';
+import { clearAuthResumeState, getAuthResumeStorage, readAuthResumeState, writeAuthResumeState } from './api/authResumeState.js';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
@@ -29,7 +30,7 @@ import EngModeControl from './eng/EngModeControl.jsx';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
-import { useEngSprintData } from './eng/useEngSprintData.js';
+import { ENG_TASK_LOAD_OUTCOME, useEngSprintData } from './eng/useEngSprintData.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
 import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
 import { useEngProjectTrackTransitions } from './eng/useEngProjectTrackTransitions.js';
@@ -42,7 +43,7 @@ import ProjectTrackTransitionMenu from './issues/ProjectTrackTransitionMenu.jsx'
 import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkStatus, migrateEngCatchUpFilters, readEngCatchUpFilterState, resolveEngCatchUpFilters } from './eng/engCatchUpFilters.js';
 import { useEngBoardFilters } from './eng/useEngBoardFilters.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
-import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
+import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningAuthResume, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import { classifyCapacityIssue } from './capacityClassification.mjs';
@@ -726,6 +727,17 @@ import {
             const planningHydratedScopeRef = useRef('');
             const planningLoadedSelectionRef = useRef(null);
             const planningBaselineScopeRef = useRef('');
+            const authResumePrincipalRef = useRef(null);
+            const authResumeSnapshotRef = useRef(null);
+            const pendingShellAuthResumeRef = useRef(null);
+            const pendingPlanningAuthResumeRef = useRef(null);
+            const authResumeShellSettledRef = useRef(null);
+            const planningAuthResumeLoadRef = useRef(null);
+            const [planningAuthResumeLoadRevision, setPlanningAuthResumeLoadRevision] = useState(0);
+            const clearAuthResumeWhenSettled = React.useCallback(() => {
+                if (pendingShellAuthResumeRef.current || pendingPlanningAuthResumeRef.current) return;
+                clearAuthResumeState(getAuthResumeStorage(window));
+            }, []);
             const teamSelectionHydratedScopeRef = useRef('');
             const teamSelectionHydratedSelectionRef = useRef(null); const teamSelectionCarryForwardRef = useRef(null);
             const teamSelectionSkipPersistScopeRef = useRef('');
@@ -4795,6 +4807,54 @@ import {
                 if (selectedSprint === null || !activeGroupId) return '';
                 return buildTeamSelectionScopeKey({ sprintId: selectedSprint, groupId: activeGroupId });
             }, [selectedSprint, activeGroupId]);
+            authResumeSnapshotRef.current = {
+                principal: authResumePrincipalRef.current,
+                view: {
+                    selectedView,
+                    activeGroupId,
+                    selectedSprint: selectedSprint === null ? '' : String(selectedSprint),
+                    engMode: showPlanning ? 'planning' : showStats ? 'statistics' : showScenario ? 'scenario' : showBoard ? 'board' : 'catch-up',
+                    settingsOpen: showGroupManage,
+                    settingsTab: groupManageTab,
+                },
+                planning: {
+                    scopeKey: planningScopeKey,
+                    selectedTaskKeys: selectedTaskKeysFromMap(selectedTasks),
+                    selectedTeams: normalizeSelectedTeams(selectedTeams),
+                    selectionMode: planningSelectionMode,
+                },
+            };
+            useEffect(() => {
+                const captureAuthResume = () => {
+                    const principal = authResumePrincipalRef.current;
+                    const tabStorage = getAuthResumeStorage(window);
+                    if (!tabStorage || !principal?.workspaceId || !principal?.viewConfigId) return;
+                    writeAuthResumeState(tabStorage, authResumeSnapshotRef.current);
+                };
+                window.addEventListener(AUTH_REQUIRED_EVENT, captureAuthResume);
+                if (readPendingAuthenticationRequired()) captureAuthResume();
+                return () => window.removeEventListener(AUTH_REQUIRED_EVENT, captureAuthResume);
+            }, []);
+            useEffect(() => {
+                const resume = pendingShellAuthResumeRef.current;
+                const settled = authResumeShellSettledRef.current;
+                if (!resume || !settled || settled.has('group') || groupsLoading) return;
+                const requestedGroup = String(resume.activeGroupId || '');
+                const groupAvailable = requestedGroup && visibleControlGroups.some(group => String(group.id) === requestedGroup);
+                if (groupAvailable) setActiveGroupId(requestedGroup);
+                settled.add('group');
+            }, [groupsLoading, visibleControlGroups, activeGroupId]);
+            useEffect(() => {
+                const resume = pendingShellAuthResumeRef.current;
+                const settled = authResumeShellSettledRef.current;
+                if (!resume || !settled || settled.has('sprint') || sprintsLoading) return;
+                const requestedSprint = availableSprints.find(sprint => String(sprint.id) === resume.selectedSprint);
+                if (requestedSprint) {
+                    setSelectedSprint(requestedSprint.id);
+                    setSprintName(requestedSprint.name);
+                }
+                settled.add('sprint');
+            }, [sprintsLoading, availableSprints, selectedSprint]);
             const buildDefaultGroupState = (groupId) => {
                 const hasStoredPlanningState = planningScopeKey
                     ? hasPlanningState(window.localStorage, planningScopeKey)
@@ -5279,6 +5339,48 @@ import {
             }, [planningScopeKey, activeGroupId, selectedSprint, activeGroupTeamIds.join('|')]);
 
             useEffect(() => {
+                const resume = pendingShellAuthResumeRef.current;
+                const settled = authResumeShellSettledRef.current;
+                if (!resume || !settled?.has('group') || !settled.has('sprint')) return;
+                const requestedGroupAvailable = resume.activeGroupId
+                    && visibleControlGroups.some(group => String(group.id) === resume.activeGroupId);
+                if (requestedGroupAvailable && String(activeGroupId) !== resume.activeGroupId) return;
+                const requestedSprint = availableSprints.find(sprint => String(sprint.id) === resume.selectedSprint);
+                if (requestedSprint && String(selectedSprint) !== resume.selectedSprint) return;
+                if (planningScopeKey && planningHydratedScopeRef.current !== planningScopeKey) return;
+                if (!sharedConfigReady || !homeTokenConnectionLoaded) return;
+
+                const nextView = resume.selectedView === 'epm' && showEpmNavigation ? 'epm' : 'eng';
+                const unavailableMode = (resume.engMode === 'planning' && isCompletedSprintSelected)
+                    || (resume.engMode === 'statistics' && isFutureSprintSelected)
+                    || (resume.engMode === 'scenario' && isCompletedSprintSelected);
+                const nextMode = unavailableMode ? 'catch-up' : resume.engMode;
+                setSelectedView(nextView);
+                setShowPlanning(nextMode === 'planning');
+                setShowStats(nextMode === 'statistics');
+                setShowScenario(nextMode === 'scenario');
+                setShowBoard(nextMode === 'board');
+
+                const settingsTabPermitted = resume.settingsTab === 'connections'
+                    || DEPARTMENT_SETTINGS_TAB_IDS.has(resume.settingsTab)
+                    || (resume.settingsTab === 'epm' && canEditEpmConfiguration && showEpmNavigation)
+                    || (ADMIN_SETTINGS_TAB_IDS.has(resume.settingsTab) && canEditSharedConfiguration);
+                if (resume.settingsOpen && settingsTabPermitted) {
+                    setGroupManageTab(resume.settingsTab);
+                    setShowGroupManage(true);
+                } else {
+                    setShowGroupManage(false);
+                }
+                pendingShellAuthResumeRef.current = null;
+                authResumeShellSettledRef.current = null;
+                clearAuthResumeWhenSettled();
+            }, [
+                activeGroupId, selectedSprint, selectedSprintState, planningScopeKey, visibleControlGroups, availableSprints,
+                sharedConfigReady, homeTokenConnectionLoaded, showEpmNavigation,
+                canEditEpmConfiguration, canEditSharedConfiguration, clearAuthResumeWhenSettled,
+            ]);
+
+            useEffect(() => {
                 if (!showPlanning) {
                     setPlanningOffset(0);
                 }
@@ -5636,6 +5738,25 @@ import {
                 setSharedConfigReady(false);
                 try {
                     const config = await fetchAppConfig(BACKEND_URL);
+                    const resumePrincipal = {
+                        workspaceId: String(config.viewConfig?.workspaceId || ''),
+                        viewConfigId: String(config.viewConfig?.viewConfigId || ''),
+                    };
+                    authResumePrincipalRef.current = resumePrincipal;
+                    const resumeStorage = getAuthResumeStorage(window);
+                    const resume = resumeStorage
+                        ? readAuthResumeState(resumeStorage, resumePrincipal)
+                        : null;
+                    if (resume) {
+                        pendingShellAuthResumeRef.current = resume.view;
+                        authResumeShellSettledRef.current = new Set();
+                        planningAuthResumeLoadRef.current = null;
+                        pendingPlanningAuthResumeRef.current = resume.view.selectedView === 'eng'
+                            && resume.view.engMode === 'planning'
+                            && resume.planning.scopeKey
+                            ? resume.planning
+                            : null;
+                    }
                     clearServerConnectionError();
                     setJiraUrl(config.jiraUrl || '');
                     setAuthMode(config.authMode || '');
@@ -5711,13 +5832,24 @@ import {
 
                 const groupLoadVersion = ++groupLoadVersionRef.current;
                 const shouldApplyGroupLoadResult = () => groupLoadVersionRef.current === groupLoadVersion;
+                const pendingPlanningResume = pendingPlanningAuthResumeRef.current;
+                const recoveryScopeKey = pendingPlanningResume?.scopeKey === planningScopeKey
+                    ? planningScopeKey
+                    : '';
+                if (recoveryScopeKey) {
+                    planningAuthResumeLoadRef.current = {
+                        scopeKey: recoveryScopeKey,
+                        loadVersion: groupLoadVersion,
+                        outcome: 'pending',
+                    };
+                }
 
                 const forceConfigRefresh =
                     configRefreshNonce !== 0 &&
                     pendingConfigRefreshRef.current === configRefreshNonce;
 
                 // Only skip loading if we have actual cached data
-                const shouldSkipLoad = !forceConfigRefresh && activeGroupId && (() => {
+                const shouldSkipLoad = !recoveryScopeKey && !forceConfigRefresh && activeGroupId && (() => {
                     const cached = groupStateRef.current.get(activeGroupId);
                     return cached &&
                         cached.sprintId === selectedSprint &&
@@ -5740,8 +5872,26 @@ import {
                 setTechEpicsInScope([]);
                 setMissingPlanningInfoTasks([]);
                 setMissingInfoEpics([]);
-                loadProductTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
-                loadTechTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                const productLoadResult = loadProductTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                const techLoadResult = loadTechTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                if (recoveryScopeKey) {
+                    void Promise.all([productLoadResult, techLoadResult]).then((outcomes) => {
+                        const pendingLoad = planningAuthResumeLoadRef.current;
+                        if (
+                            !shouldApplyGroupLoadResult()
+                            || pendingLoad?.scopeKey !== recoveryScopeKey
+                            || pendingLoad?.loadVersion !== groupLoadVersion
+                        ) return;
+                        if (
+                            outcomes.includes(ENG_TASK_LOAD_OUTCOME.IGNORED)
+                            || outcomes.includes(ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED)
+                        ) return;
+                        pendingLoad.outcome = outcomes.includes(ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE)
+                            ? ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE
+                            : ENG_TASK_LOAD_OUTCOME.APPLIED;
+                        setPlanningAuthResumeLoadRevision(revision => revision + 1);
+                    });
+                }
                 return () => {
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
@@ -5891,7 +6041,6 @@ import {
             const priorityAxis = PRIORITY_AXIS;
 
             const getTeamInfo = getTaskTeamInfo;
-
             const {
                 fetchTasks,
                 fetchBacklogEpics,
@@ -10327,21 +10476,58 @@ import {
             const selectionTasks = baseFilteredTasks;
 
             useEffect(() => {
+                const pendingPlanningResume = pendingPlanningAuthResumeRef.current;
+                if (pendingPlanningResume && pendingShellAuthResumeRef.current) return;
+                if (pendingPlanningResume && (!planningScopeKey || pendingPlanningResume.scopeKey !== planningScopeKey)) {
+                    pendingPlanningAuthResumeRef.current = null;
+                    planningAuthResumeLoadRef.current = null;
+                    clearAuthResumeWhenSettled();
+                    return;
+                }
+                if (pendingPlanningResume) {
+                    const recoveryLoad = planningAuthResumeLoadRef.current;
+                    if (!recoveryLoad || recoveryLoad.scopeKey !== planningScopeKey) return;
+                    if (recoveryLoad.outcome === 'pending') return;
+                    if (recoveryLoad.outcome === ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE) {
+                        pendingPlanningAuthResumeRef.current = null;
+                        planningAuthResumeLoadRef.current = null;
+                        clearAuthResumeWhenSettled();
+                        return;
+                    }
+                    if (recoveryLoad.outcome !== ENG_TASK_LOAD_OUTCOME.APPLIED) return;
+                }
                 if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
                 if (!tasksFetched || productTasksLoading || techTasksLoading) return;
                 if (lastLoadedSprintRef.current !== selectedSprint) return;
                 const hydratedTeamSelection = teamSelectionHydratedSelectionRef.current; if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey && !selectedTeamSelectionsEqual(selectedTeams, hydratedTeamSelection.selectedTeams)) return;
                 if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey) teamSelectionHydratedSelectionRef.current = null;
 
-                const { validTaskKeySet, nextSelectedTaskKeys, nextSelectionMode, nextSelectedTeams } = resolvePlanningSelectionForDashboard({
-                    selectedTasks,
-                    selectedTeams,
-                    planningSelectionMode,
-                    isFutureSprintSelected,
-                    selectionTasks,
-                    teamOptions,
-                    activeGroupTeamIds,
-                });
+                let validTaskKeySet;
+                let nextSelectedTaskKeys;
+                let nextSelectionMode;
+                let nextSelectedTeams;
+                if (pendingPlanningResume) {
+                    validTaskKeySet = new Set(selectionTasks.map(task => String(task?.key || '').trim()).filter(Boolean));
+                    const resumed = resolvePlanningAuthResume({
+                        resume: pendingPlanningResume,
+                        planningScopeKey,
+                        validTaskKeys: validTaskKeySet,
+                        validTeamIds: new Set(teamOptions.map(team => String(team?.id || '').trim()).filter(Boolean)),
+                    });
+                    nextSelectedTaskKeys = resumed.selectedTaskKeys;
+                    nextSelectionMode = resumed.selectionMode;
+                    nextSelectedTeams = resumed.selectedTeams;
+                } else {
+                    ({ validTaskKeySet, nextSelectedTaskKeys, nextSelectionMode, nextSelectedTeams } = resolvePlanningSelectionForDashboard({
+                        selectedTasks,
+                        selectedTeams,
+                        planningSelectionMode,
+                        isFutureSprintSelected,
+                        selectionTasks,
+                        teamOptions,
+                        activeGroupTeamIds,
+                    }));
+                }
 
                 setSelectedTasks(prev => {
                     const prevKeys = selectedTaskKeysFromMap(prev, validTaskKeySet);
@@ -10361,7 +10547,7 @@ import {
 
                 persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys), selectionMode: nextSelectionMode, selectedTeams: nextSelectedTeams, normalizeSelectedTeams });
 
-                if (planningBaselineScopeRef.current !== planningScopeKey) {
+                if (pendingPlanningResume || planningBaselineScopeRef.current !== planningScopeKey) {
                     planningLoadedSelectionRef.current = {
                         scopeKey: planningScopeKey,
                         selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys),
@@ -10369,6 +10555,11 @@ import {
                     };
                     planningBaselineScopeRef.current = planningScopeKey;
                     setCanUndoPlanningSelection(false);
+                }
+                if (pendingPlanningResume) {
+                    pendingPlanningAuthResumeRef.current = null;
+                    planningAuthResumeLoadRef.current = null;
+                    clearAuthResumeWhenSettled();
                 }
             }, [
                 planningScopeKey,
@@ -10383,7 +10574,9 @@ import {
                 selectedTasks,
                 selectedTeams,
                 planningSelectionMode,
-                activeGroupTeamIds.join('|')
+                activeGroupTeamIds.join('|'),
+                planningAuthResumeLoadRevision,
+                clearAuthResumeWhenSettled,
             ]);
 
             const visibleTasks = React.useMemo(() => baseFilteredTasks.filter(task => (

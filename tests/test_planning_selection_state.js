@@ -1,6 +1,59 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+async function loadPlanningSelectionActions() {
+    return import('../frontend/src/eng/planningSelectionActions.js');
+}
+
+test('recovered selection overrides shared storage only for its exact loaded scope', async () => {
+    const { resolvePlanningAuthResume } = await loadPlanningSelectionActions();
+    const result = resolvePlanningAuthResume({
+        resume: {
+            scopeKey: 'planning::sprint-1::group-a',
+            selectedTaskKeys: ['PLAN-1', 'REMOVED-9'],
+            selectedTeams: ['team-a', 'team-removed'],
+            selectionMode: 'manual',
+        },
+        planningScopeKey: 'planning::sprint-1::group-a',
+        validTaskKeys: new Set(['PLAN-1', 'PLAN-2']),
+        validTeamIds: new Set(['team-a', 'team-b']),
+    });
+    assert.deepEqual(result, {
+        selectedTaskKeys: ['PLAN-1'],
+        selectedTeams: ['team-a'],
+        selectionMode: 'manual',
+    });
+});
+
+test('recovered selection ignores mismatched scope and sorts exact-scope keys deterministically', async () => {
+    const { resolvePlanningAuthResume } = await loadPlanningSelectionActions();
+    const resume = {
+        scopeKey: 'planning::sprint-1::group-a',
+        selectedTaskKeys: ['PLAN-2', 'PLAN-1', 'PLAN-2'],
+        selectedTeams: ['team-b', 'team-a', 'team-b'],
+        selectionMode: 'default_all',
+    };
+    const validTaskKeys = new Set(['PLAN-1', 'PLAN-2']);
+    const validTeamIds = new Set(['team-a', 'team-b']);
+
+    assert.equal(resolvePlanningAuthResume({
+        resume,
+        planningScopeKey: 'planning::sprint-2::group-a',
+        validTaskKeys,
+        validTeamIds,
+    }), null);
+    assert.deepEqual(resolvePlanningAuthResume({
+        resume,
+        planningScopeKey: resume.scopeKey,
+        validTaskKeys,
+        validTeamIds,
+    }), {
+        selectedTaskKeys: ['PLAN-1', 'PLAN-2'],
+        selectedTeams: ['team-a', 'team-b'],
+        selectionMode: 'default_all',
+    });
+});
+
 test('buildPlanningScopeKey composes sprint and group into a stable scope key', async () => {
     const {
         buildPlanningScopeKey

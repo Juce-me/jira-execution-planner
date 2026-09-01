@@ -54,7 +54,7 @@ test('recovered selection ignores mismatched scope and sorts exact-scope keys de
     });
 });
 
-test('planning persistence reports success and fails soft for absent or throwing storage', async () => {
+test('planning persistence preserves the saved-object contract and reports failures to recovery callers', async () => {
     const { persistPlanningSelectionState } = await loadPlanningSelectionActions();
     const { savePlanningState } = await import('../frontend/src/planningSelectionState.mjs');
     const workingStorage = {
@@ -67,9 +67,22 @@ test('planning persistence reports success and fails soft for absent or throwing
         setItem() { throw new Error('quota'); },
     };
 
-    assert.equal(savePlanningState(workingStorage, 'planning::sprint-1::group-a', {
+    assert.deepEqual(savePlanningState(workingStorage, 'planning::sprint-1::group-a', {
         selectedTaskKeys: ['PLAN-1'],
         selectedTeams: ['team-a'],
+    }), {
+        selectedTaskKeys: ['PLAN-1'],
+        selectedTeams: ['team-a'],
+        selectedTeamId: 'team-a',
+        selectionMode: 'manual',
+    });
+    assert.equal(persistPlanningSelectionState({
+        storage: workingStorage,
+        scopeKey: 'planning::sprint-1::group-a',
+        selectedTasks: { 'PLAN-1': true },
+        selectedTeams: ['team-a'],
+        selectionMode: 'manual',
+        normalizeSelectedTeams: value => value,
     }), true);
     assert.equal(savePlanningState(null, 'planning::sprint-1::group-a', {}), false);
     assert.equal(savePlanningState(throwingStorage, 'planning::sprint-1::group-a', {}), false);

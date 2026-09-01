@@ -506,6 +506,10 @@ test('failed Planning recovery persistence keeps the capsule retryable without f
     expect(storedKeys).toEqual(['PLAN-1']);
 
     await page.locator('.planning-actions').getByRole('button', { name: 'Accepted', exact: true }).click();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
+    await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-3')).toBeChecked();
     await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
 });
 

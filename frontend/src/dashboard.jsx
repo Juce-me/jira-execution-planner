@@ -733,10 +733,12 @@ import {
             const pendingPlanningAuthResumeRef = useRef(null);
             const authResumeShellSettledRef = useRef(null);
             const planningAuthResumeLoadRef = useRef(null);
+            const planningAuthResumePersistenceFailedRef = useRef('');
             const [authResumeStagedRevision, setAuthResumeStagedRevision] = useState(0);
             const [planningAuthResumeLoadRevision, setPlanningAuthResumeLoadRevision] = useState(0);
             const clearAuthResumeWhenSettled = React.useCallback(() => {
                 if (readPendingAuthenticationRequired()) return;
+                if (planningAuthResumePersistenceFailedRef.current) return;
                 if (pendingShellAuthResumeRef.current || pendingPlanningAuthResumeRef.current) return;
                 clearAuthResumeState(getAuthResumeStorage(window));
             }, []);
@@ -5751,7 +5753,7 @@ import {
                     };
                     authResumePrincipalRef.current = resumePrincipal;
                     const resumeStorage = getAuthResumeStorage(window);
-                    const resume = resumeStorage
+                    const resume = resumeStorage && !planningAuthResumePersistenceFailedRef.current
                         ? readAuthResumeState(resumeStorage, resumePrincipal)
                         : null;
                     if (resume) {
@@ -10573,7 +10575,20 @@ import {
                 setPlanningSelectionMode(prev => prev === nextSelectionMode ? prev : nextSelectionMode);
 
                 const persistenceSucceeded = persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys), selectionMode: nextSelectionMode, selectedTeams: nextSelectedTeams, normalizeSelectedTeams });
-                if (pendingPlanningResume && !persistenceSucceeded) return;
+                if (pendingPlanningResume && !persistenceSucceeded) {
+                    planningAuthResumePersistenceFailedRef.current = planningScopeKey;
+                    planningLoadedSelectionRef.current = null;
+                    planningBaselineScopeRef.current = '';
+                    setCanUndoPlanningSelection(false);
+                    pendingPlanningAuthResumeRef.current = null;
+                    planningAuthResumeLoadRef.current = null;
+                    clearAuthResumeWhenSettled();
+                    return;
+                }
+                if (planningAuthResumePersistenceFailedRef.current === planningScopeKey) {
+                    setCanUndoPlanningSelection(false);
+                    return;
+                }
 
                 if (pendingPlanningResume || planningBaselineScopeRef.current !== planningScopeKey) {
                     planningLoadedSelectionRef.current = {

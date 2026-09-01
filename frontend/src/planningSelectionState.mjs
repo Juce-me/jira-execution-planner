@@ -136,7 +136,7 @@ export function savePlanningState(storage, scopeKey, state) {
     if (!scopeKey) return false;
     const stateMap = readPlanningScopeMap(storage);
     stateMap[scopeKey] = normalizeStoredScopeState(state);
-    return writePlanningScopeMap(storage, stateMap);
+    return writePlanningScopeMap(storage, stateMap) ? stateMap[scopeKey] : false;
 }
 
 export function resolvePlanningTeamSelection({

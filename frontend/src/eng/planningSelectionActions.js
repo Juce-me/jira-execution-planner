@@ -81,11 +81,11 @@ export function persistPlanningSelectionState({
     normalizeSelectedTeams
 } = {}) {
     if (!scopeKey) return false;
-    return savePlanningState(storage, scopeKey, {
+    return Boolean(savePlanningState(storage, scopeKey, {
         selectedTaskKeys: selectedTaskKeysFromMap(selectedTasks),
         selectedTeams: normalizeSelectedTeams(selectedTeams),
         selectionMode
-    });
+    }));
 }
 
 export function toggleTaskSelectionMap(selectedTasks, taskKey) {

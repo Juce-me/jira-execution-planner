@@ -733,8 +733,10 @@ import {
             const pendingPlanningAuthResumeRef = useRef(null);
             const authResumeShellSettledRef = useRef(null);
             const planningAuthResumeLoadRef = useRef(null);
+            const [authResumeStagedRevision, setAuthResumeStagedRevision] = useState(0);
             const [planningAuthResumeLoadRevision, setPlanningAuthResumeLoadRevision] = useState(0);
             const clearAuthResumeWhenSettled = React.useCallback(() => {
+                if (readPendingAuthenticationRequired()) return;
                 if (pendingShellAuthResumeRef.current || pendingPlanningAuthResumeRef.current) return;
                 clearAuthResumeState(getAuthResumeStorage(window));
             }, []);
@@ -4843,7 +4845,7 @@ import {
                 const groupAvailable = requestedGroup && visibleControlGroups.some(group => String(group.id) === requestedGroup);
                 if (groupAvailable) setActiveGroupId(requestedGroup);
                 settled.add('group');
-            }, [groupsLoading, visibleControlGroups, activeGroupId]);
+            }, [groupsLoading, visibleControlGroups, activeGroupId, authResumeStagedRevision]);
             useEffect(() => {
                 const resume = pendingShellAuthResumeRef.current;
                 const settled = authResumeShellSettledRef.current;
@@ -4854,7 +4856,7 @@ import {
                     setSprintName(requestedSprint.name);
                 }
                 settled.add('sprint');
-            }, [sprintsLoading, availableSprints, selectedSprint]);
+            }, [sprintsLoading, availableSprints, selectedSprint, authResumeStagedRevision]);
             const buildDefaultGroupState = (groupId) => {
                 const hasStoredPlanningState = planningScopeKey
                     ? hasPlanningState(window.localStorage, planningScopeKey)
@@ -5355,6 +5357,10 @@ import {
                     || (resume.engMode === 'statistics' && isFutureSprintSelected)
                     || (resume.engMode === 'scenario' && isCompletedSprintSelected);
                 const nextMode = unavailableMode ? 'catch-up' : resume.engMode;
+                if (resume.engMode === 'planning' && nextMode !== 'planning') {
+                    pendingPlanningAuthResumeRef.current = null;
+                    planningAuthResumeLoadRef.current = null;
+                }
                 setSelectedView(nextView);
                 setShowPlanning(nextMode === 'planning');
                 setShowStats(nextMode === 'statistics');
@@ -5378,6 +5384,7 @@ import {
                 activeGroupId, selectedSprint, selectedSprintState, planningScopeKey, visibleControlGroups, availableSprints,
                 sharedConfigReady, homeTokenConnectionLoaded, showEpmNavigation,
                 canEditEpmConfiguration, canEditSharedConfiguration, clearAuthResumeWhenSettled,
+                authResumeStagedRevision,
             ]);
 
             useEffect(() => {
@@ -5756,6 +5763,7 @@ import {
                             && resume.planning.scopeKey
                             ? resume.planning
                             : null;
+                        setAuthResumeStagedRevision(revision => revision + 1);
                     }
                     clearServerConnectionError();
                     setJiraUrl(config.jiraUrl || '');
@@ -5896,13 +5904,20 @@ import {
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
-            }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce]);
+            }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
+                if (!readPendingAuthenticationRequired()) {
+                    pendingShellAuthResumeRef.current = null;
+                    authResumeShellSettledRef.current = null;
+                    pendingPlanningAuthResumeRef.current = null;
+                    planningAuthResumeLoadRef.current = null;
+                    clearAuthResumeWhenSettled();
+                }
                 clearEngGroupScopeData();
                 setActiveGroupId(null);
-            }, [groupsLoading, groupPreferences.onboardingRequired, clearEngGroupScopeData]);
+            }, [groupsLoading, groupPreferences.onboardingRequired, clearEngGroupScopeData, clearAuthResumeWhenSettled, authResumeStagedRevision]);
 
             useEffect(() => {
                 if (!isStatsSourceOnlyStatsView) return;
@@ -10575,6 +10590,7 @@ import {
                 selectedTeams,
                 planningSelectionMode,
                 activeGroupTeamIds.join('|'),
+                authResumeStagedRevision,
                 planningAuthResumeLoadRevision,
                 clearAuthResumeWhenSettled,
             ]);

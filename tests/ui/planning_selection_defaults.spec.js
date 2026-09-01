@@ -11,6 +11,8 @@ const futureSprintId = 4002;
 const futureSprintName = '2026Q3 Sprint 1';
 const secondFutureSprintId = 5003;
 const secondFutureSprintName = '2026Q3 Sprint 2';
+const completedSprintId = 2001;
+const completedSprintName = '2026Q1 Sprint 9';
 const groupTeamIds = ['team-alpha'];
 let dashboardJs;
 
@@ -85,10 +87,27 @@ const secondFutureStories = [
     makeStory('PLAN-4', 'To Do', secondFutureSprintId, secondFutureSprintName, 'PLAN-EPIC-2'),
     makeStory('PLAN-5', 'Accepted', secondFutureSprintId, secondFutureSprintName, 'PLAN-EPIC-2'),
 ];
+const completedStories = [
+    makeStory('PLAN-1', 'Done', completedSprintId, completedSprintName),
+    makeStory('PLAN-2', 'Done', completedSprintId, completedSprintName),
+];
 
-async function installPlanningFixture(page, { taskFailureMode = '' } = {}) {
+async function installPlanningFixture(page, {
+    taskFailureMode = '',
+    delayConfig = false,
+    shellAuthDependency = '',
+    onboardingRequired = false,
+} = {}) {
     const calls = [];
     let futureProductTaskAttempts = 0;
+    let releaseConfig;
+    const configRelease = delayConfig
+        ? new Promise(resolve => { releaseConfig = resolve; })
+        : Promise.resolve();
+    let releaseShellAuth;
+    const shellAuthRelease = shellAuthDependency
+        ? new Promise(resolve => { releaseShellAuth = resolve; })
+        : Promise.resolve();
     let groupsConfigPayload = {
         version: 1,
         configRevision: 1,
@@ -102,7 +121,7 @@ async function installPlanningFixture(page, { taskFailureMode = '' } = {}) {
             excludedCapacityEpics: []
         }],
         preferences: {
-            onboardingRequired: false,
+            onboardingRequired,
             customized: false,
             visibleGroupIds: [],
             effectiveVisibleGroupIds: ['group-alpha'],
@@ -131,6 +150,13 @@ async function installPlanningFixture(page, { taskFailureMode = '' } = {}) {
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
         if (url.pathname === '/api/me/connections/home-token') {
+            if (shellAuthDependency === 'home-token') {
+                await shellAuthRelease;
+                return json(route, {
+                    error: 'auth_required',
+                    loginUrl: '/login?reason=session_expired',
+                }, 401);
+            }
             return json(route, {
                 connected: false,
                 provider: 'atlassian_user_api_token',
@@ -139,6 +165,7 @@ async function installPlanningFixture(page, { taskFailureMode = '' } = {}) {
             });
         }
         if (url.pathname === '/api/config') {
+            await configRelease;
             return json(route, {
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
@@ -186,6 +213,7 @@ async function installPlanningFixture(page, { taskFailureMode = '' } = {}) {
             return json(route, {
                 sprints: [
                     { id: activeSprintId, name: activeSprintName, state: 'active', startDate: '2026-05-01' },
+                    { id: completedSprintId, name: completedSprintName, state: 'closed', startDate: '2026-03-01' },
                     { id: futureSprintId, name: futureSprintName, state: 'future', startDate: '2026-07-01' },
                     { id: secondFutureSprintId, name: secondFutureSprintName, state: 'future', startDate: '2026-07-15' },
                 ],
@@ -208,11 +236,15 @@ async function installPlanningFixture(page, { taskFailureMode = '' } = {}) {
                 }
             }
             const issues = project === 'product' && !purpose
-                ? (String(sprint) === String(secondFutureSprintId) ? secondFutureStories : futureStories)
+                ? (String(sprint) === String(secondFutureSprintId)
+                    ? secondFutureStories
+                    : String(sprint) === String(completedSprintId) ? completedStories : futureStories)
                 : [];
             const epic = String(sprint) === String(secondFutureSprintId)
                 ? makeEpic(secondFutureSprintId, secondFutureSprintName, 'PLAN-EPIC-2')
-                : makeEpic();
+                : String(sprint) === String(completedSprintId)
+                    ? makeEpic(completedSprintId, completedSprintName)
+                    : makeEpic();
             return json(route, {
                 issues,
                 epics: { [epic.key]: epic },
@@ -230,14 +262,19 @@ async function installPlanningFixture(page, { taskFailureMode = '' } = {}) {
         calls,
         getGroupsConfig: () => groupsConfigPayload,
         getFutureProductTaskAttempts: () => futureProductTaskAttempts,
+        releaseConfig: () => releaseConfig?.(),
+        releaseShellAuth: () => releaseShellAuth?.(),
     };
 }
 
 async function seedPlanningAuthResume(page, {
     selectedTaskKeys = ['PLAN-2'],
     localSelectedTaskKeys = ['PLAN-1'],
+    sprintId = futureSprintId,
+    engMode = 'planning',
+    seedUiPrefs = false,
 } = {}) {
-    await page.addInitScript(({ sprintId, selectedTaskKeys, localSelectedTaskKeys }) => {
+    await page.addInitScript(({ sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, seedUiPrefs }) => {
         const seedMarker = 'planning_auth_resume_fixture_seeded';
         if (window.sessionStorage.getItem(seedMarker)) return;
         window.sessionStorage.setItem(seedMarker, 'true');
@@ -250,7 +287,7 @@ async function seedPlanningAuthResume(page, {
                 selectedView: 'eng',
                 activeGroupId: 'group-alpha',
                 selectedSprint: String(sprintId),
-                engMode: 'planning',
+                engMode,
                 settingsOpen: false,
                 settingsTab: 'teams',
             },
@@ -269,7 +306,15 @@ async function seedPlanningAuthResume(page, {
                 selectionMode: 'manual',
             },
         }));
-    }, { sprintId: futureSprintId, selectedTaskKeys, localSelectedTaskKeys });
+        if (seedUiPrefs) {
+            window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+                selectedView: 'eng',
+                activeGroupId: 'group-alpha',
+                selectedSprint: sprintId,
+                showPlanning: false,
+            }));
+        }
+    }, { sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, seedUiPrefs });
 }
 
 async function openFuturePlanning(page) {
@@ -456,6 +501,63 @@ test('a new typed auth interruption retains the staged Planning capsule', async 
         window.sessionStorage.getItem('jira_dashboard_auth_resume_v1')
     ).planning.selectedTaskKeys);
     expect(stagedKeys).toEqual(['PLAN-2']);
+});
+
+test('late authenticated config staging resumes shell and exact-scope Planning after ordinary loads settle', async ({ page }) => {
+    await seedPlanningAuthResume(page, { seedUiPrefs: true });
+    const fixture = await installPlanningFixture(page, { delayConfig: true });
+    await page.goto(appBaseUrl);
+
+    await expect.poll(() => fixture.getFutureProductTaskAttempts()).toBeGreaterThan(0);
+    fixture.releaseConfig();
+
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(selectedStat(page)).toContainText('1 · 1.0 SP');
+    await expect(storyCheckbox(page, 'PLAN-1')).not.toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+});
+
+test('typed auth during a shell dependency keeps the capsule for the next document', async ({ page }) => {
+    await seedPlanningAuthResume(page, { engMode: 'catch-up' });
+    const fixture = await installPlanningFixture(page, { shellAuthDependency: 'home-token' });
+    await page.goto(appBaseUrl);
+
+    await expect.poll(() => fixture.calls.some(call => call.pathname === '/api/projects/selected')).toBe(true);
+    fixture.releaseShellAuth();
+
+    await expect(page.getByRole('alertdialog', { name: 'Sign in required' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).not.toBe(null);
+});
+
+test('completed recovered Planning sprint falls back without overwriting persisted selection', async ({ page }) => {
+    await seedPlanningAuthResume(page, { sprintId: completedSprintId });
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+
+    await expect(page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' })).toBeChecked();
+    await expect(page.locator('.planning-panel.open')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+    const storedKeys = await page.evaluate((scopeKey) => JSON.parse(
+        window.localStorage.getItem('jira_dashboard_planning_state_v1')
+    )[scopeKey].selectedTaskKeys, `planning::${completedSprintId}::group-alpha`);
+    expect(storedKeys).toEqual(['PLAN-1']);
+});
+
+test('onboarding terminalizes staged recovery when sprint discovery is skipped', async ({ page }) => {
+    await seedPlanningAuthResume(page);
+    const fixture = await installPlanningFixture(page, { delayConfig: true, onboardingRequired: true });
+    await page.goto(appBaseUrl);
+
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
+    expect(fixture.calls.some(call => call.pathname === '/api/sprints')).toBe(false);
+    fixture.releaseConfig();
+
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+    const storedKeys = await page.evaluate((scopeKey) => JSON.parse(
+        window.localStorage.getItem('jira_dashboard_planning_state_v1')
+    )[scopeKey].selectedTaskKeys, `planning::${futureSprintId}::group-alpha`);
+    expect(storedKeys).toEqual(['PLAN-1']);
 });
 
 test('planning story selection controls align with story-point metadata', async ({ page }) => {

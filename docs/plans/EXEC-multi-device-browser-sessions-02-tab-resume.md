@@ -401,6 +401,8 @@ Treat the first post-auth Planning hydration as a one-shot terminal decision. If
 
 `fetchTasks`, `loadProductTasks`, and `loadTechTasks` expose distinct additive outcomes for applied success (including a legitimate empty payload), non-auth failure, typed auth-required interruption, and ignored/aborted/stale work. Before starting the two exact-scope loads, the dashboard records a pending recovery load. It publishes a current-scope settled outcome only after `Promise.all` completes and triggers a minimal reconciliation revision. Planning remains pending while either result is ignored or auth-required; only two applied results reconcile, while either non-auth failure abandons recovery. Delayed React error state is not a recovery signal.
 
+Config and group/sprint bootstrap remain concurrent. When authenticated config stages recovery refs, increment a minimal staged revision consumed by the group, sprint, shell, task-load, and Planning reconciliation effects so already-settled dependencies reconsider the new work. Capsule clearing must fail closed while the terminal auth latch is present. If restored Planning is unavailable, including a sprint that is now completed, cancel its staged payload before reconciliation and retain ordinary Catch Up/local persistence. If onboarding makes group scope unavailable and intentionally skips sprint discovery, terminalize shell and Planning recovery instead of waiting indefinitely; a typed-auth interruption remains non-settled.
+
 - [x] **Step 7: Run focused capture/restore tests**
 
 Run:
@@ -414,6 +416,8 @@ fnm exec --using 20 -- npx playwright test tests/ui/planning_selection_defaults.
 Expected: PASS. Existing normal `localStorage` selection behavior remains unchanged outside one-shot recovery. Add a non-auth Planning hydration failure assertion that clears the capsule/pending ref and prove a later manual reload cannot resurrect the pre-auth task keys; retain the capsule only when hydration is interrupted by a new typed auth-required error.
 
 **Observed evidence (2026-09-01):** the pinned Node 20 focused command exited `0` with 50/50 passing; the adjacent source-guard command exited `0` with 16/16 passing; and the pinned Planning Playwright command exited `0` with 12/12 passing. The three decisive exact-scope success, non-auth abandonment/reload, and typed-auth retention browser cases also passed together 3/3.
+
+**Spec-fix round 1 evidence (2026-09-01):** four new browser regressions first exited `1` with delayed config staging, completed-sprint persistence, and onboarding terminalization failing; the initial group-auth fixture did not reach the clear boundary, so the typed-auth case was tightened to hold Home connection status until config had staged recovery and then failed independently as expected. After the minimal fix, the isolated command passed 4/4. The exact pinned Node command passed 50/50, the full Planning Playwright spec passed 16/16, and adjacent source guards passed 16/16.
 
 - [x] **Step 8: Commit the capture/restore slice**
 

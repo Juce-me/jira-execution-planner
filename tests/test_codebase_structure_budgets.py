@@ -106,7 +106,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # private-view contract while preserving unified Settings save behavior (+36). Task 5
     # integrates the terminal global authentication gate across existing async consumers,
     # keyboard handlers, Scenario polling/SSE, and removes feature-local recovery UI (+43).
-    "frontend/src/dashboard.jsx": 16440,
+    # feature/user-onboarding-tour-improvements wires the first-run create/duplicate guide,
+    # verified shared-then-private save recovery, dashboard readiness/preview lifecycle, and
+    # Settings-header replay through the legacy composition root. State machines, menus, and
+    # coachmark behavior remain extracted in dedicated modules (+634).
+    "frontend/src/dashboard.jsx": 17074,
 }
 
 

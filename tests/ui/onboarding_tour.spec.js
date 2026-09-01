@@ -566,6 +566,21 @@ async function advancePreviewOrFallback(page, title, advanceFallback) {
 const productionFixtureUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const productionSprintId = 7301;
 const productionSprintName = '2026Q3 Sprint 7';
+const productionOptionCatalogRoutes = new Set([
+    '/api/issues/priorities/options',
+    '/api/issues/project-track/options',
+    '/api/issues/transitions/options',
+]);
+const productionOptionCatalogMethods = {
+    '/api/issues/priorities/options': 'GET',
+    '/api/issues/project-track/options': 'GET',
+    '/api/issues/transitions/options': 'POST',
+};
+const productionMutationRoutes = [
+    '/api/issues/priorities',
+    '/api/issues/project-track',
+    '/api/issues/transitions',
+];
 const productionFieldContracts = {
     priority: {
         heading: 'Preview Priority options',
@@ -831,6 +846,118 @@ function fieldCalls(calls, pathname, method) {
     return calls.filter(call => call.pathname === pathname && (!method || call.method === method));
 }
 
+function assertProductionRequestSafety(calls) {
+    productionMutationRoutes.forEach((pathname) => {
+        expect(fieldCalls(calls, pathname, 'POST')).toEqual([]);
+    });
+    const fieldRequests = calls.filter(call => /^\/api\/issues\/(?:priorities|project-track|transitions)(?:\/|$)/.test(call.pathname));
+    fieldRequests.forEach((call) => {
+        expect(productionOptionCatalogRoutes.has(call.pathname)).toBe(true);
+        expect(call.method).toBe(productionOptionCatalogMethods[call.pathname]);
+    });
+}
+
+function assertNoPreviewMutationAnalytics(events) {
+    expect(events.some(entry => /_change_(?:submit|result)$/.test(entry?.workflow_action || ''))).toBe(false);
+    expect(events.some(entry => /onboarding.*(?:step|view|click)/i.test(`${entry?.event_name || ''} ${entry?.workflow_action || ''}`))).toBe(false);
+    events.forEach((entry) => {
+        expect(entry).not.toHaveProperty('issue_key');
+        expect(entry).not.toHaveProperty('issue_keys');
+        expect(entry).not.toHaveProperty('step_id');
+        expect(entry).not.toHaveProperty('raw_content');
+        expect(JSON.stringify(entry)).not.toMatch(/SYN-(?:EPIC|STORY)|Highest|Medium|Committed|Flexible|To Do|Done/);
+    });
+}
+
+async function expectProductionSpotlightAligned(page, field, issueKey = 'SYN-EPIC-A') {
+    const hook = productionFieldContracts[field].triggerHook;
+    await expect.poll(() => page.locator('.onboarding-tour-spotlight').evaluate((spotlight, selector) => {
+        const trigger = document.querySelector(selector);
+        if (!trigger) return null;
+        const triggerRect = trigger.getBoundingClientRect();
+        const spotlightRect = spotlight.getBoundingClientRect();
+        return {
+            left: Math.round((spotlightRect.left + 6 - triggerRect.left) * 10) / 10,
+            top: Math.round((spotlightRect.top + 6 - triggerRect.top) * 10) / 10,
+            right: Math.round((spotlightRect.right - 6 - triggerRect.right) * 10) / 10,
+            bottom: Math.round((spotlightRect.bottom - 6 - triggerRect.bottom) * 10) / 10,
+        };
+    }, `[data-${hook}-transition-trigger][data-issue-key="${issueKey}"]`)).toEqual({
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    });
+}
+
+async function exerciseReadOnlyPreviewInputs(page, field, issueKey = 'SYN-EPIC-A') {
+    const contract = productionFieldContracts[field];
+    const menu = productionMenu(page, field, issueKey);
+    const options = menu.getByRole('menuitem');
+    const optionCount = await options.count();
+    expect(optionCount).toBeGreaterThan(0);
+
+    const activeId = async () => menu.getAttribute('aria-activedescendant');
+    const optionId = async index => options.nth(index).getAttribute('id');
+    await expect.poll(activeId).toBe(await optionId(0));
+    await menu.press('ArrowDown');
+    await expect.poll(activeId).toBe(await optionId(optionCount > 1 ? 1 : 0));
+    await menu.press('ArrowUp');
+    await expect.poll(activeId).toBe(await optionId(0));
+    await menu.press('End');
+    await expect.poll(activeId).toBe(await optionId(optionCount - 1));
+    await menu.press('Home');
+    await expect.poll(activeId).toBe(await optionId(0));
+
+    await menu.press('Enter');
+    await expect(page.getByRole('heading')).toHaveText(contract.heading);
+    await expect(menu).toBeVisible();
+    await menu.press(' ');
+    await expect(page.getByRole('heading')).toHaveText(contract.heading);
+    await expect(menu).toBeVisible();
+    const clickableOption = options.last();
+    const optionBox = await clickableOption.boundingBox();
+    expect(optionBox).not.toBeNull();
+    const optionHit = await page.evaluate(({ x, y }) => (
+        document.elementFromPoint(x, y)?.closest('[role="menuitem"]')?.id || ''
+    ), {
+        x: optionBox.x + optionBox.width / 2,
+        y: optionBox.y + optionBox.height / 2,
+    });
+    expect(optionHit).toBe(await clickableOption.getAttribute('id'));
+    await page.mouse.click(optionBox.x + optionBox.width / 2, optionBox.y + optionBox.height / 2);
+    await expect(page.getByRole('heading')).toHaveText(contract.heading);
+    await expect(menu).toBeVisible();
+}
+
+async function invokeProductionOwnerBridge(page, field, descriptorOverride) {
+    return productionTrigger(page, field).evaluate((node, override) => {
+        const fiberKey = Object.keys(node).find(key => key.startsWith('__reactFiber$'));
+        const queue = fiberKey ? [node[fiberKey]] : [];
+        const visited = new Set();
+        while (queue.length) {
+            const fiber = queue.shift();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+            const props = fiber.memoizedProps;
+            if (props?.previewOnly && typeof props.onPreviewLifecycleChange === 'function') {
+                const descriptor = { ...props.previewOnly, ...override };
+                props.onPreviewLifecycleChange(descriptor, { state: 'ready', reason: '' });
+                const tuple = value => ({
+                    sessionId: value.sessionId,
+                    stepId: value.stepId,
+                    fieldKind: value.fieldKind,
+                    issueKey: value.issueKey,
+                    targetIdentity: value.targetIdentity,
+                });
+                return { current: tuple(props.previewOnly), sent: tuple(descriptor) };
+            }
+            queue.push(fiber.return, fiber.alternate, fiber.alternate?.return);
+        }
+        throw new Error('Production onboarding owner bridge was not found.');
+    }, descriptorOverride);
+}
+
 async function productionFieldValueSnapshot(page, field, issueKey = 'SYN-EPIC-A') {
     const trigger = productionTrigger(page, field, issueKey);
     return trigger.evaluate(node => ({
@@ -875,10 +1002,9 @@ async function advanceProductionTourTo(page, heading) {
 }
 
 function assertNoUnsafePreviewAnalytics(events, contract) {
+    assertNoPreviewMutationAnalytics(events);
     const actionEvents = events.filter(entry => entry?.event_name === contract.analyticsEventName);
     expect(actionEvents.filter(entry => entry.workflow_action === contract.analyticsAction)).toHaveLength(1);
-    expect(actionEvents.some(entry => /change_(?:submit|result)$/.test(entry.workflow_action || ''))).toBe(false);
-    expect(events.some(entry => /onboarding.*(?:step|view|click)/i.test(`${entry?.event_name || ''} ${entry?.workflow_action || ''}`))).toBe(false);
     actionEvents.forEach((entry) => {
         expect(entry).toMatchObject({
             event: 'userevent',
@@ -912,14 +1038,7 @@ test('production Catch Up Priority preview owns only the exact Epic control and 
     const siblingKind = productionTrigger(page, 'track');
     const identity = await target.getAttribute('data-onboarding-target-identity');
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
-    await expect.poll(() => page.locator('.onboarding-tour-spotlight').evaluate((spotlight, selector) => {
-        const trigger = document.querySelector(selector);
-        if (!trigger) return false;
-        const triggerRect = trigger.getBoundingClientRect();
-        const spotlightRect = spotlight.getBoundingClientRect();
-        return Math.abs(spotlightRect.left + 6 - triggerRect.left) <= 1
-            && Math.abs(spotlightRect.top + 6 - triggerRect.top) <= 1;
-    }, '[data-priority-transition-trigger][data-issue-key="SYN-EPIC-A"]')).toBe(true);
+    await expectProductionSpotlightAligned(page, 'priority');
 
     await siblingKind.evaluate(node => node.click());
     await expect(page.getByRole('heading')).toHaveText(contract.heading);
@@ -939,13 +1058,14 @@ test('production Catch Up Priority preview owns only the exact Epic control and 
     await expect(siblingIssue).toHaveAttribute('aria-expanded', 'false');
     await expect(siblingIssue).not.toHaveAttribute('aria-describedby', /.+/);
     await expect(productionMenu(page, 'priority', 'SYN-EPIC-B')).toHaveCount(0);
+    await exerciseReadOnlyPreviewInputs(page, 'priority');
     expect(await productionIssueSnapshot(page)).toEqual(before);
-    expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+    assertProductionRequestSafety(calls);
 
     await menu.press('Escape');
     await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
     await expect(menu).toHaveCount(0);
-    expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+    assertProductionRequestSafety(calls);
     assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
 });
 
@@ -961,6 +1081,7 @@ for (const field of ['track', 'status']) {
         const wrongTrigger = productionTrigger(page, wrongField);
         const identity = await target.getAttribute('data-onboarding-target-identity');
         await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
+        await expectProductionSpotlightAligned(page, field);
         await wrongTrigger.evaluate(node => node.click());
         await expect(page.getByRole('heading')).toHaveText(contract.heading);
         await expect(productionMenu(page, wrongField)).not.toHaveAttribute('data-onboarding-preview-owner', /.+/);
@@ -975,13 +1096,82 @@ for (const field of ['track', 'status']) {
         await expect(menu.locator('[role="menuitem"]')).toHaveCount(field === 'track' ? 1 : 2);
         await expect(menu.locator('button[role="menuitem"]')).toHaveCount(0);
         await expect(menu.locator('[role="menuitem"]:focus')).toHaveCount(0);
+        await exerciseReadOnlyPreviewInputs(page, field);
         expect(await productionIssueSnapshot(page)).toEqual(before);
-        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertProductionRequestSafety(calls);
 
         await menu.press('Escape');
         await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
         await expect(menu).toHaveCount(0);
-        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertProductionRequestSafety(calls);
+        assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
+    });
+}
+
+for (const field of ['priority', 'track', 'status']) {
+    const contract = productionFieldContracts[field];
+    const label = field === 'track' ? 'Project Track' : field[0].toUpperCase() + field.slice(1);
+
+    test(`production ${label} same-field sibling remains a normal non-preview control`, async ({ page }) => {
+        const { calls } = await installProductionOnboardingFixture(page, { field, mode: 'success' });
+        await advanceProductionTourTo(page, contract.heading);
+        const sibling = productionTrigger(page, field, 'SYN-EPIC-B');
+        await expect(sibling).not.toHaveAttribute('aria-describedby', /.+/);
+
+        await sibling.evaluate(node => node.click());
+        const menu = productionMenu(page, field, 'SYN-EPIC-B');
+        await expect(menu).toBeVisible();
+        await expect(menu).not.toHaveClass(/is-preview-only/);
+        await expect(menu).not.toHaveAttribute('data-onboarding-preview-owner', /.+/);
+        await expect(menu.locator('button[role="menuitem"]').first()).toBeVisible();
+        await expect(menu.locator('[role="menuitem"][aria-disabled="true"]')).toHaveCount(0);
+        await expect(page.getByRole('heading')).toHaveText(contract.heading);
+        await sibling.evaluate(node => node.click());
+        await expect(menu).toHaveCount(0);
+        await expect(page.getByRole('heading')).toHaveText(contract.heading);
+
+        assertProductionRequestSafety(calls);
+        assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
+    });
+
+    test(`production ${label} owner bridge rejects every stale descriptor tuple member`, async ({ page }) => {
+        const { calls } = await installProductionOnboardingFixture(page, { field, mode: 'success' });
+        await advanceProductionTourTo(page, contract.heading);
+        const target = productionTrigger(page, field);
+        await expect(target).toHaveAttribute('aria-describedby', /.+/);
+        const targetIdentity = await target.getAttribute('data-onboarding-target-identity');
+        const expectedTuple = {
+            sessionId: expect.any(Number),
+            stepId: `editing-${field}`,
+            fieldKind: field,
+            issueKey: 'SYN-EPIC-A',
+            targetIdentity,
+        };
+
+        const wrongDescriptors = [
+            { sessionId: 'onboarding-stale-session' },
+            { stepId: 'editing-stale-step' },
+            { fieldKind: field === 'priority' ? 'status' : 'priority' },
+            { issueKey: 'SYN-EPIC-B' },
+            { targetIdentity: 'stale-target-identity' },
+        ];
+        for (const override of wrongDescriptors) {
+            const bridge = await invokeProductionOwnerBridge(page, field, override);
+            expect(bridge.current).toEqual(expectedTuple);
+            expect(bridge.sent).toEqual({ ...bridge.current, ...override });
+            await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
+            await expect(productionMenu(page, field)).toHaveCount(0);
+            await expect(page.getByRole('heading')).toHaveText(contract.heading);
+        }
+
+        await target.click();
+        const menu = productionMenu(page, field);
+        await expect(menu).toBeFocused();
+        await expect(menu).toHaveAttribute('data-onboarding-preview-owner', targetIdentity);
+        await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'preview_ready');
+        await menu.press('Escape');
+        await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
+        assertProductionRequestSafety(calls);
         assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
     });
 }
@@ -1034,9 +1224,9 @@ test('production dashboard reaches IssueCard Story preview owners when the Epic 
     await expect(productionMenu(page, 'status', 'SYN-STORY-B')).toHaveCount(0);
     await storyStatusMenu.press('Escape');
 
-    expect(fieldCalls(calls, '/api/issues/priorities', 'POST')).toEqual([]);
-    expect(fieldCalls(calls, '/api/issues/project-track', 'POST')).toEqual([]);
-    expect(fieldCalls(calls, '/api/issues/transitions', 'POST')).toEqual([]);
+    assertProductionRequestSafety(calls);
+    const analytics = await page.evaluate(() => window.dataLayer || []);
+    Object.values(productionFieldContracts).forEach(contract => assertNoUnsafePreviewAnalytics(analytics, contract));
 });
 
 for (const field of ['priority', 'track', 'status']) {
@@ -1055,12 +1245,12 @@ for (const field of ['priority', 'track', 'status']) {
         await expect(page.getByRole('heading')).toHaveText(contract.heading);
         await expect(page.getByRole('button', { name: 'Next' })).toHaveCount(0);
         expect(await productionFieldValueSnapshot(page, field)).toEqual(before);
-        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertProductionRequestSafety(calls);
 
         await menu.press('Escape');
         await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
         await expect(menu).toHaveCount(0);
-        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertProductionRequestSafety(calls);
         assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
     });
 
@@ -1076,14 +1266,14 @@ for (const field of ['priority', 'track', 'status']) {
         await expect(menu.getByRole('status')).toContainText('Choices could not be loaded.');
         await expect(page.getByRole('button', { name: 'Next' })).toHaveCount(0);
         expect(fieldCalls(calls, contract.optionRoute)).toHaveLength(1);
-        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertProductionRequestSafety(calls);
 
         await menu.press('Escape');
         await expect(page.getByRole('heading')).toHaveText(contract.heading);
         await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
         await expect(menu).toHaveCount(0);
         expect(await productionFieldValueSnapshot(page, field)).toEqual(before);
-        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertProductionRequestSafety(calls);
         assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
         await page.getByRole('button', { name: 'Next' }).click();
         await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
@@ -1101,7 +1291,7 @@ for (const field of ['priority', 'track', 'status']) {
         await expect(productionMenu(page, field)).toHaveCount(0);
         await expect(page.locator('.onboarding-tour-preview-portal')).toHaveCount(0);
         expect(fieldCalls(calls, contract.optionRoute)).toHaveLength(1);
-        expect(fieldCalls(calls, contract.mutationRoute, 'POST')).toEqual([]);
+        assertProductionRequestSafety(calls);
         assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
     });
 }
@@ -1137,9 +1327,8 @@ test('production cached Priority and Status repeat previews stay read-only witho
     expect((await page.evaluate(() => window.dataLayer || [])).filter(entry => (
         entry?.event_name === 'issue_status_action' && entry.workflow_action === 'status_options_open'
     ))).toHaveLength(1);
-    expect(fieldCalls(calls, '/api/issues/priorities', 'POST')).toEqual([]);
-    expect(fieldCalls(calls, '/api/issues/project-track', 'POST')).toEqual([]);
-    expect(fieldCalls(calls, '/api/issues/transitions', 'POST')).toEqual([]);
+    assertProductionRequestSafety(calls);
+    assertNoPreviewMutationAnalytics(await page.evaluate(() => window.dataLayer || []));
 });
 
 test('production Status preview reaches the open terminal step and only explicit Finish persists once', async ({ page }) => {
@@ -1157,13 +1346,14 @@ test('production Status preview reaches the open terminal step and only explicit
     await expect(page.locator('[data-onboarding-tour]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Finish' })).toBeVisible();
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
-    expect(fieldCalls(calls, '/api/issues/transitions', 'POST')).toEqual([]);
+    assertProductionRequestSafety(calls);
 
     await page.getByRole('button', { name: 'Finish' }).click();
     await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toHaveLength(1);
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')[0].body).toEqual({ onboardingDone: true });
-    expect(fieldCalls(calls, '/api/issues/transitions', 'POST')).toEqual([]);
+    assertProductionRequestSafety(calls);
+    assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), productionFieldContracts.status);
 });
 
 test('step collector delegates preview progression before requiring a Next fallback', async ({ page }) => {

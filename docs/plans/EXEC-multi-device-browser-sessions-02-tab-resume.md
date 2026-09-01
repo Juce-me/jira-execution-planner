@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Ready after the server slice. Execute only after `EXEC-multi-device-browser-sessions-01-server.md` passes and the branch contains `b38e8f7`.
+**Status:** Frontend execution complete through Task 5; holistic review pending. Keep this plan under `EXEC-*` until review acceptance.
 
 **Goal:** Complete issue #143 by restoring each tab's safe view and Planning selection after same-tab OAuth reauthentication, while retaining the existing terminal global auth lock, no-replay rule, and cross-tab isolation.
 
@@ -26,6 +26,7 @@
 - Modify: `frontend/src/eng/planningSelectionActions.js`
 - Modify: `frontend/src/planningSelectionState.mjs`
 - Modify: `frontend/src/styles/shared/shell.css`
+- Modify: `docs/README_ANALYTICS.md`
 - Modify: `tests/test_auth_required.js`
 - Modify: `tests/test_planning_selection_state.js`
 - Modify: `tests/test_eng_auth_recovery_message.js`
@@ -441,7 +442,7 @@ git commit -m "Restore Planning state after reauthentication"
 - Create: `frontend/src/api/authRecoveryCoordinator.js`
 - Create: `tests/test_auth_recovery_coordinator.js`
 
-- [ ] **Step 1: Write failing atomic-claim, completion, and consumption tests**
+- [x] **Step 1: Write failing atomic-claim, completion, and consumption tests**
 
 Use separate fake `sessionStorage` instances, one shared fake `localStorage`, and an injectable exclusive-lock manager. Force both claims to begin before the first lock callback finishes:
 
@@ -546,7 +547,7 @@ Also assert:
 - separately fail completion's lease removal and success write: removal failure publishes no success, while success-write failure leaves no ghost live lease;
 - inability to persist a consumed marker disables automatic reload instead of creating a loop.
 
-- [ ] **Step 2: Run the new tests to verify they fail**
+- [x] **Step 2: Run the new tests to verify they fail**
 
 Run:
 
@@ -556,7 +557,9 @@ node --test tests/test_auth_recovery_coordinator.js
 
 Expected: FAIL because the coordinator module and atomic claim functions do not exist.
 
-- [ ] **Step 3: Implement the atomic coordinator**
+**Observed evidence (2026-09-01):** the pinned Node 20 focused command exited `1` because esbuild could not resolve the intentionally missing coordinator module.
+
+- [x] **Step 3: Implement the atomic coordinator**
 
 Create these constants/functions:
 
@@ -715,7 +718,7 @@ export function consumeAuthRecoverySuccess(sharedStorage, tabStorage, {
 
 Both claim and completion hold the same Web Lock only for their synchronous shared-storage transaction; neither may hold it across navigation or network I/O, and each samples its clock only after the lock is granted. Locked mutations use strict storage reads so an access failure cannot masquerade as an absent lease; exported UI read/consume helpers remain fail-soft. Read helpers are deliberately non-destructive because an unlocked read followed by removal could delete a newer record; the next locked claim overwrites stale records. Completion removes the matching lease before publishing success, requires the same live lease recorded by the current tab, and therefore prevents a solo fallback, superseded/expired leader, or partial failure from leaving a false success with a live ghost lease. Success consumption requires `requestStartedAt <= completedAt`, so a delayed pre-recovery request can use the recovery that happened while it was in flight, but a genuinely newer request cannot consume a stale marker. A click that races the locked effect returns `role: 'resume'` instead of deleting the marker or starting OAuth. The per-request threshold plus consumed marker, not a `completedAt > lockedAt` comparison, establishes causality and prevents reload loops.
 
-- [ ] **Step 4: Run coordinator tests**
+- [x] **Step 4: Run coordinator tests**
 
 Run:
 
@@ -725,25 +728,33 @@ node --test tests/test_auth_recovery_coordinator.js
 
 Expected: PASS, including simultaneous acquisition, late-success consumption, superseded-attempt protection, and explicit uncoordinated unavailable-lock/storage fallback.
 
-- [ ] **Step 5: Commit the coordinator module**
+**Final observed evidence (2026-09-01):** the focused coordinator suite passed 28/28 and the full frontend unit suite passed 988/988 after the reported clock and generated-ID quality/security corrections.
+
+- [x] **Step 5: Commit the coordinator module**
 
 ```bash
 git add frontend/src/api/authRecoveryCoordinator.js tests/test_auth_recovery_coordinator.js
 git commit -m "Coordinate OAuth recovery across tabs"
 ```
 
+**Observed approved commits:** `7334c88` (coordinator implementation) and `c461b94` (input-validation quality/security fix).
+
 ### Task 4: Integrate atomic initiation and shared-cookie reload into the terminal gate
 
 **Files:**
 
 - Modify: `frontend/src/components/AuthRequiredGate.jsx`
+- Modify: `frontend/src/api/authRecoveryCoordinator.js`
 - Modify: `frontend/src/dashboard.jsx`
 - Modify: `frontend/src/styles/shared/shell.css`
+- Modify: `docs/README_ANALYTICS.md`
 - Modify: `tests/test_auth_required.js`
+- Modify: `tests/test_auth_recovery_coordinator.js`
 - Modify: `tests/test_auth_isolation_source_guard.js`
 - Modify: `tests/ui/global_auth_lock.spec.js`
+- Modify: `tests/ui/planning_selection_defaults.spec.js`
 
-- [ ] **Step 1: Write failing gate and same-profile two-tab Playwright tests**
+- [x] **Step 1: Write failing gate and same-profile two-tab Playwright tests**
 
 Extend `global_auth_lock.spec.js` to create two pages in one context, drive each to the same Planning scope, choose different story keys in each page, and then return `401 auth_required` from each page's next app request. Assert:
 
@@ -770,7 +781,7 @@ Add a deterministic pending-click case: hold one page's claim behind the Web Loc
 
 Add identity-mismatch, capsule-expiry, missing-task pruning, Settings tab reopen, and connection token-input blank tests. Assert `window.__oldDocumentMarker` disappears after recovery navigation in both tabs, proving neither old document unlocked in place.
 
-- [ ] **Step 2: Run focused Playwright to verify it fails**
+- [x] **Step 2: Run focused Playwright to verify it fails**
 
 Run:
 
@@ -780,13 +791,15 @@ npx playwright test tests/ui/global_auth_lock.spec.js
 
 Expected: FAIL because the gate starts an uncoordinated link navigation and no post-login state restore occurs.
 
-- [ ] **Step 3: Claim the lease atomically from the gate action**
+**Observed evidence (2026-09-01):** focused browser RED showed two competing `/login` navigations, no shared completion reload, and no immediate success publication before delayed/failing hydration; the source guard also failed before coordinator integration.
+
+- [x] **Step 3: Claim the lease atomically from the gate action**
 
 Keep the existing sanitized same-tab target. On the action click, call `event.preventDefault()`, return immediately if `navigationStartedRef.current` is already true, and otherwise set `claimPendingRef.current = true` synchronously. Obtain both stores through `getAuthRecoveryStores(window)`; a `null` result clears the pending ref, sets the navigation ref, and immediately uses `window.location.assign(loginUrl)`. Otherwise await `claimAuthRecovery(stores.sharedStorage, stores.tabStorage, { requestStartedAt: authRequired.requestStartedAt })`. While the claim is pending, storage-event reconciliation must not consume success. After it settles, clear the pending ref, synchronously run the same persisted-state reconciliation once, and stop if `navigationStartedRef.current` became true. Only then handle the result after setting the navigation ref for either navigation: `leader` and `solo` navigate to `loginUrl`; `resume` navigates directly to `/`; `follower` remains locked and renders `Sign-in is continuing in another tab. This tab will resume automatically.` Disable repeat activation while pending. A `solo` result is the current uncoordinated same-tab behavior: it avoids deadlock, but simultaneous solo flows may still compete in the shared cookie, so the implementation must not claim cross-tab single-flight without working Web Locks/storage. The gate remains modal, inert, non-dismissible, and keyboard-blocking.
 
 Use one locked `useEffect` that first calls `getAuthRecoveryStores(window)`. A `null` result disables coordination for that effect without changing the terminal gate. Otherwise install the `storage` listener first, then synchronously call the same reconciliation function used by the listener. That function returns without consuming while `claimPendingRef.current` is true; otherwise it reads the live lease for follower copy and calls `consumeAuthRecoverySuccess(stores.sharedStorage, stores.tabStorage, { requestStartedAt: authRequired.requestStartedAt })`. A consumed success sets `navigationStartedRef.current` before calling `window.location.assign('/')` exactly once. Do not require the follower to know the leader attempt id, and do not compare `completedAt` with `authRequired.lockedAt`; the request-start threshold handles success-before-mount, delayed-`401`, and stale-marker cases. Do not publish success from the old locked document.
 
-- [ ] **Step 4: Publish success immediately from the new authenticated document**
+- [x] **Step 4: Publish success immediately from the new authenticated document**
 
 In `dashboard.jsx`, immediately after `loadConfig` validates the authenticated private-view principal—and before group, sprint, Settings, or Planning hydration—guard storage acquisition and await only when available:
 
@@ -799,7 +812,7 @@ if (recoveryStores) {
 
 `completeAuthRecovery` is a no-op on ordinary bootstrap without a current tab attempt, and unavailable storage is a no-op that must not delay or fail authenticated bootstrap. Never defer completion for capsule restoration and never complete from an unauthenticated/bootstrap-locked document. Each tab validates, applies, rejects, retries, or expires its own capsule independently after the shared-cookie success broadcast.
 
-- [ ] **Step 5: Preserve terminal lock and privacy guards**
+- [x] **Step 5: Preserve terminal lock and privacy guards**
 
 Update unit/source guards to assert:
 
@@ -813,7 +826,7 @@ Update unit/source guards to assert:
 - every capsule/coordinator integration boundary obtains storage through the guarded helpers; blocked property getters skip capsule work/coordination without breaking lock render or authenticated bootstrap;
 - missing Web Locks/storage preserves the existing uncoordinated same-tab navigation without calling the id generator or claiming automatic cross-tab recovery or conflict-free simultaneous OAuth.
 
-- [ ] **Step 6: Run focused unit and Playwright tests**
+- [x] **Step 6: Run focused unit and Playwright tests**
 
 Run:
 
@@ -824,12 +837,16 @@ npx playwright test tests/ui/global_auth_lock.spec.js tests/ui/planning_selectio
 
 Expected: PASS, including simultaneous-click single-flight, dynamic leader selection, one real OAuth-initiation request, shared-cookie authentication, immediate success despite failed/delayed leader hydration, success-before-listener, delayed-`401`, stale-success rejection, pending-click serialization, storage-getter fallback, exact-once navigation, and no-replay assertions.
 
-- [ ] **Step 7: Commit the gate integration**
+**Final observed evidence (2026-09-01):** the exact pinned Node/source command passed 70/70 and the exact two-spec Playwright command passed 39/39 after the effective no-replay proof and in-lock completion-eligibility fixes.
+
+- [x] **Step 7: Commit the gate integration**
 
 ```bash
 git add frontend/src/components/AuthRequiredGate.jsx frontend/src/dashboard.jsx frontend/src/styles/shared/shell.css tests/test_auth_required.js tests/test_auth_isolation_source_guard.js tests/ui/global_auth_lock.spec.js tests/ui/planning_selection_defaults.spec.js
 git commit -m "Resume locked tabs after OAuth login"
 ```
+
+**Observed approved commits:** `ca14064` (gate/dashboard integration), `bec47d9` (effective no-replay proof), and `5f62d67` (in-lock eligibility and analytics allowlist).
 
 ### Task 5: Build and verify the complete frontend slice
 

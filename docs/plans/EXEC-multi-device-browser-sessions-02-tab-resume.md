@@ -838,7 +838,7 @@ git commit -m "Resume locked tabs after OAuth login"
 - Modify generated outputs under `frontend/dist/` only through the build
 - Modify source/tests only if verification finds a requirement-scoped defect
 
-- [ ] **Step 1: Install the pinned frontend dependencies in this worktree**
+- [x] **Step 1: Install the pinned frontend dependencies in this worktree**
 
 Run:
 
@@ -848,7 +848,9 @@ npm ci
 
 Expected: exit `0`; dependencies resolve inside this worktree rather than from an ancestor checkout.
 
-- [ ] **Step 2: Run all focused Node tests**
+Observed: Node `v20.20.0` via `fnm exec --using 20 --`; `npm ci` exited `0`, added 9 packages, and created a non-symlink `node_modules` at the worktree root.
+
+- [x] **Step 2: Run all focused Node tests**
 
 Run:
 
@@ -858,7 +860,9 @@ node --test tests/test_auth_required.js tests/test_auth_resume_state.js tests/te
 
 Expected: PASS.
 
-- [ ] **Step 3: Build generated frontend assets**
+Observed: 137 passed, 0 failed, 0 skipped. The full frontend unit suite also passed 990/990 with no skips.
+
+- [x] **Step 3: Build generated frontend assets**
 
 Run:
 
@@ -868,7 +872,9 @@ npm run build
 
 Expected: exit `0`; `frontend/dist/dashboard.js`, CSS, maps, and the separate auth-focus bundle are regenerated from source. Do not hand-edit them.
 
-- [ ] **Step 4: Run the focused browser suite**
+Observed: `npm run build` exited `0` and regenerated the five tracked JavaScript, CSS, and source-map assets exclusively from source.
+
+- [x] **Step 4: Run the focused browser suite**
 
 Run:
 
@@ -878,7 +884,9 @@ npx playwright test tests/ui/global_auth_lock.spec.js tests/ui/auth_focus_refres
 
 Expected: PASS. Capture a screenshot of each locked tab before leader navigation and each restored Planning tab after bootstrap for PR evidence.
 
-- [ ] **Step 5: Run full repository verification**
+Observed: the final exact five-spec suite passed 95/95 with normal clicks. Settled 1280 x 1064 captures are retained in the ignored `.superpowers/sdd/EXEC-multi-device-browser-sessions-02-tab-resume/evidence/task-5/` directory as `locked-tab-a.png`, `locked-tab-b.png`, `restored-planning-tab-a.png`, and `restored-planning-tab-b.png`. The first real run exposed a navigation-time `page.evaluate` race in test polling; the minimum test-only correction made polling tolerate only the expected destroyed execution context, and the final suite passed.
+
+- [x] **Step 5: Run full repository verification**
 
 Run:
 
@@ -890,7 +898,9 @@ git diff --check
 
 Expected: Python suite PASS; second build exits `0`; `git diff --check` passes; the second build introduces no additional generated diff.
 
-- [ ] **Step 6: Inspect storage and analytics privacy**
+Observed: the pinned Python suite ran 1,410 tests with 1,401 passed and 9 skipped after ratcheting the documented `dashboard.jsx` structure ceiling from 16,375 to its legitimate Tasks 1-4 size of 16,624. The second build exited `0`; every generated asset hash and the aggregate generated-diff hash (`150e2fb508ed7dae821ce974c49a78bceeb423822b0253d30e205a735d9bd7d1`) remained identical; `git diff --check` passed.
+
+- [x] **Step 6: Inspect storage and analytics privacy**
 
 Run:
 
@@ -901,7 +911,9 @@ rg -n "auth_resume|recovery_attempt|browser_session_id|selectedTaskKeys" docs/RE
 
 Expected: storage use is limited to the two new modules and their explicit integration/tests; no new GA4 parameter/event is present; issue keys, attempt ids, capsule contents, and browser-session ids are absent from analytics.
 
-- [ ] **Step 7: Commit generated assets and any verified correction**
+Observed: storage ownership is limited as expected; integration is confined to the auth gate/dashboard and explicit tests. Analytics/taxonomy scans found no new event or parameter and no issue keys, attempt ids, capsule contents, or browser-session ids. The existing privacy-safe `app_error_shown` / `auth_required` event remains authoritative.
+
+- [x] **Step 7: Commit generated assets and any verified correction**
 
 ```bash
 git add frontend/dist frontend/src tests
@@ -909,3 +921,5 @@ git commit -m "Verify per-tab authentication recovery"
 ```
 
 If Tasks 1-4 already committed every source/test change and the build produced no tracked change, do not create an empty commit.
+
+Observed: commit `568bb5a6cb98b36d9132270ec2702eeb2ebb89a3` records the five generated assets and the two direct verification corrections. No unrelated source or backend behavior was changed.

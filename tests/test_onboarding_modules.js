@@ -42,6 +42,10 @@ test('activates contextual modules with a newer request nonce', async () => {
         moduleId: 'catch-up',
         requestNonce: 2,
     }), activated, 'invalid contextual ids are idempotent');
+    assert.equal(activateOnboardingModule(activated, {
+        moduleId: 'board',
+        requestNonce: Infinity,
+    }), activated, 'non-finite nonces are idempotent');
 });
 
 test('completes configuration and resumes after leaving settings', async () => {
@@ -65,6 +69,32 @@ test('completes configuration and resumes after leaving settings', async () => {
         'duplicate completion is idempotent');
     assert.equal(completeOnboardingModule(activeConfiguration, { moduleId: 'planning' }), activeConfiguration,
         'stale completion is idempotent');
+});
+
+test('replay reset returns to catch-up and remains idempotent on a fresh session', async () => {
+    const {
+        activateOnboardingModule,
+        completeOnboardingModule,
+        createOnboardingModuleSession,
+        resumeOnboardingAfterSurfaceExit,
+    } = await loadModule();
+    const active = activateOnboardingModule(createOnboardingModuleSession(), {
+        moduleId: 'planning',
+        resumeStepId: 'launch-board',
+        requestNonce: 1,
+    });
+    const reset = completeOnboardingModule(active);
+
+    assert.equal(reset.activeModule, 'catch-up');
+    assert.equal(completeOnboardingModule(reset, { moduleId: 'planning' }), reset);
+
+    const fresh = createOnboardingModuleSession();
+    assert.equal(resumeOnboardingAfterSurfaceExit(fresh, 'catch-up'), fresh);
+    assert.equal(activateOnboardingModule(fresh, {
+        moduleId: 'planning',
+        resumeStepId: 'launch-board',
+        requestNonce: 1,
+    }).activeModule, 'planning');
 });
 
 test('acknowledges unavailable modules without duplicating completion entries', async () => {

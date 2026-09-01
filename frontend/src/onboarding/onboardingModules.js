@@ -26,6 +26,7 @@ export function activateOnboardingModule(state, request = {}) {
     const moduleId = String(request.moduleId || '');
     const requestNonce = Number(request.requestNonce) || 0;
     if (!CONTEXTUAL_MODULE_SET.has(moduleId)
+        || !Number.isFinite(requestNonce)
         || requestNonce <= (Number(state?.requestNonce) || 0)
         || state?.completedModules?.includes(moduleId)) return state;
     return {

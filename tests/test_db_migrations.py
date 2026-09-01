@@ -153,6 +153,43 @@ class DbMigrationTests(unittest.TestCase):
                 self.assertIsNone(raised.exception.__context__)
                 self.assertNotIn("secret", rendered)
 
+    def test_capacity_migration_upgrades_downgrades_and_has_portable_postgres_offline_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'capacity.db')}"
+            config = self._config(database_url)
+            command.upgrade(config, '20260604_0006')
+            command.upgrade(config, 'head')
+            engine = create_engine(database_url, future=True)
+            try:
+                inspector = inspect(engine)
+                columns = {column['name'] for column in inspector.get_columns('workspace_capacity_configs')}
+                self.assertTrue({'workspace_id', 'jira_site_url', 'jira_cloud_id', 'config_revision', 'field_schema_type'}.issubset(columns))
+                self.assertIn('uq_workspace_capacity_configs_workspace', {item['name'] for item in inspector.get_unique_constraints('workspace_capacity_configs')})
+                self.assertEqual({item['referred_table'] for item in inspector.get_foreign_keys('workspace_capacity_configs')}, {'workspaces', 'users'})
+                self.assertIn('scope_provenance', {column['name'] for column in inspector.get_columns('auth_connections')})
+            finally:
+                engine.dispose()
+            command.downgrade(config, '20260604_0006')
+            engine = create_engine(database_url, future=True)
+            try:
+                inspector = inspect(engine)
+                self.assertNotIn('workspace_capacity_configs', inspector.get_table_names())
+                self.assertNotIn('scope_provenance', {column['name'] for column in inspector.get_columns('auth_connections')})
+            finally:
+                engine.dispose()
+            command.upgrade(config, 'head')
+
+        config = self._config('postgresql+psycopg://planner@db.example.test:5432/planner?sslmode=require')
+        output = io.StringIO()
+        config.output_buffer = output
+        with patch.dict(os.environ, {'DATABASE_CONNECTION_MODE': 'url'}, clear=False):
+            command.upgrade(config, 'head', sql=True)
+        sql = output.getvalue()
+        self.assertIn('CREATE TABLE workspace_capacity_configs', sql)
+        self.assertIn('ALTER TABLE auth_connections ADD COLUMN scope_provenance', sql)
+        self.assertIn('UNIQUE (workspace_id)', sql)
+        self.assertIn('FOREIGN KEY(workspace_id)', sql)
+
 
 if __name__ == '__main__':
     unittest.main()

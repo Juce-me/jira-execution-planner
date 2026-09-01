@@ -139,6 +139,21 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
         self.assertEqual([policy.name for policy in matches], ["jira-issue-status-catalog"])
         self.assertEqual(matches[0].policy_class, "authenticated_read")
 
+    def test_capacity_write_route_has_one_dynamic_user_write_policy(self):
+        from backend.security.policy import matching_path_policies, matching_policies
+
+        rule_matches = matching_policies(
+            "/api/capacity/<issue_key>",
+            ["PATCH"],
+            "capacity_routes.patch_capacity",
+        )
+        path_matches = matching_path_policies("/api/capacity/CAP-101", "PATCH")
+
+        self.assertEqual([policy.name for policy in rule_matches], ["jira-team-capacity-write"])
+        self.assertEqual([policy.policy_class for policy in rule_matches], ["user_write"])
+        self.assertEqual([policy.name for policy in path_matches], ["jira-team-capacity-write"])
+        self.assertEqual([policy.policy_class for policy in path_matches], ["user_write"])
+
     def test_dynamic_routes_have_security_samples(self):
         from backend.security.policy import routes_requiring_samples
         from tests.endpoint_security_samples import ROUTE_SAMPLES

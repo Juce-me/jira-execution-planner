@@ -5,7 +5,8 @@ import os
 from flask import Blueprint, jsonify, redirect, request, session
 
 from backend.auth.csrf import issue_csrf_token
-from backend.auth.jira_auth import ensure_oauth_token, missing_oauth_scopes
+from backend.auth.jira_auth import ensure_oauth_token
+from backend.auth.scope_policy import missing_context_oauth_scopes
 from backend.epm import home as epm_home
 
 from . import bind_server_globals
@@ -52,15 +53,20 @@ def api_auth_status():
         })
     data = oauth_session_data()
     authenticated = bool(data.get('access_token') and data.get('cloudid'))
-    if authenticated and missing_oauth_scopes(data, ATLASSIAN_SCOPES):
-        return jsonify({
-            'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
-            'authenticated': False,
-            'loginRequired': True,
-            'loginUrl': '/login?reason=missing_scope',
-            'siteUrl': data.get('site_url'),
-            'siteName': data.get('site_name'),
-        })
+    if authenticated:
+        try:
+            context = current_request_auth_context()
+        except AuthError:
+            context = None
+        if context is None or missing_context_oauth_scopes(context, ATLASSIAN_SCOPES):
+            return jsonify({
+                'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
+                'authenticated': False,
+                'loginRequired': True,
+                'loginUrl': '/login?reason=missing_scope',
+                'siteUrl': data.get('site_url'),
+                'siteName': data.get('site_name'),
+            })
     return jsonify({
         'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
         'authenticated': authenticated,
@@ -74,14 +80,15 @@ def api_auth_status():
 def auth_entry_page():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return redirect('/')
-    if database_storage_enabled() and db_oauth_browser_session_data():
+    missing_scope_reauth = request.args.get('reason') == 'missing_scope'
+    if not missing_scope_reauth and database_storage_enabled() and db_oauth_browser_session_data():
         try:
             current_request_auth_context()
             return redirect('/')
         except AuthError:
             pass
     data = oauth_session_data()
-    if data.get('access_token') and data.get('cloudid'):
+    if not missing_scope_reauth and data.get('access_token') and data.get('cloudid'):
         return redirect('/')
     message = ''
     login_url = '/api/auth/atlassian/login'
@@ -402,8 +409,6 @@ def api_atlassian_callback():
         resources = fetch_accessible_resources(token_data.get('access_token', ''))
         resource = choose_accessible_resource(resources, config.jira_url)
         session_token_data = dict(token_data or {})
-        if not session_token_data.get('scope'):
-            session_token_data['scope'] = ATLASSIAN_SCOPES
         session_payload = token_session_payload(session_token_data, resource, user_profile)
         session_payload.update(store_db_oauth_callback_session_metadata(session_token_data, resource, user_profile))
         save_oauth_session(session_payload)

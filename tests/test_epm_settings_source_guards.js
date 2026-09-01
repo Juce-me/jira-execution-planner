@@ -117,7 +117,11 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(settingsModalCallSource.includes('onDiscard={discardGroupDraftChanges}'), 'Expected discard action to stay owned by dashboard');
     assert.ok(settingsModalCallSource.includes('saveDisabled={settingsSaveDisabled}'), 'Expected dashboard to own save disabled state');
     assert.ok(settingsModalCallSource.includes('saveTitle={settingsSaveTitle}'), 'Expected dashboard to own save title state');
-    assert.ok(settingsModalCallSource.includes("validationMessages={groupManageTab !== 'connections' ? [...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...groupConfigValidationErrors] : []}"), 'Expected validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes('validationMessages={groupManageTab !== \'connections\' ? ['), 'Expected dashboard-owned validation messages to render through the shell');
+    assert.ok(settingsModalCallSource.includes('groupConfigConflictMessages(groupsConfigConflict'), 'Expected group conflict messages in shell validation messages');
+    assert.ok(settingsModalCallSource.includes('...groupConfigValidationErrors'), 'Expected group validation errors in shell validation messages');
+    assert.ok(settingsModalCallSource.includes('capacityConfigConflict ? [\'Capacity configuration changed while you were editing.'), 'Expected fixed Capacity stale-conflict message in shell validation messages');
+    assert.ok(settingsModalCallSource.includes('capacityRequiresResolution ? [\'Capacity configuration requires an Admin choice before it can be used.\']'), 'Expected Capacity Admin-resolution message in shell validation messages');
     assert.ok(settingsModalCallSource.includes('validationActions={'), 'Expected the conflict exits to render in the shell validation slot');
     assert.ok(settingsModalCallSource.includes('onCancel={requestCloseGroupManage}'), 'Expected dashboard to wire cancel through the shared close handler');
     assert.ok(settingsModalCallSource.includes('onSave={settingsSaveHandler}'), 'Expected dashboard to wire save through the tab-aware save handler');

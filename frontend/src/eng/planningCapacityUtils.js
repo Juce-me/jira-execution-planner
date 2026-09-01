@@ -1,5 +1,273 @@
 import { classifyCapacityIssue } from '../capacityClassification.mjs';
 
+export function normalizeCapacityTeamName(name) {
+    if (!name) return '';
+    return String(name)
+        .replace(/\u00a0/g, ' ')
+        .replace(/^\[archived\]\s*/i, '')
+        .replace(/^r&d\s+/i, '')
+        .replace(/^(product|tech)\s*-\s*/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+export function normalizeCapacityKey(name) {
+    return normalizeCapacityTeamName(name).toLowerCase();
+}
+
+export function buildCapacityScopeSignature(sprintName, teamNames = []) {
+    const teams = Array.from(new Set(
+        (Array.isArray(teamNames) ? teamNames : [])
+            .map(normalizeCapacityKey)
+            .filter(Boolean),
+    )).sort((left, right) => left.localeCompare(right));
+    return JSON.stringify({ sprintName: String(sprintName || ''), teams });
+}
+
+function resolveUniqueCapacityCandidate(valuesByTeam, teamName) {
+    const key = normalizeCapacityKey(teamName);
+    if (!key || !valuesByTeam || typeof valuesByTeam !== 'object') {
+        return { matched: false, ambiguous: false, value: null };
+    }
+
+    const entries = Object.entries(valuesByTeam)
+        .map(([candidateName, value]) => ({ key: normalizeCapacityKey(candidateName), value }))
+        .filter(candidate => candidate.key);
+    const exact = entries.filter(candidate => candidate.key === key);
+    if (exact.length === 1) {
+        return { matched: true, ambiguous: false, value: exact[0].value };
+    }
+    if (exact.length > 1) {
+        return { matched: false, ambiguous: true, value: null };
+    }
+
+    const candidates = entries.filter(candidate => candidate.key.includes(key) || key.includes(candidate.key));
+    if (candidates.length === 1) {
+        return { matched: true, ambiguous: false, value: candidates[0].value };
+    }
+    return { matched: false, ambiguous: candidates.length > 1, value: null };
+}
+
+export function resolveUniqueCapacityValue(capacityByTeam, teamName) {
+    const resolved = resolveUniqueCapacityCandidate(capacityByTeam, teamName);
+    return resolved.matched
+        ? { matched: true, value: resolved.value }
+        : { matched: false, value: null };
+}
+
+export function resolveUniqueCapacityTarget(capacityTargetsByTeam, teamName) {
+    const resolved = resolveUniqueCapacityCandidate(capacityTargetsByTeam, teamName);
+    if (resolved.matched) return resolved.value;
+    return { state: resolved.ambiguous ? 'ambiguous' : 'missing' };
+}
+
+export function buildCapacityReadState(payload = {}) {
+    const capacityByTeam = {};
+    for (const [teamName, capacity] of Object.entries(payload?.capacities || {})) {
+        const key = normalizeCapacityKey(teamName);
+        if (!key || typeof capacity !== 'number' || !Number.isFinite(capacity)) continue;
+        capacityByTeam[key] = capacity;
+    }
+
+    const targetsByKey = new Map();
+    for (const entry of Array.isArray(payload?.entries) ? payload.entries : []) {
+        const teamName = normalizeCapacityTeamName(entry?.teamName);
+        const issueKey = typeof entry?.issueKey === 'string' ? entry.issueKey.trim() : '';
+        const key = normalizeCapacityKey(teamName);
+        if (!key || !issueKey) continue;
+        const capacity = typeof entry?.capacity === 'number' && Number.isFinite(entry.capacity)
+            ? entry.capacity
+            : null;
+        if (!targetsByKey.has(key)) targetsByKey.set(key, new Map());
+        const issues = targetsByKey.get(key);
+        if (!issues.has(issueKey)) {
+            issues.set(issueKey, { state: 'matched', issueKey, teamName, capacity });
+        }
+    }
+
+    const capacityTargetsByTeam = {};
+    for (const [key, issues] of targetsByKey.entries()) {
+        capacityTargetsByTeam[key] = issues.size === 1
+            ? issues.values().next().value
+            : { state: 'ambiguous' };
+    }
+    return {
+        capacityByTeam,
+        capacityTargetsByTeam,
+        mutationEnabled: payload?.mutationEnabled === true,
+    };
+}
+
+export function applyCapacitySaveResult(state, result) {
+    if (!state || !result || typeof result.issueKey !== 'string' || typeof result.teamName !== 'string') {
+        return state;
+    }
+    if (typeof result.capacity !== 'number' || !Number.isFinite(result.capacity) || result.capacity < 0) {
+        return state;
+    }
+    const key = normalizeCapacityKey(result.teamName);
+    const target = state.capacityTargetsByTeam?.[key];
+    if (
+        !key || target?.state !== 'matched'
+        || target.issueKey !== result.issueKey
+        || normalizeCapacityKey(target.teamName) !== key
+    ) {
+        return state;
+    }
+    return {
+        ...state,
+        capacityByTeam: { ...state.capacityByTeam, [key]: result.capacity },
+        capacityTargetsByTeam: {
+            ...state.capacityTargetsByTeam,
+            [key]: { ...target, capacity: result.capacity },
+        },
+    };
+}
+
+export function applyCapacitySaveResultForScope(state, result, activeScopeSignature) {
+    if (
+        !state || !result
+        || result.scopeSignature !== activeScopeSignature
+        || state.scopeSignature !== result.scopeSignature
+    ) {
+        return state;
+    }
+    return applyCapacitySaveResult(state, result);
+}
+
+function emptyCapacityState(scopeSignature) {
+    return {
+        capacityByTeam: {},
+        capacityTargetsByTeam: {},
+        mutationEnabled: false,
+        scopeSignature,
+    };
+}
+
+export function reduceCapacityReadLifecycle(model, event) {
+    if (!model || !event || typeof event.scopeSignature !== 'string') return model;
+    const { scopeSignature } = event;
+    if (event.type === 'gate') {
+        return {
+            ...model,
+            capacityState: emptyCapacityState(scopeSignature),
+            capacityLoading: false,
+            capacityReadError: '',
+            capacityDataStale: false,
+        };
+    }
+    if (event.type === 'start') {
+        const scopeChanged = model.capacityState?.scopeSignature !== scopeSignature;
+        return {
+            ...model,
+            capacityState: scopeChanged ? emptyCapacityState(scopeSignature) : model.capacityState,
+            capacityLoading: true,
+            capacityReadError: scopeChanged ? '' : model.capacityReadError,
+            capacityDataStale: scopeChanged ? false : model.capacityDataStale,
+        };
+    }
+    if (event.type === 'success') {
+        const readState = event.payload?.enabled === true
+            ? buildCapacityReadState(event.payload)
+            : buildCapacityReadState({ mutationEnabled: false });
+        return {
+            ...model,
+            capacityState: { ...readState, scopeSignature },
+            capacityLoading: false,
+            capacityReadRevision: model.capacityReadRevision + 1,
+            capacityReadError: '',
+            capacityDataStale: false,
+        };
+    }
+    if (event.type === 'failure') {
+        const previousState = model.capacityState?.scopeSignature === scopeSignature
+            ? model.capacityState
+            : emptyCapacityState(scopeSignature);
+        const capacityByTeam = previousState.capacityByTeam || {};
+        return {
+            ...model,
+            capacityState: {
+                capacityByTeam,
+                capacityTargetsByTeam: {},
+                mutationEnabled: false,
+                scopeSignature,
+            },
+            capacityLoading: false,
+            capacityReadError: 'Capacity could not be refreshed.',
+            capacityDataStale: Object.keys(capacityByTeam).length > 0,
+        };
+    }
+    return model;
+}
+
+export function beginCapacityReadOwnership({
+    generationRef,
+    abortRef,
+    activeScopeRef,
+    scopeSignature,
+    capacityEnabled,
+    showPlanning,
+    sprintName,
+    teams,
+    createAbortController = () => new AbortController(),
+}) {
+    const generation = ++generationRef.current;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    const shouldFetch = Boolean(
+        capacityEnabled && showPlanning && sprintName && Array.isArray(teams) && teams.length > 0,
+    );
+    const controller = shouldFetch ? createAbortController() : null;
+    if (controller) abortRef.current = controller;
+    const isCurrent = () => (
+        generation === generationRef.current
+        && scopeSignature === activeScopeRef.current
+    );
+    const cleanup = () => {
+        controller?.abort();
+        if (abortRef.current === controller) abortRef.current = null;
+        if (generationRef.current === generation) generationRef.current += 1;
+    };
+    return { controller, generation, shouldFetch, isCurrent, cleanup };
+}
+
+export function parseCapacityDraft(text) {
+    if (typeof text !== 'string' || text.trim() === '') {
+        return { valid: false, value: null };
+    }
+    const parsedValue = Number(text);
+    const value = parsedValue === 0 ? 0 : parsedValue;
+    return Number.isFinite(value) && value >= 0
+        ? { valid: true, value }
+        : { valid: false, value: null };
+}
+
+export function safeCapacityRecoveryUrl(error, origin) {
+    for (const candidate of [error?.loginUrl, error?.recoveryUrl]) {
+        if (typeof candidate !== 'string' || !candidate.startsWith('/') || candidate.startsWith('//')) continue;
+        try {
+            decodeURI(candidate);
+            const url = new URL(candidate, origin);
+            if (url.origin !== origin) continue;
+            if (url.pathname !== '/login' && !url.pathname.startsWith('/auth/')) continue;
+            return `${url.pathname}${url.search}${url.hash}`;
+        } catch (_error) {
+            // Ignore malformed or non-URL recovery targets.
+        }
+    }
+    return '';
+}
+
+export function getCapacityShareLabel({ showProduct, showTech, capacitySplit }) {
+    if (showProduct && !showTech) {
+        return `Planning Product share ${Math.round(capacitySplit.product * 100)}%`;
+    }
+    if (showTech && !showProduct) {
+        return `Planning Tech share ${Math.round(capacitySplit.tech * 100)}%`;
+    }
+    return '';
+}
+
 export function getCapacityStatus(selected, capacity) {
     if (!capacity) {
         return { label: '', text: '', status: '', title: '' };
@@ -247,18 +515,31 @@ export function buildSelectedTeamEntries({
     displayedTeamOptions,
     selectedTeamStats,
     capacityEnabled,
+    capacityByTeam,
+    capacityTargetsByTeam,
     getTeamCapacity,
     getTeamNetCapacity,
     capacityMultiplier
 }) {
     if (!showPlanning) return [];
-    return displayedTeamOptions.map((team) => ({
-        id: team.id,
-        name: team.name,
-        storyPoints: selectedTeamStats[team.id]?.storyPoints || 0,
-        teamCapacity: capacityEnabled ? getTeamCapacity(team.name) * capacityMultiplier : null,
-        planningCapacity: capacityEnabled ? getTeamNetCapacity(team) * capacityMultiplier : null
-    }));
+    return displayedTeamOptions.map((team) => {
+        const target = resolveUniqueCapacityTarget(capacityTargetsByTeam, team.name);
+        const numeric = resolveUniqueCapacityValue(capacityByTeam, team.name);
+        const rawCapacity = numeric.matched ? numeric.value : null;
+        return {
+            id: team.id,
+            name: team.name,
+            storyPoints: selectedTeamStats[team.id]?.storyPoints || 0,
+            teamCapacity: capacityEnabled ? getTeamCapacity(team.name) * capacityMultiplier : null,
+            planningCapacity: capacityEnabled ? getTeamNetCapacity(team) * capacityMultiplier : null,
+            rawCapacity,
+            hasCapacityValue: numeric.matched,
+            capacityIssueKey: target.state === 'matched' ? target.issueKey : '',
+            capacityTargetTeamName: target.state === 'matched' ? target.teamName : '',
+            capacityTargetCapacity: target.state === 'matched' ? target.capacity : null,
+            capacityTargetState: target.state,
+        };
+    });
 }
 
 export function buildCapacityTotals({

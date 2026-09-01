@@ -97,6 +97,35 @@
             font-size: 0.7rem;
         }
 
+        /* Shared IconButton sizes for compact icon-only controls. */
+        .icon-button--sm[data-icon-size="sm"],
+        .icon-button--md[data-icon-size="md"] {
+            box-sizing: border-box;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            margin: 0;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .icon-button--sm[data-icon-size="sm"] {
+            width: 24px;
+            max-width: 24px;
+            height: 24px;
+            min-height: 24px;
+            flex-basis: 24px;
+        }
+
+        .icon-button--md[data-icon-size="md"] {
+            width: 28px;
+            max-width: 28px;
+            height: 28px;
+            min-height: 28px;
+            flex-basis: 28px;
+        }
+
         .search-input:focus {
             outline: none;
             border-color: var(--accent);

@@ -24,6 +24,8 @@ class RequestAuthContext:
     account_status: str
     is_admin: bool
     project_access: tuple[ProjectAccessSnapshot, ...] = field(default_factory=tuple)
+    granted_scopes: tuple[str, ...] = field(default_factory=tuple)
+    granted_scopes_verified: bool = False
 
 
 def stable_local_workspace_id(environment_key, jira_site_url, cloud_id=""):

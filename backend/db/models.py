@@ -208,6 +208,30 @@ class WorkspaceGroupConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
 
+class WorkspaceCapacityConfig(Base):
+    __tablename__ = 'workspace_capacity_configs'
+    __table_args__ = (
+        UniqueConstraint('workspace_id', name='uq_workspace_capacity_configs_workspace'),
+        CheckConstraint("status in ('active', 'requires_resolution')", name='ck_workspace_capacity_configs_status'),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    jira_site_url: Mapped[str] = mapped_column(String(512), nullable=False, default='')
+    jira_cloud_id: Mapped[str] = mapped_column(String(255), nullable=False, default='')
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default='active')
+    project_key: Mapped[str] = mapped_column(String(64), nullable=False, default='')
+    field_id: Mapped[str] = mapped_column(String(255), nullable=False, default='')
+    field_name: Mapped[str] = mapped_column(String(255), nullable=False, default='')
+    field_schema_type: Mapped[str] = mapped_column(String(64), nullable=False, default='')
+    field_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    updated_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
 class UserGroupPreference(Base):
     __tablename__ = 'user_group_preferences'
     __table_args__ = (
@@ -342,6 +366,7 @@ class AuthConnection(Base):
             name='ck_auth_connections_provider',
         ),
         CheckConstraint("status in ('active', 'expired', 'revoked', 'error')", name='ck_auth_connections_status'),
+        CheckConstraint("scope_provenance in ('provider', 'unknown')", name='ck_auth_connections_scope_provenance'),
         Index(
             'uq_auth_connections_current_cloud',
             'user_id',
@@ -381,6 +406,7 @@ class AuthConnection(Base):
     cloud_id: Mapped[Optional[str]] = mapped_column(String(255))
     credential_subject: Mapped[Optional[str]] = mapped_column(String(255))
     capabilities: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    scope_provenance: Mapped[str] = mapped_column(String(32), nullable=False, default='unknown', server_default=text("'unknown'"))
     scopes: Mapped[Optional[list]] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default='active')
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

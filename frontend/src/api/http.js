@@ -56,6 +56,9 @@ export async function trackedFetch(apiSurface, url, options = {}, analyticsParam
         });
         return response;
     } catch (error) {
+        if (error?.name === 'AbortError' && analyticsParams.suppressAbortResult) {
+            throw error;
+        }
         const endedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
         safelyTrackApiResult(apiSurface, {
             featureName: analyticsParams.featureName || 'api',

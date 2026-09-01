@@ -10,11 +10,12 @@ from pathlib import Path
 from sqlalchemy import func, select
 
 from backend.auth.token_crypto import redact_token_material
-from backend.config.db_repository import infer_view_type, strip_private_team_groups
+from backend.config.db_repository import infer_view_type, strip_private_team_groups, strip_shared_capacity_config
 from backend.config.view_validation import validate_user_view_payload
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.services import shared_group_config
+from backend.services import shared_capacity_config
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,7 @@ class ConfigImportResult:
     imported: bool
     source_hash: str
     version_number: int
+    capacity_result: str = 'absent'
 
 
 def _source_hash(source_path):
@@ -65,10 +67,28 @@ def import_dashboard_config(*, database_url=None, context, source_path, actor_us
     source_hash = _source_hash(source_path)
     source_payload = _load_json(source_path)
     team_groups = source_payload.get('teamGroups') if isinstance(source_payload.get('teamGroups'), dict) else None
-    payload = strip_private_team_groups(source_payload)
+    source_capacity = source_payload.get('capacity') if isinstance(source_payload.get('capacity'), dict) else None
+    payload = strip_shared_capacity_config(strip_private_team_groups(source_payload))
     validate_user_view_payload(payload)
     actor_user_id = actor_user_id or context.user_id
     with db_engine.session_scope(database_url) as session:
+        existing_capacity = session.execute(
+            select(models.WorkspaceCapacityConfig).where(
+                models.WorkspaceCapacityConfig.workspace_id == context.workspace_id,
+            )
+        ).scalars().first()
+        private_capacity_remnant = shared_capacity_config.workspace_capacity_has_private_remnant(session, context)
+        capacity_loader = (lambda: {'capacity': source_capacity}) if source_capacity and bool(context.is_admin) and existing_capacity is None else None
+        shared_capacity_config.ensure_workspace_capacity_reconciled(session, context, capacity_loader)
+        if source_capacity is None:
+            capacity_result = 'absent'
+        elif existing_capacity is not None or private_capacity_remnant:
+            capacity_result = 'unchanged_existing'
+        elif not context.is_admin:
+            capacity_result = 'ignored_non_admin'
+        else:
+            created = shared_capacity_config.current_shared_capacity_config(session, context)
+            capacity_result = 'seeded' if created.get('project') else 'unchanged_existing'
         if team_groups is not None:
             shared_group_config.ensure_workspace_group_config(
                 session,
@@ -90,7 +110,7 @@ def import_dashboard_config(*, database_url=None, context, source_path, actor_us
                     models.ViewConfigVersion.view_config_id == existing.id,
                 )
             ).scalar_one()
-            return ConfigImportResult(existing.id, False, source_hash, int(version_number or 0))
+            return ConfigImportResult(existing.id, False, source_hash, int(version_number or 0), capacity_result)
 
         view = _default_view(session, context)
         if view is None:
@@ -123,7 +143,7 @@ def import_dashboard_config(*, database_url=None, context, source_path, actor_us
             change_note='legacy json import',
         ))
         session.flush()
-        return ConfigImportResult(view.id, True, source_hash, version_number)
+        return ConfigImportResult(view.id, True, source_hash, version_number, capacity_result)
 
 
 def _repo_root():
@@ -154,7 +174,8 @@ def export_view_config_json(*, database_url=None, context, view_config_id, outpu
         ).scalars().first()
         if view is None:
             raise ValueError('view config not found')
-        payload = strip_private_team_groups(view.payload)
+        shared_capacity_config.ensure_workspace_capacity_reconciled(session, context)
+        payload = strip_shared_capacity_config(strip_private_team_groups(view.payload))
         shared_groups = shared_group_config.current_shared_groups_config(
             session,
             context,
@@ -165,6 +186,13 @@ def export_view_config_json(*, database_url=None, context, view_config_id, outpu
             'groups': shared_groups.get('groups') or [],
             'defaultGroupId': shared_groups.get('defaultGroupId') or '',
         }
+        capacity = shared_capacity_config.current_shared_capacity_config(session, context)
+        if not capacity.get('requiresResolution') and capacity.get('project') and capacity.get('fieldId'):
+            payload['capacity'] = {
+                'project': capacity['project'],
+                'fieldId': capacity['fieldId'],
+                'fieldName': capacity['fieldName'],
+            }
         payload = redact_token_material(payload)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as handle:

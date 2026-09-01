@@ -70,6 +70,7 @@ async function mockConfigSettings(page, {
     conflictCurrents = [],
     failGroupsSaveOnce = null,
     capacityConfig = {},
+    capacityConflict = null,
     priorityWeights = [],
     // Synthetic id: the Delivery Owner custom field id differs per Jira instance and the
     // product ships no default for it (O11).
@@ -184,6 +185,9 @@ async function mockConfigSettings(page, {
         if (url.pathname === '/api/board-config') return json({ boardId: fixture.REFERENCE_BOARD_ID, boardName: 'Synthetic Board' });
         if (url.pathname === '/api/board-config/statuses') return json(fixture.referenceStatusesResponse());
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: priorityWeights });
+        if (url.pathname === '/api/capacity/config' && request.method() === 'POST' && capacityConflict) {
+            return json({ error: 'capacity_config_conflict', current: capacityConflict }, 409);
+        }
         if (url.pathname === '/api/capacity/config') return json(capacityConfig);
         if (url.pathname === '/api/sprint-field/config') return json({ fieldId: 'customfield_10020', fieldName: 'Sprint' });
         if (url.pathname === '/api/parent-name-field/config') return json({ fieldId: 'customfield_10021', fieldName: 'Parent Link' });
@@ -383,6 +387,27 @@ test('the conflict banner names the sections that committed before the rejected 
     // The claim is checked against the wire, not just against its own label list.
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/capacity/config')).toHaveLength(1);
     expect(groupsPosts(calls)).toHaveLength(1);
+});
+
+test('capacity config revision conflict keeps the Capacity draft for review', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        capacityConfig: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity', configRevision: 2, mutationEnabled: true },
+        capacityConflict: { project: 'SERVER', fieldId: 'customfield_10051', fieldName: 'Server Capacity', configRevision: 3, mutationEnabled: true },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.locator('#admin-settings-capacity-panel').getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+    const capacityPost = calls.find(call => call.method === 'POST' && call.pathname === '/api/capacity/config');
+    expect(capacityPost.body.baseRevision).toBe(2);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+    await expect(dialog).toContainText(/Capacity.*review|review.*Capacity/i);
 });
 
 // Fix 1: EPM settings save after the groups POST inside saveAllSettings, so a rejected groups POST

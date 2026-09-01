@@ -218,6 +218,7 @@ class UserApiTokenConnectionTokenTests(unittest.TestCase):
                 site_url='https://example.atlassian.net',
                 cloud_id='cloud-1',
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
@@ -298,6 +299,7 @@ class UserApiTokenConnectionTokenTests(unittest.TestCase):
             'refresh_token': 'refresh-123',
             'expires_at': time.time() + 3600,
             'scope': FULL_SCOPE,
+            'scope_provenance': 'provider',
             'cloudid': 'cloud-1',
             'site_url': 'https://example.atlassian.net',
             'site_name': 'Example',
@@ -398,6 +400,7 @@ class TestUserApiTokenConnections(unittest.TestCase):
                 site_url=workspace.jira_site_url,
                 cloud_id=workspace.jira_cloud_id,
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
@@ -419,6 +422,7 @@ class TestUserApiTokenConnections(unittest.TestCase):
             'refresh_token': 'refresh-123',
             'expires_at': time.time() + 3600,
             'scope': FULL_SCOPE,
+            'scope_provenance': 'provider',
             'cloudid': 'cloud-1',
             'site_url': 'https://example.atlassian.net',
             'site_name': 'Example',
@@ -620,7 +624,7 @@ class TestUserApiTokenConnections(unittest.TestCase):
             response = self.client.get('/api/me/connections/home-token')
 
         self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'credential_storage_unavailable')
+        self.assertEqual(response.get_json()['error'], 'config_storage_unavailable')
 
     def test_home_credential_rejected_when_home_probe_fails(self):
         self._install_session()

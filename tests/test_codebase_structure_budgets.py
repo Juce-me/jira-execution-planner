@@ -39,7 +39,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # validate_groups_config wrapper, mirroring normalize_group_team_labels (+6 lines).
     # bugfix/ready-to-close-jql-414 batches the GET-backed child scan at 40 epic keys
     # while retaining its existing global result cap and pagination behavior (+5 lines).
-    "jira_server.py": 6257,
+    # planning-capacity-editing Task 1 adds the shared-config adapter and Capacity config
+    # route support; Task 2 adds request-aware Capacity read wiring and Jira issue targets;
+    # Task 4 adds provider-verified OAuth grants to the request context (+3 lines).
+    "jira_server.py": 6332,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -86,7 +89,13 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # First-run sprint recovery waits for department onboarding, separates sprint errors
     # from task errors, routes Retry back to sprint discovery, deduplicates concurrent Retry
     # requests, and queues required forced refreshes behind active discovery (+24 over 16101).
-    "frontend/src/dashboard.jsx": 16125,
+    # planning-capacity-editing Task 1 adds 23 Settings Capacity lines for config revision,
+    # stale-conflict draft retention, and unresolved-marker resolution wiring.
+    # planning-capacity-editing Task 6 adds a net 30 dashboard orchestration lines
+    # (16148 -> 16178) for scoped capacity read ownership, retry, stale/error state,
+    # exact-target save reconciliation, and action suppression after extracting the card
+    # rendering; lifecycle decisions remain executable in planningCapacityUtils.
+    "frontend/src/dashboard.jsx": 16178,
 }
 
 

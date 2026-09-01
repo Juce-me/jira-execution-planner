@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import jira_server
 from backend.auth.context import RequestAuthContext
-from tests.oauth_test_helpers import install_oauth_session, push_oauth_request
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session, push_oauth_request
 
 
 class FakeResponse:
@@ -40,6 +40,8 @@ class OAuthJiraClientTests(unittest.TestCase):
             token_version="1",
             account_status="active",
             is_admin=True,
+            granted_scopes=tuple(FULL_OAUTH_SCOPE.split()),
+            granted_scopes_verified=True,
         )
 
     def tearDown(self):

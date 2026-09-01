@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from backend.config.view_validation import validate_user_view_payload
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.services import shared_capacity_config
 
 
 class ViewConfigNotFound(LookupError):
@@ -29,6 +30,17 @@ def strip_private_team_groups(payload):
     payload = dict(payload or {})
     payload.pop('teamGroups', None)
     return payload
+
+
+def strip_shared_capacity_config(payload):
+    """Capacity belongs to the workspace, never to an individual saved view."""
+    payload = dict(payload or {})
+    payload.pop('capacity', None)
+    return payload
+
+
+def _strip_workspace_owned_payload(payload):
+    return strip_shared_capacity_config(strip_private_team_groups(payload))
 
 
 class DbConfigRepository:
@@ -70,18 +82,20 @@ class DbConfigRepository:
 
     def load_dashboard_config(self, context, *, fallback_loader=None):
         with db_engine.session_scope(self.database_url) as session:
+            shared_capacity_config.ensure_workspace_capacity_reconciled(session, context, fallback_loader)
             view = self._default_view(session, context)
             if view is not None:
-                return strip_private_team_groups(view.payload)
+                return _strip_workspace_owned_payload(view.payload)
         if fallback_loader is not None:
             fallback_payload = fallback_loader()
             if fallback_payload is None:
                 return None
-            return strip_private_team_groups(fallback_payload)
+            return _strip_workspace_owned_payload(fallback_payload)
         return None
 
     def resolve_effective_view_config(self, context, *, view_config_id=None):
         with db_engine.session_scope(self.database_url) as session:
+            shared_capacity_config.ensure_workspace_capacity_reconciled(session, context)
             view = (
                 self._selected_view(session, context, view_config_id)
                 if view_config_id
@@ -94,14 +108,15 @@ class DbConfigRepository:
                 'workspaceId': view.workspace_id,
                 'viewConfigId': view.id,
                 'viewType': view.view_type,
-                'view': strip_private_team_groups(view.payload),
+                'view': _strip_workspace_owned_payload(view.payload),
             }
 
     def save_dashboard_config(self, context, payload, *, actor_user_id=None, change_note='compatibility save'):
         actor_user_id = actor_user_id or context.user_id
-        payload = strip_private_team_groups(payload)
+        payload = _strip_workspace_owned_payload(payload)
         validate_user_view_payload(payload)
         with db_engine.session_scope(self.database_url) as session:
+            shared_capacity_config.ensure_workspace_capacity_reconciled(session, context)
             view = self._default_view(session, context)
             if view is None:
                 view = models.ViewConfig(

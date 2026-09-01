@@ -32,21 +32,6 @@ export const fetchSprints = (backendUrl, { forceRefresh = false } = {}) => {
     });
 };
 
-export const fetchCapacity = (backendUrl, { sprintName, teams = [] } = {}) => {
-    const params = new URLSearchParams({
-        sprint: sprintName,
-        t: Date.now().toString()
-    });
-    if (teams.length) {
-        params.append('teams', teams.join(','));
-    }
-    return fetch(`${backendUrl}/api/capacity?${params.toString()}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-cache'
-    });
-};
-
 export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal } = {}) => {
     const params = new URLSearchParams({
         t: Date.now().toString(),

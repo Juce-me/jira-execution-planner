@@ -75,6 +75,8 @@ def _local_oauth_context(session_id="session-1", stored_at=0):
         token_version=str(stored_at),
         account_status="active",
         is_admin=False,
+        granted_scopes=tuple(jira_server.ATLASSIAN_SCOPES.split()),
+        granted_scopes_verified=True,
     )
 
 
@@ -585,7 +587,7 @@ class IssueTransitionRouteTests(unittest.TestCase):
         self.assertEqual(body["recoveryUrl"], "/login?reason=missing_scope")
 
     def test_transitions_write_uses_auth_context_and_forwards_to_service(self):
-        sentinel_context = object()
+        sentinel_context = _local_oauth_context()
         captured = {}
 
         def fake_transition_issues(issue_keys, target_status, *, jira_request, search_request, context=None):
@@ -732,7 +734,7 @@ class IssuePriorityRouteTests(unittest.TestCase):
         return response.get_json()["csrfToken"]
 
     def test_priority_options_route_uses_current_auth_context(self):
-        sentinel_context = object()
+        sentinel_context = _local_oauth_context()
         captured = {}
 
         def fake_load_priority_options(*, jira_request, context=None):
@@ -766,7 +768,7 @@ class IssuePriorityRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "jira_priority_options_failed")
 
     def test_priority_options_route_with_issue_key_filters_via_editmeta(self):
-        sentinel_context = object()
+        sentinel_context = _local_oauth_context()
         calls = []
 
         def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
@@ -898,7 +900,7 @@ class IssuePriorityRouteTests(unittest.TestCase):
         self.assertEqual(body["recoveryUrl"], "/login?reason=missing_scope")
 
     def test_priority_write_uses_oauth_context_and_clears_caches_on_success(self):
-        sentinel_context = object()
+        sentinel_context = _local_oauth_context()
         captured = {}
 
         def fake_update_issue_priorities(issue_keys, target_priority_id, *, jira_request, search_request, context=None):
@@ -1061,7 +1063,7 @@ class IssueProjectTrackRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "invalid_issue_key")
 
     def test_options_route_uses_current_auth_context(self):
-        sentinel_context = object()
+        sentinel_context = _local_oauth_context()
         captured = {}
 
         def fake_load_options(issue_key, *, jira_request, get_project_track_field_id, context=None):
@@ -1300,7 +1302,7 @@ class IssueProjectTrackRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "jira_project_track_update_failed")
 
     def test_write_uses_oauth_context_and_clears_caches_on_success(self):
-        sentinel_context = object()
+        sentinel_context = _local_oauth_context()
         captured = {}
 
         def fake_update(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None):
@@ -1387,7 +1389,7 @@ class IssueStatusCatalogRouteTests(unittest.TestCase):
         self._env_patcher.stop()
 
     def test_status_catalog_route_uses_current_auth_context(self):
-        sentinel_context = object()
+        sentinel_context = _local_oauth_context()
         captured = {}
 
         def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
@@ -1825,7 +1827,7 @@ class IssueDescriptionRouteTests(unittest.TestCase):
         self.assertEqual(body["message"], "Jira returned status 503")
 
     def test_description_route_uses_current_auth_context(self):
-        sentinel_context = object()
+        sentinel_context = _local_oauth_context()
         captured = {}
 
         def fake_get(path, *, params=None, timeout=30, context=None):

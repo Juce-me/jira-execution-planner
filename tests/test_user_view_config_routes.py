@@ -68,6 +68,7 @@ class UserViewConfigRouteTests(unittest.TestCase):
                 site_url=workspace.jira_site_url,
                 cloud_id=workspace.jira_cloud_id,
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
@@ -182,6 +183,34 @@ class UserViewConfigRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()['error'], 'csrf_required')
+
+    def test_current_and_version_saved_view_capacity_are_reconciled_and_new_payloads_are_rejected(self):
+        with self.factory() as session:
+            payload = {'capacity': {'project': 'CAP', 'fieldId': 'customfield_10001'}, 'scenario': {'config': {'capacity': {'hours': 3}}}, 'eng': {}}
+            view = models.ViewConfig(workspace_id=self.workspace_id, owner_user_id=self.user_id, name='Legacy capacity', view_type='eng', is_default=True, payload=payload)
+            session.add(view)
+            session.flush()
+            session.add(models.ViewConfigVersion(view_config_id=view.id, version_number=1, payload=payload, created_by=self.user_id))
+            session.commit()
+            view_id = view.id
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            listed = self.client.get('/api/me/views')
+            default_response = self.client.get('/api/me/views/default')
+            rejected_create = self.client.post('/api/me/views', json={'name': 'Bad', 'viewType': 'eng', 'view': {'capacity': {'project': 'CAP'}, 'eng': {}}}, headers=self._csrf_headers())
+            rejected_patch = self.client.patch(f'/api/me/views/{view_id}', json={'view': {'capacity': {'project': 'CAP'}, 'eng': {}}}, headers=self._csrf_headers())
+        self.assertEqual(listed.status_code, 200)
+        self.assertNotIn('capacity', listed.get_json()['views'][0]['view'])
+        self.assertEqual(listed.get_json()['views'][0]['view']['scenario']['config']['capacity'], {'hours': 3})
+        self.assertEqual(default_response.status_code, 200, default_response.get_data(as_text=True))
+        self.assertNotIn('capacity', default_response.get_json()['view'])
+        self.assertEqual(default_response.get_json()['view']['scenario']['config']['capacity'], {'hours': 3})
+        self.assertEqual(rejected_create.status_code, 400)
+        self.assertEqual(rejected_patch.status_code, 400)
+        with self.factory() as session:
+            self.assertNotIn('capacity', session.get(models.ViewConfig, view_id).payload)
+            version = session.query(models.ViewConfigVersion).filter_by(view_config_id=view_id).one()
+            self.assertNotIn('capacity', version.payload)
+            self.assertEqual(version.payload['scenario']['config']['capacity'], {'hours': 3})
 
     def test_user_cannot_patch_another_users_view(self):
         with self.factory() as session:

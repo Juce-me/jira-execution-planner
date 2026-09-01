@@ -62,6 +62,7 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
                 site_url=workspace.jira_site_url,
                 cloud_id=workspace.jira_cloud_id,
                 scopes=FULL_OAUTH_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),

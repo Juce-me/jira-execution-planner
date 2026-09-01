@@ -29,7 +29,13 @@
 
         .team-dropdown-toggle span {
             flex: 1;
+            min-width: 0;
             text-align: left;
+        }
+
+        .team-dropdown-width-label {
+            max-width: 100%;
+            overflow: hidden;
         }
 
         .team-dropdown-toggle:hover {

@@ -310,6 +310,31 @@ h1 {
   padding: 0.4rem 0.75rem;
   font-size: 0.7rem;
 }
+.icon-button--sm[data-icon-size=sm],
+.icon-button--md[data-icon-size=md] {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+}
+.icon-button--sm[data-icon-size=sm] {
+  width: 24px;
+  max-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  flex-basis: 24px;
+}
+.icon-button--md[data-icon-size=md] {
+  width: 28px;
+  max-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  flex-basis: 28px;
+}
 .search-input:focus {
   outline: none;
   border-color: var(--accent);
@@ -2957,7 +2982,12 @@ select:disabled {
 }
 .team-dropdown-toggle span {
   flex: 1;
+  min-width: 0;
   text-align: left;
+}
+.team-dropdown-width-label {
+  max-width: 100%;
+  overflow: hidden;
 }
 .team-dropdown-toggle:hover {
   background: var(--bg-secondary);
@@ -9861,7 +9891,7 @@ a.project-track-phase-epic-link:focus-visible {
 }
 .team-stats-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(var(--planning-team-columns, 6), 1fr);
   gap: 0.55rem;
   margin-top: 0.35rem;
 }
@@ -9958,6 +9988,223 @@ a.project-track-phase-epic-link:focus-visible {
 }
 .microbar-meta.under {
   color: #d4380d;
+}
+.planning-team-capacity-heading {
+  margin-top: 0.4rem;
+}
+.team-stat-card.team-card {
+  position: relative;
+  min-width: 0;
+}
+.team-stat-card.team-card.is-capacity-editing {
+  min-height: 58.64px;
+}
+.team-capacity-label-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  pointer-events: none;
+}
+.team-capacity-label-row .team-stat-label {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-stat-card.team-card.has-capacity-actions:not(.is-capacity-editing):hover .team-capacity-label-row,
+.team-stat-card.team-card.has-capacity-actions:not(.is-capacity-editing):focus-within .team-capacity-label-row {
+  padding-right: calc(48px + 0.22rem + 0.55rem + 0.4rem);
+}
+.team-stat-card.team-card.is-capacity-editing.has-capacity-share .team-stat-label {
+  width: auto;
+}
+.team-capacity-action-rail {
+  position: absolute;
+  top: 0.08rem;
+  right: 0.34rem;
+  z-index: 21;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding-left: 0.55rem;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0),
+      #fff 28%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.team-stat-card.team-card:hover .team-capacity-action-rail,
+.team-stat-card.team-card:focus-within .team-capacity-action-rail {
+  opacity: 1;
+  pointer-events: auto;
+}
+.team-capacity-action,
+.team-capacity-editor-action {
+  border-radius: 7px;
+  color: var(--text-secondary);
+  background: #fff;
+  box-shadow: none;
+  text-decoration: none;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+.team-capacity-action {
+  position: relative;
+  z-index: 22;
+  pointer-events: auto;
+}
+.team-capacity-jira-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  max-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  flex: 0 0 24px;
+  border: 1px solid var(--border);
+}
+.team-capacity-action:hover,
+.team-capacity-editor-action:hover {
+  transform: none;
+  border-color: #b7afa2;
+  background: #f6f4ef;
+  color: var(--text-primary);
+  box-shadow: none;
+}
+.team-capacity-action:focus-visible,
+.team-capacity-editor-action:focus-visible {
+  transform: none;
+  border-color: var(--accent);
+  background: #f6f4ef;
+  color: var(--text-primary);
+  box-shadow: none;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.team-capacity-action svg,
+.team-capacity-editor-action svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.team-capacity-jira-icon {
+  width: 14px !important;
+  height: 14px !important;
+  color: #0052cc;
+  fill: currentColor !important;
+  stroke: none !important;
+}
+.team-capacity-editor {
+  --capacity-editor-control-height: 28px;
+  min-width: 0;
+  margin: 0;
+}
+.team-capacity-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 0.22rem;
+  min-width: 0;
+  height: var(--capacity-editor-control-height);
+}
+.team-capacity-input {
+  box-sizing: border-box;
+  width: 84px;
+  max-width: 84px;
+  min-width: 0;
+  height: var(--capacity-editor-control-height);
+  flex: 1 1 84px;
+  padding: 0.28rem 0.38rem;
+  border: 1px solid #888077;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text-primary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(212, 56, 13, 0.1);
+}
+.team-capacity-input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(212, 56, 13, 0.12);
+}
+@media (max-width: 768px) {
+  .team-capacity-input {
+    width: 80px;
+    max-width: 80px;
+    flex-basis: 80px;
+  }
+}
+.team-capacity-editor-context {
+  flex: 0 0 auto;
+  margin-left: 0.25rem;
+  color: var(--text-secondary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.5rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+.team-capacity-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-width: 100%;
+  margin-top: 0.28rem;
+  padding: 0.3rem 0.38rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 5px 5px 0;
+  background: #fff2eb;
+  color: #7f2d12;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.52rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.team-capacity-status a {
+  color: inherit;
+  text-decoration: underline;
+}
+.team-capacity-read-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid #ffd591;
+  border-radius: 7px;
+  background: #fff7e6;
+  color: #8a4b00;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.56rem;
+  line-height: 1.35;
+}
+.team-capacity-read-status button {
+  flex: 0 0 auto;
+  margin: 0;
+}
+@media (hover: none) {
+  .team-capacity-action-rail {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .team-stat-card.team-card.has-capacity-actions:not(.is-capacity-editing) .team-capacity-label-row {
+    padding-right: calc(48px + 0.22rem + 0.55rem + 0.4rem);
+  }
 }
 .team-stat-card[data-tooltip] {
   position: relative;

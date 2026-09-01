@@ -3,7 +3,17 @@ import unittest
 from unittest.mock import patch
 
 import jira_server
-from tests.oauth_test_helpers import install_oauth_session
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
+
+
+def _verified_context():
+    return jira_server.RequestAuthContext(
+        auth_mode='atlassian_oauth', user_id='synthetic-user', stable_subject='synthetic-subject',
+        atlassian_account_id='synthetic-account', workspace_id='synthetic-workspace',
+        auth_connection_id='local-oauth-connection:session-1', cloud_id='cloud-123',
+        site_url='https://oauth-site.atlassian.net', token_version='1', account_status='active',
+        is_admin=False, granted_scopes=tuple(FULL_OAUTH_SCOPE.split()), granted_scopes_verified=True,
+    )
 
 
 class FakeResponse:
@@ -260,7 +270,7 @@ class OAuthSettingsRouteTests(unittest.TestCase):
         mock_get.assert_called_once_with("/rest/api/3/field", timeout=15)
 
     def test_board_statuses_route_reads_epic_workflows_from_selected_projects(self):
-        sentinel_context = object()
+        sentinel_context = _verified_context()
         calls = []
         responses = [
             FakeResponse(200, [

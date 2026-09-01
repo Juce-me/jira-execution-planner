@@ -27,6 +27,7 @@ import EngModeControl from './eng/EngModeControl.jsx';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
+import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
 import { useEngSprintData } from './eng/useEngSprintData.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
 import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
@@ -41,7 +42,25 @@ import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkSt
 import { useEngBoardFilters } from './eng/useEngBoardFilters.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
-import { buildCapacityTotals, buildCapacityTotalsSummary, buildDisplayedTeamOptions, buildExcludedCapacityByTeamId, buildProjectCapacity, buildSelectedProjectEntries, buildSelectedTeamEntries, buildTeamCapacityEntries, buildTeamCapacityStats, buildTeamSpTotals, getCapacityStatus, getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
+import {
+    applyCapacitySaveResultForScope,
+    beginCapacityReadOwnership,
+    buildCapacityScopeSignature,
+    buildCapacityTotals, buildCapacityTotalsSummary,
+    buildDisplayedTeamOptions,
+    buildExcludedCapacityByTeamId,
+    buildProjectCapacity,
+    buildSelectedProjectEntries,
+    buildSelectedTeamEntries,
+    buildTeamCapacityEntries,
+    buildTeamCapacityStats,
+    buildTeamSpTotals,
+    getCapacityShareLabel,
+    getCapacityStatus, getTeamCapacityMeta,
+    normalizeCapacityKey, normalizeCapacityTeamName,
+    reduceCapacityReadLifecycle,
+    resolveUniqueCapacityValue,
+} from './eng/planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import { classifyCapacityIssue } from './capacityClassification.mjs';
 import {
@@ -109,10 +128,10 @@ import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos,
 import {
     fetchMissingPlanningInfo as requestMissingPlanningInfo,
     fetchSprints as requestSprints,
-    fetchCapacity as requestCapacity,
     fetchDependencies as requestDependencies,
     fetchExcludedCapacityStatsSource as requestExcludedCapacityStatsSource,
 } from './api/engApi.js';
+import { fetchCapacity as requestCapacity, updateCapacity } from './api/capacityApi.js';
 import { resolveBackendUrl } from './api/backendUrl.js';
 import {
     fetchAppConfig,
@@ -629,6 +648,9 @@ import {
             const [capacityFieldIdDraft, setCapacityFieldIdDraft] = useState('');
             const [capacityFieldNameDraft, setCapacityFieldNameDraft] = useState('');
             const capacityBaselineRef = useRef('');
+            const [capacityConfigRevision, setCapacityConfigRevision] = useState(null);
+            const [capacityConfigConflict, setCapacityConfigConflict] = useState(null);
+            const [capacityRequiresResolution, setCapacityRequiresResolution] = useState(false);
             const [capacityProjectSearchQuery, setCapacityProjectSearchQuery] = useState('');
             const [capacityProjectSearchOpen, setCapacityProjectSearchOpen] = useState(false);
             const [capacityProjectSearchIndex, setCapacityProjectSearchIndex] = useState(0);
@@ -800,8 +822,21 @@ import {
             const [showSprintDropdown, setShowSprintDropdown] = useState(false);
             const sprintDropdownRefs = useRef({ main: null, compact: null });
             const [capacityEnabled, setCapacityEnabled] = useState(false);
-            const [capacityByTeam, setCapacityByTeam] = useState({});
+            const [capacityState, setCapacityState] = useState(() => ({ capacityByTeam: {}, capacityTargetsByTeam: {}, mutationEnabled: false, scopeSignature: '' }));
+            const capacityStateRef = useRef(capacityState);
+            capacityStateRef.current = capacityState;
             const [capacityLoading, setCapacityLoading] = useState(false);
+            const [capacityReadRevision, setCapacityReadRevision] = useState(0);
+            const [capacityReadError, setCapacityReadError] = useState('');
+            const [capacityDataStale, setCapacityDataStale] = useState(false);
+            const capacityReadModelRef = useRef(null);
+            capacityReadModelRef.current = {
+                capacityState, capacityLoading, capacityReadRevision, capacityReadError, capacityDataStale,
+            };
+            const [capacityRefreshNonce, setCapacityRefreshNonce] = useState(0);
+            const capacityReadGenerationRef = useRef(0);
+            const capacityReadAbortRef = useRef(null);
+            const activeCapacityScopeRef = useRef('');
             const [scenarioLoading, setScenarioLoading] = useState(false);
             const [scenarioError, setScenarioError] = useState('');
             const [scenarioData, setScenarioData] = useState(null);
@@ -1004,7 +1039,7 @@ import {
             }, [refreshHomeTokenConnectionStatus]);
             const {
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
-                trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
+                trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
             const {
@@ -4072,6 +4107,9 @@ import {
                     setCapacityProjectDraft(data.project || '');
                     setCapacityFieldIdDraft(data.fieldId || '');
                     setCapacityFieldNameDraft(data.fieldName || '');
+                    setCapacityConfigRevision(Number.isInteger(data.configRevision) ? data.configRevision : null);
+                    setCapacityRequiresResolution(data.requiresResolution === true);
+                    setCapacityConfigConflict(null);
                     capacityBaselineRef.current = JSON.stringify({ project: data.project || '', fieldId: data.fieldId || '', fieldName: data.fieldName || '' });
                 } catch (err) {
                     console.error('Failed to load capacity config:', err);
@@ -4079,11 +4117,20 @@ import {
             };
 
             const saveCapacityConfig = async () => {
-                const response = await requestSaveCapacityConfig(BACKEND_URL, { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
+                const payload = { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft };
+                if (Number.isInteger(capacityConfigRevision)) payload.baseRevision = capacityConfigRevision;
+                const response = await requestSaveCapacityConfig(BACKEND_URL, payload);
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
+                    if (response.status === 409 && err.error === 'capacity_config_conflict' && err.current) {
+                        setCapacityConfigConflict(err.current);
+                    }
                     throw new Error(err.error || `Save failed (${response.status})`);
                 }
+                const saved = await response.json().catch(() => ({}));
+                setCapacityConfigRevision(Number.isInteger(saved.configRevision) ? saved.configRevision : capacityConfigRevision);
+                setCapacityRequiresResolution(saved.requiresResolution === true);
+                setCapacityConfigConflict(null);
                 capacityBaselineRef.current = JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
             };
 
@@ -5260,12 +5307,6 @@ import {
             }, [showScenario]);
 
             useEffect(() => {
-                if (!capacityEnabled) {
-                    setCapacityByTeam({});
-                }
-            }, [capacityEnabled]);
-
-            useEffect(() => {
                 const handleClickOutside = (event) => {
                     const node = getActiveDropdownNode(teamDropdownRefs);
                     if (!node) return;
@@ -5659,36 +5700,6 @@ import {
             };
 
             const priorityOrder = PRIORITY_ORDER;
-
-            const fetchCapacity = async (sprintName) => {
-                if (!capacityEnabled || !sprintName) return;
-                setCapacityLoading(true);
-                try {
-                    const teams = capacityTeamNames;
-                    const response = await requestCapacity(BACKEND_URL, { sprintName, teams });
-                    if (!response.ok) {
-                        setCapacityByTeam({});
-                        return;
-                    }
-                    const data = await response.json();
-                    if (!data?.enabled) {
-                        setCapacityByTeam({});
-                        return;
-                    }
-                    const normalized = {};
-                    Object.entries(data.capacities || {}).forEach(([name, value]) => {
-                        const key = normalizeCapacityKey(name);
-                        const numeric = Number(value);
-                        if (!key || Number.isNaN(numeric)) return;
-                        normalized[key] = numeric;
-                    });
-                    setCapacityByTeam(normalized);
-                } catch (err) {
-                    setCapacityByTeam({});
-                } finally {
-                    setCapacityLoading(false);
-                }
-            };
 
             const priorityAxis = PRIORITY_AXIS;
 
@@ -6389,29 +6400,6 @@ import {
                 () => buildPriorityWeightMap(effectivePriorityWeightsRows),
                 [effectivePriorityWeightsRows]
             );
-
-            const normalizeCapacityKey = (name) => {
-                if (!name) return '';
-                return String(name)
-                    .replace(/\u00a0/g, ' ')
-                    .replace(/^\[archived\]\s*/i, '')
-                    .replace(/^r&d\s+/i, '')
-                    .replace(/^(product|tech)\s*-\s*/i, '')
-                    .replace(/\s+/g, ' ')
-                    .trim()
-                    .toLowerCase();
-            };
-
-            const toCapacityShortName = (name) => {
-                if (!name) return '';
-                return String(name)
-                    .replace(/\u00a0/g, ' ')
-                    .replace(/^\[archived\]\s*/i, '')
-                    .replace(/^r&d\s+/i, '')
-                    .replace(/^(product|tech)\s*-\s*/i, '')
-                    .replace(/\s+/g, ' ')
-                    .trim();
-            };
 
 	            const tasks = React.useMemo(
 	                () => showTech ? [...productTasks, ...techTasks] : [...productTasks],
@@ -11192,6 +11180,7 @@ import {
                     : showTech
                         ? capacitySplit.tech
                         : 1;
+            const capacityShareLabel = getCapacityShareLabel({ showProduct, showTech, capacitySplit });
 
             const teamCapacityStats = React.useMemo(() => {
                 return buildTeamCapacityStats({
@@ -11230,17 +11219,110 @@ import {
 
             const capacityTeamNames = React.useMemo(() => {
                 if (!showPlanning || !capacityEnabled) return [];
-                return displayedTeamOptions
-                    .map(team => toCapacityShortName(team.name))
-                    .filter(Boolean);
+                const teamsByKey = new Map();
+                for (const team of displayedTeamOptions) {
+                    const teamName = normalizeCapacityTeamName(team.name);
+                    const key = normalizeCapacityKey(teamName);
+                    if (key && !teamsByKey.has(key)) teamsByKey.set(key, teamName);
+                }
+                return Array.from(teamsByKey.entries())
+                    .sort(([left], [right]) => left.localeCompare(right))
+                    .map(([, teamName]) => teamName);
             }, [showPlanning, capacityEnabled, displayedTeamOptions]);
 
+            const capacityScopeSignature = buildCapacityScopeSignature(
+                selectedSprintInfo?.name || '',
+                capacityTeamNames,
+            );
+            activeCapacityScopeRef.current = capacityScopeSignature;
+
+            const commitCapacityReadLifecycle = (event) => {
+                const nextModel = reduceCapacityReadLifecycle(capacityReadModelRef.current, event);
+                capacityReadModelRef.current = nextModel;
+                capacityStateRef.current = nextModel.capacityState;
+                setCapacityState(nextModel.capacityState);
+                setCapacityLoading(nextModel.capacityLoading);
+                setCapacityReadRevision(nextModel.capacityReadRevision);
+                setCapacityReadError(nextModel.capacityReadError);
+                setCapacityDataStale(nextModel.capacityDataStale);
+            };
+
+            const effectiveCapacityState = React.useMemo(() => (
+                capacityState.scopeSignature === capacityScopeSignature
+                    ? capacityState
+                    : { capacityByTeam: {}, capacityTargetsByTeam: {}, mutationEnabled: false, scopeSignature: capacityScopeSignature }
+            ), [capacityState, capacityScopeSignature]);
+            const { capacityByTeam, capacityTargetsByTeam } = effectiveCapacityState;
+            const capacityMutationEnabled = effectiveCapacityState.mutationEnabled === true;
+
+            const handleCapacitySaved = React.useCallback((result) => {
+                if (result.scopeSignature !== activeCapacityScopeRef.current) return;
+                setCapacityState((previous) => {
+                    const nextState = applyCapacitySaveResultForScope(
+                        previous,
+                        result,
+                        activeCapacityScopeRef.current,
+                    );
+                    capacityStateRef.current = nextState;
+                    capacityReadModelRef.current = {
+                        ...capacityReadModelRef.current,
+                        capacityState: nextState,
+                    };
+                    return nextState;
+                });
+            }, []);
+            const retryCapacity = React.useCallback(() => {
+                setCapacityRefreshNonce(previous => previous + 1);
+            }, []);
+            const fetchCapacity = async ({ sprintName, teams, signal, scopeSignature, ownership }) => {
+                try {
+                    const response = await requestCapacity(BACKEND_URL, { sprintName, teams, signal });
+                    if (!response.ok) throw new Error(`capacity_read_${response.status}`);
+                    const data = await response.json();
+                    if (!ownership.isCurrent()) return;
+                    commitCapacityReadLifecycle({ type: 'success', scopeSignature, payload: data });
+                } catch (error) {
+                    if (error?.name === 'AbortError' || !ownership.isCurrent()) return;
+                    commitCapacityReadLifecycle({ type: 'failure', scopeSignature });
+                } finally {
+                    if (!ownership.isCurrent()) return;
+                    if (capacityReadAbortRef.current?.signal === signal) capacityReadAbortRef.current = null;
+                }
+            };
+
             useEffect(() => {
-                if (!capacityEnabled) return;
-                if (!showPlanning) return;
-                if (!selectedSprintInfo?.name) return;
-                fetchCapacity(selectedSprintInfo.name);
-            }, [capacityEnabled, showPlanning, selectedSprintInfo?.name, capacityTeamNames.join('|')]);
+                const scopeSignature = capacityScopeSignature;
+                const sprintName = selectedSprintInfo?.name || '';
+                const ownership = beginCapacityReadOwnership({
+                    generationRef: capacityReadGenerationRef,
+                    abortRef: capacityReadAbortRef,
+                    activeScopeRef: activeCapacityScopeRef,
+                    scopeSignature,
+                    capacityEnabled,
+                    showPlanning,
+                    sprintName,
+                    teams: capacityTeamNames,
+                });
+
+                if (!ownership.shouldFetch) {
+                    if (ownership.isCurrent()) {
+                        commitCapacityReadLifecycle({ type: 'gate', scopeSignature });
+                    }
+                } else {
+                    if (ownership.isCurrent()) {
+                        commitCapacityReadLifecycle({ type: 'start', scopeSignature });
+                    }
+                    void fetchCapacity({
+                        sprintName,
+                        teams: capacityTeamNames,
+                        signal: ownership.controller.signal,
+                        scopeSignature,
+                        ownership,
+                    });
+                }
+
+                return ownership.cleanup;
+            }, [capacityEnabled, showPlanning, capacityScopeSignature, capacityRefreshNonce]);
 
             const capacityTeamIds = React.useMemo(() => {
                 return !isAllTeamsSelected
@@ -11250,13 +11332,8 @@ import {
 
             const getTeamCapacity = (teamName) => {
                 if (!capacityEnabled) return 0;
-                const key = normalizeCapacityKey(teamName);
-                if (!key) return 0;
-                if (capacityByTeam[key]) return capacityByTeam[key];
-                const entry = Object.entries(capacityByTeam).find(([capacityKey]) =>
-                    capacityKey.includes(key) || key.includes(capacityKey)
-                );
-                return entry ? entry[1] : 0;
+                const resolved = resolveUniqueCapacityValue(capacityByTeam, teamName);
+                return resolved.matched ? resolved.value : 0;
             };
 
             const excludedCapacityByTeamId = React.useMemo(() => {
@@ -11348,6 +11425,8 @@ import {
                     displayedTeamOptions,
                     selectedTeamStats,
                     capacityEnabled,
+                    capacityByTeam,
+                    capacityTargetsByTeam,
                     getTeamCapacity,
                     getTeamNetCapacity,
                     capacityMultiplier
@@ -11359,6 +11438,7 @@ import {
                 capacityEnabled,
                 capacityMultiplier,
                 capacityByTeam,
+                capacityTargetsByTeam,
                 excludedCapacityByTeamId
             ]);
 
@@ -13007,6 +13087,9 @@ import {
                 }
                 if (activeGroupId) {
                     groupStateRef.current.delete(activeGroupId);
+                }
+                if (selectedView === 'eng' && showPlanning) {
+                    setCapacityRefreshNonce(previous => previous + 1);
                 }
                 burnoutCacheRef.current = {};
                 cohortCacheRef.current = {};
@@ -15250,65 +15333,27 @@ import {
                         />
 
                         {/* --- Team MicroBar tiles --- */}
-                        {selectedTeamEntries.length > 0 && (() => {
-                            const sortedTeams = [...selectedTeamEntries].sort((a, b) => {
-                                if (capacityEnabled) {
-                                    const da = a.storyPoints - (a.teamCapacity || 0);
-                                    const db = b.storyPoints - (b.teamCapacity || 0);
-                                    if (db !== da) return db - da;
-                                }
-                                return b.storyPoints - a.storyPoints;
-                            });
-                            const teamCount = sortedTeams.length;
-                            const maxPerRow = 6;
-                            const rows = teamCount === 6 ? 2 : Math.ceil(teamCount / maxPerRow);
-                            const cols = Math.ceil(teamCount / rows);
-                            return (
-                                <>
-                                    <div className="planning-stats compact" style={{ marginTop: '0.4rem' }}>
-                                        <div className="planning-stat">
-                                            <span className="planning-stat-label">Selected SP by Team:</span>
-                                        </div>
-                                    </div>
-                                    <div className="team-stats-grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-                                        {sortedTeams.map((info) => {
-                                            const capMeta = capacityEnabled && info.teamCapacity > 0 ? getTeamCapacityMeta(info.storyPoints, info.teamCapacity) : null;
-                                            const teamColor = resolveTeamColor(info.id);
-                                            const barW = 116;
-                                            const barH = 14;
-                                            const hasCap = capacityEnabled && info.teamCapacity > 0;
-                                            const scale = hasCap ? info.teamCapacity * 1.3 : info.storyPoints * 1.3;
-                                            const valW = scale > 0 ? Math.min(barW, (info.storyPoints / scale) * barW) : 0;
-                                            const markerX = hasCap ? (info.teamCapacity / scale) * barW : null;
-                                            const deltaSp = hasCap ? info.storyPoints - info.teamCapacity : null;
-                                            const deltaPct = hasCap ? ((info.storyPoints / info.teamCapacity) - 1) * 100 : null;
-                                            const tooltipText = hasCap
-                                                ? `${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP (${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%)`
-                                                : `${info.storyPoints.toFixed(1)} SP selected`;
-                                            const spLabel = `${info.storyPoints.toFixed(1)} SP`;
-                                            const deltaLabel = hasCap
-                                                ? `Cap ${info.teamCapacity.toFixed(1)} · ${deltaSp >= 0 ? '+' : ''}${deltaSp.toFixed(1)} SP · ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%`
-                                                : null;
-                                            return (
-                                                <div key={info.id} className="team-stat-card team-card" data-tooltip={tooltipText}>
-                                                    <div className="team-stat-label">{info.name}</div>
-                                                    <div className="microbar">
-                                                        <div className="microbar-fill" style={{width: `${scale > 0 ? Math.min(100, (valW / barW) * 100) : 0}%`, background: teamColor}} />
-                                                        {markerX !== null && (
-                                                            <div className="microbar-marker" style={{left: `${(markerX / barW) * 100}%`}} />
-                                                        )}
-                                                        <span className="microbar-label">{spLabel}</span>
-                                                    </div>
-                                                    {deltaLabel && (
-                                                        <div className={`microbar-meta ${capMeta && capMeta.status ? capMeta.status : ''}`}>{deltaLabel}</div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            );
-                        })()}
+                        <PlanningTeamCapacityCards
+                            entries={selectedTeamEntries}
+                            capacityEnabled={capacityEnabled}
+                            canOpenCapacityJira={authMode === 'atlassian_oauth'}
+                            canEditCapacity={authMode === 'atlassian_oauth' && capacityMutationEnabled === true}
+                            jiraUrl={jiraUrl}
+                            sprintName={selectedSprintInfo?.name || ''}
+                            scopeSignature={capacityScopeSignature}
+                            capacityReadRevision={capacityReadRevision}
+                            capacityLoading={capacityLoading}
+                            capacityReadError={capacityReadError}
+                            capacityDataStale={capacityDataStale}
+                            capacityShareLabel={capacityShareLabel}
+                            updateCapacityRequest={(issueKey, payload, options) =>
+                                updateCapacity(BACKEND_URL, issueKey, payload, options)}
+                            onCapacitySaved={handleCapacitySaved}
+                            onCapacityRetry={retryCapacity}
+                            onAnalyticsAction={trackPlanningCapacityAction}
+                            resolveTeamColor={resolveTeamColor}
+                            getTeamCapacityMeta={getTeamCapacityMeta}
+                        />
 
                         {/* --- Project Split Bar --- */}
                         <PlanningProjectSplitBar
@@ -15484,11 +15529,19 @@ import {
                             isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
                             unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
                             onRequestClose={requestCloseGroupManage}
-                            validationMessages={groupManageTab !== 'connections' ? [...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...groupConfigValidationErrors] : []}
-                            validationActions={groupManageTab !== 'connections' && groupsConfigConflict ? (
+                            validationMessages={groupManageTab !== 'connections' ? [
+                                ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }),
+                                ...(capacityConfigConflict ? ['Capacity configuration changed while you were editing. Your Capacity draft is still unsaved; reload or review the latest configuration.'] : []),
+                                ...(capacityRequiresResolution ? ['Capacity configuration requires an Admin choice before it can be used.'] : []),
+                                ...groupConfigValidationErrors,
+                            ] : []}
+                            validationActions={groupManageTab !== 'connections' && (groupsConfigConflict || capacityConfigConflict) ? (
                                 <div className="group-modal-button-row">
-                                    <button className="secondary compact" onClick={discardMineOnGroupsConfigConflict} type="button">Discard mine</button>
-                                    <button className="compact" onClick={keepMineOnGroupsConfigConflict} type="button">Keep mine</button>
+                                    {groupsConfigConflict && <>
+                                        <button className="secondary compact" onClick={discardMineOnGroupsConfigConflict} type="button">Discard mine</button>
+                                        <button className="compact" onClick={keepMineOnGroupsConfigConflict} type="button">Keep mine</button>
+                                    </>}
+                                    {capacityConfigConflict && <button className="secondary compact" onClick={loadCapacityConfig} type="button">Reload Capacity config</button>}
                                 </div>
                             ) : null}
                             showTestConfiguration={groupManageTab !== 'epm' && groupManageTab !== 'connections' && groupManageTab !== 'access'}

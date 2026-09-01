@@ -36,8 +36,8 @@ def _expires_at(token_data) -> datetime | None:
     return datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
 
-def _scope_list(token_data, fallback_scopes: str = '') -> list[str]:
-    raw = (token_data or {}).get('scope') or fallback_scopes or ''
+def _scope_list(token_data) -> list[str]:
+    raw = (token_data or {}).get('scope') or ''
     if isinstance(raw, str):
         return [scope for scope in raw.split() if scope]
     return [str(scope).strip() for scope in raw or [] if str(scope).strip()]
@@ -118,7 +118,9 @@ def _upsert_connection(session, *, user, workspace, resource, token_data):
         connection.token_version = int(connection.token_version or 0) + 1
     connection.site_url = site_url
     connection.cloud_id = cloud_id or None
-    connection.scopes = _scope_list(token_data)
+    provider_reported_scope = isinstance(token_data, dict) and 'scope' in token_data
+    connection.scopes = _scope_list(token_data) if provider_reported_scope else []
+    connection.scope_provenance = 'provider' if provider_reported_scope else 'unknown'
     connection.status = 'active'
     connection.expires_at = _expires_at(token_data)
     connection.last_validated_at = datetime.now(timezone.utc)
@@ -226,6 +228,7 @@ def _session_payload(connection, workspace, access_token):
         'access_token': access_token,
         'expires_at': _expires_at_timestamp(connection.expires_at),
         'scope': ' '.join(connection.scopes or []),
+        'scope_provenance': connection.scope_provenance or 'unknown',
         'cloudid': connection.cloud_id or '',
         'site_url': connection.site_url or workspace.jira_site_url or '',
         'db_user_id': connection.user_id,
@@ -278,8 +281,9 @@ def refresh_db_oauth_token(session, *, connection_id, config, key_provider, http
     connection.expires_at = expires_at
     connection.status = 'active'
     connection.token_version = int(connection.token_version or 0) + 1
-    if token_data.get('scope'):
+    if 'scope' in token_data:
         connection.scopes = _scope_list(token_data)
+        connection.scope_provenance = 'provider'
     connection.last_validated_at = datetime.now(timezone.utc)
     _replace_token(
         session,
@@ -349,10 +353,7 @@ def store_oauth_callback_tokens(
         resource=resource,
         configured_jira_url=configured_jira_url,
     )
-    token_data_for_connection = dict(token_data or {})
-    if requested_scopes and not token_data_for_connection.get('scope'):
-        token_data_for_connection['scope'] = requested_scopes
-    connection = _upsert_connection(session, user=user, workspace=workspace, resource=resource, token_data=token_data_for_connection)
+    connection = _upsert_connection(session, user=user, workspace=workspace, resource=resource, token_data=dict(token_data or {}))
     _replace_token(
         session,
         connection=connection,

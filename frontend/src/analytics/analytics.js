@@ -23,6 +23,7 @@ const API_SURFACES = new Set([
     'home_connection',
     'eng_tasks',
     'eng_subtasks',
+    'jira_team_capacity',
     'jira_issue_transitions',
     'jira_issue_priorities',
     'jira_issue_project_track',

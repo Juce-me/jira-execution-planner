@@ -114,6 +114,14 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Current dropdown selection, team multi-select, Initiative grouping/persistence, settings permissions/handlers, and compact-header behavior remain unchanged. Playwright covers all three dropdown siblings, main/compact layering, multi-group row geometry, settings placement, Initiative centerlines, `aria-pressed`, hover/focus tooltip, both color states, and settled screenshots.
    - No backend, API, saved-preference, or new analytics-event contract; existing selection/settings events remain authoritative, local Initiative regrouping stays allowlisted, and raw dropdown queries are never collected.
 
+11. `SUPPORT-planning-capacity-editing-design.md`
+   - Interaction design and the runnable synthetic reference at `frontend/src/eng/planning-capacity-editing-prototype.html` were approved by the requester on 2026-09-01 and technically amended after independent security, feasibility, and UI review.
+   - Expected output after execution: one workspace-shared Admin Capacity Project/field in DB mode; OAuth-only Jira Capacity value editing from Selected SP by Team cards; hover/focus Jira and pencil actions; explicit numeric save/cancel behavior; best-effort stale-baseline reconciliation with the documented Jira GET-to-PUT race; responsive/touch-safe cards; and no per-card lookup fan-out.
+
+12. `EXEC-planning-capacity-editing.md`
+   - Executed and verified locally on 2026-09-01, including the final geometry-proof review and checked execution steps in the plan.
+   - Delivers the approved revisioned workspace Capacity config migration, additive sanitized target read, exact-field OAuth Jira PATCH with provider-verified granted-scope enforcement, explicit race-aware Planning card state, safe analytics, responsive/sticky visual proof, and deterministic build verification.
+
 ## Capacity Reporting Workflow
 
 1. `SUPPORT-excluded-capacity-control-row-design.md`

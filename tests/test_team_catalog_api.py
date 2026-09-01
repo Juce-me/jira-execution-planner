@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from backend.routes import settings_routes
 from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE
 
 try:
     import jira_server
@@ -14,6 +15,16 @@ try:
 except ModuleNotFoundError as exc:
     jira_server = None
     _IMPORT_ERROR = exc
+
+
+def _verified_context():
+    return jira_server.RequestAuthContext(
+        auth_mode='atlassian_oauth', user_id='synthetic-user', stable_subject='synthetic-subject',
+        atlassian_account_id='synthetic-account', workspace_id='synthetic-workspace',
+        auth_connection_id='local-oauth-connection:session-1', cloud_id='cloud-123',
+        site_url='https://example.atlassian.net', token_version='1', account_status='active',
+        is_admin=False, granted_scopes=tuple(FULL_OAUTH_SCOPE.split()), granted_scopes_verified=True,
+    )
 
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
@@ -113,7 +124,7 @@ class TestTeamCatalogAPI(unittest.TestCase):
         with patch.object(jira_server, "config_storage_db_enabled", return_value=True), \
              patch.object(jira_server, "local_file_state_enabled", return_value=False), \
              patch.object(settings_routes, "db_repository", return_value=repository), \
-             patch.object(jira_server, "current_request_auth_context", return_value=object()), \
+             patch.object(jira_server, "current_request_auth_context", return_value=_verified_context()), \
              patch.object(jira_server, "_load_dashboard_config_json", side_effect=AssertionError("json fallback forbidden")), \
              patch.object(jira_server, "migrate_team_catalog_from_config", side_effect=AssertionError("json migration forbidden")), \
              patch.object(jira_server, "load_team_catalog", side_effect=AssertionError("json load forbidden")):
@@ -139,7 +150,7 @@ class TestTeamCatalogAPI(unittest.TestCase):
         with patch.object(jira_server, 'config_storage_db_enabled', return_value=True), \
              patch.object(jira_server, 'local_file_state_enabled', return_value=False), \
              patch.object(settings_routes, 'db_repository', return_value=repository), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=object()), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=_verified_context()), \
              patch.object(jira_server, '_load_dashboard_config_json', side_effect=AssertionError('json fallback forbidden')), \
              patch.object(jira_server, 'save_dashboard_config', side_effect=save_config), \
              patch.object(jira_server, 'save_team_catalog_file', side_effect=AssertionError('json save forbidden')):

@@ -1,9 +1,12 @@
 import os
+import logging
 
 from flask import g, jsonify, request, session
 
 from backend.auth.csrf import validate_csrf_token
-from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AUTH_MODE_BASIC, AuthError, missing_oauth_scopes
+from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AUTH_MODE_BASIC, AuthError
+from backend.auth.scope_policy import missing_context_oauth_scopes
+from backend.config.repository import ConfigStorageError
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled
 from backend.routes import get_jira_server
 from backend.security.policy import UNSAFE_METHODS, classify_request_rule
@@ -19,6 +22,7 @@ PROTECTED_POLICY_CLASSES = {
 CSRF_POLICY_CLASSES = {"user_write", "workspace_write", "shared_admin_write", "tool_admin"}
 ADMIN_POLICY_CLASSES = {"shared_admin_write", "tool_admin"}
 LOOPBACK_ADDRESSES = {"127.0.0.1", "::1", "localhost"}
+logger = logging.getLogger(__name__)
 
 
 def _json_response(payload, status):
@@ -71,6 +75,17 @@ def _missing_scope_required():
     }, 401)
 
 
+def _config_storage_unavailable(error):
+    logger.error(
+        "Configuration storage unavailable during endpoint security guard error_type=%s",
+        type(error).__name__,
+    )
+    return _json_response({
+        "error": "config_storage_unavailable",
+        "message": "Configuration storage is temporarily unavailable.",
+    }, 503)
+
+
 def _auth_error_response(server, error):
     if error.code == "missing_oauth_scope":
         return _missing_scope_required()
@@ -92,39 +107,36 @@ def _strict_db_browser_session_data(server):
 
 
 def _require_real_oauth_session(server, policy_class):
-    if database_storage_enabled() and _strict_db_browser_session_data(server):
+    try:
+        db_storage = database_storage_enabled()
+        strict_db_session = _strict_db_browser_session_data(server) if db_storage else {}
+    except (ConfigStorageError, DatabaseConfigurationError) as error:
+        return _config_storage_unavailable(error)
+    if db_storage and strict_db_session:
         try:
-            server.current_request_auth_context()
+            context = server.current_request_auth_context()
         except AuthError as error:
             return _auth_error_response(server, error)
-        except DatabaseConfigurationError as error:
-            if policy_class == "user_write":
-                return None
-            return _json_response({
-                "error": "config_storage_unavailable",
-                "message": str(error),
-            }, 503)
+        except (ConfigStorageError, DatabaseConfigurationError) as error:
+            return _config_storage_unavailable(error)
+        if missing_context_oauth_scopes(context, server.ATLASSIAN_SCOPES):
+            return _missing_scope_required()
         return None
 
-    if database_storage_enabled() and policy_class == "workspace_write":
+    if db_storage and policy_class == "workspace_write":
         return _auth_required(server)
 
     data = server.oauth_session_data()
     if not data.get("access_token") or not data.get("cloudid"):
         return _auth_required(server)
-    if missing_oauth_scopes(data, server.ATLASSIAN_SCOPES):
-        return _missing_scope_required()
     try:
-        server.current_request_auth_context()
+        context = server.current_request_auth_context()
     except AuthError as error:
         return _auth_error_response(server, error)
-    except DatabaseConfigurationError as error:
-        if policy_class == "user_write":
-            return None
-        return _json_response({
-            "error": "config_storage_unavailable",
-            "message": str(error),
-        }, 503)
+    except (ConfigStorageError, DatabaseConfigurationError) as error:
+        return _config_storage_unavailable(error)
+    if missing_context_oauth_scopes(context, server.ATLASSIAN_SCOPES):
+        return _missing_scope_required()
     return None
 
 
@@ -136,11 +148,8 @@ def _require_token_bound_csrf(server):
             data = server.oauth_session_data()
     except AuthError as error:
         return _auth_error_response(server, error)
-    except DatabaseConfigurationError as error:
-        return _json_response({
-            "error": "config_storage_unavailable",
-            "message": str(error),
-        }, 503)
+    except (ConfigStorageError, DatabaseConfigurationError) as error:
+        return _config_storage_unavailable(error)
     if validate_csrf_token(session, data, request.headers.get("X-CSRF-Token")):
         g.security_csrf_validated = True
         return None
@@ -152,11 +161,8 @@ def _require_admin(server):
         context = server.current_request_auth_context()
     except AuthError as error:
         return _auth_error_response(server, error)
-    except DatabaseConfigurationError as error:
-        return _json_response({
-            "error": "config_storage_unavailable",
-            "message": str(error),
-        }, 503)
+    except (ConfigStorageError, DatabaseConfigurationError) as error:
+        return _config_storage_unavailable(error)
     if getattr(context, "is_admin", False):
         return None
     payload, status = server.admin_required_payload()

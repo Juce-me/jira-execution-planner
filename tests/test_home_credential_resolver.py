@@ -16,7 +16,7 @@ from backend.epm import home as epm_home
 
 
 FULL_SCOPE = (
-    'read:me read:jira-work read:jira-user '
+    'read:me read:jira-work write:jira-work read:jira-user '
     'read:board-scope:jira-software read:sprint:jira-software read:project:jira '
     'offline_access'
 )
@@ -79,6 +79,7 @@ class HomeCredentialResolverTests(unittest.TestCase):
                 site_url=workspace.jira_site_url,
                 cloud_id=workspace.jira_cloud_id,
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),

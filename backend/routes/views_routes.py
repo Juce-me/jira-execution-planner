@@ -8,9 +8,11 @@ from sqlalchemy import func, select
 from backend.auth.csrf import validate_csrf_token
 from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
 from backend.config.db_repository import DbConfigRepository, ViewConfigNotFound, infer_view_type
+from backend.config.db_repository import strip_shared_capacity_config
 from backend.config.view_validation import ViewPayloadValidationError, validate_user_view_payload
 from backend.db import models
 from backend.db.engine import DatabaseConfigurationError, session_scope
+from backend.services import shared_capacity_config
 
 from . import bind_server_globals
 
@@ -74,7 +76,7 @@ def _view_response(view):
         'workspaceId': view.workspace_id,
         'name': view.name,
         'viewType': view.view_type,
-        'view': dict(view.payload or {}),
+        'view': strip_shared_capacity_config(view.payload),
         'isDefault': bool(view.is_default),
         'createdAt': _iso(view.created_at),
         'updatedAt': _iso(view.updated_at),
@@ -250,6 +252,7 @@ def api_me_views():
     context = g.auth_context
     try:
         with session_scope() as db_session:
+            shared_capacity_config.ensure_workspace_capacity_reconciled(db_session, context)
             statement = _active_user_view_statement(context).order_by(
                 models.ViewConfig.updated_at.desc(),
                 models.ViewConfig.created_at.desc(),
@@ -275,6 +278,7 @@ def api_me_views_create():
 
     try:
         with session_scope() as db_session:
+            shared_capacity_config.ensure_workspace_capacity_reconciled(db_session, context)
             if bool(raw.get('isDefault')):
                 _clear_default_views(db_session, context)
                 db_session.flush()
@@ -306,6 +310,7 @@ def api_me_views_patch(view_id):
 
     try:
         with session_scope() as db_session:
+            shared_capacity_config.ensure_workspace_capacity_reconciled(db_session, context)
             view = _active_user_view(db_session, context, view_id)
             if view is None:
                 return jsonify({'error': 'view_not_found'}), 404

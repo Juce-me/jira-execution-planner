@@ -52,6 +52,7 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
                 site_url=workspace.jira_site_url,
                 cloud_id=workspace.jira_cloud_id,
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
@@ -120,6 +121,48 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
 class DashboardBootstrapConfigSourceTests(unittest.TestCase):
     def test_bootstrap_returns_resolved_view_with_source_metadata(self):
         _assert_bootstrap_returns_resolved_view_with_source_metadata()
+
+    def test_bootstrap_reports_shared_capacity_config_state(self):
+        jira_server.app.config['TESTING'] = True
+        client = jira_server.app.test_client()
+        common = {
+            'get_board_config': {},
+            'resolve_groups_config_path': 'team-groups.json',
+            'get_selected_projects': [],
+            'get_epm_config': {'version': 2},
+        }
+        cases = [
+            ({'project': 'CAP', 'mutationEnabled': True, 'requiresResolution': False}, 'CAP', False, True),
+            ({'project': '', 'mutationEnabled': False, 'requiresResolution': False}, '', False, False),
+            ({'project': '', 'mutationEnabled': False, 'requiresResolution': True}, '', True, False),
+        ]
+        for capacity_config, project, requires_resolution, mutation_enabled in cases:
+            with self.subTest(capacity_config=capacity_config), \
+                 patch.object(jira_server, 'load_request_capacity_config', return_value=capacity_config), \
+                 patch.object(jira_server, 'get_effective_capacity_project', side_effect=AssertionError('legacy capacity resolver must not be used')), \
+                 patch.object(jira_server, 'get_board_config', return_value=common['get_board_config']), \
+                 patch.object(jira_server, 'resolve_groups_config_path', return_value=common['resolve_groups_config_path']), \
+                 patch.object(jira_server, 'get_selected_projects', return_value=common['get_selected_projects']), \
+                 patch.object(jira_server, 'get_epm_config', return_value=common['get_epm_config']), \
+                 patch.object(jira_server, 'load_dashboard_config', return_value={}):
+                response = client.get('/api/config')
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            body = response.get_json()
+            self.assertEqual(body['capacityProject'], project)
+            self.assertEqual(body['capacityConfigRequiresResolution'], requires_resolution)
+            self.assertEqual(body['capacityMutationEnabled'], mutation_enabled)
+
+    def test_bootstrap_maps_capacity_config_storage_error_to_safe_response(self):
+        jira_server.app.config['TESTING'] = True
+        client = jira_server.app.test_client()
+        with patch.object(jira_server, 'load_request_capacity_config', side_effect=jira_server.ConfigStorageError('synthetic-secret-like-value')):
+            response = client.get('/api/config')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json(), {
+            'error': 'config_storage_unavailable',
+            'message': 'Configuration storage is temporarily unavailable.',
+        })
 
 
 def test_bootstrap_returns_resolved_view_with_source_metadata():

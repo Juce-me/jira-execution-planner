@@ -4,8 +4,9 @@ const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
-const screenshotDir = '/tmp/codebase-structure-qa';
 const repoRoot = path.join(__dirname, '..', '..');
+const screenshotDir = path.join(repoRoot, 'test-results', 'codebase-structure-smoke');
+const capacityArtifactDir = path.join(repoRoot, '.superpowers', 'sdd', 'EXEC-planning-capacity-editing', 'task-8-artifacts');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
@@ -49,6 +50,7 @@ const epmConfig = {
 
 test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
+    fs.mkdirSync(capacityArtifactDir, { recursive: true });
     const result = esbuild.buildSync({
         entryPoints: [path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx')],
         bundle: true,
@@ -436,6 +438,11 @@ async function captureSmokeScreenshot(page, name) {
     await page.screenshot({ path: `${screenshotDir}/${name}.png`, fullPage: true });
 }
 
+async function captureCapacitySmokeScreenshot(page, name) {
+    await waitForVisualSettled(page);
+    await page.screenshot({ path: `${capacityArtifactDir}/${name}.png`, fullPage: true });
+}
+
 async function expectOpenDropdownInputGeometry(input, kind) {
     const geometry = await input.evaluate((node, dropdownKind) => {
         const toggle = node.closest(`.${dropdownKind}-dropdown-toggle`);
@@ -465,8 +472,8 @@ async function expectJiraExportMenu(page) {
     await expect(trigger).toBeVisible();
     const iconBox = await trigger.locator('.jira-export-icon').boundingBox();
     expect(iconBox).not.toBeNull();
-    expect(iconBox.width).toBeGreaterThanOrEqual(18);
-    expect(iconBox.height).toBeGreaterThanOrEqual(18);
+    expect(iconBox.width).toBeCloseTo(18, 3);
+    expect(iconBox.height).toBeCloseTo(18, 3);
     await trigger.click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
@@ -642,8 +649,10 @@ async function expectWindowSticky(page, selector) {
 }
 
 async function expectPlanningAboveEpic(page) {
-    await page.locator('.epic-header').first().evaluate((element) => {
-        const target = Math.max(0, window.scrollY + element.getBoundingClientRect().top + 120);
+    await page.locator('.planning-panel.open').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const stickyTop = Number.parseFloat(getComputedStyle(element).top) || 0;
+        const target = Math.max(0, window.scrollY + rect.top - stickyTop + 80);
         window.scrollTo(0, target);
     });
     await page.waitForTimeout(180);
@@ -657,10 +666,13 @@ async function expectPlanningAboveEpic(page) {
             epicZ: Number.parseInt(getComputedStyle(epic).zIndex, 10),
             planningBottom: planningRect.bottom,
             epicTop: epicRect.top,
+            planningTop: planningRect.top,
+            planningStickyTop: Number.parseFloat(getComputedStyle(planning).top) || 0,
         };
     });
     expect(layout.planningZ).toBeGreaterThan(layout.epicZ);
-    expect(layout.epicTop).toBeGreaterThanOrEqual(layout.planningBottom - 10);
+    expect(Math.abs(layout.planningTop - layout.planningStickyTop)).toBeLessThanOrEqual(8);
+    expect(layout.epicTop).toBeGreaterThanOrEqual(layout.planningBottom - 1);
 }
 
 async function expectContainerSticky(page, selector, containerSelector) {
@@ -723,6 +735,7 @@ async function installApiMocks(page, calls, options = {}) {
     const configGate = options.delayConfig ? createDeferred() : null;
     const sprintGate = options.delaySprintsUntilEpmProjects ? createDeferred() : null;
     const epmProjectsGate = options.delaySprintsUntilEpmProjects ? createDeferred() : null;
+    const capacityPatchGate = options.deferCapacityPatch ? createDeferred() : null;
     const epmProjectCount = options.epmProjectCount || 1;
     const unexpectedCalls = [];
     const state = {
@@ -748,6 +761,7 @@ async function installApiMocks(page, calls, options = {}) {
         });
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
+        if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-capacity-smoke' });
         if (url.pathname === '/api/me/connections/home-token') {
             return json({
                 connected: true,
@@ -766,7 +780,7 @@ async function installApiMocks(page, calls, options = {}) {
             }
             return json({
                 jiraUrl: 'https://jira.example',
-                capacityProject: '',
+                capacityProject: options.capacityProject || '',
                 authMode: options.authMode || '',
                 groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false,
@@ -932,7 +946,19 @@ async function installApiMocks(page, calls, options = {}) {
         }
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json({ epics: [] });
-        if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
+        if (url.pathname === '/api/capacity' && request.method() === 'GET') {
+            return json(options.capacityPayload || { enabled: false, capacities: {}, entries: [] });
+        }
+        if (url.pathname.startsWith('/api/capacity/') && request.method() === 'PATCH') {
+            if (capacityPatchGate) await capacityPatchGate.promise;
+            return route.fulfill({
+                status: options.capacityPatchStatus || 409,
+                contentType: 'application/json',
+                body: JSON.stringify(options.capacityPatchResponse || {
+                    error: 'capacity_conflict', currentCapacity: 7,
+                }),
+            });
+        }
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
         if (url.pathname === '/api/scenario') return json(scenarioPayload());
         if (url.pathname === '/api/stats/excluded-capacity-source') {
@@ -1023,6 +1049,7 @@ async function installApiMocks(page, calls, options = {}) {
                 configGate.resolve();
             }
         },
+        resolveCapacityPatch: () => capacityPatchGate?.resolve(),
         state,
         unexpectedCalls,
     };
@@ -1030,7 +1057,21 @@ async function installApiMocks(page, calls, options = {}) {
 
 test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky checks', async ({ page }) => {
     const calls = [];
-    const apiMocks = await installApiMocks(page, calls);
+    const apiMocks = await installApiMocks(page, calls, {
+        authMode: 'atlassian_oauth',
+        capacityProject: 'CAP',
+        deferCapacityPatch: true,
+        capacityPayload: {
+            enabled: true,
+            mutationEnabled: true,
+            sprint: selectedSprintName,
+            capacities: { 'Alpha Team': 5, 'Beta Team': 0 },
+            entries: [
+                { teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 5 },
+                { teamName: 'Beta Team', issueKey: 'CAP-102', capacity: 0 },
+            ],
+        },
+    });
     await page.setViewportSize({ width: 1028, height: 720 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -1110,11 +1151,26 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await stickyEngModes.getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
     await expect(page.getByText('Selected SP by Project:')).toBeVisible();
+    await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(2);
     const projectSplitBarVisible = await page.locator('.project-bar-graph').isVisible().catch(() => false);
     const projectSplitEmptyVisible = await page.getByText('No tasks selected').isVisible().catch(() => false);
     expect(projectSplitBarVisible || projectSplitEmptyVisible).toBeTruthy();
     await captureSmokeScreenshot(page, 'planning');
     await expectWindowSticky(page, '.planning-panel.open');
+    await expectPlanningAboveEpic(page);
+
+    const alphaCapacityCard = page.locator('.planning-team-capacity-cards .team-stat-card', { hasText: 'Alpha Team' });
+    await alphaCapacityCard.hover();
+    await alphaCapacityCard.getByRole('button', { name: 'Edit Alpha Team capacity' }).click();
+    const capacityInput = alphaCapacityCard.getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' });
+    await capacityInput.fill('6');
+    await alphaCapacityCard.getByRole('button', { name: 'Save Alpha Team capacity' }).click();
+    await expect(alphaCapacityCard.locator('form.team-capacity-editor')).toHaveAttribute('aria-busy', 'true');
+    await captureCapacitySmokeScreenshot(page, 'planning-capacity-pending');
+    await expectPlanningAboveEpic(page);
+    apiMocks.resolveCapacityPatch();
+    await expect(alphaCapacityCard.getByRole('status')).toContainText('Capacity changed in Jira to 7');
+    await captureCapacitySmokeScreenshot(page, 'planning-capacity-conflict');
     await expectPlanningAboveEpic(page);
 
     await stickyEngModes.getByRole('radio', { name: 'Scenario' }).click();

@@ -38,6 +38,7 @@ def _normalize_key(value):
 
 
 _FORBIDDEN_NORMALIZED_KEYS = {_normalize_key(key) for key in FORBIDDEN_VIEW_PAYLOAD_KEYS}
+_FORBIDDEN_ROOT_CAPACITY_KEYS = {'capacity', 'capacityconfig'}
 
 
 def _path(parent, key):
@@ -74,6 +75,9 @@ def validate_user_view_payload(payload):
     if not isinstance(payload, dict):
         raise ViewPayloadValidationError(['<root>'])
     forbidden_paths = _collect_forbidden_paths(payload)
+    for key in payload:
+        if _normalize_key(key) in _FORBIDDEN_ROOT_CAPACITY_KEYS:
+            forbidden_paths.append(str(key))
     if forbidden_paths:
         raise ViewPayloadValidationError(forbidden_paths)
     return payload

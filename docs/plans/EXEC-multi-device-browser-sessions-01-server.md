@@ -617,6 +617,7 @@ git commit -m "Keep OAuth browser sessions independent"
 - Modify: `jira_server.py`
 - Modify: `tests/test_auth_routes.py`
 - Modify: `tests/test_scenario_draft_routes.py`
+- Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
 
 - [ ] **Step 1: Write failing CSRF and Scenario tests**
 
@@ -635,7 +636,7 @@ Assert a context without `browser_session_id` is rejected by the DB-only Scenari
 Run:
 
 ```bash
-python3 -m unittest tests.test_auth_routes tests.test_scenario_draft_routes
+.venv/bin/python -m unittest tests.test_auth_routes tests.test_scenario_draft_routes
 ```
 
 Expected: FAIL because CSRF still binds to token version and Scenario reload writes only `db_auth_connection_id`.
@@ -682,7 +683,7 @@ Worker-thread Jira calls continue receiving the immutable `RequestAuthContext`; 
 Run:
 
 ```bash
-python3 -m unittest tests.test_auth_routes tests.test_scenario_draft_routes
+.venv/bin/python -m unittest tests.test_auth_routes tests.test_scenario_draft_routes
 ```
 
 Expected: PASS, including cross-profile token rejection and no-request-context Scenario coverage through the real resolver. The existing client-side Flask-cookie hash list retains consume-on-validation behavior, but this plan does not claim atomic one-use consumption for concurrent requests that start from the same cookie; server-side CSRF/session state is separate future scope.
@@ -690,7 +691,7 @@ Expected: PASS, including cross-profile token rejection and no-request-context S
 - [ ] **Step 6: Commit the CSRF/internal-context slice**
 
 ```bash
-git add backend/auth/csrf.py backend/routes/auth_routes.py backend/routes/scenario_draft_routes.py jira_server.py tests/test_auth_routes.py tests/test_scenario_draft_routes.py
+git add backend/auth/csrf.py backend/routes/auth_routes.py backend/routes/scenario_draft_routes.py jira_server.py tests/test_auth_routes.py tests/test_scenario_draft_routes.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md
 git commit -m "Bind OAuth CSRF to browser sessions"
 ```
 

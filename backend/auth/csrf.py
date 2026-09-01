@@ -11,6 +11,13 @@ MAX_CSRF_TOKENS = 8
 
 
 def _binding(session_id: str, session_data: dict) -> str:
+    browser_session_id = str((session_data or {}).get('db_browser_session_id') or '')
+    if browser_session_id:
+        return ':'.join([
+            browser_session_id,
+            str((session_data or {}).get('db_auth_connection_id') or ''),
+            str((session_data or {}).get('account_id') or ''),
+        ])
     return ':'.join([
         str(session_id or ''),
         str((session_data or {}).get('db_auth_connection_id') or ''),

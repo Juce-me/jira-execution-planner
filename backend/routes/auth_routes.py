@@ -346,10 +346,12 @@ def api_auth_csrf():
         try:
             context = current_request_auth_context()
             csrf_data = {
+                'db_browser_session_id': context.browser_session_id,
                 'db_auth_connection_id': context.auth_connection_id,
-                'db_token_version': context.token_version,
                 'account_id': context.atlassian_account_id,
             }
+            if not context.browser_session_id:
+                csrf_data['db_token_version'] = context.token_version
             token = issue_csrf_token(session, csrf_data)
         except AuthError as error:
             return auth_error_response(error, 401)

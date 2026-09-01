@@ -638,11 +638,14 @@ def oauth_auth_required_payload():
 def csrf_session_data_for_request():
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
         context = scenario_draft_request_auth_context()
-        return {
+        data = {
+            'db_browser_session_id': context.browser_session_id,
             'db_auth_connection_id': context.auth_connection_id,
-            'db_token_version': context.token_version,
             'account_id': context.atlassian_account_id,
         }
+        if not context.browser_session_id:
+            data['db_token_version'] = context.token_version
+        return data
     return oauth_session_data()
 
 

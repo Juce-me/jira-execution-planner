@@ -483,6 +483,7 @@ git commit -m "Resolve OAuth requests through browser sessions"
 - Modify: `tests/test_token_refresh_reuse.py`
 - Modify: `tests/test_token_refresh_race.py`
 - Modify: `tests/test_endpoint_security_matrix.py`
+- Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
 
 - [ ] **Step 1: Write failing multi-client callback/refresh/logout tests**
 
@@ -513,7 +514,7 @@ The tests keep the existing `TEST_DATABASE_URL` PostgreSQL guard; a skipped run 
 Run:
 
 ```bash
-python3 -m unittest tests.test_auth_routes tests.test_db_oauth_cutover tests.test_token_refresh_reuse tests.test_token_refresh_race tests.test_endpoint_security_matrix
+.venv/bin/python -m unittest tests.test_auth_routes tests.test_db_oauth_cutover tests.test_token_refresh_reuse tests.test_token_refresh_race tests.test_endpoint_security_matrix
 ```
 
 Expected: FAIL because callback/refresh still write connection/token-version cookies and logout does not delete the DB browser row.
@@ -594,7 +595,7 @@ before `session.flush()`. In the real `db_oauth_session_data_for_auth_context` w
 Run:
 
 ```bash
-python3 -m unittest tests.test_auth_routes tests.test_db_oauth_cutover tests.test_token_refresh_reuse tests.test_token_refresh_race tests.test_endpoint_security_matrix
+.venv/bin/python -m unittest tests.test_auth_routes tests.test_db_oauth_cutover tests.test_token_refresh_reuse tests.test_token_refresh_race tests.test_endpoint_security_matrix
 ```
 
 Expected: PASS. Route JSON/status shapes and unsafe-method guards remain unchanged; only cookie/session lifecycle changes. Under PostgreSQL, both first-ever callbacks and reconnect callbacks commit distinct browser sessions without unique-index failures.
@@ -602,7 +603,7 @@ Expected: PASS. Route JSON/status shapes and unsafe-method guards remain unchang
 - [ ] **Step 8: Commit the callback/logout/revocation slice**
 
 ```bash
-git add backend/auth/db_tokens.py backend/routes/auth_routes.py jira_server.py tests/test_auth_routes.py tests/test_db_oauth_cutover.py tests/test_token_refresh_reuse.py tests/test_token_refresh_race.py tests/test_endpoint_security_matrix.py
+git add backend/auth/db_tokens.py backend/routes/auth_routes.py jira_server.py tests/test_auth_routes.py tests/test_db_oauth_cutover.py tests/test_token_refresh_reuse.py tests/test_token_refresh_race.py tests/test_endpoint_security_matrix.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md
 git commit -m "Keep OAuth browser sessions independent"
 ```
 

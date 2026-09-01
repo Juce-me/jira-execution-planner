@@ -44,7 +44,7 @@ from backend.auth.cache_policy import (
 )
 from backend.auth.context import RequestAuthContext, build_auth_cache_key, stable_local_workspace_id
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
-from backend.auth.db_browser_sessions import create_browser_session
+from backend.auth.db_browser_sessions import create_browser_session, delete_browser_session, delete_browser_sessions_for_connection
 from backend.auth.csrf import validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
@@ -367,6 +367,7 @@ def is_pre_db_tool_admin_account(atlassian_account_id):
 def store_db_oauth_callback_session_metadata(token_data, resource, user_profile):
     if not database_storage_enabled():
         return {}
+    previous_browser_session_id = str(db_oauth_browser_session_data().get('db_browser_session_id') or '').strip()
     with session_scope() as db_session:
         stored = store_oauth_callback_tokens(
             db_session,
@@ -384,8 +385,18 @@ def store_db_oauth_callback_session_metadata(token_data, resource, user_profile)
             user_id=stored.user_id,
             atlassian_account_id=(user_profile or {}).get('account_id'),
         )
+        if stored.invalidate_browser_sessions:
+            delete_browser_sessions_for_connection(db_session, stored.connection_id)
+        else:
+            delete_browser_session(db_session, previous_browser_session_id)
+        handle = create_browser_session(
+            db_session,
+            user_id=stored.user_id,
+            workspace_id=stored.workspace_id,
+            auth_connection_id=stored.connection_id,
+        )
         clear_auth_sensitive_caches('oauth_reconnect')
-        return stored.session_metadata
+        return {'db_browser_session_id': handle.id}
 
 
 def current_auth_config():
@@ -529,13 +540,18 @@ def oauth_session_data_for_auth_context(context):
 
 def db_oauth_session_data_for_auth_context(context):
     with session_scope() as db_session:
-        return db_oauth_session_data(
-            db_session,
-            context,
-            config=current_auth_config(),
-            key_provider=key_provider_from_env(),
-            http_post=HTTP_SESSION.post,
-        )
+        try:
+            return db_oauth_session_data(
+                db_session,
+                context,
+                config=current_auth_config(),
+                key_provider=key_provider_from_env(),
+                http_post=HTTP_SESSION.post,
+            )
+        except AuthError as error:
+            if error.code == 'auth_connection_revoked':
+                db_session.commit()
+            raise
 
 
 def save_oauth_session_for_auth_context(context, data):

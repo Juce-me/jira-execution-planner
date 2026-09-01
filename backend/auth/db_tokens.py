@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
+from backend.auth.db_browser_sessions import delete_browser_sessions_for_connection
 from backend.auth.jira_auth import (
     AuthError,
     is_oauth_token_expired,
@@ -23,6 +25,7 @@ class StoredOAuthConnection:
     workspace_id: str
     connection_id: str
     token_version: int
+    invalidate_browser_sessions: bool
     session_metadata: dict[str, str]
 
 
@@ -41,6 +44,36 @@ def _scope_list(token_data, fallback_scopes: str = '') -> list[str]:
     if isinstance(raw, str):
         return [scope for scope in raw.split() if scope]
     return [str(scope).strip() for scope in raw or [] if str(scope).strip()]
+
+
+def _callback_lock_key(value):
+    digest = hashlib.sha256(value.encode('utf-8')).digest()
+    return int.from_bytes(digest[:8], byteorder='big', signed=True)
+
+
+def _lock_callback_natural_keys(
+    session,
+    *,
+    user_profile,
+    environment_key,
+    resource,
+    configured_jira_url,
+):
+    """Serialize callback natural-key upserts on PostgreSQL; SQLite is a no-op."""
+    if session.get_bind().dialect.name != 'postgresql':
+        return
+    account_id = str((user_profile or {}).get('account_id') or '').strip()
+    cloud_id = str((resource or {}).get('id') or '').strip()
+    site_url = normalize_site_url((resource or {}).get('url') or configured_jira_url)
+    identities = {
+        f'atlassian-user:atlassian:{account_id}',
+        f'jira-workspace:{environment_key}:{cloud_id or site_url}',
+    }
+    for lock_key in sorted(_callback_lock_key(value) for value in identities):
+        session.execute(
+            text('SELECT pg_advisory_xact_lock(:lock_key)'),
+            {'lock_key': lock_key},
+        )
 
 
 def _upsert_user(session, user_profile):
@@ -105,7 +138,9 @@ def _upsert_connection(session, *, user, workspace, resource, token_data):
         statement = statement.where(models.AuthConnection.cloud_id == cloud_id)
     else:
         statement = statement.where(models.AuthConnection.site_url == site_url)
+    statement = statement.with_for_update()
     connection = session.execute(statement).scalars().first()
+    invalidate_browser_sessions = connection is not None and connection.status != 'active'
     if connection is None:
         connection = models.AuthConnection(
             user_id=user.id,
@@ -123,7 +158,7 @@ def _upsert_connection(session, *, user, workspace, resource, token_data):
     connection.expires_at = _expires_at(token_data)
     connection.last_validated_at = datetime.now(timezone.utc)
     session.flush()
-    return connection
+    return connection, invalidate_browser_sessions
 
 
 def _replace_token(session, *, connection, workspace, token_kind, plaintext, key_provider):
@@ -201,6 +236,7 @@ def _delete_usable_tokens(session, connection_id):
 
 def _revoke_for_refresh_reuse(session, *, connection, cause):
     _delete_usable_tokens(session, connection.id)
+    delete_browser_sessions_for_connection(session, connection.id)
     connection.status = 'revoked'
     connection.token_version = int(connection.token_version or 0) + 1
     session.add(models.audit_event(
@@ -375,6 +411,13 @@ def store_oauth_callback_tokens(
     key_provider,
     requested_scopes='',
 ) -> StoredOAuthConnection:
+    _lock_callback_natural_keys(
+        session,
+        user_profile=user_profile,
+        environment_key=environment_key,
+        resource=resource,
+        configured_jira_url=configured_jira_url,
+    )
     user = _upsert_user(session, user_profile)
     workspace = _upsert_workspace(
         session,
@@ -385,7 +428,13 @@ def store_oauth_callback_tokens(
     token_data_for_connection = dict(token_data or {})
     if requested_scopes and not token_data_for_connection.get('scope'):
         token_data_for_connection['scope'] = requested_scopes
-    connection = _upsert_connection(session, user=user, workspace=workspace, resource=resource, token_data=token_data_for_connection)
+    connection, invalidate_browser_sessions = _upsert_connection(
+        session,
+        user=user,
+        workspace=workspace,
+        resource=resource,
+        token_data=token_data_for_connection,
+    )
     _replace_token(
         session,
         connection=connection,
@@ -414,5 +463,6 @@ def store_oauth_callback_tokens(
         workspace_id=workspace.id,
         connection_id=connection.id,
         token_version=connection.token_version,
+        invalidate_browser_sessions=invalidate_browser_sessions,
         session_metadata=metadata,
     )

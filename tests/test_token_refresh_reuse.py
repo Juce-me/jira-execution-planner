@@ -2,12 +2,17 @@ import base64
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
+from backend.auth.context import RequestAuthContext
+from backend.auth.db_browser_sessions import create_browser_session
 from backend.auth.db_tokens import refresh_db_oauth_token, store_oauth_callback_tokens
 from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthConfig, AuthError
 from backend.auth.key_provider import key_provider_from_env
 from backend.db import engine as db_engine
 from backend.db import models
+import jira_server
 
 
 class FakeResponse:
@@ -55,6 +60,24 @@ class TokenRefreshReuseTests(unittest.TestCase):
             )
             session.commit()
             self.connection_id = stored.connection_id
+            self.user_id = stored.user_id
+            self.workspace_id = stored.workspace_id
+
+        with self.factory() as session:
+            first = create_browser_session(
+                session,
+                user_id=self.user_id,
+                workspace_id=self.workspace_id,
+                auth_connection_id=self.connection_id,
+            )
+            second = create_browser_session(
+                session,
+                user_id=self.user_id,
+                workspace_id=self.workspace_id,
+                auth_connection_id=self.connection_id,
+            )
+            session.commit()
+            self.browser_session_ids = {first.id, second.id}
 
     def tearDown(self):
         db_engine.dispose_engines()
@@ -83,12 +106,70 @@ class TokenRefreshReuseTests(unittest.TestCase):
         with self.factory() as session:
             connection = session.get(models.AuthConnection, self.connection_id)
             token_count = session.query(models.AuthToken).filter_by(connection_id=self.connection_id).count()
+            browser_session_count = session.query(models.BrowserSession).filter_by(
+                auth_connection_id=self.connection_id,
+            ).count()
             audit_event = session.query(models.AuditEvent).filter_by(event_type='connection_revoked').one()
 
         self.assertEqual(connection.status, 'revoked')
         self.assertEqual(token_count, 0)
+        self.assertEqual(browser_session_count, 0)
         self.assertEqual(audit_event.event_metadata['cause'], 'refresh_reuse_detected')
         self.assertNotIn('old-refresh', str(audit_event.event_metadata))
+
+    def test_db_session_wrapper_commits_refresh_reuse_revocation_before_reraising(self):
+        with self.factory() as session:
+            connection = session.get(models.AuthConnection, self.connection_id)
+            connection.expires_at = datetime.now(timezone.utc) - timedelta(seconds=60)
+            session.commit()
+
+        context = RequestAuthContext(
+            auth_mode='atlassian_oauth',
+            user_id=self.user_id,
+            stable_subject='account-123',
+            atlassian_account_id='account-123',
+            workspace_id=self.workspace_id,
+            auth_connection_id=self.connection_id,
+            cloud_id='cloud-123',
+            site_url='https://example.atlassian.net',
+            token_version='1',
+            account_status='active',
+            is_admin=False,
+            browser_session_id=next(iter(self.browser_session_ids)),
+        )
+        with patch.dict(os.environ, {
+            'DATABASE_URL': self.database_url,
+            'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([12]) * 32).decode('ascii'),
+            'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
+        }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
+             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
+             patch.object(
+                 jira_server.HTTP_SESSION,
+                 'post',
+                 return_value=FakeResponse(400, {'error': 'invalid_grant'}),
+             ):
+            with self.assertRaises(AuthError) as raised:
+                jira_server.db_oauth_session_data_for_auth_context(context)
+
+        self.assertEqual(raised.exception.code, 'auth_connection_revoked')
+        with self.factory() as session:
+            connection = session.get(models.AuthConnection, self.connection_id)
+            token_count = session.query(models.AuthToken).filter_by(
+                connection_id=self.connection_id,
+            ).count()
+            browser_session_count = session.query(models.BrowserSession).filter_by(
+                auth_connection_id=self.connection_id,
+            ).count()
+            audit_count = session.query(models.AuditEvent).filter_by(
+                event_type='connection_revoked',
+            ).count()
+
+        self.assertEqual(connection.status, 'revoked')
+        self.assertEqual(token_count, 0)
+        self.assertEqual(browser_session_count, 0)
+        self.assertEqual(audit_count, 1)
 
 
 if __name__ == '__main__':

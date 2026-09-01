@@ -1,4 +1,5 @@
 import os
+import inspect
 import time
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ import tempfile
 from urllib.parse import parse_qs, urlparse
 
 from backend import app as app_module
+from backend.routes import auth_routes
 import jira_server
 from tests.oauth_test_helpers import FULL_OAUTH_SCOPE
 
@@ -127,6 +129,11 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertTrue(body['authenticated'])
         self.assertNotIn('access_token', body)
         self.assertNotIn('refresh_token', body)
+
+    def test_db_refresh_route_does_not_rewrite_browser_session_cookie(self):
+        source = inspect.getsource(auth_routes.api_auth_refresh)
+        db_branch = source.split('data = oauth_session_data()', 1)[0]
+        self.assertNotIn('remember_db_oauth_browser_session', db_branch)
 
     def test_oauth_login_redirects_to_atlassian(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \

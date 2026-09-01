@@ -5,10 +5,11 @@ import os
 from flask import Blueprint, jsonify, redirect, request, session
 
 from backend.auth.csrf import issue_csrf_token
+from backend.auth.db_browser_sessions import delete_browser_session
 from backend.auth.jira_auth import ensure_oauth_token, missing_oauth_scopes
 from backend.config.repository import ConfigStorageError
 from backend.epm import home as epm_home
-from backend.db.engine import DatabaseConfigurationError
+from backend.db.engine import DatabaseConfigurationError, session_scope
 from backend.services.user_view_config import UserViewConfigStorageError
 
 from . import bind_server_globals
@@ -20,6 +21,16 @@ bp = Blueprint("auth_routes", __name__)
 @bp.before_request
 def _sync_server_globals():
     bind_server_globals(globals())
+
+
+def _delete_current_db_oauth_browser_session():
+    browser_session_id = str(
+        db_oauth_browser_session_data().get('db_browser_session_id') or ''
+    ).strip()
+    if not browser_session_id:
+        return
+    with session_scope() as db_session:
+        delete_browser_session(db_session, browser_session_id)
 
 
 @bp.route('/api/auth/status', methods=['GET'])
@@ -397,12 +408,15 @@ def api_atlassian_callback():
     if not code_verifier:
         return jsonify({'error': 'missing_pkce_verifier'}), 400
     config = current_auth_config()
+    exchange_started = False
     try:
         validate_auth_config(config)
         validate_local_token_store_allowed()
+        exchange_started = True
         token_data = exchange_authorization_code(config, code, code_verifier)
         user_profile = fetch_current_user(token_data.get('access_token', ''))
         if user_profile.get('account_status') != 'active':
+            _delete_current_db_oauth_browser_session()
             save_oauth_session({})
             return jsonify({'error': 'user_inactive'}), 403
         resources = fetch_accessible_resources(token_data.get('access_token', ''))
@@ -414,7 +428,9 @@ def api_atlassian_callback():
         session_payload.update(store_db_oauth_callback_session_metadata(session_token_data, resource, user_profile))
         save_oauth_session(session_payload)
     except AuthError as error:
-        save_oauth_session({})
+        if exchange_started:
+            _delete_current_db_oauth_browser_session()
+            save_oauth_session({})
         if error.code in {'missing_jira_url', 'missing_oauth_config', 'missing_flask_secret_key', 'invalid_auth_mode', 'local_token_store_not_allowed'}:
             return auth_error_response(error, 400)
         return auth_error_response(error, 401 if error.code != 'jira_site_not_accessible' else 403)
@@ -429,7 +445,6 @@ def api_auth_refresh():
         try:
             context = current_request_auth_context()
             active = current_jira_session_data(context)
-            remember_db_oauth_browser_session(active)
         except AuthError as error:
             if error.code == 'auth_required':
                 save_oauth_session({})
@@ -497,7 +512,6 @@ def api_dev_home_graphql_oauth_probe():
         try:
             context = current_request_auth_context()
             active = current_jira_session_data(context)
-            remember_db_oauth_browser_session(active)
         except AuthError as error:
             if error.code == 'auth_required':
                 save_oauth_session({})
@@ -562,6 +576,7 @@ def api_dev_home_graphql_oauth_probe():
 
 @bp.route('/api/auth/logout', methods=['POST'])
 def api_auth_logout():
+    _delete_current_db_oauth_browser_session()
     save_oauth_session({})
     session.pop('oauth_state', None)
     session.pop('oauth_pkce_verifier', None)

@@ -13204,7 +13204,12 @@ import {
                     activeMode={activeEngMode}
                     isCompletedSprintSelected={isCompletedSprintSelected}
                     isFutureSprintSelected={isFutureSprintSelected}
-                    onChange={applyEngMode}
+                    onChange={(nextMode) => {
+                        applyEngMode(nextMode);
+                        if (['planning', 'board', 'statistics'].includes(nextMode)) {
+                            onboarding.requestModule(nextMode);
+                        }
+                    }}
                     selectedSprint={selectedSprint}
                 />
             );
@@ -13993,6 +13998,7 @@ import {
                                                 event.stopPropagation();
                                                 trackSettingsAction('teams', 'open', { source_surface: 'dashboard' });
                                                 openGroupManage();
+                                                onboarding.requestModule('configuration');
                                             }}
                                             disabled={groupsLoading}
                                             title="Manage team groups"
@@ -17025,6 +17031,11 @@ import {
                         previewSession={onboardingPreviewSession}
                         onPreviewTargetChange={handleOnboardingPreviewTargetChange}
                         onRequestPreviewClose={handleOnboardingPreviewCloseRequest}
+                        activeSurface={showGroupManage ? 'settings' : activeEngMode}
+                        moduleRequest={onboarding.moduleRequest}
+                        onModuleRequestConsumed={onboarding.clearModuleRequest}
+                        settingsDirty={showGroupManage && isGroupDraftDirty}
+                        settingsSaving={showGroupManage && (groupSaving || epmConfigSaving || groupVisibilitySaving)}
                     />
                     {showUpdateModal && updateNoticeVisible && (
                         <div

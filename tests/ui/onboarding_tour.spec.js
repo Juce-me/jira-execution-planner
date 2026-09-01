@@ -711,8 +711,13 @@ async function installProductionOnboardingFixture(page, {
     field = 'priority',
     mode = 'success',
     errorStatus = 403,
+    sprintState = 'active',
+    hideBoardTarget = false,
+    deferGroupSave = false,
 } = {}) {
     const calls = [];
+    let releaseGroupSave = () => {};
+    const groupSaveGate = new Promise((resolve) => { releaseGroupSave = resolve; });
     const stories = [
         productionStory('SYN-STORY-A', 'SYN-EPIC-A', 'High'),
         productionStory('SYN-STORY-B', 'SYN-EPIC-B', 'Medium'),
@@ -755,7 +760,9 @@ async function installProductionOnboardingFixture(page, {
     await page.route('**/frontend/dist/dashboard.css', route => route.fulfill({
         status: 200,
         contentType: 'text/css',
-        body: dashboardCss,
+        body: hideBoardTarget
+            ? `${dashboardCss}\n[data-onboarding-target="board-overview"] { display: none !important; }`
+            : dashboardCss,
     }));
     await page.route('https://www.googletagmanager.com/**', route => route.fulfill({
         status: 200,
@@ -805,11 +812,23 @@ async function installProductionOnboardingFixture(page, {
             });
         }
         if (url.pathname === '/api/version') return json({ enabled: false });
-        if (url.pathname === '/api/groups-config') return json(groupsPayload);
+        if (url.pathname === '/api/groups-config') {
+            if (deferGroupSave && request.method() !== 'GET') await groupSaveGate;
+            return json(groupsPayload);
+        }
+        if (url.pathname === '/api/team-catalog') {
+            return json({
+                catalog: {
+                    'team-synthetic': { id: 'team-synthetic', name: 'Synthetic Team' },
+                    'team-onboarding': { id: 'team-onboarding', name: 'Onboarding Team' },
+                },
+                meta: { source: 'synthetic' },
+            });
+        }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
         if (url.pathname === '/api/sprints') {
-            return json({ sprints: [{ id: productionSprintId, name: productionSprintName, state: 'active' }] });
+            return json({ sprints: [{ id: productionSprintId, name: productionSprintName, state: sprintState }] });
         }
         if (url.pathname === '/api/tasks-with-team-name') {
             const purpose = url.searchParams.get('purpose');
@@ -859,7 +878,70 @@ async function installProductionOnboardingFixture(page, {
     });
     await page.goto(`${productionFixtureUrl}/`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible({ timeout: 15000 });
-    return { calls };
+    return { calls, releaseGroupSave };
+}
+
+function launcherTransitionCount(events, moduleId) {
+    if (moduleId === 'configuration') {
+        return events.filter((entry) => (
+            entry?.event_name === 'settings_action'
+            && entry.section === 'teams'
+            && entry.workflow_action === 'open'
+            && entry.source_surface === 'dashboard'
+        )).length;
+    }
+    return events.filter((entry) => (
+        entry?.event_name === 'select_content'
+        && entry.content_type === 'eng_mode'
+        && entry.content_id === moduleId
+    )).length;
+}
+
+async function activateLauncher(locator, inputPath) {
+    if (inputPath === 'keyboard') {
+        await locator.focus();
+        await locator.press('Enter');
+        return;
+    }
+    await locator.click();
+}
+
+async function expectSingleLauncherTransition(page, moduleId, activate) {
+    const before = launcherTransitionCount(await page.evaluate(() => window.dataLayer || []), moduleId);
+    await activate();
+    await expect.poll(async () => launcherTransitionCount(
+        await page.evaluate(() => window.dataLayer || []),
+        moduleId,
+    )).toBe(before + 1);
+}
+
+async function completeConfigurationModule(page, inputPath, { screenshot = false } = {}) {
+    await advanceProductionTourTo(page, 'Configure this Department');
+    const settingsLauncher = page.getByRole('button', { name: 'Manage team groups' });
+    await expectSingleLauncherTransition(page, 'configuration', () => activateLauncher(settingsLauncher, inputPath));
+    await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
+    await expect(page.locator('.group-modal > .group-modal-tabs > .group-modal-tab.active')).toHaveText('Departments');
+    await expect(page.getByRole('tab', { name: 'Team groups' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[data-onboarding-target="configuration-team-add"]')).toBeVisible();
+    if (screenshot) await captureSettledOnboardingScreenshot(page, 'context-configuration.png');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    await page.locator('[data-first-run-settings-cancel]').click();
+    await expect(page.getByRole('heading', { name: 'Open Planning' })).toBeVisible();
+}
+
+async function completeEngContextualModule(page, moduleId, inputPath, { screenshot = false } = {}) {
+    const labels = { planning: 'Planning', board: 'Board', statistics: 'Statistics' };
+    const headings = { planning: 'Review sprint planning', board: 'Review the Department Board', statistics: 'Review delivery statistics' };
+    const screenshotNames = { planning: 'context-planning.png', board: 'context-board.png', statistics: 'context-statistics.png' };
+    const launcher = page.getByRole('radio', { name: labels[moduleId] });
+    await expectSingleLauncherTransition(page, moduleId, () => activateLauncher(launcher, inputPath));
+    await expect(page.locator(`[data-onboarding-target="${moduleId}-launcher"]`)).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator(`[data-onboarding-module="${moduleId}"]`)).toBeVisible();
+    await expect(page.locator(`[data-onboarding-target="${moduleId}-overview"]`)).toBeVisible();
+    await expect(page.getByRole('heading', { name: headings[moduleId] })).toBeVisible();
+    if (screenshot) await captureSettledOnboardingScreenshot(page, screenshotNames[moduleId]);
+    await page.getByRole('button', { name: 'Next' }).click();
 }
 
 function productionTrigger(page, field, issueKey = 'SYN-EPIC-A') {
@@ -1096,6 +1178,121 @@ function assertNoUnsafePreviewAnalytics(events, contract, analyticsOptions) {
         expect(JSON.stringify(entry)).not.toMatch(/SYN-(?:EPIC|STORY)|Highest|Medium|Committed|Flexible|To Do|Done/);
     });
 }
+
+for (const inputPath of ['pointer', 'keyboard']) {
+    test(`production contextual module launchers use one ${inputPath} application transition`, async ({ page }) => {
+        await installProductionOnboardingFixture(page);
+
+        await completeConfigurationModule(page, inputPath, { screenshot: inputPath === 'pointer' });
+        await completeEngContextualModule(page, 'planning', inputPath, { screenshot: inputPath === 'pointer' });
+        await expect(page.getByRole('heading', { name: 'Open Board' })).toBeVisible();
+        await completeEngContextualModule(page, 'board', inputPath, { screenshot: inputPath === 'pointer' });
+        await expect(page.getByRole('heading', { name: 'Open Statistics' })).toBeVisible();
+        await completeEngContextualModule(page, 'statistics', inputPath, { screenshot: inputPath === 'pointer' });
+
+        await expect(page.getByRole('heading', { name: 'Tour complete' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Finish' })).toBeEnabled();
+        const events = await page.evaluate(() => window.dataLayer || []);
+        for (const moduleId of ['configuration', 'planning', 'board', 'statistics']) {
+            expect(launcherTransitionCount(events, moduleId), moduleId).toBe(1);
+        }
+    });
+}
+
+test('production contextual module keeps Configuration incomplete across close and does not replay it after completion', async ({ page }) => {
+    await installProductionOnboardingFixture(page);
+    await advanceProductionTourTo(page, 'Configure this Department');
+
+    const settingsLauncher = page.getByRole('button', { name: 'Manage team groups' });
+    await expectSingleLauncherTransition(page, 'configuration', () => settingsLauncher.click());
+    await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
+    await page.locator('[data-first-run-settings-cancel]').click();
+    await expect(page.getByRole('heading', { name: 'Configure this Department' })).toBeVisible();
+
+    await expectSingleLauncherTransition(page, 'configuration', () => settingsLauncher.click());
+    await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    await page.locator('[data-first-run-settings-cancel]').click();
+    await expect(page.getByRole('heading', { name: 'Open Planning' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Back' }).click();
+    await expect(page.getByRole('heading', { name: 'Configure this Department' })).toBeVisible();
+    await expectSingleLauncherTransition(page, 'configuration', () => settingsLauncher.click());
+    await expect(page.locator('[data-onboarding-module="configuration"]')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Choose Department Teams' })).toHaveCount(0);
+});
+
+test('production launcher fallback acknowledges disabled Planning without bypassing the control', async ({ page }) => {
+    await installProductionOnboardingFixture(page, { sprintState: 'closed' });
+    await completeConfigurationModule(page, 'pointer');
+
+    await expect(page.getByRole('heading', { name: 'Open Planning' })).toBeVisible();
+    await expect(page.locator('[data-onboarding-target="planning-launcher"]')).toBeDisabled();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: 'Open Board' })).toBeVisible();
+});
+
+test('production launcher fallback acknowledges disabled Statistics without bypassing the control', async ({ page }) => {
+    await installProductionOnboardingFixture(page, { sprintState: 'future' });
+    await completeConfigurationModule(page, 'pointer');
+    await completeEngContextualModule(page, 'planning', 'pointer');
+    await completeEngContextualModule(page, 'board', 'pointer');
+
+    await expect(page.getByRole('heading', { name: 'Open Statistics' })).toBeVisible();
+    await expect(page.locator('[data-onboarding-target="statistics-launcher"]')).toBeDisabled();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: 'Tour complete' })).toBeVisible();
+});
+
+test('production contextual module uses an honest fallback when the Board destination target is unavailable', async ({ page }) => {
+    await installProductionOnboardingFixture(page, { hideBoardTarget: true });
+    await completeConfigurationModule(page, 'pointer');
+    await completeEngContextualModule(page, 'planning', 'pointer');
+    await expect(page.getByRole('heading', { name: 'Open Board' })).toBeVisible();
+
+    const board = page.getByRole('radio', { name: 'Board' });
+    await expectSingleLauncherTransition(page, 'board', () => board.click());
+    await expect(page.locator('[data-onboarding-target="board-launcher"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('heading', { name: 'Review the Department Board' })).toBeVisible();
+    await expect(page.locator('[data-onboarding-target="board-overview"]')).toBeHidden();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+});
+
+test('production Configuration contextual module defers to dirty Settings state', async ({ page }) => {
+    await installProductionOnboardingFixture(page);
+    await advanceProductionTourTo(page, 'Configure this Department');
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
+
+    const departmentName = page.getByRole('textbox', { name: 'Department name' });
+    const originalName = await departmentName.inputValue();
+    await departmentName.fill(`${originalName} updated`);
+    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.locator('.onboarding-tour-card')).toContainText('Save or discard the current Settings changes before continuing.');
+    await departmentName.fill(originalName);
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+});
+
+test('production Configuration contextual module defers to Settings while it is saving', async ({ page }) => {
+    const { releaseGroupSave } = await installProductionOnboardingFixture(page, { deferGroupSave: true });
+    await advanceProductionTourTo(page, 'Configure this Department');
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
+
+    const departmentName = page.getByRole('textbox', { name: 'Department name' });
+    await departmentName.fill(`${await departmentName.inputValue()} updated`);
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByRole('button', { name: 'Saving...' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.locator('.onboarding-tour-card')).toContainText('Save or discard the current Settings changes before continuing.');
+    releaseGroupSave();
+});
 
 test('production Catch Up Priority preview owns only the exact Epic control and never writes Jira', async ({ page }) => {
     const { calls } = await installProductionOnboardingFixture(page, { field: 'priority', mode: 'success' });
@@ -1401,7 +1598,7 @@ test('production cached Priority and Status repeat previews stay read-only witho
     assertNoPreviewMutationAnalytics(await page.evaluate(() => window.dataLayer || []));
 });
 
-test('production Status preview reaches the open terminal step and only explicit Finish persists once', async ({ page }) => {
+test('production Status preview reaches required contextual modules before explicit Finish persists once', async ({ page }) => {
     const { calls } = await installProductionOnboardingFixture(page, { field: 'status', mode: 'success' });
     await advanceProductionTourTo(page, 'Preview Status options');
     await productionTrigger(page, 'status').click();
@@ -1412,6 +1609,10 @@ test('production Status preview reaches the open terminal step and only explicit
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
 
     await page.getByRole('button', { name: 'Next' }).click();
+    await completeConfigurationModule(page, 'pointer');
+    await completeEngContextualModule(page, 'planning', 'pointer');
+    await completeEngContextualModule(page, 'board', 'pointer');
+    await completeEngContextualModule(page, 'statistics', 'pointer');
     await expect(page.getByRole('heading')).toHaveText('Tour complete');
     await expect(page.locator('[data-onboarding-tour]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Finish' })).toBeVisible();
@@ -2458,7 +2659,7 @@ test('interactive Priority, Project Track, and Status previews stay viewport-fix
             heading: 'Preview Status options',
             trigger: '[data-status-transition-trigger]',
             menu: '[data-status-transition-menu]',
-            nextHeading: 'Tour complete',
+            nextHeading: 'Configure this Department',
         },
     ];
     const assertViewportContainedWithoutOverlap = async ({ trigger, menu }) => {
@@ -2555,7 +2756,7 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
                 await advancePreviewOrFallback(callbackPage, title, advanceFallback);
             },
         });
-        const expectedTotal = mask ? 10 : 8;
+        const expectedTotal = mask ? 14 : 12;
         expect(steps.map((step) => step.progress)).toEqual(
             Array.from({ length: expectedTotal }, (_value, index) => `Step ${index + 1} of ${expectedTotal}`)
         );
@@ -2585,7 +2786,7 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
                 await advancePreviewOrFallback(callbackPage, title, advanceFallback);
             },
         });
-        const expectedTotal = mask ? 10 : 8;
+        const expectedTotal = mask ? 14 : 12;
         expect(steps.map((step) => step.progress)).toEqual(
             Array.from({ length: expectedTotal }, (_value, index) => `Step ${index + 1} of ${expectedTotal}`)
         );

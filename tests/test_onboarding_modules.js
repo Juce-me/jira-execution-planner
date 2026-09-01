@@ -122,3 +122,41 @@ test('detects completion of every required contextual module', async () => {
         completedModules: ['configuration', 'planning', 'board'],
     }), false);
 });
+
+test('reopens only incomplete modules and applies each newer request once', async () => {
+    const {
+        activateOnboardingModule,
+        completeOnboardingModule,
+        createOnboardingModuleSession,
+    } = await loadModule();
+    const first = activateOnboardingModule(createOnboardingModuleSession(), {
+        moduleId: 'configuration',
+        resumeStepId: 'launch-planning',
+        requestNonce: 1,
+    });
+    const interrupted = {
+        ...first,
+        activeModule: 'catch-up',
+        resumeStepId: '',
+    };
+    const reopened = activateOnboardingModule(interrupted, {
+        moduleId: 'configuration',
+        resumeStepId: 'launch-planning',
+        requestNonce: 2,
+    });
+
+    assert.equal(reopened.activeModule, 'configuration');
+    assert.equal(reopened.requestNonce, 2);
+    assert.equal(activateOnboardingModule(reopened, {
+        moduleId: 'configuration',
+        resumeStepId: 'launch-planning',
+        requestNonce: 2,
+    }), reopened, 'the same request cannot cause a second transition');
+
+    const completed = completeOnboardingModule(reopened, { surface: 'settings' });
+    assert.equal(activateOnboardingModule(completed, {
+        moduleId: 'configuration',
+        resumeStepId: 'launch-planning',
+        requestNonce: 3,
+    }), completed, 'a completed module cannot replay in the same session');
+});

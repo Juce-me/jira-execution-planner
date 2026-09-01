@@ -13,6 +13,7 @@ import {
     resolveOnboardingSnapshot,
     revokeTourOwnedSuppressionForMutation,
     shouldUseInteractiveCoachmark,
+    ONBOARDING_STEPS_BY_MODULE,
 } from './onboardingSteps.js';
 import {
     appendAriaDescribedByToken,
@@ -62,8 +63,8 @@ function buildPreviewDescriptor(sessionId, step, target) {
     return { sessionId, stepId: step.id, fieldKind, issueKey, targetIdentity };
 }
 
-function matchesExactStepTarget(target, step) {
-    if (!target || !step || target.getAttribute?.('data-onboarding-target') !== step.id) return false;
+function matchesStepSelector(target, step) {
+    if (!target || !step) return false;
     return step.selectors.some((selector) => {
         try {
             return target.matches(selector);
@@ -71,6 +72,11 @@ function matchesExactStepTarget(target, step) {
             return false;
         }
     });
+}
+
+function matchesExactStepTarget(target, step) {
+    return target?.getAttribute?.('data-onboarding-target') === step?.id
+        && matchesStepSelector(target, step);
 }
 
 function rectUnion(first, second) {
@@ -188,9 +194,10 @@ function isVisibleInViewport(node, viewport, options) {
 
 function sameSnapshot(left, right) {
     if (left.steps.length !== right.steps.length) return false;
+    if ((left.catchUpSteps || []).length !== (right.catchUpSteps || []).length) return false;
     return left.steps.every((step, index) => (
         step.id === right.steps[index]?.id && left.targets[step.id] === right.targets[step.id]
-    ));
+    )) && (left.catchUpSteps || []).every((step, index) => step.id === right.catchUpSteps[index]?.id);
 }
 
 function sameRect(left, right) {
@@ -218,20 +225,37 @@ function sameGeometry(left, right) {
         && left.coachmarkSize.height === right.coachmarkSize.height;
 }
 
-function readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords = []) {
+function includeModuleLaunchSteps(steps, catalog) {
+    const launchSteps = catalog.filter((step) => step.progression === 'module-launch');
+    if (!launchSteps.length) return steps;
+    const withoutLaunchers = steps.filter((step) => step.progression !== 'module-launch');
+    const completeIndex = withoutLaunchers.findIndex((step) => step.id === 'complete');
+    if (completeIndex < 0) return [...withoutLaunchers, ...launchSteps];
+    return [
+        ...withoutLaunchers.slice(0, completeIndex),
+        ...launchSteps,
+        ...withoutLaunchers.slice(completeIndex),
+    ];
+}
+
+function readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords = [], catalog = ONBOARDING_STEP_CATALOG) {
     const viewport = viewportSize();
     const raw = resolveOnboardingSnapshot(document, { width: viewport.right, height: viewport.bottom }, {
         engReadiness,
         tourOwnedSuppressionRecords,
+        catalog,
     });
-    if (!eligibleTargets) return raw;
+    if (!eligibleTargets) return { ...raw, steps: includeModuleLaunchSteps(raw.steps, catalog) };
     const availability = {};
-    ONBOARDING_STEP_CATALOG.forEach((step) => {
+    catalog.forEach((step) => {
         const explicitlyEligible = eligibleTargets[step.id] !== false;
         availability[step.id] = explicitlyEligible && Boolean(raw.targets[step.id]);
     });
     return {
-        steps: buildVisibleOnboardingSteps(availability, { engReadiness }),
+        steps: includeModuleLaunchSteps(
+            buildVisibleOnboardingSteps(availability, { engReadiness, catalog }),
+            catalog,
+        ),
         targets: raw.targets,
     };
 }
@@ -249,18 +273,32 @@ export default function OnboardingTour({
     previewSession = null,
     onPreviewTargetChange,
     onRequestPreviewClose,
+    activeSurface = 'catch-up',
+    moduleRequest = null,
+    onModuleRequestConsumed,
+    settingsDirty = false,
+    settingsSaving = false,
 } = {}) {
     const [snapshot, setSnapshot] = React.useState(() => (
         typeof document === 'undefined'
-            ? { steps: buildVisibleOnboardingSteps({}, { engReadiness }), targets: {} }
-            : readSnapshot(eligibleTargets, engReadiness)
+            ? (() => {
+                const steps = buildVisibleOnboardingSteps({}, { engReadiness });
+                return { steps, catchUpSteps: steps, targets: {} };
+            })()
+            : (() => {
+                const initialSnapshot = readSnapshot(eligibleTargets, engReadiness);
+                return { ...initialSnapshot, catchUpSteps: initialSnapshot.steps };
+            })()
     ));
     const tour = useOnboardingTour({
-        steps: snapshot.steps,
+        steps: snapshot.catchUpSteps,
         run,
         onboardingDone,
         onSkip,
         onFinish,
+        activeSurface,
+        moduleRequest,
+        onModuleRequestConsumed,
     });
     const advanceFromStep = tour.advanceFromStep;
     const skipTour = tour.skip;
@@ -330,10 +368,11 @@ export default function OnboardingTour({
             progressCloseLatchRef.current = false;
             onPreviewTargetChange?.(null);
             setAuthLocked(true);
+            tour.resetSession();
         };
         window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthenticationRequired);
         return () => window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthenticationRequired);
-    }, [onPreviewTargetChange, tour.isOpen]);
+    }, [onPreviewTargetChange, tour.isOpen, tour.resetSession]);
 
     React.useEffect(() => {
         if (!mobileSuppressed || !tour.isOpen) return;
@@ -355,14 +394,23 @@ export default function OnboardingTour({
     }
 
     const measure = React.useCallback(() => {
-        if (!tour.isOpen || !tour.currentStep || authLocked || mobileSuppressed) return;
+        if (!tour.isOpen || !tour.currentStep || tour.suspended || authLocked || mobileSuppressed) return;
         const tourOwnedSuppressionRecords = tourOwnedSuppressionRef.current;
-        const nextSnapshot = readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords);
+        const catalog = tour.moduleSession.activeModule === 'catch-up'
+            ? ONBOARDING_STEP_CATALOG
+            : (ONBOARDING_STEPS_BY_MODULE[tour.moduleSession.activeModule] || []);
+        const nextSnapshot = readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords, catalog);
         setSnapshot((current) => {
-            const reconciledSnapshot = tour.currentStep?.progression === 'menu-preview'
+            const activeSnapshot = tour.currentStep?.progression === 'menu-preview'
                 && tourOwnedSuppressionRecords.length
                 ? { ...nextSnapshot, steps: current.steps }
                 : nextSnapshot;
+            const reconciledSnapshot = {
+                ...activeSnapshot,
+                catchUpSteps: tour.moduleSession.activeModule === 'catch-up'
+                    ? activeSnapshot.steps
+                    : current.catchUpSteps,
+            };
             return sameSnapshot(current, reconciledSnapshot) ? current : reconciledSnapshot;
         });
 
@@ -400,10 +448,10 @@ export default function OnboardingTour({
                 : DEFAULT_COACHMARK_SIZE,
         };
         setGeometry((current) => sameGeometry(current, nextGeometry) ? current : nextGeometry);
-    }, [authLocked, eligibleTargets, engReadiness, mobileSuppressed, tour.currentStep, tour.isOpen]);
+    }, [authLocked, eligibleTargets, engReadiness, mobileSuppressed, tour.currentStep, tour.isOpen, tour.moduleSession.activeModule, tour.suspended]);
 
     React.useLayoutEffect(() => {
-        if (!tour.isOpen || authLocked || mobileSuppressed) return undefined;
+        if (!tour.isOpen || tour.suspended || authLocked || mobileSuppressed) return undefined;
         measure();
         window.addEventListener('resize', measure);
         window.addEventListener('scroll', measure, true);
@@ -447,13 +495,16 @@ export default function OnboardingTour({
             resizeObserver?.disconnect();
             mutationObserver?.disconnect();
         };
-    }, [authLocked, geometry.target, measure, mobileSuppressed, tour.isOpen]);
+    }, [authLocked, geometry.target, measure, mobileSuppressed, tour.isOpen, tour.suspended]);
 
     const target = geometry.target;
     const basePresentation = tour.currentStep
         ? buildStepPresentation(tour.currentStep, target, { engReadiness })
         : { fallback: true, loading: false, title: '', body: '' };
     const previewStep = tour.currentStep?.progression === 'menu-preview';
+    const targetReachableStep = tour.currentStep?.interaction === 'target-reachable';
+    const settingsContextStep = tour.moduleSession.activeModule === 'configuration'
+        && tour.currentStep?.progression === 'module-manual';
     const targetIdentity = target?.getAttribute?.('data-onboarding-target-identity') || '';
     const exactPreviewTarget = previewStep
         && matchesExactStepTarget(target, tour.currentStep)
@@ -475,7 +526,8 @@ export default function OnboardingTour({
         left: rawPlacement.left + viewport.left,
         top: rawPlacement.top + viewport.top,
     };
-    const interactiveEligible = Boolean(exactPreviewTarget
+    const exactReachableTarget = targetReachableStep && matchesStepSelector(target, tour.currentStep);
+    const interactiveEligible = Boolean((exactPreviewTarget || exactReachableTarget)
         && !authLocked
         && !mobileSuppressed
         && !basePresentation.loading
@@ -504,7 +556,7 @@ export default function OnboardingTour({
     }, [authLocked, mobileSuppressed, returnFocusRef, tour.isOpen]);
 
     React.useLayoutEffect(() => {
-        if (!tour.isOpen || !tour.currentStep || authLocked || mobileSuppressed) return undefined;
+        if (!tour.isOpen || !tour.currentStep || tour.suspended || authLocked || mobileSuppressed) return undefined;
         const appRoot = document.getElementById('root');
         if (!appRoot) return undefined;
 
@@ -519,7 +571,7 @@ export default function OnboardingTour({
         let targetAncestorScrollRecords = [];
         let htmlOverflowRecord = null;
         let bodyOverflowRecord = null;
-        if (interactive) {
+        if (interactive && !settingsContextStep) {
             const ownedPortal = previewDescriptorRef.current
                 ? document.querySelector(`[data-onboarding-preview-portal="${CSS.escape(previewDescriptorRef.current.targetIdentity)}"]`)
                 : null;
@@ -540,8 +592,14 @@ export default function OnboardingTour({
             htmlOverflowRecord = lockOverflow(document.documentElement);
             bodyOverflowRecord = lockOverflow(document.body);
             targetAncestorScrollRecords = lockTargetAncestorScroll(target);
-        } else {
+        } else if (!interactive) {
             suppress(appRoot);
+        } else {
+            describedBySnapshot = {
+                present: target.hasAttribute('aria-describedby'),
+                value: target.getAttribute('aria-describedby'),
+            };
+            target.setAttribute('aria-describedby', appendAriaDescribedByToken(describedBySnapshot.value, descriptionId));
         }
         tourOwnedSuppressionRef.current = records;
 
@@ -566,7 +624,9 @@ export default function OnboardingTour({
         interactive ? previewState : '',
         interactive ? target : null,
         interactive ? tour.currentStep : null,
+        settingsContextStep,
         tour.isOpen,
+        tour.suspended,
     ]);
 
     React.useEffect(() => {
@@ -653,11 +713,11 @@ export default function OnboardingTour({
     }, [tour.currentStepId]);
 
     React.useEffect(() => {
-        if (!tour.isOpen || !tour.currentStep || authLocked || mobileSuppressed) return undefined;
+        if (!tour.isOpen || !tour.currentStep || tour.suspended || authLocked || mobileSuppressed) return undefined;
         if (interactive) target?.focus?.();
         else panelRef.current?.focus();
         return undefined;
-    }, [authLocked, interactive, mobileSuppressed, target, tour.currentStep, tour.isOpen]);
+    }, [authLocked, interactive, mobileSuppressed, target, tour.currentStep, tour.isOpen, tour.suspended]);
 
     React.useLayoutEffect(() => {
         if (!interactive || !target) return;
@@ -710,7 +770,7 @@ export default function OnboardingTour({
     }, [interactive, measure, target, targetIdentity]);
 
     React.useEffect(() => {
-        if (!tour.isOpen || !interactive) return undefined;
+        if (!tour.isOpen || tour.suspended || !interactive || settingsContextStep) return undefined;
         const getIsland = () => {
             const menu = previewOpen && previewDescriptorRef.current
                 ? document.querySelector(`[data-onboarding-preview-owner="${CSS.escape(previewDescriptorRef.current.targetIdentity)}"]`)
@@ -762,7 +822,7 @@ export default function OnboardingTour({
             document.removeEventListener('focusin', handleFocusIn);
             document.removeEventListener('keydown', handleKeyDown);
         };
-    }, [actionPending, interactive, previewOpen, skipTour, target, tour.isOpen]);
+    }, [actionPending, interactive, previewOpen, settingsContextStep, skipTour, target, tour.isOpen, tour.suspended]);
 
     React.useEffect(() => {
         if (tour.isOpen) return;
@@ -777,9 +837,9 @@ export default function OnboardingTour({
         onPreviewTargetChange?.(null);
     }, [onPreviewTargetChange, tour.isOpen]);
 
-    if (!tour.isOpen || !tour.currentStep || authLocked || mobileSuppressed || typeof document === 'undefined') return null;
+    if (!tour.isOpen || !tour.currentStep || tour.suspended || authLocked || mobileSuppressed || typeof document === 'undefined') return null;
 
-    const progress = buildTourProgress(snapshot.steps, tour.index);
+    const progress = buildTourProgress(tour.steps, tour.index);
     const spotlightBounds = geometry.targetRect ? {
         left: Math.max(viewport.left, geometry.targetRect.left - SPOTLIGHT_PADDING),
         top: Math.max(viewport.top, geometry.targetRect.top - SPOTLIGHT_PADDING),
@@ -793,14 +853,18 @@ export default function OnboardingTour({
         height: Math.max(0, spotlightBounds.bottom - spotlightBounds.top),
     } : null;
     const exactRect = geometry.targetRect;
-    const shieldStyles = exactRect ? [
+    const shieldStyles = exactRect && !settingsContextStep ? [
         { left: viewport.left, top: viewport.top, width: viewport.width, height: Math.max(0, exactRect.top - viewport.top) },
         { left: viewport.left, top: exactRect.top, width: Math.max(0, exactRect.left - viewport.left), height: exactRect.height },
         { left: exactRect.right, top: exactRect.top, width: Math.max(0, viewport.right - exactRect.right), height: exactRect.height },
         { left: viewport.left, top: exactRect.bottom, width: viewport.width, height: Math.max(0, viewport.bottom - exactRect.bottom) },
     ] : [];
     const interactiveState = previewOpen ? `preview_${previewState}` : 'interactive_closed';
-    const sectionSkipTargetId = resolveSectionSkipTargetId(snapshot.steps, tour.currentStepId);
+    const sectionSkipTargetId = resolveSectionSkipTargetId(tour.steps, tour.currentStepId);
+    const contextualModuleActive = tour.moduleSession.activeModule !== 'catch-up';
+    const moduleLaunchStep = tour.currentStep.progression === 'module-launch';
+    const moduleManualStep = tour.currentStep.progression === 'module-manual';
+    const settingsBlocked = settingsContextStep && (settingsDirty || settingsSaving);
 
     const requestCleanup = (reason = 'cleanup') => {
         if (!previewDescriptorRef.current) return;
@@ -824,6 +888,18 @@ export default function OnboardingTour({
     const handleSkip = () => {
         requestCleanup('cleanup');
         tour.skip();
+    };
+
+    const handleNext = () => {
+        if (moduleLaunchStep && presentation.fallback) {
+            tour.acknowledgeUnavailableModule();
+            return;
+        }
+        if (moduleManualStep) {
+            tour.completeCurrentModule();
+            return;
+        }
+        tour.goNext();
     };
 
     const handleKeyDown = (event) => {
@@ -861,6 +937,7 @@ export default function OnboardingTour({
             data-onboarding-preview-settled={previewSettledStateRef.current || undefined}
             data-onboarding-preview-focused={previewFocusedRef.current ? 'true' : 'false'}
             data-onboarding-preview-cleanup={cleanupLatchRef.current ? 'true' : 'false'}
+            data-onboarding-module={tour.moduleSession.activeModule}
         >
             {interactive && shieldStyles.map((style, index) => (
                 <div
@@ -887,7 +964,9 @@ export default function OnboardingTour({
             >
                 <div className="onboarding-tour-progress" aria-live={previewOpen ? undefined : 'polite'}>{progress.label}</div>
                 <h2 id={headingId}>{presentation.title}</h2>
-                <p id={descriptionId}>{interactive
+                <p id={descriptionId}>{settingsBlocked
+                    ? 'Save or discard the current Settings changes before continuing.'
+                    : interactive && previewStep
                     ? 'Activate the highlighted control to preview its choices; no value change is required. Close the preview or press Escape to continue.'
                     : presentation.body}</p>
                 {actionError && (
@@ -908,10 +987,20 @@ export default function OnboardingTour({
                                 Skip this section
                             </button>
                         )}
-                        {tour.isLast ? (
-                            <button type="button" className="primary" onClick={tour.finish} disabled={actionPending}>Finish</button>
-                        ) : !interactive && (
-                            <button type="button" className="primary" onClick={tour.goNext} disabled={!tour.canGoNext || actionPending || presentation.loading}>Next</button>
+                        {tour.isLast && !contextualModuleActive ? (
+                            tour.allRequiredModulesComplete && (
+                                <button type="button" className="primary" onClick={tour.finish} disabled={actionPending}>Finish</button>
+                            )
+                        ) : (!interactive || moduleLaunchStep || moduleManualStep) && (
+                            <button
+                                type="button"
+                                className="primary"
+                                onClick={handleNext}
+                                disabled={actionPending
+                                    || presentation.loading
+                                    || settingsBlocked
+                                    || (moduleLaunchStep ? !presentation.fallback : (!moduleManualStep && !tour.canGoNext))}
+                            >Next</button>
                         )}
                     </div>
                 </div>

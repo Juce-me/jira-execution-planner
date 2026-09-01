@@ -5,7 +5,16 @@ import {
     reconcileTourSessionState,
 } from './onboardingSteps.js';
 import { trackOnboardingAnalytics } from './onboardingAnalytics.js';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
+import { AUTH_REQUIRED_EVENT, isAuthenticationRequiredError } from '../api/authRequired.js';
+import {
+    acknowledgeUnavailableOnboardingModule,
+    activateOnboardingModule,
+    allRequiredOnboardingModulesComplete,
+    completeOnboardingModule,
+    createOnboardingModuleSession,
+    resumeOnboardingAfterSurfaceExit,
+} from './onboardingModules.js';
+import { ONBOARDING_STEPS_BY_MODULE } from './onboardingSteps.js';
 
 export function useOnboardingController({
     bootstrapReady = false,
@@ -20,18 +29,26 @@ export function useOnboardingController({
     const [sourceSurface, setSourceSurface] = React.useState('first_run');
     const [pending, setPending] = React.useState(false);
     const [error, setError] = React.useState('');
+    const [moduleRequest, setModuleRequest] = React.useState(null);
     const automaticStartedRef = React.useRef(false);
     const inFlightRef = React.useRef(false);
     const replayPendingRef = React.useRef(false);
+    const moduleRequestNonceRef = React.useRef(0);
+
+    const resetModuleRequests = React.useCallback(() => {
+        moduleRequestNonceRef.current = 0;
+        setModuleRequest(null);
+    }, []);
 
     const open = React.useCallback((source) => {
         const normalizedSource = source === 'settings' ? 'settings' : 'first_run';
+        resetModuleRequests();
         prepareCatchUp?.();
         setError('');
         setSourceSurface(normalizedSource);
         setRun(true);
         trackOnboardingAnalytics(trackSettingsAction, 'started', normalizedSource);
-    }, [prepareCatchUp, trackSettingsAction]);
+    }, [prepareCatchUp, resetModuleRequests, trackSettingsAction]);
 
     React.useEffect(() => {
         if (!bootstrapReady || onboardingDone !== false || run || automaticStartedRef.current || replayPendingRef.current) return;
@@ -69,8 +86,14 @@ export function useOnboardingController({
         }
     }, [savePreference, setOnboardingDone, sourceSurface, trackSettingsAction]);
 
-    const skip = React.useCallback(() => persist(true, 'skipped'), [persist]);
-    const finish = React.useCallback(() => persist(true, 'completed'), [persist]);
+    const skip = React.useCallback(() => {
+        resetModuleRequests();
+        return persist(true, 'skipped');
+    }, [persist, resetModuleRequests]);
+    const finish = React.useCallback(() => {
+        resetModuleRequests();
+        return persist(true, 'completed');
+    }, [persist, resetModuleRequests]);
     const replay = React.useCallback(async () => {
         replayPendingRef.current = true;
         const saved = await persist(false, '');
@@ -84,11 +107,34 @@ export function useOnboardingController({
         return true;
     }, [closeSettings, open, persist]);
 
+    const requestModule = React.useCallback((moduleId) => {
+        if (!run) return false;
+        const requestNonce = moduleRequestNonceRef.current + 1;
+        moduleRequestNonceRef.current = requestNonce;
+        setModuleRequest({ moduleId: String(moduleId || ''), requestNonce });
+        return true;
+    }, [run]);
+
+    const clearModuleRequest = React.useCallback((requestNonce) => {
+        setModuleRequest((current) => (
+            current?.requestNonce === requestNonce ? null : current
+        ));
+    }, []);
+
+    React.useEffect(() => {
+        const reset = () => resetModuleRequests();
+        window.addEventListener(AUTH_REQUIRED_EVENT, reset);
+        return () => window.removeEventListener(AUTH_REQUIRED_EVENT, reset);
+    }, [resetModuleRequests]);
+
     return {
         run,
         sourceSurface,
         pending,
         error,
+        moduleRequest,
+        requestModule,
+        clearModuleRequest,
         skip,
         finish,
         replay,
@@ -101,18 +147,26 @@ export default function useOnboardingTour({
     onboardingDone = true,
     onSkip,
     onFinish,
+    activeSurface = 'catch-up',
+    moduleRequest = null,
+    onModuleRequestConsumed,
 } = {}) {
     const [sessionState, setSessionState] = React.useState(() => ({
         sessionOpen: false,
         currentStepId: steps[0]?.id || '',
     }));
     const previousStepsRef = React.useRef(steps);
+    const [moduleSession, setModuleSession] = React.useState(createOnboardingModuleSession);
+    const consumedModuleRequestRef = React.useRef(0);
+    const activeSteps = moduleSession.activeModule === 'catch-up'
+        ? steps
+        : (ONBOARDING_STEPS_BY_MODULE[moduleSession.activeModule] || []);
     const effectiveOpen = Boolean(run && !onboardingDone && steps.length);
-    let effectiveState = reconcileTourSessionState(sessionState, { isOpen: effectiveOpen, steps });
+    let effectiveState = reconcileTourSessionState(sessionState, { isOpen: effectiveOpen, steps: activeSteps });
     if (effectiveState.sessionOpen) {
         const reconciledStepId = reconcileCurrentStepId({
             previousSteps: previousStepsRef.current,
-            nextSteps: steps,
+            nextSteps: activeSteps,
             currentStepId: effectiveState.currentStepId,
         });
         if (reconciledStepId !== effectiveState.currentStepId) {
@@ -122,59 +176,144 @@ export default function useOnboardingTour({
     if (effectiveState !== sessionState) setSessionState(effectiveState);
 
     const resolvedStepId = effectiveState.currentStepId;
-    const foundIndex = steps.findIndex((step) => step.id === resolvedStepId);
+    const foundIndex = activeSteps.findIndex((step) => step.id === resolvedStepId);
     const currentIndex = foundIndex < 0 ? 0 : foundIndex;
     const navigation = deriveTourNavigationState({
         run,
         onboardingDone,
         currentIndex,
-        totalSteps: steps.length,
+        totalSteps: activeSteps.length,
     });
 
     React.useLayoutEffect(() => {
-        previousStepsRef.current = steps;
-    }, [steps]);
+        previousStepsRef.current = activeSteps;
+    }, [activeSteps]);
+
+    React.useEffect(() => {
+        if (effectiveOpen) return;
+        consumedModuleRequestRef.current = 0;
+        setModuleSession(createOnboardingModuleSession());
+    }, [effectiveOpen]);
+
+    React.useEffect(() => {
+        const requestNonce = Number(moduleRequest?.requestNonce) || 0;
+        const moduleId = String(moduleRequest?.moduleId || '');
+        const expectedSurface = moduleId === 'configuration' ? 'settings' : moduleId;
+        if (!effectiveOpen
+            || !requestNonce
+            || requestNonce <= consumedModuleRequestRef.current
+            || activeSurface !== expectedSurface) return;
+
+        consumedModuleRequestRef.current = requestNonce;
+        const currentCatchUpStep = steps.find((step) => step.id === effectiveState.currentStepId);
+        const currentIndex = steps.indexOf(currentCatchUpStep);
+        const resumeStepId = currentIndex >= 0 ? (steps[currentIndex + 1]?.id || 'complete') : 'complete';
+        setModuleSession((state) => {
+            return activateOnboardingModule(state, { moduleId, requestNonce, resumeStepId });
+        });
+        if (!moduleSession.completedModules.includes(moduleId)) {
+            const contextualStepId = ONBOARDING_STEPS_BY_MODULE[moduleId]?.[0]?.id || '';
+            if (contextualStepId) {
+                setSessionState((state) => ({ ...state, currentStepId: contextualStepId }));
+            }
+        }
+        onModuleRequestConsumed?.(requestNonce);
+    }, [activeSurface, effectiveOpen, effectiveState.currentStepId, moduleRequest, moduleSession.completedModules, onModuleRequestConsumed, steps]);
+
+    React.useEffect(() => {
+        if (!effectiveOpen || moduleSession.activeModule !== 'configuration') return;
+        if (activeSurface === 'settings') return;
+        setModuleSession((state) => ({
+            ...state,
+            activeModule: 'catch-up',
+            resumeStepId: '',
+            suspendedSurface: '',
+        }));
+        setSessionState((state) => ({ ...state, currentStepId: 'launch-configuration' }));
+    }, [activeSurface, effectiveOpen, moduleSession.activeModule]);
+
+    React.useEffect(() => {
+        if (!moduleSession.suspendedSurface) return;
+        const resumed = resumeOnboardingAfterSurfaceExit(moduleSession, activeSurface);
+        if (resumed !== moduleSession) setModuleSession(resumed);
+    }, [activeSurface, moduleSession]);
 
     const goBack = React.useCallback(() => {
         if (!navigation.canGoBack) return;
-        setSessionState((state) => ({ ...state, currentStepId: steps[navigation.index - 1].id }));
-    }, [navigation.canGoBack, navigation.index, steps]);
+        setSessionState((state) => ({ ...state, currentStepId: activeSteps[navigation.index - 1].id }));
+    }, [activeSteps, navigation.canGoBack, navigation.index]);
 
     const goNext = React.useCallback(() => {
         if (!navigation.canGoNext) return;
-        setSessionState((state) => ({ ...state, currentStepId: steps[navigation.index + 1].id }));
-    }, [navigation.canGoNext, navigation.index, steps]);
+        setSessionState((state) => ({ ...state, currentStepId: activeSteps[navigation.index + 1].id }));
+    }, [activeSteps, navigation.canGoNext, navigation.index]);
 
     const advanceFromStep = React.useCallback((stepId) => {
         setSessionState((state) => {
             if (!state.sessionOpen || state.currentStepId !== stepId) return state;
-            const index = steps.findIndex((step) => step.id === stepId);
-            if (index < 0 || index >= steps.length - 1) return state;
-            return { ...state, currentStepId: steps[index + 1].id };
+            const index = activeSteps.findIndex((step) => step.id === stepId);
+            if (index < 0 || index >= activeSteps.length - 1) return state;
+            return { ...state, currentStepId: activeSteps[index + 1].id };
         });
-    }, [steps]);
+    }, [activeSteps]);
 
     const goToStep = React.useCallback((stepId) => {
         setSessionState((state) => {
-            if (!state.sessionOpen || !steps.some((step) => step.id === stepId)) return state;
+            if (!state.sessionOpen || !activeSteps.some((step) => step.id === stepId)) return state;
             return state.currentStepId === stepId ? state : { ...state, currentStepId: stepId };
         });
-    }, [steps]);
+    }, [activeSteps]);
+
+    const acknowledgeUnavailableModule = React.useCallback(() => {
+        const step = activeSteps[navigation.index];
+        if (step?.progression !== 'module-launch' || !step.moduleId) return;
+        setModuleSession((state) => acknowledgeUnavailableOnboardingModule(state, step.moduleId));
+        goNext();
+    }, [activeSteps, goNext, navigation.index]);
+
+    const completeCurrentModule = React.useCallback(() => {
+        const moduleId = moduleSession.activeModule;
+        if (moduleId === 'catch-up') return;
+        const resumeStepId = moduleSession.resumeStepId || 'complete';
+        setModuleSession((state) => completeOnboardingModule(state, {
+            moduleId,
+            surface: activeSurface,
+        }));
+        setSessionState((state) => ({ ...state, currentStepId: resumeStepId }));
+    }, [activeSurface, moduleSession.activeModule, moduleSession.resumeStepId]);
+
+    const resetSession = React.useCallback(() => {
+        consumedModuleRequestRef.current = 0;
+        setModuleSession(createOnboardingModuleSession());
+    }, []);
 
     const skip = React.useCallback(() => {
-        if (navigation.isOpen) onSkip?.();
-    }, [navigation.isOpen, onSkip]);
+        if (navigation.isOpen) {
+            resetSession();
+            onSkip?.();
+        }
+    }, [navigation.isOpen, onSkip, resetSession]);
 
     const finish = React.useCallback(() => {
-        if (navigation.isOpen && navigation.isLast) onFinish?.();
-    }, [navigation.isLast, navigation.isOpen, onFinish]);
+        if (navigation.isOpen && navigation.isLast && allRequiredOnboardingModulesComplete(moduleSession)) {
+            resetSession();
+            onFinish?.();
+        }
+    }, [moduleSession, navigation.isLast, navigation.isOpen, onFinish, resetSession]);
 
     return {
         ...navigation,
-        currentStep: steps[navigation.index] || null,
-        currentStepId: steps[navigation.index]?.id || '',
+        steps: activeSteps,
+        currentStep: activeSteps[navigation.index] || null,
+        currentStepId: activeSteps[navigation.index]?.id || '',
+        moduleSession,
+        suspended: Boolean(moduleSession.suspendedSurface),
+        allRequiredModulesComplete: allRequiredOnboardingModulesComplete(moduleSession),
         goBack,
         goNext,
+        acknowledgeUnavailableModule,
+        completeCurrentModule,
+        resetSession,
         advanceFromStep,
         goToStep,
         skip,

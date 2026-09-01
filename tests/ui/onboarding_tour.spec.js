@@ -1601,6 +1601,22 @@ test('contextual Configuration routes editable unconfigured workspaces to the re
     expect(calls.filter(call => call.pathname === '/api/groups-config' && call.method !== 'GET')).toEqual([]);
 });
 
+test('mobile-suppressed onboarding preserves ordinary Settings routing in an unconfigured workspace', async ({ page }) => {
+    const { calls } = await installProductionOnboardingFixture(page, {
+        projectsConfigured: false,
+        environmentConfigExists: false,
+    });
+    await advanceProductionTourTo(page, 'Configure this Department');
+    await page.setViewportSize({ width: 390, height: 700 });
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await expect(page.locator('.group-modal > .group-modal-tabs > .group-modal-tab.active')).toHaveText('Admin');
+    await expect(page.getByRole('tab', { name: 'Scope projects' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[data-onboarding-module="configuration"]')).toHaveCount(0);
+    expect(calls.filter(call => call.pathname === '/api/groups-config' && call.method !== 'GET')).toEqual([]);
+});
+
 test('production Catch Up Priority preview owns only the exact Epic control and never writes Jira', async ({ page }) => {
     const { calls } = await installProductionOnboardingFixture(page, { field: 'priority', mode: 'success' });
     const contract = productionFieldContracts.priority;

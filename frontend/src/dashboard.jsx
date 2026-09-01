@@ -15,7 +15,7 @@ import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
-import OnboardingTour from './onboarding/OnboardingTour.jsx';
+import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
 import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
 import { useOnboardingController } from './onboarding/useOnboardingTour.js';
 import AuthRequiredGate from './components/AuthRequiredGate.jsx';
@@ -13997,8 +13997,8 @@ import {
                                             onClick={(event) => {
                                                 event.stopPropagation();
                                                 trackSettingsAction('teams', 'open', { source_surface: 'dashboard' });
-                                                openGroupManage({ contextualOnboarding: onboarding.run });
-                                                onboarding.requestModule('configuration');
+                                                const contextualOnboarding = !isDashboardMobileViewport() && onboarding.requestModule('configuration');
+                                                openGroupManage({ contextualOnboarding });
                                             }}
                                             disabled={groupsLoading}
                                             title="Manage team groups"

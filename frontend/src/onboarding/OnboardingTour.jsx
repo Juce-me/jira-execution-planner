@@ -178,7 +178,7 @@ function viewportSize() {
     };
 }
 
-function isDashboardMobileViewport() {
+export function isDashboardMobileViewport() {
     if (typeof window === 'undefined') return false;
     return window.matchMedia?.(DASHBOARD_MOBILE_QUERY).matches ?? window.innerWidth <= 760;
 }

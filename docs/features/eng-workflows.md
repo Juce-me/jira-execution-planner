@@ -34,7 +34,7 @@ At least one configured Team is required for first-run eligibility. After that, 
 
 1. **Main Initiative/Epic/Story hierarchy:** a Story in the selected sprint whose Jira Team matches a configured Department Team is included, and its parent Epic is brought into the hierarchy.
 2. **Epic-only and empty-Epic discovery:** the Epic must match either its Jira Team or the Department's exact mapped team label, and it must match either its Jira Sprint value or the exact selected-sprint-name label.
-3. **Future sprint ready path:** the Epic requires both the configured mapped team label and the selected-sprint-name label. One does not substitute for the other.
+3. **Future sprint ready path:** the Epic requires the configured mapped team label and either the Epic's Jira Sprint value or the exact selected-sprint-name label.
 
 Configured Jira Components broaden only Missing Information and Lead Times through configured-Team or Component matching. They never make Stories appear in the main Product/Tech list.
 

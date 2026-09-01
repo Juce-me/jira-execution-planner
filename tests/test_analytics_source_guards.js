@@ -299,6 +299,15 @@ test('onboarding operational guidance documents the shipped workflow boundaries'
     ]) {
         assert.ok(guide.includes(required), `Expected operational guidance for: ${required}`);
     }
+    assert.ok(
+        guide.includes("requires the configured mapped team label and either the Epic's Jira Sprint value or the exact selected-sprint-name label"),
+        'Expected future sprint-ready guidance to document mapped team label AND (Jira Sprint value OR selected-sprint-name label)',
+    );
+    assert.doesNotMatch(
+        guide,
+        /requires both the configured mapped team label and the selected-sprint-name label/i,
+        'Future sprint-ready guidance must not claim that both labels are required',
+    );
     assert.ok(onboardingDoc.includes('four phases'));
     assert.ok(onboardingDoc.includes('configuration guide and dashboard tour never run together'));
     assert.ok(onboardingDoc.includes('shared Department configuration'));

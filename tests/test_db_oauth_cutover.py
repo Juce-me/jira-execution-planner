@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from sqlalchemy.exc import OperationalError
+
 from backend.auth.key_provider import key_provider_from_env
 from backend.auth.token_crypto import decrypt_token
 from backend.auth.db_browser_sessions import create_browser_session, resolve_browser_session
@@ -247,6 +249,28 @@ class DbOauthCutoverTests(unittest.TestCase):
             handle = resolve_browser_session(session, browser_session_id)
         self.assertIsNotNone(handle)
         self.assertEqual(handle.auth_connection_id, result.connection_id)
+
+    def test_legacy_cookie_upgrade_database_failure_keeps_valid_legacy_context(self):
+        result = self._store_callback()
+        legacy_payload = {
+            'db_auth_connection_id': result.connection_id,
+            'db_token_version': result.session_metadata['db_token_version'],
+        }
+        failure = OperationalError('insert browser session', {}, RuntimeError('disk I/O error'))
+
+        with jira_server.app.test_request_context('/'):
+            jira_server.session['db_oauth_session'] = legacy_payload
+            with patch.dict(os.environ, {
+                'CONFIG_STORAGE_BACKEND': 'db',
+                'DATABASE_URL': self.database_url,
+            }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                 patch.object(jira_server, 'session_scope', side_effect=failure):
+                context = jira_server.current_request_auth_context()
+                stored_payload = dict(jira_server.session['db_oauth_session'])
+
+        self.assertEqual(context.auth_connection_id, result.connection_id)
+        self.assertEqual(context.browser_session_id, '')
+        self.assertEqual(stored_payload, legacy_payload)
 
     def test_stale_legacy_cookie_is_not_upgraded(self):
         result = self._store_callback()

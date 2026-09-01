@@ -699,14 +699,19 @@ git commit -m "Bind OAuth CSRF to browser sessions"
 
 **Files:**
 
-- Modify only if evidence requires correction: files listed in Tasks 1-5
+- Modify: `backend/db/migrations/versions/20260830_0009_browser_sessions.py`
+- Modify: `jira_server.py`
+- Modify: `tests/test_db_oauth_cutover.py`
+- Modify: `tests/test_codebase_structure_budgets.py`
+- Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
+- Modify only if verification identifies a direct regression: files listed in Tasks 1-5
 
 - [ ] **Step 1: Run focused auth, migration, revocation, and Scenario coverage**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_db_migrations tests.test_db_browser_sessions tests.test_auth_context_db tests.test_auth_routes tests.test_db_oauth_cutover tests.test_token_refresh_reuse tests.test_token_refresh_race tests.test_scenario_draft_routes tests.test_endpoint_security_matrix
+.venv/bin/python -m unittest tests.test_db_migrations tests.test_db_browser_sessions tests.test_auth_context_db tests.test_auth_routes tests.test_db_oauth_cutover tests.test_token_refresh_reuse tests.test_token_refresh_race tests.test_scenario_draft_routes tests.test_endpoint_security_matrix
 ```
 
 Expected: PASS for the default focused matrix. The PostgreSQL-only refresh/callback race may skip here when `TEST_DATABASE_URL` is absent; Step 2 must then prove it separately with zero skips.
@@ -736,7 +741,7 @@ Run:
 
 ```bash
 .venv/bin/python scripts/check_startup_preflight.py
-python3 -m unittest tests.test_codebase_structure_budgets tests.test_initiative_extraction
+.venv/bin/python -m unittest tests.test_codebase_structure_budgets tests.test_initiative_extraction
 ```
 
 Expected: PASS. If the legitimate lifecycle module changes a ratcheted budget, update only the named budget with the measured value and document the reason in the same commit.
@@ -746,7 +751,7 @@ Expected: PASS. If the legitimate lifecycle module changes a ratcheted budget, u
 Run:
 
 ```bash
-python3 -m unittest discover -s tests
+.venv/bin/python -m unittest discover -s tests
 ```
 
 Expected: PASS.
@@ -786,6 +791,7 @@ Expected: `git diff --check` passes; changed files match this plan; the final gr
 If verification required a scoped correction, stage only its named files and commit:
 
 ```bash
+git add backend/db/migrations/versions/20260830_0009_browser_sessions.py jira_server.py tests/test_db_oauth_cutover.py tests/test_codebase_structure_budgets.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md
 git commit -m "Verify DB browser session lifecycle"
 ```
 

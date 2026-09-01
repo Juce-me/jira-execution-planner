@@ -27,6 +27,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
+from sqlalchemy.exc import SQLAlchemyError
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from backend.epm import config as epm_config
 from backend.epm import home as epm_home
@@ -582,13 +583,16 @@ def current_request_auth_context():
             )
             if context.browser_session_id:
                 return context
-            with session_scope() as db_session:
-                browser_session = create_browser_session(
-                    db_session,
-                    user_id=context.user_id,
-                    workspace_id=context.workspace_id,
-                    auth_connection_id=context.auth_connection_id,
-                )
+            try:
+                with session_scope() as db_session:
+                    browser_session = create_browser_session(
+                        db_session,
+                        user_id=context.user_id,
+                        workspace_id=context.workspace_id,
+                        auth_connection_id=context.auth_connection_id,
+                    )
+            except SQLAlchemyError:
+                return context
             session['db_oauth_session'] = {'db_browser_session_id': browser_session.id}
             return dataclasses.replace(context, browser_session_id=browser_session.id)
     session_data = jira_session_data()

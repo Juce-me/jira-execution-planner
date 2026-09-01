@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 0–8 implemented and verified on `feature/user-onboarding-tour` through build commit `b4d0c83`; awaiting explicit remote-integration direction. Do not rename this execution plan to `DONE-*` until that integration is authorized and complete.
+**Status:** Tasks 0–8 and the final whole-branch review fixes are implemented and verified on `feature/user-onboarding-tour` through build commit `d27d449`; awaiting explicit remote-integration direction. Do not rename this execution plan to `DONE-*` until that integration is authorized and complete.
 
 **Goal:** Correct the desktop coachmark and Department Settings regressions, require explicit **Next** after safe field previews, and add contextual Configuration, Planning, Board, and Statistics onboarding that starts from the real user-clicked launcher.
 
@@ -989,6 +989,22 @@ Do not push additional implementation commits, create a pull request, merge, or 
 - Residual risks: visual proof uses synthetic Chromium fixtures rather than production Jira data; the two pre-existing EPM loading-skeleton cases remain skipped; Node reports existing typeless-package warnings for ESM onboarding modules; and remote integration is intentionally not performed. No in-scope gate is blocked.
 
 The committed Task 8 evidence is this section, the executed design, and the plans index. A more detailed local report exists at `.superpowers/sdd/EXEC-user-onboarding-contextual-follow-up/task-8-report.md`, but `.superpowers/` is ignored and that report is not part of commit `51d274c`.
+
+#### Final whole-branch review fix evidence
+
+- Audit base: `faf086e3e44e5a7fa34c897f223cda5d04920051`. Four independent Important findings each received a focused real-behavior RED before its minimal fix:
+  - Rejected terminal Finish removed its retry path; the new test failed because Finish no longer existed, then passed after session/module reset was deferred until persistence success (`2ba5928`).
+  - Pointer and keyboard launches could not focus the Planning destination; both new cases failed on the missing programmatic-focus contract, then passed after Planning, Board, and Statistics regions received `tabindex="-1"` (`5ba5cfe`).
+  - Constrained geometry reported an enabled Planning launcher as fallback; the new case failed on `fallback` instead of `interactive_closed`, then passed after placement fallback was separated from genuine missing/disabled availability (`624cc00`).
+  - Contextual Configuration in an editable unconfigured workspace opened Admin; the new case failed on the top tab, then passed after only the active contextual launch routed to Departments → Team Groups while an ordinary Settings open retained Admin → Scope (`526441a`).
+- Directly related evidence cleanup corrected the preview lifecycle documentation, asserted disabled/enabled Next states, and proved missing-Board progression continues to Statistics (`72bf7c8`). The dashboard entrypoint stayed at the existing 17,076-line budget without ratcheting or weakening the structure assertion (`772c3d6`).
+- Final focused verification under Node `v20.20.0` and npm `10.8.2`: Node onboarding `96 passed`, `0 failed`, `0 skipped`; onboarding/Settings Playwright `150 passed`, `0 failed`, `0 skipped`. The unchanged onboarding ready-lifecycle and future-planning sprint select-all baselines each passed individually (`1 passed` each).
+- Final complete suites: Python `1,396 run`, `1,389 passed`, `0 failed`, `7 skipped`; frontend unit `1,044 passed`, `0 failed`, `0 skipped`; Playwright `586 passed`, `0 failed`, `2 skipped` (`588` total). The two skips remain the existing desktop/mobile EPM Settings loading-skeleton cases. Existing ESM typeless-package warnings and mocked error-path/resource warnings did not conceal failures and were not changed.
+- Pinned `npm run build` rebuilt generated output; only `frontend/dist/dashboard.js` and `dashboard.js.map` differed and were committed atomically as `d27d449caf5ce0c3212e18f72c9e4556089d223b`. After the exact temporary path was confirmed absent and unregistered, a detached worktree there at that concrete commit ran `npm ci` (`9 packages`, `0 vulnerabilities`) and `npm run build`; its Git status remained clean. Only that temporary worktree was then removed and confirmed absent and unregistered.
+- The full UI run refreshed all 11 required screenshots. Original-resolution inspection accepted coachmark desktop `1200x760`, narrow desktop `768x760`, preview locked/ready `1200x760` each, Configuration/Planning/Board/Statistics `1280x900` each, Department editor `1280x720`, first-run favorite `1280x900`, and ordinary favorite `1280x720`. Targets and actions were unobscured, Next states were honest, animations were settled, and no duplicate favorite control appeared.
+- Scope remained frontend-only: no backend, schema, ownership, persistence-shape, dependency, Jira-mutation, mobile-tour, or analytics-event change. Visual proof still uses synthetic Chromium fixtures rather than production Jira data; the two existing EPM screenshot cases remain skipped; remote integration remains intentionally unperformed.
+
+The ignored local final-fix report is `.superpowers/sdd/EXEC-user-onboarding-contextual-follow-up/final-fix-report.md`. It is verification provenance only and is not committed project evidence.
 
 ---
 

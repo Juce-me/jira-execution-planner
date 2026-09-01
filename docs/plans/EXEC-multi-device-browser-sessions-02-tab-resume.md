@@ -74,7 +74,7 @@ Expected: PASS before the new behavior. Preserve these contracts: one terminal g
 - Create: `frontend/src/api/authResumeState.js`
 - Create: `tests/test_auth_resume_state.js`
 
-- [ ] **Step 1: Write failing schema, expiry, identity, and privacy tests**
+- [x] **Step 1: Write failing schema, expiry, identity, and privacy tests**
 
 Cover a valid round trip and every rejection path:
 
@@ -103,7 +103,7 @@ test('identity mismatch clears without returning prior issue keys', () => {
 
 Also assert malformed JSON, unsupported version, negative/future timestamp, age greater than 30 minutes, payload over 64 KiB, missing principal, invalid view/mode, more than 500 selected keys, and more than 200 teams are rejected and cleared. Assert serialized text does not contain `apiToken`, `access_token`, `refresh_token`, `Authorization`, email-form values, response bodies, config drafts, or OAuth/PKCE state.
 
-- [ ] **Step 2: Run the new tests to verify they fail**
+- [x] **Step 2: Run the new tests to verify they fail**
 
 Run:
 
@@ -113,7 +113,9 @@ node --test tests/test_auth_resume_state.js
 
 Expected: FAIL because `frontend/src/api/authResumeState.js` does not exist.
 
-- [ ] **Step 3: Implement the storage contract**
+**Observed evidence (2026-09-01):** `fnm exec --using 20 -- node --test tests/test_auth_resume_state.js` exited `1` with all 5 tests failing because the module did not exist.
+
+- [x] **Step 3: Implement the storage contract**
 
 Create a module with these constants and public functions:
 
@@ -241,7 +243,9 @@ Do not export a generic object serializer or accept arbitrary fields.
 
 Add a getter-failure test: when the supplied window's `sessionStorage` property throws, `getAuthResumeStorage` returns `null`, and capture/restore/clear remain no-ops rather than breaking the auth gate or bootstrap.
 
-- [ ] **Step 4: Run the capsule tests**
+**Observed evidence (2026-09-01):** Implemented the strict v1 allowlist, principal binding, 30-minute TTL, 64 KiB UTF-8 bound, list limits, fail-soft storage operations, and getter-failure behavior.
+
+- [x] **Step 4: Run the capsule tests**
 
 Run:
 
@@ -251,7 +255,9 @@ node --test tests/test_auth_resume_state.js
 
 Expected: PASS, including privacy and size bounds.
 
-- [ ] **Step 5: Commit the capsule module**
+**Observed evidence (2026-09-01):** `fnm exec --using 20 -- node --test tests/test_auth_resume_state.js` exited `0` with 6/6 tests passing.
+
+- [x] **Step 5: Commit the capsule module**
 
 ```bash
 git add frontend/src/api/authResumeState.js tests/test_auth_resume_state.js

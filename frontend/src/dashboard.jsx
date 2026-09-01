@@ -5908,6 +5908,17 @@ import {
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
+                clearEngGroupScopeData();
+                setActiveGroupId(null);
+                const hasPendingRecovery = pendingShellAuthResumeRef.current || pendingPlanningAuthResumeRef.current;
+                const principal = authResumePrincipalRef.current;
+                if (
+                    !hasPendingRecovery
+                    || !sharedConfigReady
+                    || !principal?.workspaceId
+                    || !principal?.viewConfigId
+                    || !homeTokenConnectionLoaded
+                ) return;
                 if (!readPendingAuthenticationRequired()) {
                     pendingShellAuthResumeRef.current = null;
                     authResumeShellSettledRef.current = null;
@@ -5915,9 +5926,10 @@ import {
                     planningAuthResumeLoadRef.current = null;
                     clearAuthResumeWhenSettled();
                 }
-                clearEngGroupScopeData();
-                setActiveGroupId(null);
-            }, [groupsLoading, groupPreferences.onboardingRequired, clearEngGroupScopeData, clearAuthResumeWhenSettled, authResumeStagedRevision]);
+            }, [
+                groupsLoading, groupPreferences.onboardingRequired, sharedConfigReady, homeTokenConnectionLoaded,
+                clearEngGroupScopeData, clearAuthResumeWhenSettled, authResumeStagedRevision,
+            ]);
 
             useEffect(() => {
                 if (!isStatsSourceOnlyStatsView) return;
@@ -10560,7 +10572,8 @@ import {
 
                 setPlanningSelectionMode(prev => prev === nextSelectionMode ? prev : nextSelectionMode);
 
-                persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys), selectionMode: nextSelectionMode, selectedTeams: nextSelectedTeams, normalizeSelectedTeams });
+                const persistenceSucceeded = persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys), selectionMode: nextSelectionMode, selectedTeams: nextSelectedTeams, normalizeSelectedTeams });
+                if (pendingPlanningResume && !persistenceSucceeded) return;
 
                 if (pendingPlanningResume || planningBaselineScopeRef.current !== planningScopeKey) {
                     planningLoadedSelectionRef.current = {

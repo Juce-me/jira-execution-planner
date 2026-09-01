@@ -272,11 +272,29 @@ async function seedPlanningAuthResume(page, {
     localSelectedTaskKeys = ['PLAN-1'],
     sprintId = futureSprintId,
     engMode = 'planning',
+    selectionMode = 'manual',
     seedUiPrefs = false,
+    throwPlanningPersistence = false,
+    capturePlanningWrites = false,
 } = {}) {
-    await page.addInitScript(({ sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, seedUiPrefs }) => {
+    await page.addInitScript(({ sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, seedUiPrefs, throwPlanningPersistence, capturePlanningWrites }) => {
+        const installPlanningPersistenceProbe = () => {
+            if (!throwPlanningPersistence && !capturePlanningWrites) return;
+            window.__planningPersistenceWrites = [];
+            const originalSetItem = Storage.prototype.setItem;
+            Storage.prototype.setItem = function setItem(key, value) {
+                if (key === 'jira_dashboard_planning_state_v1') {
+                    if (capturePlanningWrites) window.__planningPersistenceWrites.push(JSON.parse(String(value)));
+                    if (throwPlanningPersistence) throw new DOMException('quota', 'QuotaExceededError');
+                }
+                return originalSetItem.call(this, key, value);
+            };
+        };
         const seedMarker = 'planning_auth_resume_fixture_seeded';
-        if (window.sessionStorage.getItem(seedMarker)) return;
+        if (window.sessionStorage.getItem(seedMarker)) {
+            installPlanningPersistenceProbe();
+            return;
+        }
         window.sessionStorage.setItem(seedMarker, 'true');
         const scopeKey = `planning::${sprintId}::group-alpha`;
         window.sessionStorage.setItem('jira_dashboard_auth_resume_v1', JSON.stringify({
@@ -295,7 +313,7 @@ async function seedPlanningAuthResume(page, {
                 scopeKey,
                 selectedTaskKeys,
                 selectedTeams: ['team-alpha'],
-                selectionMode: 'manual',
+                selectionMode,
             },
         }));
         window.localStorage.setItem('jira_dashboard_planning_state_v1', JSON.stringify({
@@ -314,7 +332,8 @@ async function seedPlanningAuthResume(page, {
                 showPlanning: false,
             }));
         }
-    }, { sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, seedUiPrefs });
+        installPlanningPersistenceProbe();
+    }, { sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, seedUiPrefs, throwPlanningPersistence, capturePlanningWrites });
 }
 
 async function openFuturePlanning(page) {
@@ -473,6 +492,51 @@ test('matching auth resume overrides shared Planning state after exact-scope hyd
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
 });
 
+test('failed Planning recovery persistence keeps the capsule retryable without freezing Undo baseline', async ({ page }) => {
+    await seedPlanningAuthResume(page, { throwPlanningPersistence: true });
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).not.toBe(null);
+    const storedKeys = await page.evaluate((scopeKey) => JSON.parse(
+        window.localStorage.getItem('jira_dashboard_planning_state_v1')
+    )[scopeKey].selectedTaskKeys, `planning::${futureSprintId}::group-alpha`);
+    expect(storedKeys).toEqual(['PLAN-1']);
+
+    await page.locator('.planning-actions').getByRole('button', { name: 'Accepted', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
+});
+
+test('default-all recovery includes newly loaded tasks and freezes the full Undo baseline', async ({ page }) => {
+    await seedPlanningAuthResume(page, {
+        selectedTaskKeys: ['PLAN-1'],
+        selectionMode: 'default_all',
+        capturePlanningWrites: true,
+    });
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
+    await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-3')).toBeChecked();
+    await expect.poll(() => page.evaluate((scopeKey) => (
+        window.__planningPersistenceWrites?.[0]?.[scopeKey]?.selectedTaskKeys || []
+    ), `planning::${futureSprintId}::group-alpha`)).toEqual(['PLAN-1', 'PLAN-2', 'PLAN-3']);
+
+    await page.locator('.planning-actions').getByRole('button', { name: 'Accepted', exact: true }).click();
+    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
+    await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
+    await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-3')).toBeChecked();
+});
+
 test('non-auth Planning hydration failure abandons recovery without resurrecting it on reload', async ({ page }) => {
     await seedPlanningAuthResume(page);
     const fixture = await installPlanningFixture(page, { taskFailureMode: 'non-auth-once' });
@@ -527,7 +591,20 @@ test('typed auth during a shell dependency keeps the capsule for the next docume
     fixture.releaseShellAuth();
 
     await expect(page.getByRole('alertdialog', { name: 'Sign in required' })).toBeVisible();
-    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).not.toBe(null);
+    await expect.poll(() => page.evaluate(() => {
+        const raw = window.sessionStorage.getItem('jira_dashboard_auth_resume_v1');
+        if (!raw) return null;
+        const capsule = JSON.parse(raw);
+        return {
+            activeGroupId: capsule.view.activeGroupId,
+            selectedSprint: capsule.view.selectedSprint,
+            selectedTaskKeys: capsule.planning.selectedTaskKeys,
+        };
+    })).toEqual({
+        activeGroupId: 'group-alpha',
+        selectedSprint: String(futureSprintId),
+        selectedTaskKeys: ['PLAN-2'],
+    });
 });
 
 test('completed recovered Planning sprint falls back without overwriting persisted selection', async ({ page }) => {
@@ -558,6 +635,37 @@ test('onboarding terminalizes staged recovery when sprint discovery is skipped',
         window.localStorage.getItem('jira_dashboard_planning_state_v1')
     )[scopeKey].selectedTaskKeys, `planning::${futureSprintId}::group-alpha`);
     expect(storedKeys).toEqual(['PLAN-1']);
+});
+
+test('onboarding waits for delayed config and Home auth before deciding capsule abandonment', async ({ page }) => {
+    await seedPlanningAuthResume(page);
+    const fixture = await installPlanningFixture(page, {
+        delayConfig: true,
+        shellAuthDependency: 'home-token',
+        onboardingRequired: true,
+    });
+    await page.goto(appBaseUrl);
+
+    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
+    fixture.releaseConfig();
+    await expect.poll(() => fixture.calls.some(call => call.pathname === '/api/projects/selected')).toBe(true);
+    fixture.releaseShellAuth();
+
+    await expect(page.getByRole('alertdialog', { name: 'Sign in required' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => {
+        const raw = window.sessionStorage.getItem('jira_dashboard_auth_resume_v1');
+        if (!raw) return null;
+        const capsule = JSON.parse(raw);
+        return {
+            activeGroupId: capsule.view.activeGroupId,
+            selectedSprint: capsule.view.selectedSprint,
+            selectedTaskKeys: capsule.planning.selectedTaskKeys,
+        };
+    })).toEqual({
+        activeGroupId: 'group-alpha',
+        selectedSprint: String(futureSprintId),
+        selectedTaskKeys: ['PLAN-2'],
+    });
 });
 
 test('planning story selection controls align with story-point metadata', async ({ page }) => {

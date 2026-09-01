@@ -24,6 +24,7 @@
 - Modify: `frontend/src/dashboard.jsx`
 - Modify: `frontend/src/eng/useEngSprintData.js`
 - Modify: `frontend/src/eng/planningSelectionActions.js`
+- Modify: `frontend/src/planningSelectionState.mjs`
 - Modify: `frontend/src/styles/shared/shell.css`
 - Modify: `tests/test_auth_required.js`
 - Modify: `tests/test_planning_selection_state.js`
@@ -276,6 +277,7 @@ git commit -m "Add tab-local auth recovery capsule"
 - Modify: `frontend/src/dashboard.jsx`
 - Modify: `frontend/src/eng/useEngSprintData.js`
 - Modify: `frontend/src/eng/planningSelectionActions.js`
+- Modify: `frontend/src/planningSelectionState.mjs`
 - Modify: `tests/test_auth_required.js`
 - Modify: `tests/test_eng_auth_recovery_message.js`
 - Modify: `tests/test_dashboard_alert_source_guards.js`
@@ -403,6 +405,8 @@ Treat the first post-auth Planning hydration as a one-shot terminal decision. If
 
 Config and group/sprint bootstrap remain concurrent. When authenticated config stages recovery refs, increment a minimal staged revision consumed by the group, sprint, shell, task-load, and Planning reconciliation effects so already-settled dependencies reconsider the new work. Capsule clearing must fail closed while the terminal auth latch is present. If restored Planning is unavailable, including a sprint that is now completed, cancel its staged payload before reconciliation and retain ordinary Catch Up/local persistence. If onboarding makes group scope unavailable and intentionally skips sprint discovery, terminalize shell and Planning recovery instead of waiting indefinitely; a typed-auth interruption remains non-settled.
 
+Onboarding abandonment must wait until authenticated config has completed principal resolution and the remaining auth-capable Home connection dependency has settled; it does not wait for sprint discovery that onboarding intentionally skips. Planning persistence reports an additive boolean result: only a successful browser-storage write may freeze the recovered baseline, consume pending Planning, or clear the capsule. A blocked or quota-limited write leaves recovery retryable. For `default_all` recovery, reconcile and persist every currently valid exact-scope task key in deterministic order, including tasks introduced after capture, so the Undo baseline represents the full current set.
+
 - [x] **Step 7: Run focused capture/restore tests**
 
 Run:
@@ -419,10 +423,12 @@ Expected: PASS. Existing normal `localStorage` selection behavior remains unchan
 
 **Spec-fix round 1 evidence (2026-09-01):** four new browser regressions first exited `1` with delayed config staging, completed-sprint persistence, and onboarding terminalization failing; the initial group-auth fixture did not reach the clear boundary, so the typed-auth case was tightened to hold Home connection status until config had staged recovery and then failed independently as expected. After the minimal fix, the isolated command passed 4/4. The exact pinned Node command passed 50/50, the full Planning Playwright spec passed 16/16, and adjacent source guards passed 16/16.
 
+**Quality-fix round 1 evidence (2026-09-01):** `fnm exec --using 20 -- node --test tests/test_planning_selection_state.js` first exited `1` with 10/12 passing because `default_all` omitted a newly loaded key and persistence did not report success. `fnm exec --using 20 -- npx playwright test tests/ui/planning_selection_defaults.spec.js --grep "failed Planning recovery persistence|default-all recovery|onboarding waits for delayed"` first exited `1` with 0/3 passing at the intended persistence, baseline, and delayed-auth boundaries. After the minimal fix, the unit file passed 12/12 and the isolated browser cases passed 3/3. The exact focused Node command passed 51/51, the full Planning Playwright spec passed 19/19, and adjacent source guards passed 16/16.
+
 - [x] **Step 8: Commit the capture/restore slice**
 
 ```bash
-git add frontend/src/api/authRequired.js frontend/src/api/http.js frontend/src/dashboard.jsx frontend/src/eng/useEngSprintData.js frontend/src/eng/planningSelectionActions.js tests/test_auth_required.js tests/test_eng_auth_recovery_message.js tests/test_dashboard_alert_source_guards.js tests/test_planning_selection_state.js tests/ui/planning_selection_defaults.spec.js docs/plans/EXEC-multi-device-browser-sessions-02-tab-resume.md
+git add frontend/src/api/authRequired.js frontend/src/api/http.js frontend/src/dashboard.jsx frontend/src/eng/useEngSprintData.js frontend/src/eng/planningSelectionActions.js frontend/src/planningSelectionState.mjs tests/test_auth_required.js tests/test_eng_auth_recovery_message.js tests/test_dashboard_alert_source_guards.js tests/test_planning_selection_state.js tests/ui/planning_selection_defaults.spec.js docs/plans/EXEC-multi-device-browser-sessions-02-tab-resume.md
 git commit -m "Restore Planning state after reauthentication"
 ```
 

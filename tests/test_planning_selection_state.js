@@ -33,7 +33,7 @@ test('recovered selection ignores mismatched scope and sorts exact-scope keys de
         selectedTeams: ['team-b', 'team-a', 'team-b'],
         selectionMode: 'default_all',
     };
-    const validTaskKeys = new Set(['PLAN-1', 'PLAN-2']);
+    const validTaskKeys = new Set(['PLAN-3', 'PLAN-1', 'PLAN-2']);
     const validTeamIds = new Set(['team-a', 'team-b']);
 
     assert.equal(resolvePlanningAuthResume({
@@ -48,10 +48,39 @@ test('recovered selection ignores mismatched scope and sorts exact-scope keys de
         validTaskKeys,
         validTeamIds,
     }), {
-        selectedTaskKeys: ['PLAN-1', 'PLAN-2'],
+        selectedTaskKeys: ['PLAN-1', 'PLAN-2', 'PLAN-3'],
         selectedTeams: ['team-a', 'team-b'],
         selectionMode: 'default_all',
     });
+});
+
+test('planning persistence reports success and fails soft for absent or throwing storage', async () => {
+    const { persistPlanningSelectionState } = await loadPlanningSelectionActions();
+    const { savePlanningState } = await import('../frontend/src/planningSelectionState.mjs');
+    const workingStorage = {
+        value: null,
+        getItem() { return this.value; },
+        setItem(key, value) { this.value = String(value); },
+    };
+    const throwingStorage = {
+        getItem() { return null; },
+        setItem() { throw new Error('quota'); },
+    };
+
+    assert.equal(savePlanningState(workingStorage, 'planning::sprint-1::group-a', {
+        selectedTaskKeys: ['PLAN-1'],
+        selectedTeams: ['team-a'],
+    }), true);
+    assert.equal(savePlanningState(null, 'planning::sprint-1::group-a', {}), false);
+    assert.equal(savePlanningState(throwingStorage, 'planning::sprint-1::group-a', {}), false);
+    assert.equal(persistPlanningSelectionState({
+        storage: throwingStorage,
+        scopeKey: 'planning::sprint-1::group-a',
+        selectedTasks: { 'PLAN-1': true },
+        selectedTeams: ['team-a'],
+        selectionMode: 'manual',
+        normalizeSelectedTeams: value => value,
+    }), false);
 });
 
 test('buildPlanningScopeKey composes sprint and group into a stable scope key', async () => {

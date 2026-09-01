@@ -84,7 +84,7 @@ Expected: `Status` remains `Blocked`, `Checked on` is current for the execution 
 - Modify: `backend/db/models.py`
 - Modify: `tests/test_db_migrations.py`
 
-- [ ] **Step 1: Write failing migration and model tests**
+- [x] **Step 1: Write failing migration and model tests**
 
 Add assertions that the upgraded schema contains exactly the safe columns and indexes, and that downgrade removes only the new table:
 
@@ -110,7 +110,7 @@ def test_browser_sessions_migration_contract(self):
 
 Add a model test that constructs `models.BrowserSession` with valid foreign keys and confirms cascade delete from `auth_connections` removes it.
 
-- [ ] **Step 2: Run the migration tests to verify they fail**
+- [x] **Step 2: Run the migration tests to verify they fail**
 
 Run:
 
@@ -120,7 +120,7 @@ Run:
 
 Expected: FAIL because revision `20260830_0009`, table `browser_sessions`, and `models.BrowserSession` do not exist.
 
-- [ ] **Step 3: Add the model and migration**
+- [x] **Step 3: Add the model and migration**
 
 Add this model after `AuthConnection` and before `AuthToken`:
 
@@ -184,7 +184,7 @@ def downgrade() -> None:
     op.drop_table('browser_sessions')
 ```
 
-- [ ] **Step 4: Run the focused migration tests**
+- [x] **Step 4: Run the focused migration tests**
 
 Run:
 
@@ -194,7 +194,7 @@ Run:
 
 Expected: PASS, including upgrade from `20260827_0008`, downgrade back to it, foreign keys, indexes, and forbidden-column assertions.
 
-- [ ] **Step 5: Commit the schema slice**
+- [x] **Step 5: Commit the schema slice**
 
 ```bash
 git add backend/db/models.py backend/db/migrations/versions/20260830_0009_browser_sessions.py tests/test_db_migrations.py
@@ -209,7 +209,7 @@ git commit -m "Add persistent DB browser sessions"
 - Create: `tests/test_db_browser_sessions.py`
 - Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Cover create, resolve, single delete, connection-wide delete, and boundary mismatch:
 
@@ -244,7 +244,7 @@ def test_delete_all_for_connection_does_not_cross_connection(self):
 
 Assert the module never serializes tokens, email, user agent, IP, or callback values.
 
-- [ ] **Step 2: Run the new tests to verify they fail**
+- [x] **Step 2: Run the new tests to verify they fail**
 
 Run:
 
@@ -254,7 +254,7 @@ Run:
 
 Expected: FAIL with `ModuleNotFoundError: backend.auth.db_browser_sessions`.
 
-- [ ] **Step 3: Implement the lifecycle module**
+- [x] **Step 3: Implement the lifecycle module**
 
 Create these exact public types and functions:
 
@@ -326,7 +326,7 @@ def delete_browser_sessions_for_connection(session, auth_connection_id: str) -> 
     return int(result.rowcount or 0)
 ```
 
-- [ ] **Step 4: Run the focused lifecycle tests**
+- [x] **Step 4: Run the focused lifecycle tests**
 
 Run:
 
@@ -336,7 +336,7 @@ Run:
 
 Expected: PASS with no token-bearing field in the handle or table.
 
-- [ ] **Step 5: Commit the lifecycle slice**
+- [x] **Step 5: Commit the lifecycle slice**
 
 ```bash
 git add backend/auth/db_browser_sessions.py tests/test_db_browser_sessions.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md
@@ -354,7 +354,7 @@ git commit -m "Add browser session lifecycle boundary"
 - Modify: `tests/test_db_oauth_cutover.py`
 - Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
 
-- [ ] **Step 1: Write failing request-context tests**
+- [x] **Step 1: Write failing request-context tests**
 
 Add tests with two browser rows sharing one connection. Rotate the connection token version and prove both rows resolve the new version:
 
@@ -378,7 +378,7 @@ def test_browser_session_cannot_cross_workspace_or_connection_owner(self):
 
 Retain the existing legacy exact-version tests. Add a Flask test proving one valid legacy cookie is replaced by `{'db_browser_session_id': value}` and a stale legacy cookie is not upgraded.
 
-- [ ] **Step 2: Run the focused tests to verify they fail**
+- [x] **Step 2: Run the focused tests to verify they fail**
 
 Run:
 
@@ -388,7 +388,7 @@ Run:
 
 Expected: FAIL because `RequestAuthContext` has no `browser_session_id` and resolver still rejects shared token rotation as stale.
 
-- [ ] **Step 3: Extend the immutable request context**
+- [x] **Step 3: Extend the immutable request context**
 
 Add a defaulted field so existing explicit test constructors remain compatible:
 
@@ -410,7 +410,7 @@ class RequestAuthContext:
     browser_session_id: str = ''
 ```
 
-- [ ] **Step 4: Resolve the row before the shared connection**
+- [x] **Step 4: Resolve the row before the shared connection**
 
 In `backend/auth/db_context.py`, branch on `db_browser_session_id`. Resolve that id only through `db_browser_sessions.resolve_browser_session`, then load `AuthConnection`, `User`, and `Workspace`; reject any id mismatch; skip the legacy `session_token_version` comparison; and return the current DB token version plus the row id. Do not query `models.BrowserSession` outside the lifecycle module (migration/model tests may inspect the table directly):
 
@@ -436,7 +436,7 @@ if browser_session and (
 
 Set `browser_session_id=browser_session_id` in the returned context. Keep the exact legacy token-version comparison only when `browser_session_id` is empty.
 
-- [ ] **Step 5: Update the cookie parser and lazy upgrade**
+- [x] **Step 5: Update the cookie parser and lazy upgrade**
 
 Change `_db_oauth_browser_session_payload` to prefer the opaque id and retain the old shape only for legacy cookies:
 
@@ -456,7 +456,7 @@ return payload
 
 After a successful legacy resolution in `current_request_auth_context`, create one row through `db_browser_sessions.create_browser_session`, replace the Flask payload with only its id, and return `dataclasses.replace(context, browser_session_id=handle.id)`. Do not write when the input already contains `db_browser_session_id`.
 
-- [ ] **Step 6: Run the focused context/cutover tests**
+- [x] **Step 6: Run the focused context/cutover tests**
 
 Run:
 
@@ -466,7 +466,7 @@ Run:
 
 Expected: PASS. Existing stale legacy-cookie tests still return `auth_connection_stale`; opaque rows follow current token version.
 
-- [ ] **Step 7: Commit the request-resolution slice**
+- [x] **Step 7: Commit the request-resolution slice**
 
 ```bash
 git add backend/auth/context.py backend/auth/db_context.py jira_server.py tests/test_auth_context_db.py tests/test_db_oauth_cutover.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md
@@ -487,7 +487,7 @@ git commit -m "Resolve OAuth requests through browser sessions"
 - Modify: `tests/test_endpoint_security_matrix.py`
 - Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
 
-- [ ] **Step 1: Write failing multi-client callback/refresh/logout tests**
+- [x] **Step 1: Write failing multi-client callback/refresh/logout tests**
 
 Add two Flask clients backed by the same user/connection and assert the separate-cookie-jar contract. These clients represent two browser profiles/devices, not two tabs; tabs in one browser profile share one Flask cookie and therefore one browser-session row:
 
@@ -511,7 +511,7 @@ Extend the existing PostgreSQL harness in `tests/test_token_refresh_race.py` wit
 
 The tests keep the existing `TEST_DATABASE_URL` PostgreSQL guard; a skipped run proves neither absent-row creation nor reconnect serialization.
 
-- [ ] **Step 2: Run the focused route and reuse tests to verify they fail**
+- [x] **Step 2: Run the focused route and reuse tests to verify they fail**
 
 Run:
 
@@ -521,7 +521,7 @@ Run:
 
 Expected: FAIL because callback/refresh still write connection/token-version cookies and logout does not delete the DB browser row.
 
-- [ ] **Step 3: Serialize callback upserts and carry reconnect state out**
+- [x] **Step 3: Serialize callback upserts and carry reconnect state out**
 
 Before `_upsert_user`, `_upsert_workspace`, or `_upsert_connection`, acquire PostgreSQL transaction-scoped advisory locks for both stable natural identities involved in callback creation:
 
@@ -574,15 +574,15 @@ return {'db_browser_session_id': handle.id}
 
 Capture `previous_browser_session_id` from the current Flask cookie before entering the DB transaction. Do not return connection id or token version to `save_oauth_session` after a successful DB callback.
 
-- [ ] **Step 4: Stop refresh from replacing the browser id**
+- [x] **Step 4: Stop refresh from replacing the browser id**
 
 In every DB-backed refresh path, remove `remember_db_oauth_browser_session(active)`. `current_request_auth_context()` already resolves the stable row, and `current_jira_session_data(context)` returns the current shared token version for cache/token work. Add a source assertion that `/api/auth/refresh` does not call the cookie writer in DB mode.
 
-- [ ] **Step 5: Delete only the current row on post-exchange clear or logout**
+- [x] **Step 5: Delete only the current row on post-exchange clear or logout**
 
 Before `save_oauth_session({})` clears a DB cookie after token exchange has begun, capture its `db_browser_session_id` and delete that row in a short DB transaction. Do not move pre-exchange callback validation into this clearing path: invalid state, authorization denial, missing code, and missing PKCE verifier keep the current session unchanged. `POST /api/auth/logout` keeps its current `200 {"ok": true}` response and `X-Requested-With` auth-flow guard; it adds no token-bound CSRF requirement and must not update or revoke `auth_connections`.
 
-- [ ] **Step 6: Delete all rows on committed connection revocation**
+- [x] **Step 6: Delete all rows on committed connection revocation**
 
 Inside `_revoke_for_refresh_reuse`, call:
 
@@ -592,7 +592,7 @@ delete_browser_sessions_for_connection(session, connection.id)
 
 before `session.flush()`. In the real `db_oauth_session_data_for_auth_context` wrapper, catch `AuthError('auth_connection_revoked')`, commit the already-applied revocation/token/session deletes, then re-raise so `session_scope` does not roll them back. Keep every other error rollback behavior unchanged.
 
-- [ ] **Step 7: Run the focused lifecycle route tests**
+- [x] **Step 7: Run the focused lifecycle route tests**
 
 Run:
 
@@ -602,7 +602,7 @@ Run:
 
 Expected: PASS. Route JSON/status shapes and unsafe-method guards remain unchanged; only cookie/session lifecycle changes. Under PostgreSQL, both first-ever callbacks and reconnect callbacks commit distinct browser sessions without unique-index failures.
 
-- [ ] **Step 8: Commit the callback/logout/revocation slice**
+- [x] **Step 8: Commit the callback/logout/revocation slice**
 
 ```bash
 git add backend/auth/db_tokens.py backend/routes/auth_routes.py jira_server.py tests/test_auth_routes.py tests/test_db_oauth_cutover.py tests/test_token_refresh_reuse.py tests/test_token_refresh_race.py tests/test_endpoint_security_matrix.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md
@@ -621,7 +621,7 @@ git commit -m "Keep OAuth browser sessions independent"
 - Modify: `tests/test_scenario_draft_routes.py`
 - Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
 
-- [ ] **Step 1: Write failing CSRF and Scenario tests**
+- [x] **Step 1: Write failing CSRF and Scenario tests**
 
 Add a CSRF test that issues a token in browser profile B, rotates the shared connection from profile A, and proves the token still validates in B but not A. Add a Scenario reload test that patches the real auth resolver and asserts the synthetic request contains the captured browser id:
 
@@ -633,7 +633,7 @@ def resolver(session_data, **_kwargs):
 
 Assert a context without `browser_session_id` is rejected by the DB-only Scenario reload helper instead of synthesizing a connection-only cookie.
 
-- [ ] **Step 2: Run focused tests to verify they fail**
+- [x] **Step 2: Run focused tests to verify they fail**
 
 Run:
 
@@ -643,7 +643,7 @@ Run:
 
 Expected: FAIL because CSRF still binds to token version and Scenario reload writes only `db_auth_connection_id`.
 
-- [ ] **Step 3: Branch the CSRF binding by session generation**
+- [x] **Step 3: Branch the CSRF binding by session generation**
 
 Use the stable browser id for upgraded DB sessions and retain the current legacy/local binding otherwise:
 
@@ -666,7 +666,7 @@ def _binding(session_id: str, session_data: dict) -> str:
 
 Update `api_auth_csrf()` and `csrf_session_data_for_request()` to pass `db_browser_session_id`, `db_auth_connection_id`, and `account_id` for upgraded DB contexts. Do not include `db_token_version` in that branch.
 
-- [ ] **Step 4: Propagate the browser id in Scenario reload**
+- [x] **Step 4: Propagate the browser id in Scenario reload**
 
 Replace the synthesized connection-only payload with:
 
@@ -680,7 +680,7 @@ with app.test_request_context('/api/scenario', method='POST', json=payload):
 
 Worker-thread Jira calls continue receiving the immutable `RequestAuthContext`; they do not create rows.
 
-- [ ] **Step 5: Run the focused CSRF/Scenario tests**
+- [x] **Step 5: Run the focused CSRF/Scenario tests**
 
 Run:
 
@@ -690,7 +690,7 @@ Run:
 
 Expected: PASS, including cross-profile token rejection and no-request-context Scenario coverage through the real resolver. The existing client-side Flask-cookie hash list retains consume-on-validation behavior, but this plan does not claim atomic one-use consumption for concurrent requests that start from the same cookie; server-side CSRF/session state is separate future scope.
 
-- [ ] **Step 6: Commit the CSRF/internal-context slice**
+- [x] **Step 6: Commit the CSRF/internal-context slice**
 
 ```bash
 git add backend/auth/csrf.py backend/routes/auth_routes.py backend/routes/scenario_draft_routes.py jira_server.py tests/test_auth_routes.py tests/test_scenario_draft_routes.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md

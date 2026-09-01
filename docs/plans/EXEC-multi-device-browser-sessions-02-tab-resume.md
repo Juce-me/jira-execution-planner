@@ -35,7 +35,7 @@ No backend endpoint, database schema, configuration ownership, Home/Townsquare r
 
 ### Task 0: Verify prerequisites and baseline behavior
 
-- [ ] **Step 1: Verify the global lock and server session slice are present**
+- [x] **Step 1: Verify the global lock and server session slice are present**
 
 Run:
 
@@ -49,6 +49,8 @@ test -f backend/auth/db_browser_sessions.py
 
 Expected: every command exits `0`. If any check fails, stop; do not recreate the global lock or bypass the server-session prerequisite in this plan.
 
+**Observed evidence (2026-09-01):** `git merge-base --is-ancestor b38e8f7 HEAD` exited `0`; all four `test -f` checks exited `0`.
+
 - [ ] **Step 2: Run the existing lock and Planning baselines**
 
 Run:
@@ -59,6 +61,8 @@ npx playwright test tests/ui/global_auth_lock.spec.js tests/ui/planning_selectio
 ```
 
 Expected: PASS before the new behavior. Preserve these contracts: one terminal gate, same-tab sanitized navigation, no in-place unlock, no failed-request replay, no raw `401`, and existing Planning selection persistence.
+
+**Observed evidence (2026-09-01):** the pinned Node 20 command exited `0` with 34/34 tests passing. The pinned Playwright command exited `1`: 15/16 passed and 1 failed reproducibly (`global_auth_lock.spec.js:130`, expected `alertdialog` not found); the isolated retry also exited `1`. The initial sandbox attempt was unable to launch Chromium due to macOS `MachPortRendezvousServer` permission denial; the elevated retry launched normally.
 
 ### Task 1: Implement the tab-local recovery capsule as a pure module
 

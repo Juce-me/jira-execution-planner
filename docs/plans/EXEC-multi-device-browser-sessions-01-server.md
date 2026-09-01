@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Ready for execution. Start with Task 0 and stop if the branch no longer contains `b38e8f7` or the current `origin/main` migration head differs from this reviewed baseline.
+**Status:** Server slice complete and verified locally on 2026-09-01 through Task 6. Kept as `EXEC-*` pending acceptance or merge; the frontend slice may proceed.
 
 **Goal:** Replace mutable OAuth `token_version` browser validity with persistent opaque DB browser-profile sessions while preserving cache invalidation, per-profile logout, connection-wide revocation, legacy-cookie compatibility, and existing API contracts.
 
@@ -710,7 +710,7 @@ git commit -m "Bind OAuth CSRF to browser sessions"
 - Modify: `docs/plans/SUPPORT-multi-device-browser-sessions-design.md`
 - Modify only if verification identifies a direct regression: files listed in Tasks 1-5
 
-- [ ] **Step 1: Run focused auth, migration, revocation, and Scenario coverage**
+- [x] **Step 1: Run focused auth, migration, revocation, and Scenario coverage**
 
 Run:
 
@@ -720,7 +720,7 @@ Run:
 
 Expected: PASS for the default focused matrix. The PostgreSQL-only refresh/callback race may skip here when `TEST_DATABASE_URL` is absent; Step 2 must then prove it separately with zero skips.
 
-- [ ] **Step 2: Run the mandatory PostgreSQL concurrency proof with zero skips**
+- [x] **Step 2: Run the mandatory PostgreSQL concurrency proof with zero skips**
 
 In terminal 1, start the repository-owned fixed local PostgreSQL runner:
 
@@ -742,7 +742,7 @@ TEST_DATABASE_URL=postgresql+psycopg://jep:jep@127.0.0.1:5432/jep_local \
 
 Expected: `OK` with zero skipped tests. The existing refresh serialization test, the new first-ever absent-row callback test, and the concurrent reconnect-callback test all execute against PostgreSQL. A skipped test, SQLite-only pass, unavailable Docker runner, or missing `TEST_DATABASE_URL` is a failed acceptance gate. Keep terminal 1 active through Step 5 so startup, full-suite, and HTTP verification use the same fixed migrated DB/OAuth runner environment.
 
-- [ ] **Step 3: Run startup and structural verification**
+- [x] **Step 3: Run startup and structural verification**
 
 Run:
 
@@ -764,7 +764,7 @@ env \
 
 Expected: PASS. The preflight process receives the runner's fixed DB/OAuth/config/bind environment explicitly; a separate terminal does not inherit exports from `run.sh`. Required local encryption configuration may still load from `.env`, but the command must not print or copy it. If the legitimate lifecycle module changes a ratcheted budget, update only the named budget with the measured value and document the reason in the same commit.
 
-- [ ] **Step 4: Run the full Python suite**
+- [x] **Step 4: Run the full Python suite**
 
 Run:
 
@@ -786,7 +786,7 @@ env \
 
 Expected: PASS against the runner's fixed migrated database. The explicit `TEST_DATABASE_URL` makes the Task 6 PostgreSQL race cases execute in the complete suite. Do not substitute or print any user-configured `.env` database URL or secret.
 
-- [ ] **Step 5: Verify cookie-free OAuth health and authentication boundaries**
+- [x] **Step 5: Verify cookie-free OAuth health and authentication boundaries**
 
 With the exact repository runner from Step 2 still active on port `5050`, run in another terminal:
 
@@ -803,7 +803,7 @@ Expected in this DB-backed Atlassian OAuth runner environment:
 
 This is an OAuth-specific anonymous boundary check. Do not authenticate curl, forge or reuse a cookie, seed an OAuth token, or make this gate depend on live Jira. Basic-auth loopback behavior is outside this slice. Stop terminal 1 with `Ctrl+C` after the check and confirm the runner removes only its owned container/network while retaining its documented volume.
 
-- [ ] **Step 6: Review the diff for scope and secrets**
+- [x] **Step 6: Review the diff for scope and secrets**
 
 Run:
 
@@ -815,7 +815,7 @@ git grep -n -E "access_token|refresh_token|apiToken|Authorization" -- backend/db
 
 Expected: `git diff --check` passes; changed files match this plan; the final grep returns no browser-session storage of credential material.
 
-- [ ] **Step 7: Commit any verification-only correction**
+- [x] **Step 7: Commit any verification-only correction**
 
 If verification required a scoped correction, stage only its named files and commit:
 

@@ -17,6 +17,7 @@
 - Create: `backend/db/migrations/versions/20260830_0009_browser_sessions.py`
 - Create: `backend/auth/db_browser_sessions.py`
 - Create: `tests/test_db_browser_sessions.py`
+- Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
 - Modify: `backend/db/models.py`
 - Modify: `backend/auth/context.py`
 - Modify: `backend/auth/db_context.py`
@@ -335,7 +336,7 @@ Expected: PASS with no token-bearing field in the handle or table.
 - [ ] **Step 5: Commit the lifecycle slice**
 
 ```bash
-git add backend/auth/db_browser_sessions.py tests/test_db_browser_sessions.py
+git add backend/auth/db_browser_sessions.py tests/test_db_browser_sessions.py docs/plans/EXEC-multi-device-browser-sessions-01-server.md
 git commit -m "Add browser session lifecycle boundary"
 ```
 

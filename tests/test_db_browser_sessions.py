@@ -31,6 +31,13 @@ class DbBrowserSessionTests(unittest.TestCase):
                 jira_cloud_id='test-cloud',
                 created_by='test',
             )
+            other_workspace = models.Workspace(
+                environment_key='test',
+                name='Other workspace',
+                jira_site_url='https://other.atlassian.net',
+                jira_cloud_id='other-cloud',
+                created_by='test',
+            )
             user = models.User(
                 external_provider='test',
                 external_subject='user-1',
@@ -49,17 +56,19 @@ class DbBrowserSessionTests(unittest.TestCase):
                 status='active',
                 created_by='test',
             )
-            session.add_all([workspace, user, other_user])
+            session.add_all([workspace, other_workspace, user, other_user])
             session.flush()
             connection = self._connection(user.id, workspace.id, 'cloud-1')
             other_connection = self._connection(other_user.id, workspace.id, 'cloud-2')
-            session.add_all([connection, other_connection])
+            other_workspace_connection = self._connection(user.id, other_workspace.id, 'cloud-3')
+            session.add_all([connection, other_connection, other_workspace_connection])
             session.commit()
             self.workspace_id = workspace.id
             self.user_id = user.id
             self.other_user_id = other_user.id
             self.connection_id = connection.id
             self.other_connection_id = other_connection.id
+            self.other_workspace_connection_id = other_workspace_connection.id
 
     def tearDown(self):
         db_engine.dispose_engines()
@@ -94,7 +103,7 @@ class DbBrowserSessionTests(unittest.TestCase):
             'id', 'user_id', 'workspace_id', 'auth_connection_id',
         })
 
-    def test_create_rejects_connection_from_different_user_or_workspace(self):
+    def test_create_rejects_connection_from_different_user(self):
         with self.factory() as session:
             with self.assertRaises(AuthError) as error:
                 create_browser_session(
@@ -102,6 +111,17 @@ class DbBrowserSessionTests(unittest.TestCase):
                     user_id=self.user_id,
                     workspace_id=self.workspace_id,
                     auth_connection_id=self.other_connection_id,
+                )
+        self.assertEqual(error.exception.code, 'auth_required')
+
+    def test_create_rejects_connection_from_different_workspace_for_same_user(self):
+        with self.factory() as session:
+            with self.assertRaises(AuthError) as error:
+                create_browser_session(
+                    session,
+                    user_id=self.user_id,
+                    workspace_id=self.workspace_id,
+                    auth_connection_id=self.other_workspace_connection_id,
                 )
         self.assertEqual(error.exception.code, 'auth_required')
 

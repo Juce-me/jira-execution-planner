@@ -112,7 +112,7 @@ Add a model test that constructs `models.BrowserSession` with valid foreign keys
 Run:
 
 ```bash
-python3 -m unittest tests.test_db_migrations
+.venv/bin/python -m unittest tests.test_db_migrations
 ```
 
 Expected: FAIL because revision `20260830_0009`, table `browser_sessions`, and `models.BrowserSession` do not exist.
@@ -186,7 +186,7 @@ def downgrade() -> None:
 Run:
 
 ```bash
-python3 -m unittest tests.test_db_migrations
+.venv/bin/python -m unittest tests.test_db_migrations
 ```
 
 Expected: PASS, including upgrade from `20260827_0008`, downgrade back to it, foreign keys, indexes, and forbidden-column assertions.

@@ -1434,6 +1434,62 @@ test('production launcher fallback acknowledges disabled Planning without bypass
     await expect(page.getByRole('heading', { name: 'Open Board' })).toBeVisible();
 });
 
+test('enabled Planning launcher stays required and natively activatable when coachmark placement falls back', async ({ page }) => {
+    await installProductionOnboardingFixture(page);
+    await completeConfigurationModule(page, 'pointer');
+
+    const launcher = page.getByRole('radio', { name: 'Planning' });
+    await expect(page.getByRole('heading', { name: 'Open Planning' })).toBeVisible();
+    await expect(launcher).toBeEnabled();
+    const cardHeight = await page.locator('.onboarding-tour-card').evaluate(node => node.getBoundingClientRect().height);
+    await launcher.evaluate((node, height) => {
+        Object.assign(node.style, {
+            position: 'fixed',
+            left: '320px',
+            top: `${Math.ceil(height) + 22}px`,
+            width: '60px',
+            height: '20px',
+            minHeight: '20px',
+            padding: '0',
+            margin: '0',
+            zIndex: '10000',
+        });
+        const state = { width: 700, height: Math.ceil(height) + 42, offsetLeft: 0, offsetTop: 0 };
+        ['width', 'height', 'offsetLeft', 'offsetTop'].forEach((key) => {
+            Object.defineProperty(window.visualViewport, key, {
+                configurable: true,
+                get: () => state[key],
+            });
+        });
+        window.visualViewport.dispatchEvent(new Event('resize'));
+    }, cardHeight);
+
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
+    await expect(page.locator('[data-onboarding-tour]')).toHaveClass(/is-interactive/);
+    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(launcher).toBeFocused();
+    await expect(launcher).toHaveAttribute('aria-describedby', /.+/);
+    expect(await launcher.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return hit === node || node.contains(hit);
+    })).toBe(true);
+
+    await expectSingleLauncherTransition(page, 'planning', () => launcher.click());
+    await expect(page.locator('[data-onboarding-module="planning"]')).toBeVisible();
+    await page.evaluate(() => {
+        const restored = { width: window.innerWidth, height: window.innerHeight, offsetLeft: 0, offsetTop: 0 };
+        ['width', 'height', 'offsetLeft', 'offsetTop'].forEach((key) => {
+            Object.defineProperty(window.visualViewport, key, {
+                configurable: true,
+                get: () => restored[key],
+            });
+        });
+        window.visualViewport.dispatchEvent(new Event('resize'));
+    });
+    await expect(page.locator('[data-onboarding-target="planning-overview"]')).toBeFocused();
+});
+
 test('production launcher fallback acknowledges disabled Statistics without bypassing the control', async ({ page }) => {
     await installProductionOnboardingFixture(page, { sprintState: 'future' });
     await completeConfigurationModule(page, 'pointer');

@@ -496,6 +496,8 @@ export default function OnboardingTour({
         ? buildStepPresentation(tour.currentStep, target, { engReadiness })
         : { fallback: true, loading: false, title: '', body: '' };
     const previewStep = tour.currentStep?.progression === 'menu-preview';
+    const moduleLaunchStep = tour.currentStep?.progression === 'module-launch';
+    const moduleUnavailable = moduleLaunchStep && basePresentation.fallback;
     const targetReachableStep = tour.currentStep?.interaction === 'target-reachable';
     const settingsContextStep = tour.moduleSession.activeModule === 'configuration'
         && tour.currentStep?.progression === 'module-manual';
@@ -527,8 +529,11 @@ export default function OnboardingTour({
         && !basePresentation.loading
         && !basePresentation.fallback
         && !previewForcedFallback);
-    const interactive = shouldUseInteractiveCoachmark(interactiveEligible, rawPlacement);
-    const presentation = previewForcedFallback || unsafeForcedFallback || rawPlacement.mode === 'fallback'
+    const interactive = shouldUseInteractiveCoachmark(interactiveEligible, rawPlacement)
+        || Boolean(moduleLaunchStep && interactiveEligible && rawPlacement.mode === 'fallback');
+    const presentation = previewForcedFallback
+        || unsafeForcedFallback
+        || (rawPlacement.mode === 'fallback' && !moduleLaunchStep)
         ? buildStepPresentation(tour.currentStep, null, { engReadiness })
         : basePresentation;
     const matchedPreviewSession = descriptorsMatch(previewDescriptorRef.current, previewSession)
@@ -865,7 +870,6 @@ export default function OnboardingTour({
     const interactiveState = previewOpen ? `preview_${previewState}` : 'interactive_closed';
     const sectionSkipTargetId = resolveSectionSkipTargetId(tour.steps, tour.currentStepId);
     const contextualModuleActive = tour.moduleSession.activeModule !== 'catch-up';
-    const moduleLaunchStep = tour.currentStep.progression === 'module-launch';
     const moduleManualStep = tour.currentStep.progression === 'module-manual';
     const settingsBlocked = settingsContextStep && (settingsDirty || settingsSaving);
 
@@ -896,7 +900,7 @@ export default function OnboardingTour({
 
     const handleNext = () => {
         requestCleanup('cleanup');
-        if (moduleLaunchStep && presentation.fallback) {
+        if (moduleUnavailable) {
             tour.acknowledgeUnavailableModule();
             return;
         }
@@ -1006,7 +1010,7 @@ export default function OnboardingTour({
                                     || presentation.loading
                                     || settingsBlocked
                                     || (previewStep && !tour.stepUnlocked)
-                                    || (moduleLaunchStep ? !presentation.fallback : (!moduleManualStep && !tour.canGoNext))}
+                                    || (moduleLaunchStep ? !moduleUnavailable : (!moduleManualStep && !tour.canGoNext))}
                             >Next</button>
                         )}
                     </div>

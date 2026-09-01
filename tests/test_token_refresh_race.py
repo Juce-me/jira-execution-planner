@@ -341,6 +341,25 @@ class TokenRefreshRaceTests(unittest.TestCase):
         for forbidden in ('email', 'display_name', 'token_data', 'oauth_state', 'pkce'):
             self.assertNotIn(forbidden, lock_source)
 
+    def test_reconnect_race_helper_matches_callback_cleanup_order(self):
+        """Reconnect races delete target rows before unconditionally deleting the prior id."""
+        source = inspect.getsource(
+            self.test_concurrent_revoked_reconnects_keep_both_new_rows_and_delete_old_rows
+        )
+        conditional_index = source.index('if replacement.invalidate_browser_sessions:')
+        target_delete_index = source.index(
+            'delete_browser_sessions_for_connection(session, replacement.connection_id)'
+        )
+        previous_delete_index = source.index(
+            'delete_browser_session(session, previous_browser_session_id)'
+        )
+        create_index = source.index('handle = create_browser_session(')
+
+        self.assertLess(conditional_index, target_delete_index)
+        self.assertLess(target_delete_index, previous_delete_index)
+        self.assertLess(previous_delete_index, create_index)
+        self.assertNotIn('else:', source[target_delete_index:previous_delete_index])
+
     @unittest.skipUnless(
         os.getenv('TEST_DATABASE_URL') and make_url(os.getenv('TEST_DATABASE_URL')).get_backend_name() == 'postgresql',
         'PostgreSQL TEST_DATABASE_URL is required to prove first-ever callback serialization.',
@@ -495,8 +514,7 @@ class TokenRefreshRaceTests(unittest.TestCase):
                         )
                         if replacement.invalidate_browser_sessions:
                             delete_browser_sessions_for_connection(session, replacement.connection_id)
-                        else:
-                            delete_browser_session(session, previous_browser_session_id)
+                        delete_browser_session(session, previous_browser_session_id)
                         handle = create_browser_session(
                             session,
                             user_id=replacement.user_id,

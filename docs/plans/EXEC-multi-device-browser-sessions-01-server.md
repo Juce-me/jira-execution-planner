@@ -222,10 +222,11 @@ git commit -m "Add persistent DB browser sessions"
 
 - [x] **Step 1: Write failing lifecycle tests**
 
-Cover create, resolve, single delete, connection-wide delete, and boundary mismatch:
+Cover create, resolve, single delete, connection-wide delete, ownership mismatch, and the exact OAuth provider boundary. `test_create_rejects_non_oauth_connection_provider` must raise `auth_required`, while `test_resolve_rejects_non_oauth_connection_provider` must treat a persisted row referencing any provider other than `atlassian_oauth` as unresolved:
 
 ```python
 def test_create_and_resolve_browser_session(self):
+    """A created browser session resolves to its expected ownership metadata."""
     with self.factory() as session:
         handle = create_browser_session(
             session,
@@ -236,21 +237,24 @@ def test_create_and_resolve_browser_session(self):
         session.commit()
     with self.factory() as session:
         resolved = resolve_browser_session(session, handle.id)
-    self.assertEqual(resolved.user_id, self.user_id)
-    self.assertEqual(resolved.workspace_id, self.workspace_id)
-    self.assertEqual(resolved.auth_connection_id, self.connection_id)
+    self.assertEqual(resolved, handle)
+    self.assertEqual(set(handle.__dataclass_fields__), {
+        'id', 'user_id', 'workspace_id', 'auth_connection_id',
+    })
 
 def test_delete_all_for_connection_does_not_cross_connection(self):
+    """Connection-wide deletion preserves sessions owned by other connections."""
     with self.factory() as session:
         first = create_browser_session(session, user_id=self.user_id, workspace_id=self.workspace_id, auth_connection_id=self.connection_id)
         second = create_browser_session(session, user_id=self.user_id, workspace_id=self.workspace_id, auth_connection_id=self.connection_id)
         other = create_browser_session(session, user_id=self.other_user_id, workspace_id=self.workspace_id, auth_connection_id=self.other_connection_id)
-        self.assertEqual(delete_browser_sessions_for_connection(session, self.connection_id), 2)
+        self.assertEqual(delete_browser_sessions_for_connection(session, f' {self.connection_id} '), 2)
         session.commit()
     with self.factory() as session:
         self.assertIsNone(resolve_browser_session(session, first.id))
         self.assertIsNone(resolve_browser_session(session, second.id))
         self.assertEqual(resolve_browser_session(session, other.id).id, other.id)
+        self.assertEqual(delete_browser_sessions_for_connection(session, ''), 0)
 ```
 
 Assert the module never serializes tokens, email, user agent, IP, or callback values.
@@ -298,9 +302,20 @@ def _handle(row: models.BrowserSession) -> BrowserSessionHandle:
     )
 
 
-def create_browser_session(session, *, user_id: str, workspace_id: str, auth_connection_id: str) -> BrowserSessionHandle:
+def create_browser_session(
+    session,
+    *,
+    user_id: str,
+    workspace_id: str,
+    auth_connection_id: str,
+) -> BrowserSessionHandle:
     connection = session.get(models.AuthConnection, auth_connection_id)
-    if connection is None or connection.user_id != user_id or connection.workspace_id != workspace_id:
+    if (
+        connection is None
+        or connection.provider != 'atlassian_oauth'
+        or connection.user_id != user_id
+        or connection.workspace_id != workspace_id
+    ):
         raise AuthError('auth_required', 'Atlassian authentication is required.')
     row = models.BrowserSession(
         id=str(uuid4()),
@@ -318,7 +333,12 @@ def resolve_browser_session(session, browser_session_id: str) -> BrowserSessionH
     if not value:
         return None
     row = session.get(models.BrowserSession, value)
-    return _handle(row) if row is not None else None
+    if row is None:
+        return None
+    connection = session.get(models.AuthConnection, row.auth_connection_id)
+    if connection is None or connection.provider != 'atlassian_oauth':
+        return None
+    return _handle(row)
 
 
 def delete_browser_session(session, browser_session_id: str) -> int:
@@ -333,7 +353,9 @@ def delete_browser_sessions_for_connection(session, auth_connection_id: str) -> 
     value = str(auth_connection_id or '').strip()
     if not value:
         return 0
-    result = session.execute(delete(models.BrowserSession).where(models.BrowserSession.auth_connection_id == value))
+    result = session.execute(
+        delete(models.BrowserSession).where(models.BrowserSession.auth_connection_id == value)
+    )
     return int(result.rowcount or 0)
 ```
 
@@ -370,24 +392,47 @@ git commit -m "Add browser session lifecycle boundary"
 Add tests with two browser rows sharing one connection. Rotate the connection token version and prove both rows resolve the new version:
 
 ```python
-def test_browser_session_ignores_cookie_token_version_and_returns_current_version(self):
-    browser_id = self._seed_browser_session(token_version=3)
-    self._set_connection_token_version(4)
-    context = resolve_db_request_auth_context(
-        {'db_browser_session_id': browser_id, 'db_token_version': '3'},
-        database_url=self.database_url,
-    )
-    self.assertEqual(context.browser_session_id, browser_id)
-    self.assertEqual(context.token_version, '4')
+def test_browser_sessions_ignore_cookie_token_version_and_return_current_connection_version(self):
+    """Opaque sessions ignore cookie versions and expose the current connection version."""
+    first_id, second_id, connection_id = self._seed_browser_sessions(token_version=3)
+    self._set_connection_token_version(connection_id, 4)
 
-def test_browser_session_cannot_cross_workspace_or_connection_owner(self):
-    browser_id = self._seed_mismatched_browser_session()
-    with self.assertRaises(AuthError) as raised:
-        resolve_db_request_auth_context({'db_browser_session_id': browser_id}, database_url=self.database_url)
-    self.assertEqual(raised.exception.code, 'auth_required')
+    first_context = resolve_db_request_auth_context(
+        {'db_browser_session_id': first_id, 'db_token_version': '3'},
+        database_url=self.database_url,
+        required_scopes=FULL_SCOPE,
+    )
+    second_context = resolve_db_request_auth_context(
+        {'db_browser_session_id': second_id, 'db_token_version': '3'},
+        database_url=self.database_url,
+        required_scopes=FULL_SCOPE,
+    )
+
+    self.assertEqual(first_context.browser_session_id, first_id)
+    self.assertEqual(second_context.browser_session_id, second_id)
+    self.assertEqual(first_context.token_version, '4')
+    self.assertEqual(second_context.token_version, '4')
+
+def test_legacy_connection_requires_a_nonempty_exact_token_version(self):
+    """Reject missing and empty legacy versions with the stale-connection contract."""
+    _, _, connection_id = self._seed_connection(token_version=3)
+
+    for name, session_data in (
+        ('missing', {'db_auth_connection_id': connection_id}),
+        ('empty', {'db_auth_connection_id': connection_id, 'db_token_version': ''}),
+    ):
+        with self.subTest(name=name):
+            with self.assertRaises(AuthError) as raised:
+                resolve_db_request_auth_context(
+                    session_data,
+                    database_url=self.database_url,
+                    required_scopes=FULL_SCOPE,
+                )
+
+            self.assertEqual(raised.exception.code, 'auth_connection_stale')
 ```
 
-Retain the existing legacy exact-version tests. Add a Flask test proving one valid legacy cookie is replaced by `{'db_browser_session_id': value}` and a stale legacy cookie is not upgraded.
+Also cover the exact implemented ownership/provider cases in `test_browser_session_rejects_user_owner_mismatch`, `test_browser_session_rejects_workspace_owner_mismatch`, and `test_browser_session_rejects_non_oauth_connection_provider`. Retain the valid and stale legacy exact-version cases. Flask coverage must include `test_valid_legacy_cookie_is_replaced_with_opaque_browser_session`, `test_stale_legacy_cookie_is_not_upgraded`, and `test_missing_or_empty_legacy_version_uses_exact_recovery_without_row_creation`.
 
 - [x] **Step 2: Run the focused tests to verify they fail**
 
@@ -427,11 +472,16 @@ In `backend/auth/db_context.py`, branch on `db_browser_session_id`. Resolve that
 
 ```python
 browser_session_id = str((session_data or {}).get('db_browser_session_id') or '').strip()
-browser_session = resolve_browser_session(session, browser_session_id) if browser_session_id else None
+browser_session = (
+    resolve_browser_session(session, browser_session_id) if browser_session_id else None
+)
 if browser_session_id and browser_session is None:
     raise AuthError('auth_required', 'Atlassian authentication is required.')
-connection = session.get(models.AuthConnection, browser_session.auth_connection_id) if browser_session else _find_connection(session, session_data)
-if connection is None:
+connection = (
+    session.get(models.AuthConnection, browser_session.auth_connection_id)
+    if browser_session else _find_connection(session, session_data)
+)
+if connection is None or connection.provider != 'atlassian_oauth':
     raise AuthError('auth_required', 'Atlassian authentication is required.')
 user = session.get(models.User, connection.user_id)
 workspace = session.get(models.Workspace, connection.workspace_id)
@@ -443,9 +493,19 @@ if browser_session and (
     or browser_session.auth_connection_id != connection.id
 ):
     raise AuthError('auth_required', 'Atlassian authentication is required.')
+
+user_status, connection_status = _status_for(user, connection, current_time)
+if user_status != 'active':
+    raise AuthError('account_disabled', 'Your account is disabled.')
+if connection_status != 'active':
+    raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
+
+session_token_version = str((session_data or {}).get('db_token_version') or '')
+if not browser_session_id and session_token_version != str(connection.token_version):
+    raise AuthError('auth_connection_stale', 'Your Jira connection changed. Reconnect to continue.')
 ```
 
-Set `browser_session_id=browser_session_id` in the returned context. Keep the exact legacy token-version comparison only when `browser_session_id` is empty.
+Set `browser_session_id=browser_session_id` in the returned context. Keep the exact legacy token-version comparison only when `browser_session_id` is empty; a missing or empty version becomes `''` and must fail the same `auth_connection_stale` recovery contract without creating a browser-session row.
 
 - [x] **Step 5: Update the cookie parser and lazy upgrade**
 
@@ -509,7 +569,7 @@ self.assertEqual(client_a.get('/api/auth/status').get_json()['authenticated'], T
 self.assertEqual(client_b.get('/api/auth/status').get_json()['authenticated'], True)
 ```
 
-After client A refreshes, assert B remains authenticated and its signed payload still contains `browser_b_id`. After B logs out with the existing `X-Requested-With: jira-execution-planner` auth-flow guard, assert A remains authenticated and only B's row is absent; assert the missing header retains the existing `403 csrf_required` response, without introducing token-bound CSRF for this endpoint. Add a reconnect test where a previously revoked connection deletes every old row before creating one new row. Do not add a per-tab server row or claim that logout is isolated between tabs sharing one cookie; same-profile tab behavior is verified in the frontend slice.
+After client A refreshes, assert B remains authenticated and its signed payload still contains `browser_b_id`. After B logs out with the existing `X-Requested-With: jira-execution-planner` auth-flow guard, assert A remains authenticated and only B's row is absent; assert the missing header retains the existing `403 csrf_required` response, without introducing token-bound CSRF for this endpoint. `test_non_active_connection_callback_deletes_all_old_rows_before_new_browser_row` proves a previously revoked/expired/error target connection deletes every old target row before creating one replacement. `test_revoked_reconnect_deletes_target_rows_and_previous_other_connection_row` must additionally start client A on connection A, reconnect revoked connection B through A's browser, and prove A's captured prior row and every old B row are gone with exactly one new B row remaining. Do not add a per-tab server row or claim that logout is isolated between tabs sharing one cookie; same-profile tab behavior is verified in the frontend slice.
 
 Add callback failure coverage for the existing distinction: `invalid_oauth_state`, authorization denial, missing code, and missing PKCE verifier leave a current browser row intact because they fail before token exchange; an `AuthError` after exchange begins may delete only the current row. Every failure must leave the other client's row active.
 
@@ -518,7 +578,7 @@ Extend `tests/test_token_refresh_reuse.py` to seed two browser rows and assert c
 Extend the existing PostgreSQL harness in `tests/test_token_refresh_race.py` with both callback races:
 
 1. Start from no matching user, workspace, connection, token, or browser-session row. Start two first-ever callback-storage transactions for the same Atlassian account/environment/resource, hold the first after it acquires the callback natural-key locks, and prove the second blocks before any select-then-insert upsert. Release the first and assert both callbacks commit: exactly one user, one workspace, one active connection, one active access/refresh token pair, and two distinct browser-session rows remain. No `IntegrityError` or rejected callback is allowed.
-2. Seed a revoked connection with old browser rows, start two callback-storage transactions against it, hold the first transaction open after it creates its replacement row, and prove the second remains blocked. Release the first, then assert both callbacks commit distinct new browser rows and every old row is gone.
+2. Seed a revoked connection with old browser rows, start two callback-storage transactions against it, hold the first transaction open after it creates its replacement row, and prove the second remains blocked. In each transaction, conditionally delete all target-connection rows when `invalidate_browser_sessions` is true, then unconditionally delete that callback's captured previous browser id before creating the replacement. Release the first, then assert both callbacks commit distinct new browser rows and every old row is gone.
 
 The tests keep the existing `TEST_DATABASE_URL` PostgreSQL guard; a skipped run proves neither absent-row creation nor reconnect serialization.
 
@@ -549,7 +609,15 @@ def _callback_lock_key(value):
     return int.from_bytes(digest[:8], byteorder='big', signed=True)
 
 
-def _lock_callback_natural_keys(session, *, user_profile, environment_key, resource, configured_jira_url):
+def _lock_callback_natural_keys(
+    session,
+    *,
+    user_profile,
+    environment_key,
+    resource,
+    configured_jira_url,
+):
+    """Serialize callback natural-key upserts on PostgreSQL; SQLite is a no-op."""
     if session.get_bind().dialect.name != 'postgresql':
         return
     account_id = str((user_profile or {}).get('account_id') or '').strip()
@@ -560,7 +628,10 @@ def _lock_callback_natural_keys(session, *, user_profile, environment_key, resou
         f'jira-workspace:{environment_key}:{cloud_id or site_url}',
     }
     for lock_key in sorted(_callback_lock_key(value) for value in identities):
-        session.execute(text('SELECT pg_advisory_xact_lock(:lock_key)'), {'lock_key': lock_key})
+        session.execute(
+            text('SELECT pg_advisory_xact_lock(:lock_key)'),
+            {'lock_key': lock_key},
+        )
 ```
 
 Call `_lock_callback_natural_keys(...)` at the start of `store_oauth_callback_tokens`, before `_upsert_user`. Import only standard-library `hashlib` and SQLAlchemy `text`.
@@ -572,18 +643,18 @@ Use the returned flag inside the existing `session_scope()` in `store_db_oauth_c
 ```python
 if stored.invalidate_browser_sessions:
     delete_browser_sessions_for_connection(db_session, stored.connection_id)
-else:
-    delete_browser_session(db_session, previous_browser_session_id)
+delete_browser_session(db_session, previous_browser_session_id)
 handle = create_browser_session(
     db_session,
     user_id=stored.user_id,
     workspace_id=stored.workspace_id,
     auth_connection_id=stored.connection_id,
 )
+clear_auth_sensitive_caches('oauth_reconnect')
 return {'db_browser_session_id': handle.id}
 ```
 
-Capture `previous_browser_session_id` from the current Flask cookie before entering the DB transaction. Do not return connection id or token version to `save_oauth_session` after a successful DB callback.
+Capture `previous_browser_session_id` from the current Flask cookie before entering the DB transaction. The previous-id delete is unconditional and has no `else`: it may remove a row from another connection when that browser profile reconnects a non-active target. Do not return connection id or token version to `save_oauth_session` after a successful DB callback.
 
 - [x] **Step 4: Stop refresh from replacing the browser id**
 
@@ -634,7 +705,7 @@ git commit -m "Keep OAuth browser sessions independent"
 
 - [x] **Step 1: Write failing CSRF and Scenario tests**
 
-Add a CSRF test that issues a token in browser profile B, rotates the shared connection from profile A, and proves the token still validates in B but not A. Add a Scenario reload test that patches the real auth resolver and asserts the synthetic request contains the captured browser id:
+Add a CSRF test that issues a token in browser profile B, rotates the shared connection from profile A, and proves the token still validates in B but not A. Add `test_csrf_context_mapping_preserves_precedence_and_is_shared_by_consumers` to prove opaque ids suppress token-version data, legacy contexts retain their exact token version, and both the HTTP and internal consumers call the same mapper. Add a Scenario reload test that patches the real auth resolver and asserts the synthetic request contains the captured browser id:
 
 ```python
 def resolver(session_data, **_kwargs):
@@ -656,6 +727,20 @@ Expected: FAIL because CSRF still binds to token version and Scenario reload wri
 
 - [x] **Step 3: Branch the CSRF binding by session generation**
 
+Build CSRF session data once in `backend/auth/csrf.py`; the opaque branch omits `db_token_version`, while the legacy branch includes it:
+
+```python
+def csrf_session_data_for_auth_context(context) -> dict:
+    data = {
+        'db_browser_session_id': str(getattr(context, 'browser_session_id', '') or ''),
+        'db_auth_connection_id': str(getattr(context, 'auth_connection_id', '') or ''),
+        'account_id': str(getattr(context, 'atlassian_account_id', '') or ''),
+    }
+    if not data['db_browser_session_id']:
+        data['db_token_version'] = str(getattr(context, 'token_version', '') or '')
+    return data
+```
+
 Use the stable browser id for upgraded DB sessions and retain the current legacy/local binding otherwise:
 
 ```python
@@ -675,7 +760,7 @@ def _binding(session_id: str, session_data: dict) -> str:
     ])
 ```
 
-Update `api_auth_csrf()` and `csrf_session_data_for_request()` to pass `db_browser_session_id`, `db_auth_connection_id`, and `account_id` for upgraded DB contexts. Do not include `db_token_version` in that branch.
+Import and call `csrf_session_data_for_auth_context(context)` from both `api_auth_csrf()` and `csrf_session_data_for_request()`; neither consumer may duplicate the context-to-dict mapping. The helper preserves `db_browser_session_id`, `db_auth_connection_id`, and `account_id`, gives opaque browser ids precedence, and includes `db_token_version` only for the legacy fallback.
 
 - [x] **Step 4: Propagate the browser id in Scenario reload**
 

@@ -49,7 +49,7 @@ class SharedCapacityConfigTests(unittest.TestCase):
 
     def test_workspace_users_share_one_config_and_another_workspace_isolated(self):
         saved = save_shared_capacity_config(
-            self.one, {'project': 'CAP', 'fieldId': 'customfield_10001', 'fieldName': 'Untrusted'}, 1,
+            self.one, {'project': 'CAP', 'fieldId': 'customfield_10001', 'fieldName': 'Untrusted'}, 0,
             field_catalog=self.fields, database_url=self.database_url,
         )
         self.assertEqual(saved['fieldName'], 'Capacity points')
@@ -59,20 +59,20 @@ class SharedCapacityConfigTests(unittest.TestCase):
         self.assertEqual(other['fieldId'], '')
 
     def test_stale_revision_returns_sanitized_current_config(self):
-        save_shared_capacity_config(self.one, {'project': 'CAP', 'fieldId': 'customfield_10001'}, 1, field_catalog=self.fields, database_url=self.database_url)
+        save_shared_capacity_config(self.one, {'project': 'CAP', 'fieldId': 'customfield_10001'}, 0, field_catalog=self.fields, database_url=self.database_url)
         with self.assertRaises(CapacityConfigConflict) as raised:
-            save_shared_capacity_config(self.one_other_user, {'project': 'OTHER', 'fieldId': 'customfield_10001'}, 1, field_catalog=self.fields, database_url=self.database_url)
+            save_shared_capacity_config(self.one_other_user, {'project': 'OTHER', 'fieldId': 'customfield_10001'}, 0, field_catalog=self.fields, database_url=self.database_url)
         self.assertEqual(raised.exception.current['project'], 'CAP')
-        self.assertEqual(raised.exception.current['configRevision'], 2)
+        self.assertEqual(raised.exception.current['configRevision'], 1)
 
     def test_concurrent_saves_with_the_same_revision_have_one_winner(self):
-        save_shared_capacity_config(self.one, {'project': 'CAP', 'fieldId': 'customfield_10001'}, 1, field_catalog=self.fields, database_url=self.database_url)
+        save_shared_capacity_config(self.one, {'project': 'CAP', 'fieldId': 'customfield_10001'}, 0, field_catalog=self.fields, database_url=self.database_url)
         barrier = Barrier(2)
 
         def attempt(context, project):
             barrier.wait()
             try:
-                return save_shared_capacity_config(context, {'project': project, 'fieldId': 'customfield_10001'}, 2, field_catalog=self.fields, database_url=self.database_url)
+                return save_shared_capacity_config(context, {'project': project, 'fieldId': 'customfield_10001'}, 1, field_catalog=self.fields, database_url=self.database_url)
             except CapacityConfigConflict:
                 return 'conflict'
 
@@ -80,9 +80,9 @@ class SharedCapacityConfigTests(unittest.TestCase):
             results = list(pool.map(lambda item: attempt(*item), ((self.one, 'ONE'), (self.one_other_user, 'TWO'))))
         self.assertEqual(sum(result == 'conflict' for result in results), 1)
         self.assertEqual(sum(isinstance(result, dict) for result in results), 1)
-        self.assertEqual(load_shared_capacity_config(self.one, None, self.database_url)['configRevision'], 3)
+        self.assertEqual(load_shared_capacity_config(self.one, None, self.database_url)['configRevision'], 2)
 
-    def test_multiple_private_remnants_materialize_blank_resolution_marker(self):
+    def test_private_view_capacity_never_becomes_workspace_capacity(self):
         factory = db_engine.session_factory(self.database_url)
         with factory() as session:
             for user_id, project in (('user-one', 'ONE'), ('user-two', 'TWO')):
@@ -90,54 +90,38 @@ class SharedCapacityConfigTests(unittest.TestCase):
                 session.add(view)
             session.commit()
         config = load_shared_capacity_config(self.one, None, self.database_url)
-        self.assertEqual(config['configRevision'], 1)
-        self.assertTrue(config['requiresResolution'])
+        self.assertEqual(config['configRevision'], 0)
+        self.assertFalse(config['requiresResolution'])
         self.assertEqual(config['project'], '')
-        factory = db_engine.session_factory(self.database_url)
-        with factory() as session:
-            self.assertFalse(any('capacity' in row.payload for row in session.query(models.ViewConfig).all()))
 
-    def test_two_admin_resolutions_of_a_materialized_marker_have_one_winner_and_a_sanitized_conflict(self):
+    def test_save_preserves_other_workspace_administrator_sections(self):
         factory = db_engine.session_factory(self.database_url)
         with factory() as session:
-            session.add_all([
-                models.ViewConfig(workspace_id=self.workspace_one, owner_user_id='user-one', name='One', view_type='eng', payload={'capacity': {'project': 'ONE', 'fieldId': 'customfield_10001'}}),
-                models.ViewConfig(workspace_id=self.workspace_one, owner_user_id='user-two', name='Two', view_type='eng', payload={'capacity': {'project': 'TWO', 'fieldId': 'customfield_10001'}}),
-            ])
+            session.add(models.WorkspaceDashboardConfig(
+                workspace_id=self.workspace_one,
+                payload={'board': {'boardId': '42', 'boardName': 'Planning'}},
+                config_revision=1,
+            ))
             session.commit()
-        marker = load_shared_capacity_config(self.one, None, self.database_url)
-        self.assertTrue(marker['requiresResolution'])
-        self.assertEqual(marker['configRevision'], 1)
-        winner = save_shared_capacity_config(self.one, {'project': 'RESOLVED', 'fieldId': 'customfield_10001'}, marker['configRevision'], field_catalog=self.fields, database_url=self.database_url)
-        with self.assertRaises(CapacityConfigConflict) as raised:
-            save_shared_capacity_config(self.one_other_user, {'project': 'OTHER', 'fieldId': 'customfield_10001'}, marker['configRevision'], field_catalog=self.fields, database_url=self.database_url)
-        self.assertFalse(winner['requiresResolution'])
-        self.assertEqual(winner['configRevision'], 2)
-        self.assertEqual(raised.exception.current, winner)
-
-    def test_one_private_remnant_promotes_and_current_and_version_payloads_are_stripped(self):
-        factory = db_engine.session_factory(self.database_url)
+        save_shared_capacity_config(
+            self.one, {'project': 'CAP', 'fieldId': 'customfield_10001'}, 1,
+            field_catalog=self.fields, database_url=self.database_url,
+        )
         with factory() as session:
-            view = models.ViewConfig(workspace_id=self.workspace_one, owner_user_id='user-one', name='Legacy', view_type='eng', payload={'capacity': {'project': 'ONE', 'fieldId': 'customfield_10001', 'fieldName': 'Capacity'}})
-            session.add(view)
-            session.flush()
-            session.add(models.ViewConfigVersion(view_config_id=view.id, version_number=1, payload={'capacity': {'project': 'ONE', 'fieldId': 'customfield_10001', 'fieldName': 'Capacity'}}, created_by='user-one'))
-            session.commit()
-        promoted = load_shared_capacity_config(self.one, None, self.database_url)
-        self.assertEqual(promoted['project'], 'ONE')
-        with factory() as session:
-            self.assertNotIn('capacity', session.query(models.ViewConfig).one().payload)
-            self.assertNotIn('capacity', session.query(models.ViewConfigVersion).one().payload)
+            payload = session.query(models.WorkspaceDashboardConfig).one().payload
+        self.assertEqual(payload['board'], {'boardId': '42', 'boardName': 'Planning'})
+        self.assertEqual(payload['capacity']['project'], 'CAP')
 
     def test_no_private_remnant_creates_blank_active_workspace_row(self):
         config = load_shared_capacity_config(self.one, None, self.database_url)
         self.assertEqual(config['project'], '')
+        self.assertEqual(config['configRevision'], 0)
         self.assertFalse(config['requiresResolution'])
 
     def test_field_must_be_exact_numeric_custom_field(self):
         invalid_catalog = [{'id': 'customfield_10001', 'name': 'Capacity points', 'schema': {'type': 'string'}}]
         with self.assertRaises(ValueError):
-            save_shared_capacity_config(self.one, {'project': 'CAP', 'fieldId': 'customfield_10001'}, 1, field_catalog=invalid_catalog, database_url=self.database_url)
+            save_shared_capacity_config(self.one, {'project': 'CAP', 'fieldId': 'customfield_10001'}, 0, field_catalog=invalid_catalog, database_url=self.database_url)
 
 
 if __name__ == '__main__':

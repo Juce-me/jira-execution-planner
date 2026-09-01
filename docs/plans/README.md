@@ -29,7 +29,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 4. `DONE-03-db-user-configuration.md`
    - Completed DB user-configuration plan. Use for audit and prerequisite evidence; do not execute as active work.
-   - Expected output: DB-backed user-owned saved views. EPM configuration is user-owned, including Home goal scope and project label mappings; service integrations remain admin/operator-controlled.
+   - Output: DB-backed user-owned saved views, including private EPM scope, label prefix, issue types, and project-label mappings. EPM tab and sprint are private UI state; existing private-view values remain preserved. PR #130 temporarily moved normalized EPM settings into workspace configuration; `DONE-user-owned-epm-configuration.md` corrects that ownership regression.
 
 5. `DONE-04-db-user-home-epm-read-token.md`
    - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
@@ -44,12 +44,39 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 8. `DONE-shared-department-groups.md`
    - Completed and merged in [PR #62](https://github.com/Juce-me/jira-execution-planner/pull/62). Moves department/team-group definitions to workspace-shared configuration while keeping per-user visible-group preferences. Use for audit and prerequisite evidence; do not execute as active work.
-   - Output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, shared saves are revision-conflict protected, and the existing default-group star remains shared.
+   - Historical output: any authenticated user can edit the shared group catalog, every user can discover shared groups, each user controls which groups appear in dashboard controls, and shared saves are revision-conflict protected. PR #62 left the existing star wired to shared `defaultGroupId`; `DONE-personal-group-star.md` corrects that product mismatch without rewriting shared catalog history.
 
-9. `EXEC-cloud-sql-iam-connectivity.md`
+9. `DONE-shared-admin-configuration.md`
+   - Completed and merged in PR #130 (`7ea40db`). Use for audit context only.
+   - Current output: administrator dashboard sections persist once per workspace/Jira site with revisioned, authorized writes; normal-user catalog refreshes use separate storage; no private payload is auto-promoted. Its shared-EPM decision is superseded by `DONE-user-owned-epm-configuration.md`.
+   - Execution record: `../agents/bugfixes/2026-08-26-executed-shared-admin-configuration.md`.
+
+10. `DONE-user-owned-epm-configuration.md`
+   - Completed, verified, and accepted correction for the ownership regression identified after PR #130. Use for audit context only.
+   - Current output: EPM settings use each user's default private saved view and every functional EPM path uses that source; cache keys include a normalized-configuration digest and every effective-default change performs post-commit user-partitioned invalidation; legacy import discards derived `teamCatalog`; misplaced workspace EPM is held in a reversible archive without an inferred owner; and every application API `401` terminally locks the whole app behind one sanitized same-tab sign-in recovery screen. Department groups remain workspace-shared and user-editable, while administrator settings remain workspace-shared and admin-only. Full Python, Node, Playwright, startup, clean-build, and explicit PostgreSQL gates pass.
+   - Design record: `../agents/bugfixes/2026-08-27-planned-global-auth-lock.md`.
+
+11. `EXEC-cloud-sql-iam-connectivity.md`
    - Implementation is complete and locally verified, but the plan remains `EXEC-*` pending user acceptance or merge.
    - Output: default local/CI URL behavior stays unchanged; hosted mode obtains lock-protected ADC login tokens immediately before new physical connections; every IAM connection uses the fixed app-owned 10-second timeout; web pooling and Alembic `NullPool` share one engine factory; offline migrations remain ADC-independent while validating the passwordless TLS URL; hosted docs record the complete IAM/database prerequisites; no Cloud SQL Python Connector, alternate PostgreSQL driver, proxy, deployment, UI, or unrelated product change was introduced.
    - Design record: `../agents/features/2026-07-27-executed-cloud-sql-iam-connectivity-design.md`.
+
+12. `EXEC-local-postgresql-runners.md`
+   - Implemented on `feature/local-postgresql-runners` with 39 daemon-free focused tests plus live Docker lifecycle, abuse, persistence, production-image, and release-layout isolation passing. The plan remains active: no GitHub PostgreSQL run exists, and the configured-runtime full suite still has nine pre-existing EPM configuration failures.
+   - Expected output: isolated `runners/local/` and `runners/github/` workflows that start a digest-pinned loopback PostgreSQL only for local source-checkout runtime, clean up owned containers on exit while retaining data, and prove PostgreSQL locking/concurrency in a least-privilege GitHub-hosted job without changing application or deployment implementation.
+   - Design record: `../agents/features/2026-08-27-planned-local-postgresql-runners.md`.
+
+13. `SUPPORT-multi-device-browser-sessions-design.md`
+   - Reviewed design for persistent DB/OAuth browser-profile sessions plus issue #143's per-tab reauthentication resume. The branch contains global auth lock `b38e8f7` and migration head `20260827_0008`; execution still begins with each plan's Task 0 baseline check.
+   - Expected output after both execution slices: independent per-profile/device login/logout, shared token refresh without cross-device sign-out, connection-wide revocation that fails closed, lazy upgrade of current legacy cookies, terminal `401` recovery without raw config errors or request replay, and per-tab restoration of available view/Planning scope and selected story checkboxes after same-tab OAuth. Tabs in one profile share the Flask cookie/browser-session row but retain isolated recovery capsules.
+
+14. `EXEC-multi-device-browser-sessions-01-server.md`
+   - Ready first execution slice. Adds opaque DB browser-profile session rows, stable request/CSRF resolution, per-profile logout, connection-wide revocation, legacy-cookie upgrade, and Scenario internal-context propagation.
+   - Adds no frontend UI, Home/Townsquare mutation, Jira mutation, service credential, or device-management endpoint.
+
+15. `EXEC-multi-device-browser-sessions-02-tab-resume.md`
+   - Ready second execution slice after the server plan passes. Adds a strict 30-minute `sessionStorage` recovery capsule, atomic Web-Lock acquisition/completion of a nonsecret five-minute `localStorage` OAuth lease, and a request-causal success marker that makes locked sibling tabs reload with their already-shared authenticated cookie.
+   - Restores each tab's available view, Settings shell, group/sprint/ENG mode, selected teams, and valid Planning story keys in a new authenticated document; success publication never waits for Planning hydration, and recovery never stores credential inputs, arbitrary drafts, API payloads, or failed request bodies or unlocks/replays the old document.
 
 ## Completed Scenario Planner Workflow
 
@@ -114,13 +141,27 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Current dropdown selection, team multi-select, Initiative grouping/persistence, settings permissions/handlers, and compact-header behavior remain unchanged. Playwright covers all three dropdown siblings, main/compact layering, multi-group row geometry, settings placement, Initiative centerlines, `aria-pressed`, hover/focus tooltip, both color states, and settled screenshots.
    - No backend, API, saved-preference, or new analytics-event contract; existing selection/settings events remain authoritative, local Initiative regrouping stays allowlisted, and raw dropdown queries are never collected.
 
-11. `SUPPORT-planning-capacity-editing-design.md`
-   - Interaction design and the runnable synthetic reference at `frontend/src/eng/planning-capacity-editing-prototype.html` were approved by the requester on 2026-09-01 and technically amended after independent security, feasibility, and UI review.
-   - Expected output after execution: one workspace-shared Admin Capacity Project/field in DB mode; OAuth-only Jira Capacity value editing from Selected SP by Team cards; hover/focus Jira and pencil actions; explicit numeric save/cancel behavior; best-effort stale-baseline reconciliation with the documented Jira GET-to-PUT race; responsive/touch-safe cards; and no per-card lookup fan-out.
+11. `DONE-personal-group-star.md`
+   - Completed and verified on 2026-08-26 in commits `50db7ee..083a09c`; this prerequisite is satisfied for the onboarding tour.
+   - Expected output: one personal starred Department group per authenticated workspace/user, single-select first-run search UI, personal Settings star controls, and strict separation between the persisted favorite and temporary dashboard Group scope. Shared `defaultGroupId` remains a file/JSON compatibility field and is never shown or mutated as a DB user's favorite.
+   - This plan owns star persistence and UI only. It adds no onboarding completion state, guided tour, configure guidance, skip action, or replay action.
 
-12. `EXEC-planning-capacity-editing.md`
-   - Executed and verified locally on 2026-09-01, including the final geometry-proof review and checked execution steps in the plan.
-   - Delivers the approved revisioned workspace Capacity config migration, additive sanitized target read, exact-field OAuth Jira PATCH with provider-verified granted-scope enforcement, explicit race-aware Planning card state, safe analytics, responsive/sticky visual proof, and deterministic build verification.
+12. `EXEC-user-onboarding-tour.md`
+   - Ready for execution on `feature/user-onboarding-tour`; prerequisite `DONE-personal-group-star.md` is complete.
+   - Expected output: configure/duplicate guidance after the mandatory group gate, followed by a guided tour of dashboard scope controls, actions, filters, issue hierarchy, and editable Jira fields. Per-user/workspace `onboarding_done` supports completion, skip, interruption recovery, and an explicit Settings replay action without another startup request.
+   - The tour consumes the personal-star contract read-only and must not change star persistence or UI. Existing users are backfilled as complete; JSON/basic mode stays unchanged; privacy-safe `settings_action` events measure only started/completed/skipped outcomes.
+
+13. `EXEC-hide-single-option-view-mode-control.md`
+   - Ready for execution as a small frontend-only task suitable for a 5.3 coding model.
+   - Expected output: the ENG/EPM segmented control is absent when EPM navigation is unavailable, remains a two-option control when EPM is available, and updates correctly after Home-token connection, revocation, or backend prerequisite changes. Existing availability, analytics, auth, request, and shared-control contracts remain unchanged.
+
+14. `SUPPORT-planning-capacity-editing-design.md`
+   - Approved interaction design and synthetic reference for Selected SP by Team capacity editing.
+   - Expected output: hover/focus Jira and pencil actions, one active editor, equal-height compact controls, Enter-to-save, explicit cancel, responsive/touch-safe cards, and no per-card lookup fan-out.
+
+15. `EXEC-planning-capacity-editing.md`
+   - Implemented and locally verified on 2026-09-01; retain as `EXEC-*` pending acceptance or merge.
+   - Delivers workspace-shared Capacity configuration, OAuth-only Jira field editing through the signed-in user, provider-verified scope enforcement, revision-aware saves, safe analytics, and responsive/sticky UI verification.
 
 ## Capacity Reporting Workflow
 

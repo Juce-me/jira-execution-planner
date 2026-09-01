@@ -4,10 +4,14 @@ import os
 
 from flask import Blueprint, jsonify, redirect, request, session
 
-from backend.auth.csrf import issue_csrf_token
+from backend.auth.csrf import csrf_session_data_for_auth_context, issue_csrf_token
+from backend.auth.db_browser_sessions import delete_browser_session
 from backend.auth.jira_auth import ensure_oauth_token
 from backend.auth.scope_policy import missing_context_oauth_scopes
+from backend.config.repository import ConfigStorageError
 from backend.epm import home as epm_home
+from backend.db.engine import DatabaseConfigurationError, session_scope
+from backend.services.user_view_config import UserViewConfigStorageError
 
 from . import bind_server_globals
 
@@ -18,6 +22,16 @@ bp = Blueprint("auth_routes", __name__)
 @bp.before_request
 def _sync_server_globals():
     bind_server_globals(globals())
+
+
+def _delete_current_db_oauth_browser_session():
+    browser_session_id = str(
+        db_oauth_browser_session_data().get('db_browser_session_id') or ''
+    ).strip()
+    if not browser_session_id:
+        return
+    with session_scope() as db_session:
+        delete_browser_session(db_session, browser_session_id)
 
 
 @bp.route('/api/auth/status', methods=['GET'])
@@ -80,22 +94,24 @@ def api_auth_status():
 def auth_entry_page():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return redirect('/')
-    missing_scope_reauth = request.args.get('reason') == 'missing_scope'
-    if not missing_scope_reauth and database_storage_enabled() and db_oauth_browser_session_data():
+    recovery_reason = request.args.get('reason')
+    terminal_recovery = recovery_reason in {'session_expired', 'missing_scope'}
+    if not terminal_recovery and database_storage_enabled() and db_oauth_browser_session_data():
         try:
             current_request_auth_context()
             return redirect('/')
         except AuthError:
             pass
     data = oauth_session_data()
-    if not missing_scope_reauth and data.get('access_token') and data.get('cloudid'):
+    if not terminal_recovery and data.get('access_token') and data.get('cloudid'):
         return redirect('/')
     message = ''
     login_url = '/api/auth/atlassian/login'
-    if request.args.get('reason') == 'session_expired':
+    if recovery_reason == 'session_expired':
         message = '<p class="auth-notice" role="status">Your Jira sign-in expired. Sign in again to continue.</p>'
-    elif request.args.get('reason') == 'missing_scope':
+    elif recovery_reason == 'missing_scope':
         message = '<p class="auth-notice" role="status">Your Jira sign-in needs updated permissions. Sign in again to continue.</p>'
+        login_url = '/api/auth/atlassian/login?prompt=consent'
     return f"""
 <!doctype html>
 <html lang="en">
@@ -335,11 +351,7 @@ def api_auth_csrf():
     if database_storage_enabled() and db_oauth_browser_session_data():
         try:
             context = current_request_auth_context()
-            csrf_data = {
-                'db_auth_connection_id': context.auth_connection_id,
-                'db_token_version': context.token_version,
-                'account_id': context.atlassian_account_id,
-            }
+            csrf_data = csrf_session_data_for_auth_context(context)
             token = issue_csrf_token(session, csrf_data)
         except AuthError as error:
             return auth_error_response(error, 401)
@@ -398,12 +410,15 @@ def api_atlassian_callback():
     if not code_verifier:
         return jsonify({'error': 'missing_pkce_verifier'}), 400
     config = current_auth_config()
+    exchange_started = False
     try:
         validate_auth_config(config)
         validate_local_token_store_allowed()
+        exchange_started = True
         token_data = exchange_authorization_code(config, code, code_verifier)
         user_profile = fetch_current_user(token_data.get('access_token', ''))
         if user_profile.get('account_status') != 'active':
+            _delete_current_db_oauth_browser_session()
             save_oauth_session({})
             return jsonify({'error': 'user_inactive'}), 403
         resources = fetch_accessible_resources(token_data.get('access_token', ''))
@@ -413,7 +428,9 @@ def api_atlassian_callback():
         session_payload.update(store_db_oauth_callback_session_metadata(session_token_data, resource, user_profile))
         save_oauth_session(session_payload)
     except AuthError as error:
-        save_oauth_session({})
+        if exchange_started:
+            _delete_current_db_oauth_browser_session()
+            save_oauth_session({})
         if error.code in {'missing_jira_url', 'missing_oauth_config', 'missing_flask_secret_key', 'invalid_auth_mode', 'local_token_store_not_allowed'}:
             return auth_error_response(error, 400)
         return auth_error_response(error, 401 if error.code != 'jira_site_not_accessible' else 403)
@@ -428,7 +445,6 @@ def api_auth_refresh():
         try:
             context = current_request_auth_context()
             active = current_jira_session_data(context)
-            remember_db_oauth_browser_session(active)
         except AuthError as error:
             if error.code == 'auth_required':
                 save_oauth_session({})
@@ -483,6 +499,7 @@ def api_auth_refresh():
 
 @bp.route('/api/auth/dev/home-graphql-oauth-probe', methods=['GET'])
 def api_dev_home_graphql_oauth_probe():
+    context = None
     if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
         return jsonify({'error': 'not_found'}), 404
     if os.getenv('ALLOW_DEV_DIAGNOSTIC_ENDPOINTS', '').strip().lower() not in {'1', 'true', 'yes'}:
@@ -495,7 +512,6 @@ def api_dev_home_graphql_oauth_probe():
         try:
             context = current_request_auth_context()
             active = current_jira_session_data(context)
-            remember_db_oauth_browser_session(active)
         except AuthError as error:
             if error.code == 'auth_required':
                 save_oauth_session({})
@@ -532,7 +548,14 @@ def api_dev_home_graphql_oauth_probe():
                 }), 401
             return auth_error_response(error, 401)
 
-    epm_config = get_epm_config()
+    try:
+        epm_config = get_epm_config(context=context)
+    except (ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError) as error:
+        logger.error('EPM Home OAuth probe config read failed errorClass=%s', type(error).__name__)
+        return jsonify({
+            'error': 'config_storage_unavailable',
+            'message': 'EPM configuration storage is unavailable.',
+        }), 503
     scope = epm_config.get('scope') or {}
     sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKeys') or scope.get('subGoalKey'))
     root_goal_key = normalize_epm_upper_text(request.args.get('rootGoalKey') or scope.get('rootGoalKey'))
@@ -553,6 +576,7 @@ def api_dev_home_graphql_oauth_probe():
 
 @bp.route('/api/auth/logout', methods=['POST'])
 def api_auth_logout():
+    _delete_current_db_oauth_browser_session()
     save_oauth_session({})
     session.pop('oauth_state', None)
     session.pop('oauth_pkce_verifier', None)

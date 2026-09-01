@@ -3,7 +3,7 @@ import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
-import { parseCapacityDraft, safeCapacityRecoveryUrl } from './planningCapacityUtils.js';
+import { parseCapacityDraft } from './planningCapacityUtils.js';
 
 const CAPACITY_ERROR_MESSAGES = {
     invalid_capacity: 'Enter a valid capacity of 0 or more.',
@@ -113,11 +113,6 @@ function conflictMessage(currentCapacity) {
     return `Capacity changed in Jira to ${displayCapacity(currentCapacity)}. Review and save again, or cancel.`;
 }
 
-function safeRecoveryForError(error) {
-    if (typeof window === 'undefined' || !window.location?.origin) return '';
-    return safeCapacityRecoveryUrl(error, window.location.origin);
-}
-
 function editorDomId(value) {
     return String(value || 'capacity').replace(/[^a-z0-9_-]+/gi, '-');
 }
@@ -220,7 +215,7 @@ export default function PlanningTeamCapacityCards({
         setConfigEditingSuppressed(false);
         setEditor(current => {
             if (!current || !RELOAD_RESET_CODES.has(current.errorCode)) return current;
-            return { ...current, errorCode: '', errorMessage: '', recoveryUrl: '' };
+            return { ...current, errorCode: '', errorMessage: '' };
         });
     }, [capacityReadRevision]);
 
@@ -282,7 +277,6 @@ export default function PlanningTeamCapacityCards({
             submitting: false,
             errorCode: '',
             errorMessage: '',
-            recoveryUrl: '',
         };
         editorRef.current = nextEditor;
         setEditor(nextEditor);
@@ -303,7 +297,7 @@ export default function PlanningTeamCapacityCards({
         if (!candidate || submissionRef.current) return;
         const blockedReason = getSubmitBlockedReason(candidate);
         if (blockedReason) {
-            setEditor(current => current ? { ...current, errorMessage: blockedReason, recoveryUrl: '' } : current);
+            setEditor(current => current ? { ...current, errorMessage: blockedReason } : current);
             return;
         }
         const parsed = parseCapacityDraft(candidate.draft);
@@ -318,7 +312,6 @@ export default function PlanningTeamCapacityCards({
             submitting: true,
             errorCode: '',
             errorMessage: '',
-            recoveryUrl: '',
         };
         editorRef.current = submittingEditor;
         setEditor(submittingEditor);
@@ -355,10 +348,12 @@ export default function PlanningTeamCapacityCards({
                 ? error.code
                 : 'jira_capacity_update_failed';
             const isConflict = code === 'capacity_conflict';
-            const recoveryUrl = safeRecoveryForError(error);
-            const message = isConflict
-                ? conflictMessage(error.currentCapacity)
-                : fixedErrorMessage(error);
+            const isAuthenticationFailure = error?.name === 'AuthenticationRequiredError' || code === 'auth_required';
+            const message = isAuthenticationFailure
+                ? ''
+                : isConflict
+                    ? conflictMessage(error.currentCapacity)
+                    : fixedErrorMessage(error);
 
             if (CONFIG_FAILURE_CODES.has(code)) {
                 configSuppressedRef.current = true;
@@ -376,7 +371,6 @@ export default function PlanningTeamCapacityCards({
                 submitting: false,
                 errorCode: code,
                 errorMessage: message,
-                recoveryUrl,
             };
             editorRef.current = failedEditor;
             setEditor(failedEditor);
@@ -599,9 +593,6 @@ export default function PlanningTeamCapacityCards({
                                     {statusMessage && (
                                         <div id={errorId} className="team-capacity-status" role="status" aria-live="polite">
                                             <span>{statusMessage}</span>
-                                            {activeEditor.recoveryUrl && (
-                                                <a href={activeEditor.recoveryUrl}>Recover Atlassian access</a>
-                                            )}
                                         </div>
                                     )}
                                 </>

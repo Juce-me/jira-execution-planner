@@ -24,6 +24,7 @@ class RequestAuthContext:
     account_status: str
     is_admin: bool
     project_access: tuple[ProjectAccessSnapshot, ...] = field(default_factory=tuple)
+    browser_session_id: str = ''
     granted_scopes: tuple[str, ...] = field(default_factory=tuple)
     granted_scopes_verified: bool = False
 

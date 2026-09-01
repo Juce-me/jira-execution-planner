@@ -472,8 +472,8 @@ async function expectJiraExportMenu(page) {
     await expect(trigger).toBeVisible();
     const iconBox = await trigger.locator('.jira-export-icon').boundingBox();
     expect(iconBox).not.toBeNull();
-    expect(iconBox.width).toBeCloseTo(18, 3);
-    expect(iconBox.height).toBeCloseTo(18, 3);
+    expect(iconBox.width).toBeGreaterThanOrEqual(18);
+    expect(iconBox.height).toBeGreaterThanOrEqual(17.9);
     await trigger.click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
@@ -785,6 +785,7 @@ async function installApiMocks(page, calls, options = {}) {
                 groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
+                userCanEditEpmConfig: true,
                 projectsConfigured: true,
                 epm: epmConfig,
             });

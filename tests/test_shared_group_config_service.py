@@ -2,6 +2,9 @@ import os
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
+
+from sqlalchemy.orm import Session
 
 from backend.db import engine as db_engine
 from backend.db import models
@@ -68,6 +71,19 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
             'groups': [
                 {'id': 'default', 'name': 'Default', 'teamIds': ['team-default']},
                 {'id': 'platform', 'name': 'Platform', 'teamIds': ['team-a']},
+            ],
+            'defaultGroupId': 'default',
+        }
+
+    def _db_groups(self):
+        return {
+            'version': 1,
+            'source': service.GROUPS_SOURCE_DB,
+            'groups': [
+                {'id': 'default', 'name': 'Default', 'teamIds': ['team-default']},
+                {'id': 'platform', 'name': 'Platform', 'teamIds': ['team-platform']},
+                {'id': 'mobile', 'name': 'Mobile', 'teamIds': ['team-mobile']},
+                {'id': 'empty', 'name': 'Empty', 'teamIds': []},
             ],
             'defaultGroupId': 'default',
         }
@@ -218,6 +234,192 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         self.assertFalse(preferences['customized'])
         self.assertFalse(preferences['onboardingRequired'])
         self.assertEqual(preferences['effectiveVisibleGroupIds'], ['default', 'platform'])
+
+    def test_workspace_preferences_do_not_force_the_shared_default_visible(self):
+        saved = service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+
+        self.assertEqual(saved['visibleGroupIds'], ['platform'])
+        self.assertEqual(saved['effectiveVisibleGroupIds'], ['platform'])
+        self.assertEqual(saved['activeGroupId'], 'platform')
+        self.assertFalse(saved['onboardingRequired'])
+
+    def test_workspace_preferences_are_isolated_by_user_and_workspace(self):
+        first = service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        second = service.save_group_preferences(
+            self.other_context,
+            {'visibleGroupIds': ['mobile'], 'activeGroupId': 'mobile'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        with self.factory() as session:
+            other_workspace = models.Workspace(
+                environment_key='other',
+                name='Other',
+                jira_site_url='https://other.example.atlassian.net',
+                jira_cloud_id='cloud-2',
+                created_by='test',
+            )
+            session.add(other_workspace)
+            session.commit()
+            other_workspace_context = SimpleNamespace(
+                workspace_id=other_workspace.id,
+                user_id=self.user_id,
+                auth_connection_id='connection-other-workspace',
+            )
+
+        isolated = service.load_group_preferences(
+            other_workspace_context,
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+
+        self.assertEqual(first['activeGroupId'], 'platform')
+        self.assertEqual(second['activeGroupId'], 'mobile')
+        self.assertTrue(isolated['onboardingRequired'])
+        self.assertIsNone(isolated['activeGroupId'])
+
+    def test_existing_workspace_preference_allows_multiple_visible_groups_with_one_favorite(self):
+        service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+
+        saved = service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform', 'mobile'], 'activeGroupId': 'mobile'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+
+        self.assertEqual(saved['visibleGroupIds'], ['platform', 'mobile'])
+        self.assertEqual(saved['effectiveVisibleGroupIds'], ['platform', 'mobile'])
+        self.assertEqual(saved['activeGroupId'], 'mobile')
+
+    def test_raw_workspace_preference_validation_rejects_invalid_first_and_existing_favorites(self):
+        invalid_first_payloads = (
+            {'visibleGroupIds': [], 'activeGroupId': None},
+            {'visibleGroupIds': ['platform', 'mobile'], 'activeGroupId': 'platform'},
+            {'visibleGroupIds': ['platform'], 'activeGroupId': None},
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'mobile'},
+            {'visibleGroupIds': ['platform', 'platform'], 'activeGroupId': 'platform'},
+            {'visibleGroupIds': ['unknown'], 'activeGroupId': 'unknown'},
+            {'visibleGroupIds': ['empty'], 'activeGroupId': 'empty'},
+            {'visibleGroupIds': 'platform', 'activeGroupId': 'platform'},
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 7},
+        )
+        for payload in invalid_first_payloads:
+            with self.subTest(payload=payload), self.assertRaises(service.InvalidGroupPreferences):
+                service.save_group_preferences(
+                    self.context,
+                    payload,
+                    self._db_groups(),
+                    database_url=self.database_url,
+                )
+
+        service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        for payload in (
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'mobile'},
+            {'visibleGroupIds': ['platform', 'empty'], 'activeGroupId': 'empty'},
+        ):
+            with self.subTest(existing_payload=payload), self.assertRaises(service.InvalidGroupPreferences):
+                service.save_group_preferences(
+                    self.context,
+                    payload,
+                    self._db_groups(),
+                    database_url=self.database_url,
+                )
+
+    def test_invalid_stored_workspace_favorite_reopens_onboarding_without_rewriting(self):
+        invalid_cases = (
+            (['platform'], 'deleted', self._db_groups()),
+            (['mobile'], 'platform', self._db_groups()),
+            (['empty'], 'empty', self._db_groups()),
+            (['platform'], 'platform', {
+                **self._db_groups(),
+                'groups': [group for group in self._db_groups()['groups'] if group['id'] != 'platform'],
+            }),
+        )
+        for visible_ids, favorite_id, groups_config in invalid_cases:
+            with self.subTest(visible_ids=visible_ids, favorite_id=favorite_id):
+                with self.factory() as session:
+                    session.query(models.UserGroupPreference).delete()
+                    session.add(models.UserGroupPreference(
+                        workspace_id=self.workspace_id,
+                        user_id=self.user_id,
+                        payload_version=1,
+                        visible_group_ids=visible_ids,
+                        active_group_id=favorite_id,
+                        customized=True,
+                    ))
+                    session.commit()
+
+                loaded = service.load_group_preferences(
+                    self.context,
+                    groups_config,
+                    database_url=self.database_url,
+                )
+                self.assertTrue(loaded['onboardingRequired'])
+                self.assertIsNone(loaded['activeGroupId'])
+                self.assertEqual(loaded['effectiveVisibleGroupIds'], [])
+                with self.factory() as session:
+                    stored = session.query(models.UserGroupPreference).one()
+                    self.assertEqual(stored.visible_group_ids, visible_ids)
+                    self.assertEqual(stored.active_group_id, favorite_id)
+
+    def test_concurrent_first_insert_recovers_and_applies_the_final_request(self):
+        original_flush = Session.flush
+        injected = False
+
+        def flush_with_competing_insert(session, *args, **kwargs):
+            nonlocal injected
+            pending_preference = next(
+                (row for row in session.new if isinstance(row, models.UserGroupPreference)),
+                None,
+            )
+            if pending_preference is not None and not injected:
+                injected = True
+                with self.engine.begin() as connection:
+                    connection.execute(models.UserGroupPreference.__table__.insert().values(
+                        workspace_id=self.workspace_id,
+                        user_id=self.user_id,
+                        payload_version=1,
+                        visible_group_ids=['mobile'],
+                        active_group_id='mobile',
+                        customized=True,
+                    ))
+            return original_flush(session, *args, **kwargs)
+
+        with patch.object(Session, 'flush', flush_with_competing_insert):
+            saved = service.save_group_preferences(
+                self.context,
+                {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+                self._db_groups(),
+                database_url=self.database_url,
+            )
+
+        self.assertTrue(injected)
+        self.assertEqual(saved['activeGroupId'], 'platform')
+        with self.factory() as session:
+            stored = session.query(models.UserGroupPreference).one()
+            self.assertEqual(stored.visible_group_ids, ['platform'])
+            self.assertEqual(stored.active_group_id, 'platform')
 
 
 if __name__ == '__main__':

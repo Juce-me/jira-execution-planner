@@ -242,22 +242,6 @@ export function parseCapacityDraft(text) {
         : { valid: false, value: null };
 }
 
-export function safeCapacityRecoveryUrl(error, origin) {
-    for (const candidate of [error?.loginUrl, error?.recoveryUrl]) {
-        if (typeof candidate !== 'string' || !candidate.startsWith('/') || candidate.startsWith('//')) continue;
-        try {
-            decodeURI(candidate);
-            const url = new URL(candidate, origin);
-            if (url.origin !== origin) continue;
-            if (url.pathname !== '/login' && !url.pathname.startsWith('/auth/')) continue;
-            return `${url.pathname}${url.search}${url.hash}`;
-        } catch (_error) {
-            // Ignore malformed or non-URL recovery targets.
-        }
-    }
-    return '';
-}
-
 export function getCapacityShareLabel({ showProduct, showTech, capacitySplit }) {
     if (showProduct && !showTech) {
         return `Planning Product share ${Math.round(capacitySplit.product * 100)}%`;

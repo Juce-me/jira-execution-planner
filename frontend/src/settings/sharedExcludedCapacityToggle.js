@@ -1,4 +1,5 @@
 import { saveGroupsConfig as requestSaveGroupsConfig } from '../api/configApi.js';
+import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { buildGroupsConfigWithExcludedCapacityToggle } from './groupConfigUtils.js';
 import { buildSharedGroupsPayload } from './groupVisibilityUtils.js';
 
@@ -85,6 +86,7 @@ export async function saveSharedExcludedCapacityToggle({
             result: 'success'
         });
     } catch (err) {
+        if (isAuthenticationRequiredError(err)) return;
         setGroupDraftError(err.message || 'Failed to update excluded capacity.');
         trackSettingsAction('departments', 'toggle_excluded_capacity_result', {
             source_surface: sourceSurface,

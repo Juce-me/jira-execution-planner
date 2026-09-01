@@ -15,6 +15,10 @@ import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
+import AuthRequiredGate from './components/AuthRequiredGate.jsx';
+import { AUTH_REQUIRED_EVENT, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './api/authRequired.js';
+import { completeAuthRecovery, getAuthRecoveryStores } from './api/authRecoveryCoordinator.js';
+import { clearAuthResumeState, getAuthResumeStorage, readAuthResumeState, writeAuthResumeState } from './api/authResumeState.js';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
@@ -28,7 +32,7 @@ import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
-import { useEngSprintData } from './eng/useEngSprintData.js';
+import { ENG_TASK_LOAD_OUTCOME, useEngSprintData } from './eng/useEngSprintData.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
 import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
 import { useEngProjectTrackTransitions } from './eng/useEngProjectTrackTransitions.js';
@@ -41,12 +45,13 @@ import ProjectTrackTransitionMenu from './issues/ProjectTrackTransitionMenu.jsx'
 import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkStatus, migrateEngCatchUpFilters, readEngCatchUpFilterState, resolveEngCatchUpFilters } from './eng/engCatchUpFilters.js';
 import { useEngBoardFilters } from './eng/useEngBoardFilters.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
-import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
+import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningAuthResume, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import {
     applyCapacitySaveResultForScope,
     beginCapacityReadOwnership,
     buildCapacityScopeSignature,
-    buildCapacityTotals, buildCapacityTotalsSummary,
+    buildCapacityTotals,
+    buildCapacityTotalsSummary,
     buildDisplayedTeamOptions,
     buildExcludedCapacityByTeamId,
     buildProjectCapacity,
@@ -56,8 +61,10 @@ import {
     buildTeamCapacityStats,
     buildTeamSpTotals,
     getCapacityShareLabel,
-    getCapacityStatus, getTeamCapacityMeta,
-    normalizeCapacityKey, normalizeCapacityTeamName,
+    getCapacityStatus,
+    getTeamCapacityMeta,
+    normalizeCapacityKey,
+    normalizeCapacityTeamName,
     reduceCapacityReadLifecycle,
     resolveUniqueCapacityValue,
 } from './eng/planningCapacityUtils.js';
@@ -163,6 +170,7 @@ import {
 } from './settings/groupConfigUtils.js';
 import { validatePresentGroupBoards } from './settings/groupBoardModel.js';
 import { boardDraftIsDirty, committedSectionLabels, groupConfigConflictMessages, rebaseSharedGroupsPayload } from './settings/groupsConfigConflict.js';
+import { committedWorkspaceSectionLabels, workspaceConfigConflictMessages } from './settings/workspaceConfigConflict.js';
 import { saveSharedExcludedCapacityToggle } from './settings/sharedExcludedCapacityToggle.js';
 import { useGroupVisibilityPreferences } from './settings/useGroupVisibilityPreferences.js';
 import {
@@ -266,7 +274,7 @@ import {
         const EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY = 3;
         const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access']);
         const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels', 'boards']);
-        const SHARED_CONFIGURATION_TAB_IDS = new Set([...ADMIN_SETTINGS_TAB_IDS, 'epm']);
+        const SHARED_CONFIGURATION_TAB_IDS = new Set(ADMIN_SETTINGS_TAB_IDS);
         function isActiveHomeTokenConnection(connection) {
             return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
         }
@@ -472,7 +480,17 @@ import {
             const epmSubGoalFilterDropdownRefs = useRef({ main: null, compact: null });
             const [showEpmSortDropdown, setShowEpmSortDropdown] = useState(false);
             const epmSortDropdownRefs = useRef({ main: null, compact: null });
-            const [epmConfigDraft, setEpmConfigDraft] = useState(createEmptyEpmConfigDraft());
+            const [epmConfigDraft, setEpmConfigDraftState] = useState(createEmptyEpmConfigDraft());
+            const epmConfigDraftRef = useRef(epmConfigDraft);
+            const epmConfigDraftGenerationRef = useRef(0);
+            const setEpmConfigDraft = React.useCallback((updater) => {
+                setEpmConfigDraftState((previous) => {
+                    const next = typeof updater === 'function' ? updater(previous) : updater;
+                    epmConfigDraftRef.current = next;
+                    epmConfigDraftGenerationRef.current += 1;
+                    return next;
+                });
+            }, []);
             const [epmConfigLoading, setEpmConfigLoading] = useState(false);
             const [epmConfigSaving, setEpmConfigSaving] = useState(false);
             const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);
@@ -538,6 +556,11 @@ import {
             const [groupDraftError, setGroupDraftError] = useState('');
             // { current, savedSections }: a rejected groups POST, kept so the draft survives it (D45).
             const [groupsConfigConflict, setGroupsConfigConflict] = useState(null);
+            const [workspaceConfigConflict, setWorkspaceConfigConflict] = useState(null);
+            const [sharedConfigRevision, setSharedConfigRevision] = useState(0);
+            const sharedConfigRevisionRef = useRef(0);
+            const lastCommittedWorkspaceSectionsRef = useRef([]);
+            const [sharedConfigReady, setSharedConfigReady] = useState(false);
             const [groupImportText, setGroupImportText] = useState('');
             const [showGroupImport, setShowGroupImport] = useState(false);
             const [showGroupAdvanced, setShowGroupAdvanced] = useState(false);
@@ -581,7 +604,7 @@ import {
                 active: showGroupManage && groupManageTab === 'access',
             });
             const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
-            const canEditEpmConfiguration = canEditSharedConfiguration || userCanEditEpmConfig;
+            const canEditEpmConfiguration = userCanEditEpmConfig === true;
             const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
             const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
@@ -648,9 +671,6 @@ import {
             const [capacityFieldIdDraft, setCapacityFieldIdDraft] = useState('');
             const [capacityFieldNameDraft, setCapacityFieldNameDraft] = useState('');
             const capacityBaselineRef = useRef('');
-            const [capacityConfigRevision, setCapacityConfigRevision] = useState(null);
-            const [capacityConfigConflict, setCapacityConfigConflict] = useState(null);
-            const [capacityRequiresResolution, setCapacityRequiresResolution] = useState(false);
             const [capacityProjectSearchQuery, setCapacityProjectSearchQuery] = useState('');
             const [capacityProjectSearchOpen, setCapacityProjectSearchOpen] = useState(false);
             const [capacityProjectSearchIndex, setCapacityProjectSearchIndex] = useState(0);
@@ -682,7 +702,7 @@ import {
                 deliveryOwnerFieldSearchQuery, setDeliveryOwnerFieldSearchQuery, deliveryOwnerFieldSearchOpen, setDeliveryOwnerFieldSearchOpen,
                 deliveryOwnerFieldSearchIndex, setDeliveryOwnerFieldSearchIndex, deliveryOwnerFieldSearchInputRef, deliveryOwnerFieldSearchResults, deliveryOwnerFieldSearchHidden,
                 handleDeliveryOwnerFieldSearchKeyDown, isDeliveryOwnerFieldDirty, saveDeliveryOwnerFieldConfig,
-                loadAllFieldConfigs, anyFieldConfigDirty, dirtyFieldConfigCount,
+                loadAllFieldConfigs, seedSharedFieldConfigs, anyFieldConfigDirty, dirtyFieldConfigCount,
             } = useJiraFieldPickers({ backendUrl: BACKEND_URL, jiraFields });
             const [issueTypesDraft, setIssueTypesDraft] = useState(['Story']);
             const issueTypesBaselineRef = useRef(JSON.stringify(['Story']));
@@ -730,6 +750,21 @@ import {
             const planningHydratedScopeRef = useRef('');
             const planningLoadedSelectionRef = useRef(null);
             const planningBaselineScopeRef = useRef('');
+            const authResumePrincipalRef = useRef(null);
+            const authResumeSnapshotRef = useRef(null);
+            const pendingShellAuthResumeRef = useRef(null);
+            const pendingPlanningAuthResumeRef = useRef(null);
+            const authResumeShellSettledRef = useRef(null);
+            const planningAuthResumeLoadRef = useRef(null);
+            const planningAuthResumePersistenceFailedRef = useRef('');
+            const [authResumeStagedRevision, setAuthResumeStagedRevision] = useState(0);
+            const [planningAuthResumeLoadRevision, setPlanningAuthResumeLoadRevision] = useState(0);
+            const clearAuthResumeWhenSettled = React.useCallback(() => {
+                if (readPendingAuthenticationRequired()) return;
+                if (planningAuthResumePersistenceFailedRef.current) return;
+                if (pendingShellAuthResumeRef.current || pendingPlanningAuthResumeRef.current) return;
+                clearAuthResumeState(getAuthResumeStorage(window));
+            }, []);
             const teamSelectionHydratedScopeRef = useRef('');
             const teamSelectionHydratedSelectionRef = useRef(null); const teamSelectionCarryForwardRef = useRef(null);
             const teamSelectionSkipPersistScopeRef = useRef('');
@@ -978,6 +1013,7 @@ import {
             const catchUpAlertLoadRef = useRef('');
             const catchUpAlertForceRefreshRef = useRef(false);
             const catchUpAlertVersionRef = useRef(0);
+            const groupLoadVersionRef = useRef(0);
             const rearmCatchUpAlerts = () => { catchUpAlertLoadRef.current = ''; catchUpAlertForceRefreshRef.current = true; catchUpAlertVersionRef.current += 1; setCatchUpAlertRefreshNonce(value => value + 1); };
             const epmSettingsProjectsRequestIdRef = useRef(0);
             const epmSettingsProjectsCacheRef = useRef(new Map());
@@ -1017,6 +1053,7 @@ import {
                     setHomeTokenConnection(nextConnection);
                     return nextConnection;
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return null;
                     reportServerConnectionError(err);
                     setHomeTokenConnection({ connected: false });
                     return { connected: false };
@@ -1042,11 +1079,26 @@ import {
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
+            const applyPreferenceGroupsSnapshot = React.useCallback((snapshot) => {
+                const normalized = normalizeGroupsConfig(snapshot);
+                setGroupsConfig(normalized);
+                setGroupWarnings(snapshot?.warnings || []);
+                setGroupConfigSource(normalized.source || snapshot?.source || '');
+                if (showGroupManage) {
+                    setGroupDraft(normalized);
+                    groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
+                }
+                return normalized;
+            }, [showGroupManage]);
+            const personalGroupPreferencesEnabled = groupsConfig.source === 'workspace_db';
             const {
                 groupPreferences,
                 setGroupPreferences,
                 visibleGroupDraftIds,
                 setVisibleGroupDraftIds,
+                favoriteGroupDraftId,
+                setFavoriteGroupDraft,
+                favoriteGroupValidationError,
                 setGroupPreferencesSaving,
                 groupVisibilitySaving,
                 isGroupVisibilityDraftDirty,
@@ -1054,8 +1106,8 @@ import {
                 initializeGroupPreferencesDraft,
                 isGroupVisibleInControls,
                 toggleGroupVisibleInControls,
-                firstRunSelectedGroupIds,
-                toggleFirstRunGroup,
+                firstRunFavoriteGroupId,
+                selectFirstRunFavoriteGroup,
                 saveFirstRunGroupPreferences,
                 openFirstRunAddGroup,
                 firstRunSaving,
@@ -1071,9 +1123,10 @@ import {
                 setShowGroupManage,
                 setGroupManageTab,
                 setDepartmentSettingsTab,
+                applyPreferenceGroupsSnapshot,
                 trackSettingsAction,
                 bucketCount,
-                useBackendPreferences: groupsConfig.source === 'workspace_db',
+                useBackendPreferences: personalGroupPreferencesEnabled,
             });
             useEffect(() => {
                 if (!homeTokenConnectionLoaded) return;
@@ -1178,6 +1231,7 @@ import {
                     if (epmSettingsProjectsRequestIdRef.current !== requestId) {
                         return [];
                     }
+                    if (isAuthenticationRequiredError(err)) return [];
                     console.error('Failed to load EPM projects:', err);
                     setEpmSettingsProjectsError(err?.message || 'Failed to load EPM projects.');
                     return [];
@@ -1218,10 +1272,17 @@ import {
                 setGroupDraftError('');
                 trackSettingsAction('epm', 'save', { dirty_state: isEpmConfigDirty ? 'dirty' : 'clean', project_count_bucket: bucketCount(epmConfigDraft?.projects?.length || 0) });
                 try {
-                    const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraft);
+                    const submittedGeneration = epmConfigDraftGenerationRef.current;
+                    const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraftRef.current);
                     const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);
                     const nextConfig = normalizeEpmConfigDraft(payload);
-                    applySavedEpmConfig(nextConfig);
+                    const draftUnchanged = epmConfigDraftGenerationRef.current === submittedGeneration;
+                    if (draftUnchanged) {
+                        applySavedEpmConfig(nextConfig);
+                    } else {
+                        epmConfigBaselineRef.current = JSON.stringify(nextConfig);
+                        setEpmConfigLoaded(true);
+                    }
                     updateEpmSettingsProjectRowsAfterSave(nextConfig);
                     if (hasSavedEpmScopeConfig(nextConfig)) {
                         await refreshEpmProjects();
@@ -1232,11 +1293,13 @@ import {
                         setEpmSettingsProjectsLoaded(false);
                     }
                     trackSettingsAction('epm', 'save_result', { result: 'success' });
+                    return draftUnchanged;
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) throw err;
                     const message = err?.message || 'Failed to save EPM settings.';
                     setGroupDraftError(message);
                     console.error('Failed to save EPM config:', err);
-                    trackSettingsAction('epm', 'save_result', { result: 'failure' });
+                    if (err?.status !== 409) trackSettingsAction('epm', 'save_result', { result: 'failure' });
                     throw err;
                 } finally {
                     setEpmConfigSaving(false);
@@ -1335,6 +1398,7 @@ import {
                         setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
                     }
                 } catch (error) {
+                    if (isAuthenticationRequiredError(error)) return;
                     if (labelSearchRequestIdRef.current[key] === requestId) {
                         setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
                         setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
@@ -1528,6 +1592,7 @@ import {
                     if (epmSubGoalsRequestIdRef.current !== requestId) {
                         return { goals: [], hasExpectedSubGoal: false, lookupFailed: true };
                     }
+                    if (isAuthenticationRequiredError(err)) return { goals: [], hasExpectedSubGoal: true, lookupFailed: true };
                     console.error('Failed to fetch EPM sub-goals:', err);
                     setEpmSubGoals([]);
                     setEpmSubGoalsError(err?.message || '');
@@ -1655,12 +1720,10 @@ import {
                 setShowEpmSortDropdown(next.sort);
             };
 
-            const invalidateSprintDataForConfigSave = (refreshTarget) => {
-                if (!selectedSprint) return;
+            const clearEngGroupScopeData = React.useCallback(({ clearScenario = true } = {}) => {
                 abortSprintFetches();
-                if (activeGroupId) {
-                    groupStateRef.current.delete(activeGroupId);
-                }
+                groupLoadVersionRef.current += 1;
+                groupStateRef.current.clear();
                 setTasksFetched(false);
                 setProductTasks([]);
                 setTechTasks([]);
@@ -1678,6 +1741,7 @@ import {
                 setMissingInfoEpics([]);
                 setBacklogProductEpics([]);
                 setBacklogTechEpics([]);
+                setDependencyData({});
                 clearStorySubtasks();
                 burnoutCacheRef.current = {};
                 cohortCacheRef.current = {};
@@ -1693,15 +1757,29 @@ import {
                 setExcludedCapacityData(null);
                 setExcludedCapacityError('');
                 setExcludedCapacityLoading(false);
-                if (refreshTarget === 'scenario') {
+                setCapacityState({ capacityByTeam: {}, capacityTargetsByTeam: {}, mutationEnabled: false, scopeSignature: '' });
+                setCapacityLoading(false);
+                setCapacityReadError('');
+                setCapacityDataStale(false);
+                if (clearScenario) {
                     setScenarioData(null);
                     setScenarioError('');
+                    setScenarioLoading(false);
                 }
+                setLoading(false);
+                setError('');
+                setProductTasksLoading(false);
+                setTechTasksLoading(false);
                 sprintLoadRef.current = { sprintId: selectedSprint, product: false, tech: false };
                 lastLoadedSprintRef.current = null;
                 catchUpAlertLoadRef.current = '';
                 catchUpAlertForceRefreshRef.current = false;
                 catchUpAlertVersionRef.current += 1;
+            }, [abortSprintFetches, selectedSprint]);
+
+            const invalidateSprintDataForConfigSave = (refreshTarget) => {
+                if (!selectedSprint) return;
+                clearEngGroupScopeData({ clearScenario: refreshTarget === 'scenario' });
             };
 
             const queueConfigSaveRefresh = (refreshTarget) => {
@@ -1738,8 +1816,6 @@ import {
                 // below so a first-time user does not start Jira work before choosing a scope.
                 loadConfig();
                 loadGroupsConfig();
-                loadSelectedProjects();
-                loadPriorityWeightsConfig();
             }, []);
 
             useEffect(() => {
@@ -1801,18 +1877,20 @@ import {
                 setShowGroupListMobile(false);
                 setProjectSearchQuery('');
                 setActiveGroupDraftId(resolveInitialGroupId(normalized));
-                loadSelectedProjects();
-                loadPriorityWeightsConfig();
-                loadBoardConfig();
-                loadCapacityConfig();
-                loadAllFieldConfigs();
-                loadIssueTypesConfig();
+                if (authMode !== 'atlassian_oauth') {
+                    loadSelectedProjects();
+                    loadPriorityWeightsConfig();
+                    loadBoardConfig();
+                    loadCapacityConfig();
+                    loadAllFieldConfigs();
+                    loadIssueTypesConfig();
+                }
                 fetchAvailableIssueTypes();
                 if (!jiraProjects.length) fetchJiraProjects();
                 setAvailableTeams(loadTeamsFromCurrentView());
                 setLoadingTeams(false);
                 loadTeamCatalog();
-            }, [showGroupManage, groupsConfig]);
+            }, [showGroupManage]);
 
             useEffect(() => {
                 if (!showGroupManage || groupManageTab !== 'epm') return;
@@ -1826,12 +1904,23 @@ import {
                     setEpmRootGoalsError('');
                     let rootGoalKey = '';
                     let loadedConfig = null;
+                    let requestGeneration = null;
                     try {
-                        const config = await loadEpmConfig();
+                        if (isEpmConfigDirty) {
+                            loadedConfig = epmConfigDraft;
+                            rootGoalKey = String(epmConfigDraft.scope?.rootGoalKey || '').trim().toUpperCase();
+                        } else {
+                            requestGeneration = epmConfigDraftGenerationRef.current;
+                            const config = await loadEpmConfig();
+                            if (!cancelled) {
+                                const nextConfig = epmConfigDraftGenerationRef.current === requestGeneration
+                                    ? applySavedEpmConfig(config)
+                                    : epmConfigDraftRef.current;
+                                loadedConfig = nextConfig;
+                                rootGoalKey = String(nextConfig.scope?.rootGoalKey || '').trim().toUpperCase();
+                            }
+                        }
                         if (!cancelled) {
-                            const nextConfig = applySavedEpmConfig(config);
-                            loadedConfig = nextConfig;
-                            rootGoalKey = String(nextConfig.scope?.rootGoalKey || '').trim().toUpperCase();
                             setEpmRootGoalQuery('');
                             setEpmSubGoalQuery('');
                             setEpmRootGoalOpen(false);
@@ -1840,9 +1929,12 @@ import {
                             setEpmSubGoalIndex(0);
                         }
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
                         console.error('Failed to load EPM config:', err);
                         if (!cancelled) {
-                            applySavedEpmConfig(emptyEpmConfig);
+                            if (requestGeneration === epmConfigDraftGenerationRef.current) {
+                                applySavedEpmConfig(emptyEpmConfig);
+                            }
                             setGroupDraftError('Failed to load EPM settings.');
                             setEpmConfigLoading(false);
                         }
@@ -1862,6 +1954,7 @@ import {
                             });
                         }
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
                         console.error('Failed to load EPM scope metadata:', err);
                         if (!cancelled) {
                             setEpmScopeMeta({ cloudId: '', error: err?.message || '' });
@@ -1876,6 +1969,7 @@ import {
                             setEpmRootGoalsError(String(rootGoalsPayload?.error || '').trim());
                         }
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
                         console.error('Failed to load EPM root goals:', err);
                         if (!cancelled) {
                             setEpmRootGoals([]);
@@ -2190,6 +2284,7 @@ import {
                         return resolveVisibleActiveGroupId(normalized, effectiveIds, preferred);
                     });
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (reportServerConnectionError(err)) {
                         setGroupsError('');
                     } else {
@@ -2214,6 +2309,7 @@ import {
                         setAvailableTeams(catalogTeams);
                     }
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     console.warn('Failed to load team catalog:', err);
                 }
             };
@@ -2229,6 +2325,7 @@ import {
                     });
                     return data;
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     console.warn('Failed to save team catalog:', err);
                 }
             };
@@ -2285,6 +2382,7 @@ import {
                         source: 'sprint'
                     });
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     console.error('Error fetching teams from Jira:', err);
                     setGroupDraftError(`Failed to fetch teams: ${err.message}`);
                 } finally {
@@ -2312,6 +2410,7 @@ import {
                         resolvedAt: new Date().toISOString()
                     }, false);
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     console.warn('Failed to resolve team names:', err);
                 }
             };
@@ -2665,16 +2764,20 @@ import {
                         errors.push(`${groupName}: ${overlap[0]} cannot be both excluded capacity and Ad Hoc capacity.`);
                     }
                 });
+                if (favoriteGroupValidationError) {
+                    errors.push(favoriteGroupValidationError);
+                }
                 errors.push(...validatePresentGroupBoards(groupDraft?.groups));
                 return errors;
-            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft]);
+            }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft, favoriteGroupValidationError]);
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving || epmConfigSaving) return 'Save in progress';
+                if (authMode === 'atlassian_oauth' && !sharedConfigReady) return 'Shared settings are loading';
                 if (canEditEpmConfiguration && isEpmConfigDirty && epmConfigLoading) return 'EPM settings are loading';
                 if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
                 if (!isGroupDraftDirty) return 'No changes to save';
                 return '';
-            }, [groupSaving, epmConfigSaving, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
+            }, [groupSaving, epmConfigSaving, authMode, sharedConfigReady, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -2687,6 +2790,11 @@ import {
             };
 
             const discardGroupDraftChanges = () => {
+                if (isEpmConfigDirty) {
+                    try {
+                        setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}'));
+                    } catch (_) { /* baseline is produced by this document */ }
+                }
                 setShowGroupDiscardConfirm(false);
                 closeGroupManage();
             };
@@ -3196,6 +3304,8 @@ import {
                 setGroupSaving(true);
                 setGroupDraftError('');
                 setGroupsConfigConflict(null);
+                setWorkspaceConfigConflict(null);
+                const committedAdminSections = {};
                 try {
                     const savingAdminSettings = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
                     const sharedGroupsChanged = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current);
@@ -3215,36 +3325,42 @@ import {
                         projectsChanged = isProjectsDraftDirty;
                         if (projectsChanged) {
                             await saveProjectSelection();
+                            committedAdminSections.projects = true;
                         }
 
                         priorityWeightsChanged = isPriorityWeightsDirty;
                         if (priorityWeightsChanged) {
                             await savePriorityWeightsConfig();
+                            committedAdminSections.priorityWeights = true;
                         }
 
                         boardChanged = isBoardConfigDirty;
                         if (boardChanged) {
                             await saveBoardConfig();
+                            committedAdminSections.board = true;
                         }
 
                         // Save capacity config if changed
                         capacityChanged = isCapacityDraftDirty;
                         if (capacityChanged) {
                             await saveCapacityConfig();
+                            committedAdminSections.capacity = true;
                         }
 
                         // Save custom field configs if changed
-                        if (isSprintFieldDirty) await saveSprintFieldConfig();
-                        if (isParentNameFieldDirty) await saveParentNameFieldConfig();
-                        if (isStoryPointsFieldDirty) await saveStoryPointsFieldConfig();
-                        if (isTeamFieldDirty) await saveTeamFieldConfig();
-                        if (isDeliveryOwnerFieldDirty) await saveDeliveryOwnerFieldConfig();
+                        if (isSprintFieldDirty) commitSharedConfigRevision(await saveSprintFieldConfig(sharedConfigRevisionRef.current));
+                        if (isParentNameFieldDirty) commitSharedConfigRevision(await saveParentNameFieldConfig(sharedConfigRevisionRef.current));
+                        if (isStoryPointsFieldDirty) commitSharedConfigRevision(await saveStoryPointsFieldConfig(sharedConfigRevisionRef.current));
+                        if (isTeamFieldDirty) commitSharedConfigRevision(await saveTeamFieldConfig(sharedConfigRevisionRef.current));
+                        if (isDeliveryOwnerFieldDirty) commitSharedConfigRevision(await saveDeliveryOwnerFieldConfig(sharedConfigRevisionRef.current));
                         fieldConfigsChanged = isSprintFieldDirty || isParentNameFieldDirty || isStoryPointsFieldDirty || isTeamFieldDirty || isDeliveryOwnerFieldDirty;
+                        if (fieldConfigsChanged) committedAdminSections.fieldConfigs = true;
 
                         // Save issue types config if changed
                         issueTypesChanged = isIssueTypesDraftDirty;
                         if (issueTypesChanged) {
                             await saveIssueTypesConfig();
+                            committedAdminSections.issueTypes = true;
                         }
 
                         if (isAdminAccessDirty) {
@@ -3310,13 +3426,16 @@ import {
                     try {
                         const cfg = await fetchAppConfig(BACKEND_URL);
                         setAuthMode(cfg.authMode || '');
-                        setCapacityEnabled(Boolean(cfg.capacityProject));
+                        setCapacityEnabled(Boolean(cfg.capacityProject || cfg.capacityConfigRequiresResolution));
                         setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
                         setUserCanEditSettings(cfg.userCanEditSettings === true);
                         setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
                         setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
                         setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
-                    } catch (_) { /* best-effort */ }
+                    } catch (err) {
+                        if (isAuthenticationRequiredError(err)) throw err;
+                        /* best-effort */
+                    }
 
                     invalidateSprintDataForConfigSave(refreshTarget);
                     queueConfigSaveRefresh(refreshTarget);
@@ -3329,10 +3448,32 @@ import {
                         closeGroupManage();
                     }
                     trackSettingsAction(analyticsSection, 'save_result', { result: 'success' });
+                    lastCommittedWorkspaceSectionsRef.current = committedWorkspaceSectionLabels(committedAdminSections);
                     return true;
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return false;
+                    if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict') {
+                        const pendingSections = committedWorkspaceSectionLabels({
+                            projects: isProjectsDraftDirty && !committedAdminSections.projects,
+                            priorityWeights: isPriorityWeightsDirty && !committedAdminSections.priorityWeights,
+                            board: isBoardConfigDirty && !committedAdminSections.board,
+                            capacity: isCapacityDraftDirty && !committedAdminSections.capacity,
+                            fieldConfigs: anyFieldConfigDirty && !committedAdminSections.fieldConfigs,
+                            issueTypes: isIssueTypesDraftDirty && !committedAdminSections.issueTypes,
+                        });
+                        setWorkspaceConfigConflict({
+                            ...err.payload,
+                            savedSections: committedWorkspaceSectionLabels(committedAdminSections),
+                            pendingSections,
+                        });
+                        trackSettingsAction('admin', 'save_result', {
+                            result: 'failure',
+                            conflict_state: 'remote',
+                            conflict_count_bucket: '1_5',
+                        });
+                    }
                     setGroupDraftError(err.message || 'Failed to save groups.');
-                    trackSettingsAction(groupManageTab, 'save_result', { result: 'failure' });
+                    if (err?.status !== 409) trackSettingsAction(groupManageTab, 'save_result', { result: 'failure' });
                     return false;
                 } finally {
                     setGroupPreferencesSaving(false);
@@ -3349,12 +3490,15 @@ import {
                 const hasSharedSettingsChanges = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
                 const hasDepartmentSettingsChanges = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current) || isGroupVisibilityDraftDirty;
                 const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;
+                lastCommittedWorkspaceSectionsRef.current = [];
                 try {
+                    let epmDraftUnchanged = true;
                     if (hasSharedSettingsChanges || hasDepartmentSettingsChanges) {
                         const saved = await saveGroupsConfig({ closeOnSuccess: false, rebaseOnto });
                         if (!saved) return;
                     }
-                    if (hasEpmSettingsChanges) await saveEpmConfig();
+                    if (hasEpmSettingsChanges) epmDraftUnchanged = await saveEpmConfig();
+                    if (hasEpmSettingsChanges && !epmDraftUnchanged) return;
                     if (hasSharedSettingsChanges || hasDepartmentSettingsChanges || hasEpmSettingsChanges) closeGroupManage();
                 } catch (_) {}
             };
@@ -3376,9 +3520,24 @@ import {
                 setGroupDraftError('');
             };
 
+            const keepMineOnWorkspaceConfigConflict = async () => {
+                if (!workspaceConfigConflict) return;
+                sharedConfigRevisionRef.current = Number(workspaceConfigConflict.currentRevision || 0);
+                setSharedConfigRevision(sharedConfigRevisionRef.current);
+                setWorkspaceConfigConflict(null);
+                await saveAllSettings();
+            };
+
+            const useLatestWorkspaceConfig = async () => {
+                setWorkspaceConfigConflict(null);
+                setGroupDraftError('');
+                await loadConfig({ preserveEpmDraft: isEpmConfigDirty });
+            };
+
             useEffect(() => {
                 if (!showGroupManage) return;
                 const handleKey = (event) => {
+                    if (readPendingAuthenticationRequired()) return;
                     const key = event.key;
                     if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
                         event.preventDefault();
@@ -3891,6 +4050,7 @@ import {
                     setSavedSelectedProjects(selected);
                     selectedProjectsBaselineRef.current = JSON.stringify(selected);
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load selected projects:', err);
                     }
@@ -3931,26 +4091,30 @@ import {
                 }
             };
 
+            const commitSharedConfigRevision = (payload) => {
+                if (!Number.isInteger(payload?.configRevision)) return;
+                sharedConfigRevisionRef.current = payload.configRevision;
+                setSharedConfigRevision(payload.configRevision);
+            };
+
             const saveBoardConfig = async () => {
-                const response = await requestSaveBoardConfig(BACKEND_URL, { boardId: boardIdDraft, boardName: boardNameDraft });
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    throw new Error(err.error || `Save failed (${response.status})`);
-                }
+                const payload = await requestSaveBoardConfig(
+                    BACKEND_URL,
+                    { boardId: boardIdDraft, boardName: boardNameDraft },
+                    sharedConfigRevisionRef.current,
+                );
+                commitSharedConfigRevision(payload);
                 boardConfigBaselineRef.current = JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft });
                 setSavedBoardId(boardIdDraft);
+                return payload;
             };
 
             const savePriorityWeightsConfig = async () => {
-                const response = await requestSavePriorityWeightsConfig(BACKEND_URL, (priorityWeightsDraft || []).map((row) => ({
+                const data = await requestSavePriorityWeightsConfig(BACKEND_URL, (priorityWeightsDraft || []).map((row) => ({
                     priority: String(row.priority || '').trim(),
                     weight: Number(row.weight)
-                })));
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    throw new Error(err.error || `Save failed (${response.status})`);
-                }
-                const data = await response.json();
+                })), sharedConfigRevisionRef.current);
+                commitSharedConfigRevision(data);
                 const rows = clonePriorityWeightRows(data.weights);
                 setPriorityWeightsDraft(rows);
                 setEffectivePriorityWeightsRows(rows);
@@ -4084,11 +4248,8 @@ import {
                 setGroupSaving(true);
                 setGroupDraftError('');
                 try {
-                    const response = await requestSaveSelectedProjects(BACKEND_URL, selectedProjectsDraft);
-                    if (!response.ok) {
-                        const errorPayload = await response.json().catch(() => ({}));
-                        throw new Error(errorPayload.error || `Save failed (${response.status})`);
-                    }
+                    const payload = await requestSaveSelectedProjects(BACKEND_URL, selectedProjectsDraft, sharedConfigRevisionRef.current);
+                    commitSharedConfigRevision(payload);
                     selectedProjectsBaselineRef.current = JSON.stringify(selectedProjectsDraft);
                     setSavedSelectedProjects([...selectedProjectsDraft]);
                 } catch (err) {
@@ -4107,9 +4268,6 @@ import {
                     setCapacityProjectDraft(data.project || '');
                     setCapacityFieldIdDraft(data.fieldId || '');
                     setCapacityFieldNameDraft(data.fieldName || '');
-                    setCapacityConfigRevision(Number.isInteger(data.configRevision) ? data.configRevision : null);
-                    setCapacityRequiresResolution(data.requiresResolution === true);
-                    setCapacityConfigConflict(null);
                     capacityBaselineRef.current = JSON.stringify({ project: data.project || '', fieldId: data.fieldId || '', fieldName: data.fieldName || '' });
                 } catch (err) {
                     console.error('Failed to load capacity config:', err);
@@ -4117,20 +4275,12 @@ import {
             };
 
             const saveCapacityConfig = async () => {
-                const payload = { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft };
-                if (Number.isInteger(capacityConfigRevision)) payload.baseRevision = capacityConfigRevision;
-                const response = await requestSaveCapacityConfig(BACKEND_URL, payload);
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    if (response.status === 409 && err.error === 'capacity_config_conflict' && err.current) {
-                        setCapacityConfigConflict(err.current);
-                    }
-                    throw new Error(err.error || `Save failed (${response.status})`);
-                }
-                const saved = await response.json().catch(() => ({}));
-                setCapacityConfigRevision(Number.isInteger(saved.configRevision) ? saved.configRevision : capacityConfigRevision);
-                setCapacityRequiresResolution(saved.requiresResolution === true);
-                setCapacityConfigConflict(null);
+                const payload = await requestSaveCapacityConfig(
+                    BACKEND_URL,
+                    { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft },
+                    sharedConfigRevisionRef.current,
+                );
+                commitSharedConfigRevision(payload);
                 capacityBaselineRef.current = JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
             };
 
@@ -4148,11 +4298,8 @@ import {
             };
 
             const saveIssueTypesConfig = async () => {
-                const response = await requestSaveIssueTypesConfig(BACKEND_URL, issueTypesDraft);
-                if (!response.ok) {
-                    const err = await response.json().catch(() => ({}));
-                    throw new Error(err.error || `Save failed (${response.status})`);
-                }
+                const payload = await requestSaveIssueTypesConfig(BACKEND_URL, issueTypesDraft, sharedConfigRevisionRef.current);
+                commitSharedConfigRevision(payload);
                 issueTypesBaselineRef.current = JSON.stringify(issueTypesDraft);
             };
 
@@ -4702,6 +4849,54 @@ import {
                 if (selectedSprint === null || !activeGroupId) return '';
                 return buildTeamSelectionScopeKey({ sprintId: selectedSprint, groupId: activeGroupId });
             }, [selectedSprint, activeGroupId]);
+            authResumeSnapshotRef.current = {
+                principal: authResumePrincipalRef.current,
+                view: {
+                    selectedView,
+                    activeGroupId,
+                    selectedSprint: selectedSprint === null ? '' : String(selectedSprint),
+                    engMode: showPlanning ? 'planning' : showStats ? 'statistics' : showScenario ? 'scenario' : showBoard ? 'board' : 'catch-up',
+                    settingsOpen: showGroupManage,
+                    settingsTab: groupManageTab,
+                },
+                planning: {
+                    scopeKey: planningScopeKey,
+                    selectedTaskKeys: selectedTaskKeysFromMap(selectedTasks),
+                    selectedTeams: normalizeSelectedTeams(selectedTeams),
+                    selectionMode: planningSelectionMode,
+                },
+            };
+            useEffect(() => {
+                const captureAuthResume = () => {
+                    const principal = authResumePrincipalRef.current;
+                    const tabStorage = getAuthResumeStorage(window);
+                    if (!tabStorage || !principal?.workspaceId || !principal?.viewConfigId) return;
+                    writeAuthResumeState(tabStorage, authResumeSnapshotRef.current);
+                };
+                window.addEventListener(AUTH_REQUIRED_EVENT, captureAuthResume);
+                if (readPendingAuthenticationRequired()) captureAuthResume();
+                return () => window.removeEventListener(AUTH_REQUIRED_EVENT, captureAuthResume);
+            }, []);
+            useEffect(() => {
+                const resume = pendingShellAuthResumeRef.current;
+                const settled = authResumeShellSettledRef.current;
+                if (!resume || !settled || settled.has('group') || groupsLoading) return;
+                const requestedGroup = String(resume.activeGroupId || '');
+                const groupAvailable = requestedGroup && visibleControlGroups.some(group => String(group.id) === requestedGroup);
+                if (groupAvailable) setActiveGroupId(requestedGroup);
+                settled.add('group');
+            }, [groupsLoading, visibleControlGroups, activeGroupId, authResumeStagedRevision]);
+            useEffect(() => {
+                const resume = pendingShellAuthResumeRef.current;
+                const settled = authResumeShellSettledRef.current;
+                if (!resume || !settled || settled.has('sprint') || sprintsLoading) return;
+                const requestedSprint = availableSprints.find(sprint => String(sprint.id) === resume.selectedSprint);
+                if (requestedSprint) {
+                    setSelectedSprint(requestedSprint.id);
+                    setSprintName(requestedSprint.name);
+                }
+                settled.add('sprint');
+            }, [sprintsLoading, availableSprints, selectedSprint, authResumeStagedRevision]);
             const buildDefaultGroupState = (groupId) => {
                 const hasStoredPlanningState = planningScopeKey
                     ? hasPlanningState(window.localStorage, planningScopeKey)
@@ -5186,6 +5381,53 @@ import {
             }, [planningScopeKey, activeGroupId, selectedSprint, activeGroupTeamIds.join('|')]);
 
             useEffect(() => {
+                const resume = pendingShellAuthResumeRef.current;
+                const settled = authResumeShellSettledRef.current;
+                if (!resume || !settled?.has('group') || !settled.has('sprint')) return;
+                const requestedGroupAvailable = resume.activeGroupId
+                    && visibleControlGroups.some(group => String(group.id) === resume.activeGroupId);
+                if (requestedGroupAvailable && String(activeGroupId) !== resume.activeGroupId) return;
+                const requestedSprint = availableSprints.find(sprint => String(sprint.id) === resume.selectedSprint);
+                if (requestedSprint && String(selectedSprint) !== resume.selectedSprint) return;
+                if (planningScopeKey && planningHydratedScopeRef.current !== planningScopeKey) return;
+                if (!sharedConfigReady || !homeTokenConnectionLoaded) return;
+
+                const nextView = resume.selectedView === 'epm' && showEpmNavigation ? 'epm' : 'eng';
+                const unavailableMode = (resume.engMode === 'planning' && isCompletedSprintSelected)
+                    || (resume.engMode === 'statistics' && isFutureSprintSelected)
+                    || (resume.engMode === 'scenario' && isCompletedSprintSelected);
+                const nextMode = unavailableMode ? 'catch-up' : resume.engMode;
+                if (resume.engMode === 'planning' && nextMode !== 'planning') {
+                    pendingPlanningAuthResumeRef.current = null;
+                    planningAuthResumeLoadRef.current = null;
+                }
+                setSelectedView(nextView);
+                setShowPlanning(nextMode === 'planning');
+                setShowStats(nextMode === 'statistics');
+                setShowScenario(nextMode === 'scenario');
+                setShowBoard(nextMode === 'board');
+
+                const settingsTabPermitted = resume.settingsTab === 'connections'
+                    || DEPARTMENT_SETTINGS_TAB_IDS.has(resume.settingsTab)
+                    || (resume.settingsTab === 'epm' && canEditEpmConfiguration && showEpmNavigation)
+                    || (ADMIN_SETTINGS_TAB_IDS.has(resume.settingsTab) && canEditSharedConfiguration);
+                if (resume.settingsOpen && settingsTabPermitted) {
+                    setGroupManageTab(resume.settingsTab);
+                    setShowGroupManage(true);
+                } else {
+                    setShowGroupManage(false);
+                }
+                pendingShellAuthResumeRef.current = null;
+                authResumeShellSettledRef.current = null;
+                clearAuthResumeWhenSettled();
+            }, [
+                activeGroupId, selectedSprint, selectedSprintState, planningScopeKey, visibleControlGroups, availableSprints,
+                sharedConfigReady, homeTokenConnectionLoaded, showEpmNavigation,
+                canEditEpmConfiguration, canEditSharedConfiguration, clearAuthResumeWhenSettled,
+                authResumeStagedRevision,
+            ]);
+
+            useEffect(() => {
                 if (!showPlanning) {
                     setPlanningOffset(0);
                 }
@@ -5387,6 +5629,7 @@ import {
 
             useEffect(() => {
                 const handleKey = (event) => {
+                    if (readPendingAuthenticationRequired()) return;
                     if (event.key !== '/') return;
                     const target = event.target;
                     if (target) {
@@ -5529,25 +5772,99 @@ import {
                 updateDismissedHash
             ]);
 
-            const loadConfig = async () => {
+            const loadConfig = async ({ preserveEpmDraft = false } = {}) => {
+                const epmRequestGeneration = epmConfigDraftGenerationRef.current;
+                const shouldPreserveEpmDraft = () => preserveEpmDraft
+                    || epmConfigDraftGenerationRef.current !== epmRequestGeneration;
+                setSharedConfigReady(false);
                 try {
                     const config = await fetchAppConfig(BACKEND_URL);
+                    const resumePrincipal = {
+                        workspaceId: String(config.viewConfig?.workspaceId || ''),
+                        viewConfigId: String(config.viewConfig?.viewConfigId || ''),
+                    };
+                    if (resumePrincipal.workspaceId && resumePrincipal.viewConfigId) {
+                        const recoveryStores = getAuthRecoveryStores(window);
+                        if (recoveryStores) {
+                            await completeAuthRecovery(
+                                recoveryStores.sharedStorage,
+                                recoveryStores.tabStorage,
+                                {
+                                    canComplete: () => !readPendingAuthenticationRequired(),
+                                },
+                            );
+                        }
+                    }
+                    authResumePrincipalRef.current = resumePrincipal;
+                    const resumeStorage = getAuthResumeStorage(window);
+                    const resume = resumeStorage && !planningAuthResumePersistenceFailedRef.current
+                        ? readAuthResumeState(resumeStorage, resumePrincipal)
+                        : null;
+                    if (resume) {
+                        pendingShellAuthResumeRef.current = resume.view;
+                        authResumeShellSettledRef.current = new Set();
+                        planningAuthResumeLoadRef.current = null;
+                        pendingPlanningAuthResumeRef.current = resume.view.selectedView === 'eng'
+                            && resume.view.engMode === 'planning'
+                            && resume.planning.scopeKey
+                            ? resume.planning
+                            : null;
+                        setAuthResumeStagedRevision(revision => revision + 1);
+                    }
                     clearServerConnectionError();
                     setJiraUrl(config.jiraUrl || '');
                     setAuthMode(config.authMode || '');
-                    setCapacityEnabled(Boolean(config.capacityProject));
+                    setCapacityEnabled(Boolean(config.capacityProject || config.capacityConfigRequiresResolution));
                     setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
                     setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
                     setUserCanEditSettings(config.userCanEditSettings === true);
                     setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);
                     setAdminUserManagementAvailable(config.adminUserManagementAvailable === true);
                     setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
-                    applySavedEpmConfig(config.epm);
+                    const sharedConfig = config.sharedConfig;
+                    if (sharedConfig && Number.isInteger(config.sharedConfigRevision)) {
+                        const selectedProjects = sharedConfig.projects?.selected || [];
+                        setSelectedProjectsDraft(selectedProjects);
+                        setSavedSelectedProjects(selectedProjects);
+                        selectedProjectsBaselineRef.current = JSON.stringify(selectedProjects);
+                        const board = sharedConfig.board || {};
+                        const nextBoardId = String(board.boardId || '');
+                        const nextBoardName = String(board.boardName || '');
+                        setBoardIdDraft(nextBoardId);
+                        setSavedBoardId(nextBoardId);
+                        setBoardNameDraft(nextBoardName);
+                        boardConfigBaselineRef.current = JSON.stringify({ boardId: nextBoardId, boardName: nextBoardName });
+                        const capacity = sharedConfig.capacity || {};
+                        setCapacityProjectDraft(capacity.project || '');
+                        setCapacityFieldIdDraft(capacity.fieldId || '');
+                        setCapacityFieldNameDraft(capacity.fieldName || '');
+                        capacityBaselineRef.current = JSON.stringify({ project: capacity.project || '', fieldId: capacity.fieldId || '', fieldName: capacity.fieldName || '' });
+                        const weightRows = clonePriorityWeightRows(sharedConfig.statsPriorityWeights);
+                        setPriorityWeightsDraft(weightRows);
+                        setEffectivePriorityWeightsRows(weightRows);
+                        setPriorityWeightsSource(sharedConfig.statsPriorityWeights ? 'config' : 'default');
+                        priorityWeightsBaselineRef.current = JSON.stringify(weightRows);
+                        const issueTypes = sharedConfig.issueTypes || ['Story'];
+                        setIssueTypesDraft(issueTypes);
+                        issueTypesBaselineRef.current = JSON.stringify(issueTypes);
+                        seedSharedFieldConfigs(sharedConfig);
+                        const personalEpm = config.viewConfig?.view?.epm || config.epm;
+                        if (!shouldPreserveEpmDraft()) applySavedEpmConfig(personalEpm);
+                        sharedConfigRevisionRef.current = config.sharedConfigRevision;
+                        setSharedConfigRevision(config.sharedConfigRevision);
+                        setWorkspaceConfigConflict(null);
+                    } else {
+                        if (!shouldPreserveEpmDraft()) applySavedEpmConfig(config.viewConfig?.view?.epm || config.epm);
+                        await Promise.all([loadSelectedProjects(), loadPriorityWeightsConfig()]);
+                    }
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load config:', err);
                     }
-                    applySavedEpmConfig(createEmptyEpmConfigDraft());
+                    if (!shouldPreserveEpmDraft()) applySavedEpmConfig(createEmptyEpmConfigDraft());
+                } finally {
+                    setSharedConfigReady(true);
                 }
             };
 
@@ -5567,12 +5884,26 @@ import {
                     return;
                 }
 
+                const groupLoadVersion = ++groupLoadVersionRef.current;
+                const shouldApplyGroupLoadResult = () => groupLoadVersionRef.current === groupLoadVersion;
+                const pendingPlanningResume = pendingPlanningAuthResumeRef.current;
+                const recoveryScopeKey = pendingPlanningResume?.scopeKey === planningScopeKey
+                    ? planningScopeKey
+                    : '';
+                if (recoveryScopeKey) {
+                    planningAuthResumeLoadRef.current = {
+                        scopeKey: recoveryScopeKey,
+                        loadVersion: groupLoadVersion,
+                        outcome: 'pending',
+                    };
+                }
+
                 const forceConfigRefresh =
                     configRefreshNonce !== 0 &&
                     pendingConfigRefreshRef.current === configRefreshNonce;
 
                 // Only skip loading if we have actual cached data
-                const shouldSkipLoad = !forceConfigRefresh && activeGroupId && (() => {
+                const shouldSkipLoad = !recoveryScopeKey && !forceConfigRefresh && activeGroupId && (() => {
                     const cached = groupStateRef.current.get(activeGroupId);
                     return cached &&
                         cached.sprintId === selectedSprint &&
@@ -5595,9 +5926,56 @@ import {
                 setTechEpicsInScope([]);
                 setMissingPlanningInfoTasks([]);
                 setMissingInfoEpics([]);
-                loadProductTasks();
-                loadTechTasks();
-            }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce]);
+                const productLoadResult = loadProductTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                const techLoadResult = loadTechTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                if (recoveryScopeKey) {
+                    void Promise.all([productLoadResult, techLoadResult]).then((outcomes) => {
+                        const pendingLoad = planningAuthResumeLoadRef.current;
+                        if (
+                            !shouldApplyGroupLoadResult()
+                            || pendingLoad?.scopeKey !== recoveryScopeKey
+                            || pendingLoad?.loadVersion !== groupLoadVersion
+                        ) return;
+                        if (
+                            outcomes.includes(ENG_TASK_LOAD_OUTCOME.IGNORED)
+                            || outcomes.includes(ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED)
+                        ) return;
+                        pendingLoad.outcome = outcomes.includes(ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE)
+                            ? ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE
+                            : ENG_TASK_LOAD_OUTCOME.APPLIED;
+                        setPlanningAuthResumeLoadRevision(revision => revision + 1);
+                    });
+                }
+                return () => {
+                    groupLoadVersionRef.current += 1;
+                    abortSprintFetches();
+                };
+            }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
+
+            useEffect(() => {
+                if (groupsLoading || !groupPreferences.onboardingRequired) return;
+                clearEngGroupScopeData();
+                setActiveGroupId(null);
+                const hasPendingRecovery = pendingShellAuthResumeRef.current || pendingPlanningAuthResumeRef.current;
+                const principal = authResumePrincipalRef.current;
+                if (
+                    !hasPendingRecovery
+                    || !sharedConfigReady
+                    || !principal?.workspaceId
+                    || !principal?.viewConfigId
+                    || !homeTokenConnectionLoaded
+                ) return;
+                if (!readPendingAuthenticationRequired()) {
+                    pendingShellAuthResumeRef.current = null;
+                    authResumeShellSettledRef.current = null;
+                    pendingPlanningAuthResumeRef.current = null;
+                    planningAuthResumeLoadRef.current = null;
+                    clearAuthResumeWhenSettled();
+                }
+            }, [
+                groupsLoading, groupPreferences.onboardingRequired, sharedConfigReady, homeTokenConnectionLoaded,
+                clearEngGroupScopeData, clearAuthResumeWhenSettled, authResumeStagedRevision,
+            ]);
 
             useEffect(() => {
                 if (!isStatsSourceOnlyStatsView) return;
@@ -5682,6 +6060,7 @@ import {
                     console.log('✅ Loaded sprints:', sprints);
                     clearServerConnectionError();
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (reportServerConnectionError(err)) {
                         setSprintError('');
                     } else {
@@ -5704,7 +6083,6 @@ import {
             const priorityAxis = PRIORITY_AXIS;
 
             const getTeamInfo = getTaskTeamInfo;
-
             const {
                 fetchTasks,
                 fetchBacklogEpics,
@@ -5778,6 +6156,7 @@ import {
                     setDependencyData(data.dependencies || {});
                 } catch (err) {
                     if (err.name === 'AbortError') return;
+                    if (isAuthenticationRequiredError(err)) return;
                     console.error('Dependencies fetch error:', err);
                 } finally {
                     cleanupSprintFetch(controller);
@@ -5839,6 +6218,7 @@ import {
                         try {
                             return await postWithToken(await fetchScenarioRealtimeCsrfToken(true));
                         } catch (retryErr) {
+                            if (isAuthenticationRequiredError(retryErr)) throw retryErr;
                             pauseScenarioRealtime('Realtime paused; session security expired. Keep editing local-only, then refresh or sign in again.');
                             throw retryErr;
                         }
@@ -5993,6 +6373,7 @@ import {
                         try {
                             return await postScenarioDraft(freshCsrfToken);
                         } catch (csrfRetry) {
+                            if (isAuthenticationRequiredError(csrfRetry)) throw csrfRetry;
                             csrfRetry.message = 'Session security check expired. Try saving again.';
                             throw csrfRetry;
                         }
@@ -6178,6 +6559,7 @@ import {
                             }
                         } catch (err) {
                             if (err.name === 'AbortError') throw err;
+                            if (isAuthenticationRequiredError(err)) return;
                             setScenarioOverrides({});
                             setScenarioDraftMeta(prev => ({
                                 ...prev,
@@ -6202,6 +6584,7 @@ import {
                     if (err.name === 'AbortError') {
                         return;
                     }
+                    if (isAuthenticationRequiredError(err)) return;
                     setScenarioError(err.message || 'Failed to run scenario.');
                     trackScenarioAction('compute_result', { result: 'failure' });
                 } finally {
@@ -6236,6 +6619,7 @@ import {
                     learnScenarioCurrentUserFromLock(data.lock);
                     mergeScenarioDraftLock(data.lock);
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (err.status === 409 && err.payload?.activeLock) {
                         mergeScenarioDraftLock(err.payload.activeLock);
                     }
@@ -6253,6 +6637,7 @@ import {
                     learnScenarioCurrentUserFromLock(data.lock);
                     mergeScenarioDraftLock(data.lock);
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (err.status === 409 && err.payload?.activeLock) {
                         mergeScenarioDraftLock(err.payload.activeLock);
                     }
@@ -6271,6 +6656,7 @@ import {
                         removeScenarioDraftLock('issue', issueKey);
                     }
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     // Advisory locks must not block local editing.
                 }
             };
@@ -6363,6 +6749,7 @@ import {
                             setBacklogTechEpics(tech);
                         } catch (err) {
                             if (cancelled || !shouldApplyAlertResult()) return;
+                            if (isAuthenticationRequiredError(err)) return;
                             setBacklogProductEpics([]);
                             setBacklogTechEpics([]);
                         }
@@ -6571,7 +6958,10 @@ import {
                     availableTeamIds: validTeamIds
                 });
 
-                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey; teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams }; teamSelectionSkipPersistScopeRef.current = teamSelectionScopeKey;
+                const hydrationWillUpdateSelection = !selectedTeamSelectionsEqual(selectedTeams, nextSelectedTeams);
+                teamSelectionHydratedScopeRef.current = teamSelectionScopeKey;
+                teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
+                teamSelectionSkipPersistScopeRef.current = hydrationWillUpdateSelection ? teamSelectionScopeKey : '';
                 setSelectedTeams(prev => {
                     const normalizedPrev = normalizeSelectedTeams(prev);
                     const sameLength = normalizedPrev.length === nextSelectedTeams.length;
@@ -6853,6 +7243,7 @@ import {
                         setBurnoutData(data);
                     } catch (err) {
                         if (cancelled) return;
+                        if (isAuthenticationRequiredError(err)) return;
                         if (err.name === 'AbortError') {
                             setBurnoutError('Burndown request timed out (30s). Narrow scope with team or assignee filter.');
                             setBurnoutData(null);
@@ -6980,6 +7371,7 @@ import {
                         setCohortError('');
                     } catch (err) {
                         if (cancelled) return;
+                        if (isAuthenticationRequiredError(err)) return;
                         if (err?.name === 'AbortError') {
                             setCohortError('Lead times request timed out (30s). Narrow scope with team filters.');
                         } else {
@@ -7255,6 +7647,7 @@ import {
                         }
                         return data;
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) throw err;
                         if (err?.name === 'AbortError' && timedOut) {
                             const timeoutError = new Error('request timed out after 30s');
                             timeoutError.name = 'ExcludedCapacitySprintTimeout';
@@ -7295,6 +7688,7 @@ import {
                         trackApiResult('stats_source', { featureName: 'stats', method: 'POST', status: 200, durationMs: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - analyticsStartedAt, cacheState: forceRefresh ? 'refresh' : 'unknown' });
                     } catch (err) {
                         if (cancelled) return;
+                        if (isAuthenticationRequiredError(err)) return;
                         if (err?.name === 'AbortError') {
                             setExcludedCapacityError('Excluded capacity sprint request timed out (30s). Narrow the sprint range or team filter.');
                         } else {
@@ -7432,6 +7826,7 @@ import {
                         setProjectTrackPhaseError('');
                     } catch (err) {
                         if (cancelled || err?.name === 'AbortError') return;
+                        if (isAuthenticationRequiredError(err)) return;
                         setProjectTrackPhaseError(String(err?.message || err || 'Failed to load phase duration data.'));
                         setProjectTrackPhaseData(null);
                     } finally {
@@ -7731,6 +8126,7 @@ import {
                 const expectedDraftId = scenarioActiveDraftId;
                 const expectedScopeKey = scenarioScopeKey;
                 const poll = async () => {
+                    if (readPendingAuthenticationRequired()) return;
                     const controller = new AbortController();
                     controllers.add(controller);
                     try {
@@ -7749,6 +8145,7 @@ import {
                             prev.paused ? prev : { mode: 'polling', paused: false, message: '' }
                         ));
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
                         if (!cancelled && err.name !== 'AbortError') {
                             setScenarioDraftRealtimeStatus(prev => (
                                 prev.paused ? prev : { mode: 'polling', paused: false, message: 'Realtime polling will retry.' }
@@ -7779,12 +8176,14 @@ import {
                 if (scenarioDraftRealtimeStatus.paused) return undefined;
                 let cancelled = false;
                 const heartbeat = async () => {
+                    if (readPendingAuthenticationRequired()) return;
                     try {
                         await postScenarioRealtimeJson(scenarioActiveDraftId, '/presence', {
                             mode: scenarioEditMode ? 'editing' : 'viewing',
                             cursorPayload: {}
                         }).then(data => learnScenarioCurrentUserFromPresence(data.presence));
                     } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
                         if (!cancelled && !(err.status === 403 && err.payload?.error === 'csrf_required')) {
                             pauseScenarioRealtime('Realtime paused; keep editing local-only until the connection recovers.');
                         }
@@ -7800,11 +8199,13 @@ import {
 
             React.useEffect(() => {
                 if (!scenarioActiveDraftReady) return undefined;
+                if (readPendingAuthenticationRequired()) return undefined;
                 const sseEnabled = window.SCENARIO_DRAFT_SSE_ENABLED === true;
                 if (!sseEnabled || typeof window.EventSource !== 'function') return undefined;
                 const source = new window.EventSource(buildScenarioDraftEventsStreamUrl(BACKEND_URL, scenarioActiveDraftId, scenarioDraftLastEventNumber));
                 const expectedDraftId = scenarioActiveDraftId;
                 const handleStreamMessage = (message) => {
+                    if (readPendingAuthenticationRequired()) return;
                     if (scenarioActiveDraftIdRef.current !== expectedDraftId) return;
                     try {
                         applyScenarioDraftEvent(JSON.parse(message.data));
@@ -7824,6 +8225,7 @@ import {
                     source.addEventListener(eventType, handleStreamMessage);
                 });
                 source.onerror = () => {
+                    if (readPendingAuthenticationRequired()) return;
                     setScenarioDraftRealtimeStatus(prev => (
                         prev.paused ? prev : { mode: 'polling', paused: false, message: 'Realtime stream disconnected; polling will continue.' }
                     ));
@@ -7833,7 +8235,12 @@ import {
                         // ignore close errors
                     }
                 };
+                const closeForAuth = () => {
+                    try { source.close(); } catch (err) { /* ignore close errors */ }
+                };
+                window.addEventListener(AUTH_REQUIRED_EVENT, closeForAuth, { once: true });
                 return () => {
+                    window.removeEventListener(AUTH_REQUIRED_EVENT, closeForAuth);
                     try {
                         source.close();
                     } catch (err) {
@@ -8197,6 +8604,7 @@ import {
             React.useEffect(() => {
                 if (!scenarioEditMode) return;
                 const handler = (e) => {
+                    if (readPendingAuthenticationRequired()) return;
                     const isMeta = e.metaKey || e.ctrlKey;
                     if (!isMeta || e.key.toLowerCase() !== 'z') return;
                     e.preventDefault();
@@ -8254,6 +8662,7 @@ import {
                     }));
                     trackScenarioAction('draft_save_result', { result: 'success' });
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     const conflict = err.payload?.error === 'scenario_draft_conflict' && err.payload?.conflict
                         ? {
                             ...err.payload.conflict,
@@ -8340,6 +8749,7 @@ import {
                         error: ''
                     }));
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (
                         err.name === 'AbortError'
                         || scenarioHistoryRefreshControllerRef.current !== controller
@@ -8443,6 +8853,7 @@ import {
                         error: ''
                     }));
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (err.name === 'AbortError' || !isScenarioScopeDraftCurrent(scopeKey, expectedDraftId)) {
                         return;
                     }
@@ -8465,6 +8876,7 @@ import {
             React.useEffect(() => {
                 if (!scenarioDraftMeta.historyOpen) return undefined;
                 const handleKeyDown = (event) => {
+                    if (readPendingAuthenticationRequired()) return;
                     if (event.key !== 'Escape') return;
                     const panel = scenarioHistoryPanelRef.current;
                     if (!panel || !panel.contains(document.activeElement)) return;
@@ -8565,6 +8977,7 @@ import {
                         error: ''
                     }));
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (
                         err.name === 'AbortError'
                         || scenarioHistoryActionControllerRef.current !== controller
@@ -8632,6 +9045,7 @@ import {
                     }));
                     trackScenarioAction('writeback_preview_result', { result: 'success', selected_count_bucket: bucketCount(Array.isArray(preview?.changes) ? preview.changes.length : 0) });
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
                         return;
                     }
@@ -8670,6 +9084,7 @@ import {
                     }));
                     trackScenarioAction('writeback_gate_result', { result: 'success' });
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)) {
                         return;
                     }
@@ -8765,6 +9180,7 @@ import {
                             error: ''
                     }));
                 } catch (err) {
+                    if (isAuthenticationRequiredError(err)) return;
                     if (
                         err.name === 'AbortError'
                         || scenarioHistoryActionControllerRef.current !== controller
@@ -10048,6 +10464,7 @@ import {
             useEffect(() => {
                 if (!scenarioEpicFocus) return;
                 const handleKey = (event) => {
+                    if (readPendingAuthenticationRequired()) return;
                     if (event.key === 'Escape') {
                         clearScenarioEpicFocus();
                     }
@@ -10078,21 +10495,58 @@ import {
             const selectionTasks = baseFilteredTasks;
 
             useEffect(() => {
+                const pendingPlanningResume = pendingPlanningAuthResumeRef.current;
+                if (pendingPlanningResume && pendingShellAuthResumeRef.current) return;
+                if (pendingPlanningResume && (!planningScopeKey || pendingPlanningResume.scopeKey !== planningScopeKey)) {
+                    pendingPlanningAuthResumeRef.current = null;
+                    planningAuthResumeLoadRef.current = null;
+                    clearAuthResumeWhenSettled();
+                    return;
+                }
+                if (pendingPlanningResume) {
+                    const recoveryLoad = planningAuthResumeLoadRef.current;
+                    if (!recoveryLoad || recoveryLoad.scopeKey !== planningScopeKey) return;
+                    if (recoveryLoad.outcome === 'pending') return;
+                    if (recoveryLoad.outcome === ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE) {
+                        pendingPlanningAuthResumeRef.current = null;
+                        planningAuthResumeLoadRef.current = null;
+                        clearAuthResumeWhenSettled();
+                        return;
+                    }
+                    if (recoveryLoad.outcome !== ENG_TASK_LOAD_OUTCOME.APPLIED) return;
+                }
                 if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
                 if (!tasksFetched || productTasksLoading || techTasksLoading) return;
                 if (lastLoadedSprintRef.current !== selectedSprint) return;
                 const hydratedTeamSelection = teamSelectionHydratedSelectionRef.current; if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey && !selectedTeamSelectionsEqual(selectedTeams, hydratedTeamSelection.selectedTeams)) return;
                 if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey) teamSelectionHydratedSelectionRef.current = null;
 
-                const { validTaskKeySet, nextSelectedTaskKeys, nextSelectionMode, nextSelectedTeams } = resolvePlanningSelectionForDashboard({
-                    selectedTasks,
-                    selectedTeams,
-                    planningSelectionMode,
-                    isFutureSprintSelected,
-                    selectionTasks,
-                    teamOptions,
-                    activeGroupTeamIds,
-                });
+                let validTaskKeySet;
+                let nextSelectedTaskKeys;
+                let nextSelectionMode;
+                let nextSelectedTeams;
+                if (pendingPlanningResume) {
+                    validTaskKeySet = new Set(selectionTasks.map(task => String(task?.key || '').trim()).filter(Boolean));
+                    const resumed = resolvePlanningAuthResume({
+                        resume: pendingPlanningResume,
+                        planningScopeKey,
+                        validTaskKeys: validTaskKeySet,
+                        validTeamIds: new Set(teamOptions.map(team => String(team?.id || '').trim()).filter(Boolean)),
+                    });
+                    nextSelectedTaskKeys = resumed.selectedTaskKeys;
+                    nextSelectionMode = resumed.selectionMode;
+                    nextSelectedTeams = resumed.selectedTeams;
+                } else {
+                    ({ validTaskKeySet, nextSelectedTaskKeys, nextSelectionMode, nextSelectedTeams } = resolvePlanningSelectionForDashboard({
+                        selectedTasks,
+                        selectedTeams,
+                        planningSelectionMode,
+                        isFutureSprintSelected,
+                        selectionTasks,
+                        teamOptions,
+                        activeGroupTeamIds,
+                    }));
+                }
 
                 setSelectedTasks(prev => {
                     const prevKeys = selectedTaskKeysFromMap(prev, validTaskKeySet);
@@ -10110,9 +10564,23 @@ import {
 
                 setPlanningSelectionMode(prev => prev === nextSelectionMode ? prev : nextSelectionMode);
 
-                persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys), selectionMode: nextSelectionMode, selectedTeams: nextSelectedTeams, normalizeSelectedTeams });
+                const persistenceSucceeded = persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys), selectionMode: nextSelectionMode, selectedTeams: nextSelectedTeams, normalizeSelectedTeams });
+                if (pendingPlanningResume && !persistenceSucceeded) {
+                    planningAuthResumePersistenceFailedRef.current = planningScopeKey;
+                    planningLoadedSelectionRef.current = null;
+                    planningBaselineScopeRef.current = '';
+                    setCanUndoPlanningSelection(false);
+                    pendingPlanningAuthResumeRef.current = null;
+                    planningAuthResumeLoadRef.current = null;
+                    clearAuthResumeWhenSettled();
+                    return;
+                }
+                if (planningAuthResumePersistenceFailedRef.current === planningScopeKey) {
+                    setCanUndoPlanningSelection(false);
+                    return;
+                }
 
-                if (planningBaselineScopeRef.current !== planningScopeKey) {
+                if (pendingPlanningResume || planningBaselineScopeRef.current !== planningScopeKey) {
                     planningLoadedSelectionRef.current = {
                         scopeKey: planningScopeKey,
                         selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys),
@@ -10120,6 +10588,11 @@ import {
                     };
                     planningBaselineScopeRef.current = planningScopeKey;
                     setCanUndoPlanningSelection(false);
+                }
+                if (pendingPlanningResume) {
+                    pendingPlanningAuthResumeRef.current = null;
+                    planningAuthResumeLoadRef.current = null;
+                    clearAuthResumeWhenSettled();
                 }
             }, [
                 planningScopeKey,
@@ -10134,7 +10607,10 @@ import {
                 selectedTasks,
                 selectedTeams,
                 planningSelectionMode,
-                activeGroupTeamIds.join('|')
+                activeGroupTeamIds.join('|'),
+                authResumeStagedRevision,
+                planningAuthResumeLoadRevision,
+                clearAuthResumeWhenSettled,
             ]);
 
             const visibleTasks = React.useMemo(() => baseFilteredTasks.filter(task => (
@@ -10807,6 +11283,7 @@ import {
             useEffect(() => {
                 if (!dependencyFocus) return;
                 const handleKey = (event) => {
+                    if (readPendingAuthenticationRequired()) return;
                     if (event.key === 'Escape') {
                         setDependencyFocus(null);
                     }
@@ -12421,21 +12898,20 @@ import {
             );
 
             const renderViewSwitch = () => {
-                const options = [{ value: 'eng', label: 'ENG' }];
-                if (showEpmNavigation) {
-                    options.push({ value: 'epm', label: 'EPM' });
-                }
+                if (!showEpmNavigation) return null;
                 return (
                     <SegmentedControl
                         className="view-mode-control"
                         ariaLabel="Dashboard view"
-                        value={showEpmNavigation ? selectedView : 'eng'}
+                        value={selectedView}
                         onChange={(nextView) => {
-                            if (nextView === 'epm' && !showEpmNavigation) return;
                             trackSelectContent('dashboard_view', nextView, { from_view: currentDashboardView() });
                             setSelectedView(nextView);
                         }}
-                        options={options}
+                        options={[
+                            { value: 'eng', label: 'ENG' },
+                            { value: 'epm', label: 'EPM' },
+                        ]}
                     />
                 );
             };
@@ -12668,8 +13144,13 @@ import {
                                                 >
                                                     <span>{group.name}</span>
                                                     <div className="group-option-tags">
-                                                        {groupsConfig.defaultGroupId === group.id && (
-                                                            <span className="group-option-default" title="Default group">★</span>
+                                                        {(groupsConfig.source === 'workspace_db'
+                                                            ? groupPreferences.activeGroupId === group.id
+                                                            : groupsConfig.defaultGroupId === group.id) && (
+                                                            <span
+                                                                className="group-option-default"
+                                                                title={groupsConfig.source === 'workspace_db' ? 'My favorite group' : 'Default group'}
+                                                            >★</span>
                                                         )}
                                                         <span className="group-option-meta">
                                                             {group.teamIds?.length || 0} teams
@@ -15332,7 +15813,6 @@ import {
                             capacitySummary={capacitySummary}
                         />
 
-                        {/* --- Team MicroBar tiles --- */}
                         <PlanningTeamCapacityCards
                             entries={selectedTeamEntries}
                             capacityEnabled={capacityEnabled}
@@ -15529,19 +16009,16 @@ import {
                             isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
                             unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
                             onRequestClose={requestCloseGroupManage}
-                            validationMessages={groupManageTab !== 'connections' ? [
-                                ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }),
-                                ...(capacityConfigConflict ? ['Capacity configuration changed while you were editing. Your Capacity draft is still unsaved; reload or review the latest configuration.'] : []),
-                                ...(capacityRequiresResolution ? ['Capacity configuration requires an Admin choice before it can be used.'] : []),
-                                ...groupConfigValidationErrors,
-                            ] : []}
-                            validationActions={groupManageTab !== 'connections' && (groupsConfigConflict || capacityConfigConflict) ? (
+                            validationMessages={groupManageTab !== 'connections' ? [...workspaceConfigConflictMessages(workspaceConfigConflict), ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...(groupDraftError && SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab) && !workspaceConfigConflict && !groupsConfigConflict ? [groupDraftError] : []), ...groupConfigValidationErrors] : []}
+                            validationActions={groupManageTab !== 'connections' && workspaceConfigConflict ? (
+                                <div className="group-modal-button-row" data-testid="workspace-config-conflict-actions">
+                                    <button className="secondary compact" onClick={useLatestWorkspaceConfig} type="button">Use latest</button>
+                                    <button className="compact" onClick={keepMineOnWorkspaceConfigConflict} type="button">Keep mine</button>
+                                </div>
+                            ) : groupManageTab !== 'connections' && groupsConfigConflict ? (
                                 <div className="group-modal-button-row">
-                                    {groupsConfigConflict && <>
-                                        <button className="secondary compact" onClick={discardMineOnGroupsConfigConflict} type="button">Discard mine</button>
-                                        <button className="compact" onClick={keepMineOnGroupsConfigConflict} type="button">Keep mine</button>
-                                    </>}
-                                    {capacityConfigConflict && <button className="secondary compact" onClick={loadCapacityConfig} type="button">Reload Capacity config</button>}
+                                    <button className="secondary compact" onClick={discardMineOnGroupsConfigConflict} type="button">Discard mine</button>
+                                    <button className="compact" onClick={keepMineOnGroupsConfigConflict} type="button">Keep mine</button>
                                 </div>
                             ) : null}
                             showTestConfiguration={groupManageTab !== 'epm' && groupManageTab !== 'connections' && groupManageTab !== 'access'}
@@ -15909,6 +16386,9 @@ import {
                                         teamCacheLabel,
                                         updateGroupDraftName,
                                         toggleDefaultGroupDraft,
+                                        personalGroupPreferencesEnabled,
+                                        favoriteGroupDraftId,
+                                        setFavoriteGroupDraft,
                                         duplicateGroupDraft,
                                         resolveTeamName,
                                         removeTeamFromGroup,
@@ -16130,11 +16610,10 @@ import {
                     {groupPreferences.onboardingRequired && !showGroupManage && (
                         <FirstRunGroupSelectionModal
                             groups={groupsConfig.groups || []}
-                            defaultGroupId={groupsConfig.defaultGroupId || ''}
-                            selectedGroupIds={firstRunSelectedGroupIds}
-                            onToggleGroup={toggleFirstRunGroup}
+                            selectedGroupId={firstRunFavoriteGroupId}
+                            onSelectGroup={selectFirstRunFavoriteGroup}
                             onContinue={saveFirstRunGroupPreferences}
-                            onAddGroup={openFirstRunAddGroup}
+                            onConfigure={openFirstRunAddGroup}
                             saving={firstRunSaving}
                             error={firstRunError}
                         />
@@ -16173,6 +16652,6 @@ import {
         const rootElement = document.getElementById('root');
         if (rootElement) {
             const root = createRoot(rootElement);
-            root.render(<App />);
+            root.render(<AuthRequiredGate><App /></AuthRequiredGate>);
         }
     

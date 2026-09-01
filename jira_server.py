@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-from flask import abort, has_request_context, jsonify, redirect, request, send_file, send_from_directory, session
+from flask import abort, g, has_request_context, jsonify, redirect, request, send_file, send_from_directory, session
 import requests
 import argparse
 import base64
 import copy
 import csv
+import dataclasses
 import logging
 import os
 import re
@@ -26,6 +27,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
+from sqlalchemy.exc import OperationalError
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from backend.epm import config as epm_config
 from backend.epm import home as epm_home
@@ -37,13 +39,14 @@ from backend.epm.scope import build_epm_scope_clause, normalize_epm_sprint_field
 from planning import Issue, ScheduledIssue, ScenarioConfig, compute_slack, schedule_issues
 from backend.auth.cache_policy import (
     build_jira_home_process_cache_key,
+    cache_key_in_jira_home_partition,
     jira_home_partitioned_process_cache_enabled,
     jira_home_process_cache_enabled,
 )
 from backend.auth.context import RequestAuthContext, build_auth_cache_key, stable_local_workspace_id
-from backend.auth.scope_policy import missing_context_oauth_scopes
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
-from backend.auth.csrf import validate_csrf_token
+from backend.auth.db_browser_sessions import create_browser_session, delete_browser_session, delete_browser_sessions_for_connection
+from backend.auth.csrf import csrf_session_data_for_auth_context, validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
@@ -58,6 +61,8 @@ from backend.config.repository import (
     json_repository as build_json_config_repository,
     validate_config_storage_startup,
 )
+from backend.config.shared_config import normalize_shared_admin_section
+from backend.services.workspace_dashboard_config import WorkspaceConfigConflict
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
@@ -364,6 +369,7 @@ def is_pre_db_tool_admin_account(atlassian_account_id):
 def store_db_oauth_callback_session_metadata(token_data, resource, user_profile):
     if not database_storage_enabled():
         return {}
+    previous_browser_session_id = str(db_oauth_browser_session_data().get('db_browser_session_id') or '').strip()
     with session_scope() as db_session:
         stored = store_oauth_callback_tokens(
             db_session,
@@ -381,8 +387,17 @@ def store_db_oauth_callback_session_metadata(token_data, resource, user_profile)
             user_id=stored.user_id,
             atlassian_account_id=(user_profile or {}).get('account_id'),
         )
+        if stored.invalidate_browser_sessions:
+            delete_browser_sessions_for_connection(db_session, stored.connection_id)
+        delete_browser_session(db_session, previous_browser_session_id)
+        handle = create_browser_session(
+            db_session,
+            user_id=stored.user_id,
+            workspace_id=stored.workspace_id,
+            auth_connection_id=stored.connection_id,
+        )
         clear_auth_sensitive_caches('oauth_reconnect')
-        return stored.session_metadata
+        return {'db_browser_session_id': handle.id}
 
 
 def current_auth_config():
@@ -432,6 +447,9 @@ def _oauth_token_store_persistence_enabled():
 def _db_oauth_browser_session_payload(data):
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or not database_storage_enabled():
         return {}
+    browser_session_id = str((data or {}).get('db_browser_session_id') or '').strip()
+    if browser_session_id:
+        return {'db_browser_session_id': browser_session_id}
     connection_id = str((data or {}).get('db_auth_connection_id') or '').strip()
     if not connection_id:
         return {}
@@ -440,14 +458,6 @@ def _db_oauth_browser_session_payload(data):
     if token_version:
         payload['db_token_version'] = token_version
     return payload
-
-
-def remember_db_oauth_browser_session(data):
-    payload = _db_oauth_browser_session_payload(data)
-    if payload:
-        session['db_oauth_session'] = payload
-    else:
-        session.pop('db_oauth_session', None)
 
 
 def db_oauth_browser_session_data():
@@ -523,13 +533,18 @@ def oauth_session_data_for_auth_context(context):
 
 def db_oauth_session_data_for_auth_context(context):
     with session_scope() as db_session:
-        return db_oauth_session_data(
-            db_session,
-            context,
-            config=current_auth_config(),
-            key_provider=key_provider_from_env(),
-            http_post=HTTP_SESSION.post,
-        )
+        try:
+            return db_oauth_session_data(
+                db_session,
+                context,
+                config=current_auth_config(),
+                key_provider=key_provider_from_env(),
+                http_post=HTTP_SESSION.post,
+            )
+        except AuthError as error:
+            if error.code == 'auth_connection_revoked':
+                db_session.commit()
+            raise
 
 
 def save_oauth_session_for_auth_context(context, data):
@@ -554,10 +569,25 @@ def current_request_auth_context():
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
         db_session_data = db_oauth_browser_session_data()
         if db_session_data:
-            return resolve_db_request_auth_context(
+            context = resolve_db_request_auth_context(
                 db_session_data,
                 required_scopes=ATLASSIAN_SCOPES,
             )
+            if context.browser_session_id:
+                return context
+            try:
+                with session_scope() as db_session:
+                    browser_session = create_browser_session(
+                        db_session,
+                        user_id=context.user_id,
+                        workspace_id=context.workspace_id,
+                        auth_connection_id=context.auth_connection_id,
+                    )
+            except OperationalError:
+                log_warning('DB browser session upgrade unavailable; retaining validated legacy session.')
+                return context
+            session['db_oauth_session'] = {'db_browser_session_id': browser_session.id}
+            return dataclasses.replace(context, browser_session_id=browser_session.id)
     session_data = jira_session_data()
     site_url = (session_data.get('site_url') or JIRA_URL or '').strip().rstrip('/')
     cloud_id = session_data.get('cloudid', '')
@@ -607,11 +637,7 @@ def oauth_auth_required_payload():
 def csrf_session_data_for_request():
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
         context = scenario_draft_request_auth_context()
-        return {
-            'db_auth_connection_id': context.auth_connection_id,
-            'db_token_version': context.token_version,
-            'account_id': context.atlassian_account_id,
-        }
+        return csrf_session_data_for_auth_context(context)
     return oauth_session_data()
 
 
@@ -1695,11 +1721,43 @@ def load_dashboard_config(*, source='auto'):
         return _load_dashboard_config_json()
     if source == 'db' or config_storage_db_enabled():
         context = _current_dashboard_config_context_or_error()
-        return build_db_config_repository().load_dashboard_config(
-            context,
-            fallback_loader=lambda: _site_eligible_legacy_capacity_loader(context),
-        )
+        return load_dashboard_config_snapshot(source='db').payload
     return _load_dashboard_config_json()
+
+
+def load_dashboard_config_snapshot(*, source='auto'):
+    source = _normalize_dashboard_config_source(source)
+    if source == 'jsonfile' or (source == 'auto' and not config_storage_db_enabled()):
+        from backend.services.workspace_dashboard_config import WorkspaceConfigSnapshot
+        payload = _load_dashboard_config_json() or {}
+        return WorkspaceConfigSnapshot(payload, 0, 'legacy_json')
+    context = _current_dashboard_config_context_or_error()
+    cache_key = '_workspace_dashboard_config_snapshot'
+    if has_request_context() and hasattr(g, cache_key):
+        return getattr(g, cache_key)
+    snapshot = build_db_config_repository().load_dashboard_config_snapshot(
+        context,
+        fallback_loader=_load_dashboard_config_json,
+        legacy_site_url=JIRA_URL or '',
+    )
+    if has_request_context():
+        setattr(g, cache_key, snapshot)
+    return snapshot
+
+
+def save_dashboard_config_section(section, value, *, base_revision):
+    context = _current_dashboard_config_context_or_error()
+    snapshot = build_db_config_repository().save_dashboard_section(
+        context,
+        section,
+        value,
+        base_revision,
+        fallback_loader=_load_dashboard_config_json,
+        legacy_site_url=JIRA_URL or '',
+    )
+    if has_request_context():
+        g._workspace_dashboard_config_snapshot = snapshot
+    return snapshot
 
 
 def _save_dashboard_config_json(config):
@@ -1712,8 +1770,7 @@ def save_dashboard_config(config, *, source='auto'):
     if source == 'jsonfile':
         return _save_dashboard_config_json(config)
     if source == 'db' or config_storage_db_enabled():
-        context = _current_dashboard_config_context_or_error()
-        return build_db_config_repository().save_dashboard_config(context, config)
+        raise ConfigStorageError('full workspace dashboard replacement is forbidden in DB mode')
     return _save_dashboard_config_json(config)
 
 
@@ -1861,12 +1918,12 @@ def _load_json_capacity_config(context=None):
         'configRevision': None,
         'source': source,
         'requiresResolution': False,
-        'mutationEnabled': bool(attested),
+        'mutationEnabled': bool(project and field_id and attested),
     }
 
 
 def load_request_capacity_config(context=None, *, source='auto'):
-    """Resolve Capacity from the workspace row or the explicit shared JSON compatibility path."""
+    """Resolve Capacity from workspace storage or the explicit JSON compatibility path."""
     source = _normalize_dashboard_config_source(source)
     if context is None:
         if source != 'jsonfile':
@@ -1890,7 +1947,7 @@ def load_request_capacity_config(context=None, *, source='auto'):
 
 
 def get_capacity_config(context=None, *, source='auto'):
-    """Compatibility wrapper for the one workspace-owned Capacity configuration."""
+    """Compatibility wrapper for the workspace-owned Capacity configuration."""
     if context is None and has_request_context():
         context = current_request_auth_context()
     if context is None:
@@ -1934,8 +1991,14 @@ def clear_epm_rollup_caches():
         EPM_ROLLUP_CACHE.clear()
 
 
-def clear_epm_caches():
+def clear_epm_caches(context=None):
     with _epm_cache_lock:
+        if context is not None and not jira_home_process_cache_enabled(context):
+            for cache in (EPM_PROJECTS_CACHE, EPM_ISSUES_CACHE, EPM_ROLLUP_CACHE):
+                for key in list(cache):
+                    if cache_key_in_jira_home_partition(key, context):
+                        cache.pop(key, None)
+            return
         EPM_PROJECTS_CACHE.clear()
         EPM_ISSUES_CACHE.clear()
         EPM_ROLLUP_CACHE.clear()
@@ -1987,7 +2050,12 @@ register_service_integration_cache_invalidator(clear_auth_sensitive_caches)
 def build_epm_projects_dependencies(context=None, epm_config_override=None):
     auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
     fetch_context = auth_context if auth_context is not None and not jira_home_process_cache_enabled(auth_context) else None
-    get_config = (lambda: epm_config_override) if epm_config_override is not None else get_epm_config
+    config_snapshot = normalize_epm_config(
+        epm_config_override
+        if epm_config_override is not None
+        else get_epm_config(context=auth_context)
+    )
+    get_config = lambda: config_snapshot
     return epm_projects.EpmProjectsDependencies(
         fetch_epm_home_projects=(
             lambda epm_scope: fetch_epm_home_projects(epm_scope, context=fetch_context)
@@ -2004,6 +2072,7 @@ def build_epm_projects_dependencies(context=None, epm_config_override=None):
         get_epm_config=get_config,
         abort_not_found=abort,
         context=auth_context,
+        config_generation=build_epm_config_generation(config_snapshot),
     )
 
 
@@ -2144,9 +2213,9 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
     return raw_issues
 
 
-def build_epm_rollup_dependencies(sub_goal_keys=None):
-    auth_context = current_request_auth_context() if has_request_context() else None
-    epm_config_snapshot = get_epm_config()
+def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_override=None):
+    auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
+    epm_config_snapshot = epm_config_override if epm_config_override is not None else get_epm_config(context=auth_context)
     base_jql_snapshot = build_base_jql()
     story_points_field_id_snapshot = get_story_points_field_id()
     sprint_field_id_snapshot = get_sprint_field_id()
@@ -2198,6 +2267,7 @@ def build_epm_rollup_dependencies(sub_goal_keys=None):
         cache_lock=_epm_cache_lock,
         cache_ttl_seconds=EPM_ROLLUP_CACHE_TTL_SECONDS,
         context=auth_context,
+        config_generation=build_epm_config_generation(epm_config_snapshot),
     )
 
 
@@ -2233,7 +2303,7 @@ def find_epm_config_row(projects, project_id):
 def build_epm_projects_payload(epm_config, force_refresh=False, tab=None, sub_goal_keys=None, context=None):
     return epm_projects.build_epm_projects_payload(
         epm_config,
-        build_epm_projects_dependencies(context=context),
+        build_epm_projects_dependencies(context=context, epm_config_override=epm_config),
         force_refresh=force_refresh,
         tab=tab,
         sub_goal_keys=sub_goal_keys,
@@ -2249,16 +2319,24 @@ def collect_epm_rollup_issue_keys(rollup):
 
 
 def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
+    auth_context = current_request_auth_context() if has_request_context() else None
+    epm_config_snapshot = get_epm_config(context=auth_context)
     return epm_aggregate.build_all_epm_projects_rollup(
         tab,
         sprint,
         epm_aggregate.EpmAggregateDependencies(
             normalize_epm_text=normalize_epm_text,
             validate_epm_tab_sprint=validate_epm_tab_sprint,
-            get_epm_config=get_epm_config,
-            build_epm_projects_payload=build_epm_projects_payload,
+            get_epm_config=lambda: epm_config_snapshot,
+            build_epm_projects_payload=lambda config, **kwargs: build_epm_projects_payload(
+                config, context=auth_context, **kwargs,
+            ),
             filter_epm_projects_for_tab=filter_epm_projects_for_tab,
-            build_epm_rollup_dependencies=build_epm_rollup_dependencies,
+            build_epm_rollup_dependencies=lambda **kwargs: build_epm_rollup_dependencies(
+                context=auth_context,
+                epm_config_override=epm_config_snapshot,
+                **kwargs,
+            ),
             get_epm_project_payload_identity=get_epm_project_payload_identity,
             build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
             build_per_project_rollup=build_per_project_rollup,
@@ -2271,7 +2349,11 @@ def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
 def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None, epm_config_override=None):
     requested_sub_goal_keys = epm_projects.normalize_epm_sub_goal_keys(sub_goal_keys)
     if requested_sub_goal_keys:
-        epm_config = epm_config_override if epm_config_override is not None else get_epm_config()
+        epm_config = (
+            epm_config_override
+            if epm_config_override is not None
+            else get_epm_config(context=context)
+        )
         projects_payload = build_epm_projects_payload(
             epm_config,
             sub_goal_keys=requested_sub_goal_keys,
@@ -2323,10 +2405,30 @@ is_epm_v2_config = epm_config.is_epm_v2_config
 normalize_epm_project_row = epm_config.normalize_epm_project_row
 normalize_epm_project_output_key = epm_config.normalize_epm_project_output_key
 normalize_epm_config = epm_config.normalize_epm_config
+build_epm_config_generation = epm_config.build_epm_config_generation
 
 
-def get_epm_config():
-    config = load_dashboard_config() or {}
+def get_epm_config(context=None, source='auto'):
+    if source not in {'auto', 'db', 'jsonfile'}:
+        raise ConfigStorageError('EPM configuration source must be auto, db, or jsonfile')
+    use_db = source == 'db' or (source == 'auto' and config_storage_db_enabled())
+    if use_db:
+        auth_context = context
+        if auth_context is None and has_request_context():
+            auth_context = current_request_auth_context()
+        if auth_context is None:
+            raise ConfigStorageError('DB-backed EPM configuration requires a request auth context')
+        return build_db_config_repository().load_user_epm_config(auth_context)
+    json_config_repository = _json_config_repository()
+    json_config_repository.log_warning_fn = lambda *_args: None
+    dashboard_path = json_config_repository.dashboard_path
+    try:
+        config = json_config_repository.load_dashboard_config()
+    except (OSError, ValueError) as error:
+        raise ConfigStorageError('JSON EPM configuration read failed') from error
+    if config is None and os.path.exists(dashboard_path):
+        raise ConfigStorageError('JSON EPM configuration read failed')
+    config = config or {}
     return normalize_epm_config(config.get('epm') or {})
 
 
@@ -6037,17 +6139,30 @@ LABELS_CACHE = {'data': None, 'timestamp': 0}
 LABELS_CACHE_TTL = 15 * 60  # 15 minutes
 
 
-# --- Custom Field Config Endpoints ---
-
 def _save_field_config(config_key, cache_name=None):
-    """Generic helper to save a field config (fieldId + fieldName) into dashboard-config.json."""
-    payload = request.get_json(silent=True) or {}
-    field_id = str(payload.get('fieldId', '')).strip()
-    field_name = str(payload.get('fieldName', '')).strip()
+    """Save a route-owned Jira field configuration."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'request body must be a JSON object'}), 400
+    allowed = {'fieldId', 'fieldName'} | ({'baseRevision'} if config_storage_db_enabled() else set())
+    if set(payload) - allowed:
+        return jsonify({'error': 'unsupported configuration field'}), 400
+    if config_storage_db_enabled() and 'baseRevision' not in payload:
+        return jsonify({'error': 'baseRevision is required'}), 400
     try:
-        dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
-        dashboard_config[config_key] = {'fieldId': field_id, 'fieldName': field_name}
-        save_dashboard_config(dashboard_config)
+        value = normalize_shared_admin_section(config_key, {key: payload.get(key, '') for key in ('fieldId', 'fieldName')})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    try:
+        revision = None
+        if config_storage_db_enabled():
+            revision = save_dashboard_config_section(
+                config_key, value, base_revision=payload.get('baseRevision'),
+            ).config_revision
+        else:
+            dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
+            dashboard_config[config_key] = value
+            save_dashboard_config(dashboard_config)
         # Invalidate tasks cache so next fetch uses the new field
         global TASKS_CACHE
         TASKS_CACHE = {}
@@ -6056,9 +6171,20 @@ def _save_field_config(config_key, cache_name=None):
             g = globals()
             with _cache_lock:
                 g[cache_name] = None
+    except WorkspaceConfigConflict as error:
+        current_value = (error.current.payload or {}).get(config_key) or {}
+        return jsonify({
+            'error': 'workspace_config_conflict',
+            'message': 'Shared settings changed while you were editing. Your changes are still unsaved.',
+            'currentRevision': error.current.config_revision,
+            'current': {'section': config_key, 'value': current_value, 'configRevision': error.current.config_revision},
+        }), 409
     except Exception as e:
         return jsonify({'error': f'Failed to save {config_key} config', 'message': str(e)}), 500
-    return jsonify({'fieldId': field_id, 'fieldName': field_name})
+    result = dict(value)
+    if revision is not None:
+        result['configRevision'] = revision
+    return jsonify(result)
 
 
 # --- Issue Types ---

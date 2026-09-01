@@ -39,10 +39,19 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # validate_groups_config wrapper, mirroring normalize_group_team_labels (+6 lines).
     # bugfix/ready-to-close-jql-414 batches the GET-backed child scan at 40 epic keys
     # while retaining its existing global result cap and pagination behavior (+5 lines).
-    # planning-capacity-editing Task 1 adds the shared-config adapter and Capacity config
-    # route support; Task 2 adds request-aware Capacity read wiring and Jira issue targets;
-    # Task 4 adds provider-verified OAuth grants to the request context (+3 lines).
-    "jira_server.py": 6332,
+    # bugfix/shared-admin-configuration adds the request-scoped immutable workspace config
+    # snapshot, route-owned section save wrapper, DB full-replacement guard, and revision-aware
+    # field-config compatibility handlers. Validation and persistence remain extracted (+57).
+    # bugfix/user-owned-epm-config Task 2 routes every runtime EPM consumer through one
+    # authenticated user's private-view config snapshot, threads its generation into cache
+    # dependencies, and scopes post-commit cache invalidation to that user's partition (+46).
+    # bugfix/review-multidevice-sessions-plan adds the persistent DB browser-session lifecycle
+    # entrypoint wiring for callback creation/replacement, failure-safe legacy-cookie upgrade,
+    # sanitized upgrade-failure logging, revocation, logout, and browser-bound CSRF/Scenario
+    # context propagation (+24).
+    # feature/planning-capacity-editing threads the workspace Capacity snapshot through reads,
+    # scenario sizing, verified OAuth scope context, and exact Jira issue mutations (+74).
+    "jira_server.py": 6458,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -86,16 +95,23 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # interactive/passive branch for real Epics (+35 over the 15965 ceiling).
     # Header dropdown query inputs add Group, Teams, and Sprint filtering while preserving
     # the existing shared main/compact control surface (+101 over the 16000 ceiling).
-    # First-run sprint recovery waits for department onboarding, separates sprint errors
-    # from task errors, routes Retry back to sprint discovery, deduplicates concurrent Retry
-    # requests, and queues required forced refreshes behind active discovery (+24 over 16101).
-    # planning-capacity-editing Task 1 adds 23 Settings Capacity lines for config revision,
-    # stale-conflict draft retention, and unresolved-marker resolution wiring.
-    # planning-capacity-editing Task 6 adds a net 30 dashboard orchestration lines
-    # (16148 -> 16178) for scoped capacity read ownership, retry, stale/error state,
-    # exact-target save reconciliation, and action suppression after extracting the card
-    # rendering; lifecycle decisions remain executable in planningCapacityUtils.
-    "frontend/src/dashboard.jsx": 16178,
+    # improvement/personal-group-star adds source-aware personal-favorite wiring, canonical
+    # preference snapshot application, and stale group-scope clearing. First-run sprint
+    # recovery waits for department onboarding, separates sprint errors from task errors,
+    # routes Retry back to sprint discovery, deduplicates concurrent Retry requests, and
+    # queues required forced refreshes behind active discovery.
+    # bugfix/shared-admin-configuration wires one atomic shared snapshot/revision into the
+    # existing Settings drafts, threads sequential compare-and-swap saves, and renders conflict
+    # plus safe auth-recovery actions. Pure conflict copy/rebase logic stays extracted (+113).
+    # bugfix/user-owned-epm-config Task 4 replaces workspace EPM draft/save wiring with the
+    # private-view contract while preserving unified Settings save behavior (+36). Task 5
+    # integrates the terminal global authentication gate across existing async consumers,
+    # keyboard handlers, Scenario polling/SSE, and removes feature-local recovery UI (+43).
+    # bugfix/multidevice-sessions-continuation adds per-tab auth-resume capture/restore,
+    # staged Planning hydration, and terminal bootstrap-safe recovery wiring (+249).
+    # feature/planning-capacity-editing adds the Capacity config lifecycle and one-at-a-time
+    # team card editor while retaining the global auth-lock and workspace-config flows (+33).
+    "frontend/src/dashboard.jsx": 16657,
 }
 
 

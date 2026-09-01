@@ -204,7 +204,7 @@ test('dashboard delegates team capacity cards with OAuth and server-attested mut
     assert.doesNotMatch(dashboardSource, /className="team-capacity-action-rail/);
     assert.doesNotMatch(dashboardSource, /document\.addEventListener\(['"]pointerdown/);
     assert.match(componentSource, /document\.addEventListener\(['"]pointerdown/);
-    assert.match(componentSource, /safeCapacityRecoveryUrl/);
+    assert.doesNotMatch(componentSource, /safeCapacityRecoveryUrl|recoveryUrl|Recover Atlassian access/);
     assert.doesNotMatch(componentSource, /redirectToAuthRecovery|location\.assign/);
     assert.doesNotMatch(
         componentSource,
@@ -275,6 +275,7 @@ test('capacity read state is atomic, scope-tagged, and advances revision only af
     assert.match(source, /const \[capacityDataStale, setCapacityDataStale\] = useState\(false\)/);
     assert.match(source, /capacityState\.scopeSignature === capacityScopeSignature/);
     assert.match(source, /const capacityMutationEnabled = effectiveCapacityState\.mutationEnabled === true/);
+    assert.equal((source.match(/setCapacityEnabled\(Boolean\([^)]*capacityConfigRequiresResolution[^)]*\)\)/g) || []).length, 2);
     assert.match(source, /commitCapacityReadLifecycle\(\{ type: 'success', scopeSignature, payload: data \}\)/);
     assert.doesNotMatch(source, /handleCapacitySaved[\s\S]{0,800}setCapacityReadRevision/);
 });
@@ -381,12 +382,13 @@ test('dashboard delegates planning project split bar to ENG component', () => {
     assert.match(componentSource, /No tasks selected/);
 });
 
-test('ENG status transition hook imports the transition API and auth recovery helpers', () => {
+test('ENG status transition hook imports the transition API and typed global auth contract', () => {
     const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
     const hookSource = fs.readFileSync(hookPath, 'utf8');
 
     assert.match(hookSource, /import \{ fetchIssueTransitionOptions, transitionIssues \} from '\.\.\/api\/jiraIssueApi\.js';/);
-    assert.match(hookSource, /import \{ authRecoveryLoginUrl, redirectToAuthRecovery \} from '\.\/useEngSprintData\.js';/);
+    assert.match(hookSource, /import \{ isAuthenticationRequiredError \} from '\.\.\/api\/authRequired\.js';/);
+    assert.doesNotMatch(hookSource, /redirectToAuthRecovery|location\.assign/);
 });
 
 test('ENG status transition hook aborts in-flight option requests when the target signature changes', () => {

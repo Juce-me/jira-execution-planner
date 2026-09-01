@@ -168,6 +168,8 @@ async function installCapacityFixture(page, options = {}) {
     const state = {
         authMode: options.authMode || 'atlassian_oauth',
         jiraUrl: options.jiraUrl === undefined ? 'https://jira.example/' : options.jiraUrl,
+        capacityProject: options.capacityProject === undefined ? 'CAP' : options.capacityProject,
+        capacityConfigRequiresResolution: options.capacityConfigRequiresResolution === true,
         capacityPayload: structuredClone(options.capacityPayload || fixtureData?.capacityPayload || capacityPayload),
         nextCapacityPayload: structuredClone(options.nextCapacityPayload || fixtureData?.nextCapacityPayload || {
             enabled: true, mutationEnabled: true, sprint: nextSprintName, capacities: {}, entries: [],
@@ -176,7 +178,7 @@ async function installCapacityFixture(page, options = {}) {
         nextStories: fixtureData?.nextStories || nextStories,
         selectedKeys: fixtureData?.selectedKeys || selectedKeys,
         teamNames: fixtureData?.teamNames || ['Alpha', 'Beta', 'Gamma'],
-        capacityGetStatus: 200,
+        capacityGetStatus: options.capacityGetStatus || 200,
         capacityGetGate: null,
         patchResponse: options.patchResponse || ((body, issueKey) => ({
             issueKey,
@@ -293,7 +295,8 @@ async function installCapacityFixture(page, options = {}) {
         if (url.pathname === '/api/config') {
             return json(route, {
                 jiraUrl: state.jiraUrl,
-                capacityProject: 'CAP',
+                capacityProject: state.capacityProject,
+                capacityConfigRequiresResolution: state.capacityConfigRequiresResolution,
                 authMode: state.authMode,
                 projectsConfigured: true,
                 environmentConfigExists: true,
@@ -892,7 +895,7 @@ test('old GET and PATCH settlements in the scope-switch turn cannot replace the 
     await expect(page.getByText('Cap 50.0', { exact: false })).toHaveCount(0);
 });
 
-test('capacity conflict recovery and config errors preserve drafts without unsafe navigation or retry', async ({ page }) => {
+test('capacity auth expiry preserves the draft behind the global safe recovery gate', async ({ page }) => {
     await page.setViewportSize({ width: 1028, height: 720 });
     const fixture = await openPlanning(page);
     const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
@@ -904,16 +907,20 @@ test('capacity conflict recovery and config errors preserve drafts without unsaf
     fixture.state.patchStatus = 401;
     fixture.state.patchResponse = { error: 'auth_required', loginUrl: '/login?reason=session_expired' };
     await input.press('Enter');
-    await expect(card.getByRole('link', { name: 'Recover Atlassian access' })).toHaveAttribute('href', '/login?reason=session_expired');
-    await expect(input).toHaveValue('8');
+    const gate = page.getByRole('alertdialog');
+    await expect(gate).toBeVisible();
+    await expect(gate.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(card.locator('input.team-capacity-input')).toHaveValue('8');
     expect(new URL(page.url()).pathname).toBe('/');
+});
 
-    fixture.state.patchResponse = { error: 'auth_required', loginUrl: 'https://evil.example/login' };
-    await card.getByRole('button', { name: 'Save Alpha capacity' }).click();
-    await expect(card.getByRole('status')).toContainText('Your Jira sign-in expired');
-    await expect(card.getByRole('link', { name: 'Recover Atlassian access' })).toHaveCount(0);
-    expect(new URL(page.url()).pathname).toBe('/');
-
+test('capacity config errors preserve drafts without retry', async ({ page }) => {
+    await page.setViewportSize({ width: 1028, height: 720 });
+    const fixture = await openPlanning(page);
+    const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
+    await card.hover();
+    await card.getByRole('button', { name: 'Edit Alpha capacity' }).click();
+    const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' });
     fixture.state.patchStatus = 409;
     fixture.state.patchResponse = { error: 'capacity_config_missing' };
     await input.fill('8.5');
@@ -925,6 +932,19 @@ test('capacity conflict recovery and config errors preserve drafts without unsaf
     await input.press('Enter');
     await expect.poll(() => capacityCalls(fixture.calls, 'PATCH').length).toBe(requestCount);
     await expect(input).toHaveValue('8.5');
+});
+
+test('unresolved bootstrap config still loads Capacity and exposes retry recovery', async ({ page }) => {
+    await page.setViewportSize({ width: 1028, height: 720 });
+    const fixture = await openPlanning(page, {
+        capacityProject: '',
+        capacityConfigRequiresResolution: true,
+        capacityGetStatus: 409,
+        capacityPayload: { error: 'capacity_config_conflict' },
+    });
+
+    await expect(page.getByRole('button', { name: 'Retry capacity' })).toBeVisible();
+    expect(capacityCalls(fixture.calls, 'GET')).toHaveLength(1);
 });
 
 test('capacity scope reread blocks a remapped open editor and shows stale retry state', async ({ page }) => {

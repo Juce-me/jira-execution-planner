@@ -1,5 +1,21 @@
 # Planning Team Capacity Editing Implementation Plan
 
+> **Status:** Implemented with changes and verified on `feature/planning-capacity-editing`; pending integration into `main`.
+
+## Outcome
+
+Implemented with changes. ENG Planning now reads Capacity targets from the workspace-shared dashboard configuration, exposes the Jira issue and single-card editor only for signed-in OAuth users with a provider-reported write grant, saves through the signed-in user's Jira context, and preserves one scoped Capacity read for the selected sprint/team set. The approved hover, single-editor, compact equal-height controls, Enter/Escape behavior, microbar gap, conflict handling, responsive layout, analytics, and generated frontend output are covered by automated tests.
+
+## Current Accuracy
+
+This plan records the implementation sequence, but these as-built decisions supersede the earlier task text where they differ:
+
+- Capacity is a revisioned section of the canonical `WorkspaceDashboardConfig`; the planned separate `WorkspaceCapacityConfig` table and online reconciliation model were not retained after merging the shared-configuration architecture from `origin/main`.
+- Legacy private saved-view Capacity values are rejected on new writes and sanitized from responses; reads do not mutate stored user rows.
+- Application API `401` recovery is owned by the global `AuthRequiredGate`. Capacity cards keep their mounted draft inert while the gate is shown and do not render a second card-local recovery action.
+- Jira browse links use the configured Atlassian origin plus `/browse/<issue-key>` and intentionally discard any configured path, query, or fragment.
+- The implementation and tests are the source of truth for schema and route details that the completed checklist below describes using the earlier standalone-storage design.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let a signed-in Atlassian OAuth user open and safely edit the configured Jira Capacity value from a Selected SP by Team card while preserving the existing Planning layout and calculations.
@@ -79,7 +95,7 @@ Every global-guard `DatabaseConfigurationError` path uses that fixed storage res
 
 ## Plan Review
 
-Two independent security, feasibility, and UI review passes plus a final source trace found and resolved: private-view ownership and direct saved-view ingress; non-durable migration conflicts; cross-site legacy seeding; unverified OAuth scope fabrication; guarded-route tests with non-attested context stubs; missing numeric-field attestation; global guard error leakage; one-time CSRF reuse and an inaccessible private CSRF helper; exact-field-id fallback; stale GET and target-remap races; overstated Jira concurrency; unsafe cancel claims; incomplete PUT-409 reconciliation; responsive overflow; raw/adjusted unit ambiguity; auth-recovery, analytics, and body-allowlist gaps; and an impossible pre-commit dist-clean gate. The requester then approved the runnable UI reference, including one-editor-only locking, no Jira/pencil rails while editing, a clear rail-to-microbar gap, and equal-height compact one-row edit controls. The endpoint matrix, state machine, task ordering, existing-path inventory, import/export coverage, and focused/final commands now encode the corrections. The plan is ready for execution; Jira's documented validation-GET-to-unconditional-PUT race remains an explicit residual risk rather than an unproved compare-and-set claim.
+Two independent security, feasibility, and UI review passes plus a final source trace found and resolved: private-view ownership and direct saved-view ingress; non-durable migration conflicts; cross-site legacy seeding; unverified OAuth scope fabrication; guarded-route tests with non-attested context stubs; missing numeric-field attestation; global guard error leakage; one-time CSRF reuse and an inaccessible private CSRF helper; exact-field-id fallback; stale GET and target-remap races; overstated Jira concurrency; unsafe cancel claims; incomplete PUT-409 reconciliation; responsive overflow; raw/adjusted unit ambiguity; auth-recovery, analytics, and body-allowlist gaps; and an impossible pre-commit dist-clean gate. The requester then approved the runnable UI reference, including one-editor-only locking, no Jira/pencil rails while editing, a clear rail-to-microbar gap, and equal-height compact one-row edit controls. The endpoint matrix, state machine, task ordering, existing-path inventory, import/export coverage, and focused/final commands encode the implemented behavior; Jira's documented validation-GET-to-unconditional-PUT race remains an explicit residual risk rather than an unproved compare-and-set claim.
 
 ---
 
@@ -1391,7 +1407,7 @@ In docs/README_ANALYTICS.md document:
 - existing external_link_opened/jira_issue_browse coverage for the Jira icon;
 - no GA4 custom-dimension registration.
 
-Update docs/plans/README.md so this EXEC plan follows the SUPPORT design and is marked Ready for execution only after every review finding is resolved.
+Update docs/plans/README.md so this EXEC plan follows the SUPPORT design and reflects its implemented status after every review finding is resolved.
 
 - [x] **Step 5: Run focused frontend and backend suites**
 

@@ -8,6 +8,9 @@ import tempfile
 from urllib.parse import parse_qs, urlparse
 
 from backend import app as app_module
+from backend.auth.context import RequestAuthContext
+from backend.auth.csrf import CSRF_SESSION_KEY, validate_csrf_token
+from backend.routes import auth_routes
 import jira_server
 from tests.oauth_test_helpers import FULL_OAUTH_SCOPE
 
@@ -128,6 +131,151 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertNotIn('access_token', body)
         self.assertNotIn('refresh_token', body)
 
+    def test_db_csrf_token_survives_connection_rotation_only_in_issuing_browser(self):
+        """Connection rotation preserves CSRF validity only in the issuing browser."""
+        def context(browser_session_id, token_version):
+            return RequestAuthContext(
+                auth_mode='atlassian_oauth',
+                user_id='user-1',
+                stable_subject='account-1',
+                atlassian_account_id='account-1',
+                workspace_id='workspace-1',
+                auth_connection_id='connection-1',
+                cloud_id='cloud-1',
+                site_url='https://example.atlassian.net',
+                token_version=token_version,
+                account_status='active',
+                is_admin=False,
+                browser_session_id=browser_session_id,
+            )
+
+        profile_a = jira_server.app.test_client()
+        profile_b = jira_server.app.test_client()
+        before_rotation = context('browser-b', '1')
+        after_rotation_b = context('browser-b', '2')
+        after_rotation_a = context('browser-a', '2')
+        with profile_b.session_transaction() as flask_session:
+            flask_session['db_oauth_session'] = {
+                'db_browser_session_id': before_rotation.browser_session_id,
+            }
+
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'database_storage_enabled', return_value=True), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=before_rotation):
+            response = profile_b.get('/api/auth/csrf')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        token = response.get_json()['csrfToken']
+        with profile_b.session_transaction() as flask_session:
+            issued_hashes = list(flask_session[CSRF_SESSION_KEY])
+        with profile_a.session_transaction() as flask_session:
+            flask_session[CSRF_SESSION_KEY] = issued_hashes
+            self.assertFalse(validate_csrf_token(flask_session, {
+                'db_browser_session_id': after_rotation_a.browser_session_id,
+                'db_auth_connection_id': after_rotation_a.auth_connection_id,
+                'account_id': after_rotation_a.atlassian_account_id,
+            }, token))
+        with profile_b.session_transaction() as flask_session:
+            self.assertFalse(validate_csrf_token(flask_session, {
+                'db_browser_session_id': after_rotation_b.browser_session_id,
+                'db_auth_connection_id': 'connection-2',
+                'account_id': after_rotation_b.atlassian_account_id,
+            }, token))
+            self.assertFalse(validate_csrf_token(flask_session, {
+                'db_browser_session_id': after_rotation_b.browser_session_id,
+                'db_auth_connection_id': after_rotation_b.auth_connection_id,
+                'account_id': 'account-2',
+            }, token))
+            self.assertTrue(validate_csrf_token(flask_session, {
+                'db_browser_session_id': after_rotation_b.browser_session_id,
+                'db_auth_connection_id': after_rotation_b.auth_connection_id,
+                'account_id': after_rotation_b.atlassian_account_id,
+            }, token))
+
+    def test_csrf_context_mapping_preserves_precedence_and_is_shared_by_consumers(self):
+        """Use one mapping helper for opaque and legacy CSRF session data."""
+        from backend.auth.csrf import csrf_session_data_for_auth_context
+
+        opaque_context = RequestAuthContext(
+            auth_mode='atlassian_oauth',
+            user_id='user-1',
+            stable_subject='account-1',
+            atlassian_account_id='account-1',
+            workspace_id='workspace-1',
+            auth_connection_id='connection-1',
+            cloud_id='cloud-1',
+            site_url='https://example.atlassian.net',
+            token_version='7',
+            account_status='active',
+            is_admin=False,
+            browser_session_id='browser-1',
+        )
+        legacy_context = RequestAuthContext(
+            auth_mode='atlassian_oauth',
+            user_id='user-1',
+            stable_subject='account-1',
+            atlassian_account_id='account-1',
+            workspace_id='workspace-1',
+            auth_connection_id='connection-1',
+            cloud_id='cloud-1',
+            site_url='https://example.atlassian.net',
+            token_version='7',
+            account_status='active',
+            is_admin=False,
+        )
+        opaque_data = {
+            'db_browser_session_id': 'browser-1',
+            'db_auth_connection_id': 'connection-1',
+            'account_id': 'account-1',
+        }
+        legacy_data = {
+            'db_browser_session_id': '',
+            'db_auth_connection_id': 'connection-1',
+            'account_id': 'account-1',
+            'db_token_version': '7',
+        }
+        self.assertEqual(csrf_session_data_for_auth_context(opaque_context), opaque_data)
+        self.assertEqual(csrf_session_data_for_auth_context(legacy_context), legacy_data)
+
+        issued_data = []
+
+        def issue_token(_flask_session, session_data):
+            issued_data.append(session_data)
+            return 'csrf-token'
+
+        with patch.object(
+            jira_server,
+            'csrf_session_data_for_auth_context',
+            wraps=csrf_session_data_for_auth_context,
+        ) as shared_mapper:
+            with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                 patch.object(jira_server, 'database_storage_enabled', return_value=True), \
+                 jira_server.app.test_request_context('/api/scenario', method='POST'):
+                with patch.object(
+                    jira_server,
+                    'scenario_draft_request_auth_context',
+                    return_value=opaque_context,
+                ):
+                    internal_data = jira_server.csrf_session_data_for_request()
+
+            with self.client.session_transaction() as flask_session:
+                flask_session['db_oauth_session'] = {
+                    'db_browser_session_id': opaque_context.browser_session_id,
+                }
+            with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                 patch.object(jira_server, 'database_storage_enabled', return_value=True), \
+                 patch.object(
+                     jira_server,
+                     'current_request_auth_context',
+                     return_value=opaque_context,
+                 ), patch.object(auth_routes, 'issue_csrf_token', side_effect=issue_token):
+                response = self.client.get('/api/auth/csrf')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(internal_data, opaque_data)
+        self.assertEqual(issued_data, [opaque_data])
+        self.assertEqual(shared_mapper.call_count, 2)
+
     def test_oauth_login_redirects_to_atlassian(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
@@ -160,14 +308,14 @@ class TestAuthRoutes(unittest.TestCase):
         query = parse_qs(urlparse(response.headers['Location']).query)
         self.assertEqual(query['prompt'], ['consent'])
 
-    def test_missing_scope_entry_page_does_not_force_consent(self):
+    def test_missing_scope_entry_page_forces_consent(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.get('/login?reason=missing_scope')
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
         self.assertIn('/api/auth/atlassian/login', body)
-        self.assertNotIn('prompt=consent', body)
+        self.assertIn('prompt=consent', body)
 
     def test_oauth_login_rejects_non_local_token_store_environment(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \

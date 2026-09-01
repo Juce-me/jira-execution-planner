@@ -139,8 +139,10 @@ def scenario_draft_reload_source_loader(context, draft, timeout_seconds):
 
     scope_payload = deepcopy(draft.get('scopePayload') or {})
     payload = _scenario_reload_payload(scope_payload)
+    if not context.browser_session_id:
+        raise ScenarioDraftReloadUnavailable('browser session is required for DB OAuth Scenario reload')
     with app.test_request_context('/api/scenario', method='POST', json=payload):
-        session['db_oauth_session'] = {'db_auth_connection_id': context.auth_connection_id}
+        session['db_oauth_session'] = {'db_browser_session_id': context.browser_session_id}
         response = planner()
 
     if isinstance(response, tuple):

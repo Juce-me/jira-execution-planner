@@ -523,22 +523,6 @@ test('parseCapacityDraft accepts finite non-negative numbers without coercing bl
     }
 });
 
-test('safeCapacityRecoveryUrl permits only same-origin login and auth routes', async () => {
-    const { safeCapacityRecoveryUrl } = await loadUtils();
-    const origin = 'https://planner.example';
-
-    assert.equal(safeCapacityRecoveryUrl({ loginUrl: '/login?reason=required#retry' }, origin), '/login?reason=required#retry');
-    assert.equal(safeCapacityRecoveryUrl({ loginUrl: '/login-evil', recoveryUrl: '/login?reason=missing_scope' }, origin), '/login?reason=missing_scope');
-    assert.equal(safeCapacityRecoveryUrl({ recoveryUrl: '/auth/reconnect?provider=atlassian' }, origin), '/auth/reconnect?provider=atlassian');
-    for (const candidate of [
-        '/login-evil', '//evil.example/login', 'https://evil.example/login',
-        'javascript:alert(1)', '', 'not a url', '/%zz',
-    ]) {
-        assert.equal(safeCapacityRecoveryUrl({ recoveryUrl: candidate }, origin), '');
-    }
-    assert.equal(safeCapacityRecoveryUrl(null, origin), '');
-});
-
 test('capacity share labels describe only one-sided planning filters', async () => {
     const { getCapacityShareLabel } = await loadUtils();
     const split = { product: 0.7, tech: 0.3 };

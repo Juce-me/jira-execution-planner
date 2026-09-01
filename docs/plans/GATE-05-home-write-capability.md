@@ -16,7 +16,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | --- | --- |
 | Status | Blocked |
 | Checked on | 2026-09-01 |
-| Last result | FAIL insufficient_home_write_probe_input (probe not run: operator inputs and an approved disposable Home project are unavailable; the Planning Capacity plan adds only a signed-in-user Jira REST issue-field write) |
+| Last result | FAIL insufficient_home_write_probe_input (probe not run: all four operator inputs and an approved disposable Home project were unavailable; Planning Capacity writes only to Jira through the signed-in user's OAuth context) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -106,8 +106,9 @@ Required behavior after the gate passes:
 - Require active OAuth user, active DB user, active OAuth `auth_connection`, token-bound CSRF, and active `atlassian_user_api_token`.
 - Resolve credentials through `resolve_home_credential(context, "write_as_user")`.
 - Never fall back to the workspace `home_townsquare_basic` service integration.
-- Return `409 home_user_token_required` when the user API-token connection is missing.
-- Return `401 auth_connection_revoked` when either the OAuth connection or the user API-token connection is revoked.
+- Return `409 home_user_token_required` when the user API-token connection is missing or inactive, including
+  revoked, expired, and error states.
+- Return `401 auth_connection_revoked` only when the primary OAuth connection is revoked.
 - Return `403 home_write_not_authorized` when Home rejects the verified user credential for the target project.
 - On success, return only sanitized update metadata.
 - After a successful write, clear EPM caches so later project, issue, and rollup reads cannot serve stale Home update text.
@@ -117,6 +118,7 @@ Required tests after the gate passes:
 
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_requires_user_api_token`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_missing_token_response_includes_connect_url`
+- `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_returns_home_user_token_required_when_user_token_revoked`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_returns_auth_connection_revoked_when_oauth_revoked`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_uses_user_credential_not_service_integration`
 - `tests/test_home_mutation_auth_guards.py::TestHomeProjectUpdateRoute.test_post_home_update_requires_token_bound_csrf`
@@ -127,7 +129,20 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
-- 2026-09-01: Startup sweep rechecked the gate while creating the Planning Capacity editing plan. The required operator inputs and an approved disposable Home project are unavailable, and the planned mutation uses only Jira REST through the signed-in user's OAuth context. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-09-01: The Planning Capacity merge adds a signed-in-user Jira REST field write only. The required Home probe inputs and an approved disposable Home project remain unavailable, so no Home mutation probe was run. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-09-01: Execution baseline sweep confirmed the four `HOME_WRITE_PROBE_*` variables are not present, so no Home write mutation probe was run. This plan adds no Home/Townsquare write path or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+
+- 2026-08-31: Startup sweep rechecked the gate while making the multi-device browser-session and per-tab reauthentication plans implementation-ready. All four required `HOME_WRITE_PROBE_*` inputs and an approved disposable Home project remain unavailable, and the revision adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-30: Startup sweep rechecked the gate while revising the multi-device browser-session design for issue #143. All four required `HOME_WRITE_PROBE_*` inputs and an approved disposable Home project remain unavailable, and the revised work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-29: Acceptance/integration sweep confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this integration adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-28: Startup sweep rechecked the gate while running the localhost PostgreSQL runner work and planning removal of the redundant single-option ENG/EPM view control. The required operator inputs and an approved disposable Home project remain unavailable, and this frontend work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-27: Final execution sweep for workspace-shared admin configuration confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this implementation adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-26: Final execution sweep for workspace-shared admin configuration confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this implementation adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-26: Startup sweep rechecked the gate while validating workspace-shared admin configuration persistence. The required operator inputs and an approved disposable Home project remain unavailable, and this plan adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-26: Startup sweep rechecked the gate while executing the personal-group-star prerequisite. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and the implementation adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-26: Startup sweep rechecked the gate while splitting personal-group-star behavior from onboarding. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and neither plan adds a Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-25: Startup sweep rechecked the gate while designing multi-device DB/OAuth browser sessions. The required operator inputs and an approved disposable Home project remain unavailable, and this work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
+- 2026-08-25: Startup sweep rechecked the gate while planning per-user onboarding. All four required `HOME_WRITE_PROBE_*` inputs are unavailable, and the plan adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-08: Startup sweep rechecked the gate while continuing the ENG Group Board execution plan. The required operator inputs and an approved disposable Home project remain unavailable, and this work adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-07-27: Startup sweep rechecked the gate while designing Cloud SQL IAM database connectivity. The required disposable-project probe inputs remain unavailable, and this database-connection-only work adds no Home/Townsquare route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-07-16: Startup sweep rechecked the gate while executing the ENG Project Track write switch plan. Required `HOME_WRITE_PROBE_EMAIL`, `HOME_WRITE_PROBE_API_TOKEN`, `HOME_WRITE_PROBE_PROJECT_ID`, and `HOME_WRITE_PROBE_TEXT` inputs remain unavailable. The executed feature writes only the Jira Project Track field via the signed-in user's OAuth issue-edit path and adds no Home/Townsquare or EPM mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.

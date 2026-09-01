@@ -2,6 +2,8 @@
 
 > **Status:** Done. Executed on branch `cdx/auth-db-context-plan` and merged to `main` in PR #19 (`1cd0618`). Kept for audit context only; do not execute as an active plan.
 
+> **Current accuracy:** This file remains authoritative for per-user Home/Townsquare credentials, read authorization, and private EPM ownership. PR #130's temporary shared-EPM boundary is superseded by `DONE-user-owned-epm-configuration.md`; EPM scope, label mask, issue-type mapping, and project-label mapping belong to the owning user's default private saved view. EPM tab and sprint remain private UI state, with existing private-view values preserved. The connected `atlassian_user_api_token` is represented in `auth_connections` and stored encrypted in `auth_tokens`; it never enters EPM configuration or shared service integrations.
+
 ## Status
 
 - [x] Task 1: Verify current auth/storage baseline

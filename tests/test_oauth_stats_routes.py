@@ -383,7 +383,18 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()["error"], "csrf_required")
 
-    def test_epm_home_routes_are_oauth_ready_with_service_home_credentials(self):
+    def test_epm_home_routes_are_oauth_ready_with_current_user_home_credentials(self):
+        epm_config = {
+            "version": 2,
+            "labelPrefix": "rnd_project_*",
+            "scope": {"rootGoalKey": "", "subGoalKeys": []},
+            "issueTypes": {
+                "initiative": ["Initiative"],
+                "epic": ["Epic"],
+                "leaf": ["Story"],
+            },
+            "projects": {},
+        }
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "fetch_home_site_cloud_id", return_value="cloud-123"), \
              patch.object(jira_server, "fetch_epm_goal_catalog", return_value=[]), \
@@ -397,20 +408,21 @@ class OAuthStatsRouteTests(unittest.TestCase):
              patch.object(jira_server, "build_base_jql", return_value="project = ABC"), \
              patch.object(jira_server, "fetch_issues_by_jql", return_value=[]), \
              patch.object(jira_server, "build_per_project_rollup", return_value=({"project": {}}, 200, {})):
-            csrf = self.client.get("/api/auth/csrf").get_json()["csrfToken"]
+            configuration_csrf = self.client.get("/api/auth/csrf").get_json()["csrfToken"]
+            preview_csrf = self.client.get("/api/auth/csrf").get_json()["csrfToken"]
             responses = [
                 self.client.get("/api/epm/scope"),
                 self.client.get("/api/epm/goals"),
                 self.client.get("/api/epm/projects"),
                 self.client.post(
                     "/api/epm/projects/configuration",
-                    headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": csrf},
-                    json={},
+                    headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": configuration_csrf},
+                    json=epm_config,
                 ),
                 self.client.post(
                     "/api/epm/projects/preview",
-                    headers={"X-Requested-With": "jira-execution-planner"},
-                    json={},
+                    headers={"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": preview_csrf},
+                    json=epm_config,
                 ),
                 self.client.get("/api/epm/projects/rollup/all?tab=backlog"),
                 self.client.get("/api/epm/projects/home-1/issues?tab=backlog"),

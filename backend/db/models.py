@@ -208,25 +208,34 @@ class WorkspaceGroupConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
 
-class WorkspaceCapacityConfig(Base):
-    __tablename__ = 'workspace_capacity_configs'
-    __table_args__ = (
-        UniqueConstraint('workspace_id', name='uq_workspace_capacity_configs_workspace'),
-        CheckConstraint("status in ('active', 'requires_resolution')", name='ck_workspace_capacity_configs_status'),
-    )
+class WorkspaceDashboardConfig(Base):
+    __tablename__ = 'workspace_dashboard_configs'
+    __table_args__ = (UniqueConstraint('workspace_id', name='uq_workspace_dashboard_configs_workspace'),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
-    jira_site_url: Mapped[str] = mapped_column(String(512), nullable=False, default='')
-    jira_cloud_id: Mapped[str] = mapped_column(String(255), nullable=False, default='')
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default='active')
-    project_key: Mapped[str] = mapped_column(String(64), nullable=False, default='')
-    field_id: Mapped[str] = mapped_column(String(255), nullable=False, default='')
-    field_name: Mapped[str] = mapped_column(String(255), nullable=False, default='')
-    field_schema_type: Mapped[str] = mapped_column(String(64), nullable=False, default='')
-    field_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    payload_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    capacity_jira_site_url: Mapped[Optional[str]] = mapped_column(String(512))
+    capacity_jira_cloud_id: Mapped[Optional[str]] = mapped_column(String(255))
+    capacity_field_schema_type: Mapped[Optional[str]] = mapped_column(String(64))
+    capacity_field_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    updated_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class WorkspaceTeamCatalog(Base):
+    __tablename__ = 'workspace_team_catalogs'
+    __table_args__ = (UniqueConstraint('workspace_id', name='uq_workspace_team_catalogs_workspace'),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    payload_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
@@ -366,7 +375,10 @@ class AuthConnection(Base):
             name='ck_auth_connections_provider',
         ),
         CheckConstraint("status in ('active', 'expired', 'revoked', 'error')", name='ck_auth_connections_status'),
-        CheckConstraint("scope_provenance in ('provider', 'unknown')", name='ck_auth_connections_scope_provenance'),
+        CheckConstraint(
+            "scope_provenance in ('provider', 'unknown')",
+            name='ck_auth_connections_scope_provenance',
+        ),
         Index(
             'uq_auth_connections_current_cloud',
             'user_id',
@@ -406,14 +418,33 @@ class AuthConnection(Base):
     cloud_id: Mapped[Optional[str]] = mapped_column(String(255))
     credential_subject: Mapped[Optional[str]] = mapped_column(String(255))
     capabilities: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
-    scope_provenance: Mapped[str] = mapped_column(String(32), nullable=False, default='unknown', server_default=text("'unknown'"))
     scopes: Mapped[Optional[list]] = mapped_column(JSON)
+    scope_provenance: Mapped[str] = mapped_column(
+        String(32), nullable=False, default='unknown', server_default=text("'unknown'"),
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default='active')
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     last_validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class BrowserSession(Base):
+    __tablename__ = 'browser_sessions'
+    __table_args__ = (
+        Index('ix_browser_sessions_connection', 'auth_connection_id'),
+        Index('ix_browser_sessions_user_workspace', 'user_id', 'workspace_id'),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    auth_connection_id: Mapped[str] = mapped_column(
+        ForeignKey('auth_connections.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
 class AuthToken(Base):

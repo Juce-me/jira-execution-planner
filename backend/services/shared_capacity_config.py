@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import re
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
+from backend.config.shared_config import normalize_shared_admin_section
 from backend.db import engine as db_engine
 from backend.db import models
 
@@ -36,168 +38,73 @@ def normalize_site_url(value):
     return str(value or '').strip().rstrip('/').lower()
 
 
-def _normalize_project(value):
-    return str(value or '').strip().upper()[:64]
-
-
-def _normalize_field_id(value):
-    return str(value or '').strip()
-
-
-def _normalize_field_name(value):
-    return str(value or '').strip()[:255]
-
-
 def _context_identity(context):
-    return normalize_site_url(getattr(context, 'site_url', '')), str(getattr(context, 'cloud_id', '') or '').strip()
+    return (
+        normalize_site_url(getattr(context, 'site_url', '')),
+        str(getattr(context, 'cloud_id', '') or '').strip(),
+    )
 
 
-def _empty_config(*, revision=1, source=CAPACITY_SOURCE_DB, requires_resolution=False):
+def _capacity(payload):
+    value = (payload or {}).get('capacity') if isinstance(payload, dict) else None
+    if not isinstance(value, dict):
+        return {'project': '', 'fieldId': '', 'fieldName': ''}
+    return {
+        'project': str(value.get('project') or '').strip().upper()[:64],
+        'fieldId': str(value.get('fieldId') or '').strip(),
+        'fieldName': str(value.get('fieldName') or '').strip()[:255],
+    }
+
+
+def _empty_config(*, revision=0, source=CAPACITY_SOURCE_DB, requires_resolution=False):
     return {
         'project': '', 'fieldId': '', 'fieldName': '',
-        'configRevision': int(revision or 1), 'source': source,
+        'configRevision': int(revision or 0), 'source': source,
         'requiresResolution': bool(requires_resolution), 'mutationEnabled': False,
     }
 
 
-def _row_matches_context(row, context):
-    site_url, cloud_id = _context_identity(context)
-    return normalize_site_url(row.jira_site_url) == site_url and str(row.jira_cloud_id or '') == cloud_id
-
-
 def _row_to_config(row, context):
-    if not _row_matches_context(row, context):
-        return _empty_config(revision=row.config_revision, requires_resolution=True)
-    requires_resolution = row.status == 'requires_resolution'
-    verified = (
-        not requires_resolution
-        and bool(row.project_key and row.field_id)
-        and row.field_schema_type == 'number'
-        and row.field_verified_at is not None
+    value = _capacity(row.payload)
+    has_mapping = bool(value['project'] or value['fieldId'])
+    site_url, cloud_id = _context_identity(context)
+    identity_matches = (
+        normalize_site_url(row.capacity_jira_site_url) == site_url
+        and str(row.capacity_jira_cloud_id or '') == cloud_id
     )
-    if requires_resolution:
+    if has_mapping and not identity_matches:
         return _empty_config(revision=row.config_revision, requires_resolution=True)
+    verified = (
+        bool(value['project'] and value['fieldId'])
+        and identity_matches
+        and row.capacity_field_schema_type == 'number'
+        and row.capacity_field_verified_at is not None
+    )
     return {
-        'project': row.project_key or '',
-        'fieldId': row.field_id or '',
-        'fieldName': row.field_name or '',
-        'configRevision': int(row.config_revision or 1),
+        **value,
+        'configRevision': int(row.config_revision or 0),
         'source': CAPACITY_SOURCE_DB,
         'requiresResolution': False,
         'mutationEnabled': bool(verified),
     }
 
 
-def _root_capacity(payload):
-    if not isinstance(payload, dict) or 'capacity' not in payload:
-        return None
-    value = payload.get('capacity')
-    if not isinstance(value, dict):
-        return ('', '', '')
-    return (
-        _normalize_project(value.get('project')),
-        _normalize_field_id(value.get('fieldId')),
-        _normalize_field_name(value.get('fieldName')),
-    )
-
-
-def _legacy_values(session, context):
-    values = []
-    views = session.execute(
-        select(models.ViewConfig).where(models.ViewConfig.workspace_id == context.workspace_id)
-    ).scalars().all()
-    for view in views:
-        value = _root_capacity(view.payload)
-        if value is not None:
-            values.append(value)
-    versions = session.execute(
-        select(models.ViewConfigVersion)
-        .join(models.ViewConfig, models.ViewConfig.id == models.ViewConfigVersion.view_config_id)
-        .where(models.ViewConfig.workspace_id == context.workspace_id)
-    ).scalars().all()
-    for version in versions:
-        value = _root_capacity(version.payload)
-        if value is not None:
-            values.append(value)
-    return set(values), views, versions
-
-
-def workspace_capacity_has_private_remnant(session, context):
-    """Whether reconciliation will promote or resolve a saved-view capacity value."""
-    values, _views, _versions = _legacy_values(session, context)
-    return bool(values)
-
-
-def _strip_payload(payload):
-    payload = dict(payload or {})
-    payload.pop('capacity', None)
-    return payload
-
-
-def _strip_legacy_payloads(views, versions):
-    for row in [*views, *versions]:
-        if isinstance(row.payload, dict) and 'capacity' in row.payload:
-            row.payload = _strip_payload(row.payload)
-
-
-def _eligible_capacity_from_payload(payload):
-    value = _root_capacity(payload)
-    return value if value is not None else None
-
-
-def ensure_workspace_capacity_reconciled(session, context, eligible_legacy_loader=None):
-    """Materialize the single durable row before any private payload is changed."""
-    row = session.execute(
-        select(models.WorkspaceCapacityConfig).where(
-            models.WorkspaceCapacityConfig.workspace_id == context.workspace_id,
-        )
-    ).scalars().first()
-    values, views, versions = _legacy_values(session, context)
-    if row is not None:
-        _strip_legacy_payloads(views, versions)
-        return row
-
-    site_url, cloud_id = _context_identity(context)
-    if len(values) == 1:
-        project, field_id, field_name = next(iter(values))
-        row_kwargs = {'status': 'active', 'project_key': project, 'field_id': field_id, 'field_name': field_name}
-    elif len(values) > 1:
-        row_kwargs = {'status': 'requires_resolution', 'project_key': '', 'field_id': '', 'field_name': ''}
-    else:
-        legacy_payload = eligible_legacy_loader() if eligible_legacy_loader is not None else None
-        legacy = _eligible_capacity_from_payload(legacy_payload)
-        if legacy is None:
-            row_kwargs = {'status': 'active', 'project_key': '', 'field_id': '', 'field_name': ''}
-        else:
-            project, field_id, field_name = legacy
-            row_kwargs = {'status': 'active', 'project_key': project, 'field_id': field_id, 'field_name': field_name}
-    row = models.WorkspaceCapacityConfig(
-        workspace_id=context.workspace_id,
-        jira_site_url=site_url,
-        jira_cloud_id=cloud_id,
-        config_revision=1,
-        created_by=getattr(context, 'user_id', None),
-        updated_by=getattr(context, 'user_id', None),
-        **row_kwargs,
-    )
-    try:
-        with session.begin_nested():
-            session.add(row)
-            session.flush()
-    except IntegrityError:
-        row = session.execute(
-            select(models.WorkspaceCapacityConfig).where(
-                models.WorkspaceCapacityConfig.workspace_id == context.workspace_id,
-            )
-        ).scalars().one()
-    _strip_legacy_payloads(views, versions)
-    return row
+def _fallback_config(fallback_loader):
+    payload = fallback_loader() if fallback_loader is not None else None
+    value = _capacity(payload)
+    return {
+        **value,
+        'configRevision': 0,
+        'source': 'legacy_json' if payload is not None else 'empty',
+        'requiresResolution': False,
+        'mutationEnabled': False,
+    }
 
 
 def current_shared_capacity_config(session, context):
     row = session.execute(
-        select(models.WorkspaceCapacityConfig).where(
-            models.WorkspaceCapacityConfig.workspace_id == context.workspace_id,
+        select(models.WorkspaceDashboardConfig).where(
+            models.WorkspaceDashboardConfig.workspace_id == context.workspace_id,
         )
     ).scalars().first()
     return _row_to_config(row, context) if row is not None else _empty_config()
@@ -205,18 +112,25 @@ def current_shared_capacity_config(session, context):
 
 def load_shared_capacity_config(context, fallback_loader, database_url=None):
     with db_engine.session_scope(database_url) as session:
-        row = ensure_workspace_capacity_reconciled(session, context, fallback_loader)
-        return _row_to_config(row, context)
+        row = session.execute(
+            select(models.WorkspaceDashboardConfig).where(
+                models.WorkspaceDashboardConfig.workspace_id == context.workspace_id,
+            )
+        ).scalars().first()
+        if row is not None:
+            return _row_to_config(row, context)
+    return _fallback_config(fallback_loader)
 
 
 def _validate_payload(payload):
     if not isinstance(payload, dict):
         raise InvalidSharedCapacityConfig('capacity config must be an object')
-    forbidden = set(payload) & _IDENTITY_FIELDS
-    unknown = set(payload) - _REQUEST_FIELDS
-    if forbidden or unknown:
+    if set(payload) & _IDENTITY_FIELDS or set(payload) - _REQUEST_FIELDS:
         raise InvalidSharedCapacityConfig('capacity config contains unsupported fields')
-    return _normalize_project(payload.get('project')), _normalize_field_id(payload.get('fieldId')), _normalize_field_name(payload.get('fieldName'))
+    try:
+        return normalize_shared_admin_section('capacity', payload)
+    except ValueError as error:
+        raise InvalidSharedCapacityConfig(str(error)) from error
 
 
 def _verified_field(field_id, field_catalog):
@@ -231,55 +145,100 @@ def _verified_field(field_id, field_catalog):
     return None
 
 
-def save_shared_capacity_config(context, payload, base_revision, field_catalog, database_url=None):
+def _revision(value):
+    if isinstance(value, bool):
+        raise InvalidSharedCapacityConfig('baseRevision is required')
     try:
-        revision = int(base_revision)
+        revision = int(value)
     except (TypeError, ValueError) as error:
         raise InvalidSharedCapacityConfig('baseRevision is required') from error
-    if revision < 1:
+    if revision < 0:
         raise InvalidSharedCapacityConfig('baseRevision is required')
-    project, field_id, field_name = _validate_payload(payload)
+    return revision
+
+
+def save_shared_capacity_config(context, payload, base_revision, field_catalog, database_url=None):
+    revision = _revision(base_revision)
+    capacity = _validate_payload(payload)
+    project = str(capacity.get('project') or '').strip().upper()[:64]
+    field_id = str(capacity.get('fieldId') or '').strip()
     verified_field = None
     if field_id:
         verified_field = _verified_field(field_id, field_catalog)
         if verified_field is None:
             raise InvalidSharedCapacityConfig('capacity_field_not_numeric')
-        field_name = _normalize_field_name(verified_field.get('name'))
+        capacity['fieldName'] = str(verified_field.get('name') or '').strip()[:255]
     elif project:
         raise InvalidSharedCapacityConfig('capacity_field_not_numeric')
+    capacity['project'] = project
 
+    site_url, cloud_id = _context_identity(context)
+    now = models._utcnow()
     with db_engine.session_scope(database_url) as session:
-        ensure_workspace_capacity_reconciled(session, context)
-        site_url, cloud_id = _context_identity(context)
-        statement = (
-            update(models.WorkspaceCapacityConfig)
-            .where(
-                models.WorkspaceCapacityConfig.workspace_id == context.workspace_id,
-                models.WorkspaceCapacityConfig.config_revision == revision,
-                models.WorkspaceCapacityConfig.jira_site_url == site_url,
-                models.WorkspaceCapacityConfig.jira_cloud_id == cloud_id,
-            )
-            .values(
-                jira_site_url=site_url,
-                jira_cloud_id=cloud_id,
-                status='active',
-                project_key=project,
-                field_id=field_id,
-                field_name=field_name,
-                field_schema_type='number' if verified_field else '',
-                field_verified_at=models._utcnow() if verified_field else None,
-                config_revision=revision + 1,
-                updated_by=getattr(context, 'user_id', None),
-                updated_at=models._utcnow(),
-            )
-        )
-        result = session.execute(statement)
-        if result.rowcount != 1:
-            current = current_shared_capacity_config(session, context)
-            raise CapacityConfigConflict(current, current.get('requiresResolution', False))
         row = session.execute(
-            select(models.WorkspaceCapacityConfig).where(
-                models.WorkspaceCapacityConfig.workspace_id == context.workspace_id,
+            select(models.WorkspaceDashboardConfig).where(
+                models.WorkspaceDashboardConfig.workspace_id == context.workspace_id,
             )
-        ).scalars().one()
-        return _row_to_config(row, context)
+        ).scalars().first()
+        if row is None:
+            if revision != 0:
+                raise CapacityConfigConflict(_empty_config())
+            row = models.WorkspaceDashboardConfig(
+                workspace_id=context.workspace_id,
+                payload={'capacity': capacity},
+                config_revision=1,
+                capacity_jira_site_url=site_url if verified_field else None,
+                capacity_jira_cloud_id=cloud_id if verified_field else None,
+                capacity_field_schema_type='number' if verified_field else None,
+                capacity_field_verified_at=now if verified_field else None,
+                created_by=getattr(context, 'user_id', None),
+                updated_by=getattr(context, 'user_id', None),
+            )
+            session.add(row)
+            try:
+                session.flush()
+            except IntegrityError:
+                session.rollback()
+                current = current_shared_capacity_config(session, context)
+                raise CapacityConfigConflict(current, current.get('requiresResolution', False))
+            next_revision = 1
+        else:
+            next_payload = deepcopy(row.payload or {})
+            next_payload['capacity'] = capacity
+            statement = (
+                update(models.WorkspaceDashboardConfig)
+                .where(
+                    models.WorkspaceDashboardConfig.workspace_id == context.workspace_id,
+                    models.WorkspaceDashboardConfig.config_revision == revision,
+                )
+                .values(
+                    payload=next_payload,
+                    config_revision=revision + 1,
+                    capacity_jira_site_url=site_url if verified_field else None,
+                    capacity_jira_cloud_id=cloud_id if verified_field else None,
+                    capacity_field_schema_type='number' if verified_field else None,
+                    capacity_field_verified_at=now if verified_field else None,
+                    updated_by=getattr(context, 'user_id', None),
+                    updated_at=now,
+                )
+            )
+            result = session.execute(statement.execution_options(synchronize_session=False))
+            if result.rowcount != 1:
+                session.expire_all()
+                current = current_shared_capacity_config(session, context)
+                raise CapacityConfigConflict(current, current.get('requiresResolution', False))
+            next_revision = revision + 1
+        session.add(models.audit_event(
+            workspace_id=context.workspace_id,
+            actor_user_id=getattr(context, 'user_id', None),
+            event_type='workspace_dashboard_config_updated',
+            metadata={'section': 'capacity', 'revision': next_revision},
+        ))
+        session.flush()
+        return {
+            **capacity,
+            'configRevision': next_revision,
+            'source': CAPACITY_SOURCE_DB,
+            'requiresResolution': False,
+            'mutationEnabled': bool(verified_field and project),
+        }

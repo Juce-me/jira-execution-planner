@@ -79,6 +79,18 @@ class TestPriorityWeightsConfigApi(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('duplicate priority', (response.get_json() or {}).get('error', '').lower())
 
+    def test_priority_weights_api_rejects_unknown_nested_fields(self):
+        client = jira_server.app.test_client()
+        with patch.object(jira_server, 'save_dashboard_config') as mock_save:
+            response = client.post('/api/stats/priority-weights-config', json={
+                'weights': [
+                    {'priority': 'Blocker', 'weight': 0.5, 'unexpected': 'value'},
+                ],
+            })
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        mock_save.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

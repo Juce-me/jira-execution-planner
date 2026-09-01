@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Template version: 2026-07-23
+Template version: 2026-08-29
 
 Drop-in operating instructions for coding agents. Read this file before every task.
 
@@ -27,7 +27,7 @@ These rules override later guidance in this file:
 4. **Do not guess through material ambiguity.** Follow the decision rule in section 8.
 5. **Change only what the request requires.** No drive-by fixes, refactors, or formatting.
 6. **Protect existing work and contracts.** Preserve user changes, architecture boundaries, public interfaces, and migration paths unless the user changes them.
-7. **Do not commit personal or local data.** Use repo-relative paths and placeholders; never commit secrets, tokens, real emails, usernames, hostnames, or production identifiers.
+7. **Do not commit sensitive personal or local data.** Use repo-relative paths and placeholders; never commit secrets, tokens, real emails, local machine usernames, hostnames, or production identifiers. A configured Git author name may be used where project documentation requires attribution.
 8. **No agent or tool branding** in branches, commits, PRs, or project content unless explicitly requested.
 
 ---
@@ -35,7 +35,7 @@ These rules override later guidance in this file:
 ## 1. Before editing
 
 - State the intended outcome, observable acceptance criteria, files in scope, and verification. Use a numbered plan only when the work is non-trivial.
-- Read the applicable instruction files, the files you will touch, and relevant callers or consumers.
+- Before editing a target file, read the instruction chain from the project root through its directory, including nested `AGENTS.md` files the runtime did not load automatically. Then read the target file and relevant callers or consumers.
 - Check the worktree and preserve unrelated changes. If required work overlaps uncertain user edits, stop and ask.
 - When approaches differ materially, explain the tradeoff and recommend one. Do not add ceremony for trivial, reversible edits.
 
@@ -234,6 +234,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Treat Atlassian account ids only as stable identity keys for tool-local admin roles; never imply Atlassian tenant/admin status grants tool admin access.
 - Redact OAuth callback query strings from logs; never log authorization code or state values.
 - Store implementation plans in `docs/plans/` only.
+- Before modifying configuration storage, database ownership, endpoint rights, or Settings edit gates, read `backend/security/CONFIGURATION_OWNERSHIP.md` and preserve its admin/group/preference/EPM ownership matrix across backend and frontend.
+- Keep EPM scope, label prefix, issue types, and project-label mappings in the owning user's default private saved view; keep tab and sprint as private UI state, preserve any existing private-view values, and never store any of them in workspace administrator configuration.
+- Keep department groups, group labels, memberships, exclusions, and department board layouts shared once per workspace and configurable by every authenticated user; keep stars/favorites, visibility, and active group private per user.
 - For any plan review, creation, or execution under `docs/plans/`, read `docs/plans/AGENTS.md` first and follow its plan review prompt, naming, and gate rules.
 - Before creating or executing any Home/Townsquare auth migration plan, read `docs/plans/AGENTS.md` and run or document the Home GraphQL OAuth probe gate; do not mark Home/Townsquare-backed routes OAuth-ready unless it passes with a real local user 3LO session.
 - After DB auth exists, Home/Townsquare 3LO plans must use DB `auth_connections`/encrypted `auth_tokens` and must not resolve route tokens through local OAuth token-store helpers.
@@ -242,7 +245,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Auth/backend plans must name and verify the user journey for each supported route surface; backend tests alone are not enough unless the route is explicitly developer-only.
 - OAuth cookie-session slices must include unsafe-method CSRF protection before the first supported browser POST route.
 - Local OAuth token stores must require both a local/dev environment key and an explicit allow flag at startup.
-- Auth-expired states must have a visible recovery screen or re-auth target; do not leave users with only backend `401` JSON.
+- Any application API `401` must terminally lock the mounted app behind one sanitized same-tab sign-in recovery screen; preserve mounted feature state, never render local recovery UI or raw `401`, and never unlock in place or replay the failed request after reauthentication.
 - Browser-focus auth refresh is an optimization only; keep the visible expired-auth recovery path as the fallback.
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.
@@ -260,6 +263,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Treat Scenario Planner group scope as a shared environment-scoped PM/EPM-managed configuration reference; drafts may reference groups but must not create private group definitions or own group membership.
 - In DB/OAuth mode, hide the EPM tab until the current user has connected a Home/Townsquare token in Settings; once visible, the EPM tab must expose an accessible EPM settings gear.
 - At the start of auth/DB/Home/EPM plan work, scan `docs/plans/GATE-*.md` and update each gate's `Checked on` and `Last result`; never mark a gate passed without its documented `PASS` output.
+- Keep personal group-star persistence and selection UI in a prerequisite plan separate from onboarding tour/state; require exactly one personally starred first-run group, persist it in the authenticated user's group preferences, and never mutate or present shared `defaultGroupId` as the user's favorite.
 - For OAuth Jira worker-thread fixes, verify a no-request-context test that reaches the real Jira auth wrapper; route mocks alone are not sufficient.
 - Name active auth/DB/Home migration docs with `EXEC-*`, executed docs with `DONE-*`, support/reference/setup docs with `SUPPORT-*`, and deferred scope with `FUTURE-*`; keep expectations in `docs/plans/README.md`.
 - Before executing a plan task, verify every named file in that task's file map exists unless the plan explicitly marks it `Create`.
@@ -307,3 +311,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Department group JSON export/import is selected-group scoped: export only the active group, and import settings into only that active group while preserving its id/name, sibling groups, and the shared default.
 - In main ENG view filters, keep `.eng-mode-control` intrinsic-width, use the flexible gap after Teams for right alignment, and bottom-align it with the dropdown controls.
 - Global heading rules also affect Jira-rendered description headings inside `.m-desc-body`; do not apply entrance animations to H1 elements.
+- Keep localhost and CI runner assets under `runners/local/` and `runners/github/`; never mix them into application source, production startup, deployment images, or release packaging.

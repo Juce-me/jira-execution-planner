@@ -1,6 +1,65 @@
-import { trackApiResult } from '../analytics/analytics.js';
+import {
+    AuthenticationRequiredError,
+    publishAuthenticationRequired,
+    readPendingAuthenticationRequired,
+} from './authRequired.js';
+
+async function authenticationPayload(response) {
+    if (!response || response.ok) return null;
+    try {
+        return await response.clone().json();
+    } catch (error) {
+        return null;
+    }
+}
+
+async function waitForResponseBody(response) {
+    if (!response?.body) return;
+    await response.clone().arrayBuffer();
+}
+
+export async function apiFetch(url, options = {}) {
+    const pending = readPendingAuthenticationRequired();
+    if (pending) throw new AuthenticationRequiredError(pending);
+    let response;
+    const requestStartedAt = Date.now();
+    try {
+        response = await fetch(url, options);
+    } catch (error) {
+        const lockedAfterFailure = readPendingAuthenticationRequired();
+        if (lockedAfterFailure) throw new AuthenticationRequiredError(lockedAfterFailure, 0);
+        throw error;
+    }
+    if (!response.ok) {
+        const payload = await authenticationPayload(response);
+        if (response.status === 401 || payload?.error === 'auth_required') {
+            const state = publishAuthenticationRequired({ ...(payload || {}), requestStartedAt });
+            throw new AuthenticationRequiredError(state, response.status);
+        }
+    }
+    try {
+        await waitForResponseBody(response);
+    } catch (error) {
+        const lockedAfterFailure = readPendingAuthenticationRequired();
+        if (lockedAfterFailure) throw new AuthenticationRequiredError(lockedAfterFailure, response.status);
+        throw error;
+    }
+    const lockedAfterResponse = readPendingAuthenticationRequired();
+    if (lockedAfterResponse) throw new AuthenticationRequiredError(lockedAfterResponse, response.status);
+    return response;
+}
+
+async function rejectAuthenticationResponse(response) {
+    if (response?.ok) return;
+    const payload = await authenticationPayload(response);
+    if (response?.status === 401 || payload?.error === 'auth_required') {
+        const state = publishAuthenticationRequired(payload || {});
+        throw new AuthenticationRequiredError(state, response.status);
+    }
+}
 
 export async function json(response, label) {
+    await rejectAuthenticationResponse(response);
     if (!response.ok) {
         throw new Error(`${label} error ${response.status}`);
     }
@@ -9,9 +68,9 @@ export async function json(response, label) {
 
 // Same contract as json() on success, but on a non-OK response parses the JSON
 // body and throws an Error carrying .status/.code/.loginUrl/.recoveryUrl so
-// callers can drive auth recovery (authRecoveryLoginUrl/redirectToAuthRecovery)
-// and recoverable-error UI, mirroring useEngSprintData.js's buildTaskResponseError.
+// callers can drive non-auth recoverable-error UI.
 export async function jsonOrStructuredError(response, label) {
+    await rejectAuthenticationResponse(response);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const error = new Error(errorData.message || errorData.error || `${label} error ${response.status}`);
@@ -32,7 +91,7 @@ function cacheStateFromResponse(response) {
 
 function safelyTrackApiResult(apiSurface, params) {
     try {
-        trackApiResult(apiSurface, params);
+        globalThis?.JepAnalytics?.trackApiResult?.(apiSurface, params);
     } catch (err) {
         // Analytics must never change the API result seen by the caller.
     }
@@ -42,7 +101,7 @@ export async function trackedFetch(apiSurface, url, options = {}, analyticsParam
     const startedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     const method = String(options.method || 'GET').toUpperCase();
     try {
-        const response = await fetch(url, options);
+        const response = await apiFetch(url, options);
         const endedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
         safelyTrackApiResult(apiSurface, {
             featureName: analyticsParams.featureName || 'api',
@@ -63,7 +122,7 @@ export async function trackedFetch(apiSurface, url, options = {}, analyticsParam
         safelyTrackApiResult(apiSurface, {
             featureName: analyticsParams.featureName || 'api',
             method,
-            status: 0,
+            status: Number(error?.status) || 0,
             durationMs: endedAt - startedAt,
             cacheState: 'unknown',
             epmTab: analyticsParams.epmTab,
@@ -78,7 +137,7 @@ export function getJson(url, label, options = {}) {
     const { analytics, ...fetchOptions } = options;
     const request = analytics
         ? trackedFetch(analytics.apiSurface, url, fetchOptions, analytics)
-        : fetch(url, fetchOptions);
+        : apiFetch(url, fetchOptions);
     return request.then(response => json(response, label));
 }
 
@@ -100,6 +159,6 @@ export function postJson(url, body, label, options = {}) {
     };
     const request = analytics
         ? trackedFetch(analytics.apiSurface, url, requestOptions, analytics)
-        : fetch(url, requestOptions);
+        : apiFetch(url, requestOptions);
     return request.then(response => json(response, label));
 }

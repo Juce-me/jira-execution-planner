@@ -65,22 +65,40 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
                 payload={
                     'filters': {'projectKeys': ['PROD']},
                     'epm': {
+                        'version': 2,
+                        'labelPrefix': 'private_*',
+                        'scope': {'rootGoalKey': 'PRIVATE-ROOT', 'subGoalKeys': ['PRIVATE-GOAL']},
+                        'issueTypes': {'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story']},
+                        'projects': {'private-1': {'id': 'private-1', 'name': 'Private', 'label': 'private_label'}},
                         'tab': 'active',
-                        'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-2']},
-                        'labelPrefix': 'rnd_project_*',
                         'selectedSprint': 'Active',
-                        'projects': {
-                            'home-1': {
-                                'homeProjectId': 'home-1',
-                                'name': 'Synthetic Project',
-                                'label': 'rnd_project_synthetic',
-                            },
-                        },
                     },
                 },
                 is_default=True,
             )
-            session.add_all([connection, view])
+            shared = models.WorkspaceDashboardConfig(
+                workspace_id=workspace.id,
+                payload_version=1,
+                config_revision=3,
+                payload={
+                    'version': 1,
+                    'capacity': {'project': 'CAP', 'fieldId': 'customfield_10001', 'fieldName': 'Capacity'},
+                    'epm': {
+                        'version': 2,
+                        'labelPrefix': 'rnd_project_*',
+                        'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-2']},
+                        'issueTypes': {'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story']},
+                        'projects': {'home-1': {'id': 'home-1', 'homeProjectId': 'home-1', 'name': 'Synthetic Project', 'label': 'rnd_project_synthetic'}},
+                    },
+                },
+                created_by=user.id,
+                updated_by=user.id,
+                capacity_jira_site_url='https://other.example.test',
+                capacity_jira_cloud_id='other-cloud',
+                capacity_field_schema_type='number',
+                capacity_field_verified_at=datetime.now(timezone.utc),
+            )
+            session.add_all([connection, view, shared])
             session.commit()
             workspace_id = workspace.id
             view_id = view.id
@@ -105,12 +123,20 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
 
         assert response.status_code == 200, response.get_data(as_text=True)
         body = response.get_json()
-        assert body['epm']['projects']['home-1']['label'] == 'rnd_project_synthetic'
+        assert body['epm']['projects']['private-1']['label'] == 'private_label'
+        assert body['sharedConfigRevision'] == 3
+        assert 'epm' not in body['sharedConfig']
+        assert body['capacityProject'] == ''
+        assert body['capacityConfigRequiresResolution'] is True
+        assert body['capacityMutationEnabled'] is False
         assert body['viewConfig']['source'] == 'user_saved_view'
         assert body['viewConfig']['workspaceId'] == workspace_id
         assert body['viewConfig']['viewConfigId'] == view_id
         assert body['viewConfig']['viewType'] == 'epm'
         assert body['viewConfig']['view']['epm']['selectedSprint'] == 'Active'
+        assert set(body['viewConfig']['view']['epm']) == {
+            'version', 'labelPrefix', 'scope', 'issueTypes', 'projects', 'tab', 'selectedSprint',
+        }
     finally:
         db_engine.dispose_engines()
         jira_server.OAUTH_TOKEN_STORE.clear()
@@ -122,46 +148,24 @@ class DashboardBootstrapConfigSourceTests(unittest.TestCase):
     def test_bootstrap_returns_resolved_view_with_source_metadata(self):
         _assert_bootstrap_returns_resolved_view_with_source_metadata()
 
-    def test_bootstrap_reports_shared_capacity_config_state(self):
+    def test_bootstrap_returns_fixed_storage_error_for_private_epm_read_failure(self):
         jira_server.app.config['TESTING'] = True
         client = jira_server.app.test_client()
-        common = {
-            'get_board_config': {},
-            'resolve_groups_config_path': 'team-groups.json',
-            'get_selected_projects': [],
-            'get_epm_config': {'version': 2},
-        }
-        cases = [
-            ({'project': 'CAP', 'mutationEnabled': True, 'requiresResolution': False}, 'CAP', False, True),
-            ({'project': '', 'mutationEnabled': False, 'requiresResolution': False}, '', False, False),
-            ({'project': '', 'mutationEnabled': False, 'requiresResolution': True}, '', True, False),
-        ]
-        for capacity_config, project, requires_resolution, mutation_enabled in cases:
-            with self.subTest(capacity_config=capacity_config), \
-                 patch.object(jira_server, 'load_request_capacity_config', return_value=capacity_config), \
-                 patch.object(jira_server, 'get_effective_capacity_project', side_effect=AssertionError('legacy capacity resolver must not be used')), \
-                 patch.object(jira_server, 'get_board_config', return_value=common['get_board_config']), \
-                 patch.object(jira_server, 'resolve_groups_config_path', return_value=common['resolve_groups_config_path']), \
-                 patch.object(jira_server, 'get_selected_projects', return_value=common['get_selected_projects']), \
-                 patch.object(jira_server, 'get_epm_config', return_value=common['get_epm_config']), \
-                 patch.object(jira_server, 'load_dashboard_config', return_value={}):
-                response = client.get('/api/config')
-            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-            body = response.get_json()
-            self.assertEqual(body['capacityProject'], project)
-            self.assertEqual(body['capacityConfigRequiresResolution'], requires_resolution)
-            self.assertEqual(body['capacityMutationEnabled'], mutation_enabled)
-
-    def test_bootstrap_maps_capacity_config_storage_error_to_safe_response(self):
-        jira_server.app.config['TESTING'] = True
-        client = jira_server.app.test_client()
-        with patch.object(jira_server, 'load_request_capacity_config', side_effect=jira_server.ConfigStorageError('synthetic-secret-like-value')):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=type('Context', (), {
+            'site_url': 'https://example.atlassian.net', 'auth_mode': 'basic', 'is_admin': True,
+        })()), \
+             patch.object(jira_server, 'load_dashboard_config_snapshot', return_value=type('Snapshot', (), {
+                 'payload': {}, 'config_revision': None,
+             })()), \
+             patch.object(jira_server, 'get_board_config', return_value={}), \
+             patch.object(jira_server, 'get_epm_config', side_effect=jira_server.ConfigStorageError('sensitive detail')):
             response = client.get('/api/config')
 
-        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
         self.assertEqual(response.get_json(), {
             'error': 'config_storage_unavailable',
-            'message': 'Configuration storage is temporarily unavailable.',
+            'message': 'EPM configuration storage is unavailable.',
         })
 
 

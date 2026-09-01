@@ -6,5 +6,6 @@ User-facing behavior guides for the main dashboard modules.
 - [EPM View](epm-view.md)
 - [Statistics](statistics.md)
 - [Scenario Planner](scenario-planner.md)
+- [Personal Group Favorite](personal-group-star.md)
 
 These pages describe what each feature is for, what users should expect in the UI, and how to interpret the output.

@@ -85,7 +85,7 @@ class SharedCapacityConfigRouteTests(unittest.TestCase):
         return patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': self.database_url}, clear=False)
 
     def _payload(self):
-        return {'project': 'CAP', 'fieldId': 'customfield_10001', 'fieldName': 'Capacity', 'baseRevision': 1}
+        return {'project': 'CAP', 'fieldId': 'customfield_10001', 'fieldName': 'Capacity', 'baseRevision': 0}
 
     def test_capacity_adapter_requires_explicit_json_source_without_request_context(self):
         with self.assertRaises(Exception):
@@ -120,6 +120,14 @@ class SharedCapacityConfigRouteTests(unittest.TestCase):
             attested = jira_server.load_request_capacity_config(local)
         self.assertTrue(attested['mutationEnabled'])
         self.assertIsNone(attested['configRevision'])
+        for missing_mapping in (
+            {**attested_capacity, 'project': ''},
+            {**attested_capacity, 'fieldId': ''},
+        ):
+            with self.subTest(missing_mapping=missing_mapping), \
+                 patch.object(jira_server, '_load_dashboard_config_json', return_value={'capacity': missing_mapping}):
+                incomplete = jira_server.load_request_capacity_config(local)
+            self.assertFalse(incomplete['mutationEnabled'])
         with patch.object(jira_server, '_load_dashboard_config_json', return_value={'capacity': {**attested_capacity, 'verifiedCloudId': 'other-cloud'}}):
             unattested = jira_server.load_request_capacity_config(local)
         self.assertEqual(unattested['project'], 'CAP')
@@ -130,13 +138,13 @@ class SharedCapacityConfigRouteTests(unittest.TestCase):
         with self._db_env(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch('backend.routes.settings_routes.load_current_site_field_catalog', return_value=catalog):
             response = self.client.post('/api/capacity/config', json={
-                'project': 'cap', 'fieldId': 'customfield_10001', 'fieldName': 'untrusted', 'baseRevision': 1,
+                'project': 'cap', 'fieldId': 'customfield_10001', 'fieldName': 'untrusted', 'baseRevision': 0,
             }, headers=self._headers())
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
             self.assertEqual(response.get_json()['fieldName'], 'Canonical Capacity')
-            self.assertEqual(response.get_json()['configRevision'], 2)
+            self.assertEqual(response.get_json()['configRevision'], 1)
             stale = self.client.post('/api/capacity/config', json={
-                'project': 'OTHER', 'fieldId': 'customfield_10001', 'baseRevision': 1,
+                'project': 'OTHER', 'fieldId': 'customfield_10001', 'baseRevision': 0,
             }, headers=self._headers())
         self.assertEqual(stale.status_code, 409, stale.get_data(as_text=True))
         self.assertEqual(stale.get_json()['error'], 'capacity_config_conflict')
@@ -169,7 +177,7 @@ class SharedCapacityConfigRouteTests(unittest.TestCase):
             headers = self._headers()
             accepted = self.client.post('/api/capacity/config', json=self._payload(), headers=headers)
             self.assertEqual(accepted.status_code, 200, accepted.get_data(as_text=True))
-            reused = self.client.post('/api/capacity/config', json={**self._payload(), 'baseRevision': 2}, headers=headers)
+            reused = self.client.post('/api/capacity/config', json={**self._payload(), 'baseRevision': 1}, headers=headers)
             self.assertEqual(reused.status_code, 403)
             self.assertEqual(reused.get_json()['error'], 'csrf_required')
             self.assertEqual(catalog_loader.call_count, 1)
@@ -184,8 +192,8 @@ class SharedCapacityConfigRouteTests(unittest.TestCase):
             self.assertEqual(shared.status_code, 200)
             self.assertEqual(shared.get_json()['project'], 'CAP')
             with self.factory() as session:
-                row = session.query(models.WorkspaceCapacityConfig).one()
-                row.jira_cloud_id = 'different-cloud'
+                row = session.query(models.WorkspaceDashboardConfig).one()
+                row.capacity_jira_cloud_id = 'different-cloud'
                 session.commit()
             isolated = self.client.get('/api/capacity/config')
             self.assertEqual(isolated.status_code, 200)
@@ -220,12 +228,21 @@ class SharedCapacityConfigRouteTests(unittest.TestCase):
                 context_patch = patch.object(jira_server, 'current_request_auth_context')
                 load_patch = patch.object(jira_server, 'load_request_capacity_config')
                 with self.subTest(error_type=error_type.__name__, failing_operation=failing_operation), \
+                     self._db_env(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
                      context_patch as context_loader, load_patch as capacity_loader:
                     if failing_operation == 'context':
                         context_loader.side_effect = error
                         capacity_loader.side_effect = AssertionError('capacity load must not run')
                     else:
-                        context_loader.return_value = object()
+                        context_loader.side_effect = None
+                        context_loader.return_value = RequestAuthContext(
+                            auth_mode='atlassian_oauth', user_id='synthetic-user', stable_subject='synthetic-user',
+                            atlassian_account_id='synthetic-user', workspace_id='synthetic-workspace',
+                            auth_connection_id='synthetic-connection', cloud_id='synthetic-cloud',
+                            site_url='https://example.test', token_version='1', account_status='active',
+                            is_admin=True, granted_scopes=tuple(jira_server.ATLASSIAN_SCOPES.split()),
+                            granted_scopes_verified=True,
+                        )
                         capacity_loader.side_effect = error
                     response = self.client.get('/api/capacity/config')
                 self.assertEqual(response.status_code, 503)

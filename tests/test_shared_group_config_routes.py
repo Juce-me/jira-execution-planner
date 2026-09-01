@@ -107,6 +107,21 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
             },
         }
 
+    def _favorite_config(self):
+        return {
+            'version': 1,
+            'teamGroups': {
+                'version': 1,
+                'groups': [
+                    {'id': 'default', 'name': 'Default', 'teamIds': ['team-default']},
+                    {'id': 'platform', 'name': 'Platform', 'teamIds': ['team-platform']},
+                    {'id': 'mobile', 'name': 'Mobile', 'teamIds': ['team-mobile']},
+                    {'id': 'empty', 'name': 'Empty', 'teamIds': []},
+                ],
+                'defaultGroupId': 'default',
+            },
+        }
+
     def _get_groups_config(self, *, fallback=None):
         fallback = self._legacy_config() if fallback is None else fallback
         with self._env_patch(), \
@@ -306,6 +321,137 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         self.assertEqual(json_mode.get_json()['error'], 'group_preferences_db_required')
         self.assertEqual(spoofed.status_code, 400, spoofed.get_data(as_text=True))
         self.assertEqual(spoofed.get_json()['error'], 'unsupported_group_preference_field')
+
+    def test_post_group_preferences_rejects_invalid_json_and_non_object_payloads(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            malformed = self.client.post(
+                '/api/groups-preferences',
+                data='{',
+                content_type='application/json',
+                headers=self._csrf_headers(),
+            )
+            non_object = self.client.post(
+                '/api/groups-preferences',
+                json=['platform'],
+                headers=self._csrf_headers(),
+            )
+            wrong_content_type = self.client.post(
+                '/api/groups-preferences',
+                data='visibleGroupIds=platform',
+                content_type='application/x-www-form-urlencoded',
+                headers=self._csrf_headers(),
+            )
+
+        self.assertEqual(malformed.status_code, 400, malformed.get_data(as_text=True))
+        self.assertEqual(malformed.get_json()['error'], 'invalid_json')
+        self.assertEqual(non_object.status_code, 400, non_object.get_data(as_text=True))
+        self.assertEqual(non_object.get_json()['error'], 'invalid_group_preferences')
+        self.assertEqual(wrong_content_type.status_code, 400, wrong_content_type.get_data(as_text=True))
+        self.assertEqual(wrong_content_type.get_json()['error'], 'invalid_json')
+
+    def test_post_group_preferences_rejects_missing_extra_and_invalid_first_run_fields(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        invalid_payloads = (
+            {},
+            {'visibleGroupIds': ['platform']},
+            {'activeGroupId': 'platform'},
+            {'visibleGroupIds': [], 'activeGroupId': None},
+            {'visibleGroupIds': ['platform', 'mobile'], 'activeGroupId': 'platform'},
+            {'visibleGroupIds': ['platform'], 'activeGroupId': None},
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'mobile'},
+            {'visibleGroupIds': ['platform', 'platform'], 'activeGroupId': 'platform'},
+            {'visibleGroupIds': ['unknown'], 'activeGroupId': 'unknown'},
+            {'visibleGroupIds': ['empty'], 'activeGroupId': 'empty'},
+            {'visibleGroupIds': 'platform', 'activeGroupId': 'platform'},
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 7},
+        )
+        unsupported_fields = (
+            'defaultGroupId',
+            'workspaceId',
+            'workspace_id',
+            'userId',
+            'user_id',
+            'cloudId',
+            'cloud_id',
+            'siteUrl',
+            'site_url',
+            'accountId',
+            'account_id',
+            'futureField',
+        )
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            invalid_responses = [
+                self.client.post('/api/groups-preferences', json=payload, headers=self._csrf_headers())
+                for payload in invalid_payloads
+            ]
+            unsupported_responses = [
+                self.client.post(
+                    '/api/groups-preferences',
+                    json={
+                        'visibleGroupIds': ['platform'],
+                        'activeGroupId': 'platform',
+                        field: 'forbidden',
+                    },
+                    headers=self._csrf_headers(),
+                )
+                for field in unsupported_fields
+            ]
+
+        for response in invalid_responses:
+            self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+            self.assertEqual(response.get_json()['error'], 'invalid_group_preferences')
+        for response in unsupported_responses:
+            self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+            self.assertEqual(response.get_json()['error'], 'unsupported_group_preference_field')
+
+    def test_post_group_preferences_returns_canonical_snapshot_and_last_write_wins(self):
+        before = self._get_groups_config(fallback=self._favorite_config()).get_json()
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            first = self.client.post(
+                '/api/groups-preferences',
+                json={'visibleGroupIds': ['default'], 'activeGroupId': 'default'},
+                headers=self._csrf_headers(),
+            )
+            second = self.client.post(
+                '/api/groups-preferences',
+                json={'visibleGroupIds': ['mobile'], 'activeGroupId': 'mobile'},
+                headers=self._csrf_headers(),
+            )
+        after = self._get_groups_config(fallback={'version': 1}).get_json()
+
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        first_body = first.get_json()
+        self.assertEqual(set(first_body), {'preferences', 'groupsConfigSnapshot'})
+        self.assertEqual(first_body['groupsConfigSnapshot']['preferences'], first_body['preferences'])
+        self.assertEqual(first_body['groupsConfigSnapshot']['source'], 'workspace_db')
+        self.assertEqual(first_body['groupsConfigSnapshot']['configRevision'], before['configRevision'])
+        selected_group = next(
+            group for group in first_body['groupsConfigSnapshot']['groups']
+            if group['id'] == 'default'
+        )
+        self.assertEqual(selected_group['teamIds'], ['team-default'])
+        self.assertEqual(second.status_code, 200, second.get_data(as_text=True))
+        self.assertEqual(after['preferences']['visibleGroupIds'], ['mobile'])
+        self.assertEqual(after['preferences']['activeGroupId'], 'mobile')
+
+    def test_post_group_preferences_requires_requested_with_and_token_bound_csrf(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            csrf_headers = self._csrf_headers()
+            missing_requested_with = self.client.post(
+                '/api/groups-preferences',
+                json={'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+                headers={'X-CSRF-Token': csrf_headers['X-CSRF-Token']},
+            )
+            missing_csrf = self.client.post(
+                '/api/groups-preferences',
+                json={'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+
+        self.assertEqual(missing_requested_with.status_code, 403, missing_requested_with.get_data(as_text=True))
+        self.assertEqual(missing_csrf.status_code, 403, missing_csrf.get_data(as_text=True))
 
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import jira_server
 from tests.oauth_test_helpers import install_oauth_session
@@ -38,7 +38,6 @@ class PreDbToolAdminGateTests(unittest.TestCase):
             ("/api/team-field/config", {"fieldId": "customfield_5", "fieldName": "Team"}),
             ("/api/stats/priority-weights-config", {"weights": []}),
             ("/api/issue-types/config", {"issueTypes": ["Story"]}),
-            ("/api/epm/config", {"version": 2, "projects": {}}),
         ]
 
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -59,76 +58,33 @@ class PreDbToolAdminGateTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
             self.assertEqual(mock_save.call_count, len(routes))
 
-    def test_local_capacity_config_maps_all_field_catalog_failures_to_fixed_502(self):
+    def test_authenticated_oauth_account_can_save_user_owned_epm_before_db_roles(self):
         install_oauth_session(self.client, account_id="regular-user-account")
-        json_failure = Mock(status_code=200)
-        json_failure.json.side_effect = ValueError('synthetic-secret-json-detail')
-        failures = (
-            None,
-            Mock(status_code=503),
-            json_failure,
-            RuntimeError('synthetic-secret-request-detail'),
-        )
-        expected = {'error': 'jira_field_catalog_failed'}
-        for failure in failures:
-            jira_patch = (
-                patch.object(jira_server, 'current_jira_request', side_effect=failure)
-                if isinstance(failure, Exception)
-                else patch.object(jira_server, 'current_jira_request', return_value=failure)
-            )
-            with self.subTest(failure=type(failure).__name__), \
-                 patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-                 patch.object(jira_server, 'load_dashboard_config', return_value={}), \
-                 patch.object(jira_server, 'save_dashboard_config') as saver, jira_patch:
-                response = self.client.post(
-                    '/api/capacity/config',
-                    json={'project': 'CAP', 'fieldId': 'customfield_1'},
-                    headers=self.csrf_headers(),
-                )
-            self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
-            self.assertEqual(response.get_json(), expected)
-            self.assertNotIn('secret', response.get_data(as_text=True))
-            saver.assert_not_called()
+        payload = {
+            "version": 2,
+            "labelPrefix": "rnd_project_*",
+            "scope": {"rootGoalKey": "", "subGoalKeys": []},
+            "issueTypes": {
+                "initiative": ["Initiative"],
+                "epic": ["Epic"],
+                "leaf": ["Story"],
+            },
+            "projects": {},
+        }
 
-    def test_local_capacity_config_preserves_field_catalog_auth_recovery(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'load_dashboard_config', return_value={}), \
-             patch.object(jira_server, 'current_jira_request', side_effect=jira_server.AuthError(
-                 'auth_required', 'synthetic-secret-auth-detail',
-             )):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
             response = self.client.post(
-                '/api/capacity/config',
-                json={'project': 'CAP', 'fieldId': 'customfield_1'},
+                "/api/epm/config",
+                json=payload,
                 headers=self.csrf_headers(),
             )
-        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {
-            'error': 'auth_required',
-            'message': 'Your Jira sign-in expired. Sign in again to continue.',
-            'loginUrl': '/login?reason=session_expired',
-        })
-        self.assertNotIn('secret', response.get_data(as_text=True))
 
-    def test_local_capacity_config_maps_raw_catalog_401_to_auth_recovery(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        upstream = Mock(status_code=401)
-        upstream.text = 'synthetic-secret-upstream-detail'
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'load_dashboard_config', return_value={}), \
-             patch.object(jira_server, 'current_jira_request', return_value=upstream):
-            response = self.client.post(
-                '/api/capacity/config',
-                json={'project': 'CAP', 'fieldId': 'customfield_1'},
-                headers=self.csrf_headers(),
-            )
-        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {
-            'error': 'auth_required',
-            'message': 'Your Jira sign-in expired. Sign in again to continue.',
-            'loginUrl': '/login?reason=session_expired',
-        })
-        self.assertNotIn('secret', response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["version"], 2)
+        mock_save.assert_called_once()
 
     def test_shared_config_write_without_oauth_session_returns_login_url(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -276,3 +232,89 @@ class PreDbToolAdminGateTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["boardId"], "7")
         mock_save.assert_called_once()
+
+    def test_shared_config_routes_reject_raw_payload_bypasses_before_saving(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
+        cases = (
+            (
+                "/api/projects/selected",
+                {"selected": [{"key": "ABC", "type": "product", "workspaceId": "claimed"}]},
+            ),
+            (
+                "/api/projects/selected",
+                {"selected": [{"key": "ABC", "type": "product", "unexpected": "value"}]},
+            ),
+            (
+                "/api/capacity/config",
+                {"project": "CAP", "fieldId": {"value": "customfield_1"}, "fieldName": "Capacity"},
+            ),
+            (
+                "/api/sprint-field/config",
+                {"fieldId": "customfield_2", "fieldName": {"value": "Sprint"}},
+            ),
+            (
+                "/api/issue-types/config",
+                {"issueTypes": ["Story", {"name": "Bug"}]},
+            ),
+        )
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
+            for route, payload in cases:
+                with self.subTest(route=route, payload=payload):
+                    response = self.client.post(route, json=payload, headers=self.csrf_headers())
+                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+
+        mock_save.assert_not_called()
+
+    def test_user_owned_epm_rejects_raw_payload_bypasses_before_saving(self):
+        install_oauth_session(self.client, account_id="regular-user-account")
+        cases = (
+            {
+                "version": 2,
+                "labelPrefix": "rnd_project_*",
+                "scope": {"rootGoalKey": "GOAL-1", "subGoalKeys": [], "unexpected": "value"},
+                "issueTypes": {"initiative": ["Initiative"], "epic": ["Epic"], "leaf": ["Story"]},
+                "projects": {},
+            },
+            {
+                "version": 2,
+                "labelPrefix": "rnd_project_*",
+                "scope": {"rootGoalKey": "GOAL-1", "subGoalKeys": []},
+                "issueTypes": {
+                    "initiative": ["Initiative"],
+                    "epic": ["Epic"],
+                    "leaf": ["Story", {"name": "Bug"}],
+                },
+                "projects": {},
+            },
+            {
+                "version": 2,
+                "labelPrefix": "rnd_project_*",
+                "scope": {"rootGoalKey": "GOAL-1", "subGoalKeys": []},
+                "issueTypes": {"initiative": ["Initiative"], "epic": ["Epic"], "leaf": ["Story"]},
+                "projects": {
+                    "draft-1": {
+                        "id": "draft-1",
+                        "name": "Draft",
+                        "label": "rnd_project_draft",
+                        "user_id": "claimed",
+                    },
+                },
+            },
+        )
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "load_dashboard_config", return_value={}), \
+             patch.object(jira_server, "save_dashboard_config") as mock_save:
+            for payload in cases:
+                with self.subTest(payload=payload):
+                    response = self.client.post(
+                        "/api/epm/config",
+                        json=payload,
+                        headers=self.csrf_headers(),
+                    )
+                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+
+        mock_save.assert_not_called()

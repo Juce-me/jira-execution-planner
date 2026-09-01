@@ -35,6 +35,8 @@ After Department setup succeeds, an incomplete user can start the guided ENG Cat
 
 The dashboard tour is desktop only. At viewport widths of 760px or less it stays closed, while the first-run Department chooser and configuration continue to work. Mobile dashboard-tour work is deferred in GitHub issue #151.
 
+Configuration, Planning, Board, and Statistics are desktop contextual modules. Each contextual module starts only after the user opens the real area through its existing launcher. Configuration never adds or saves a Team automatically; it only points to the real Department editor. These contextual modules are not available on mobile; mobile dashboard onboarding remains deferred in GitHub issue #151.
+
 The tour is skippable with **Skip onboarding** or Escape. **Finish** and Skip persist completion before closing. A failed write keeps the tour open with a retryable error; an expired session uses the app-wide sign-in recovery. The tour never changes the active sprint, Department scope, Teams, favorite, Priority, Project Track, or Jira Status.
 
 Tour progress is session-only. Reloading an unfinished tour restarts at its first eligible step. A successful Finish or Skip prevents later automatic replay.

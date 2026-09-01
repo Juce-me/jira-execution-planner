@@ -893,3 +893,33 @@ test('a new effective-open session resets synchronously to the first eligible st
         { sessionOpen: true, currentStepId: 'sprint' }
     );
 });
+
+test('onboarding guide documents the shipped desktop contextual-module contract', () => {
+    const guide = readFileSync(
+        new URL('../docs/features/onboarding.md', `file://${__filename}`),
+        'utf8'
+    );
+    assert.match(guide, /Configuration, Planning, Board, and Statistics.*desktop contextual modules/i);
+    assert.match(guide, /starts only after the user opens the real area/i);
+    assert.match(guide, /Configuration never adds or saves a Team automatically/i);
+    assert.match(guide, /Mobile dashboard-tour work is deferred in GitHub issue #151/i);
+});
+
+test('onboarding implementation guards avoid programmatic activation and forced test navigation', () => {
+    const tour = readFileSync(
+        new URL('../frontend/src/onboarding/OnboardingTour.jsx', `file://${__filename}`),
+        'utf8'
+    );
+    const controller = readFileSync(
+        new URL('../frontend/src/onboarding/useOnboardingTour.js', `file://${__filename}`),
+        'utf8'
+    );
+    const browserTest = readFileSync(
+        new URL('../tests/ui/onboarding_tour.spec.js', `file://${__filename}`),
+        'utf8'
+    );
+
+    assert.equal(tour.includes('Activate the highlighted control'), false);
+    assert.equal(controller.includes('advanceFromStep(tour.currentStepId)'), false);
+    assert.equal(browserTest.includes('force: true'), false);
+});

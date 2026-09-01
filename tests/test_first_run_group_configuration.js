@@ -525,3 +525,15 @@ test('first-run and compact controls declare keyboard-safe 44px target geometry'
     assert.ok(selectorCss.includes('.group-list-name-input'));
     assert.ok(groupCss.includes('.settings-onboarding-replay'));
 });
+
+test('analytics contract retains contextual-module events and forbids raw onboarding data', () => {
+    const analytics = fs.readFileSync(path.join(__dirname, '..', 'docs', 'README_ANALYTICS.md'), 'utf8');
+    assert.match(analytics, /launcher\/view and option-open events remain existing canonical events/i);
+    assert.match(analytics, /module navigation.*no-new-event.*no independent product outcome/i);
+    assert.match(analytics, /raw target\/step\/Department\/Team\/issue data is forbidden/i);
+});
+
+test('Department configuration source retains the canonical favorite control', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx'), 'utf8');
+    assert.equal(source.includes('group-star-button'), false);
+});

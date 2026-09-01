@@ -300,7 +300,6 @@ export default function OnboardingTour({
         moduleRequest,
         onModuleRequestConsumed,
     });
-    const advanceFromStep = tour.advanceFromStep;
     const skipTour = tour.skip;
     const panelRef = React.useRef(null);
     const layerRef = React.useRef(null);
@@ -308,12 +307,11 @@ export default function OnboardingTour({
     const backButtonRef = React.useRef(null);
     const sectionSkipButtonRef = React.useRef(null);
     const skipButtonRef = React.useRef(null);
+    const nextButtonRef = React.useRef(null);
     const priorFocusRef = React.useRef(null);
     const tourOwnedSuppressionRef = React.useRef([]);
     const pendingOwnedMutationsRef = React.useRef([]);
     const scrollEntryRef = React.useRef({ stepId: '', target: null });
-    const sessionCounterRef = React.useRef(0);
-    const sessionOpenRef = React.useRef(false);
     const previewDescriptorRef = React.useRef(null);
     const previewSettledStateRef = React.useRef('');
     const previewFocusedRef = React.useRef(false);
@@ -337,12 +335,13 @@ export default function OnboardingTour({
     const descriptionId = `${headingId}-description`;
 
     React.useEffect(() => () => {
+        tour.clearStepUnlock();
         if (!previewDescriptorRef.current) return;
         const descriptor = previewDescriptorRef.current;
         cleanupLatchRef.current = true;
         previewDescriptorRef.current = null;
         requestPreviewCloseRef.current?.(descriptor, 'unmount');
-    }, []);
+    }, [tour.clearStepUnlock]);
 
     React.useEffect(() => {
         const media = window.matchMedia?.(DASHBOARD_MOBILE_QUERY);
@@ -367,12 +366,13 @@ export default function OnboardingTour({
             previewFocusedRef.current = false;
             progressCloseLatchRef.current = false;
             onPreviewTargetChange?.(null);
+            tour.clearStepUnlock();
             setAuthLocked(true);
             tour.resetSession();
         };
         window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthenticationRequired);
         return () => window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthenticationRequired);
-    }, [onPreviewTargetChange, tour.isOpen, tour.resetSession]);
+    }, [onPreviewTargetChange, tour.clearStepUnlock, tour.isOpen, tour.resetSession]);
 
     React.useEffect(() => {
         if (!mobileSuppressed || !tour.isOpen) return;
@@ -384,14 +384,8 @@ export default function OnboardingTour({
         previewFocusedRef.current = false;
         progressCloseLatchRef.current = false;
         onPreviewTargetChange?.(null);
-    }, [mobileSuppressed, onPreviewTargetChange, tour.isOpen]);
-
-    if (tour.isOpen && !sessionOpenRef.current) {
-        sessionCounterRef.current += 1;
-        sessionOpenRef.current = true;
-    } else if (!tour.isOpen) {
-        sessionOpenRef.current = false;
-    }
+        tour.clearStepUnlock();
+    }, [mobileSuppressed, onPreviewTargetChange, tour.clearStepUnlock, tour.isOpen]);
 
     const measure = React.useCallback(() => {
         if (!tour.isOpen || !tour.currentStep || tour.suspended || authLocked || mobileSuppressed) return;
@@ -633,17 +627,24 @@ export default function OnboardingTour({
         if (!interactive || !target || !tour.currentStep) {
             if (previewDescriptorRef.current) {
                 cleanupLatchRef.current = true;
+                tour.clearStepUnlock();
                 onRequestPreviewClose?.(previewDescriptorRef.current, 'target_loss');
                 previewDescriptorRef.current = null;
                 onPreviewTargetChange?.(null);
             }
             return undefined;
         }
-        const descriptor = buildPreviewDescriptor(sessionCounterRef.current, tour.currentStep, target);
+        if (previewFallbackStepId === tour.currentStep.id
+            && previewFallbackTargetIdentity
+            && previewFallbackTargetIdentity !== targetIdentity) {
+            tour.clearStepUnlock();
+        }
+        const descriptor = buildPreviewDescriptor(tour.sessionId, tour.currentStep, target);
         if (!descriptor) return undefined;
         if (!descriptorsMatch(previewDescriptorRef.current, descriptor)) {
             if (previewDescriptorRef.current) {
                 cleanupLatchRef.current = true;
+                tour.clearStepUnlock();
                 onRequestPreviewClose?.(previewDescriptorRef.current, 'target_loss');
             }
             previewSettledStateRef.current = '';
@@ -654,7 +655,7 @@ export default function OnboardingTour({
             onPreviewTargetChange?.(descriptor);
         }
         return undefined;
-    }, [interactive, onPreviewTargetChange, onRequestPreviewClose, target, tour.currentStep]);
+    }, [interactive, onPreviewTargetChange, onRequestPreviewClose, previewFallbackStepId, previewFallbackTargetIdentity, target, targetIdentity, tour.clearStepUnlock, tour.currentStep, tour.sessionId]);
 
     React.useEffect(() => {
         if (!matchedPreviewSession || !previewDescriptorRef.current) return;
@@ -690,21 +691,22 @@ export default function OnboardingTour({
             return;
         }
         if (previewSettledStateRef.current === 'error') {
-            const closedTargetIdentity = previewDescriptorRef.current.targetIdentity;
+            const descriptor = previewDescriptorRef.current;
+            const closedTargetIdentity = descriptor.targetIdentity;
             previewDescriptorRef.current = null;
             onPreviewTargetChange?.(null);
             setPreviewFallbackStepId(tour.currentStepId);
             setPreviewFallbackTargetIdentity(closedTargetIdentity);
+            tour.unlockStep({ sessionId: descriptor.sessionId, stepId: descriptor.stepId });
         } else if ((previewSettledStateRef.current === 'ready' || previewSettledStateRef.current === 'empty')
             && previewFocusedRef.current) {
-            previewDescriptorRef.current = null;
-            onPreviewTargetChange?.(null);
+            const descriptor = previewDescriptorRef.current;
             target?.focus?.();
-            advanceFromStep(tour.currentStepId);
+            tour.unlockStep({ sessionId: descriptor.sessionId, stepId: descriptor.stepId });
         }
         previewSettledStateRef.current = '';
         previewFocusedRef.current = false;
-    }, [advanceFromStep, matchedPreviewSession, measure, onPreviewTargetChange, previewState, target, tour.currentStepId]);
+    }, [matchedPreviewSession, measure, onPreviewTargetChange, previewState, target, tour.currentStepId, tour.unlockStep]);
 
     React.useEffect(() => {
         setPreviewFallbackStepId('');
@@ -775,7 +777,7 @@ export default function OnboardingTour({
             const menu = previewOpen && previewDescriptorRef.current
                 ? document.querySelector(`[data-onboarding-preview-owner="${CSS.escape(previewDescriptorRef.current.targetIdentity)}"]`)
                 : null;
-            const controls = [backButtonRef.current, sectionSkipButtonRef.current, skipButtonRef.current]
+            const controls = [backButtonRef.current, sectionSkipButtonRef.current, nextButtonRef.current, skipButtonRef.current]
                 .filter((node) => node && !node.disabled);
             const ordered = previewOpen ? [menu, target, ...controls] : [target, ...controls];
             return ordered.filter((node, index, all) => node && all.indexOf(node) === index);
@@ -835,7 +837,8 @@ export default function OnboardingTour({
         cleanupLatchRef.current = false;
         progressCloseLatchRef.current = false;
         onPreviewTargetChange?.(null);
-    }, [onPreviewTargetChange, tour.isOpen]);
+        tour.clearStepUnlock();
+    }, [onPreviewTargetChange, tour.clearStepUnlock, tour.isOpen]);
 
     if (!tour.isOpen || !tour.currentStep || tour.suspended || authLocked || mobileSuppressed || typeof document === 'undefined') return null;
 
@@ -867,6 +870,7 @@ export default function OnboardingTour({
     const settingsBlocked = settingsContextStep && (settingsDirty || settingsSaving);
 
     const requestCleanup = (reason = 'cleanup') => {
+        tour.clearStepUnlock();
         if (!previewDescriptorRef.current) return;
         const descriptor = previewDescriptorRef.current;
         cleanupLatchRef.current = true;
@@ -891,6 +895,7 @@ export default function OnboardingTour({
     };
 
     const handleNext = () => {
+        requestCleanup('cleanup');
         if (moduleLaunchStep && presentation.fallback) {
             tour.acknowledgeUnavailableModule();
             return;
@@ -967,7 +972,7 @@ export default function OnboardingTour({
                 <p id={descriptionId}>{settingsBlocked
                     ? 'Save or discard the current Settings changes before continuing.'
                     : interactive && previewStep
-                    ? 'Activate the highlighted control to preview its choices; no value change is required. Close the preview or press Escape to continue.'
+                    ? 'Click the highlighted control to preview its choices. Nothing will change.'
                     : presentation.body}</p>
                 {actionError && (
                     <div className="onboarding-tour-error" role="alert">
@@ -991,14 +996,16 @@ export default function OnboardingTour({
                             tour.allRequiredModulesComplete && (
                                 <button type="button" className="primary" onClick={tour.finish} disabled={actionPending}>Finish</button>
                             )
-                        ) : (!interactive || moduleLaunchStep || moduleManualStep) && (
+                        ) : (
                             <button
+                                ref={nextButtonRef}
                                 type="button"
                                 className="primary"
                                 onClick={handleNext}
                                 disabled={actionPending
                                     || presentation.loading
                                     || settingsBlocked
+                                    || (previewStep && !tour.stepUnlocked)
                                     || (moduleLaunchStep ? !presentation.fallback : (!moduleManualStep && !tour.canGoNext))}
                             >Next</button>
                         )}

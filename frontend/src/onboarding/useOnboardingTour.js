@@ -16,6 +16,19 @@ import {
 } from './onboardingModules.js';
 import { ONBOARDING_STEPS_BY_MODULE } from './onboardingSteps.js';
 
+export function updateOnboardingStepUnlock(currentKey, action = {}) {
+    if (action.type === 'clear') return null;
+    if (action.type !== 'unlock' || action.activeProgression !== 'menu-preview') return currentKey;
+    const sessionId = Number(action.sessionId) || 0;
+    const stepId = String(action.stepId || '');
+    if (!sessionId
+        || sessionId !== action.activeSessionId
+        || !stepId
+        || stepId !== action.activeStepId) return currentKey;
+    if (currentKey?.sessionId === sessionId && currentKey?.stepId === stepId) return currentKey;
+    return { sessionId, stepId };
+}
+
 export function useOnboardingController({
     bootstrapReady = false,
     onboardingDone = true,
@@ -158,6 +171,9 @@ export default function useOnboardingTour({
     const previousStepsRef = React.useRef(steps);
     const [moduleSession, setModuleSession] = React.useState(createOnboardingModuleSession);
     const consumedModuleRequestRef = React.useRef(0);
+    const sessionCounterRef = React.useRef(0);
+    const sessionOpenRef = React.useRef(false);
+    const [unlockedStepKey, setUnlockedStepKey] = React.useState(null);
     const activeSteps = moduleSession.activeModule === 'catch-up'
         ? steps
         : (ONBOARDING_STEPS_BY_MODULE[moduleSession.activeModule] || []);
@@ -184,6 +200,30 @@ export default function useOnboardingTour({
         currentIndex,
         totalSteps: activeSteps.length,
     });
+    if (navigation.isOpen && !sessionOpenRef.current) {
+        sessionCounterRef.current += 1;
+        sessionOpenRef.current = true;
+    } else if (!navigation.isOpen) {
+        sessionOpenRef.current = false;
+    }
+    const sessionId = sessionCounterRef.current;
+    const currentStep = activeSteps[navigation.index] || null;
+    const stepUnlocked = Boolean(unlockedStepKey
+        && unlockedStepKey.sessionId === sessionId
+        && unlockedStepKey.stepId === currentStep?.id);
+    const clearStepUnlock = React.useCallback(() => {
+        setUnlockedStepKey((current) => updateOnboardingStepUnlock(current, { type: 'clear' }));
+    }, []);
+    const unlockStep = React.useCallback((key = {}) => {
+        setUnlockedStepKey((current) => updateOnboardingStepUnlock(current, {
+            type: 'unlock',
+            sessionId: key.sessionId,
+            stepId: key.stepId,
+            activeSessionId: sessionId,
+            activeStepId: currentStep?.id || '',
+            activeProgression: currentStep?.progression || '',
+        }));
+    }, [currentStep, sessionId]);
 
     React.useLayoutEffect(() => {
         previousStepsRef.current = activeSteps;
@@ -192,8 +232,9 @@ export default function useOnboardingTour({
     React.useEffect(() => {
         if (effectiveOpen) return;
         consumedModuleRequestRef.current = 0;
+        clearStepUnlock();
         setModuleSession(createOnboardingModuleSession());
-    }, [effectiveOpen]);
+    }, [clearStepUnlock, effectiveOpen]);
 
     React.useEffect(() => {
         const requestNonce = Number(moduleRequest?.requestNonce) || 0;
@@ -205,6 +246,7 @@ export default function useOnboardingTour({
             || activeSurface !== expectedSurface) return;
 
         consumedModuleRequestRef.current = requestNonce;
+        clearStepUnlock();
         const currentCatchUpStep = steps.find((step) => step.id === effectiveState.currentStepId);
         const currentIndex = steps.indexOf(currentCatchUpStep);
         const resumeStepId = currentIndex >= 0 ? (steps[currentIndex + 1]?.id || 'complete') : 'complete';
@@ -218,11 +260,12 @@ export default function useOnboardingTour({
             }
         }
         onModuleRequestConsumed?.(requestNonce);
-    }, [activeSurface, effectiveOpen, effectiveState.currentStepId, moduleRequest, moduleSession.completedModules, onModuleRequestConsumed, steps]);
+    }, [activeSurface, clearStepUnlock, effectiveOpen, effectiveState.currentStepId, moduleRequest, moduleSession.completedModules, onModuleRequestConsumed, steps]);
 
     React.useEffect(() => {
         if (!effectiveOpen || moduleSession.activeModule !== 'configuration') return;
         if (activeSurface === 'settings') return;
+        clearStepUnlock();
         setModuleSession((state) => ({
             ...state,
             activeModule: 'catch-up',
@@ -230,7 +273,7 @@ export default function useOnboardingTour({
             suspendedSurface: '',
         }));
         setSessionState((state) => ({ ...state, currentStepId: 'launch-configuration' }));
-    }, [activeSurface, effectiveOpen, moduleSession.activeModule]);
+    }, [activeSurface, clearStepUnlock, effectiveOpen, moduleSession.activeModule]);
 
     React.useEffect(() => {
         if (!moduleSession.suspendedSurface) return;
@@ -240,29 +283,26 @@ export default function useOnboardingTour({
 
     const goBack = React.useCallback(() => {
         if (!navigation.canGoBack) return;
+        clearStepUnlock();
         setSessionState((state) => ({ ...state, currentStepId: activeSteps[navigation.index - 1].id }));
-    }, [activeSteps, navigation.canGoBack, navigation.index]);
+    }, [activeSteps, clearStepUnlock, navigation.canGoBack, navigation.index]);
 
     const goNext = React.useCallback(() => {
-        if (!navigation.canGoNext) return;
+        if (!navigation.canGoNext || (currentStep?.progression === 'menu-preview' && !stepUnlocked)) return;
+        clearStepUnlock();
         setSessionState((state) => ({ ...state, currentStepId: activeSteps[navigation.index + 1].id }));
-    }, [activeSteps, navigation.canGoNext, navigation.index]);
-
-    const advanceFromStep = React.useCallback((stepId) => {
-        setSessionState((state) => {
-            if (!state.sessionOpen || state.currentStepId !== stepId) return state;
-            const index = activeSteps.findIndex((step) => step.id === stepId);
-            if (index < 0 || index >= activeSteps.length - 1) return state;
-            return { ...state, currentStepId: activeSteps[index + 1].id };
-        });
-    }, [activeSteps]);
+    }, [activeSteps, clearStepUnlock, currentStep, navigation.canGoNext, navigation.index, stepUnlocked]);
 
     const goToStep = React.useCallback((stepId) => {
+        if (!effectiveState.sessionOpen
+            || !activeSteps.some((step) => step.id === stepId)
+            || effectiveState.currentStepId === stepId) return;
+        clearStepUnlock();
         setSessionState((state) => {
             if (!state.sessionOpen || !activeSteps.some((step) => step.id === stepId)) return state;
             return state.currentStepId === stepId ? state : { ...state, currentStepId: stepId };
         });
-    }, [activeSteps]);
+    }, [activeSteps, clearStepUnlock, effectiveState.currentStepId, effectiveState.sessionOpen]);
 
     const acknowledgeUnavailableModule = React.useCallback(() => {
         const step = activeSteps[navigation.index];
@@ -275,17 +315,19 @@ export default function useOnboardingTour({
         const moduleId = moduleSession.activeModule;
         if (moduleId === 'catch-up') return;
         const resumeStepId = moduleSession.resumeStepId || 'complete';
+        clearStepUnlock();
         setModuleSession((state) => completeOnboardingModule(state, {
             moduleId,
             surface: activeSurface,
         }));
         setSessionState((state) => ({ ...state, currentStepId: resumeStepId }));
-    }, [activeSurface, moduleSession.activeModule, moduleSession.resumeStepId]);
+    }, [activeSurface, clearStepUnlock, moduleSession.activeModule, moduleSession.resumeStepId]);
 
     const resetSession = React.useCallback(() => {
         consumedModuleRequestRef.current = 0;
+        clearStepUnlock();
         setModuleSession(createOnboardingModuleSession());
-    }, []);
+    }, [clearStepUnlock]);
 
     const skip = React.useCallback(() => {
         if (navigation.isOpen) {
@@ -304,8 +346,10 @@ export default function useOnboardingTour({
     return {
         ...navigation,
         steps: activeSteps,
-        currentStep: activeSteps[navigation.index] || null,
-        currentStepId: activeSteps[navigation.index]?.id || '',
+        currentStep,
+        currentStepId: currentStep?.id || '',
+        sessionId,
+        stepUnlocked,
         moduleSession,
         suspended: Boolean(moduleSession.suspendedSurface),
         allRequiredModulesComplete: allRequiredOnboardingModulesComplete(moduleSession),
@@ -314,7 +358,8 @@ export default function useOnboardingTour({
         acknowledgeUnavailableModule,
         completeCurrentModule,
         resetSession,
-        advanceFromStep,
+        unlockStep,
+        clearStepUnlock,
         goToStep,
         skip,
         finish,

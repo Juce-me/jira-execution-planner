@@ -6,6 +6,10 @@ async function loadModule() {
     return import('../frontend/src/onboarding/onboardingSteps.js');
 }
 
+async function loadTourModule() {
+    return import('../frontend/src/onboarding/useOnboardingTour.js');
+}
+
 function element(rect, {
     display = 'block',
     visibility = 'visible',
@@ -816,6 +820,44 @@ test('navigation does not open before run, after completion, or without steps', 
     assert.equal(deriveTourNavigationState({ run: false, onboardingDone: false, currentIndex: 0, totalSteps: 2 }).isOpen, false);
     assert.equal(deriveTourNavigationState({ run: true, onboardingDone: true, currentIndex: 0, totalSteps: 2 }).isOpen, false);
     assert.equal(deriveTourNavigationState({ run: true, onboardingDone: false, currentIndex: 0, totalSteps: 0 }).isOpen, false);
+});
+
+test('preview Next unlock accepts only the active menu-preview session and step', async () => {
+    const tourModule = await loadTourModule();
+    assert.equal(typeof tourModule.updateOnboardingStepUnlock, 'function');
+    const { updateOnboardingStepUnlock } = tourModule;
+    const active = {
+        activeSessionId: 4,
+        activeStepId: 'editing-priority',
+        activeProgression: 'menu-preview',
+    };
+
+    const unlocked = updateOnboardingStepUnlock(null, {
+        type: 'unlock',
+        sessionId: 4,
+        stepId: 'editing-priority',
+        ...active,
+    });
+    assert.deepEqual(unlocked, { sessionId: 4, stepId: 'editing-priority' });
+    assert.equal(updateOnboardingStepUnlock(unlocked, {
+        type: 'unlock',
+        sessionId: 4,
+        stepId: 'editing-priority',
+        ...active,
+    }), unlocked, 'duplicate close is one-shot');
+
+    for (const request of [
+        { sessionId: 3, stepId: 'editing-priority' },
+        { sessionId: 4, stepId: 'editing-track' },
+        { sessionId: 4, stepId: 'editing-priority', activeProgression: 'manual' },
+    ]) {
+        assert.equal(updateOnboardingStepUnlock(null, {
+            type: 'unlock',
+            ...active,
+            ...request,
+        }), null);
+    }
+    assert.equal(updateOnboardingStepUnlock(unlocked, { type: 'clear' }), null);
 });
 
 test('a new effective-open session resets synchronously to the first eligible step', async () => {

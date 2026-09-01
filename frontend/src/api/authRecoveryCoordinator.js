@@ -19,19 +19,20 @@ const parseRecord = raw => {
     try { return JSON.parse(raw || 'null'); } catch (error) { return null; }
 };
 
+const validNow = value => Number.isFinite(value) && value >= 0;
+const validAttemptId = value => typeof value === 'string'
+    && value.length > 0
+    && value.length <= 128;
+
 const validAttempt = (value, timestampKey, now) => Boolean(
-    typeof value?.attemptId === 'string'
-    && value.attemptId.length > 0
-    && value.attemptId.length <= 128
+    validAttemptId(value?.attemptId)
     && Number.isFinite(value?.[timestampKey])
     && value[timestampKey] >= 0
     && value[timestampKey] <= now
     && now - value[timestampKey] <= AUTH_RECOVERY_LEASE_MS
 );
 
-const validRequestStart = (value, now) => Number.isFinite(value)
-    && value >= 0
-    && value <= now;
+const validRequestStart = (value, now) => validNow(value) && value <= now;
 
 const readLiveAuthRecoveryLeaseStrict = (sharedStorage, now) => {
     const value = parseRecord(sharedStorage.getItem(AUTH_RECOVERY_LEASE_KEY));
@@ -40,6 +41,7 @@ const readLiveAuthRecoveryLeaseStrict = (sharedStorage, now) => {
 };
 
 export function readLiveAuthRecoveryLease(sharedStorage, now = Date.now()) {
+    if (!validNow(now)) return null;
     try {
         return readLiveAuthRecoveryLeaseStrict(sharedStorage, now);
     } catch (error) {
@@ -88,6 +90,7 @@ export async function claimAuthRecovery(sharedStorage, tabStorage, {
             { mode: 'exclusive' },
             () => {
                 const now = clock();
+                if (!validNow(now)) return solo();
                 const completed = consumeAuthRecoverySuccessStrict(
                     sharedStorage,
                     tabStorage,
@@ -97,7 +100,8 @@ export async function claimAuthRecovery(sharedStorage, tabStorage, {
                 if (completed) return { role: 'resume', attemptId: completed.attemptId };
                 const current = readLiveAuthRecoveryLeaseStrict(sharedStorage, now);
                 if (current) return { role: 'follower', attemptId: current.attemptId };
-                const attemptId = String(newId());
+                const attemptId = newId();
+                if (!validAttemptId(attemptId)) return solo();
                 sharedStorage.removeItem(AUTH_RECOVERY_SUCCESS_KEY);
                 writeTabAttempt(tabStorage, attemptId, now);
                 sharedStorage.setItem(
@@ -124,6 +128,7 @@ export async function completeAuthRecovery(sharedStorage, tabStorage, {
             { mode: 'exclusive' },
             () => {
                 const now = clock();
+                if (!validNow(now)) return null;
                 const tabAttempt = parseRecord(
                     tabStorage.getItem(AUTH_RECOVERY_TAB_ATTEMPT_KEY),
                 );
@@ -151,6 +156,7 @@ export async function completeAuthRecovery(sharedStorage, tabStorage, {
 }
 
 export function readAuthRecoverySuccess(sharedStorage, now = Date.now()) {
+    if (!validNow(now)) return null;
     try {
         return readAuthRecoverySuccessStrict(sharedStorage, now);
     } catch (error) {
@@ -162,6 +168,7 @@ export function consumeAuthRecoverySuccess(sharedStorage, tabStorage, {
     now = Date.now(),
     requestStartedAt,
 } = {}) {
+    if (!validNow(now)) return null;
     try {
         return consumeAuthRecoverySuccessStrict(
             sharedStorage,

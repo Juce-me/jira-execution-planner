@@ -18,6 +18,7 @@ const EXPECTED_SUCCESS_KEY = 'jira_dashboard_auth_recovery_success_v1';
 const EXPECTED_TAB_ATTEMPT_KEY = 'jira_dashboard_auth_recovery_attempt_v1';
 const EXPECTED_CONSUMED_KEY = 'jira_dashboard_auth_recovery_consumed_v1';
 const EXPECTED_LEASE_MS = 5 * 60 * 1000;
+const INVALID_NOW_VALUES = [NaN, Infinity, -Infinity, -1, '1000'];
 
 function loadModule() {
     const source = esbuild.buildSync({
@@ -40,6 +41,27 @@ function createStorage(initial = {}) {
         removeItem(key) { values.delete(key); },
         peek(key) { return values.has(key) ? values.get(key) : null; },
     };
+}
+
+function createObservedStorage(initial = {}) {
+    const storage = createStorage(initial);
+    const operations = [];
+    const getItem = storage.getItem.bind(storage);
+    const setItem = storage.setItem.bind(storage);
+    const removeItem = storage.removeItem.bind(storage);
+    storage.getItem = key => {
+        operations.push(['getItem', key]);
+        return getItem(key);
+    };
+    storage.setItem = (key, value) => {
+        operations.push(['setItem', key, String(value)]);
+        setItem(key, value);
+    };
+    storage.removeItem = key => {
+        operations.push(['removeItem', key]);
+        removeItem(key);
+    };
+    return { storage, operations };
 }
 
 function createExplodingStorage() {
@@ -162,6 +184,60 @@ test('claim samples time after the exclusive lock is granted', async () => {
 
     assert.equal(claim.role, 'follower');
     assert.equal(claim.attemptId, 'attempt-a');
+});
+
+test('invalid claim clocks return solo before storage or id generation', async () => {
+    for (const now of INVALID_NOW_VALUES) {
+        const shared = createObservedStorage();
+        const tab = createObservedStorage();
+        let clockCalls = 0;
+        let idCalls = 0;
+        const claim = await api.claimAuthRecovery(shared.storage, tab.storage, {
+            lockManager: createQueuedExclusiveLockManager(),
+            clock: () => {
+                clockCalls += 1;
+                return now;
+            },
+            newId: () => {
+                idCalls += 1;
+                return 'attempt-a';
+            },
+        });
+
+        assert.deepEqual(json(claim), { role: 'solo', attemptId: '' }, String(now));
+        assert.equal(clockCalls, 1, String(now));
+        assert.equal(idCalls, 0, String(now));
+        assert.deepEqual(shared.operations, [], String(now));
+        assert.deepEqual(tab.operations, [], String(now));
+    }
+});
+
+test('invalid completion clocks preserve all recovery records before storage access', async () => {
+    const leaseRaw = JSON.stringify({ attemptId: 'attempt-a', startedAt: 1_000 });
+    const successRaw = JSON.stringify({ attemptId: 'attempt-prior', completedAt: 900 });
+    const tabAttemptRaw = JSON.stringify({ attemptId: 'attempt-a', startedAt: 1_000 });
+    for (const now of INVALID_NOW_VALUES) {
+        const shared = createObservedStorage({
+            [EXPECTED_LEASE_KEY]: leaseRaw,
+            [EXPECTED_SUCCESS_KEY]: successRaw,
+        });
+        const tab = createObservedStorage({
+            [EXPECTED_TAB_ATTEMPT_KEY]: tabAttemptRaw,
+            [EXPECTED_CONSUMED_KEY]: 'attempt-prior',
+        });
+        const completion = await api.completeAuthRecovery(shared.storage, tab.storage, {
+            lockManager: createQueuedExclusiveLockManager(),
+            clock: () => now,
+        });
+
+        assert.equal(completion, null, String(now));
+        assert.deepEqual(shared.operations, [], String(now));
+        assert.deepEqual(tab.operations, [], String(now));
+        assert.equal(shared.storage.peek(EXPECTED_LEASE_KEY), leaseRaw, String(now));
+        assert.equal(shared.storage.peek(EXPECTED_SUCCESS_KEY), successRaw, String(now));
+        assert.equal(tab.storage.peek(EXPECTED_TAB_ATTEMPT_KEY), tabAttemptRaw, String(now));
+        assert.equal(tab.storage.peek(EXPECTED_CONSUMED_KEY), 'attempt-prior', String(now));
+    }
 });
 
 test('a queued replacement wins before late completion without being cleared or overwritten', async () => {
@@ -325,6 +401,40 @@ test('read boundaries reject invalid attempts and request timestamps without mut
     }
 });
 
+test('public reads reject invalid now values before touching shared storage', () => {
+    const leaseRaw = JSON.stringify({ attemptId: 'attempt-a', startedAt: 1_000 });
+    const successRaw = JSON.stringify({ attemptId: 'attempt-a', completedAt: 1_500 });
+    for (const now of INVALID_NOW_VALUES) {
+        const shared = createObservedStorage({
+            [EXPECTED_LEASE_KEY]: leaseRaw,
+            [EXPECTED_SUCCESS_KEY]: successRaw,
+        });
+
+        assert.equal(api.readLiveAuthRecoveryLease(shared.storage, now), null, String(now));
+        assert.equal(api.readAuthRecoverySuccess(shared.storage, now), null, String(now));
+        assert.deepEqual(shared.operations, [], String(now));
+        assert.equal(shared.storage.peek(EXPECTED_LEASE_KEY), leaseRaw, String(now));
+        assert.equal(shared.storage.peek(EXPECTED_SUCCESS_KEY), successRaw, String(now));
+    }
+});
+
+test('public consumption rejects invalid now values without reading or writing markers', () => {
+    const successRaw = JSON.stringify({ attemptId: 'attempt-a', completedAt: 1_500 });
+    for (const now of INVALID_NOW_VALUES) {
+        const shared = createObservedStorage({ [EXPECTED_SUCCESS_KEY]: successRaw });
+        const tab = createObservedStorage();
+
+        assert.equal(api.consumeAuthRecoverySuccess(shared.storage, tab.storage, {
+            now,
+            requestStartedAt: 1_000,
+        }), null, String(now));
+        assert.deepEqual(shared.operations, [], String(now));
+        assert.deepEqual(tab.operations, [], String(now));
+        assert.equal(shared.storage.peek(EXPECTED_SUCCESS_KEY), successRaw, String(now));
+        assert.equal(tab.storage.peek(EXPECTED_CONSUMED_KEY), null, String(now));
+    }
+});
+
 test('unlocked readers ignore stale records without deleting a newer concurrent value', () => {
     const cases = [
         {
@@ -483,6 +593,71 @@ test('an unavailable randomUUID degrades a locked claim to solo without a lease'
     assert.equal(result.role, 'solo');
     assert.equal(shared.getItem(api.AUTH_RECOVERY_LEASE_KEY), null);
     assert.equal(tab.getItem(api.AUTH_RECOVERY_TAB_ATTEMPT_KEY), null);
+});
+
+test('invalid generated attempt ids return solo without mutating recovery records', async () => {
+    const successRaw = JSON.stringify({ attemptId: 'attempt-prior', completedAt: 1_500 });
+    const invalidAttemptIds = ['', 'x'.repeat(129), null, undefined, 123, true, {}];
+    for (const attemptId of invalidAttemptIds) {
+        const shared = createObservedStorage({ [EXPECTED_SUCCESS_KEY]: successRaw });
+        const tab = createObservedStorage();
+        const claim = await api.claimAuthRecovery(shared.storage, tab.storage, {
+            lockManager: createQueuedExclusiveLockManager(),
+            clock: () => 2_000,
+            requestStartedAt: 1_600,
+            newId: () => attemptId,
+        });
+
+        assert.deepEqual(json(claim), { role: 'solo', attemptId: '' }, String(attemptId));
+        assert.equal(shared.storage.peek(EXPECTED_SUCCESS_KEY), successRaw, String(attemptId));
+        assert.equal(shared.storage.peek(EXPECTED_LEASE_KEY), null, String(attemptId));
+        assert.equal(tab.storage.peek(EXPECTED_TAB_ATTEMPT_KEY), null, String(attemptId));
+        assert.equal(
+            shared.operations.some(([operation]) => operation !== 'getItem'),
+            false,
+            String(attemptId),
+        );
+        assert.equal(
+            tab.operations.some(([operation]) => operation !== 'getItem'),
+            false,
+            String(attemptId),
+        );
+    }
+});
+
+test('simultaneous queued claims skip an invalid id and elect only the next valid leader', async () => {
+    const shared = createStorage();
+    const invalidTab = createStorage();
+    const leaderTab = createStorage();
+    const followerTab = createStorage();
+    const locks = createQueuedExclusiveLockManager();
+    const [invalid, leader, follower] = await Promise.all([
+        api.claimAuthRecovery(shared, invalidTab, {
+            lockManager: locks,
+            clock: () => 1_000,
+            newId: () => '',
+        }),
+        api.claimAuthRecovery(shared, leaderTab, {
+            lockManager: locks,
+            clock: () => 1_000,
+            newId: () => 'attempt-valid',
+        }),
+        api.claimAuthRecovery(shared, followerTab, {
+            lockManager: locks,
+            clock: () => 1_000,
+            newId: () => { throw new Error('follower_must_not_generate'); },
+        }),
+    ]);
+
+    assert.deepEqual(
+        [invalid.role, leader.role, follower.role],
+        ['solo', 'leader', 'follower'],
+    );
+    assert.equal(leader.attemptId, 'attempt-valid');
+    assert.equal(follower.attemptId, 'attempt-valid');
+    assert.equal(invalidTab.getItem(EXPECTED_TAB_ATTEMPT_KEY), null);
+    assert.equal(JSON.parse(shared.getItem(EXPECTED_LEASE_KEY)).attemptId, 'attempt-valid');
+    assert.equal(locks.maxConcurrentCallbacks, 1);
 });
 
 test('completion requires Web Locks and the current tab matching the live lease', async () => {

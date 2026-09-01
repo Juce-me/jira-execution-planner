@@ -725,10 +725,13 @@ Expected: PASS for the default focused matrix. The PostgreSQL-only refresh/callb
 In terminal 1, start the repository-owned fixed local PostgreSQL runner:
 
 ```bash
-./runners/local/run.sh
+env \
+  JIRA_AUTH_MODE=atlassian_oauth \
+  OAUTH_LOCAL_TOKEN_STORE_ALLOWED=false \
+  ./runners/local/run.sh
 ```
 
-Expected: the digest-pinned PostgreSQL service becomes healthy on `127.0.0.1:5432`, Alembic reaches the current head, startup preflight passes, and Flask starts without a dependency/runtime warning. Leave this exact runner active for the next command; do not start an ad-hoc PostgreSQL container.
+Expected: the digest-pinned PostgreSQL service becomes healthy on `127.0.0.1:5432`, Alembic reaches the current head, startup preflight passes, and Flask starts without a dependency/runtime warning. The runner's preflight and Flask child inherit the explicit `JIRA_AUTH_MODE=atlassian_oauth` and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=false` values, so Step 5 cannot fall through to Basic mode or a local token store. Leave this repository runner active for the next command; do not start an ad-hoc PostgreSQL container.
 
 In terminal 2, run the complete refresh/callback race module against the runner's fixed local database:
 

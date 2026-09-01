@@ -215,6 +215,7 @@ export default function TeamGroupsSettings(props) {
                                                             <span
                                                                 className="group-list-star group-list-star-status"
                                                                 data-first-run-guide-target="favorite"
+                                                                tabIndex={0}
                                                                 role="status"
                                                                 aria-label="Favorite Department, selected pending save"
                                                             >★</span>

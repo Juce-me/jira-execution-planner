@@ -1431,6 +1431,11 @@ test('first-run preferences favorite reuses the active row slot and keeps the ed
     await expect(favoriteTarget).toHaveCount(1);
     expect(await favoriteTarget.evaluate(node => node.closest('.group-list-item')?.classList.contains('active'))).toBe(true);
     await expectGuideTargetGeometry(favoriteTarget, guide);
+    await expect(favoriteTarget).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(guide.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(favoriteTarget).toBeFocused();
 
     const header = editor.locator(':scope > .group-editor-header');
     const preference = editor.locator(':scope > .group-preference-row');

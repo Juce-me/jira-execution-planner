@@ -63,6 +63,10 @@ const FULL_AVAILABILITY = {
     'editing-track': true,
     'editing-status': true,
     'jira-export': true,
+    'launch-configuration': true,
+    'launch-planning': true,
+    'launch-board': true,
+    'launch-statistics': true,
 };
 
 const ENG_STEP_IDS = [
@@ -85,7 +89,7 @@ test('onboarding persistence is available only for Atlassian OAuth workspace DB 
     assert.equal(isOnboardingAvailable('', 'workspace_db'), false);
 });
 
-test('catalog contains the exact 14-step tour and progression order', async () => {
+test('catch-up catalog keeps contextual module launchers between Jira export and completion', async () => {
     const { ONBOARDING_STEP_CATALOG } = await loadModule();
     assert.deepEqual(
         ONBOARDING_STEP_CATALOG.map((step) => [step.id, step.progression]),
@@ -103,17 +107,78 @@ test('catalog contains the exact 14-step tour and progression order', async () =
             ['editing-track', 'menu-preview'],
             ['editing-status', 'menu-preview'],
             ['jira-export', 'manual'],
+            ['launch-configuration', 'module-launch'],
+            ['launch-planning', 'module-launch'],
+            ['launch-board', 'module-launch'],
+            ['launch-statistics', 'module-launch'],
             ['complete', 'finish'],
         ]
     );
-    ONBOARDING_STEP_CATALOG.forEach((step) => {
-        assert.equal(Object.hasOwn(step, 'interaction'), false, step.id);
+    const launchers = ONBOARDING_STEP_CATALOG.filter((step) => step.progression === 'module-launch');
+    assert.deepEqual(
+        launchers.map((step) => [step.id, step.moduleId]),
+        [
+            ['launch-configuration', 'configuration'],
+            ['launch-planning', 'planning'],
+            ['launch-board', 'board'],
+            ['launch-statistics', 'statistics'],
+        ]
+    );
+    launchers.forEach((step) => {
+        assert.equal(step.interaction, 'target-reachable', step.id);
+        assert.equal(step.requireEnabled, true, step.id);
+        assert.match(step.fallbackBody, /unavailable|not available/i, step.id);
     });
     assert.equal(Object.isFrozen(ONBOARDING_STEP_CATALOG), true);
     const renderedCopy = ONBOARDING_STEP_CATALOG
         .flatMap((step) => [step.title, step.body, step.fallbackBody || ''])
         .join(' ');
     assert.doesNotMatch(renderedCopy, /data-onboarding-target|hierarchy-epic|editing-priority/);
+});
+
+test('contextual module catalogs expose one manually advanced reachable destination each', async () => {
+    const { ONBOARDING_STEPS_BY_MODULE, resolveOnboardingSnapshot } = await loadModule();
+    const expectedTargets = {
+        configuration: 'configuration-team-add',
+        planning: 'planning-overview',
+        board: 'board-overview',
+        statistics: 'statistics-overview',
+    };
+
+    for (const [moduleId, targetId] of Object.entries(expectedTargets)) {
+        const catalog = ONBOARDING_STEPS_BY_MODULE[moduleId];
+        assert.equal(catalog.length, 1, moduleId);
+        const [step] = catalog;
+        assert.equal(step.interaction, 'target-reachable', moduleId);
+        assert.equal(step.progression, 'module-manual', moduleId);
+        assert.deepEqual(step.selectors, [`[data-onboarding-target="${targetId}"]`], moduleId);
+
+        const destination = element(VISIBLE_RECT);
+        const snapshot = resolveOnboardingSnapshot(
+            rootWith({ [step.selectors[0]]: [destination] }),
+            VIEWPORT,
+            { catalog },
+        );
+        assert.equal(snapshot.targets[step.id], destination, moduleId);
+        assert.deepEqual(snapshot.steps.map((entry) => entry.id), [step.id], moduleId);
+    }
+});
+
+test('contextual launcher and destination source contracts preserve native controls', () => {
+    const dashboard = readFileSync(new URL('../frontend/src/dashboard.jsx', `file://${__filename}`), 'utf8');
+    const modeControl = readFileSync(new URL('../frontend/src/eng/EngModeControl.jsx', `file://${__filename}`), 'utf8');
+    const segmentedControl = readFileSync(new URL('../frontend/src/ui/SegmentedControl.jsx', `file://${__filename}`), 'utf8');
+    const board = readFileSync(new URL('../frontend/src/eng/EngBoardView.jsx', `file://${__filename}`), 'utf8');
+
+    assert.ok(dashboard.includes('data-onboarding-target="settings-launcher"'));
+    assert.ok(modeControl.includes("'data-onboarding-target': 'planning-launcher'"));
+    assert.ok(modeControl.includes("'data-onboarding-target': 'board-launcher'"));
+    assert.ok(modeControl.includes("'data-onboarding-target': 'statistics-launcher'"));
+    assert.match(segmentedControl, /<button\s+\{\.\.\.\(option\.domProps \|\| \{\}\)\}/);
+    assert.equal((segmentedControl.match(/\{\.\.\.\(option\.domProps \|\| \{\}\)\}/g) || []).length, 1);
+    assert.ok(dashboard.includes('data-onboarding-target="planning-overview"'));
+    assert.ok(dashboard.includes('data-onboarding-target="statistics-overview"'));
+    assert.ok(board.includes('data-onboarding-target="board-overview"'));
 });
 
 test('all eligible steps are included in catalog order', async () => {
@@ -156,6 +221,10 @@ test('all-absent hierarchy compacts to one aggregate fallback before field previ
         'hierarchy-epic': false,
         'hierarchy-story': false,
         'jira-export': false,
+        'launch-configuration': false,
+        'launch-planning': false,
+        'launch-board': false,
+        'launch-statistics': false,
     });
     assert.deepEqual(
         steps.map((step) => step.id),

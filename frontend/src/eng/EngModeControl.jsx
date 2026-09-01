@@ -20,14 +20,21 @@ export default function EngModeControl({
                     value: 'planning',
                     label: 'Planning',
                     disabled: !selectedSprint || isCompletedSprintSelected,
-                    title: 'Show sprint planning panel'
+                    title: 'Show sprint planning panel',
+                    domProps: { 'data-onboarding-target': 'planning-launcher' },
                 },
-                { value: 'board', label: 'Board', title: 'Show the group board' },
+                {
+                    value: 'board',
+                    label: 'Board',
+                    title: 'Show the group board',
+                    domProps: { 'data-onboarding-target': 'board-launcher' },
+                },
                 {
                     value: 'statistics',
                     label: 'Statistics',
                     disabled: isFutureSprintSelected,
-                    title: 'Show sprint statistics'
+                    title: 'Show sprint statistics',
+                    domProps: { 'data-onboarding-target': 'statistics-launcher' },
                 },
                 {
                     value: 'scenario',

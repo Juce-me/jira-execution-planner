@@ -202,6 +202,58 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         body: 'Open the current issue set in Jira when you need its full issue tools.',
     }),
     freezeStep({
+        id: 'launch-configuration',
+        moduleId: 'configuration',
+        presence: 'conditional',
+        progression: 'module-launch',
+        interaction: 'target-reachable',
+        group: CONTINUE_IN_JIRA,
+        requireEnabled: true,
+        selectors: [target('settings-launcher')],
+        title: 'Configure this Department',
+        body: 'Open Settings to manage the Teams included in this Department.',
+        fallbackBody: 'Settings is unavailable in this dashboard state. You can continue with the tour without changing configuration.',
+    }),
+    freezeStep({
+        id: 'launch-planning',
+        moduleId: 'planning',
+        presence: 'conditional',
+        progression: 'module-launch',
+        interaction: 'target-reachable',
+        group: CONTINUE_IN_JIRA,
+        requireEnabled: true,
+        selectors: [target('planning-launcher')],
+        title: 'Open Planning',
+        body: 'Open Planning to review sprint work against available capacity.',
+        fallbackBody: 'Planning is unavailable for the selected sprint. You can continue with the tour without opening it.',
+    }),
+    freezeStep({
+        id: 'launch-board',
+        moduleId: 'board',
+        presence: 'conditional',
+        progression: 'module-launch',
+        interaction: 'target-reachable',
+        group: CONTINUE_IN_JIRA,
+        requireEnabled: true,
+        selectors: [target('board-launcher')],
+        title: 'Open Board',
+        body: 'Open Board to see scoped Epics in the Department workflow.',
+        fallbackBody: 'Board is unavailable in this dashboard state. You can continue with the tour without opening it.',
+    }),
+    freezeStep({
+        id: 'launch-statistics',
+        moduleId: 'statistics',
+        presence: 'conditional',
+        progression: 'module-launch',
+        interaction: 'target-reachable',
+        group: CONTINUE_IN_JIRA,
+        requireEnabled: true,
+        selectors: [target('statistics-launcher')],
+        title: 'Open Statistics',
+        body: 'Open Statistics to review delivery data for the selected scope.',
+        fallbackBody: 'Statistics is unavailable for the selected sprint. You can continue with the tour without opening it.',
+    }),
+    freezeStep({
         id: 'complete',
         presence: 'required',
         progression: 'finish',
@@ -211,6 +263,62 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         body: 'Finish the tour to return to the dashboard.',
     }),
 ]);
+
+export const ONBOARDING_STEPS_BY_MODULE = Object.freeze({
+    'catch-up': ONBOARDING_STEP_CATALOG,
+    configuration: Object.freeze([
+        freezeStep({
+            id: 'configuration-team-add',
+            presence: 'required',
+            progression: 'module-manual',
+            interaction: 'target-reachable',
+            group: 'Configuration',
+            selectors: [target('configuration-team-add')],
+            title: 'Choose Department Teams',
+            body: 'Add or remove Teams here to control which Jira work appears for this Department. No change is required to continue.',
+            fallbackBody: 'The Team search is unavailable because this Department has reached the Team limit or the Team catalog is unavailable. You can continue with Next without making a change.',
+        }),
+    ]),
+    planning: Object.freeze([
+        freezeStep({
+            id: 'planning-overview',
+            presence: 'required',
+            progression: 'module-manual',
+            interaction: 'target-reachable',
+            group: 'Planning',
+            selectors: [target('planning-overview')],
+            title: 'Review sprint planning',
+            body: 'Planning helps select sprint work, compare it with capacity, and hand a chosen issue set to Jira.',
+            fallbackBody: 'Planning is unavailable for the selected sprint. You can continue with Next without making a change.',
+        }),
+    ]),
+    board: Object.freeze([
+        freezeStep({
+            id: 'board-overview',
+            presence: 'required',
+            progression: 'module-manual',
+            interaction: 'target-reachable',
+            group: 'Board',
+            selectors: [target('board-overview')],
+            title: 'Review the Department Board',
+            body: 'Board groups scoped Epics into the Department\'s configured workflow columns.',
+            fallbackBody: 'Board is unavailable in this dashboard state. You can continue with Next without making a change.',
+        }),
+    ]),
+    statistics: Object.freeze([
+        freezeStep({
+            id: 'statistics-overview',
+            presence: 'required',
+            progression: 'module-manual',
+            interaction: 'target-reachable',
+            group: 'Statistics',
+            selectors: [target('statistics-overview')],
+            title: 'Review delivery statistics',
+            body: 'Statistics compares delivery, priority, lead-time, capacity, and collaboration views for the selected scope.',
+            fallbackBody: 'Statistics is unavailable for the selected sprint. You can continue with Next without making a change.',
+        }),
+    ]),
+});
 
 const HIERARCHY_FALLBACK_STEP = freezeStep({
     id: 'hierarchy',
@@ -236,12 +344,16 @@ const EDITING_FALLBACK_STEP = freezeStep({
     terminalErrorBody: 'Field previews could not be loaded for this dashboard view. Continue with the tour or retry the dashboard later.',
 });
 
-export function buildVisibleOnboardingSteps(availability = {}, { engReadiness = 'settled' } = {}) {
+export function buildVisibleOnboardingSteps(
+    availability = {},
+    { engReadiness = 'settled', catalog = ONBOARDING_STEP_CATALOG } = {},
+) {
     const engLoading = engReadiness === 'loading';
     const hasVisibleHierarchy = HIERARCHY_STEP_IDS.some((id) => availability[id] === true);
     const hasVisibleEditing = EDITING_STEP_IDS.some((id) => availability[id] === true);
     const steps = [];
-    ONBOARDING_STEP_CATALOG.forEach((step) => {
+    const stepCatalog = Array.isArray(catalog) ? catalog : ONBOARDING_STEP_CATALOG;
+    stepCatalog.forEach((step) => {
         if (step.presence === 'hierarchy') {
             if (engLoading || hasVisibleHierarchy) {
                 steps.push(step);
@@ -399,9 +511,10 @@ export function resolveStepTarget(step, root, viewport) {
 
 export function resolveOnboardingSnapshot(root, viewport, options = {}) {
     const engReadiness = options.engReadiness || 'settled';
+    const catalog = Array.isArray(options.catalog) ? options.catalog : ONBOARDING_STEP_CATALOG;
     const targets = {};
     const availability = {};
-    ONBOARDING_STEP_CATALOG.forEach((step) => {
+    catalog.forEach((step) => {
         const targetOptions = {
             ...options,
             requireEnabled: step.requireEnabled === true,
@@ -418,7 +531,7 @@ export function resolveOnboardingSnapshot(root, viewport, options = {}) {
         availability[step.id] = Boolean(resolved);
     });
     return {
-        steps: buildVisibleOnboardingSteps(availability, { engReadiness }),
+        steps: buildVisibleOnboardingSteps(availability, { engReadiness, catalog }),
         targets,
     };
 }

@@ -410,6 +410,7 @@ export default function TeamGroupsSettings(props) {
                                                     ) : (activeGroupDraft.teamIds || []).length < 12 && (
                                                         <div className="team-search-wrapper">
                                                             <input
+                                                                data-onboarding-target="configuration-team-add"
                                                                 type="text"
                                                                 className="team-search-input"
                                                                 placeholder="Search teams to add..."

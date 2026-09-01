@@ -434,6 +434,15 @@ test('Department editor exposes one canonical inline name and guide targets', ()
     assert.equal(source.includes('Show in my controls'), false);
 });
 
+test('Department Team search exposes the configuration onboarding destination only on the native input', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx'), 'utf8');
+    assert.match(
+        source,
+        /<input\s+data-onboarding-target="configuration-team-add"\s+type="text"\s+className="team-search-input"/s,
+    );
+    assert.equal((source.match(/data-onboarding-target="configuration-team-add"/g) || []).length, 1);
+});
+
 test('SettingsModal owns the replay header action slot', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'SettingsModal.jsx'), 'utf8');
     assert.ok(source.includes('headerAction'));

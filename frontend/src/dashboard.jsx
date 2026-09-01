@@ -13998,6 +13998,7 @@ import {
                                             title="Manage team groups"
                                             aria-label="Manage team groups"
                                             type="button"
+                                            data-onboarding-target="settings-launcher"
                                         >
                                             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                                 <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" stroke="currentColor" strokeWidth="1.6"/>
@@ -14468,7 +14469,7 @@ import {
                     )}
 
                     {selectedView === 'eng' && showStats && (
-                    <div className={`stats-panel ${showStats ? 'open' : ''}`}>
+                    <div className={`stats-panel ${showStats ? 'open' : ''}`} data-onboarding-target="statistics-overview">
                         {showStats && !canRenderStatsPanel && (
                             <div className="stats-note">Load stats for the selected sprint.</div>
                         )}
@@ -16096,7 +16097,7 @@ import {
                     )}
 
                     {selectedView === 'eng' && showPlanning && (
-                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`}>
+                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`} data-onboarding-target="planning-overview">
                         {/* --- Planning Actions (top of panel) --- */}
                         <PlanningActionBar
                             isAcceptedIncluded={isAcceptedIncluded}

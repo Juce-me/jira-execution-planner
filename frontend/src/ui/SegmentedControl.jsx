@@ -9,6 +9,7 @@ export default function SegmentedControl({ className = '', ariaLabel, options, v
                 const active = value === option.value;
                 return (
                     <button
+                        {...(option.domProps || {})}
                         key={option.value}
                         className={`segmented-control-button ${active ? 'active' : ''}`}
                         onClick={() => onChange(option.value)}

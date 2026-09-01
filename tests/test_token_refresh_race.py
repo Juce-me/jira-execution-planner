@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import quote
 
-from sqlalchemy import text
+from sqlalchemy import event as sqlalchemy_event, text
 from sqlalchemy.engine import make_url
 
 from backend.auth import db_tokens as db_tokens_module
@@ -93,7 +93,7 @@ def _postgres_schema(prefix):
     try:
         engine = db_engine.get_engine(schema_url)
         models.Base.metadata.create_all(engine)
-        yield db_engine.session_factory(schema_url), _key_provider()
+        yield db_engine.session_factory(schema_url), _key_provider(), engine
     finally:
         with base_engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
@@ -343,14 +343,22 @@ class TokenRefreshRaceTests(unittest.TestCase):
         'PostgreSQL TEST_DATABASE_URL is required to prove first-ever callback serialization.',
     )
     def test_concurrent_first_callbacks_serialize_before_upsert_and_keep_two_browser_rows(self):
-        with _postgres_schema('jep_first_callback') as (factory, key_provider):
+        with _postgres_schema('jep_first_callback') as (factory, key_provider, engine):
             first_reached_upsert = threading.Event()
+            second_reached_advisory_lock = threading.Event()
             release_first = threading.Event()
             upsert_count_lock = threading.Lock()
             upsert_count = 0
             original_upsert_user = db_tokens_module._upsert_user
             results = []
             errors = []
+
+            def observe_second_advisory_lock(conn, cursor, statement, parameters, context, executemany):
+                if (
+                    threading.current_thread().name == 'second-first-ever-callback'
+                    and 'pg_advisory_xact_lock' in statement
+                ):
+                    second_reached_advisory_lock.set()
 
             def gated_upsert_user(session, user_profile):
                 nonlocal upsert_count
@@ -381,20 +389,32 @@ class TokenRefreshRaceTests(unittest.TestCase):
                 except Exception as error:
                     errors.append(error)
 
-            with patch.object(db_tokens_module, '_upsert_user', side_effect=gated_upsert_user):
-                first = threading.Thread(target=store_callback, args=('first',))
-                first.start()
-                self.assertTrue(first_reached_upsert.wait(timeout=5))
-                second = threading.Thread(target=store_callback, args=('second',))
-                second.start()
-                time.sleep(0.2)
-                with upsert_count_lock:
-                    self.assertEqual(upsert_count, 1)
-                self.assertTrue(second.is_alive())
+            first = None
+            second = None
+            sqlalchemy_event.listen(engine, 'before_cursor_execute', observe_second_advisory_lock)
+            try:
+                with patch.object(db_tokens_module, '_upsert_user', side_effect=gated_upsert_user):
+                    first = threading.Thread(target=store_callback, args=('first',))
+                    first.start()
+                    self.assertTrue(first_reached_upsert.wait(timeout=5))
+                    second = threading.Thread(
+                        target=store_callback,
+                        args=('second',),
+                        name='second-first-ever-callback',
+                    )
+                    second.start()
+                    self.assertTrue(second_reached_advisory_lock.wait(timeout=5))
+                    with upsert_count_lock:
+                        self.assertEqual(upsert_count, 1)
+            finally:
                 release_first.set()
-                first.join(timeout=15)
-                second.join(timeout=15)
+                for thread in (first, second):
+                    if thread is not None:
+                        thread.join(timeout=15)
+                sqlalchemy_event.remove(engine, 'before_cursor_execute', observe_second_advisory_lock)
 
+            self.assertIsNotNone(first)
+            self.assertIsNotNone(second)
             self.assertFalse(first.is_alive())
             self.assertFalse(second.is_alive())
             if errors:
@@ -417,7 +437,7 @@ class TokenRefreshRaceTests(unittest.TestCase):
         'PostgreSQL TEST_DATABASE_URL is required to prove reconnect callback serialization.',
     )
     def test_concurrent_revoked_reconnects_keep_both_new_rows_and_delete_old_rows(self):
-        with _postgres_schema('jep_reconnect_callback') as (factory, key_provider):
+        with _postgres_schema('jep_reconnect_callback') as (factory, key_provider, engine):
             with factory() as session:
                 stored = store_oauth_callback_tokens(
                     session,
@@ -440,12 +460,20 @@ class TokenRefreshRaceTests(unittest.TestCase):
                 session.commit()
 
             first_created_replacement = threading.Event()
+            second_reached_advisory_lock = threading.Event()
             release_first = threading.Event()
             upsert_count_lock = threading.Lock()
             upsert_count = 0
             original_upsert_user = db_tokens_module._upsert_user
             results = []
             errors = []
+
+            def observe_second_advisory_lock(conn, cursor, statement, parameters, context, executemany):
+                if (
+                    threading.current_thread().name == 'second-reconnect-callback'
+                    and 'pg_advisory_xact_lock' in statement
+                ):
+                    second_reached_advisory_lock.set()
 
             def counted_upsert_user(session, user_profile):
                 nonlocal upsert_count
@@ -479,20 +507,32 @@ class TokenRefreshRaceTests(unittest.TestCase):
                 except Exception as error:
                     errors.append(error)
 
-            with patch.object(db_tokens_module, '_upsert_user', side_effect=counted_upsert_user):
-                first = threading.Thread(target=reconnect, args=('first', old_first.id, True))
-                first.start()
-                self.assertTrue(first_created_replacement.wait(timeout=5))
-                second = threading.Thread(target=reconnect, args=('second', old_second.id))
-                second.start()
-                time.sleep(0.2)
-                with upsert_count_lock:
-                    self.assertEqual(upsert_count, 1)
-                self.assertTrue(second.is_alive())
+            first = None
+            second = None
+            sqlalchemy_event.listen(engine, 'before_cursor_execute', observe_second_advisory_lock)
+            try:
+                with patch.object(db_tokens_module, '_upsert_user', side_effect=counted_upsert_user):
+                    first = threading.Thread(target=reconnect, args=('first', old_first.id, True))
+                    first.start()
+                    self.assertTrue(first_created_replacement.wait(timeout=5))
+                    second = threading.Thread(
+                        target=reconnect,
+                        args=('second', old_second.id),
+                        name='second-reconnect-callback',
+                    )
+                    second.start()
+                    self.assertTrue(second_reached_advisory_lock.wait(timeout=5))
+                    with upsert_count_lock:
+                        self.assertEqual(upsert_count, 1)
+            finally:
                 release_first.set()
-                first.join(timeout=15)
-                second.join(timeout=15)
+                for thread in (first, second):
+                    if thread is not None:
+                        thread.join(timeout=15)
+                sqlalchemy_event.remove(engine, 'before_cursor_execute', observe_second_advisory_lock)
 
+            self.assertIsNotNone(first)
+            self.assertIsNotNone(second)
             self.assertFalse(first.is_alive())
             self.assertFalse(second.is_alive())
             if errors:

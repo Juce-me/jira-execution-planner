@@ -277,7 +277,7 @@ test('allows empty shell scope with canonical group, team, and principal identif
 test('replacement is atomic when incoming payload is oversized or storage write fails', () => {
     const api = loadModule();
     const oldSnapshot = { ...planningSnapshot(), planning: { ...planningSnapshot().planning, selectedTaskKeys: ['OLD-1'] } };
-    const oversized = { ...planningSnapshot(), principal: { workspaceId: 'other', viewConfigId: 'other' },
+    const oversized = { ...planningSnapshot(), principal: { workspaceId: 'third', viewConfigId: 'third' },
         planning: { ...planningSnapshot().planning, selectedTaskKeys: Array.from({ length: 500 }, (_, i) => `${'TASK'.repeat(60)}-${i}`) } };
     const storage = createStorage();
     assert.equal(api.writeAuthResumeState(storage, oldSnapshot, 1_000), true);
@@ -291,8 +291,9 @@ test('replacement is atomic when incoming payload is oversized or storage write 
     assert.equal(storedReplacement.view.activeGroupId, 'new-group');
     assert.deepEqual(storedReplacement.planning.selectedTaskKeys, ['NEW-1']);
     assert.equal(storedReplacement.planning.selectedTaskKeys.includes('OLD-1'), false);
+    const replacementBytes = storage.getItem(api.AUTH_RESUME_STORAGE_KEY);
     assert.equal(api.writeAuthResumeState(storage, oversized, 3_000), false);
-    assert.deepEqual(JSON.parse(storage.getItem(api.AUTH_RESUME_STORAGE_KEY)).planning.selectedTaskKeys, ['NEW-1']);
+    assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), replacementBytes);
     const throwing = createThrowingWriteStorage(before);
     assert.equal(api.writeAuthResumeState(throwing, { ...oldSnapshot, principal: { workspaceId: 'other', viewConfigId: 'other' } }, 2_000), false);
     assert.equal(throwing.getItem(api.AUTH_RESUME_STORAGE_KEY), before);

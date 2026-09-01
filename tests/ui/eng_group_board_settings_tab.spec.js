@@ -328,7 +328,7 @@ test('Export JSON downloads only the selected saved group instead of the unsaved
     const dialog = page.getByRole('dialog').first();
 
     await dialog.locator('.group-pane-list .group-list-item', { hasText: 'Southridge' }).click();
-    await dialog.locator('.group-name-input').fill('Unsaved draft name');
+    await dialog.getByRole('textbox', { name: 'Department name' }).fill('Unsaved draft name');
     await dialog.locator('summary', { hasText: 'Advanced' }).click();
     const initialGetCount = calls.filter(call => call.method === 'GET' && call.pathname === '/api/groups-config').length;
     const downloadPromise = page.waitForEvent('download', { timeout: 5000 });
@@ -360,7 +360,7 @@ test('Import JSON updates only a newly created selected group and preserves sibl
     let dialog = page.getByRole('dialog').first();
 
     await dialog.getByRole('button', { name: '+ Add group' }).click();
-    await expect(dialog.locator('.group-name-input')).toHaveValue('New Group');
+    await expect(dialog.getByRole('textbox', { name: 'Department name' })).toHaveValue('New Group');
     await dialog.locator('summary', { hasText: 'Advanced' }).click();
     await dialog.getByRole('button', { name: 'Import JSON' }).click();
     await dialog.locator('textarea').fill(JSON.stringify({
@@ -382,7 +382,7 @@ test('Import JSON updates only a newly created selected group and preserves sibl
     await expect(dialog.locator('.group-pane-list .group-list-item')).toHaveCount(3);
     await expect(dialog.locator('.group-pane-list .group-list-item', { hasText: 'Northwind' })).toBeVisible();
     await expect(dialog.locator('.group-pane-list .group-list-item', { hasText: 'Southridge' })).toBeVisible();
-    await expect(dialog.locator('.group-name-input')).toHaveValue('New Group');
+    await expect(dialog.getByRole('textbox', { name: 'Department name' })).toHaveValue('New Group');
     await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeEnabled();
     await dialog.getByRole('button', { name: /^Save$/ }).click();
     await expect(dialog).toHaveCount(0);

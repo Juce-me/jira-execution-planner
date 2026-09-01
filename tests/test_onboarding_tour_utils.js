@@ -136,22 +136,35 @@ test('catch-up catalog keeps contextual module launchers between Jira export and
     assert.doesNotMatch(renderedCopy, /data-onboarding-target|hierarchy-epic|editing-priority/);
 });
 
-test('contextual module catalogs expose one manually advanced reachable destination each', async () => {
+test('contextual module catalogs expose exact manually advanced reachable destinations', async () => {
     const { ONBOARDING_STEPS_BY_MODULE, resolveOnboardingSnapshot } = await loadModule();
-    const expectedTargets = {
-        configuration: 'configuration-team-add',
-        planning: 'planning-overview',
-        board: 'board-overview',
-        statistics: 'statistics-overview',
+    const expectedSteps = {
+        configuration: {
+            targetId: 'configuration-team-add',
+            body: 'Add or remove Teams here to control which Jira work appears for this Department. No change is required to continue.',
+        },
+        planning: {
+            targetId: 'planning-overview',
+            body: 'Planning helps select sprint work, compare it with capacity, and hand a chosen issue set to Jira.',
+        },
+        board: {
+            targetId: 'board-overview',
+            body: 'Board groups scoped Epics into the Department\'s configured workflow columns.',
+        },
+        statistics: {
+            targetId: 'statistics-overview',
+            body: 'Statistics compares delivery, priority, lead-time, capacity, and collaboration views for the selected scope.',
+        },
     };
 
-    for (const [moduleId, targetId] of Object.entries(expectedTargets)) {
+    for (const [moduleId, expected] of Object.entries(expectedSteps)) {
         const catalog = ONBOARDING_STEPS_BY_MODULE[moduleId];
         assert.equal(catalog.length, 1, moduleId);
         const [step] = catalog;
         assert.equal(step.interaction, 'target-reachable', moduleId);
         assert.equal(step.progression, 'module-manual', moduleId);
-        assert.deepEqual(step.selectors, [`[data-onboarding-target="${targetId}"]`], moduleId);
+        assert.deepEqual(step.selectors, [`[data-onboarding-target="${expected.targetId}"]`], moduleId);
+        assert.equal(step.body, expected.body, moduleId);
 
         const destination = element(VISIBLE_RECT);
         const snapshot = resolveOnboardingSnapshot(
@@ -162,6 +175,29 @@ test('contextual module catalogs expose one manually advanced reachable destinat
         assert.equal(snapshot.targets[step.id], destination, moduleId);
         assert.deepEqual(snapshot.steps.map((entry) => entry.id), [step.id], moduleId);
     }
+});
+
+test('Configuration fallback names the actual Team search absence reason and retains manual Next', async () => {
+    const { ONBOARDING_STEPS_BY_MODULE, buildStepPresentation } = await loadModule();
+    const [configurationStep] = ONBOARDING_STEPS_BY_MODULE.configuration;
+
+    const limit = buildStepPresentation(configurationStep, null, {
+        configurationTeamCount: 12,
+        configurationTeamCatalogAvailable: true,
+    });
+    assert.equal(
+        limit.body,
+        'The Team search is unavailable because this Department has reached the Team limit. You can continue with Next without making a change.',
+    );
+
+    const unavailableCatalog = buildStepPresentation(configurationStep, null, {
+        configurationTeamCount: 3,
+        configurationTeamCatalogAvailable: false,
+    });
+    assert.equal(
+        unavailableCatalog.body,
+        'The Team search is unavailable because the Team catalog is unavailable. You can continue with Next without making a change.',
+    );
 });
 
 test('contextual launcher and destination source contracts preserve native controls', () => {

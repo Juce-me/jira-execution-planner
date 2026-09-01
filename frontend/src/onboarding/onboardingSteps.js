@@ -276,7 +276,7 @@ export const ONBOARDING_STEPS_BY_MODULE = Object.freeze({
             selectors: [target('configuration-team-add')],
             title: 'Choose Department Teams',
             body: 'Add or remove Teams here to control which Jira work appears for this Department. No change is required to continue.',
-            fallbackBody: 'The Team search is unavailable because this Department has reached the Team limit or the Team catalog is unavailable. You can continue with Next without making a change.',
+            fallbackBody: 'The Team search is unavailable. You can continue with Next without making a change.',
         }),
     ]),
     planning: Object.freeze([
@@ -619,7 +619,21 @@ export function reconcileTourSessionState(state = {}, { isOpen = false, steps = 
     return state;
 }
 
-export function buildStepPresentation(step, targetNode, { engReadiness = 'settled' } = {}) {
+function configurationFallbackBody({ configurationTeamCount, configurationTeamCatalogAvailable } = {}) {
+    if (configurationTeamCatalogAvailable === false) {
+        return 'The Team search is unavailable because the Team catalog is unavailable. You can continue with Next without making a change.';
+    }
+    if (Number(configurationTeamCount) >= 12) {
+        return 'The Team search is unavailable because this Department has reached the Team limit. You can continue with Next without making a change.';
+    }
+    return '';
+}
+
+export function buildStepPresentation(
+    step,
+    targetNode,
+    { engReadiness = 'settled', configurationTeamCount, configurationTeamCatalogAvailable } = {},
+) {
     const loading = engReadiness === 'loading' && isOnboardingEngDataStep(step);
     if (loading) {
         return {
@@ -638,9 +652,12 @@ export function buildStepPresentation(step, targetNode, { engReadiness = 'settle
         };
     }
     const fallback = !targetNode;
+    const configurationFallback = step?.id === 'configuration-team-add'
+        ? configurationFallbackBody({ configurationTeamCount, configurationTeamCatalogAvailable })
+        : '';
     return {
         title: step?.title || '',
-        body: fallback ? (step?.fallbackBody || step?.body || '') : (step?.body || ''),
+        body: fallback ? (configurationFallback || step?.fallbackBody || step?.body || '') : (step?.body || ''),
         fallback,
         loading: false,
     };

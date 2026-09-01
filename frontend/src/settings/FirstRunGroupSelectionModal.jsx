@@ -89,7 +89,7 @@ export default function FirstRunGroupSelectionModal(props) {
                     <div className="department-first-run-heading">
                         <div id="department-first-run-title" className="department-first-run-title">Choose your Department</div>
                         <div className="department-first-run-subtitle">Choose the Department you want to see first.</div>
-                        <div className="department-first-run-next">{onboardingDone ? 'Next: dashboard' : 'Next: a skippable dashboard tour'}</div>
+                        <div className="department-first-run-next">{onboardingDone ? 'Next: dashboard' : 'Next: the dashboard. The optional tour runs on desktop.'}</div>
                     </div>
                 </div>
                 {showSearch ? (

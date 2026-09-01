@@ -928,7 +928,7 @@ test('first-run saving locks every picker mutation and restores controls after f
     expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toHaveLength(1);
 });
 
-test('successful first-run selection starts the dashboard tour before any onboarding write', async ({ page }, testInfo) => {
+test('successful first-run selection starts the desktop dashboard tour before any onboarding write', async ({ page }, testInfo) => {
     const preferenceGate = deferred();
     const calls = await mockFirstRunDashboard(page, {
         preferences: defaultGroupPreferences({ onboardingDone: false }),
@@ -936,7 +936,8 @@ test('successful first-run selection starts the dashboard tour before any onboar
     });
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toContainText('Next: a skippable dashboard tour');
+    await expect(page.getByRole('dialog', { name: 'Choose your Department' }))
+        .toContainText('Next: the dashboard. The optional tour runs on desktop.');
     expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
 
     await page.getByRole('radio', { name: /Platform/ }).check();
@@ -1026,22 +1027,37 @@ test('replay is disabled while Team groups settings are dirty', async ({ page })
     await expect(settings.getByRole('button', { name: 'Run onboarding again' })).toBeDisabled();
 });
 
-test('mobile first-run tour highlights the compact sprint target within the viewport', async ({ page }, testInfo) => {
+test('mobile first-run handoff preserves the Department and never opens or completes dashboard onboarding', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 600 });
-    await mockFirstRunDashboard(page, {
+    const calls = await mockFirstRunDashboard(page, {
         preferences: defaultGroupPreferences({ onboardingDone: false }),
     });
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
-    await page.getByRole('radio', { name: /Platform/ }).check();
-    await page.getByRole('button', { name: 'Continue' }).click();
-    const tour = page.getByRole('dialog', { name: 'Choose a sprint' });
-    await expect(tour).toBeVisible();
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await expect(page.locator('[data-onboarding-target="sprint"][data-onboarding-surface="compact"]')).toBeVisible();
-    await expectContainedInViewport(tour);
-    await expectContainedInViewport(page.locator('.onboarding-tour-spotlight'));
+    const chooser = page.getByRole('dialog', { name: 'Choose your Department' });
+    await expect(chooser).toBeVisible();
+    await expect(chooser).toContainText('Next: the dashboard. The optional tour runs on desktop.');
+    await expect(chooser.getByRole('radio', { name: /Platform/ })).toBeEnabled();
+    await chooser.getByRole('radio', { name: /Platform/ }).check();
+    await chooser.getByRole('button', { name: 'Continue' }).click();
+
+    await expect(chooser).toHaveCount(0);
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toHaveCount(0);
+    await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
+    await expect(page.locator('[data-onboarding-target="sprint"][data-onboarding-surface="main"]')).toContainText('2026Q2 Sprint 42');
+    await expect(page.locator('[data-onboarding-target="teams"][data-onboarding-surface="main"]')).toBeVisible();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/groups-preferences').length).toBe(1);
+    expect(calls.find(call => call.pathname === '/api/groups-preferences').body).toEqual({
+        visibleGroupIds: ['platform'],
+        activeGroupId: 'platform',
+    });
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+    const taskCalls = calls.filter(call => call.pathname === '/api/tasks-with-team-name');
+    expect(taskCalls.length).toBeGreaterThan(0);
+    expect(taskCalls.every(call => call.params.groupId === 'platform')).toBe(true);
+    expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
     await page.waitForTimeout(250);
-    await page.screenshot({ path: testInfo.outputPath('dashboard-onboarding-mobile.png'), animations: 'disabled' });
+    await page.screenshot({ path: testInfo.outputPath('dashboard-onboarding-mobile-absent.png'), animations: 'disabled' });
 });
 
 test('first-run Add Department opens the anchored configuration guide and Cancel restores the picker', async ({ page }) => {

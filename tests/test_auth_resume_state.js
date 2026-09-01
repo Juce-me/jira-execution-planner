@@ -200,6 +200,25 @@ test('rejects embedded emails but preserves opaque STATE identifiers', () => {
     assert.equal(api.readAuthResumeState(storage, snapshot.principal, 2_000).view.activeGroupId, 'STATE-123');
 });
 
+test('rejects whitespace-separated credential and recovery markers in allowed fields', () => {
+    const api = loadModule();
+    const cases = [
+        ['view', 'activeGroupId', 'api token secret'], ['view', 'selectedSprint', 'access token secret'],
+        ['planning', 'scopeKey', 'refresh token secret'], ['planning', 'selectedTaskKeys', ['response body secret']],
+        ['planning', 'selectedTeams', ['response data secret']], ['planning', 'scopeKey', 'config draft secret'],
+        ['planning', 'selectedTaskKeys', ['oauth state secret']], ['planning', 'selectedTeams', ['code verifier secret']],
+        ['planning', 'scopeKey', 'code challenge secret'], ['view', 'activeGroupId', 'Bearer secret'],
+    ];
+    for (const [section, key, value] of cases) {
+        const snapshot = planningSnapshot();
+        snapshot[section][key] = value;
+        assert.equal(api.writeAuthResumeState(createStorage(), snapshot, 1_000), false, `${section}.${key}`);
+    }
+    const valid = planningSnapshot();
+    valid.view.activeGroupId = 'STATE-123';
+    assert.equal(api.writeAuthResumeState(createStorage(), valid, 1_000), true);
+});
+
 test('blocked sessionStorage getter is fail-soft', () => {
     const api = loadModule();
     const win = Object.defineProperty({}, 'sessionStorage', { get() { throw new Error('blocked'); } });

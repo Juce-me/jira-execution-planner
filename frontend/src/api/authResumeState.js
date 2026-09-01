@@ -15,7 +15,7 @@ const SETTINGS_TABS = new Set([
 ]);
 const SELECTION_MODES = new Set(['manual', 'default_all']);
 
-const SENSITIVE_TEXT = /(?:api[_-]?token|access[_-]?token|refresh[_-]?token|authorization|bearer|response[_-]?(?:body|data)|config[_-]?draft|oauth[_-]?state|pkce|code[_-]?verifier)/i;
+const SENSITIVE_TEXT = /(?<![a-z])(?:api[\s_-]*token|access[\s_-]*token|refresh[\s_-]*token|authorization|bearer|response[\s_-]*(?:body|data)|config[\s_-]*draft|oauth[\s_-]*state|pkce|code[\s_-]*(?:verifier|challenge))(?![a-z])/i;
 const EMAIL_TEXT = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 
 const cleanString = (value, max = 255) => typeof value === 'string'

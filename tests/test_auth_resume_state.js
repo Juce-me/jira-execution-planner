@@ -110,7 +110,7 @@ test('malformed, expired, oversized, and invalid capsules are rejected and clear
     assert.equal(invalid, false);
     assert.equal(api.writeAuthResumeState(createStorage(), {
         principal: { workspaceId: 'w', viewConfigId: 'v' }, view: { selectedView: 'eng', engMode: 'catch-up', settingsOpen: false, settingsTab: 'scope' },
-        planning: { selectedTaskKeys: Array.from({ length: 501 }, (_, i) => `T-${i}`) },
+        planning: { ...planningSnapshot().planning, selectedTaskKeys: Array.from({ length: 501 }, (_, i) => `T-${i}`) },
     }, 1_000), false);
 });
 
@@ -125,6 +125,7 @@ test('rejects malformed list shapes, invalid clocks, and UTF-8 payloads without 
     for (const planning of [
         { ...base.planning, selectedTaskKeys: 'TASK-1' },
         { ...base.planning, selectedTaskKeys: [1] },
+        { ...base.planning, selectedTaskKeys: [null] },
         { ...base.planning, selectedTeams: 'team-1' },
         { ...base.planning, selectedTeams: [1] },
     ]) {
@@ -175,6 +176,28 @@ test('rejects sensitive markers even when placed in allowlisted fields', () => {
         assert.equal(api.readAuthResumeState(validStorage, planningSnapshot().principal, 2_000), null, `${section}.${key} read`);
         assert.equal(validStorage.getItem(api.AUTH_RESUME_STORAGE_KEY), null);
     }
+});
+
+test('rejects embedded emails but preserves opaque STATE identifiers', () => {
+    const api = loadModule();
+    const embedded = [
+        ['planning', 'scopeKey', 'note person@example.test'],
+        ['planning', 'selectedTaskKeys', ['note person@example.test']],
+        ['planning', 'selectedTeams', ['note person@example.test']],
+    ];
+    for (const [section, key, value] of embedded) {
+        const snapshot = planningSnapshot();
+        snapshot[section][key] = value;
+        assert.equal(api.writeAuthResumeState(createStorage(), snapshot, 1_000), false, `${section}.${key}`);
+    }
+    const snapshot = planningSnapshot();
+    snapshot.view.activeGroupId = 'STATE-123';
+    snapshot.planning.scopeKey = 'STATE-456';
+    snapshot.planning.selectedTaskKeys = ['STATE-789'];
+    snapshot.planning.selectedTeams = ['STATE-000'];
+    const storage = createStorage();
+    assert.equal(api.writeAuthResumeState(storage, snapshot, 1_000), true);
+    assert.equal(api.readAuthResumeState(storage, snapshot.principal, 2_000).view.activeGroupId, 'STATE-123');
 });
 
 test('blocked sessionStorage getter is fail-soft', () => {

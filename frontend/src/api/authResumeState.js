@@ -15,8 +15,8 @@ const SETTINGS_TABS = new Set([
 ]);
 const SELECTION_MODES = new Set(['manual', 'default_all']);
 
-const SENSITIVE_TEXT = /(?:^|[^a-z])(api[_-]?token|access[_-]?token|refresh[_-]?token|authorization|bearer|response[_-]?(?:body|data)|config[_-]?draft|oauth|pkce|state)(?:$|[^a-z])/i;
-const EMAIL_TEXT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SENSITIVE_TEXT = /(?:api[_-]?token|access[_-]?token|refresh[_-]?token|authorization|bearer|response[_-]?(?:body|data)|config[_-]?draft|oauth[_-]?state|pkce|code[_-]?verifier)/i;
+const EMAIL_TEXT = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 
 const cleanString = (value, max = 255) => typeof value === 'string'
     ? value.trim().slice(0, max)
@@ -27,7 +27,7 @@ const isSafeString = value => value == null || (typeof value === 'string'
     && !SENSITIVE_TEXT.test(value));
 
 const cleanList = (values, maxItems) => {
-    if (!Array.isArray(values) || values.length > maxItems || values.some(value => !isSafeString(value))) {
+    if (!Array.isArray(values) || values.length > maxItems || values.some(value => typeof value !== 'string' || !isSafeString(value))) {
         return null;
     }
     return [...new Set(values.map(value => cleanString(value)).filter(Boolean))];

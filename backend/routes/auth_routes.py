@@ -4,7 +4,7 @@ import os
 
 from flask import Blueprint, jsonify, redirect, request, session
 
-from backend.auth.csrf import issue_csrf_token
+from backend.auth.csrf import csrf_session_data_for_auth_context, issue_csrf_token
 from backend.auth.db_browser_sessions import delete_browser_session
 from backend.auth.jira_auth import ensure_oauth_token, missing_oauth_scopes
 from backend.config.repository import ConfigStorageError
@@ -345,13 +345,7 @@ def api_auth_csrf():
     if database_storage_enabled() and db_oauth_browser_session_data():
         try:
             context = current_request_auth_context()
-            csrf_data = {
-                'db_browser_session_id': context.browser_session_id,
-                'db_auth_connection_id': context.auth_connection_id,
-                'account_id': context.atlassian_account_id,
-            }
-            if not context.browser_session_id:
-                csrf_data['db_token_version'] = context.token_version
+            csrf_data = csrf_session_data_for_auth_context(context)
             token = issue_csrf_token(session, csrf_data)
         except AuthError as error:
             return auth_error_response(error, 401)

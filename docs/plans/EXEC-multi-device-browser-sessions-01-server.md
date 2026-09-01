@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Server slice complete and verified locally on 2026-09-01 through Task 6. Kept as `EXEC-*` pending acceptance or merge; the frontend slice may proceed.
+**Status:** Holistic server review fixes implemented on 2026-09-01; Task 6 acceptance rerun pending. Kept as `EXEC-*` pending acceptance or merge; the frontend slice remains gated.
 
 **Goal:** Replace mutable OAuth `token_version` browser validity with persistent opaque DB browser-profile sessions while preserving cache invalidation, per-profile logout, connection-wide revocation, legacy-cookie compatibility, and existing API contracts.
 
@@ -19,6 +19,9 @@
 - Create: `tests/test_db_browser_sessions.py`
 - Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
 - Modify: `docs/plans/SUPPORT-multi-device-browser-sessions-design.md`
+- Modify (Task 0 gate record only): `docs/plans/GATE-05-home-write-capability.md`
+- Modify (pre-execution cross-slice coordination only): `docs/plans/EXEC-multi-device-browser-sessions-02-tab-resume.md`
+- Modify (pre-execution plan-index coordination only): `docs/plans/README.md`
 - Modify: `backend/db/models.py`
 - Modify: `backend/auth/context.py`
 - Modify: `backend/auth/db_context.py`
@@ -36,10 +39,18 @@
 - Modify: `tests/test_token_refresh_race.py`
 - Modify: `tests/test_scenario_draft_routes.py`
 - Modify: `tests/test_endpoint_security_matrix.py`
+- Modify: `tests/test_epm_config_api.py`
 
 No frontend source, generated asset, Home/Townsquare route, Jira mutation route, credential schema, or configuration ownership file changes in this slice.
 
+The sibling frontend plan and plan index changes on this execution branch are pre-execution coordination that records the server-first dependency and naming state; they are included in the aggregate review scope but are not server runtime implementation, so this holistic server fix does not modify them. The Home write gate is likewise a Task 0 status input only, while the support design remains the architecture map for this slice.
+
 ### Task 0: Verify the execution baseline and gate
+
+**Files:**
+
+- Modify: `docs/plans/EXEC-multi-device-browser-sessions-01-server.md`
+- Modify (status check only): `docs/plans/GATE-05-home-write-capability.md`
 
 - [x] **Step 1: Confirm the branch contains the global auth-lock prerequisite**
 
@@ -576,7 +587,7 @@ Capture `previous_browser_session_id` from the current Flask cookie before enter
 
 - [x] **Step 4: Stop refresh from replacing the browser id**
 
-In every DB-backed refresh path, remove `remember_db_oauth_browser_session(active)`. `current_request_auth_context()` already resolves the stable row, and `current_jira_session_data(context)` returns the current shared token version for cache/token work. Add a source assertion that `/api/auth/refresh` does not call the cookie writer in DB mode.
+In every DB-backed refresh path, preserve the opaque browser id without a cookie-writer wrapper. `current_request_auth_context()` already resolves the stable row, and `current_jira_session_data(context)` returns the current shared token version for cache/token work. Cover the no-rewrite behavior through the refresh lifecycle tests.
 
 - [x] **Step 5: Delete only the current row on post-exchange clear or logout**
 
@@ -710,7 +721,7 @@ git commit -m "Bind OAuth CSRF to browser sessions"
 - Modify: `docs/plans/SUPPORT-multi-device-browser-sessions-design.md`
 - Modify only if verification identifies a direct regression: files listed in Tasks 1-5
 
-- [x] **Step 1: Run focused auth, migration, revocation, and Scenario coverage**
+- [ ] **Step 1: Run focused auth, migration, revocation, and Scenario coverage**
 
 Run:
 
@@ -720,7 +731,7 @@ Run:
 
 Expected: PASS for the default focused matrix. The PostgreSQL-only refresh/callback race may skip here when `TEST_DATABASE_URL` is absent; Step 2 must then prove it separately with zero skips.
 
-- [x] **Step 2: Run the mandatory PostgreSQL concurrency proof with zero skips**
+- [ ] **Step 2: Run the mandatory PostgreSQL concurrency proof with zero skips**
 
 In terminal 1, start the repository-owned fixed local PostgreSQL runner:
 
@@ -742,7 +753,7 @@ TEST_DATABASE_URL=postgresql+psycopg://jep:jep@127.0.0.1:5432/jep_local \
 
 Expected: `OK` with zero skipped tests. The existing refresh serialization test, the new first-ever absent-row callback test, and the concurrent reconnect-callback test all execute against PostgreSQL. A skipped test, SQLite-only pass, unavailable Docker runner, or missing `TEST_DATABASE_URL` is a failed acceptance gate. Keep terminal 1 active through Step 5 so startup, full-suite, and HTTP verification use the same fixed migrated DB/OAuth runner environment.
 
-- [x] **Step 3: Run startup and structural verification**
+- [ ] **Step 3: Run startup and structural verification**
 
 Run:
 
@@ -764,7 +775,7 @@ env \
 
 Expected: PASS. The preflight process receives the runner's fixed DB/OAuth/config/bind environment explicitly; a separate terminal does not inherit exports from `run.sh`. Required local encryption configuration may still load from `.env`, but the command must not print or copy it. If the legitimate lifecycle module changes a ratcheted budget, update only the named budget with the measured value and document the reason in the same commit.
 
-- [x] **Step 4: Run the full Python suite**
+- [ ] **Step 4: Run the full Python suite**
 
 Run:
 
@@ -786,7 +797,7 @@ env \
 
 Expected: PASS against the runner's fixed migrated database. The explicit `TEST_DATABASE_URL` makes the Task 6 PostgreSQL race cases execute in the complete suite. Do not substitute or print any user-configured `.env` database URL or secret.
 
-- [x] **Step 5: Verify cookie-free OAuth health and authentication boundaries**
+- [ ] **Step 5: Verify cookie-free OAuth health and authentication boundaries**
 
 With the exact repository runner from Step 2 still active on port `5050`, run in another terminal:
 
@@ -803,7 +814,7 @@ Expected in this DB-backed Atlassian OAuth runner environment:
 
 This is an OAuth-specific anonymous boundary check. Do not authenticate curl, forge or reuse a cookie, seed an OAuth token, or make this gate depend on live Jira. Basic-auth loopback behavior is outside this slice. Stop terminal 1 with `Ctrl+C` after the check and confirm the runner removes only its owned container/network while retaining its documented volume.
 
-- [x] **Step 6: Review the diff for scope and secrets**
+- [ ] **Step 6: Review the diff for scope and secrets**
 
 Run:
 
@@ -815,7 +826,7 @@ git grep -n -E "access_token|refresh_token|apiToken|Authorization" -- backend/db
 
 Expected: `git diff --check` passes; changed files match this plan; the final grep returns no browser-session storage of credential material.
 
-- [x] **Step 7: Commit any verification-only correction**
+- [ ] **Step 7: Commit any verification-only correction**
 
 If verification required a scoped correction, stage only its named files and commit:
 

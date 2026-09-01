@@ -46,7 +46,7 @@ from backend.auth.cache_policy import (
 from backend.auth.context import RequestAuthContext, build_auth_cache_key, stable_local_workspace_id
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
 from backend.auth.db_browser_sessions import create_browser_session, delete_browser_session, delete_browser_sessions_for_connection
-from backend.auth.csrf import validate_csrf_token
+from backend.auth.csrf import csrf_session_data_for_auth_context, validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
@@ -388,8 +388,7 @@ def store_db_oauth_callback_session_metadata(token_data, resource, user_profile)
         )
         if stored.invalidate_browser_sessions:
             delete_browser_sessions_for_connection(db_session, stored.connection_id)
-        else:
-            delete_browser_session(db_session, previous_browser_session_id)
+        delete_browser_session(db_session, previous_browser_session_id)
         handle = create_browser_session(
             db_session,
             user_id=stored.user_id,
@@ -458,14 +457,6 @@ def _db_oauth_browser_session_payload(data):
     if token_version:
         payload['db_token_version'] = token_version
     return payload
-
-
-def remember_db_oauth_browser_session(data):
-    payload = _db_oauth_browser_session_payload(data)
-    if payload:
-        session['db_oauth_session'] = payload
-    else:
-        session.pop('db_oauth_session', None)
 
 
 def db_oauth_browser_session_data():
@@ -643,14 +634,7 @@ def oauth_auth_required_payload():
 def csrf_session_data_for_request():
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
         context = scenario_draft_request_auth_context()
-        data = {
-            'db_browser_session_id': context.browser_session_id,
-            'db_auth_connection_id': context.auth_connection_id,
-            'account_id': context.atlassian_account_id,
-        }
-        if not context.browser_session_id:
-            data['db_token_version'] = context.token_version
-        return data
+        return csrf_session_data_for_auth_context(context)
     return oauth_session_data()
 
 

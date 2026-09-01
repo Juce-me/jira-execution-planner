@@ -118,6 +118,7 @@ class TokenRefreshReuseTests(unittest.TestCase):
         self.assertNotIn('old-refresh', str(audit_event.event_metadata))
 
     def test_db_session_wrapper_commits_refresh_reuse_revocation_before_reraising(self):
+        """The database wrapper commits refresh-reuse revocation before reraising."""
         with self.factory() as session:
             connection = session.get(models.AuthConnection, self.connection_id)
             connection.expires_at = datetime.now(timezone.utc) - timedelta(seconds=60)

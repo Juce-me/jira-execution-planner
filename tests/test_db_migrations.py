@@ -55,6 +55,7 @@ class DbMigrationTests(unittest.TestCase):
         return columns, indexes
 
     def test_browser_sessions_migration_contract(self):
+        """Browser-session migration preserves the required table and index contract."""
         with tempfile.TemporaryDirectory() as tmpdir:
             database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'browser-sessions.db')}"
             config = self._config(database_url)
@@ -98,6 +99,7 @@ class DbMigrationTests(unittest.TestCase):
                 engine.dispose()
 
     def test_browser_session_model_cascades_with_auth_connection_delete(self):
+        """Deleting an auth connection cascades to its browser-session rows."""
         engine = create_engine('sqlite+pysqlite:///:memory:', future=True)
         try:
             with engine.begin() as connection:

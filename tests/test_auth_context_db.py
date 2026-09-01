@@ -35,7 +35,15 @@ class DbAuthContextTests(unittest.TestCase):
         db_engine.dispose_engines()
         self._tmpdir.cleanup()
 
-    def _seed_connection(self, *, user_status='active', connection_status='active', token_version=3, scopes=None):
+    def _seed_connection(
+        self,
+        *,
+        user_status='active',
+        connection_status='active',
+        token_version=3,
+        scopes=None,
+        provider='atlassian_oauth',
+    ):
         with self.factory() as session:
             user = models.User(
                 external_provider='atlassian',
@@ -58,7 +66,7 @@ class DbAuthContextTests(unittest.TestCase):
             connection = models.AuthConnection(
                 user_id=user.id,
                 workspace_id=workspace.id,
-                provider='atlassian_oauth',
+                provider=provider,
                 site_url='https://example.atlassian.net',
                 cloud_id='cloud-123',
                 scopes=(scopes or FULL_SCOPE).split(),
@@ -194,7 +202,26 @@ class DbAuthContextTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 'auth_connection_stale')
 
+    def test_legacy_connection_requires_a_nonempty_exact_token_version(self):
+        """Reject missing and empty legacy versions with the stale-connection contract."""
+        _, _, connection_id = self._seed_connection(token_version=3)
+
+        for name, session_data in (
+            ('missing', {'db_auth_connection_id': connection_id}),
+            ('empty', {'db_auth_connection_id': connection_id, 'db_token_version': ''}),
+        ):
+            with self.subTest(name=name):
+                with self.assertRaises(AuthError) as raised:
+                    resolve_db_request_auth_context(
+                        session_data,
+                        database_url=self.database_url,
+                        required_scopes=FULL_SCOPE,
+                    )
+
+                self.assertEqual(raised.exception.code, 'auth_connection_stale')
+
     def test_browser_sessions_ignore_cookie_token_version_and_return_current_connection_version(self):
+        """Opaque sessions ignore cookie versions and expose the current connection version."""
         first_id, second_id, connection_id = self._seed_browser_sessions(token_version=3)
         self._set_connection_token_version(connection_id, 4)
 
@@ -215,6 +242,7 @@ class DbAuthContextTests(unittest.TestCase):
         self.assertEqual(second_context.token_version, '4')
 
     def test_missing_browser_session_is_rejected_without_legacy_connection_fallback(self):
+        """An unknown opaque session cannot fall back to legacy connection data."""
         _, _, connection_id = self._seed_connection()
 
         with self.assertRaises(AuthError) as raised:
@@ -231,6 +259,7 @@ class DbAuthContextTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 'auth_required')
 
     def test_browser_session_rejects_user_owner_mismatch(self):
+        """Context resolution rejects a browser session owned by another user."""
         browser_session_id = self._seed_browser_session_with_mismatched_user()
 
         with self.assertRaises(AuthError) as raised:
@@ -243,7 +272,30 @@ class DbAuthContextTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 'auth_required')
 
     def test_browser_session_rejects_workspace_owner_mismatch(self):
+        """Context resolution rejects a browser session owned by another workspace."""
         browser_session_id = self._seed_browser_session_with_mismatched_workspace()
+
+        with self.assertRaises(AuthError) as raised:
+            resolve_db_request_auth_context(
+                {'db_browser_session_id': browser_session_id},
+                database_url=self.database_url,
+                required_scopes=FULL_SCOPE,
+            )
+
+        self.assertEqual(raised.exception.code, 'auth_required')
+
+    def test_browser_session_rejects_non_oauth_connection_provider(self):
+        """Reject a browser row whose referenced connection is not Atlassian OAuth."""
+        user_id, workspace_id, connection_id = self._seed_connection(provider='jira_basic')
+        with self.factory() as session:
+            browser_session = models.BrowserSession(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                auth_connection_id=connection_id,
+            )
+            session.add(browser_session)
+            session.commit()
+            browser_session_id = browser_session.id
 
         with self.assertRaises(AuthError) as raised:
             resolve_db_request_auth_context(

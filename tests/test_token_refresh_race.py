@@ -282,6 +282,7 @@ class TokenRefreshRaceTests(unittest.TestCase):
             db_engine.require_postgresql_refresh_locking(self.database_url)
 
     def test_callback_advisory_lock_keys_are_stable_signed_sha256_values(self):
+        """Callback advisory lock keys are stable signed SHA-256-derived values."""
         self.assertEqual(
             db_tokens_module._callback_lock_key('atlassian-user:atlassian:account-123'),
             5873179604012975869,
@@ -292,6 +293,7 @@ class TokenRefreshRaceTests(unittest.TestCase):
         )
 
     def test_callback_advisory_locks_use_sorted_postgresql_transaction_keys(self):
+        """PostgreSQL callback advisory locks acquire sorted transaction keys."""
         class RecordingSession:
             def __init__(self, dialect_name):
                 self.bind = SimpleNamespace(dialect=SimpleNamespace(name=dialect_name))
@@ -327,6 +329,7 @@ class TokenRefreshRaceTests(unittest.TestCase):
         self.assertEqual(sqlite_session.calls, [])
 
     def test_callback_storage_locks_natural_keys_before_locked_connection_upsert(self):
+        """Callback storage locks natural keys before performing its connection upsert."""
         storage_source = inspect.getsource(db_tokens_module.store_oauth_callback_tokens)
         self.assertLess(
             storage_source.index('_lock_callback_natural_keys('),
@@ -343,6 +346,7 @@ class TokenRefreshRaceTests(unittest.TestCase):
         'PostgreSQL TEST_DATABASE_URL is required to prove first-ever callback serialization.',
     )
     def test_concurrent_first_callbacks_serialize_before_upsert_and_keep_two_browser_rows(self):
+        """Concurrent first callbacks serialize and retain one row per browser."""
         with _postgres_schema('jep_first_callback') as (factory, key_provider, engine):
             first_reached_upsert = threading.Event()
             second_reached_advisory_lock = threading.Event()
@@ -437,6 +441,7 @@ class TokenRefreshRaceTests(unittest.TestCase):
         'PostgreSQL TEST_DATABASE_URL is required to prove reconnect callback serialization.',
     )
     def test_concurrent_revoked_reconnects_keep_both_new_rows_and_delete_old_rows(self):
+        """Concurrent revoked reconnects retain new rows while deleting all old rows."""
         with _postgres_schema('jep_reconnect_callback') as (factory, key_provider, engine):
             with factory() as session:
                 stored = store_oauth_callback_tokens(

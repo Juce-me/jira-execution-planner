@@ -281,6 +281,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         self.assertNotIn('revision', response.get_json()['activeDraft'])
 
     def test_draft_write_uses_upgraded_browser_session_csrf_binding(self):
+        """Draft writes use the upgraded browser-session CSRF binding."""
         context = replace(self.context, browser_session_id='browser-1')
         with self.client.session_transaction() as flask_session:
             flask_session['db_oauth_session'] = {
@@ -796,6 +797,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             self.assertEqual(event.draft_revision, 2)
 
     def test_reload_source_loader_resolves_captured_browser_session_without_creating_rows(self):
+        """Reload resolves the captured browser session without creating rows."""
         context = replace(self.context, browser_session_id='browser-1')
         draft = {
             'scopePayload': {
@@ -832,6 +834,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         self.assertEqual(result['issues'], [])
 
     def test_reload_source_loader_rejects_context_without_browser_session(self):
+        """Reload rejects an auth context without a browser session."""
         context = replace(self.context, browser_session_id='')
         with patch.object(
             jira_server,

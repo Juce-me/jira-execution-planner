@@ -253,6 +253,7 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         self.assertIn("X-Requested-With", response.get_json()["message"])
 
     def test_oauth_logout_requires_requested_with_but_not_token_bound_csrf(self):
+        """OAuth logout requires the requested-with header but not token-bound CSRF."""
         install_oauth_session(self.client, account_id='account-123')
         with self._oauth_mode():
             missing_header = self.client.post('/api/auth/logout')

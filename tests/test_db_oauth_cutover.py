@@ -103,6 +103,7 @@ class DbOauthCutoverTests(unittest.TestCase):
         client=None,
         access_token='access-123',
         refresh_token='refresh-123',
+        account_id='account-123',
     ):
         client = client or self.client
         with client.session_transaction() as session:
@@ -115,10 +116,10 @@ class DbOauthCutoverTests(unittest.TestCase):
             'scope': jira_server.ATLASSIAN_SCOPES,
         }
         user_profile = {
-            'account_id': 'account-123',
+            'account_id': account_id,
             'account_status': 'active',
-            'email': 'user@example.com',
-            'display_name': 'User Example',
+            'email': f'{account_id}@example.invalid',
+            'display_name': f'User {account_id}',
         }
         resource = {
             'id': 'cloud-123',
@@ -136,7 +137,11 @@ class DbOauthCutoverTests(unittest.TestCase):
         with client.session_transaction() as session:
             session_payload = dict(session['db_oauth_session'])
         with self.factory() as session:
-            connection = session.query(models.AuthConnection).one()
+            browser_session = session.get(
+                models.BrowserSession,
+                session_payload.get('db_browser_session_id'),
+            )
+            connection = session.get(models.AuthConnection, browser_session.auth_connection_id)
             return SimpleNamespace(
                 connection_id=connection.id,
                 token_version=str(connection.token_version),
@@ -228,6 +233,7 @@ class DbOauthCutoverTests(unittest.TestCase):
         self.assertEqual(context.workspace_id, result.workspace_id)
 
     def test_valid_legacy_cookie_is_replaced_with_opaque_browser_session(self):
+        """A valid legacy cookie upgrades once to an opaque browser session."""
         result = self._store_callback()
         with self.client.session_transaction() as session:
             session['db_oauth_session'] = {
@@ -253,6 +259,7 @@ class DbOauthCutoverTests(unittest.TestCase):
         self.assertEqual(handle.auth_connection_id, result.connection_id)
 
     def test_legacy_cookie_upgrade_database_failure_keeps_valid_legacy_context(self):
+        """A database failure during upgrade preserves the valid legacy context."""
         result = self._store_callback()
         legacy_payload = {
             'db_auth_connection_id': result.connection_id,
@@ -294,6 +301,7 @@ class DbOauthCutoverTests(unittest.TestCase):
         ])
 
     def test_legacy_cookie_upgrade_unexpected_sqlalchemy_error_propagates(self):
+        """Unexpected SQLAlchemy upgrade errors propagate to the request boundary."""
         result = self._store_callback()
         legacy_payload = {
             'db_auth_connection_id': result.connection_id,
@@ -333,6 +341,7 @@ class DbOauthCutoverTests(unittest.TestCase):
         warning.assert_not_called()
 
     def test_stale_legacy_cookie_is_not_upgraded(self):
+        """A stale legacy cookie fails recovery without creating a browser session."""
         result = self._store_callback()
         legacy_payload = {
             'db_auth_connection_id': result.connection_id,
@@ -359,7 +368,43 @@ class DbOauthCutoverTests(unittest.TestCase):
             self.assertEqual(session['db_oauth_session'], legacy_payload)
         create_session.assert_not_called()
 
+    def test_missing_or_empty_legacy_version_uses_exact_recovery_without_row_creation(self):
+        """Keep incomplete legacy cookies unauthenticated and create no browser row."""
+        result = self._store_callback()
+        with self.factory() as session:
+            initial_row_count = session.query(models.BrowserSession).count()
+
+        for name, legacy_payload in (
+            ('missing', {'db_auth_connection_id': result.connection_id}),
+            ('empty', {
+                'db_auth_connection_id': result.connection_id,
+                'db_token_version': '',
+            }),
+        ):
+            client = jira_server.app.test_client()
+            with client.session_transaction() as session:
+                session['db_oauth_session'] = legacy_payload
+
+            with patch.dict(os.environ, {
+                'CONFIG_STORAGE_BACKEND': 'db',
+                'DATABASE_URL': self.database_url,
+            }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                 patch.object(jira_server, 'ATLASSIAN_SCOPES', jira_server.ATLASSIAN_SCOPES):
+                response = client.get('/api/auth/status')
+
+            with self.subTest(name=name):
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                self.assertFalse(response.get_json()['authenticated'])
+                self.assertTrue(response.get_json()['loginRequired'])
+                self.assertEqual(response.get_json()['recoveryUrl'], '/auth/reconnect')
+                with self.factory() as session:
+                    self.assertEqual(
+                        session.query(models.BrowserSession).count(),
+                        initial_row_count,
+                    )
+
     def test_opaque_cookie_resolution_does_not_rewrite_the_flask_session(self):
+        """Resolving an opaque cookie leaves Flask session data unchanged."""
         result = self._store_callback()
         with self.factory() as session:
             handle = create_browser_session(
@@ -531,12 +576,7 @@ class DbOauthCutoverTests(unittest.TestCase):
             'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([7]) * 32).decode('ascii'),
             'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
         }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server.HTTP_SESSION, 'post', side_effect=AssertionError('fresh DB token should not refresh')), \
-             patch.object(
-                 jira_server,
-                 'remember_db_oauth_browser_session',
-                 side_effect=AssertionError('DB refresh must preserve the existing browser id'),
-             ):
+             patch.object(jira_server.HTTP_SESSION, 'post', side_effect=AssertionError('fresh DB token should not refresh')):
             response = self.client.post(
                 '/api/auth/refresh',
                 headers={'X-Requested-With': 'jira-execution-planner'},
@@ -551,6 +591,7 @@ class DbOauthCutoverTests(unittest.TestCase):
         self.assertNotIn('refresh-123', str(payload))
 
     def test_two_browser_profiles_share_connection_but_refresh_and_logout_independently(self):
+        """Two browser profiles share a connection while refreshing and logging out independently."""
         client_a = self.client
         client_b = jira_server.app.test_client()
         callback_a = self._store_callback_through_route(
@@ -604,10 +645,6 @@ class DbOauthCutoverTests(unittest.TestCase):
                 'expires_in': 3600,
                 'scope': jira_server.ATLASSIAN_SCOPES,
             }),
-        ), patch.object(
-            jira_server,
-            'remember_db_oauth_browser_session',
-            side_effect=AssertionError('DB refresh must preserve the existing browser id'),
         ):
             refresh_response = client_a.post(
                 '/api/auth/refresh',
@@ -648,6 +685,7 @@ class DbOauthCutoverTests(unittest.TestCase):
         self.assertEqual(connection.status, 'active')
 
     def test_callback_validation_failures_preserve_current_and_other_browser_rows(self):
+        """Callback validation failures preserve both current and sibling browser rows."""
         client_a = self.client
         client_b = jira_server.app.test_client()
         callback_a = self._store_callback_through_route(client=client_a, access_token='access-a')
@@ -685,6 +723,7 @@ class DbOauthCutoverTests(unittest.TestCase):
                     self.assertIsNotNone(session.get(models.BrowserSession, browser_b_id))
 
     def test_post_exchange_callback_failure_deletes_only_current_browser_row(self):
+        """A post-exchange callback failure deletes only the current browser row."""
         client_a = self.client
         client_b = jira_server.app.test_client()
         callback_a = self._store_callback_through_route(client=client_a, access_token='access-a')
@@ -715,6 +754,7 @@ class DbOauthCutoverTests(unittest.TestCase):
             self.assertIsNotNone(session.get(models.BrowserSession, callback_b.browser_session_id))
 
     def test_non_active_connection_callback_deletes_all_old_rows_before_new_browser_row(self):
+        """Reconnecting a non-active connection replaces all of its old browser rows."""
         client_a = self.client
         client_b = jira_server.app.test_client()
         callback_a = self._store_callback_through_route(client=client_a, access_token='access-a')
@@ -752,6 +792,58 @@ class DbOauthCutoverTests(unittest.TestCase):
                         client=client_b,
                         access_token=f'access-b-{connection_status}',
                     )
+
+    def test_revoked_reconnect_deletes_target_rows_and_previous_other_connection_row(self):
+        """Reconnect revoked B while deleting both B rows and the caller's prior A row."""
+        client_a = self.client
+        client_b_first = jira_server.app.test_client()
+        client_b_second = jira_server.app.test_client()
+        callback_a = self._store_callback_through_route(
+            client=client_a,
+            access_token='access-a',
+            account_id='account-a',
+        )
+        callback_b_first = self._store_callback_through_route(
+            client=client_b_first,
+            access_token='access-b-first',
+            account_id='account-b',
+        )
+        callback_b_second = self._store_callback_through_route(
+            client=client_b_second,
+            access_token='access-b-second',
+            account_id='account-b',
+        )
+        self.assertNotEqual(callback_a.connection_id, callback_b_first.connection_id)
+        self.assertEqual(callback_b_first.connection_id, callback_b_second.connection_id)
+
+        with self.factory() as session:
+            target_connection = session.get(
+                models.AuthConnection,
+                callback_b_first.connection_id,
+            )
+            target_connection.status = 'revoked'
+            session.commit()
+
+        replacement_b = self._store_callback_through_route(
+            client=client_a,
+            access_token='access-b-reconnected',
+            account_id='account-b',
+        )
+
+        self.assertEqual(replacement_b.connection_id, callback_b_first.connection_id)
+        with self.factory() as session:
+            self.assertIsNone(session.get(models.BrowserSession, callback_a.browser_session_id))
+            self.assertIsNone(session.get(
+                models.BrowserSession,
+                callback_b_first.browser_session_id,
+            ))
+            self.assertIsNone(session.get(
+                models.BrowserSession,
+                callback_b_second.browser_session_id,
+            ))
+            remaining = session.query(models.BrowserSession).all()
+
+        self.assertEqual([row.id for row in remaining], [replacement_b.browser_session_id])
 
     def test_dev_home_graphql_probe_uses_db_session_without_local_token_store(self):
         result = self._store_callback()

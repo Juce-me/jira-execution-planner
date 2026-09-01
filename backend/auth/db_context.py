@@ -112,7 +112,7 @@ def resolve_db_request_auth_context(
             session.get(models.AuthConnection, browser_session.auth_connection_id)
             if browser_session else _find_connection(session, session_data)
         )
-        if connection is None:
+        if connection is None or connection.provider != 'atlassian_oauth':
             raise AuthError('auth_required', 'Atlassian authentication is required.')
         user = session.get(models.User, connection.user_id)
         workspace = session.get(models.Workspace, connection.workspace_id)
@@ -132,7 +132,7 @@ def resolve_db_request_auth_context(
             raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
 
         session_token_version = str((session_data or {}).get('db_token_version') or '')
-        if not browser_session_id and session_token_version and session_token_version != str(connection.token_version):
+        if not browser_session_id and session_token_version != str(connection.token_version):
             raise AuthError('auth_connection_stale', 'Your Jira connection changed. Reconnect to continue.')
         if missing_oauth_scopes({'scope': ' '.join(connection.scopes or [])}, required_scopes):
             raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')

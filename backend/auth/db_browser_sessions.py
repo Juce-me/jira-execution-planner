@@ -36,6 +36,7 @@ def create_browser_session(
     connection = session.get(models.AuthConnection, auth_connection_id)
     if (
         connection is None
+        or connection.provider != 'atlassian_oauth'
         or connection.user_id != user_id
         or connection.workspace_id != workspace_id
     ):
@@ -56,7 +57,12 @@ def resolve_browser_session(session, browser_session_id: str) -> BrowserSessionH
     if not value:
         return None
     row = session.get(models.BrowserSession, value)
-    return _handle(row) if row is not None else None
+    if row is None:
+        return None
+    connection = session.get(models.AuthConnection, row.auth_connection_id)
+    if connection is None or connection.provider != 'atlassian_oauth':
+        return None
+    return _handle(row)
 
 
 def delete_browser_session(session, browser_session_id: str) -> int:

@@ -47,8 +47,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # dependencies, and scopes post-commit cache invalidation to that user's partition (+46).
     # bugfix/review-multidevice-sessions-plan adds the persistent DB browser-session lifecycle
     # entrypoint wiring for callback creation/replacement, failure-safe legacy-cookie upgrade,
-    # revocation, logout, and browser-bound CSRF/Scenario context propagation (+39).
-    "jira_server.py": 6399,
+    # sanitized upgrade-failure logging, revocation, logout, and browser-bound CSRF/Scenario
+    # context propagation (+40).
+    "jira_server.py": 6400,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.

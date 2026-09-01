@@ -8,7 +8,9 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import event as sqlalchemy_event
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import Session
 
 from backend.auth.key_provider import key_provider_from_env
 from backend.auth.token_crypto import decrypt_token
@@ -256,21 +258,79 @@ class DbOauthCutoverTests(unittest.TestCase):
             'db_auth_connection_id': result.connection_id,
             'db_token_version': result.session_metadata['db_token_version'],
         }
-        failure = OperationalError('insert browser session', {}, RuntimeError('disk I/O error'))
+        failure = OperationalError('COMMIT', {}, RuntimeError('sensitive persistence detail'))
+        with self.factory() as db_session:
+            initial_row_count = db_session.query(models.BrowserSession).count()
+        flushed_row_counts = []
 
-        with jira_server.app.test_request_context('/'):
-            jira_server.session['db_oauth_session'] = legacy_payload
-            with patch.dict(os.environ, {
-                'CONFIG_STORAGE_BACKEND': 'db',
-                'DATABASE_URL': self.database_url,
-            }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-                 patch.object(jira_server, 'session_scope', side_effect=failure):
-                context = jira_server.current_request_auth_context()
-                stored_payload = dict(jira_server.session['db_oauth_session'])
+        def fail_upgrade_commit(db_session):
+            flushed_row_counts.append(db_session.query(models.BrowserSession).count())
+            raise failure
+
+        sqlalchemy_event.listen(Session, 'before_commit', fail_upgrade_commit)
+        try:
+            with jira_server.app.test_request_context('/'):
+                jira_server.session['db_oauth_session'] = legacy_payload
+                with patch.dict(os.environ, {
+                    'CONFIG_STORAGE_BACKEND': 'db',
+                    'DATABASE_URL': self.database_url,
+                }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                     self.assertLogs('jira_server', level='WARNING') as captured:
+                    context = jira_server.current_request_auth_context()
+                    stored_payload = dict(jira_server.session['db_oauth_session'])
+        finally:
+            sqlalchemy_event.remove(Session, 'before_commit', fail_upgrade_commit)
+
+        with self.factory() as db_session:
+            final_row_count = db_session.query(models.BrowserSession).count()
 
         self.assertEqual(context.auth_connection_id, result.connection_id)
         self.assertEqual(context.browser_session_id, '')
         self.assertEqual(stored_payload, legacy_payload)
+        self.assertEqual(flushed_row_counts, [initial_row_count + 1])
+        self.assertEqual(final_row_count, initial_row_count)
+        self.assertEqual(captured.output, [
+            'WARNING:jira_server:DB browser session upgrade unavailable; retaining validated legacy session.',
+        ])
+
+    def test_legacy_cookie_upgrade_unexpected_sqlalchemy_error_propagates(self):
+        result = self._store_callback()
+        legacy_payload = {
+            'db_auth_connection_id': result.connection_id,
+            'db_token_version': result.session_metadata['db_token_version'],
+        }
+        failure = IntegrityError('COMMIT', {}, RuntimeError('unexpected persistence defect'))
+        with self.factory() as db_session:
+            initial_row_count = db_session.query(models.BrowserSession).count()
+        flushed_row_counts = []
+
+        def fail_upgrade_commit(db_session):
+            flushed_row_counts.append(db_session.query(models.BrowserSession).count())
+            raise failure
+
+        sqlalchemy_event.listen(Session, 'before_commit', fail_upgrade_commit)
+        try:
+            with jira_server.app.test_request_context('/'):
+                jira_server.session['db_oauth_session'] = legacy_payload
+                with patch.dict(os.environ, {
+                    'CONFIG_STORAGE_BACKEND': 'db',
+                    'DATABASE_URL': self.database_url,
+                }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                     patch.object(jira_server.logger, 'warning') as warning:
+                    with self.assertRaises(IntegrityError) as raised:
+                        jira_server.current_request_auth_context()
+                    stored_payload = dict(jira_server.session['db_oauth_session'])
+        finally:
+            sqlalchemy_event.remove(Session, 'before_commit', fail_upgrade_commit)
+
+        with self.factory() as db_session:
+            final_row_count = db_session.query(models.BrowserSession).count()
+
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(stored_payload, legacy_payload)
+        self.assertEqual(flushed_row_counts, [initial_row_count + 1])
+        self.assertEqual(final_row_count, initial_row_count)
+        warning.assert_not_called()
 
     def test_stale_legacy_cookie_is_not_upgraded(self):
         result = self._store_callback()

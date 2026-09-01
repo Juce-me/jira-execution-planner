@@ -27,7 +27,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from backend.epm import config as epm_config
 from backend.epm import home as epm_home
@@ -591,7 +591,8 @@ def current_request_auth_context():
                         workspace_id=context.workspace_id,
                         auth_connection_id=context.auth_connection_id,
                     )
-            except SQLAlchemyError:
+            except OperationalError:
+                log_warning('DB browser session upgrade unavailable; retaining validated legacy session.')
                 return context
             session['db_oauth_session'] = {'db_browser_session_id': browser_session.id}
             return dataclasses.replace(context, browser_session_id=browser_session.id)

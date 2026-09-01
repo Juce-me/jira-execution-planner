@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Frontend execution complete through Task 5; holistic review pending. Keep this plan under `EXEC-*` until review acceptance.
+**Status:** Frontend slice approved; whole-branch review pending. Keep this plan under `EXEC-*` until whole-branch acceptance.
+
+**Holistic frontend review (2026-09-01):** Standards/security approved with no findings. Spec approved after docs-only execution-record correction `d021cac`; whole-branch review and final verification remain pending.
 
 **Goal:** Complete issue #143 by restoring each tab's safe view and Planning selection after same-tab OAuth reauthentication, while retaining the existing terminal global auth lock, no-replay rule, and cross-tab isolation.
 

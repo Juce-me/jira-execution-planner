@@ -773,15 +773,17 @@ test('unified settings save gates admin writes while saving dirty config section
     });
 });
 
-test('department visibility controls are prop-owned and separate from shared default star', () => {
+test('department visibility controls are prop-owned and share one canonical row favorite', () => {
     assert.ok(!teamGroupsSettingsSource.includes('useState('), 'TeamGroupsSettings must not own visibility state');
     assert.ok(teamGroupsSettingsSource.includes('Show in Department selector'), 'Expected explicit personal visibility label');
     assert.ok(teamGroupsSettingsSource.includes('toggleGroupVisibleInControls(activeGroupDraft.id)'), 'Expected visibility toggle handler prop');
     assert.ok(teamGroupsSettingsSource.includes('personalGroupPreferencesEnabled'), 'Expected source-aware personal preference mode');
-    assert.ok(teamGroupsSettingsSource.includes('favoriteGroupDraftId === activeGroupDraft.id'), 'Expected personal favorite visibility to be forced on');
-    assert.ok(teamGroupsSettingsSource.includes(': groupDraft?.defaultGroupId === activeGroupDraft.id'), 'Expected file-mode shared default visibility compatibility');
-    assert.ok(teamGroupsSettingsSource.includes('Set ${activeGroupDraft.name || \'group\'} as my favorite group'), 'Expected personal favorite star accessible label');
-    assert.ok(teamGroupsSettingsSource.includes('Set as shared default group'), 'Expected shared default star accessible label');
+    assert.ok(groupVisibilityHookSource.includes('if (useBackendPreferences && favoriteGroupDraftId === normalizedId) return true;'), 'Expected personal favorite visibility to be forced on');
+    assert.ok(groupVisibilityHookSource.includes('if (!useBackendPreferences && groupDraft?.defaultGroupId === normalizedId) return true;'), 'Expected file-mode shared default visibility compatibility');
+    assert.ok(teamGroupsSettingsSource.includes('personalGroupPreferencesEnabled ? favoriteGroupDraftId : groupDraft?.defaultGroupId'), 'Expected active favorite state to support DB and file modes');
+    assert.ok(teamGroupsSettingsSource.includes('disabled={groupVisibilitySaving || activeGroupIsFavorite}'), 'Expected favorite visibility to stay immutable in the editor');
+    assert.ok(teamGroupsSettingsSource.includes('Set ${group.name || \'Department\'} as your favorite Department'), 'Expected canonical row favorite accessible label');
+    assert.ok(!teamGroupsSettingsSource.includes('group-star-button'), 'Expected no duplicate right-pane favorite control');
     assert.ok(!teamGroupsSettingsSource.includes('<input') || teamGroupsSettingsSource.indexOf('className="group-visible-control"') > teamGroupsSettingsSource.indexOf('className="group-editor-header"'), 'Expected visibility input in editor header, not group list row');
 });
 

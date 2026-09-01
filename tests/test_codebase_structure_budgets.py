@@ -110,7 +110,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # verified shared-then-private save recovery, dashboard readiness/preview lifecycle, and
     # Settings-header replay through the legacy composition root. State machines, menus, and
     # coachmark behavior remain extracted in dedicated modules (+634).
-    "frontend/src/dashboard.jsx": 17074,
+    # The contextual onboarding follow-up adds launcher observation and requested-module wiring
+    # while keeping the module state machine and coachmark behavior extracted (+2).
+    "frontend/src/dashboard.jsx": 17076,
 }
 
 

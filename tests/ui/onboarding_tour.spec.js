@@ -519,6 +519,22 @@ async function captureSettledOnboardingScreenshot(page, name, { fullPage = false
     expect(fs.existsSync(screenshotPath), `${name} was not produced`).toBe(true);
 }
 
+async function expectCoachmarkContentContained(page) {
+    const containment = await page.locator('.onboarding-tour-card').evaluate((card) => {
+        const cardRect = card.getBoundingClientRect();
+        const actionRects = [...card.querySelectorAll('.onboarding-tour-actions button')]
+            .map((button) => button.getBoundingClientRect());
+        return {
+            horizontalOverflow: card.scrollWidth - card.clientWidth,
+            actionsContained: actionRects.every((rect) => (
+                rect.left >= cardRect.left && rect.right <= cardRect.right
+            )),
+        };
+    });
+    expect(containment.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(containment.actionsContained).toBe(true);
+}
+
 async function advanceToHeading(page, heading) {
     for (let index = 0; index < 20; index += 1) {
         if (await page.getByRole('heading', { name: heading }).count()) return;
@@ -2510,6 +2526,7 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
         if (mask === 5) {
             await advanceToHeading(page, 'Follow the Epic');
             await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
+            await expectCoachmarkContentContained(page);
             await captureSettledOnboardingScreenshot(page, 'hierarchy-partial-desktop.png');
             await page.evaluate(() => window.__tourHarness.closeWithDone());
             await page.evaluate(() => window.__tourHarness.open());
@@ -2518,6 +2535,7 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
         if (mask === 0) {
             await advanceToHeading(page, 'Follow work from goal to delivery');
             await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
+            await expectCoachmarkContentContained(page);
             await captureSettledOnboardingScreenshot(page, 'hierarchy-all-absent-desktop.png');
             await page.evaluate(() => window.__tourHarness.closeWithDone());
             await page.evaluate(() => window.__tourHarness.open());

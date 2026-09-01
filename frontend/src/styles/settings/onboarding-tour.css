@@ -38,6 +38,7 @@
 
 .onboarding-tour-card {
     position: fixed;
+    box-sizing: border-box;
     width: min(380px, calc(100vw - 24px));
     max-height: calc(100vh - 24px);
     overflow: auto;
@@ -104,11 +105,16 @@
 .onboarding-tour-navigation {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.55rem;
 }
 
 .onboarding-tour-actions {
     justify-content: space-between;
+}
+
+.onboarding-tour-navigation {
+    justify-content: flex-end;
 }
 
 .onboarding-tour-actions button {

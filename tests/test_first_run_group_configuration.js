@@ -441,6 +441,10 @@ test('Department Team search exposes the configuration onboarding destination on
         /<input\s+data-onboarding-target="configuration-team-add"\s+type="text"\s+className="team-search-input"/s,
     );
     assert.equal((source.match(/data-onboarding-target="configuration-team-add"/g) || []).length, 1);
+    assert.match(
+        source,
+        /className="team-selector"[\s\S]*data-onboarding-configuration-team-count=\{\(activeGroupDraft\.teamIds \|\| \[\]\)\.length\}[\s\S]*data-onboarding-configuration-team-catalog-unavailable=\{availableTeams\.length === 0 && !loadingTeams \? 'true' : 'false'\}/,
+    );
 });
 
 test('SettingsModal owns the replay header action slot', () => {

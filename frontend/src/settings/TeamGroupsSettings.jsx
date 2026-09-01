@@ -368,7 +368,13 @@ export default function TeamGroupsSettings(props) {
                                                         Duplicate
                                                     </button>
                                                 </div>
-                                                <div className="team-selector" data-first-run-guide-target="teams" tabIndex={-1}>
+                                                <div
+                                                    className="team-selector"
+                                                    data-first-run-guide-target="teams"
+                                                    data-onboarding-configuration-team-count={(activeGroupDraft.teamIds || []).length}
+                                                    data-onboarding-configuration-team-catalog-unavailable={availableTeams.length === 0 && !loadingTeams ? 'true' : 'false'}
+                                                    tabIndex={-1}
+                                                >
                                                     <div className="team-selector-header">
                                                         <div className="team-selector-label">
                                                             Teams {(activeGroupDraft.teamIds || []).length}/12

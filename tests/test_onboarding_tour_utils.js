@@ -177,27 +177,36 @@ test('contextual module catalogs expose exact manually advanced reachable destin
     }
 });
 
-test('Configuration fallback names the actual Team search absence reason and retains manual Next', async () => {
+test('Configuration fallback reads the real Team selector metadata and retains manual Next', async () => {
     const { ONBOARDING_STEPS_BY_MODULE, buildStepPresentation } = await loadModule();
     const [configurationStep] = ONBOARDING_STEPS_BY_MODULE.configuration;
+    const previousDocument = globalThis.document;
+    const selector = '[data-onboarding-configuration-team-count]';
+    const presentationFromTeamSelector = (teamCount, catalogUnavailable) => {
+        globalThis.document = {
+            querySelector: (candidate) => candidate === selector ? {
+                getAttribute: (name) => ({
+                    'data-onboarding-configuration-team-count': String(teamCount),
+                    'data-onboarding-configuration-team-catalog-unavailable': String(catalogUnavailable),
+                })[name] || null,
+            } : null,
+        };
+        return buildStepPresentation(configurationStep, null);
+    };
 
-    const limit = buildStepPresentation(configurationStep, null, {
-        configurationTeamCount: 12,
-        configurationTeamCatalogAvailable: true,
-    });
-    assert.equal(
-        limit.body,
-        'The Team search is unavailable because this Department has reached the Team limit. You can continue with Next without making a change.',
-    );
-
-    const unavailableCatalog = buildStepPresentation(configurationStep, null, {
-        configurationTeamCount: 3,
-        configurationTeamCatalogAvailable: false,
-    });
-    assert.equal(
-        unavailableCatalog.body,
-        'The Team search is unavailable because the Team catalog is unavailable. You can continue with Next without making a change.',
-    );
+    try {
+        assert.equal(
+            presentationFromTeamSelector(12, false).body,
+            'The Team search is unavailable because this Department has reached the Team limit. You can continue with Next without making a change.',
+        );
+        assert.equal(
+            presentationFromTeamSelector(12, true).body,
+            'The Team search is unavailable because the Team catalog is unavailable. You can continue with Next without making a change.',
+        );
+    } finally {
+        if (previousDocument === undefined) delete globalThis.document;
+        else globalThis.document = previousDocument;
+    }
 });
 
 test('contextual launcher and destination source contracts preserve native controls', () => {

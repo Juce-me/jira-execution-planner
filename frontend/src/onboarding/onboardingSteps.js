@@ -619,11 +619,12 @@ export function reconcileTourSessionState(state = {}, { isOpen = false, steps = 
     return state;
 }
 
-function configurationFallbackBody({ configurationTeamCount, configurationTeamCatalogAvailable } = {}) {
-    if (configurationTeamCatalogAvailable === false) {
+function configurationFallbackBody() {
+    const configurationSurface = globalThis.document?.querySelector?.('[data-onboarding-configuration-team-count]');
+    if (configurationSurface?.getAttribute?.('data-onboarding-configuration-team-catalog-unavailable') === 'true') {
         return 'The Team search is unavailable because the Team catalog is unavailable. You can continue with Next without making a change.';
     }
-    if (Number(configurationTeamCount) >= 12) {
+    if (Number(configurationSurface?.getAttribute?.('data-onboarding-configuration-team-count')) >= 12) {
         return 'The Team search is unavailable because this Department has reached the Team limit. You can continue with Next without making a change.';
     }
     return '';
@@ -632,7 +633,7 @@ function configurationFallbackBody({ configurationTeamCount, configurationTeamCa
 export function buildStepPresentation(
     step,
     targetNode,
-    { engReadiness = 'settled', configurationTeamCount, configurationTeamCatalogAvailable } = {},
+    { engReadiness = 'settled' } = {},
 ) {
     const loading = engReadiness === 'loading' && isOnboardingEngDataStep(step);
     if (loading) {
@@ -653,7 +654,7 @@ export function buildStepPresentation(
     }
     const fallback = !targetNode;
     const configurationFallback = step?.id === 'configuration-team-add'
-        ? configurationFallbackBody({ configurationTeamCount, configurationTeamCatalogAvailable })
+        ? configurationFallbackBody()
         : '';
     return {
         title: step?.title || '',

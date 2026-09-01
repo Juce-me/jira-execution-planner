@@ -744,21 +744,44 @@ Expected: `OK` with zero skipped tests. The existing refresh serialization test,
 Run:
 
 ```bash
-.venv/bin/python scripts/check_startup_preflight.py
+env \
+  DATABASE_URL=postgresql+psycopg://jep:jep@127.0.0.1:5432/jep_local \
+  DATABASE_CONNECTION_MODE=url \
+  CONFIG_STORAGE_BACKEND=db \
+  JIRA_AUTH_MODE=atlassian_oauth \
+  OAUTH_LOCAL_TOKEN_STORE_ALLOWED=false \
+  APP_ENVIRONMENT_KEY=local \
+  APP_BIND_HOST=127.0.0.1 \
+  ALLOW_NETWORK_BIND=false \
+  ALLOW_BASIC_AUTH_ON_NETWORK=false \
+  DEBUG_MODE=false \
+  .venv/bin/python scripts/check_startup_preflight.py
 .venv/bin/python -m unittest tests.test_codebase_structure_budgets tests.test_initiative_extraction
 ```
 
-Expected: PASS. If the legitimate lifecycle module changes a ratcheted budget, update only the named budget with the measured value and document the reason in the same commit.
+Expected: PASS. The preflight process receives the runner's fixed DB/OAuth/config/bind environment explicitly; a separate terminal does not inherit exports from `run.sh`. Required local encryption configuration may still load from `.env`, but the command must not print or copy it. If the legitimate lifecycle module changes a ratcheted budget, update only the named budget with the measured value and document the reason in the same commit.
 
 - [ ] **Step 4: Run the full Python suite**
 
 Run:
 
 ```bash
-.venv/bin/python -m unittest discover -s tests
+env \
+  DATABASE_URL=postgresql+psycopg://jep:jep@127.0.0.1:5432/jep_local \
+  TEST_DATABASE_URL=postgresql+psycopg://jep:jep@127.0.0.1:5432/jep_local \
+  DATABASE_CONNECTION_MODE=url \
+  CONFIG_STORAGE_BACKEND=db \
+  JIRA_AUTH_MODE=atlassian_oauth \
+  OAUTH_LOCAL_TOKEN_STORE_ALLOWED=false \
+  APP_ENVIRONMENT_KEY=local \
+  APP_BIND_HOST=127.0.0.1 \
+  ALLOW_NETWORK_BIND=false \
+  ALLOW_BASIC_AUTH_ON_NETWORK=false \
+  DEBUG_MODE=false \
+  .venv/bin/python -m unittest discover -s tests
 ```
 
-Expected: PASS.
+Expected: PASS against the runner's fixed migrated database. The explicit `TEST_DATABASE_URL` makes the Task 6 PostgreSQL race cases execute in the complete suite. Do not substitute or print any user-configured `.env` database URL or secret.
 
 - [ ] **Step 5: Verify cookie-free OAuth health and authentication boundaries**
 

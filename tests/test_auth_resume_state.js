@@ -24,6 +24,12 @@ function createStorage(initial = null) {
     };
 }
 
+function createThrowingWriteStorage(initial) {
+    const storage = createStorage(initial);
+    storage.setItem = () => { throw new Error('quota'); };
+    return storage;
+}
+
 function planningSnapshot() {
     return {
         principal: { workspaceId: ' workspace-1 ', viewConfigId: ' view-1 ' },
@@ -153,11 +159,11 @@ test('write serialization keeps only the exact recovery allowlist', () => {
     assert.deepEqual(Object.keys(JSON.parse(raw)).sort(), ['capturedAt', 'planning', 'principal', 'version', 'view']);
 });
 
-test('rejects sensitive markers even when placed in allowlisted fields', () => {
+test('rejects structurally invalid values in allowlisted fields', () => {
     const api = loadModule();
     const fields = [
-        ['view', 'activeGroupId', 'person@example.test'], ['view', 'selectedSprint', 'Authorization: bearer secret'],
-        ['planning', 'scopeKey', 'planning::sprint-1::group 1'], ['planning', 'selectedTaskKeys', ['not an issue']],
+        ['view', 'activeGroupId', 'person@example.test'], ['view', 'selectedSprint', 'bad@id'],
+        ['planning', 'scopeKey', 'planning::sprint-1::group=1'], ['planning', 'selectedTaskKeys', ['not an issue']],
         ['planning', 'selectedTeams', ['team@example.test']], ['principal', 'workspaceId', 'access_token=secret'],
     ];
     for (const [section, key, value] of fields) {
@@ -198,22 +204,12 @@ test('rejects embedded emails but preserves opaque STATE identifiers', () => {
     assert.equal(api.readAuthResumeState(storage, snapshot.principal, 2_000).view.activeGroupId, 'STATE-123');
 });
 
-test('rejects whitespace-separated credential and recovery markers in allowed fields', () => {
+test('preserves legacy whitespace-separated opaque identifiers', () => {
     const api = loadModule();
-    const cases = [
-        ['view', 'activeGroupId', 'api token secret'], ['view', 'selectedSprint', 'access token secret'],
-        ['planning', 'scopeKey', 'refresh token secret'], ['planning', 'selectedTaskKeys', ['response body secret']],
-        ['planning', 'selectedTeams', ['response data secret']], ['planning', 'scopeKey', 'config draft secret'],
-        ['planning', 'selectedTaskKeys', ['oauth state secret']], ['planning', 'selectedTeams', ['code verifier secret']],
-        ['planning', 'scopeKey', 'code challenge secret'], ['view', 'activeGroupId', 'Bearer secret'],
-    ];
-    for (const [section, key, value] of cases) {
-        const snapshot = planningSnapshot();
-        snapshot[section][key] = value;
-        assert.equal(api.writeAuthResumeState(createStorage(), snapshot, 1_000), false, `${section}.${key}`);
-    }
     const valid = planningSnapshot();
-    valid.view.activeGroupId = 'STATE-123';
+    valid.view.activeGroupId = 'Group / Legacy:1';
+    valid.view.selectedSprint = 'Sprint / Legacy:2';
+    valid.planning.selectedTeams = ['Team / Legacy:1'];
     assert.equal(api.writeAuthResumeState(createStorage(), valid, 1_000), true);
 });
 
@@ -241,6 +237,34 @@ test('accepts canonical opaque IDs and Jira keys without vocabulary blacklisting
     snapshot.planning.scopeKey = 'planning::PKCE-123::AUTHORIZATION-123';
     snapshot.planning.selectedTaskKeys = ['PKCE-123', 'STATE-123'];
     assert.equal(api.writeAuthResumeState(createStorage(), snapshot, 1_000), true);
+});
+
+test('allows empty shell scope and legacy group, team, and principal identifiers', () => {
+    const api = loadModule();
+    const snapshot = planningSnapshot();
+    snapshot.principal = { workspaceId: 'cloud/site:legacy', viewConfigId: 'view/legacy' };
+    snapshot.view.activeGroupId = 'Group / Legacy:1';
+    snapshot.view.selectedSprint = 'Sprint / Legacy:2';
+    snapshot.planning.scopeKey = '';
+    snapshot.planning.selectedTeams = ['Team / Legacy:1'];
+    const storage = createStorage();
+    assert.equal(api.writeAuthResumeState(storage, snapshot, 1_000), true);
+    assert.equal(api.readAuthResumeState(storage, snapshot.principal, 2_000).planning.scopeKey, '');
+});
+
+test('replacement is atomic when incoming payload is oversized or storage write fails', () => {
+    const api = loadModule();
+    const oldSnapshot = planningSnapshot();
+    const oversized = { ...planningSnapshot(), principal: { workspaceId: 'other', viewConfigId: 'other' },
+        planning: { ...planningSnapshot().planning, selectedTaskKeys: Array.from({ length: 500 }, (_, i) => `${'TASK'.repeat(60)}-${i}`) } };
+    const storage = createStorage();
+    assert.equal(api.writeAuthResumeState(storage, oldSnapshot, 1_000), true);
+    const before = storage.getItem(api.AUTH_RESUME_STORAGE_KEY);
+    assert.equal(api.writeAuthResumeState(storage, oversized, 2_000), false);
+    assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), before);
+    const throwing = createThrowingWriteStorage(before);
+    assert.equal(api.writeAuthResumeState(throwing, { ...oldSnapshot, principal: { workspaceId: 'other', viewConfigId: 'other' } }, 2_000), false);
+    assert.equal(throwing.getItem(api.AUTH_RESUME_STORAGE_KEY), before);
 });
 
 test('blocked sessionStorage getter is fail-soft', () => {

@@ -189,6 +189,65 @@ header {
 .compact-sticky-header .control-label {
   background: var(--bg-primary);
 }
+.header-filter-dropdown--sprint {
+  --header-filter-dropdown-width: 8.5rem;
+}
+.header-filter-dropdown--group,
+.header-filter-dropdown--team {
+  --header-filter-dropdown-width: 12.5rem;
+}
+.view-selector .header-filter-dropdown {
+  width: var(--header-filter-dropdown-width);
+  min-width: var(--header-filter-dropdown-width);
+  max-width: var(--header-filter-dropdown-width);
+}
+.view-selector .header-filter-dropdown > .sprint-dropdown-toggle,
+.view-selector .header-filter-dropdown > .group-dropdown-toggle,
+.view-selector .header-filter-dropdown > .team-dropdown-toggle,
+.view-selector .header-filter-dropdown > .sprint-dropdown-panel,
+.view-selector .header-filter-dropdown > .group-dropdown-panel,
+.view-selector .header-filter-dropdown > .team-dropdown-panel {
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+}
+.view-selector .header-filter-dropdown .dropdown-toggle-filter-input {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+}
+.view-selector .header-filter-dropdown--sprint > .sprint-dropdown-panel .sprint-dropdown-option {
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+@media (min-width: 1028px) {
+  .compact-sticky-header .header-filter-dropdown {
+    width: min(var(--header-filter-dropdown-width), 10.625rem);
+    min-width: 0;
+    max-width: 100%;
+  }
+  .compact-sticky-header .header-filter-dropdown > .sprint-dropdown-toggle,
+  .compact-sticky-header .header-filter-dropdown > .group-dropdown-toggle,
+  .compact-sticky-header .header-filter-dropdown > .team-dropdown-toggle,
+  .compact-sticky-header .header-filter-dropdown > .sprint-dropdown-panel,
+  .compact-sticky-header .header-filter-dropdown > .group-dropdown-panel,
+  .compact-sticky-header .header-filter-dropdown > .team-dropdown-panel {
+    width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+  }
+  .compact-sticky-header .header-filter-dropdown .dropdown-toggle-filter-input {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+  }
+  .compact-sticky-header .header-filter-dropdown--sprint > .sprint-dropdown-panel .sprint-dropdown-option {
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+}
 h1 {
   font-size: 2.4rem;
   font-weight: 300;

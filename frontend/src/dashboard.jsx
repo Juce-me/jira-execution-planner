@@ -13096,9 +13096,13 @@ import {
                 <EpmProjectCollapseAllButton label={epmProjectCollapseAllLabel} onClick={toggleAllVisibleEpmProjectsCollapsed} pressed={allVisibleEpmProjectsCollapsed} />
             ) : null;
 
+            const sprintDropdownClassName = [
+                'sprint-dropdown',
+                selectedView === 'eng' ? 'header-filter-dropdown header-filter-dropdown--sprint' : '',
+            ].filter(Boolean).join(' ');
             const renderSprintControl = (surface) => (
                 <ControlField label="Sprint">
-                    <div className="sprint-dropdown" ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
+                    <div className={sprintDropdownClassName} ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
                             role={showSprintDropdown ? undefined : 'button'}
@@ -13187,7 +13191,7 @@ import {
                 return (
                     <div className="group-control">
                         <ControlField label="Group">
-                            <div className="group-dropdown" ref={(node) => { groupDropdownRefs.current[surface] = node; }}>
+                            <div className="group-dropdown header-filter-dropdown header-filter-dropdown--group" ref={(node) => { groupDropdownRefs.current[surface] = node; }}>
                                 <div
                                     className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
                                     role={showGroupDropdown ? undefined : 'button'}
@@ -13279,7 +13283,7 @@ import {
 
             const renderTeamControl = (surface) => (
                 <ControlField label="Teams">
-                    <div className="team-dropdown" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
+                    <div className="team-dropdown header-filter-dropdown header-filter-dropdown--team" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''} ${!isAllTeamsSelected ? 'active-filter applied-filter' : ''}`}
                             role={showTeamDropdown ? undefined : 'button'}

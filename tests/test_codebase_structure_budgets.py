@@ -123,9 +123,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Catch Up re-entry imports the canonical ENG onboarding-surface predicate (+1).
     # Surface interruption passes the controller's non-persisting close callback to the tour (+1).
     # Mobile start eligibility adds one stable viewport callback and passes it to the controller (+2).
+    # Contextual module launch eligibility now shares the resolved bootstrap/server-error guard (+6).
     # bugfix/multidevice-sessions-continuation adds per-tab auth-resume capture/restore,
     # staged Planning hydration, and terminal bootstrap-safe recovery wiring (+250).
-    "frontend/src/dashboard.jsx": 17342,
+    "frontend/src/dashboard.jsx": 17348,
 }
 
 

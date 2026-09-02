@@ -13096,13 +13096,9 @@ import {
                 <EpmProjectCollapseAllButton label={epmProjectCollapseAllLabel} onClick={toggleAllVisibleEpmProjectsCollapsed} pressed={allVisibleEpmProjectsCollapsed} />
             ) : null;
 
-            const sprintDropdownClassName = [
-                'sprint-dropdown',
-                selectedView === 'eng' ? 'header-filter-dropdown header-filter-dropdown--sprint' : '',
-            ].filter(Boolean).join(' ');
             const renderSprintControl = (surface) => (
                 <ControlField label="Sprint">
-                    <div className={sprintDropdownClassName} ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
+                    <div className={`sprint-dropdown${selectedView === 'eng' ? ' header-filter-dropdown header-filter-dropdown--sprint' : ''}`} ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
                             role={showSprintDropdown ? undefined : 'button'}

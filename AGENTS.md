@@ -317,3 +317,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep localhost and CI runner assets under `runners/local/` and `runners/github/`; never mix them into application source, production startup, deployment images, or release packaging.
 - When the user explicitly excludes a gate document from an execution plan, do not read or modify that gate during the execution.
 - Catch Up onboarding must never require cross-surface activation; keep Next enabled, let Next open field previews, and advance exactly once from the preview surface, a preview choice, the same field, or Next without mutating Jira.
+- When a persisted shared mapping is complete but unverified, Settings must expose it as an unsaved re-verification state and call the owning verification endpoint even when its visible values are unchanged.

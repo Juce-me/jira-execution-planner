@@ -42,6 +42,7 @@ class DbAuthContextTests(unittest.TestCase):
         connection_status='active',
         token_version=3,
         scopes=None,
+        scope_provenance='provider',
         provider='atlassian_oauth',
     ):
         with self.factory() as session:
@@ -70,6 +71,7 @@ class DbAuthContextTests(unittest.TestCase):
                 site_url='https://example.atlassian.net',
                 cloud_id='cloud-123',
                 scopes=(scopes or FULL_SCOPE).split(),
+                scope_provenance=scope_provenance,
                 status=connection_status,
                 token_version=token_version,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
@@ -165,6 +167,20 @@ class DbAuthContextTests(unittest.TestCase):
         self.assertEqual(context.token_version, '3')
         self.assertTrue(context.is_admin)
         self.assertEqual(context.project_access[0].project_key, 'ABC')
+        self.assertEqual(context.granted_scopes, tuple(FULL_SCOPE.split()))
+        self.assertTrue(context.granted_scopes_verified)
+
+    def test_unknown_legacy_scope_provenance_is_rejected_even_with_scope_text(self):
+        _, _, connection_id = self._seed_connection(scope_provenance='unknown')
+
+        with self.assertRaises(AuthError) as raised:
+            resolve_db_request_auth_context(
+                {'db_auth_connection_id': connection_id, 'db_token_version': '3'},
+                database_url=self.database_url,
+                required_scopes=FULL_SCOPE,
+            )
+
+        self.assertEqual(raised.exception.code, 'missing_oauth_scope')
 
     def test_disabled_user_is_rejected_before_user_scoped_calls(self):
         _, _, connection_id = self._seed_connection(user_status='disabled')

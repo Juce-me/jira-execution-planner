@@ -2,6 +2,12 @@ import * as JepAnalytics from './analytics.js';
 
 export const bucketCount = JepAnalytics.bucketCount;
 
+const CAPACITY_WORKFLOW_ACTIONS = new Set([
+    'capacity_edit_open',
+    'capacity_change_submit',
+    'capacity_change_result',
+]);
+
 export function analyticsToken(value, fallback = 'unknown') {
     return String(value || fallback).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || fallback;
 }
@@ -233,6 +239,19 @@ export function useDashboardAnalytics(React, {
         });
     }, [trackProductEvent]);
 
+    const trackPlanningCapacityAction = useCallback((workflowAction, { result } = {}) => {
+        if (!CAPACITY_WORKFLOW_ACTIONS.has(workflowAction)) return;
+        const payload = {
+            feature_name: 'planning_capacity_edit',
+            workflow_action: workflowAction,
+            source_surface: 'planning',
+        };
+        if (workflowAction === 'capacity_change_result' && ['success', 'failure', 'conflict'].includes(result)) {
+            payload.result = result;
+        }
+        trackProductEvent('planning_action', payload);
+    }, [trackProductEvent]);
+
     const trackSearch = useCallback((searchQuery, resultCount) => {
         const trimmed = String(searchQuery || '').trim();
         if (!trimmed) return;
@@ -260,6 +279,7 @@ export function useDashboardAnalytics(React, {
         trackIssuePriorityAction,
         trackIssueProjectTrackAction,
         trackIssueStatusAction,
+        trackPlanningCapacityAction,
         trackPlanningSelection,
         trackProductEvent,
         trackScenarioAction,

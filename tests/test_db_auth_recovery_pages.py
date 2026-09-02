@@ -74,6 +74,7 @@ class DbAuthRecoveryPagesTests(unittest.TestCase):
                 site_url='https://example.atlassian.net',
                 cloud_id='cloud-123',
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status=connection_status,
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),

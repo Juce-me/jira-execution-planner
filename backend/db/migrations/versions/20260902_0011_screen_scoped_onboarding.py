@@ -1,8 +1,8 @@
 """screen-scoped onboarding completion
 
-Revision ID: 20260901_0010
-Revises: 20260829_0009, 20260830_0009
-Create Date: 2026-09-01
+Revision ID: 20260902_0011
+Revises: 20260829_0009, 20260901_0010
+Create Date: 2026-09-02
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = '20260901_0010'
-down_revision = ('20260829_0009', '20260830_0009')
+revision = '20260902_0011'
+down_revision = ('20260829_0009', '20260901_0010')
 branch_labels = None
 depends_on = None
 

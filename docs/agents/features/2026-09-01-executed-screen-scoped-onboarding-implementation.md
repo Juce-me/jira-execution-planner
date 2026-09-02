@@ -39,7 +39,7 @@ Accurate for the screen-scoped persistence and launcher behavior. A 2026-09-02 f
 
 ## File map and ownership
 
-- Persistence schema: `backend/db/models.py`, new `backend/db/migrations/versions/20260901_0010_screen_scoped_onboarding.py`.
+- Persistence schema: `backend/db/models.py`, new `backend/db/migrations/versions/20260902_0011_screen_scoped_onboarding.py`.
 - Persistence behavior: `backend/services/shared_group_config.py`.
 - HTTP contract: `backend/routes/settings_routes.py`, `frontend/src/api/configApi.js`.
 - Preference normalization: `frontend/src/settings/groupVisibilityUtils.js`, `frontend/src/settings/groupConfigUtils.js`.
@@ -84,7 +84,7 @@ Reject mixed payloads, unknown fields, unknown module ids, non-boolean `onboardi
 
 **Files:**
 - Modify: `backend/db/models.py`
-- Create: `backend/db/migrations/versions/20260901_0010_screen_scoped_onboarding.py`
+- Create: `backend/db/migrations/versions/20260902_0011_screen_scoped_onboarding.py`
 - Modify: `backend/services/shared_group_config.py`
 - Test: `tests/test_db_migrations.py`
 - Test: `tests/test_shared_group_config_service.py`
@@ -138,7 +138,7 @@ Run:
 .venv/bin/python -m unittest tests.test_db_migrations
 ```
 
-Expected: FAIL because revision `20260901_0010` and the column do not exist.
+Expected: FAIL because the screen-scoped onboarding revision and column do not exist.
 
 - [x] **Step 5: Implement the model and migration**
 

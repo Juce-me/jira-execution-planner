@@ -127,17 +127,20 @@ test('dashboard hydrates scoped team selection from group and sprint storage', (
 });
 
 test('selected sp by team forces six teams onto multiple rows', () => {
-    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const sourcePath = path.resolve(__dirname, '../frontend/src/eng/PlanningTeamCapacityCards.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');
 
-    assert.match(source, /const rows = teamCount === 6 \? 2 : Math\.ceil\(teamCount \/ maxPerRow\);/);
+    assert.match(source, /const rows = teamCount === 6 \? 2 : Math\.ceil\(teamCount \/ 6\);/);
+    assert.match(source, /'--planning-team-columns': columns/);
 });
 
 test('selected sp by team cards still render for a single team entry', () => {
-    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
-    const source = fs.readFileSync(sourcePath, 'utf8');
+    const dashboardSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    const componentSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/PlanningTeamCapacityCards.jsx'), 'utf8');
 
-    assert.match(source, /\{selectedTeamEntries\.length > 0 && \(\(\) => \{/);
+    assert.match(dashboardSource, /<PlanningTeamCapacityCards/);
+    assert.match(componentSource, /if \(sortedTeams\.length === 0\) return null;/);
+    assert.match(componentSource, /\{sortedTeams\.map\(\(entry\) => \{/);
 });
 
 test('dashboard imports planning capacity helpers from ENG module', () => {
@@ -165,6 +168,158 @@ test('dashboard imports planning capacity aggregate helpers from ENG module', ()
     assert.match(source, /buildTeamCapacityStats/);
     assert.doesNotMatch(source, /capacityTasks\.reduce\(\(acc, task\) => \{/);
     assert.doesNotMatch(source, /displayedTeamCapacityEntries\.reduce\(\(acc, info\) => \{/);
+});
+
+test('dashboard delegates capacity API and state shaping without owning editor UI', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+
+    assert.match(source, /import \{ fetchCapacity as requestCapacity, updateCapacity \} from '\.\/api\/capacityApi\.js';/);
+    assert.match(source, /reduceCapacityReadLifecycle/);
+    assert.match(source, /applyCapacitySaveResultForScope/);
+    assert.match(source, /resolveUniqueCapacityValue/);
+    assert.match(source, /requestCapacity\(BACKEND_URL,/);
+    assert.doesNotMatch(source, /const normalizeCapacityKey =/);
+    assert.doesNotMatch(source, /const toCapacityShortName =/);
+    assert.doesNotMatch(source, /className="capacity-editor/);
+    assert.doesNotMatch(source, /data-capacity-editor/);
+    assert.doesNotMatch(source, /document\.addEventListener\([^\n]*capacity/i);
+});
+
+test('dashboard delegates team capacity cards with OAuth and server-attested mutation gates', () => {
+    const dashboardSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningTeamCapacityCards.jsx');
+
+    assert.equal(fs.existsSync(componentPath), true);
+    const componentSource = fs.readFileSync(componentPath, 'utf8');
+
+    assert.match(dashboardSource, /import PlanningTeamCapacityCards from '\.\/eng\/PlanningTeamCapacityCards\.jsx';/);
+    assert.match(dashboardSource, /<PlanningTeamCapacityCards/);
+    assert.match(dashboardSource, /canOpenCapacityJira=\{authMode === 'atlassian_oauth'\}/);
+    assert.match(dashboardSource, /canEditCapacity=\{authMode === 'atlassian_oauth' && capacityMutationEnabled === true\}/);
+    assert.doesNotMatch(
+        dashboardSource,
+        /canEditCapacity=\{[^}]*?(?:userCanEditSettings|userCanEditEpmConfig|settingsAdminOnly)/,
+    );
+    assert.doesNotMatch(dashboardSource, /className="team-capacity-editor/);
+    assert.doesNotMatch(dashboardSource, /className="team-capacity-action-rail/);
+    assert.doesNotMatch(dashboardSource, /document\.addEventListener\(['"]pointerdown/);
+    assert.match(componentSource, /document\.addEventListener\(['"]pointerdown/);
+    assert.doesNotMatch(componentSource, /safeCapacityRecoveryUrl|recoveryUrl|Recover Atlassian access/);
+    assert.doesNotMatch(componentSource, /redirectToAuthRecovery|location\.assign/);
+    assert.doesNotMatch(
+        componentSource,
+        /userCanEditSettings|userCanEditEpmConfig|SETTINGS_ADMIN_ONLY|settingsAdminOnly/,
+    );
+});
+
+test('planning capacity actions use the shared IconButton sizing contract', () => {
+    const componentSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/PlanningTeamCapacityCards.jsx'), 'utf8');
+    const iconButtonSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/ui/IconButton.jsx'), 'utf8');
+    const sharedControlsSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/styles/shared/controls.css'), 'utf8');
+    const capacityStyles = fs.readFileSync(path.resolve(__dirname, '../frontend/src/styles/planning/stat-cards.css'), 'utf8');
+
+    assert.match(iconButtonSource, /size = ''/);
+    assert.match(iconButtonSource, /icon-button--\$\{size\}/);
+    assert.match(iconButtonSource, /React\.forwardRef/);
+    assert.match(sharedControlsSource, /\.icon-button--sm/);
+    assert.match(sharedControlsSource, /\.icon-button--md/);
+    assert.match(componentSource, /size="sm"/);
+    assert.match(componentSource, /size="md"/);
+    assert.doesNotMatch(capacityStyles, /\.team-capacity-action\s*\{[^}]*\bheight\s*:/s);
+    assert.doesNotMatch(capacityStyles, /\.team-capacity-editor-action\s*\{[^}]*\bheight\s*:/s);
+});
+
+test('smoke screenshots keep general output separate from Task 8 capacity evidence', () => {
+    const smokeSource = fs.readFileSync(path.resolve(__dirname, './ui/codebase_structure_smoke.spec.js'), 'utf8');
+
+    assert.match(smokeSource, /test-results', 'codebase-structure-smoke/);
+    assert.match(smokeSource, /const capacityArtifactDir = path\.join\(repoRoot, '\.superpowers'/);
+    assert.match(smokeSource, /async function captureCapacitySmokeScreenshot/);
+    assert.match(smokeSource, /captureCapacitySmokeScreenshot\(page, 'planning-capacity-pending'\)/);
+    assert.doesNotMatch(smokeSource, /const screenshotDir = path\.join\(repoRoot, '\.superpowers'/);
+});
+
+test('the Jira mark paths have one shared JSX owner', () => {
+    const sourceRoot = path.resolve(__dirname, '../frontend/src');
+    const jiraIconPath = path.join(sourceRoot, 'ui', 'JiraMarkIcon.jsx');
+
+    assert.equal(fs.existsSync(jiraIconPath), true);
+    const jsxSources = [];
+    const visit = (directory) => {
+        fs.readdirSync(directory, { withFileTypes: true }).forEach((entry) => {
+            const entryPath = path.join(directory, entry.name);
+            if (entry.isDirectory()) visit(entryPath);
+            if (entry.isFile() && entry.name.endsWith('.jsx')) {
+                jsxSources.push([entryPath, fs.readFileSync(entryPath, 'utf8')]);
+            }
+        });
+    };
+    visit(sourceRoot);
+
+    for (const pathData of [
+        'M11.8 3.2 3 12l8.8 8.8 3-3L9 12l5.8-5.8-3-3z',
+        'M12.2 3.2 21 12l-8.8 8.8-3-3L15 12 9.2 6.2l3-3z',
+    ]) {
+        const owners = jsxSources.filter(([, source]) => source.includes(pathData)).map(([file]) => file);
+        assert.deepEqual(owners, [jiraIconPath]);
+    }
+});
+
+test('capacity read state is atomic, scope-tagged, and advances revision only after HTTP success', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+
+    assert.match(source, /const \[capacityState, setCapacityState\] = useState/);
+    assert.match(source, /capacityByTeam:\s*\{\},\s*capacityTargetsByTeam:\s*\{\},\s*capacityIssueCount:\s*null,\s*mutationEnabled:\s*false,\s*scopeSignature:\s*''/);
+    assert.match(source, /const \[capacityReadRevision, setCapacityReadRevision\] = useState\(0\)/);
+    assert.match(source, /const \[capacityReadError, setCapacityReadError\] = useState\(''\)/);
+    assert.match(source, /const \[capacityDataStale, setCapacityDataStale\] = useState\(false\)/);
+    assert.match(source, /capacityState\.scopeSignature === capacityScopeSignature/);
+    assert.match(source, /const capacityMutationEnabled = effectiveCapacityState\.mutationEnabled === true/);
+    assert.equal((source.match(/setCapacityEnabled\(Boolean\([^)]*capacityConfigRequiresResolution[^)]*\)\)/g) || []).length, 2);
+    assert.match(source, /commitCapacityReadLifecycle\(\{ type: 'success', scopeSignature, payload: data \}\)/);
+    assert.doesNotMatch(source, /handleCapacitySaved[\s\S]{0,800}setCapacityReadRevision/);
+});
+
+test('capacity request orchestration delegates ownership and collision-proof scope identity', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    const effectStart = source.indexOf('const capacityScopeSignature =');
+    const effectEnd = source.indexOf('const capacityTeamIds =', effectStart);
+    const effect = source.slice(effectStart, effectEnd);
+
+    assert.notEqual(effectStart, -1);
+    assert.notEqual(effectEnd, -1);
+    assert.match(effect, /buildCapacityScopeSignature\(/);
+    assert.doesNotMatch(effect, /capacityTeamNames\.join\(/);
+    assert.match(effect, /beginCapacityReadOwnership\(\{/);
+    assert.match(effect, /if \(!ownership\.shouldFetch\)/);
+    assert.match(effect, /signal: ownership\.controller\.signal/);
+    assert.match(effect, /error\?\.name === 'AbortError'/);
+    assert.match(effect, /return ownership\.cleanup;/);
+});
+
+test('capacity gates, success, and failure use the executable lifecycle reducer', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    const effectStart = source.indexOf('const capacityScopeSignature =');
+    const effectEnd = source.indexOf('const capacityTeamIds =', effectStart);
+    const effect = source.slice(effectStart, effectEnd);
+
+    assert.match(effect, /commitCapacityReadLifecycle\(\{ type: 'gate', scopeSignature \}\)/);
+    assert.match(effect, /commitCapacityReadLifecycle\(\{ type: 'start', scopeSignature \}\)/);
+    assert.match(effect, /commitCapacityReadLifecycle\(\{ type: 'success', scopeSignature, payload: data \}\)/);
+    assert.match(effect, /commitCapacityReadLifecycle\(\{ type: 'failure', scopeSignature \}\)/);
+});
+
+test('capacity scope refresh and save reconciliation stay scoped without extra card requests', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+
+    assert.match(source, /const \[capacityRefreshNonce, setCapacityRefreshNonce\] = useState\(0\)/);
+    assert.match(source, /setCapacityRefreshNonce\(previous => previous \+ 1\)/);
+    assert.match(source, /capacityRefreshNonce[\s\S]{0,300}\]\);/);
+    assert.match(source, /activeCapacityScopeRef\.current = capacityScopeSignature/);
+    assert.match(source, /if \(result\.scopeSignature !== activeCapacityScopeRef\.current\) return;/);
+    assert.match(source, /const nextState = applyCapacitySaveResultForScope\([\s\S]{0,180}previous,[\s\S]{0,180}result,[\s\S]{0,180}activeCapacityScopeRef\.current/);
+    assert.equal((source.match(/requestCapacity\(BACKEND_URL,/g) || []).length, 1);
+    assert.doesNotMatch(source, /onMouse(?:Enter|Over)=[^\n]*fetchCapacity/);
 });
 
 test('dashboard imports dependency focus helpers from issues module', () => {

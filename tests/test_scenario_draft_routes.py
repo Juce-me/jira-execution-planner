@@ -102,6 +102,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
                 site_url=site,
                 cloud_id=cloud,
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
@@ -135,6 +136,8 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             account_status='active',
             is_admin=True,
             browser_session_id=browser_session_id,
+            granted_scopes=tuple(FULL_SCOPE.split()),
+            granted_scopes_verified=True,
         )
 
     def _install_session(self, session_id, account_id, connection_id, browser_session_id=''):
@@ -218,6 +221,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
                 site_url=workspace.jira_site_url,
                 cloud_id=workspace.jira_cloud_id,
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),

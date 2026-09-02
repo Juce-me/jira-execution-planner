@@ -24,6 +24,7 @@ def oauth_session_payload(**overrides):
         "account_id": "account-123",
         "account_status": "active",
         "scope": FULL_OAUTH_SCOPE,
+        "scope_provenance": "provider",
         "stored_at": time.time(),
     }
     payload.update(overrides)

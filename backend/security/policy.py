@@ -91,6 +91,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("jira-issue-priorities-write", "/api/issues/priorities", frozenset({"POST"}), "user_write"),
     EndpointPolicy("jira-project-track-options", "/api/issues/project-track/options", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("jira-project-track-write", "/api/issues/project-track", frozenset({"POST"}), "user_write"),
+    EndpointPolicy("jira-team-capacity-write", "/api/capacity/<issue_key>", frozenset({"PATCH"}), "user_write", "dynamic"),
     EndpointPolicy("jira-issue-status-catalog", "/api/issues/statuses/catalog", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-config-read", "/api/config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-version", "/api/version", PUBLIC_METHODS, "authenticated_read"),

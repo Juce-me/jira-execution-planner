@@ -15,10 +15,12 @@ from sqlalchemy.orm import Session
 from backend.auth.key_provider import key_provider_from_env
 from backend.auth.token_crypto import decrypt_token
 from backend.auth.db_browser_sessions import create_browser_session, resolve_browser_session
-from backend.auth.db_tokens import store_oauth_callback_tokens
+from backend.auth.db_tokens import refresh_db_oauth_token, store_oauth_callback_tokens
+from backend.auth.jira_auth import refresh_oauth_token
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
+from tests.oauth_test_helpers import install_oauth_session
 
 
 class FakeResponse:
@@ -162,6 +164,8 @@ class DbOauthCutoverTests(unittest.TestCase):
             tokens = session.query(models.AuthToken).filter_by(connection_id=result.connection_id).all()
 
         self.assertEqual(connection.user_id, result.user_id)
+        self.assertEqual(connection.scope_provenance, 'provider')
+        self.assertEqual(connection.scopes, jira_server.ATLASSIAN_SCOPES.split())
         self.assertEqual({token.token_kind for token in tokens}, {'access_token', 'refresh_token'})
         for token in tokens:
             self.assertNotIn('access-123', token.ciphertext)
@@ -182,7 +186,7 @@ class DbOauthCutoverTests(unittest.TestCase):
             )
             self.assertIn(decrypted, {'access-123', 'refresh-123'})
 
-    def test_callback_persists_requested_scopes_when_provider_omits_scope(self):
+    def test_callback_does_not_treat_requested_scopes_as_provider_grants(self):
         with self.factory() as session:
             result = store_oauth_callback_tokens(
                 session,
@@ -212,7 +216,72 @@ class DbOauthCutoverTests(unittest.TestCase):
         with self.factory() as session:
             connection = session.get(models.AuthConnection, result.connection_id)
 
-        self.assertEqual(connection.scopes, jira_server.ATLASSIAN_SCOPES.split())
+        self.assertEqual(connection.scopes, [])
+        self.assertEqual(connection.scope_provenance, 'unknown')
+
+    def test_db_refresh_without_scope_preserves_existing_provenance(self):
+        result = self._store_callback()
+        with self.factory() as session:
+            connection = session.get(models.AuthConnection, result.connection_id)
+            connection.expires_at = None
+            session.commit()
+
+        with self.factory() as session:
+            refresh_db_oauth_token(
+                session,
+                connection_id=result.connection_id,
+                config=jira_server.current_auth_config(),
+                key_provider=self.key_provider,
+                http_post=lambda *_args, **_kwargs: FakeResponse(200, {
+                    'access_token': 'new-access',
+                    'refresh_token': 'new-refresh',
+                    'expires_in': 3600,
+                }),
+            )
+            session.commit()
+
+        with self.factory() as session:
+            connection = session.get(models.AuthConnection, result.connection_id)
+            self.assertEqual(connection.scope_provenance, 'provider')
+            self.assertEqual(connection.scopes, jira_server.ATLASSIAN_SCOPES.split())
+
+    def test_local_refresh_without_scope_never_upgrades_unknown_provenance(self):
+        config = jira_server.current_auth_config()
+        verified = refresh_oauth_token(
+            config,
+            {'refresh_token': 'refresh', 'scope': 'read:me', 'scope_provenance': 'provider'},
+            http_post=lambda *_args, **_kwargs: FakeResponse(200, {
+                'access_token': 'new', 'expires_in': 3600,
+            }),
+        )
+        unknown = refresh_oauth_token(
+            config,
+            {
+                'refresh_token': 'refresh',
+                'scope': jira_server.ATLASSIAN_SCOPES,
+                'scope_provenance': 'unknown',
+            },
+            http_post=lambda *_args, **_kwargs: FakeResponse(200, {
+                'access_token': 'new', 'expires_in': 3600,
+            }),
+        )
+
+        self.assertEqual((verified['scope'], verified['scope_provenance']), ('read:me', 'provider'))
+        self.assertEqual(unknown['scope_provenance'], 'unknown')
+
+    def test_local_requested_only_session_fails_closed(self):
+        install_oauth_session(
+            self.client,
+            scope=jira_server.ATLASSIAN_SCOPES,
+            scope_provenance='unknown',
+        )
+        with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}, clear=False), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/api/auth/status')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()['authenticated'])
+        self.assertEqual(response.get_json()['loginUrl'], '/login?reason=missing_scope')
 
     def test_current_request_context_prefers_db_connection_metadata(self):
         result = self._store_callback()

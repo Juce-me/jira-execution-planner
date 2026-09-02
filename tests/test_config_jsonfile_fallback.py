@@ -17,7 +17,7 @@ import jira_server
 
 
 FULL_SCOPE = (
-    'read:me read:jira-work read:jira-user '
+    'read:me read:jira-work write:jira-work read:jira-user '
     'read:board-scope:jira-software read:sprint:jira-software read:project:jira '
     'offline_access'
 )
@@ -48,6 +48,8 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
             token_version='1',
             account_status='active',
             is_admin=False,
+            granted_scopes=tuple(FULL_SCOPE.split()),
+            granted_scopes_verified=True,
         )
         with open(self.dashboard_path, 'w', encoding='utf-8') as handle:
             json.dump(self._dashboard_config(), handle)
@@ -83,6 +85,7 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
                 site_url=workspace.jira_site_url,
                 cloud_id=workspace.jira_cloud_id,
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),

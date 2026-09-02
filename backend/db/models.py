@@ -217,6 +217,10 @@ class WorkspaceDashboardConfig(Base):
     payload_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    capacity_jira_site_url: Mapped[Optional[str]] = mapped_column(String(512))
+    capacity_jira_cloud_id: Mapped[Optional[str]] = mapped_column(String(255))
+    capacity_field_schema_type: Mapped[Optional[str]] = mapped_column(String(64))
+    capacity_field_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
     updated_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
@@ -378,6 +382,10 @@ class AuthConnection(Base):
             name='ck_auth_connections_provider',
         ),
         CheckConstraint("status in ('active', 'expired', 'revoked', 'error')", name='ck_auth_connections_status'),
+        CheckConstraint(
+            "scope_provenance in ('provider', 'unknown')",
+            name='ck_auth_connections_scope_provenance',
+        ),
         Index(
             'uq_auth_connections_current_cloud',
             'user_id',
@@ -418,6 +426,9 @@ class AuthConnection(Base):
     credential_subject: Mapped[Optional[str]] = mapped_column(String(255))
     capabilities: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
     scopes: Mapped[Optional[list]] = mapped_column(JSON)
+    scope_provenance: Mapped[str] = mapped_column(
+        String(32), nullable=False, default='unknown', server_default=text("'unknown'"),
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default='active')
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     last_validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

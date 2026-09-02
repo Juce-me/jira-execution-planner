@@ -49,7 +49,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # entrypoint wiring for callback creation/replacement, failure-safe legacy-cookie upgrade,
     # sanitized upgrade-failure logging, revocation, logout, and browser-bound CSRF/Scenario
     # context propagation (+24).
-    "jira_server.py": 6384,
+    # feature/planning-capacity-editing threads the workspace Capacity snapshot through reads,
+    # scenario sizing, verified OAuth scope context, and exact Jira issue mutations (+74).
+    "jira_server.py": 6458,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -126,7 +128,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Contextual module launch eligibility now shares the resolved bootstrap/server-error guard (+6).
     # bugfix/multidevice-sessions-continuation adds per-tab auth-resume capture/restore,
     # staged Planning hydration, and terminal bootstrap-safe recovery wiring (+250).
-    "frontend/src/dashboard.jsx": 17348,
+    # feature/planning-capacity-editing adds the Capacity config lifecycle, one-at-a-time
+    # team card editor, mapping re-verification/conflict recovery, local-OAuth fallback,
+    # and scoped empty-state refresh while retaining global auth/config flows (+70 after merge).
+    "frontend/src/dashboard.jsx": 17418,
 }
 
 

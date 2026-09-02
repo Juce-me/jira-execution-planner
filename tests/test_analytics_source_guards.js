@@ -27,6 +27,14 @@ function jsSetValues(source, setName) {
     return new Set(Array.from(match[1].matchAll(/'([^']+)'/g), ([, value]) => value));
 }
 
+function identifiers(source) {
+    const codeWithoutStringsOrComments = source
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/\/\/[^\n]*/g, ' ')
+        .replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g, ' ');
+    return new Set(codeWithoutStringsOrComments.match(/\b[A-Za-z_$][A-Za-z0-9_$]*\b/g) || []);
+}
+
 function yamlValues(source, key) {
     return new Set(Array.from(source.matchAll(new RegExp(`${key}: "([^"]+)"`, 'g')), ([, value]) => value));
 }
@@ -432,6 +440,28 @@ test('Jira issue transition API module sends the eng_status_transitions surface 
     assert.ok(source.includes('/api/issues/transitions'), 'Expected the transition write endpoint literal');
     assert.ok(source.includes("trackedFetch('jira_issue_transitions'"), 'Expected both wrappers to use the jira_issue_transitions API surface');
     assert.ok(source.includes("featureName: 'eng_status_transitions'"), 'Expected both wrappers to tag the eng_status_transitions feature');
+});
+
+test('planning capacity analytics keeps an allowlisted planning_action contract', () => {
+    const source = read('frontend/src/analytics/dashboardAnalytics.js');
+    const match = source.match(/const trackPlanningCapacityAction = useCallback\(([\s\S]*?)\}, \[trackProductEvent\]\);/);
+    assert.ok(match, 'Expected to locate the trackPlanningCapacityAction definition');
+    const body = match[1];
+
+    assert.match(body, /CAPACITY_WORKFLOW_ACTIONS\.has\(workflowAction\)/);
+    assert.match(body, /trackProductEvent\('planning_action'/);
+    assert.match(body, /feature_name:\s*'planning_capacity_edit'/);
+    assert.match(body, /source_surface:\s*'planning'/);
+    assert.match(body, /\['success', 'failure', 'conflict'\]\.includes\(result\)/);
+    assert.equal(/\.\.\.\s*(?:params|payload|arguments)\b/.test(body), false, 'Capacity analytics must not spread dynamic caller data');
+
+    const rawIdentifiers = identifiers(body);
+    for (const forbidden of [
+        'issueKey', 'teamName', 'sprintName', 'expectedCapacity', 'jiraUrl', 'jql', 'error',
+        'email', 'token', 'apiToken', 'authToken', 'csrfToken', 'password', 'credential',
+    ]) {
+        assert.equal(rawIdentifiers.has(forbidden), false, `Capacity analytics must not reference raw ${forbidden}`);
+    }
 });
 
 test('trackIssueStatusAction emits only the eng status transition contract, never issue-level PII', () => {

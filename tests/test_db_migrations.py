@@ -239,7 +239,12 @@ class DbMigrationTests(unittest.TestCase):
             inspector = inspect(engine)
             self.assertEqual(
                 {column['name'] for column in inspector.get_columns('workspace_dashboard_configs')},
-                {'id', 'workspace_id', 'payload_version', 'payload', 'config_revision', 'created_by', 'updated_by', 'created_at', 'updated_at'},
+                {
+                    'id', 'workspace_id', 'payload_version', 'payload', 'config_revision',
+                    'created_by', 'updated_by', 'created_at', 'updated_at',
+                    'capacity_jira_site_url', 'capacity_jira_cloud_id',
+                    'capacity_field_schema_type', 'capacity_field_verified_at',
+                },
             )
             self.assertEqual(
                 {column['name'] for column in inspector.get_columns('workspace_team_catalogs')},
@@ -563,6 +568,47 @@ class DbMigrationTests(unittest.TestCase):
                 self.assertIsNone(raised.exception.__cause__)
                 self.assertIsNone(raised.exception.__context__)
                 self.assertNotIn("secret", rendered)
+
+    def test_capacity_migration_upgrades_downgrades_and_has_portable_postgres_offline_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'capacity.db')}"
+            config = self._config(database_url)
+            command.upgrade(config, '20260604_0006')
+            command.upgrade(config, 'head')
+            engine = create_engine(database_url, future=True)
+            try:
+                inspector = inspect(engine)
+                columns = {column['name'] for column in inspector.get_columns('workspace_dashboard_configs')}
+                self.assertTrue({
+                    'capacity_jira_site_url', 'capacity_jira_cloud_id',
+                    'capacity_field_schema_type', 'capacity_field_verified_at',
+                }.issubset(columns))
+                self.assertNotIn('workspace_capacity_configs', inspector.get_table_names())
+                self.assertIn('scope_provenance', {column['name'] for column in inspector.get_columns('auth_connections')})
+            finally:
+                engine.dispose()
+            command.downgrade(config, '20260604_0006')
+            engine = create_engine(database_url, future=True)
+            try:
+                inspector = inspect(engine)
+                self.assertNotIn('workspace_capacity_configs', inspector.get_table_names())
+                self.assertNotIn('workspace_dashboard_configs', inspector.get_table_names())
+                self.assertNotIn('scope_provenance', {column['name'] for column in inspector.get_columns('auth_connections')})
+            finally:
+                engine.dispose()
+            command.upgrade(config, 'head')
+
+        config = self._config('postgresql+psycopg://planner@db.example.test:5432/planner?sslmode=require')
+        output = io.StringIO()
+        config.output_buffer = output
+        with patch.dict(os.environ, {'DATABASE_CONNECTION_MODE': 'url'}, clear=False):
+            command.upgrade(config, 'head', sql=True)
+        sql = output.getvalue()
+        self.assertNotIn('CREATE TABLE workspace_capacity_configs', sql)
+        self.assertIn('ALTER TABLE workspace_dashboard_configs ADD COLUMN capacity_jira_site_url', sql)
+        self.assertIn('ALTER TABLE workspace_dashboard_configs ADD COLUMN capacity_field_verified_at', sql)
+        self.assertIn('ALTER TABLE auth_connections ADD COLUMN scope_provenance', sql)
+        self.assertIn('ck_auth_connections_scope_provenance', sql)
 
     def test_screen_scoped_onboarding_migration_backfills_and_downgrades_only_modules(self):
         with tempfile.TemporaryDirectory() as tmpdir:

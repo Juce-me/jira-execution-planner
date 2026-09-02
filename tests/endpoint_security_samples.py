@@ -1,4 +1,5 @@
 ROUTE_SAMPLES = {
+    "/api/capacity/<issue_key>": "/api/capacity/CAP-101",
     "/api/admin/service-integrations/<service_integration_id>": "/api/admin/service-integrations/svc-1",
     "/api/admin/users/<user_id>": "/api/admin/users/user-1",
     "/api/admin/users/<user_id>/admin-grant": "/api/admin/users/user-1/admin-grant",

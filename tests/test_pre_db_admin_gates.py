@@ -43,6 +43,9 @@ class PreDbToolAdminGateTests(unittest.TestCase):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
              patch.object(jira_server, "load_dashboard_config", return_value={}), \
+             patch("backend.routes.settings_routes.load_current_site_field_catalog", return_value=[
+                 {"id": "customfield_1", "name": "Synthetic Capacity", "schema": {"type": "number"}},
+             ]), \
              patch.object(jira_server, "save_dashboard_config") as mock_save:
             for route, payload in routes:
                 with self.subTest(route=route):

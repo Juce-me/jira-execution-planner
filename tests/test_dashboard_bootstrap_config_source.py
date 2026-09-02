@@ -52,6 +52,7 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
                 site_url=workspace.jira_site_url,
                 cloud_id=workspace.jira_cloud_id,
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
@@ -79,15 +80,23 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
                 workspace_id=workspace.id,
                 payload_version=1,
                 config_revision=3,
-                payload={'version': 1, 'epm': {
-                    'version': 2,
-                    'labelPrefix': 'rnd_project_*',
-                    'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-2']},
-                    'issueTypes': {'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story']},
-                    'projects': {'home-1': {'id': 'home-1', 'homeProjectId': 'home-1', 'name': 'Synthetic Project', 'label': 'rnd_project_synthetic'}},
-                }},
+                payload={
+                    'version': 1,
+                    'capacity': {'project': 'CAP', 'fieldId': 'customfield_10001', 'fieldName': 'Capacity'},
+                    'epm': {
+                        'version': 2,
+                        'labelPrefix': 'rnd_project_*',
+                        'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': ['GOAL-2']},
+                        'issueTypes': {'initiative': ['Initiative'], 'epic': ['Epic'], 'leaf': ['Story']},
+                        'projects': {'home-1': {'id': 'home-1', 'homeProjectId': 'home-1', 'name': 'Synthetic Project', 'label': 'rnd_project_synthetic'}},
+                    },
+                },
                 created_by=user.id,
                 updated_by=user.id,
+                capacity_jira_site_url='https://other.example.test',
+                capacity_jira_cloud_id='other-cloud',
+                capacity_field_schema_type='number',
+                capacity_field_verified_at=datetime.now(timezone.utc),
             )
             session.add_all([connection, view, shared])
             session.commit()
@@ -117,6 +126,9 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
         assert body['epm']['projects']['private-1']['label'] == 'private_label'
         assert body['sharedConfigRevision'] == 3
         assert 'epm' not in body['sharedConfig']
+        assert body['capacityProject'] == ''
+        assert body['capacityConfigRequiresResolution'] is True
+        assert body['capacityMutationEnabled'] is False
         assert body['viewConfig']['source'] == 'user_saved_view'
         assert body['viewConfig']['workspaceId'] == workspace_id
         assert body['viewConfig']['viewConfigId'] == view_id

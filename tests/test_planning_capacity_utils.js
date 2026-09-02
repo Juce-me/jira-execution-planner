@@ -350,6 +350,10 @@ test('buildSelected entries and capacity totals preserve display ordering and ze
             displayedTeamOptions: [{ id: 'team-a', name: 'Team A' }],
             selectedTeamStats: { 'team-a': { storyPoints: 7 } },
             capacityEnabled: true,
+            capacityByTeam: { 'team a': 10 },
+            capacityTargetsByTeam: {
+                'team a': { state: 'matched', issueKey: 'CAP-1', teamName: 'Team A', capacity: 10 }
+            },
             getTeamCapacity: () => 10,
             getTeamNetCapacity: () => 8,
             capacityMultiplier: 0.7
@@ -359,7 +363,465 @@ test('buildSelected entries and capacity totals preserve display ordering and ze
             name: 'Team A',
             storyPoints: 7,
             teamCapacity: 7,
-            planningCapacity: 5.6
+            planningCapacity: 5.6,
+            rawCapacity: 10,
+            hasCapacityValue: true,
+            capacityIssueKey: 'CAP-1',
+            capacityTargetTeamName: 'Team A',
+            capacityTargetCapacity: 10,
+            capacityTargetState: 'matched'
         }]
     );
+});
+
+test('buildCapacityReadState preserves zero and groups exact Jira targets without guessing duplicates', async () => {
+    const { buildCapacityReadState } = await loadUtils();
+
+    const state = buildCapacityReadState({
+        mutationEnabled: true,
+        capacities: { Alpha: 0, Beta: 5, Invalid: '7', Infinite: Infinity },
+        entries: [
+            { teamName: 'Alpha', issueKey: 'CAP-101', capacity: 0 },
+            { teamName: 'Alpha', issueKey: 'CAP-101', capacity: 0 },
+            { teamName: 'Beta', issueKey: 'CAP-102', capacity: 5 },
+            { teamName: 'Beta', issueKey: 'CAP-103', capacity: 6 },
+            { teamName: 'Gamma', issueKey: 'CAP-104', capacity: null },
+            { teamName: '', issueKey: 'CAP-105', capacity: 9 },
+            { teamName: 'Delta', issueKey: '', capacity: 9 },
+        ],
+    });
+
+    assert.deepEqual(state.capacityByTeam, { alpha: 0, beta: 5 });
+    assert.equal(state.capacityIssueCount, 4);
+    assert.equal(state.mutationEnabled, true);
+    assert.deepEqual(state.capacityTargetsByTeam.alpha, {
+        state: 'matched',
+        issueKey: 'CAP-101',
+        teamName: 'Alpha',
+        capacity: 0,
+    });
+    assert.deepEqual(state.capacityTargetsByTeam.beta, { state: 'ambiguous' });
+    assert.deepEqual(state.capacityTargetsByTeam.gamma, {
+        state: 'matched',
+        issueKey: 'CAP-104',
+        teamName: 'Gamma',
+        capacity: null,
+    });
+
+    for (const mutationEnabled of [false, undefined, 1, 'true', null]) {
+        assert.equal(buildCapacityReadState({ mutationEnabled }).mutationEnabled, false);
+    }
+});
+
+test('capacity resolvers use exact normalized matches and only one containment fallback', async () => {
+    const {
+        resolveUniqueCapacityTarget,
+        resolveUniqueCapacityValue,
+    } = await loadUtils();
+    const values = { alpha: 3, 'alpha core': 5 };
+    const targets = {
+        alpha: { state: 'matched', issueKey: 'CAP-1', teamName: 'Alpha', capacity: null },
+        'alpha core': { state: 'matched', issueKey: 'CAP-2', teamName: 'Alpha Core', capacity: 5 },
+    };
+
+    assert.deepEqual(resolveUniqueCapacityValue(values, 'R&D Alpha'), { matched: true, value: 3 });
+    assert.deepEqual(resolveUniqueCapacityValue(values, 'Core'), { matched: true, value: 5 });
+    assert.deepEqual(resolveUniqueCapacityValue(values, 'Alpha Core Platform'), { matched: false, value: null });
+    assert.deepEqual(resolveUniqueCapacityValue({ 'alpha core': 0 }, 'Alpha'), { matched: true, value: 0 });
+    assert.deepEqual(resolveUniqueCapacityTarget(targets, 'Product - Alpha'), targets.alpha);
+    assert.deepEqual(resolveUniqueCapacityTarget(targets, 'Alpha Core Platform'), { state: 'ambiguous' });
+    assert.deepEqual(resolveUniqueCapacityTarget({}, 'Alpha'), { state: 'missing' });
+});
+
+test('buildSelectedTeamEntries separates numeric display capacity from exact mutation targets', async () => {
+    const { buildSelectedTeamEntries, resolveUniqueCapacityValue } = await loadUtils();
+    const capacityByTeam = { 'alpha core': 5, beta: 0 };
+    const capacityTargetsByTeam = {
+        alpha: { state: 'matched', issueKey: 'CAP-1', teamName: 'Alpha', capacity: null },
+        beta: { state: 'ambiguous' },
+    };
+    const getTeamCapacity = (name) => {
+        const resolved = resolveUniqueCapacityValue(capacityByTeam, name);
+        return resolved.matched ? resolved.value : 0;
+    };
+
+    assert.deepEqual(buildSelectedTeamEntries({
+        showPlanning: true,
+        displayedTeamOptions: [
+            { id: 'alpha', name: 'Alpha' },
+            { id: 'beta', name: 'Beta' },
+            { id: 'missing', name: 'Missing' },
+        ],
+        selectedTeamStats: {},
+        capacityEnabled: true,
+        capacityByTeam,
+        capacityTargetsByTeam,
+        getTeamCapacity,
+        getTeamNetCapacity: team => getTeamCapacity(team.name),
+        capacityMultiplier: 0.7,
+    }), [
+        {
+            id: 'alpha', name: 'Alpha', storyPoints: 0,
+            teamCapacity: 3.5, planningCapacity: 3.5,
+            rawCapacity: 5, hasCapacityValue: true,
+            capacityIssueKey: 'CAP-1', capacityTargetTeamName: 'Alpha',
+            capacityTargetCapacity: null, capacityTargetState: 'matched',
+        },
+        {
+            id: 'beta', name: 'Beta', storyPoints: 0,
+            teamCapacity: 0, planningCapacity: 0,
+            rawCapacity: 0, hasCapacityValue: true,
+            capacityIssueKey: '', capacityTargetTeamName: '',
+            capacityTargetCapacity: null, capacityTargetState: 'ambiguous',
+        },
+        {
+            id: 'missing', name: 'Missing', storyPoints: 0,
+            teamCapacity: 0, planningCapacity: 0,
+            rawCapacity: null, hasCapacityValue: false,
+            capacityIssueKey: '', capacityTargetTeamName: '',
+            capacityTargetCapacity: null, capacityTargetState: 'missing',
+        },
+    ]);
+});
+
+test('applyCapacitySaveResult immutably updates only an exact canonical issue target', async () => {
+    const { applyCapacitySaveResult } = await loadUtils();
+    const state = {
+        capacityByTeam: { alpha: 5, beta: 8 },
+        capacityTargetsByTeam: {
+            alpha: { state: 'matched', issueKey: 'CAP-1', teamName: 'Alpha', capacity: 5 },
+            beta: { state: 'matched', issueKey: 'CAP-2', teamName: 'Beta', capacity: 8 },
+        },
+        mutationEnabled: true,
+        scopeSignature: 'scope-a',
+    };
+
+    const updated = applyCapacitySaveResult(state, { issueKey: 'CAP-1', teamName: 'R&D Alpha', capacity: 0 });
+    assert.notEqual(updated, state);
+    assert.notEqual(updated.capacityByTeam, state.capacityByTeam);
+    assert.notEqual(updated.capacityTargetsByTeam, state.capacityTargetsByTeam);
+    assert.deepEqual(updated.capacityByTeam, { alpha: 0, beta: 8 });
+    assert.deepEqual(updated.capacityTargetsByTeam.alpha, {
+        state: 'matched', issueKey: 'CAP-1', teamName: 'Alpha', capacity: 0,
+    });
+    assert.equal(updated.mutationEnabled, true);
+    assert.equal(updated.scopeSignature, 'scope-a');
+    assert.equal(state.capacityByTeam.alpha, 5);
+    assert.equal(applyCapacitySaveResult(state, { issueKey: 'CAP-X', teamName: 'Alpha', capacity: 9 }), state);
+    assert.equal(applyCapacitySaveResult(state, { issueKey: 'CAP-1', teamName: 'Alpha Core', capacity: 9 }), state);
+    assert.equal(applyCapacitySaveResult(state, { issueKey: 'CAP-1', teamName: 'Alpha', capacity: Infinity }), state);
+});
+
+test('parseCapacityDraft accepts finite non-negative numbers without coercing blank input to zero', async () => {
+    const { parseCapacityDraft } = await loadUtils();
+    const cases = [
+        ['', false, null], ['-', false, null], ['-1', false, null],
+        ['Infinity', false, null], ['abc', false, null],
+        ['0', true, 0], ['-0', true, 0], ['5.5', true, 5.5], ['1e2', true, 100],
+    ];
+    for (const [text, valid, value] of cases) {
+        assert.deepEqual(parseCapacityDraft(text), { valid, value });
+    }
+});
+
+test('capacity share labels describe only one-sided planning filters', async () => {
+    const { getCapacityShareLabel } = await loadUtils();
+    const split = { product: 0.7, tech: 0.3 };
+
+    assert.equal(getCapacityShareLabel({ showProduct: true, showTech: false, capacitySplit: split }), 'Planning Product share 70%');
+    assert.equal(getCapacityShareLabel({ showProduct: false, showTech: true, capacitySplit: split }), 'Planning Tech share 30%');
+    assert.equal(getCapacityShareLabel({ showProduct: true, showTech: true, capacitySplit: split }), '');
+    assert.equal(getCapacityShareLabel({ showProduct: false, showTech: false, capacitySplit: split }), '');
+});
+
+function createDeferred() {
+    let resolve;
+    let reject;
+    const promise = new Promise((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+}
+
+function createFakeAbortController() {
+    return {
+        signal: { aborted: false },
+        abort() {
+            this.signal.aborted = true;
+        },
+    };
+}
+
+function createCapacityReadModel(scopeSignature = '') {
+    return {
+        capacityState: {
+            capacityByTeam: {},
+            capacityTargetsByTeam: {},
+            capacityIssueCount: null,
+            mutationEnabled: false,
+            scopeSignature,
+        },
+        capacityLoading: false,
+        capacityReadRevision: 0,
+        capacityReadError: '',
+        capacityDataStale: false,
+    };
+}
+
+async function startDeferredCapacityRead({
+    utils,
+    ownershipRefs,
+    modelRef,
+    deferred,
+    scopeSignature,
+    sprintName = 'Sprint 1',
+    teams = ['Alpha'],
+    capacityEnabled = true,
+    showPlanning = true,
+}) {
+    const ownership = utils.beginCapacityReadOwnership({
+        ...ownershipRefs,
+        scopeSignature,
+        sprintName,
+        teams,
+        capacityEnabled,
+        showPlanning,
+        createAbortController: createFakeAbortController,
+    });
+    modelRef.current = utils.reduceCapacityReadLifecycle(modelRef.current, {
+        type: ownership.shouldFetch ? 'start' : 'gate',
+        scopeSignature,
+    });
+    const settled = ownership.shouldFetch
+        ? deferred.promise.then(
+            payload => {
+                if (!ownership.isCurrent()) return;
+                modelRef.current = utils.reduceCapacityReadLifecycle(modelRef.current, {
+                    type: 'success',
+                    scopeSignature,
+                    payload,
+                });
+            },
+            error => {
+                if (error?.name === 'AbortError' || !ownership.isCurrent()) return;
+                modelRef.current = utils.reduceCapacityReadLifecycle(modelRef.current, {
+                    type: 'failure',
+                    scopeSignature,
+                });
+            },
+        )
+        : Promise.resolve();
+    return { ownership, settled };
+}
+
+test('capacity scope signatures distinguish normalized team arrays containing delimiters', async () => {
+    const { beginCapacityReadOwnership, buildCapacityScopeSignature } = await loadUtils();
+
+    const left = buildCapacityScopeSignature('Sprint 1', ['A', 'B|C']);
+    const right = buildCapacityScopeSignature('Sprint 1', ['A|B', 'C']);
+
+    assert.notEqual(left, right);
+    assert.equal(left, buildCapacityScopeSignature('Sprint 1', [' b|c ', 'R&D A', 'A']));
+
+    const ownershipRefs = {
+        generationRef: { current: 0 },
+        abortRef: { current: null },
+        activeScopeRef: { current: left },
+    };
+    const first = beginCapacityReadOwnership({
+        ...ownershipRefs,
+        scopeSignature: left,
+        sprintName: 'Sprint 1',
+        teams: ['A', 'B|C'],
+        capacityEnabled: true,
+        showPlanning: true,
+        createAbortController: createFakeAbortController,
+    });
+    ownershipRefs.activeScopeRef.current = right;
+    const second = beginCapacityReadOwnership({
+        ...ownershipRefs,
+        scopeSignature: right,
+        sprintName: 'Sprint 1',
+        teams: ['A|B', 'C'],
+        capacityEnabled: true,
+        showPlanning: true,
+        createAbortController: createFakeAbortController,
+    });
+
+    assert.equal(first.controller.signal.aborted, true);
+    assert.equal(first.isCurrent(), false);
+    assert.equal(second.isCurrent(), true);
+    second.cleanup();
+});
+
+test('deferred capacity save updater rejects an old scope even when issue and team identities match', async () => {
+    const { applyCapacitySaveResultForScope } = await loadUtils();
+    const activeScopeRef = { current: 'scope-a' };
+    const result = { scopeSignature: 'scope-a', issueKey: 'CAP-1', teamName: 'Alpha', capacity: 9 };
+    const deferredUpdater = previous => applyCapacitySaveResultForScope(
+        previous,
+        result,
+        activeScopeRef.current,
+    );
+    const newScopeStateWithMatchingIdentity = {
+        capacityByTeam: { alpha: 5 },
+        capacityTargetsByTeam: {
+            alpha: { state: 'matched', issueKey: 'CAP-1', teamName: 'Alpha', capacity: 5 },
+        },
+        mutationEnabled: true,
+        scopeSignature: 'scope-b',
+    };
+
+    activeScopeRef.current = 'scope-b';
+    assert.equal(deferredUpdater(newScopeStateWithMatchingIdentity), newScopeStateWithMatchingIdentity);
+
+    activeScopeRef.current = 'scope-a';
+    const currentScopeState = { ...newScopeStateWithMatchingIdentity, scopeSignature: 'scope-a' };
+    assert.equal(deferredUpdater(currentScopeState).capacityByTeam.alpha, 9);
+});
+
+test('capacity read ownership rejects stale completions after changed scope and unmount invalidation', async () => {
+    const utils = await loadUtils();
+    const ownershipRefs = {
+        generationRef: { current: 0 },
+        abortRef: { current: null },
+        activeScopeRef: { current: 'scope-a' },
+    };
+    const modelRef = { current: createCapacityReadModel() };
+    const firstDeferred = createDeferred();
+    const first = await startDeferredCapacityRead({
+        utils, ownershipRefs, modelRef, deferred: firstDeferred, scopeSignature: 'scope-a',
+    });
+    assert.equal(modelRef.current.capacityLoading, true);
+
+    ownershipRefs.activeScopeRef.current = 'scope-b';
+    const secondDeferred = createDeferred();
+    const second = await startDeferredCapacityRead({
+        utils, ownershipRefs, modelRef, deferred: secondDeferred, scopeSignature: 'scope-b',
+    });
+    assert.equal(first.ownership.controller.signal.aborted, true);
+    firstDeferred.resolve({ enabled: true, capacities: { Alpha: 99 } });
+    await first.settled;
+    assert.equal(modelRef.current.capacityState.scopeSignature, 'scope-b');
+    assert.equal(modelRef.current.capacityReadRevision, 0);
+
+    second.ownership.cleanup();
+    secondDeferred.resolve({ enabled: true, capacities: { Alpha: 7 } });
+    await second.settled;
+    assert.equal(modelRef.current.capacityReadRevision, 0);
+    assert.equal(modelRef.current.capacityLoading, true);
+});
+
+test('Planning-off, capacity-disabled, and sprint-cleared gates abort and clear lifecycle state', async () => {
+    const utils = await loadUtils();
+    for (const gate of [
+        { showPlanning: false, capacityEnabled: true, sprintName: 'Sprint 1', teams: ['Alpha'] },
+        { showPlanning: true, capacityEnabled: false, sprintName: 'Sprint 1', teams: ['Alpha'] },
+        { showPlanning: true, capacityEnabled: true, sprintName: '', teams: ['Alpha'] },
+    ]) {
+        const ownershipRefs = {
+            generationRef: { current: 0 },
+            abortRef: { current: null },
+            activeScopeRef: { current: 'scope-a' },
+        };
+        const modelRef = { current: createCapacityReadModel('scope-a') };
+        const pendingDeferred = createDeferred();
+        modelRef.current = utils.reduceCapacityReadLifecycle(modelRef.current, {
+            type: 'success', scopeSignature: 'scope-a',
+            payload: { enabled: true, capacities: { Alpha: 5 }, mutationEnabled: true },
+        });
+        const pending = await startDeferredCapacityRead({
+            utils, ownershipRefs, modelRef, deferred: pendingDeferred, scopeSignature: 'scope-a',
+        });
+        const gateDeferred = createDeferred();
+        const gated = await startDeferredCapacityRead({
+            utils, ownershipRefs, modelRef, deferred: gateDeferred, scopeSignature: 'scope-a', ...gate,
+        });
+
+        assert.equal(gated.ownership.shouldFetch, false);
+        assert.equal(pending.ownership.controller.signal.aborted, true);
+        assert.deepEqual(modelRef.current, {
+            ...createCapacityReadModel('scope-a'),
+            capacityReadRevision: 1,
+        });
+        pendingDeferred.resolve({ enabled: true, capacities: { Alpha: 99 } });
+        await pending.settled;
+        assert.deepEqual(modelRef.current, {
+            ...createCapacityReadModel('scope-a'),
+            capacityReadRevision: 1,
+        });
+    }
+});
+
+test('capacity failures preserve only same-scope numbers and retry success alone advances revision', async () => {
+    const utils = await loadUtils();
+    const scopeSignature = 'scope-a';
+    let model = createCapacityReadModel(scopeSignature);
+    model = utils.reduceCapacityReadLifecycle(model, {
+        type: 'success', scopeSignature,
+        payload: {
+            enabled: true,
+            capacities: { Alpha: 0, Beta: 5 },
+            entries: [{ teamName: 'Beta', issueKey: 'CAP-2', capacity: 5 }],
+            mutationEnabled: true,
+        },
+    });
+    assert.equal(model.capacityReadRevision, 1);
+
+    model = {
+        ...model,
+        capacityState: utils.applyCapacitySaveResultForScope(model.capacityState, {
+            scopeSignature,
+            issueKey: 'CAP-2',
+            teamName: 'Beta',
+            capacity: 7,
+        }, scopeSignature),
+    };
+    assert.equal(model.capacityState.capacityByTeam.beta, 7);
+    assert.equal(model.capacityReadRevision, 1);
+
+    model = utils.reduceCapacityReadLifecycle(model, { type: 'start', scopeSignature });
+    model = utils.reduceCapacityReadLifecycle(model, { type: 'failure', scopeSignature });
+    assert.deepEqual(model.capacityState.capacityByTeam, { alpha: 0, beta: 7 });
+    assert.deepEqual(model.capacityState.capacityTargetsByTeam, {});
+    assert.equal(model.capacityState.mutationEnabled, false);
+    assert.equal(model.capacityDataStale, true);
+    assert.equal(model.capacityReadError, 'Capacity could not be refreshed.');
+    assert.equal(model.capacityReadRevision, 1);
+
+    model = utils.reduceCapacityReadLifecycle(model, { type: 'start', scopeSignature });
+    assert.equal(model.capacityLoading, true);
+    model = utils.reduceCapacityReadLifecycle(model, {
+        type: 'success', scopeSignature,
+        payload: { enabled: true, capacities: { Alpha: 3 }, mutationEnabled: true },
+    });
+    assert.equal(model.capacityReadRevision, 2);
+    assert.equal(model.capacityReadError, '');
+    assert.equal(model.capacityDataStale, false);
+    assert.equal(model.capacityLoading, false);
+
+    const newScopeFailure = utils.reduceCapacityReadLifecycle(model, {
+        type: 'failure', scopeSignature: 'scope-b',
+    });
+    assert.deepEqual(newScopeFailure.capacityState.capacityByTeam, {});
+    assert.equal(newScopeFailure.capacityDataStale, false);
+    assert.equal(newScopeFailure.capacityReadRevision, 2);
+});
+
+test('only an enabled successful read records that zero Capacity issues were fetched', async () => {
+    const utils = await loadUtils();
+    const enabledEmpty = utils.reduceCapacityReadLifecycle(createCapacityReadModel('scope-a'), {
+        type: 'success',
+        scopeSignature: 'scope-a',
+        payload: { enabled: true, capacities: {}, entries: [], mutationEnabled: true },
+    });
+    assert.equal(enabledEmpty.capacityState.capacityIssueCount, 0);
+
+    const disabled = utils.reduceCapacityReadLifecycle(createCapacityReadModel('scope-a'), {
+        type: 'success',
+        scopeSignature: 'scope-a',
+        payload: { enabled: false, capacities: {}, entries: [], mutationEnabled: false },
+    });
+    assert.equal(disabled.capacityState.capacityIssueCount, null);
 });

@@ -103,6 +103,7 @@ from backend.services import priority_weights as _priority_weights_service
 from backend.services import team_catalog as _team_catalog_service
 from backend.services import group_config as _group_config_service
 from backend.services import group_board as _group_board_service
+from backend.services import shared_capacity_config as _shared_capacity_config_service
 from backend.services.eng_subtasks import build_embedded_subtask_summary
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
@@ -606,6 +607,8 @@ def current_request_auth_context():
             token_version=str(session_data.get('stored_at', '1')),
             account_status=session_data.get('account_status', ''),
             is_admin=is_pre_db_tool_admin_account(account_id),
+            granted_scopes=tuple(session_data.get('scope', '').split()) if session_data.get('scope_provenance') == 'provider' else (),
+            granted_scopes_verified=session_data.get('scope_provenance') == 'provider',
         )
     return RequestAuthContext(
         auth_mode=AUTH_MODE_BASIC,
@@ -1309,21 +1312,19 @@ def resolve_epic_link_field_id(headers, names_map=None, context=None):
         return None
 
 
-def resolve_capacity_field_id(headers, context=None):
+def resolve_capacity_field_id(headers, context=None, *, capacity_config):
     """Resolve the Jira custom field ID for Team capacity."""
     global CAPACITY_FIELD_CACHE
+    cap = capacity_config or {}
+    configured_field_id = str(cap.get('fieldId') or '').strip()
+    if configured_field_id:
+        return configured_field_id
+
     cache_enabled = jira_home_process_cache_enabled(_cache_policy_context(context))
     with _cache_lock:
         if cache_enabled and CAPACITY_FIELD_CACHE:
             return CAPACITY_FIELD_CACHE
-        cap = get_capacity_config()
-        if cap['fieldId']:
-            if cache_enabled:
-                CAPACITY_FIELD_CACHE = cap['fieldId']
-                return CAPACITY_FIELD_CACHE
-            return cap['fieldId']
-
-        field_name = cap['fieldName']
+        field_name = str(cap.get('fieldName') or '').strip()
         if not field_name:
             return None
 
@@ -1449,47 +1450,63 @@ def fetch_teams_from_jira_api():
     return teams
 
 
-def build_capacity_jql(sprint_name, team_names=None):
+def build_capacity_jql(sprint_name, team_names=None, *, capacity_project):
     return _capacity_service.build_capacity_jql(
         sprint_name,
         team_names,
-        capacity_project=get_effective_capacity_project(),
+        capacity_project=capacity_project,
     )
 
 
-def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None):
+def _load_capacity_config_for_operation(context, capacity_config):
+    if capacity_config is not None:
+        return capacity_config
+    if context is None:
+        context = _cache_policy_context()
+    if context is None:
+        return load_request_capacity_config(source='jsonfile')
+    return load_request_capacity_config(context)
+
+
+def fetch_capacity_for_sprint(sprint_name, headers, debug=False, team_names=None, *, context=None, capacity_config=None):
+    capacity_config = _load_capacity_config_for_operation(context, capacity_config)
+    capacity_field_id = resolve_capacity_field_id(headers, context=context, capacity_config=capacity_config)
     return _capacity_service.fetch_capacity_for_sprint(
         sprint_name,
         headers,
         debug=debug,
         team_names=team_names,
-        capacity_project=get_effective_capacity_project(),
-        resolve_capacity_field_id=resolve_capacity_field_id,
-        search_request=jira_search_request,
+        capacity_project=capacity_config.get('project'),
+        capacity_field_id=capacity_field_id,
+        mutation_enabled=capacity_config.get('mutationEnabled') is True,
+        search_request=lambda payload: jira_search_request(payload, context=context),
         build_capacity_jql_fn=build_capacity_jql,
         normalize_capacity_team_name_fn=normalize_capacity_team_name,
     )
 
 
-def fetch_watchers_count(issue_key):
+def fetch_watchers_count(issue_key, *, context=None):
     """Fetch watchers count for an issue (fallback if watches field is missing)."""
     return _capacity_service.fetch_watchers_count(
         issue_key,
-        current_jira_get=current_jira_get,
+        current_jira_get=lambda path, timeout=20: current_jira_get(path, timeout=timeout, context=context),
         log_warning_fn=log_warning,
         logger=logger,
     )
 
 
-def fetch_capacity_team_sizes(sprint_name, headers, team_names=None):
+def fetch_capacity_team_sizes(sprint_name, headers, team_names=None, *, context=None, capacity_config=None):
     """Fetch team sizes from Jira capacity issues (watchers count)."""
+    capacity_config = _load_capacity_config_for_operation(context, capacity_config)
+    if capacity_config.get('requiresResolution'):
+        return {}, {}
     return _capacity_service.fetch_capacity_team_sizes(
         sprint_name,
         headers,
         team_names=team_names,
-        capacity_project=get_effective_capacity_project(),
-        search_request=jira_search_request,
-        fetch_watchers_count=fetch_watchers_count,
+        capacity_project=capacity_config.get('project'),
+        search_request=lambda payload: jira_search_request(payload, context=context),
+        fetch_watchers_count=lambda issue_key: fetch_watchers_count(issue_key, context=context),
         build_capacity_jql_fn=build_capacity_jql,
         normalize_capacity_team_name_fn=normalize_capacity_team_name,
         log_warning_fn=log_warning,
@@ -1870,21 +1887,72 @@ def get_selected_projects_typed():
     return result
 
 
-def get_capacity_config():
-    """Return capacity config from dashboard config, falling back to env vars."""
-    config = load_dashboard_config()
-    if config and 'capacity' in config:
-        cap = config['capacity']
-        return {
-            'project': cap.get('project', ''),
-            'fieldId': cap.get('fieldId', ''),
-            'fieldName': cap.get('fieldName', ''),
-        }
+def _site_eligible_legacy_capacity_loader(context):
+    configured_site = _shared_capacity_config_service.normalize_site_url(JIRA_URL)
+    if configured_site != _shared_capacity_config_service.normalize_site_url(context.site_url):
+        return None
+    return _load_dashboard_config_json()
+
+
+def _load_json_capacity_config(context=None):
+    config = _load_dashboard_config_json() or {}
+    capacity = config.get('capacity') if isinstance(config, dict) else None
+    capacity = capacity if isinstance(capacity, dict) else {}
+    project = str(capacity.get('project') or CAPACITY_PROJECT or '').strip().upper()
+    field_id = str(capacity.get('fieldId') or CAPACITY_FIELD_ID or '').strip()
+    field_name = str(capacity.get('fieldName') or CAPACITY_FIELD_NAME or '').strip()
+    source = 'file' if capacity else ('env' if (CAPACITY_PROJECT or CAPACITY_FIELD_ID or CAPACITY_FIELD_NAME) else 'file')
+    attested = False
+    if context is not None and getattr(context, 'auth_mode', '') == AUTH_MODE_ATLASSIAN_OAUTH:
+        attested = (
+            str(capacity.get('fieldSchemaType') or '') == 'number'
+            and bool(capacity.get('fieldVerifiedAt'))
+            and _shared_capacity_config_service.normalize_site_url(capacity.get('verifiedSiteUrl'))
+                == _shared_capacity_config_service.normalize_site_url(context.site_url)
+            and str(capacity.get('verifiedCloudId') or '') == str(context.cloud_id or '')
+        )
     return {
-        'project': CAPACITY_PROJECT,
-        'fieldId': CAPACITY_FIELD_ID,
-        'fieldName': CAPACITY_FIELD_NAME,
+        'project': project,
+        'fieldId': field_id,
+        'fieldName': field_name,
+        'configRevision': None,
+        'source': source,
+        'requiresResolution': False,
+        'mutationEnabled': bool(project and field_id and attested),
     }
+
+
+def load_request_capacity_config(context=None, *, source='auto'):
+    """Resolve Capacity from workspace storage or the explicit JSON compatibility path."""
+    source = _normalize_dashboard_config_source(source)
+    if context is None:
+        if source != 'jsonfile':
+            raise ConfigStorageError('Capacity config without a request context requires source="jsonfile"')
+        return _load_json_capacity_config()
+    if source == 'jsonfile':
+        return _load_json_capacity_config(context)
+    if source == 'db':
+        if not is_db_auth_context(context):
+            raise ConfigStorageError('Capacity DB source requires a database-backed OAuth context')
+        return _shared_capacity_config_service.load_shared_capacity_config(
+            context,
+            fallback_loader=lambda: _site_eligible_legacy_capacity_loader(context),
+        )
+    if is_db_auth_context(context):
+        return _shared_capacity_config_service.load_shared_capacity_config(
+            context,
+            fallback_loader=lambda: _site_eligible_legacy_capacity_loader(context),
+        )
+    return _load_json_capacity_config(context)
+
+
+def get_capacity_config(context=None, *, source='auto'):
+    """Compatibility wrapper for the workspace-owned Capacity configuration."""
+    if context is None and has_request_context():
+        context = current_request_auth_context()
+    if context is None:
+        return load_request_capacity_config(source='jsonfile')
+    return load_request_capacity_config(context, source=source)
 
 
 def get_board_config(*, source='auto'):
@@ -2535,9 +2603,9 @@ def get_priority_weights_config():
     )
 
 
-def get_effective_capacity_project():
+def get_effective_capacity_project(context=None):
     """Return the effective capacity project name."""
-    return get_capacity_config()['project']
+    return get_capacity_config(context)['project']
 
 
 def parse_groups_config_env():
@@ -4062,11 +4130,17 @@ def scenario_planner():
                 normalized = normalize_capacity_team_name(name)
                 if normalized:
                     capacity_keys[name] = normalized
-            capacity_sizes, capacity_details = fetch_capacity_team_sizes(
-                sprint_label,
-                None,
-                team_names=sorted(set(capacity_keys.values()))
-            )
+            capacity_config = load_request_capacity_config(auth_context)
+            if capacity_config.get('requiresResolution'):
+                capacity_sizes = {}
+            else:
+                capacity_sizes, capacity_details = fetch_capacity_team_sizes(
+                    sprint_label,
+                    None,
+                    team_names=sorted(set(capacity_keys.values())),
+                    context=auth_context,
+                    capacity_config=capacity_config,
+                )
             scenario_config.team_sizes = {
                 name: capacity_sizes.get(norm)
                 for name, norm in capacity_keys.items()

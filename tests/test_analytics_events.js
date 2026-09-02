@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 async function loadAnalytics() {
     return import('../frontend/src/analytics/analytics.js');
@@ -561,6 +563,38 @@ test('api_result accepts the jira_issue_priorities surface', async () => {
     assert.equal(pushed[0].feature_name, 'eng_priority_changes');
 });
 
+test('api_result accepts jira_team_capacity with the existing bucketed API contract', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    trackApiResult('jira_team_capacity', {
+        featureName: 'planning_capacity_edit',
+        method: 'PATCH',
+        status: 409,
+        durationMs: 400,
+    });
+
+    assert.deepEqual(pushed, [{
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'api_result',
+        feature_name: 'planning_capacity_edit',
+        api_surface: 'jira_team_capacity',
+        method: 'PATCH',
+        status_bucket: '4xx',
+        result: 'failure',
+        duration_bucket: 'under_1s',
+        duration_ms: 400,
+        cache_state: 'unknown',
+    }]);
+});
+
 test('issue_priority_action pushes the eng priority transition contract through the dataLayer', async () => {
     const { initAnalytics, trackEvent } = await loadAnalytics();
     resetDom();
@@ -1000,9 +1034,98 @@ test('tracked fetch does not let analytics validation failures affect API fetch'
     delete global.fetch;
 });
 
+test('tracked fetch suppresses intended abort telemetry but retains network failures', async () => {
+    const { trackedFetch } = await loadHttp();
+    const analytics = await loadAnalytics();
+    const { initAnalytics } = analytics;
+    resetDom();
+    globalThis.JepAnalytics = analytics;
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+
+    global.fetch = async () => {
+        const error = new Error('scope cancelled');
+        error.name = 'AbortError';
+        throw error;
+    };
+    await assert.rejects(
+        () => trackedFetch('jira_team_capacity', '/api/capacity', {}, {
+            featureName: 'planning_capacity_edit',
+            suppressAbortResult: true,
+        }),
+        { name: 'AbortError' },
+    );
+    assert.deepEqual(pushed, []);
+
+    global.fetch = async () => { throw new Error('network unavailable'); };
+    await assert.rejects(
+        () => trackedFetch('jira_team_capacity', '/api/capacity', {}, {
+            featureName: 'planning_capacity_edit',
+            suppressAbortResult: true,
+        }),
+        /network unavailable/,
+    );
+    assert.equal(pushed.length, 1);
+    assert.equal(pushed[0].event_name, 'api_result');
+    assert.equal(pushed[0].status_bucket, '0');
+    assert.equal(pushed[0].result, 'failure');
+    delete global.fetch;
+    delete globalThis.JepAnalytics;
+});
+
 async function loadDashboardAnalytics() {
     return import('../frontend/src/analytics/dashboardAnalytics.js');
 }
+
+async function loadDashboardAnalyticsWithRecorder(events) {
+    const sourcePath = path.join(__dirname, '..', 'frontend', 'src', 'analytics', 'dashboardAnalytics.js');
+    const source = fs.readFileSync(sourcePath, 'utf8')
+        .replace("import * as JepAnalytics from './analytics.js';", '')
+        .replace('export const bucketCount = JepAnalytics.bucketCount;', 'const bucketCount = JepAnalytics.bucketCount;')
+        .replaceAll('export function ', 'function ');
+    const module = new Function('JepAnalytics', `${source}; return { useDashboardAnalytics };`)({
+        bucketCount: (value) => String(value),
+        initAnalytics: async () => ({ enabled: false }),
+        trackEvent: (eventName, payload) => events.push({ eventName, payload }),
+        trackApiResult: () => {},
+        trackPageview: () => {},
+    });
+    const React = {
+        useCallback: (callback) => callback,
+        useEffect: () => {},
+        useRef: (current) => ({ current }),
+        useState: (initial) => [initial, () => {}],
+    };
+    return module.useDashboardAnalytics(React, {
+        authMode: 'oauth', selectedView: 'eng', showPlanning: true,
+        showStats: false, showScenario: false, showBoard: false, serverConnectionError: '',
+    });
+}
+
+test('planning capacity workflow helper emits only fixed allowlisted payloads', async () => {
+    const events = [];
+    const { trackPlanningCapacityAction } = await loadDashboardAnalyticsWithRecorder(events);
+
+    trackPlanningCapacityAction('capacity_edit_open', { result: 'failure', issueKey: 'CAP-1' });
+    trackPlanningCapacityAction('capacity_change_submit', { teamName: 'Team Alpha' });
+    trackPlanningCapacityAction('capacity_change_result', { result: 'success', sprintName: 'Sprint Alpha' });
+    trackPlanningCapacityAction('capacity_change_result', { result: 'failure', jiraUrl: 'https://example.invalid/browse/CAP-1' });
+    trackPlanningCapacityAction('capacity_change_result', { result: 'conflict', expectedCapacity: 8 });
+    trackPlanningCapacityAction('capacity_change_result', { result: 'invalid' });
+    trackPlanningCapacityAction('unknown_action', { result: 'failure' });
+
+    assert.deepEqual(events, [
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_edit_open', source_surface: 'planning' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_submit', source_surface: 'planning' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning', result: 'success' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning', result: 'failure' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning', result: 'conflict' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning' } },
+    ]);
+});
 
 test('buildSortChangedParams produces correct ENG sort payload with source_surface=eng', async () => {
     const { buildSortChangedParams } = await loadDashboardAnalytics();

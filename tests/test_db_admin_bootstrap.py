@@ -51,6 +51,7 @@ class DbAdminBootstrapTests(unittest.TestCase):
                 site_url='https://example.atlassian.net',
                 cloud_id='cloud-123',
                 scopes=['read:me'],
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
             )

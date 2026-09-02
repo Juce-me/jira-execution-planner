@@ -199,11 +199,13 @@ def token_session_payload(token_data, resource, user_profile=None):
     user_profile = user_profile or {}
     now = int(time.time())
     expires_in = int(token_data.get("expires_in") or 0)
+    provider_reported_scope = isinstance(token_data, dict) and "scope" in token_data
     return {
         "access_token": token_data.get("access_token"),
         "refresh_token": token_data.get("refresh_token"),
         "expires_at": now + expires_in,
         "scope": token_data.get("scope") or "",
+        "scope_provenance": "provider" if provider_reported_scope else "unknown",
         "cloudid": resource.get("id"),
         "site_url": normalize_site_url(resource.get("url")),
         "site_name": resource.get("name"),
@@ -231,7 +233,11 @@ def refresh_oauth_token(config, session_data, http_post=requests.post):
     merged["access_token"] = token_data.get("access_token")
     merged["refresh_token"] = token_data.get("refresh_token") or refresh_token
     merged["expires_at"] = int(time.time()) + expires_in
-    merged["scope"] = token_data.get("scope") or merged.get("scope")
+    if "scope" in token_data:
+        merged["scope"] = token_data.get("scope") or ""
+        merged["scope_provenance"] = "provider"
+    else:
+        merged["scope_provenance"] = merged.get("scope_provenance") or "unknown"
     return merged
 
 

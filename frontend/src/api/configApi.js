@@ -102,8 +102,20 @@ export const fetchCapacityConfig = (backendUrl) =>
         cache: 'no-cache'
     });
 
+export const buildCapacityConfigPayload = (payload = {}) => {
+    const scoped = {
+        project: payload.project,
+        fieldId: payload.fieldId,
+        fieldName: payload.fieldName,
+    };
+    if (Number.isInteger(payload.baseRevision)) {
+        scoped.baseRevision = payload.baseRevision;
+    }
+    return scoped;
+};
+
 export const saveCapacityConfig = (backendUrl, payload, baseRevision) =>
-    postWorkspaceConfig(backendUrl, '/api/capacity/config', { ...payload, baseRevision });
+    postWorkspaceConfig(backendUrl, '/api/capacity/config', buildCapacityConfigPayload({ ...payload, baseRevision }));
 
 export const fetchFieldConfig = (backendUrl, endpoint) =>
     apiFetch(`${backendUrl}/api/${endpoint}/config`, {

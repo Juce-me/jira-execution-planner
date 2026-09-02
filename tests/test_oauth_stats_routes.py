@@ -59,8 +59,12 @@ class OAuthStatsRouteTests(unittest.TestCase):
 
     def test_capacity_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
-             patch.object(jira_server, "resolve_capacity_field_id", return_value="customfield_capacity"), \
+             patch.object(jira_server, "load_request_capacity_config", return_value={
+                 'project': 'CAP', 'fieldId': 'customfield_capacity', 'fieldName': 'Capacity',
+                 'requiresResolution': False, 'mutationEnabled': True,
+             }), \
+             patch.object(jira_server, "get_effective_capacity_project", side_effect=AssertionError('legacy capacity resolver must not be used')), \
+             patch.object(jira_server, "get_capacity_config", side_effect=AssertionError('private capacity config must not be used')), \
              patch.object(jira_server, "current_jira_search", return_value=FakeResponse(200, {
                  "issues": [{
                      "key": "CAP-1",
@@ -75,16 +79,171 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["enabled"], True)
         self.assertEqual(response.get_json()["capacities"], {"Alpha": 5.0})
+        self.assertEqual(response.get_json()['entries'], [{'teamName': 'Alpha', 'issueKey': 'CAP-1', 'capacity': 5.0}])
+        self.assertTrue(response.get_json()['mutationEnabled'])
         mock_search.assert_called()
 
     def test_planned_capacity_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
-             patch.object(jira_server, "fetch_capacity_for_sprint", return_value=({"enabled": True, "capacities": {}}, None)) as mock_fetch:
+             patch.object(jira_server, 'load_request_capacity_config', return_value={
+                 'project': 'CAP', 'fieldId': 'customfield_capacity', 'requiresResolution': False, 'mutationEnabled': False,
+             }), \
+             patch.object(jira_server, "get_effective_capacity_project", side_effect=AssertionError('legacy capacity resolver must not be used')), \
+             patch.object(jira_server, "fetch_capacity_for_sprint", return_value=({
+                 'enabled': True, 'capacities': {}, 'entries': [], 'mutationEnabled': False,
+             }, None)) as mock_fetch:
             response = self.client.get("/api/planned-capacity?sprint=2026Q2")
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        mock_fetch.assert_called_once_with("2026Q2", None, debug=False, team_names=[])
+        self.assertEqual(response.get_json()['entries'], [])
+        mock_fetch.assert_called_once()
+
+    def test_capacity_routes_map_unresolved_and_failed_reads_without_upstream_text(self):
+        unresolved = {'project': '', 'fieldId': '', 'requiresResolution': True, 'mutationEnabled': False}
+        for route in ('/api/capacity?sprint=2026Q2', '/api/planned-capacity?sprint=2026Q2'):
+            with self.subTest(route=route), patch.object(jira_server, 'load_request_capacity_config', return_value=unresolved):
+                response = self.client.get(route)
+            self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+            self.assertEqual(response.get_json()['error'], 'capacity_config_conflict')
+
+        active = {'project': 'CAP', 'fieldId': 'customfield_capacity', 'requiresResolution': False, 'mutationEnabled': False}
+        for route in ('/api/capacity?sprint=2026Q2', '/api/planned-capacity?sprint=2026Q2'):
+            with self.subTest(route=route, failure='upstream'), \
+                 patch.object(jira_server, 'load_request_capacity_config', return_value=active), \
+                 patch.object(jira_server, 'current_jira_search', return_value=FakeResponse(500, {'detail': 'synthetic-secret-like-value'})):
+                response = self.client.get(route)
+            self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+            self.assertEqual(response.get_json(), {
+                'error': 'jira_capacity_fetch_failed',
+                'message': 'Capacity could not be loaded from Jira.',
+            })
+            self.assertNotIn('synthetic-secret-like-value', response.get_data(as_text=True))
+
+        for route in ('/api/capacity?sprint=2026Q2', '/api/planned-capacity?sprint=2026Q2'):
+            with self.subTest(route=route, failure='exception'), \
+                 patch.object(jira_server, 'load_request_capacity_config', return_value=active), \
+                 patch.object(jira_server, 'current_jira_search', side_effect=RuntimeError('synthetic-secret-like-exception')):
+                response = self.client.get(route)
+            self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+            self.assertEqual(response.get_json(), {
+                'error': 'jira_capacity_fetch_failed',
+                'message': 'Capacity could not be loaded from Jira.',
+            })
+            self.assertNotIn('synthetic-secret-like-exception', response.get_data(as_text=True))
+
+    def test_capacity_route_maps_raw_401_on_first_and_later_search_pages_to_login(self):
+        active = {
+            'project': 'CAP', 'fieldId': 'customfield_capacity',
+            'requiresResolution': False, 'mutationEnabled': False,
+        }
+        expected = {
+            'error': 'auth_required',
+            'message': 'Your Jira sign-in expired. Sign in again to continue.',
+            'loginUrl': '/login?reason=session_expired',
+        }
+        for failing_page in (1, 2):
+            install_oauth_session(self.client)
+            calls = []
+
+            def search_request(_payload, **_kwargs):
+                calls.append(_payload)
+                if len(calls) == failing_page:
+                    return FakeResponse(401, {'detail': 'synthetic-secret-upstream-detail'})
+                return FakeResponse(200, {
+                    'issues': [],
+                    'isLast': False,
+                    'nextPageToken': 'synthetic-page-2',
+                })
+
+            with self.subTest(failing_page=failing_page), \
+                 patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                 patch.object(jira_server, 'load_request_capacity_config', return_value=active), \
+                 patch.object(jira_server, 'current_jira_search', side_effect=search_request):
+                response = self.client.get('/api/capacity?sprint=2026Q2')
+
+            self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+            self.assertEqual(response.get_json(), expected)
+            self.assertNotIn('secret', response.get_data(as_text=True))
+            self.assertEqual(len(calls), failing_page)
+
+    def test_basic_capacity_route_keeps_raw_401_on_fixed_jira_failure_contract(self):
+        active = {
+            'project': 'CAP', 'fieldId': 'customfield_capacity',
+            'requiresResolution': False, 'mutationEnabled': False,
+        }
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'load_request_capacity_config', return_value=active), \
+             patch.object(jira_server, 'current_jira_search', return_value=FakeResponse(
+                 401, {'detail': 'synthetic-secret-upstream-detail'},
+             )):
+            response = self.client.get('/api/capacity?sprint=2026Q2')
+
+        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {
+            'error': 'jira_capacity_fetch_failed',
+            'message': 'Capacity could not be loaded from Jira.',
+        })
+        self.assertNotIn('secret', response.get_data(as_text=True))
+
+    def test_capacity_route_returns_disabled_shape_when_project_missing(self):
+        with patch.object(jira_server, 'load_request_capacity_config', return_value={
+            'project': '', 'fieldId': '', 'requiresResolution': False, 'mutationEnabled': False,
+        }):
+            response = self.client.get('/api/capacity?sprint=2026Q2')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {
+            'enabled': False,
+            'capacities': {},
+            'entries': [],
+            'mutationEnabled': False,
+        })
+
+    def test_capacity_wrappers_use_loaded_shared_config_and_explicit_context(self):
+        context = RequestAuthContext(
+            auth_mode='atlassian_oauth', user_id='user-1', stable_subject='user-1', atlassian_account_id='user-1',
+            workspace_id='workspace-1', auth_connection_id='connection-1', cloud_id='cloud-1',
+            site_url='https://example.atlassian.net', token_version='1', account_status='active', is_admin=True,
+        )
+        config = {'project': 'CAP', 'fieldId': 'customfield_capacity', 'fieldName': 'Capacity', 'requiresResolution': False, 'mutationEnabled': True}
+        response = FakeResponse(200, {'issues': [{
+            'key': 'CAP-1',
+            'fields': {'summary': 'Team info 2026Q2 - Alpha', 'customfield_capacity': 5, 'watches': {'watchCount': 3}, 'reporter': {}},
+        }]})
+        with patch.object(jira_server, 'load_request_capacity_config', return_value=config), \
+             patch.object(jira_server, 'get_effective_capacity_project', side_effect=AssertionError('legacy capacity resolver must not be used')), \
+             patch.object(jira_server, 'get_capacity_config', side_effect=AssertionError('private capacity config must not be used')), \
+             patch.object(jira_server, 'current_jira_search', return_value=response) as mock_search:
+            payload, error = jira_server.fetch_capacity_for_sprint('2026Q2', None, context=context)
+            sizes, details = jira_server.fetch_capacity_team_sizes('2026Q2', None, context=context)
+
+        self.assertIsNone(error)
+        self.assertEqual(payload['entries'][0]['issueKey'], 'CAP-1')
+        self.assertEqual(sizes, {'Alpha': 3})
+        self.assertEqual(details['Alpha']['issue_key'], 'CAP-1')
+        self.assertTrue(all(call.kwargs['context'] is context for call in mock_search.call_args_list))
+        self.assertEqual(
+            jira_server.build_capacity_jql('2026Q2', ['Alpha'], capacity_project='CAP'),
+            'project = "CAP" AND (summary ~ "\\"Team info 2026Q2 - Alpha\\"")',
+        )
+
+    def test_scenario_skips_capacity_enrichment_for_unresolved_shared_config(self):
+        unresolved = {'project': '', 'fieldId': '', 'requiresResolution': True, 'mutationEnabled': False}
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, 'load_request_capacity_config', return_value=unresolved), \
+             patch.object(jira_server, 'get_effective_capacity_project', side_effect=AssertionError('legacy capacity resolver must not be used')), \
+             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
+             patch.object(jira_server, "resolve_epic_link_field_id", return_value=None), \
+             patch.object(jira_server, "fetch_issues_by_jql", return_value=[]), \
+             patch.object(jira_server, "collect_dependencies", return_value={}), \
+             patch.object(jira_server, "fetch_capacity_team_sizes", side_effect=AssertionError('unresolved capacity must skip enrichment')):
+            response = self.client.post(
+                "/api/scenario",
+                headers={"X-Requested-With": "jira-execution-planner"},
+                json={"filters": {"sprint": "2026Q2"}, "config": {}},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
     def test_stats_route_bypasses_file_cache_for_oauth(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \

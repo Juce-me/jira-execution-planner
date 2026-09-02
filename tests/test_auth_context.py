@@ -5,9 +5,36 @@ from backend.auth.context import (
     build_auth_cache_key,
     stable_local_workspace_id,
 )
+from backend.auth.scope_policy import missing_context_oauth_scopes
 
 
 class AuthContextTests(unittest.TestCase):
+    def test_context_scope_check_normalizes_tuples_and_fails_closed_without_provenance(self):
+        verified = RequestAuthContext(
+            auth_mode="oauth", user_id="user-1", stable_subject="subject-1",
+            atlassian_account_id="atlassian-1", workspace_id="workspace-1",
+            auth_connection_id="connection-1", cloud_id="cloud-1",
+            site_url="https://example.atlassian.net", token_version="7",
+            account_status="active", is_admin=False,
+            granted_scopes=(" read:me ", "write:jira-work"),
+            granted_scopes_verified=True,
+        )
+        unknown = RequestAuthContext(
+            auth_mode="oauth", user_id="user-1", stable_subject="subject-1",
+            atlassian_account_id="atlassian-1", workspace_id="workspace-1",
+            auth_connection_id="connection-1", cloud_id="cloud-1",
+            site_url="https://example.atlassian.net", token_version="7",
+            account_status="active", is_admin=False,
+            granted_scopes=("read:me", "write:jira-work"),
+            granted_scopes_verified=False,
+        )
+
+        self.assertEqual(missing_context_oauth_scopes(verified, "read:me write:jira-work"), set())
+        self.assertEqual(missing_context_oauth_scopes(verified, {"delete:jira-work"}), {"delete:jira-work"})
+        self.assertEqual(
+            missing_context_oauth_scopes(unknown, {"read:me", "write:jira-work"}),
+            {"read:me", "write:jira-work"},
+        )
     def test_stable_local_workspace_id_normalizes_site_and_changes_by_environment(self):
         self.assertEqual(
             stable_local_workspace_id("local", "https://example.atlassian.net/"),

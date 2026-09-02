@@ -6,7 +6,7 @@ from backend.auth.context import ProjectAccessSnapshot, RequestAuthContext
 from backend.auth.project_access import project_access_denied_response, upsert_project_access_snapshot
 from backend.db import models
 import jira_server
-from tests.oauth_test_helpers import install_oauth_session
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
 
 
 def auth_context(*, project_access):
@@ -23,6 +23,8 @@ def auth_context(*, project_access):
         account_status='active',
         is_admin=False,
         project_access=tuple(project_access),
+        granted_scopes=tuple(FULL_OAUTH_SCOPE.split()),
+        granted_scopes_verified=True,
     )
 
 

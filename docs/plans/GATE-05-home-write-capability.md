@@ -16,7 +16,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | --- | --- |
 | Status | Blocked |
 | Checked on | 2026-09-01 |
-| Last result | FAIL insufficient_home_write_probe_input (probe not run: all four operator inputs and an approved disposable Home project were unavailable; this plan adds no Home write path) |
+| Last result | FAIL insufficient_home_write_probe_input (probe not run: all four operator inputs and an approved disposable Home project were unavailable; Planning Capacity writes only to Jira through the signed-in user's OAuth context) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -129,6 +129,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-09-01: The Planning Capacity merge adds a signed-in-user Jira REST field write only. The required Home probe inputs and an approved disposable Home project remain unavailable, so no Home mutation probe was run. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-01: Execution baseline sweep confirmed the four `HOME_WRITE_PROBE_*` variables are not present, so no Home write mutation probe was run. This plan adds no Home/Townsquare write path or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 
 - 2026-08-31: Startup sweep rechecked the gate while making the multi-device browser-session and per-tab reauthentication plans implementation-ready. All four required `HOME_WRITE_PROBE_*` inputs and an approved disposable Home project remain unavailable, and the revision adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.

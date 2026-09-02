@@ -155,6 +155,14 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Ready for execution as a small frontend-only task suitable for a 5.3 coding model.
    - Expected output: the ENG/EPM segmented control is absent when EPM navigation is unavailable, remains a two-option control when EPM is available, and updates correctly after Home-token connection, revocation, or backend prerequisite changes. Existing availability, analytics, auth, request, and shared-control contracts remain unchanged.
 
+14. `SUPPORT-planning-capacity-editing-design.md`
+   - Approved interaction design and synthetic reference for Selected SP by Team capacity editing.
+   - Expected output: hover/focus Jira and pencil actions, one active editor, equal-height compact controls, Enter-to-save, explicit cancel, responsive/touch-safe cards, and no per-card lookup fan-out.
+
+15. `EXEC-planning-capacity-editing.md`
+   - Implemented and locally verified on 2026-09-01; retain as `EXEC-*` pending acceptance or merge.
+   - Delivers workspace-shared Capacity configuration, OAuth-only Jira field editing through the signed-in user, provider-verified scope enforcement, revision-aware saves, safe analytics, and responsive/sticky UI verification.
+
 ## Capacity Reporting Workflow
 
 1. `SUPPORT-excluded-capacity-control-row-design.md`

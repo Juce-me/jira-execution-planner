@@ -104,6 +104,7 @@ class DbAdminRoutesTests(unittest.TestCase):
                 site_url='https://example.atlassian.net',
                 cloud_id='cloud-123',
                 scopes=FULL_SCOPE.split(),
+                scope_provenance='provider',
                 status='active',
                 token_version=1,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
@@ -257,7 +258,10 @@ class DbAdminRoutesTests(unittest.TestCase):
             ('/api/issue-types/config', {'issueTypes': ['Story']}),
         ]
         revision = 0
-        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch('backend.routes.settings_routes.load_current_site_field_catalog', return_value=[{
+                 'id': 'customfield_1', 'name': 'Capacity', 'schema': {'type': 'number'},
+             }]):
             for route, body in routes:
                 headers = self._csrf_headers()
                 response = self.client.post(route, json={**body, 'baseRevision': revision}, headers=headers)

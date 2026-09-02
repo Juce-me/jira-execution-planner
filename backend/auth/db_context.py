@@ -9,7 +9,8 @@ from sqlalchemy import select
 
 from backend.auth.db_browser_sessions import resolve_browser_session
 from backend.auth.context import ProjectAccessSnapshot, RequestAuthContext
-from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError, missing_oauth_scopes
+from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
+from backend.auth.scope_policy import missing_context_oauth_scopes
 from backend.db import engine as db_engine
 from backend.db import models
 
@@ -134,10 +135,9 @@ def resolve_db_request_auth_context(
         session_token_version = str((session_data or {}).get('db_token_version') or '')
         if not browser_session_id and session_token_version != str(connection.token_version):
             raise AuthError('auth_connection_stale', 'Your Jira connection changed. Reconnect to continue.')
-        if missing_oauth_scopes({'scope': ' '.join(connection.scopes or [])}, required_scopes):
-            raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
-
-        return RequestAuthContext(
+        scopes_verified = connection.scope_provenance == 'provider'
+        granted_scopes = tuple(connection.scopes or []) if scopes_verified else ()
+        scope_context = RequestAuthContext(
             auth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
             user_id=user.id,
             stable_subject=user.external_subject,
@@ -151,4 +151,9 @@ def resolve_db_request_auth_context(
             is_admin=user.account_type == 'admin',
             project_access=_project_access(session, connection),
             browser_session_id=browser_session_id,
+            granted_scopes=granted_scopes,
+            granted_scopes_verified=scopes_verified,
         )
+        if missing_context_oauth_scopes(scope_context, required_scopes):
+            raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
+        return scope_context

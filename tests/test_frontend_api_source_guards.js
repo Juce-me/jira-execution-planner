@@ -424,6 +424,171 @@ test('ENG API module owns ENG task, backlog, and dependency endpoint constructio
     assert.ok(dashboardSource.includes("from './api/engApi.js'"), 'Expected dashboard to import ENG API wrappers');
 });
 
+test('capacity API module owns tracked capacity reads and writes instead of ENG API', () => {
+    const capacityApiPath = path.join(frontendSrcPath, 'api', 'capacityApi.js');
+    const engApiPath = path.join(frontendSrcPath, 'api', 'engApi.js');
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+
+    assert.ok(fs.existsSync(capacityApiPath), 'Expected frontend/src/api/capacityApi.js to exist');
+    const capacitySource = readSource(capacityApiPath);
+    const engSource = readSource(engApiPath);
+
+    assert.match(capacitySource, /import\s+\{\s*fetchCsrfToken\s*\}\s+from\s+'\.\/authApi\.js'/);
+    assert.equal(capacitySource.includes('fetchMutationCsrfToken'), false);
+    assert.equal(/new\s+Map\s*\(/.test(capacitySource), false);
+    assert.equal(engSource.includes('fetchCapacity'), false);
+    assert.equal(engSource.includes('/api/capacity'), false);
+    assert.ok(dashboardSource.includes("from './api/capacityApi.js'"), 'Expected dashboard to import the capacity API wrapper');
+});
+
+test('capacity API preserves scoped GET encoding and tracks capacity reads', async () => {
+    const calls = [];
+    const capacityApi = loadApiModule('capacityApi.js', ['fetchCapacity'], {
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            calls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ capacity: [] });
+        },
+    });
+    const signal = new AbortController().signal;
+
+    const response = await capacityApi.fetchCapacity('http://backend', {
+        sprintName: 'Sprint / A',
+        teams: ['Team One', 'Team/Two'],
+        signal,
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].apiSurface, 'jira_team_capacity');
+    assert.deepEqual(calls[0].analyticsParams, {
+        featureName: 'planning_capacity_edit',
+        suppressAbortResult: true,
+    });
+    const requestUrl = new URL(calls[0].url);
+    assert.equal(requestUrl.pathname, '/api/capacity');
+    assert.equal(requestUrl.searchParams.get('sprint'), 'Sprint / A');
+    assert.equal(requestUrl.searchParams.get('teams'), 'Team One,Team/Two');
+    assert.ok(requestUrl.searchParams.get('t'));
+    assert.equal(calls[0].options.method, 'GET');
+    assert.equal(calls[0].options.cache, 'no-cache');
+    assert.equal(calls[0].options.signal, signal);
+    assertJsonHeader(calls[0].options);
+});
+
+test('capacity update requests one fresh CSRF token per write and sends only the supported body', async () => {
+    const calls = [];
+    let csrfCalls = 0;
+    const capacityApi = loadApiModule('capacityApi.js', ['updateCapacity'], {
+        fetchCsrfToken: async () => ({ csrfToken: `csrf-${++csrfCalls}` }),
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            calls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ capacity: 12 });
+        },
+    });
+    const signal = new AbortController().signal;
+    const payload = {
+        sprintName: 'Sprint Alpha',
+        teamName: 'Team Alpha',
+        expectedCapacity: 8,
+        capacity: 12,
+        project: 'discarded-project',
+        fieldId: 'discarded-field',
+        jiraUrl: 'https://example.invalid/browse/CAP-1',
+        analytics: { unsafe: true },
+        arbitrary: 'discarded',
+    };
+
+    const [first, second] = await Promise.all([
+        capacityApi.updateCapacity('http://backend', 'CAP/ 1', payload, { signal }),
+        capacityApi.updateCapacity('http://backend', 'CAP/ 2', payload, { signal }),
+    ]);
+
+    assert.deepEqual(first, { capacity: 12 });
+    assert.deepEqual(second, { capacity: 12 });
+    assert.equal(csrfCalls, 2, 'each intentional write must independently fetch a one-time CSRF token');
+    assert.equal(calls.length, 2);
+    for (const [index, call] of calls.entries()) {
+        assert.equal(call.apiSurface, 'jira_team_capacity');
+        assert.deepEqual(call.analyticsParams, {
+            featureName: 'planning_capacity_edit',
+            suppressAbortResult: true,
+        });
+        assert.equal(new URL(call.url).pathname, index === 0 ? '/api/capacity/CAP%2F%201' : '/api/capacity/CAP%2F%202');
+        assert.equal(call.options.method, 'PATCH');
+        assert.equal(call.options.cache, 'no-cache');
+        assert.equal(call.options.signal, signal);
+        assertJsonHeader(call.options);
+        assert.equal(new Headers(call.options.headers).get('X-Requested-With'), 'jira-execution-planner');
+        assert.equal(new Headers(call.options.headers).get('X-CSRF-Token'), `csrf-${index + 1}`);
+        assert.deepEqual(JSON.parse(call.options.body), {
+            sprintName: 'Sprint Alpha',
+            teamName: 'Team Alpha',
+            expectedCapacity: 8,
+            capacity: 12,
+        });
+    }
+});
+
+test('capacity update error preserves only recoverable fields and a safe conflict capacity', async () => {
+    const capacityApi = loadApiModule('capacityApi.js', ['updateCapacity'], {
+        fetchCsrfToken: async () => ({ csrfToken: 'csrf-token' }),
+        trackedFetch: async () => ({
+            ok: false,
+            status: 409,
+            json: async () => ({
+                error: 'capacity_conflict',
+                message: 'raw backend message must not reach the UI',
+                loginUrl: '/auth/login',
+                recoveryUrl: '/auth/recover',
+                currentCapacity: 9,
+                issueKey: 'CAP-1',
+                teamName: 'Team Alpha',
+                unexpected: 'discarded',
+            }),
+        }),
+    });
+
+    await assert.rejects(
+        () => capacityApi.updateCapacity('http://backend', 'CAP-1', {
+            sprintName: 'Sprint Alpha', teamName: 'Team Alpha', expectedCapacity: 8, capacity: 9,
+        }),
+        (error) => {
+            assert.equal(error.message, 'capacity_conflict');
+            assert.equal(error.status, 409);
+            assert.equal(error.code, 'capacity_conflict');
+            assert.equal(error.loginUrl, '/auth/login');
+            assert.equal(error.recoveryUrl, '/auth/recover');
+            assert.equal(error.currentCapacity, 9);
+            assert.deepEqual(Object.keys(error).sort(), ['code', 'currentCapacity', 'loginUrl', 'recoveryUrl', 'status']);
+            return true;
+        },
+    );
+});
+
+test('capacity update error discards arbitrary response fields and unsafe conflict capacities', async () => {
+    const capacityApi = loadApiModule('capacityApi.js', ['updateCapacity'], {
+        fetchCsrfToken: async () => ({ csrfToken: 'csrf-token' }),
+        trackedFetch: async () => ({
+            ok: false,
+            status: 400,
+            json: async () => ({ error: 'invalid_capacity', message: 'raw', currentCapacity: -1, token: 'secret' }),
+        }),
+    });
+
+    await assert.rejects(
+        () => capacityApi.updateCapacity('http://backend', 'CAP-1', {
+            sprintName: 'Sprint Alpha', teamName: 'Team Alpha', expectedCapacity: 8, capacity: 9,
+        }),
+        (error) => {
+            assert.equal(error.message, 'invalid_capacity');
+            assert.equal(error.status, 400);
+            assert.equal(error.code, 'invalid_capacity');
+            assert.deepEqual(Object.keys(error).sort(), ['code', 'status']);
+            return true;
+        },
+    );
+});
+
 test('ENG API wrapper builds story subtask request with tracked analytics surface', async () => {
     const calls = [];
     const engApi = loadApiModule('engApi.js', [

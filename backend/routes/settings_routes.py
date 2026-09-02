@@ -9,6 +9,8 @@ from backend.config.repository import ConfigStorageError, config_storage_db_enab
 from backend.config.shared_config import normalize_shared_admin_section
 from backend.db.engine import DatabaseConfigurationError
 from backend.services import shared_group_config
+from backend.services import shared_capacity_config
+from backend.services.capacity import CapacityUpstreamUnauthorized
 from backend.services.user_view_config import UserViewConfigStorageError
 from backend.services.workspace_dashboard_config import WorkspaceConfigConflict, TeamCatalogConflict
 from . import bind_server_globals
@@ -114,6 +116,58 @@ def _shared_group_db_auth_context():
     if not is_db_auth_context(auth_context):
         return None
     return auth_context
+
+
+_CAPACITY_ALLOWED_FIELDS = {'project', 'fieldId', 'fieldName', 'baseRevision'}
+
+
+def _shared_capacity_db_auth_context():
+    if not config_storage_db_enabled():
+        return None
+    auth_context = current_request_auth_context()
+    return auth_context if is_db_auth_context(auth_context) else None
+
+
+def _capacity_payload_error(payload):
+    if not isinstance(payload, dict) or set(payload) - _CAPACITY_ALLOWED_FIELDS:
+        return 'invalid_capacity_config'
+    if any(
+        key in payload and payload.get(key) is not None and not isinstance(payload.get(key), str)
+        for key in ('project', 'fieldId', 'fieldName')
+    ):
+        return 'invalid_capacity_config'
+    if 'baseRevision' in payload and (
+        isinstance(payload.get('baseRevision'), bool)
+        or not isinstance(payload.get('baseRevision'), int)
+        or payload.get('baseRevision') < 0
+    ):
+        return 'invalid_capacity_config'
+    return None
+
+
+def load_current_site_field_catalog(context):
+    """Read the current user's Jira field catalog for Capacity attestation."""
+    try:
+        response = current_jira_request('GET', '/rest/api/3/field', timeout=20, context=context)
+        if response is None or response.status_code != 200:
+            if response is not None and response.status_code == 401:
+                raise CapacityUpstreamUnauthorized()
+            return None
+        fields = response.json()
+    except AuthError:
+        raise
+    except (CapacityUpstreamUnauthorized, ConfigStorageError, DatabaseConfigurationError):
+        raise
+    except Exception:
+        return None
+    return fields if isinstance(fields, list) else None
+
+
+def _clear_capacity_field_cache():
+    global CAPACITY_FIELD_CACHE
+    with _cache_lock:
+        _jira_server_module.CAPACITY_FIELD_CACHE = None
+        CAPACITY_FIELD_CACHE = None
 
 
 def _environment_dashboard_config_exists():
@@ -349,6 +403,7 @@ def get_config():
             )
         else:
             epm_config = get_epm_config(context=auth_context)
+        capacity_config = load_request_capacity_config(auth_context)
     except (ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError) as error:
         logger.error('Dashboard bootstrap EPM config read failed errorClass=%s', type(error).__name__)
         return jsonify({
@@ -360,7 +415,9 @@ def get_config():
     payload = {
         'jiraUrl': auth_context.site_url,
         'authMode': auth_context.auth_mode,
-        'capacityProject': get_effective_capacity_project(),
+        'capacityProject': capacity_config.get('project', ''),
+        'capacityConfigRequiresResolution': capacity_config.get('requiresResolution') is True,
+        'capacityMutationEnabled': capacity_config.get('mutationEnabled') is True,
         'boardId': board_cfg.get('boardId', ''),
         'boardName': board_cfg.get('boardName', ''),
         'boardConfigSource': board_cfg.get('source', 'default'),
@@ -983,8 +1040,13 @@ def save_selected_projects():
 @bp.route('/api/capacity/config', methods=['GET'])
 def get_capacity_config_endpoint():
     """Return current capacity configuration."""
-    cap = get_capacity_config()
-    return jsonify(_with_config_revision(cap))
+    try:
+        return jsonify(load_request_capacity_config(current_request_auth_context()))
+    except (ConfigStorageError, DatabaseConfigurationError):
+        return jsonify({
+            'error': 'config_storage_unavailable',
+            'message': 'Configuration storage is temporarily unavailable.',
+        }), 503
 
 
 @bp.route('/api/board-config', methods=['GET'])
@@ -1132,40 +1194,76 @@ def get_board_config_statuses():
 
 @bp.route('/api/capacity/config', methods=['POST'])
 def save_capacity_config_endpoint():
-    """Save capacity project and field configuration."""
-    payload = request.get_json(silent=True)
+    """Save the workspace-owned Capacity Project/field mapping."""
+    payload = request.get_json(silent=True) or {}
+    if _capacity_payload_error(payload):
+        return jsonify({'error': 'invalid_capacity_config'}), 400
     try:
-        base_revision = _parse_shared_write(payload, {'project', 'fieldId', 'fieldName'})
-    except ValueError as error:
-        return jsonify({'error': str(error)}), 400
-    try:
-        capacity_value = normalize_shared_admin_section('capacity', {
-            'project': payload.get('project', ''),
-            'fieldId': payload.get('fieldId', ''),
-            'fieldName': payload.get('fieldName', ''),
-        })
-    except ValueError as error:
-        return jsonify({'error': str(error)}), 400
-    project = capacity_value['project']
-    field_id = capacity_value['fieldId']
-    field_name = capacity_value['fieldName']
+        auth_context = current_request_auth_context()
+        db_context = _shared_capacity_db_auth_context()
+        if db_context is not None and 'baseRevision' not in payload:
+            return jsonify({'error': 'invalid_capacity_config'}), 400
+        if db_context is not None:
+            fields = load_current_site_field_catalog(db_context)
+            if fields is None:
+                return jsonify({'error': 'jira_field_catalog_failed'}), 502
+            try:
+                saved = shared_capacity_config.save_shared_capacity_config(
+                    db_context,
+                    {key: payload.get(key) for key in ('project', 'fieldId', 'fieldName')},
+                    payload.get('baseRevision'),
+                    field_catalog=fields,
+                )
+            except shared_capacity_config.CapacityConfigConflict as error:
+                return jsonify({'error': 'capacity_config_conflict', 'current': error.current}), 409
+            except shared_capacity_config.InvalidSharedCapacityConfig as error:
+                code = 'capacity_field_not_numeric' if str(error) == 'capacity_field_not_numeric' else 'invalid_capacity_config'
+                return jsonify({'error': code}), 400
+            _clear_capacity_field_cache()
+            return jsonify(saved)
 
-    try:
-        revision = _persist_shared_section('capacity', capacity_value, base_revision)
-        # Reset the field cache since config changed
-        global CAPACITY_FIELD_CACHE
-        with _cache_lock:
-            _jira_server_module.CAPACITY_FIELD_CACHE = None
-            CAPACITY_FIELD_CACHE = None
-    except WorkspaceConfigConflict as error:
-        return _workspace_conflict_response(error)
-    except Exception as e:
-        return jsonify({'error': 'Failed to save capacity config', 'message': str(e)}), 500
-
-    result = {'project': project, 'fieldId': field_id, 'fieldName': field_name}
-    if revision is not None:
-        result['configRevision'] = revision
-    return jsonify(result)
+        project = str(payload.get('project') or '').strip().upper()
+        field_id = str(payload.get('fieldId') or '').strip()
+        field_name = str(payload.get('fieldName') or '').strip()
+        dashboard_config = load_dashboard_config(source='jsonfile') or {'version': 1, 'projects': {'selected': []}}
+        capacity = {'project': project, 'fieldId': field_id, 'fieldName': field_name}
+        if auth_context.auth_mode == AUTH_MODE_ATLASSIAN_OAUTH and field_id:
+            fields = load_current_site_field_catalog(auth_context)
+            if fields is None:
+                return jsonify({'error': 'jira_field_catalog_failed'}), 502
+            verified = next((
+                field for field in fields or []
+                if str(field.get('id') or '') == field_id
+                and (field.get('schema') or {}).get('type') == 'number'
+            ), None)
+            if verified is None:
+                return jsonify({'error': 'capacity_field_not_numeric'}), 400
+            capacity.update({
+                'fieldName': str(verified.get('name') or '').strip(),
+                'verifiedSiteUrl': auth_context.site_url,
+                'verifiedCloudId': auth_context.cloud_id,
+                'fieldSchemaType': 'number',
+                'fieldVerifiedAt': datetime.now(timezone.utc).isoformat(),
+            })
+        dashboard_config['capacity'] = capacity
+        save_dashboard_config(dashboard_config, source='jsonfile')
+        _clear_capacity_field_cache()
+        return jsonify(load_request_capacity_config(auth_context, source='jsonfile'))
+    except CapacityUpstreamUnauthorized:
+        if auth_context.auth_mode == AUTH_MODE_ATLASSIAN_OAUTH:
+            auth_payload, status = oauth_auth_required_payload()
+            return jsonify(auth_payload), status
+        return jsonify({'error': 'jira_field_catalog_failed'}), 502
+    except AuthError as error:
+        if error.code == 'auth_required':
+            auth_payload, status = oauth_auth_required_payload()
+            return jsonify(auth_payload), status
+        return auth_error_response(error, 401)
+    except (ConfigStorageError, DatabaseConfigurationError):
+        return jsonify({
+            'error': 'config_storage_unavailable',
+            'message': 'Configuration storage is temporarily unavailable.',
+        }), 503
 
 
 @bp.route('/api/sprint-field/config', methods=['GET'])

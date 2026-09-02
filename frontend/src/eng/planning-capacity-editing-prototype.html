@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<!-- Throwaway prototype of Planning capacity editing, switchable with ?state=idle|hover|edit|conflict. Run: python3 -m http.server 4173 -->
+<!-- Approved UI reference on 2026-09-01. Keep synthetic and separate from the production bundle. -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planning Capacity Editing Prototype</title>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/frontend/dist/dashboard.css">
+    <style>
+        body {
+            min-height: 100vh;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        .capacity-prototype {
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 0.9rem 1.5rem 2rem;
+        }
+
+        .prototype-note {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin: 0 0 0.9rem;
+            padding: 0.55rem 0.7rem;
+            border: 1px dashed #c9c2b6;
+            border-radius: 8px;
+            background: #fffdf7;
+            color: #5f574b;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+            line-height: 1.4;
+        }
+
+        .prototype-note strong {
+            color: var(--text-primary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .prototype-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1.25rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .prototype-title h1 {
+            margin: 0;
+            font-size: 2rem;
+            line-height: 1;
+            font-weight: 300;
+        }
+
+        .prototype-title p {
+            margin-top: 0.35rem;
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.66rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .prototype-header-controls,
+        .prototype-state-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+        }
+
+        .prototype-control,
+        .prototype-state-button {
+            min-height: 32px;
+            margin: 0;
+            padding: 0.35rem 0.65rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--text-secondary);
+            box-shadow: none;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+            letter-spacing: 0;
+            text-transform: none;
+            cursor: pointer;
+        }
+
+        .prototype-control:hover,
+        .prototype-state-button:hover {
+            transform: none;
+            border-color: #c9c2b6;
+            background: #f4f2ec;
+            color: var(--text-primary);
+            box-shadow: none;
+        }
+
+        .prototype-control.is-active,
+        .prototype-state-button.is-active {
+            border-color: #1a1a1a;
+            color: #1a1a1a;
+            box-shadow: inset 0 0 0 1px #1a1a1a;
+        }
+
+        .prototype-stage {
+            margin-top: 1rem;
+        }
+
+        .prototype-toolbar {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .prototype-view-tabs {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .prototype-view-tab {
+            padding: 0.32rem 0.68rem;
+            border: 0;
+            border-bottom: 2px solid transparent;
+            background: transparent;
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.64rem;
+        }
+
+        .prototype-view-tab.active {
+            border-bottom-color: var(--accent);
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .prototype-planning.planning-panel.open {
+            position: relative;
+            top: auto;
+            max-height: none;
+            margin-top: 0;
+            padding: 0.7rem;
+        }
+
+        .prototype-panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.55rem;
+        }
+
+        .prototype-panel-title {
+            display: flex;
+            align-items: baseline;
+            gap: 0.5rem;
+        }
+
+        .prototype-panel-title h2 {
+            font-size: 1.05rem;
+            font-weight: 400;
+            line-height: 1.1;
+        }
+
+        .prototype-panel-title span,
+        .prototype-scope {
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.58rem;
+        }
+
+        .prototype-kpis {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.45rem;
+            margin-bottom: 0.6rem;
+        }
+
+        .prototype-kpi {
+            padding: 0.38rem 0.48rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #fbfaf7;
+        }
+
+        .prototype-kpi span {
+            display: block;
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.52rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .prototype-kpi strong {
+            display: block;
+            margin-top: 0.08rem;
+            color: var(--text-primary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+
+        .prototype-capacity-summary {
+            margin-bottom: 0.6rem;
+        }
+
+        .prototype-capacity-summary .capacity-bar-track {
+            height: 17px;
+        }
+
+        .prototype-capacity-caption {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-top: 0.22rem;
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.54rem;
+        }
+
+        .prototype-section-label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin: 0.45rem 0 0.25rem;
+        }
+
+        .prototype-section-label span:first-child {
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.58rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .prototype-section-label span:last-child {
+            color: #8b8377;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.52rem;
+        }
+
+        .capacity-prototype-grid.team-stats-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.55rem;
+            margin-top: 0;
+        }
+
+        .capacity-prototype-card.team-stat-card {
+            position: relative;
+            min-width: 0;
+            min-height: 72px;
+            padding: 0.42rem 0.48rem;
+            overflow: visible;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .capacity-prototype-card.is-target {
+            border-color: #cbc5ba;
+            box-shadow: 0 6px 16px rgba(26, 26, 26, 0.1);
+        }
+
+        .capacity-prototype-card.is-editing,
+        .capacity-prototype-card.is-conflict {
+            border-color: #9b9183;
+            box-shadow: 0 8px 20px rgba(26, 26, 26, 0.12);
+        }
+
+        .capacity-card-label-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-width: 0;
+            min-height: 26px;
+            gap: 0.35rem;
+            padding-right: 3.2rem;
+        }
+
+        .capacity-card-label-row .team-stat-label {
+            min-width: 0;
+            margin: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .capacity-action-rail {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.22rem;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.12s ease;
+        }
+
+        .capacity-action-rail {
+            position: absolute;
+            top: 0.32rem;
+            right: 0.34rem;
+            z-index: 2;
+            padding-left: 0.55rem;
+            background: linear-gradient(90deg, rgba(255,255,255,0), #fff 28%);
+        }
+
+        .capacity-prototype-card > .microbar {
+            margin-top: 0.3rem;
+        }
+
+        .capacity-prototype-card:hover .capacity-action-rail,
+        .capacity-prototype-card:focus-within .capacity-action-rail,
+        .capacity-prototype-card.is-target .capacity-action-rail,
+        .capacity-prototype-card.is-editing .capacity-action-rail,
+        .capacity-prototype-card.is-conflict .capacity-action-rail {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+
+        .capacity-icon-button {
+            width: 24px;
+            min-width: 24px;
+            height: 24px;
+            min-height: 24px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 0;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            background: #fff;
+            color: var(--text-secondary);
+            box-shadow: none;
+            cursor: pointer;
+        }
+
+        .capacity-icon-button:hover,
+        .capacity-icon-button:focus-visible {
+            transform: none;
+            border-color: #b7afa2;
+            background: #f6f4ef;
+            box-shadow: none;
+            outline: 2px solid rgba(212, 56, 13, 0.2);
+            outline-offset: 1px;
+        }
+
+        .capacity-icon-button img {
+            width: 13px;
+            height: 13px;
+            display: block;
+        }
+
+        .capacity-icon-button.jira img {
+            width: 14px;
+            height: 14px;
+        }
+
+        .capacity-edit-shell {
+            --capacity-editor-control-height: 28px;
+            display: flex;
+            align-items: center;
+            gap: 0.28rem;
+            min-height: var(--capacity-editor-control-height);
+            margin-top: 0.3rem;
+        }
+
+        .capacity-input-wrap {
+            display: block;
+            min-width: 0;
+            width: 84px;
+            max-width: 84px;
+            height: var(--capacity-editor-control-height);
+            margin: 0;
+            flex: 1 1 84px;
+            position: relative;
+            line-height: 0;
+        }
+
+        .capacity-input-wrap > .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .capacity-input {
+            width: 100%;
+            height: var(--capacity-editor-control-height);
+            box-sizing: border-box;
+            padding: 0.28rem 1.7rem 0.28rem 0.45rem;
+            border: 1px solid #888077;
+            border-radius: 6px;
+            background: #fff;
+            color: var(--text-primary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.66rem;
+            font-variant-numeric: tabular-nums;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(212, 56, 13, 0.1);
+        }
+
+        .capacity-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(212, 56, 13, 0.12);
+        }
+
+        .capacity-input-unit {
+            position: absolute;
+            right: 0.45rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.5rem;
+            pointer-events: none;
+        }
+
+        .capacity-editor-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.22rem;
+            flex: 0 0 auto;
+        }
+
+        .capacity-editor-actions .capacity-icon-button {
+            width: var(--capacity-editor-control-height);
+            min-width: var(--capacity-editor-control-height);
+            height: var(--capacity-editor-control-height);
+            min-height: var(--capacity-editor-control-height);
+        }
+
+        .capacity-conflict {
+            margin-top: 0.28rem;
+            padding: 0.3rem 0.38rem;
+            border-left: 3px solid var(--accent);
+            border-radius: 0 5px 5px 0;
+            background: #fff2eb;
+            color: #7f2d12;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.52rem;
+            line-height: 1.35;
+        }
+
+        .capacity-footer-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.4rem;
+            min-width: 0;
+        }
+
+        .capacity-footer-row .microbar-meta {
+            min-width: 0;
+            margin-right: auto;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .prototype-toast {
+            position: fixed;
+            top: 1rem;
+            left: 50%;
+            z-index: 200;
+            transform: translate(-50%, -16px);
+            opacity: 0;
+            padding: 0.45rem 0.65rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #1a1a1a;
+            color: #fff;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            pointer-events: none;
+            transition: opacity 0.16s ease, transform 0.16s ease;
+        }
+
+        .prototype-toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
+        @media (hover: none) {
+            .capacity-action-rail {
+                opacity: 1;
+                visibility: visible;
+                pointer-events: auto;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .capacity-prototype {
+                padding: 0.7rem 0.65rem 2rem;
+            }
+
+            .prototype-header,
+            .prototype-toolbar,
+            .prototype-panel-head,
+            .prototype-note {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .prototype-title h1 {
+                font-size: 1.6rem;
+            }
+
+            .prototype-kpis {
+                grid-template-columns: 1fr;
+            }
+
+            .capacity-prototype-grid.team-stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="capacity-prototype" id="prototypeRoot" data-state="idle">
+        <aside class="prototype-note">
+            <div><strong>Prototype only</strong> — synthetic data, no Jira requests, no persistence.</div>
+            <div id="prototypeQuestion">Question: how should low-frequency capacity controls appear without adding idle clutter?</div>
+        </aside>
+
+        <header class="prototype-header">
+            <div class="prototype-title">
+                <h1>Jira Delivery Planner</h1>
+                <p>Engineering planning · capacity editing mockup</p>
+            </div>
+            <div class="prototype-header-controls" aria-label="Planning scope">
+                <button class="prototype-control" type="button">Group: Product &amp; Tech</button>
+                <button class="prototype-control" type="button">Sprint: 2026.Q3 Sprint 1</button>
+                <button class="prototype-control is-active" type="button">Planning</button>
+            </div>
+        </header>
+
+        <section class="prototype-stage" aria-label="Planning capacity mockup">
+            <div class="prototype-toolbar">
+                <div class="prototype-view-tabs" aria-label="Engineering views">
+                    <button class="prototype-view-tab" type="button">Catch Up</button>
+                    <button class="prototype-view-tab active" type="button">Planning</button>
+                    <button class="prototype-view-tab" type="button">Scenario</button>
+                </div>
+                <div class="prototype-state-controls" role="group" aria-label="Preview state">
+                    <button class="prototype-state-button is-active" type="button" data-preview-state="idle">Idle</button>
+                    <button class="prototype-state-button" type="button" data-preview-state="hover">Revealed</button>
+                    <button class="prototype-state-button" type="button" data-preview-state="edit">Editing</button>
+                    <button class="prototype-state-button" type="button" data-preview-state="conflict">Conflict</button>
+                </div>
+            </div>
+
+            <div class="planning-panel open prototype-planning">
+                <div class="prototype-panel-head">
+                    <div class="prototype-panel-title">
+                        <h2>Planning</h2>
+                        <span>24 selected stories</span>
+                    </div>
+                    <div class="prototype-scope">Capacity split: Product 70% · Tech 30%</div>
+                </div>
+
+                <div class="prototype-kpis">
+                    <div class="prototype-kpi"><span>Selected</span><strong>83.5 SP</strong></div>
+                    <div class="prototype-kpi"><span>Planned capacity</span><strong>91.0 SP</strong></div>
+                    <div class="prototype-kpi"><span>Remaining</span><strong>7.5 SP</strong></div>
+                </div>
+
+                <div class="prototype-capacity-summary capacity-bar-graph">
+                    <div class="capacity-bar-track">
+                        <div class="capacity-bar-fill" style="width: 76%;">
+                            <span class="capacity-bar-fill-label">83.5 SP selected</span>
+                        </div>
+                        <div class="capacity-bar-marker" style="left: 83%;">
+                            <span class="capacity-bar-marker-line"></span>
+                        </div>
+                    </div>
+                    <div class="prototype-capacity-caption">
+                        <span>Planning capacity across selected teams</span>
+                        <span>91.0 SP target</span>
+                    </div>
+                </div>
+
+                <div class="prototype-section-label">
+                    <span>Selected SP by Team:</span>
+                    <span>Jira and edit controls reveal in the corner with a clear gap above the bar.</span>
+                </div>
+                <div class="team-stats-grid capacity-prototype-grid" id="teamGrid"></div>
+            </div>
+        </section>
+    </main>
+
+    <div class="prototype-toast" id="prototypeToast" role="status"></div>
+
+    <script>
+        (() => {
+            const teams = [
+                { id: 'alpha', name: 'Alpha', storyPoints: 22, capacity: 18, color: '#3d1ef8' },
+                { id: 'beta', name: 'Beta', storyPoints: 14.5, capacity: 16, color: '#FE5000' },
+                { id: 'gamma', name: 'Gamma', storyPoints: 9, capacity: 0, color: '#2f9e73' },
+                { id: 'delta', name: 'Delta Platform', storyPoints: 17, capacity: 20, color: '#597ef7' },
+                { id: 'epsilon', name: 'Epsilon', storyPoints: 12, capacity: 14, color: '#cf5c8a' },
+                { id: 'zeta', name: 'Zeta', storyPoints: 9, capacity: 11, color: '#7a5af8' }
+            ];
+
+            const root = document.getElementById('prototypeRoot');
+            const teamGrid = document.getElementById('teamGrid');
+            const toast = document.getElementById('prototypeToast');
+            const assetRoot = '/assets/';
+            let toastTimer = null;
+
+            const readParams = () => {
+                const params = new URLSearchParams(window.location.search);
+                const allowedStates = ['idle', 'hover', 'edit', 'conflict'];
+                const state = allowedStates.includes(params.get('state')) ? params.get('state') : 'idle';
+                const requestedTeam = teams.some(team => team.id === params.get('team')) ? params.get('team') : null;
+                const activeTeam = state === 'idle' ? null : requestedTeam || teams[0].id;
+                return { state, activeTeam };
+            };
+
+            const writeParams = ({ state, team = null }) => {
+                const params = new URLSearchParams(window.location.search);
+                params.delete('variant');
+                params.set('state', state);
+                if (team && state !== 'idle') {
+                    params.set('team', team);
+                } else {
+                    params.delete('team');
+                }
+                window.history.replaceState({}, '', window.location.pathname + '?' + params.toString());
+                render();
+            };
+
+            const showToast = message => {
+                toast.textContent = message;
+                toast.classList.add('show');
+                window.clearTimeout(toastTimer);
+                toastTimer = window.setTimeout(() => toast.classList.remove('show'), 2200);
+            };
+
+            const icon = (name, alt = '') => `<img src="${assetRoot}planning-capacity-prototype-${name}.svg" alt="${alt}">`;
+
+            const actions = team => `
+                <div class="capacity-action-rail">
+                    <button class="capacity-icon-button jira" type="button" data-jira="${team.id}" aria-label="Open ${team.name} capacity ticket in Jira" title="Open in Jira">${icon('jira')}</button>
+                    <button class="capacity-icon-button" type="button" data-edit="${team.id}" aria-label="Edit ${team.name} planned capacity" title="Edit capacity">${icon('pencil')}</button>
+                </div>`;
+
+            const readView = team => {
+                const scale = Math.max(team.storyPoints, team.capacity, 1) * 1.3;
+                const fill = Math.min(100, (team.storyPoints / scale) * 100);
+                const marker = team.capacity > 0 ? Math.min(100, (team.capacity / scale) * 100) : null;
+                const delta = team.storyPoints - team.capacity;
+                const pct = team.capacity > 0 ? (delta / team.capacity) * 100 : null;
+                const meta = team.capacity > 0
+                    ? `Cap ${team.capacity.toFixed(1)} · ${delta >= 0 ? '+' : ''}${delta.toFixed(1)} SP · ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%`
+                    : 'Cap 0.0 · no percentage';
+                return `
+                    <div class="microbar" aria-label="${team.storyPoints.toFixed(1)} story points selected against ${team.capacity.toFixed(1)} capacity">
+                        <div class="microbar-fill" style="width:${fill}%;background:${team.color}"></div>
+                        ${marker === null ? '' : `<div class="microbar-marker" style="left:${marker}%"></div>`}
+                        <span class="microbar-label">${team.storyPoints.toFixed(1)} SP</span>
+                    </div>
+                    <div class="capacity-footer-row">
+                        <div class="microbar-meta ${delta > 0 ? 'over' : ''}">${meta}</div>
+                    </div>`;
+            };
+
+            const editView = (team, conflict) => `
+                <div class="capacity-edit-shell">
+                    <label class="capacity-input-wrap">
+                        <span class="sr-only">Planned capacity for ${team.name}</span>
+                        <input class="capacity-input" type="number" min="0" step="0.5" value="${conflict ? '20' : team.capacity.toFixed(1)}" data-capacity-input="${team.id}">
+                        <span class="capacity-input-unit">SP</span>
+                    </label>
+                    <div class="capacity-editor-actions">
+                        <button class="capacity-icon-button" type="button" data-save="${team.id}" aria-label="Save ${team.name} planned capacity" title="Save">${icon('check')}</button>
+                        <button class="capacity-icon-button" type="button" data-cancel="${team.id}" aria-label="Cancel editing ${team.name} planned capacity" title="Cancel">${icon('close')}</button>
+                    </div>
+                </div>
+                ${conflict ? '<div class="capacity-conflict" role="alert">Capacity changed in Jira to 19.0. Review and save again, or cancel.</div>' : '<div class="microbar-meta">Current Jira capacity: ' + team.capacity.toFixed(1) + ' SP · Enter saves · Esc cancels</div>'}`;
+
+            const cancelCapacityEdit = teamId => {
+                writeParams({ state: 'hover', team: teamId });
+            };
+
+            const saveCapacityEdit = teamId => {
+                const team = teams.find(item => item.id === teamId);
+                const input = teamGrid.querySelector(`[data-capacity-input="${teamId}"]`);
+                const capacity = Number(input ? input.value : NaN);
+                if (!team || !Number.isFinite(capacity) || capacity < 0) {
+                    showToast('Enter a capacity of 0 SP or more');
+                    if (input) input.focus();
+                    return;
+                }
+                team.capacity = capacity;
+                showToast(`Mock save: ${team.name} capacity is now ${capacity.toFixed(1)} SP`);
+                writeParams({ state: 'hover', team: teamId });
+            };
+
+            const render = () => {
+                const current = readParams();
+                root.dataset.state = current.state;
+                const editorOpen = current.state === 'edit' || current.state === 'conflict';
+
+                document.querySelectorAll('[data-preview-state]').forEach(button => {
+                    button.classList.toggle('is-active', button.dataset.previewState === current.state);
+                });
+
+                teamGrid.innerHTML = teams.map(team => {
+                    const isTarget = team.id === current.activeTeam;
+                    const editing = isTarget && editorOpen;
+                    const conflict = editing && current.state === 'conflict';
+                    const classes = [
+                        'team-stat-card',
+                        'team-card',
+                        'capacity-prototype-card',
+                        isTarget ? 'is-target' : '',
+                        editing ? 'is-editing' : '',
+                        conflict ? 'is-conflict' : ''
+                    ].filter(Boolean).join(' ');
+                    return `
+                        <article class="${classes}" data-team="${team.id}">
+                            <div class="capacity-card-label-row">
+                                <div class="team-stat-label">${team.name}</div>
+                                ${editorOpen ? '' : actions(team)}
+                            </div>
+                            ${editing ? editView(team, conflict) : readView(team)}
+                        </article>`;
+                }).join('');
+
+                if (current.state === 'edit' || current.state === 'conflict') {
+                    window.requestAnimationFrame(() => {
+                        const input = teamGrid.querySelector(`[data-capacity-input="${current.activeTeam}"]`);
+                        if (input) input.select();
+                    });
+                }
+            };
+
+            document.querySelectorAll('[data-preview-state]').forEach(button => {
+                button.addEventListener('click', () => {
+                    const state = button.dataset.previewState;
+                    writeParams({ state, team: state === 'idle' ? null : teams[0].id });
+                });
+            });
+
+            teamGrid.addEventListener('click', event => {
+                const jiraButton = event.target.closest('[data-jira]');
+                if (jiraButton) {
+                    const team = teams.find(item => item.id === jiraButton.dataset.jira);
+                    showToast(`Would open CAP-${team.id.toUpperCase()} in Jira`);
+                    return;
+                }
+                const editButton = event.target.closest('[data-edit]');
+                if (editButton) {
+                    writeParams({ state: 'edit', team: editButton.dataset.edit });
+                    return;
+                }
+                const cancelButton = event.target.closest('[data-cancel]');
+                if (cancelButton) {
+                    cancelCapacityEdit(cancelButton.dataset.cancel);
+                    return;
+                }
+                const saveButton = event.target.closest('[data-save]');
+                if (saveButton) {
+                    saveCapacityEdit(saveButton.dataset.save);
+                }
+            });
+
+            teamGrid.addEventListener('keydown', event => {
+                const input = event.target.closest('[data-capacity-input]');
+                if (!input) return;
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    saveCapacityEdit(input.dataset.capacityInput);
+                }
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    cancelCapacityEdit(input.dataset.capacityInput);
+                }
+            });
+            window.addEventListener('popstate', render);
+            render();
+        })();
+    </script>
+</body>
+</html>

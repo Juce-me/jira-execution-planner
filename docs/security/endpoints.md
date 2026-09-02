@@ -69,6 +69,7 @@ The endpoint policy registry lives in `backend/security/policy.py`. Every Flask 
 | `board-config-write` | `POST` | `/api/board-config` | `shared_admin_write` | `exact` |
 | `capacity-config-read` | `GET` | `/api/capacity/config` | `authenticated_read` | `exact` |
 | `capacity-config-write` | `POST` | `/api/capacity/config` | `shared_admin_write` | `exact` |
+| `jira-team-capacity-write` | `PATCH` | `/api/capacity/<issue_key>` | `user_write` | `dynamic` |
 | `sprint-field-config-read` | `GET` | `/api/sprint-field/config` | `authenticated_read` | `exact` |
 | `sprint-field-config-write` | `POST` | `/api/sprint-field/config` | `shared_admin_write` | `exact` |
 | `story-points-config-read` | `GET` | `/api/story-points-field/config` | `authenticated_read` | `exact` |

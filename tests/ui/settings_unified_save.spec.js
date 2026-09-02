@@ -949,6 +949,116 @@ test('settings save persists dirty department and EPM sections together', async 
     ))).toBe(false);
 });
 
+test('unverified saved Capacity mapping is re-attested without changing the selection', async ({ page }) => {
+    const capacity = {
+        project: 'DEMO',
+        fieldId: 'customfield_10050',
+        fieldName: 'Capacity',
+    };
+    const workspace = sharedWorkspaceSnapshot();
+    workspace.capacityProject = capacity.project;
+    workspace.capacityMutationEnabled = false;
+    workspace.sharedConfig.capacity = capacity;
+    const calls = await mockConfigSettings(page, {
+        workspaceSnapshots: [workspace],
+        capacityConfig: { ...capacity, mutationEnabled: true, configRevision: 4 },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+
+    const saveButton = dialog.getByRole('button', { name: /^Save$/ });
+    await expect(saveButton).toBeEnabled();
+    await expect(dialog.locator('.group-modal-dirty')).toHaveText('Unsaved changes · 1');
+    await dialog.screenshot({ path: `${screenshotDir}/capacity-reverification-ready.png`, animations: 'disabled' });
+    await saveButton.click();
+
+    await expect(dialog).toHaveCount(0);
+    const posts = workspacePosts(calls, '/api/capacity/config');
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toEqual({ ...capacity, baseRevision: 3 });
+});
+
+test('local OAuth JSON mode loads and re-attests an existing Capacity mapping', async ({ page }) => {
+    const capacity = {
+        project: 'DEMO',
+        fieldId: 'customfield_10050',
+        fieldName: 'Capacity',
+    };
+    const calls = await mockConfigSettings(page, {
+        workspaceSnapshots: [{
+            jiraUrl: 'https://jira.example',
+            authMode: 'atlassian_oauth',
+            capacityProject: capacity.project,
+            capacityMutationEnabled: false,
+        }],
+        capacityConfig: { ...capacity, mutationEnabled: false, configRevision: 0 },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+
+    await expect(dialog.locator('.selected-team-chip', { hasText: 'DEMO' })).toBeVisible();
+    await expect(dialog.locator('.selected-team-chip', { hasText: 'Capacity' })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeEnabled();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+    await expect(dialog).toHaveCount(0);
+    const posts = workspacePosts(calls, '/api/capacity/config');
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toEqual({ ...capacity, baseRevision: 0 });
+});
+
+test('Capacity config conflict can keep the draft and retry on the server revision', async ({ page }) => {
+    const capacity = {
+        project: 'DEMO',
+        fieldId: 'customfield_10050',
+        fieldName: 'Capacity',
+    };
+    const workspace = sharedWorkspaceSnapshot();
+    workspace.capacityProject = capacity.project;
+    workspace.capacityMutationEnabled = false;
+    workspace.sharedConfig.capacity = capacity;
+    const calls = await mockConfigSettings(page, {
+        workspaceSnapshots: [workspace],
+        workspaceSaveResponses: {
+            '/api/capacity/config': [
+                {
+                    status: 409,
+                    body: {
+                        error: 'capacity_config_conflict',
+                        current: { ...capacity, configRevision: 5, mutationEnabled: true },
+                    },
+                },
+                { body: { ...capacity, configRevision: 6, mutationEnabled: true } },
+            ],
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+    await expect(dialog.getByTestId('workspace-config-conflict-actions')).toBeVisible();
+    await expect(dialog).toContainText('Still unsaved: Capacity.');
+    await dialog.getByRole('button', { name: 'Keep mine' }).click();
+
+    await expect(dialog).toHaveCount(0);
+    const posts = workspacePosts(calls, '/api/capacity/config');
+    expect(posts).toHaveLength(2);
+    expect(posts[0].body.baseRevision).toBe(3);
+    expect(posts[1].body.baseRevision).toBe(5);
+});
+
 test('EPM save auth expiry preserves the private draft and exposes safe recovery without replay', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
         epmSaveResponse: {

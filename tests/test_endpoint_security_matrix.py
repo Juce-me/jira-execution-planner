@@ -1,9 +1,19 @@
 import unittest
-from types import SimpleNamespace
 from unittest.mock import patch
 
+from backend.auth.context import RequestAuthContext
 import jira_server
-from tests.oauth_test_helpers import install_oauth_session
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
+
+
+def _verified_context(*, is_admin=False):
+    return RequestAuthContext(
+        auth_mode='atlassian_oauth', user_id='synthetic-user', stable_subject='synthetic-subject',
+        atlassian_account_id='synthetic-account', workspace_id='synthetic-workspace',
+        auth_connection_id='local-oauth-connection:session-1', cloud_id='cloud-123',
+        site_url='https://example.atlassian.net', token_version='1', account_status='active',
+        is_admin=is_admin, granted_scopes=tuple(FULL_OAUTH_SCOPE.split()), granted_scopes_verified=True,
+    )
 
 
 SECURITY_SAMPLES = {
@@ -27,6 +37,7 @@ SECURITY_SAMPLES = {
         ("GET", "/api/board-config/statuses"),
     ],
     "user_write": [
+        ("PATCH", "/api/capacity/CAP-101"),
         ("POST", "/api/me/views"),
         ("POST", "/api/epm/config"),
         ("POST", "/api/groups-preferences"),
@@ -122,6 +133,7 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         from backend.security.policy import matching_path_policies
 
         samples = [
+            ("PATCH", "/api/capacity/CAP-101", "user_write"),
             ("GET", "/api/epm/projects/home-project-1/issues", "authenticated_read"),
             ("POST", "/api/scenario/drafts/draft-1/rollback", "workspace_write"),
         ]
@@ -289,7 +301,7 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         with self._oauth_mode():
             csrf_token = self._csrf_token()
 
-        non_admin_context = SimpleNamespace(is_admin=False)
+        non_admin_context = _verified_context(is_admin=False)
         with self._oauth_mode(), \
              patch.object(jira_server, "SETTINGS_ADMIN_ONLY", True), \
              patch.object(jira_server, "current_request_auth_context", return_value=non_admin_context), \
@@ -312,7 +324,7 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         with self._oauth_mode():
             csrf_token = self._csrf_token()
 
-        non_admin_context = SimpleNamespace(is_admin=False)
+        non_admin_context = _verified_context(is_admin=False)
         with self._oauth_mode(), \
              patch.object(jira_server, "SETTINGS_ADMIN_ONLY", False), \
              patch.object(jira_server, "current_request_auth_context", return_value=non_admin_context), \

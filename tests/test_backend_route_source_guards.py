@@ -14,6 +14,8 @@ JIRA_SERVER_PATH = REPO_ROOT / "jira_server.py"
 BACKEND_EPM_ROUTES_PATH = REPO_ROOT / "backend" / "routes" / "epm_routes.py"
 BACKEND_ENG_ROUTES_PATH = REPO_ROOT / "backend" / "routes" / "eng_routes.py"
 BACKEND_SETTINGS_ROUTES_PATH = REPO_ROOT / "backend" / "routes" / "settings_routes.py"
+BACKEND_CAPACITY_ROUTES_PATH = REPO_ROOT / "backend" / "routes" / "capacity_routes.py"
+BACKEND_CAPACITY_SERVICE_PATH = REPO_ROOT / "backend" / "services" / "capacity.py"
 BACKEND_ROUTE_GROUPS = {
     "scenario": (REPO_ROOT / "backend" / "routes" / "scenario_routes.py", ("/api/scenario", "/api/scenario/overrides")),
     "stats": (REPO_ROOT / "backend" / "routes" / "stats_routes.py", ("/api/stats", "/api/stats/burnout", "/api/stats/epic-cohort", "/api/stats/excluded-capacity-source")),
@@ -162,6 +164,74 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
             matches = app_route_pattern(route_paths).findall(source)
             if matches:
                 failures[group_name] = matches
+
+        self.assertEqual(failures, {})
+
+    def test_capacity_patch_is_registered_only_on_the_capacity_blueprint(self):
+        route_tree = ast.parse(BACKEND_CAPACITY_ROUTES_PATH.read_text(encoding="utf8"))
+        registrations = []
+        for node in route_tree.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for decorator in node.decorator_list:
+                if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+                    continue
+                if decorator.func.attr != "route" or not decorator.args:
+                    continue
+                path = ast.literal_eval(decorator.args[0])
+                methods = []
+                for keyword in decorator.keywords:
+                    if keyword.arg == "methods":
+                        methods = ast.literal_eval(keyword.value)
+                if path == "/api/capacity/<issue_key>":
+                    registrations.append((node.name, methods))
+
+        self.assertEqual(registrations, [("patch_capacity", ["PATCH"])])
+        self.assertEqual(
+            app_route_pattern(("/api/capacity/<issue_key>",)).findall(
+                JIRA_SERVER_PATH.read_text(encoding="utf8")
+            ),
+            [],
+        )
+
+    def test_capacity_route_and_service_have_no_forbidden_credential_or_field_resolver_dependencies(self):
+        forbidden_symbols = {
+            "build_jira_headers", "JIRA_EMAIL", "JIRA_TOKEN", "JIRA_API_TOKEN",
+            "resolve_capacity_field_id", "oauth_session_data", "db_oauth_session_data",
+            "save_oauth_session", "oauth_refresh_lock", "OAUTH_TOKEN_STORE",
+            "resolve_user_api_token_connection", "resolve_home_credential",
+            "resolve_home_credentials",
+        }
+        forbidden_module_markers = (
+            "service_integration", "backend.epm", "backend.auth.user_api_tokens",
+            "backend.auth.home_credentials",
+        )
+        failures = {}
+        for path in (BACKEND_CAPACITY_ROUTES_PATH, BACKEND_CAPACITY_SERVICE_PATH):
+            tree = ast.parse(path.read_text(encoding="utf8"))
+            imported_modules = []
+            referenced_symbols = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported_modules.extend(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        imported_modules.append(node.module)
+                    referenced_symbols.update(alias.name for alias in node.names)
+                elif isinstance(node, ast.Name):
+                    referenced_symbols.add(node.id)
+                elif isinstance(node, ast.Attribute):
+                    referenced_symbols.add(node.attr)
+            blocked_modules = sorted(
+                module for module in imported_modules
+                if any(marker in module for marker in forbidden_module_markers)
+            )
+            blocked_symbols = sorted(forbidden_symbols & referenced_symbols)
+            if blocked_modules or blocked_symbols:
+                failures[str(path.relative_to(REPO_ROOT))] = {
+                    "modules": blocked_modules,
+                    "symbols": blocked_symbols,
+                }
 
         self.assertEqual(failures, {})
 

@@ -12,6 +12,7 @@ EXPECTED_MOVED_ROUTE_METHODS = {
     "/api/stats/epic-cohort": {"POST"},
     "/api/stats/excluded-capacity-source": {"POST"},
     "/api/capacity": {"GET"},
+    "/api/capacity/<issue_key>": {"PATCH"},
     "/api/planned-capacity": {"GET"},
     "/api/export-excel": {"POST"},
     "/api/test": {"GET"},

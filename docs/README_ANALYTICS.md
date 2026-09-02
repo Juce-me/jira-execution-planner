@@ -228,6 +228,7 @@ State-changing routes or user-visible surfaces without analytics must be documen
 | ENG Catch Up targeted background reconciliation | `frontend/src/eng/useEngStatusTransitions.js`, `frontend/src/eng/useEngPriorityTransitions.js` | Existing `issue_status_action` / `issue_priority_action` submit-result events and `api_result` already cover adoption and reliability; another event would duplicate the same user action. | 2026-07-10 |
 | ENG Group Board sticky column chrome | `frontend/src/eng/EngBoardView.jsx`, `frontend/src/styles/eng/board.css` | Passive positioning adds no new user action or application state; Board focus/fold/star interactions remain intentionally untracked under the existing Board allowlist, and scroll position itself is not collected. | 2026-08-08 |
 | ENG shared filter-bar wrapper spacing | `frontend/src/styles/eng/filter-bar.css` | Passive layout correction in existing Catch Up and Board controls; no new action, state, or data collection is introduced. | 2026-08-08 |
+| Header dropdown query typing and width stabilization | `frontend/src/dashboard.jsx`, `frontend/src/styles/shared/header.css` | Query text only filters already-loaded local options and is discarded on close; the stable shell/panel width is passive presentation. Existing `filter_changed` events remain attached to committed Sprint, Group, and Teams selections. No separate `userevent` is emitted, and raw query text, sprint names, group names, and team names are never collected. | 2026-09-02 |
 
 ## Drift Checks
 

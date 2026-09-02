@@ -136,41 +136,46 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Output: Initiative key/summary matches render every loaded descendant Epic and Story, Epic matching retains its descendant behavior, active ENG filters remain authoritative, the Initiative grouping choice survives search transitions, existing bucketed `app_search` analytics remain canonical, and focused unit plus committed-dist Playwright screenshot coverage proves the result.
 
 10. `EXEC-filterable-header-dropdown-inputs.md`
-   - Ready for execution on `improvement/filterable-header-dropdowns`.
-   - Expected output: the open Sprint, Group, and Teams header dropdown toggles become auto-focused local filter inputs; Sprint loses its duplicate panel input; adding visible groups no longer pushes the settings gear or any desktop control onto another row; the active ENG/EPM settings gear sits immediately after Refresh; and Group by Initiative becomes a fixed 30×30 icon toggle that is neutral gray when off and Initiative yellow with a pale-yellow surface when on.
+   - Implemented and merged in PR #125 (`13b646b`). Retained as `EXEC-*` pending separately approved plan-file renaming; do not execute it again.
+   - Current output: the open Sprint, Group, and Teams header dropdown toggles become auto-focused local filter inputs; Sprint loses its duplicate panel input; adding visible groups no longer pushes the settings gear or any desktop control onto another row; the active ENG/EPM settings gear sits immediately after Refresh; and Group by Initiative becomes a fixed 30×30 icon toggle that is neutral gray when off and Initiative yellow with a pale-yellow surface when on.
    - Current dropdown selection, team multi-select, Initiative grouping/persistence, settings permissions/handlers, and compact-header behavior remain unchanged. Playwright covers all three dropdown siblings, main/compact layering, multi-group row geometry, settings placement, Initiative centerlines, `aria-pressed`, hover/focus tooltip, both color states, and settled screenshots.
    - No backend, API, saved-preference, or new analytics-event contract; existing selection/settings events remain authoritative, local Initiative regrouping stays allowlisted, and raw dropdown queries are never collected.
 
-11. `DONE-personal-group-star.md`
+11. `EXEC-shared-header-dropdown-width-contract.md`
+   - Implementation is locally complete on `bugfix/shared-dropdown-width-contract` and merged with the current onboarding implementation from `origin/main`; final full-regression verification is blocked by one inherited scoped-startup fixture failure (71 of 72 dropdown-suite tests passed). The build, 1,144 frontend units, 1,538 isolated Python tests, 100 onboarding-tour tests, and 220 onboarding integration tests pass; this plan remains `EXEC-*` and unaccepted.
+   - Expected output: ENG header Sprint, Group, and Teams own stable main/compact widths while closed, open, typed, and reopened; each opted-in panel aligns to its trigger; long Sprint options remain readable through scoped wrapping; and desktop single-row plus narrow wrapping behavior is proven without changing EPM, Statistics, or sort dropdowns.
+   - No backend, API, saved state, new component, JavaScript measurement, or analytics-event change. Generated frontend output and settled Playwright screenshots are required.
+
+12. `DONE-personal-group-star.md`
    - Completed and verified on 2026-08-26 in commits `50db7ee..083a09c`; this prerequisite is satisfied for the onboarding tour.
    - Expected output: one personal starred Department group per authenticated workspace/user, single-select first-run search UI, personal Settings star controls, and strict separation between the persisted favorite and temporary dashboard Group scope. Shared `defaultGroupId` remains a file/JSON compatibility field and is never shown or mutated as a DB user's favorite.
    - This plan owns star persistence and UI only. It adds no onboarding completion state, guided tour, configure guidance, skip action, or replay action.
 
-12. `DONE-user-onboarding-tour.md`
+13. `DONE-user-onboarding-tour.md`
     - Completed, verified, and accepted for remote integration on `feature/user-onboarding-tour` on 2026-09-01. Use for audit context only. The prerequisite `DONE-personal-group-star.md` remains satisfied.
     - Expected output: configure/duplicate guidance after the mandatory group gate, followed by a guided tour of dashboard scope controls, actions, filters, issue hierarchy, and editable Jira fields. Per-user/workspace `onboarding_done` supports completion, skip, interruption recovery, and an explicit Settings replay action without another startup request.
     - The tour consumes the personal-star contract read-only and must not change star persistence or UI. Existing users are backfilled as complete; JSON/basic mode stays unchanged; privacy-safe `settings_action` events measure only started/completed/skipped outcomes.
 
-13. `DONE-user-onboarding-tour-improvements.md`
+14. `DONE-user-onboarding-tour-improvements.md`
    - Tasks 0–9 are implemented and verified on `feature/user-onboarding-tour`. The dashboard tour is desktop-only; first-run Department selection and configuration still work on mobile, while the mobile dashboard tour is deferred in GitHub issue #151.
    - Implemented output includes direct existing-Department selection or persistent **Add Department**, guided create/duplicate/repair in the real Team Groups editor, automatic pending favorite/visibility with ordered shared/private save recovery, a single left-list name input, Settings-header replay, safe target-driven Priority/Project Track/Status previews, deterministic hierarchy fallbacks, analytics review, source guards, and operational guidance.
    - Task 9 used the authorized fresh Node 20 verification worktree. The clean final ref passed 1,396 Python tests with 7 skips, 1,027 frontend unit tests, and 563 Playwright tests with 2 skips; reproducible generated output and all 15 settled screenshots were verified and inspected. Completed and accepted for remote integration on 2026-09-01; use for audit context only.
 
-14. `DONE-user-onboarding-contextual-follow-up.md`
+15. `DONE-user-onboarding-contextual-follow-up.md`
    - Tasks 0–8 plus the final whole-branch review fixes are implemented, verified, and accepted for remote integration on `feature/user-onboarding-tour` through build commit `02f75e1`. Use for audit context only.
    - Delivered output: a wider desktop coachmark with blue/red/neutral action hierarchy, explicit Next after safe field previews, contextual Configuration/Planning/Board/Statistics modules launched by native activation of the real controls, persistence-safe terminal retries, focusable destination regions, exact launcher hit-testing through centered placement, desktop-only contextual Settings routing, one canonical left-row Department favorite, and a compact right-pane visibility layout.
    - Final verification under pinned Node 20: 96 focused Node tests; both unchanged named baseline cases; 151 combined onboarding/Settings Playwright tests; 1,396 Python tests run with 1,389 passed and 7 skipped; 1,044 frontend unit tests; and 589 full Playwright tests with 2 skips. Generated output reproduced cleanly from `02f75e1`, and all 11 required screenshots passed original-resolution inspection.
    - Mobile dashboard onboarding remains deferred to issue #151. The final review added no backend, ownership, persistence-schema, Jira-mutation, dependency, or analytics-event change. See the final whole-branch review evidence in `DONE-user-onboarding-contextual-follow-up.md` for RED/GREEN history and residual risks.
 
-15. `EXEC-hide-single-option-view-mode-control.md`
+16. `EXEC-hide-single-option-view-mode-control.md`
    - Ready for execution as a small frontend-only task suitable for a 5.3 coding model.
    - Expected output: the ENG/EPM segmented control is absent when EPM navigation is unavailable, remains a two-option control when EPM is available, and updates correctly after Home-token connection, revocation, or backend prerequisite changes. Existing availability, analytics, auth, request, and shared-control contracts remain unchanged.
 
-14. `SUPPORT-planning-capacity-editing-design.md`
+17. `SUPPORT-planning-capacity-editing-design.md`
    - Approved interaction design and synthetic reference for Selected SP by Team capacity editing.
    - Expected output: hover/focus Jira and pencil actions, one active editor, equal-height compact controls, Enter-to-save, explicit cancel, responsive/touch-safe cards, and no per-card lookup fan-out.
 
-15. `EXEC-planning-capacity-editing.md`
+18. `EXEC-planning-capacity-editing.md`
    - Implemented and locally verified on 2026-09-01; retain as `EXEC-*` pending acceptance or merge.
    - Delivers workspace-shared Capacity configuration, OAuth-only Jira field editing through the signed-in user, provider-verified scope enforcement, revision-aware saves, safe analytics, and responsive/sticky UI verification.
 

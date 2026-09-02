@@ -7,14 +7,120 @@ import {
 import { trackOnboardingAnalytics } from './onboardingAnalytics.js';
 import { AUTH_REQUIRED_EVENT, isAuthenticationRequiredError } from '../api/authRequired.js';
 import {
-    acknowledgeUnavailableOnboardingModule,
+    ONBOARDING_MODULE_IDS,
     activateOnboardingModule,
-    allRequiredOnboardingModulesComplete,
-    completeOnboardingModule,
+    allOnboardingModulesComplete,
+    closeOnboardingModuleSession,
     createOnboardingModuleSession,
-    resumeOnboardingAfterSurfaceExit,
+    isOnboardingModuleComplete,
+    nextOnboardingModuleRequest,
+    normalizeCompletedOnboardingModules,
+    resetOnboardingModuleRequest,
 } from './onboardingModules.js';
 import { ONBOARDING_STEPS_BY_MODULE } from './onboardingSteps.js';
+
+const ONBOARDING_PREFERENCE_RETRY_ERROR = 'Saved onboarding preference could not be verified. Please retry.';
+const ONBOARDING_PREFERENCE_SAVE_ERROR = 'Failed to save onboarding preference. Please retry.';
+const DEFAULT_CAN_START_MODULE = () => true;
+
+export function isOnboardingModuleStartAllowed(canStartModule, moduleId) {
+    return typeof canStartModule !== 'function' || canStartModule(moduleId) !== false;
+}
+
+export function shouldAutomaticallyStartOnboarding({
+    bootstrapReady = false,
+    completedModules = [],
+    run = false,
+    automaticStarted = false,
+    replayPending = false,
+    activeSurface = 'catch-up',
+} = {}) {
+    return Boolean(bootstrapReady
+        && activeSurface === 'catch-up'
+        && !isOnboardingModuleComplete(completedModules, 'catch-up')
+        && !run
+        && !automaticStarted
+        && !replayPending);
+}
+
+function normalizeCompletionPayload(payload) {
+    return Array.isArray(payload?.completedOnboardingModules)
+        ? normalizeCompletedOnboardingModules(payload.completedOnboardingModules)
+        : [];
+}
+
+export function resolveOnboardingCompletionTransition(state = {}, payload, moduleId) {
+    const savedModules = normalizeCompletionPayload(payload);
+    if (!isOnboardingModuleComplete(savedModules, moduleId)) {
+        throw new Error(ONBOARDING_PREFERENCE_RETRY_ERROR);
+    }
+    return {
+        ...state,
+        run: false,
+        requestNonce: 0,
+        moduleRequest: null,
+        completedModules: savedModules,
+        onboardingDone: allOnboardingModulesComplete(savedModules),
+    };
+}
+
+export function resolveOnboardingCompletionSettlement(
+    payload,
+    moduleId,
+    { completionGeneration, currentGeneration } = {},
+) {
+    const transition = resolveOnboardingCompletionTransition({}, payload, moduleId);
+    return {
+        saved: true,
+        shouldClose: completionGeneration === currentGeneration,
+        moduleId,
+        completedModules: transition.completedModules,
+        onboardingDone: transition.onboardingDone,
+    };
+}
+
+export function shouldCloseOnboardingTourAfterSettlement(settlement) {
+    return settlement !== false && settlement?.shouldClose !== false;
+}
+
+export function shouldCloseOnboardingModuleForSurface({
+    effectiveOpen = false,
+    activeModule = '',
+    activeSurface = '',
+    moduleRequest = null,
+} = {}) {
+    if (!effectiveOpen || !activeModule) return false;
+    const expectedSurface = activeModule === 'configuration' ? 'settings' : activeModule;
+    if (activeSurface === expectedSurface) return false;
+    const requestedModule = String(moduleRequest?.moduleId || '');
+    const requestedSurface = requestedModule === 'configuration' ? 'settings' : requestedModule;
+    return !requestedSurface || requestedSurface !== activeSurface;
+}
+
+export function resolveOnboardingReplayTransition(state = {}, payload) {
+    if (!Array.isArray(payload?.completedOnboardingModules)
+        || payload.completedOnboardingModules.length
+        || payload?.onboardingDone !== false) {
+        throw new Error(ONBOARDING_PREFERENCE_RETRY_ERROR);
+    }
+    return {
+        ...resetOnboardingModuleRequest({
+            ...state,
+            completedModules: [],
+        }),
+        onboardingDone: false,
+    };
+}
+
+export function classifyOnboardingPersistenceError(error) {
+    if (isAuthenticationRequiredError(error)) {
+        return { authRequired: true, message: '' };
+    }
+    return {
+        authRequired: false,
+        message: error?.message || ONBOARDING_PREFERENCE_SAVE_ERROR,
+    };
+}
 
 export function updateOnboardingStepUnlock(currentKey, action = {}) {
     if (action.type === 'clear') return null;
@@ -31,12 +137,15 @@ export function updateOnboardingStepUnlock(currentKey, action = {}) {
 
 export function useOnboardingController({
     bootstrapReady = false,
-    onboardingDone = true,
-    setOnboardingDone,
-    savePreference,
+    activeSurface = 'catch-up',
+    completedModules,
+    setCompletedModules,
+    completeModule,
+    resetModules,
     prepareCatchUp,
     closeSettings,
     trackSettingsAction,
+    canStartModule = DEFAULT_CAN_START_MODULE,
 } = {}) {
     const [run, setRun] = React.useState(false);
     const [sourceSurface, setSourceSurface] = React.useState('first_run');
@@ -47,94 +156,155 @@ export function useOnboardingController({
     const inFlightRef = React.useRef(false);
     const replayPendingRef = React.useRef(false);
     const moduleRequestNonceRef = React.useRef(0);
+    const normalizedCompletedModules = React.useMemo(
+        () => normalizeCompletedOnboardingModules(completedModules),
+        [completedModules],
+    );
 
     const resetModuleRequests = React.useCallback(() => {
         moduleRequestNonceRef.current = 0;
         setModuleRequest(null);
     }, []);
 
-    const open = React.useCallback((source) => {
+    const openModule = React.useCallback((moduleId, source) => {
+        if (!isOnboardingModuleStartAllowed(canStartModule, moduleId)) return false;
         const normalizedSource = source === 'settings' ? 'settings' : 'first_run';
-        resetModuleRequests();
-        prepareCatchUp?.();
+        const current = {
+            run,
+            completedModules: normalizedCompletedModules,
+            requestNonce: moduleRequestNonceRef.current,
+            moduleRequest,
+        };
+        const next = nextOnboardingModuleRequest(current, moduleId);
+        if (next === current) return false;
+        moduleRequestNonceRef.current = next.requestNonce;
+        setModuleRequest(next.moduleRequest);
         setError('');
         setSourceSurface(normalizedSource);
         setRun(true);
-        trackOnboardingAnalytics(trackSettingsAction, 'started', normalizedSource);
-    }, [prepareCatchUp, resetModuleRequests, trackSettingsAction]);
+        trackOnboardingAnalytics(trackSettingsAction, 'started', normalizedSource, moduleId);
+        return true;
+    }, [canStartModule, moduleRequest, normalizedCompletedModules, run, trackSettingsAction]);
 
     React.useEffect(() => {
-        if (!bootstrapReady || onboardingDone !== false || run || automaticStartedRef.current || replayPendingRef.current) return;
-        automaticStartedRef.current = true;
-        open('first_run');
-    }, [bootstrapReady, onboardingDone, open, run]);
+        if (!shouldAutomaticallyStartOnboarding({
+            bootstrapReady,
+            completedModules: normalizedCompletedModules,
+            run,
+            automaticStarted: automaticStartedRef.current,
+            replayPending: replayPendingRef.current,
+            activeSurface,
+        })) return;
+        automaticStartedRef.current = openModule('catch-up', 'first_run');
+    }, [activeSurface, bootstrapReady, normalizedCompletedModules, openModule, run]);
 
     React.useEffect(() => {
-        if (onboardingDone !== false) automaticStartedRef.current = false;
-    }, [onboardingDone]);
+        if (isOnboardingModuleComplete(normalizedCompletedModules, 'catch-up')) {
+            automaticStartedRef.current = false;
+        }
+    }, [normalizedCompletedModules]);
 
-    const persist = React.useCallback(async (nextDone, outcome) => {
-        if (inFlightRef.current || typeof savePreference !== 'function') return false;
+    const persistModule = React.useCallback(async (moduleId, outcome) => {
+        if (inFlightRef.current || !ONBOARDING_MODULE_IDS.includes(moduleId)) return false;
+        if (typeof completeModule !== 'function') return false;
+        const completionGeneration = moduleRequestNonceRef.current;
         inFlightRef.current = true;
         setPending(true);
         setError('');
         try {
-            const payload = await savePreference(nextDone);
-            if (payload?.onboardingDone !== nextDone) {
-                throw new Error('Saved onboarding preference could not be verified. Please retry.');
-            }
-            setOnboardingDone?.(nextDone);
-            if (nextDone) {
+            const payload = await completeModule(moduleId);
+            const settlement = resolveOnboardingCompletionSettlement(
+                payload,
+                moduleId,
+                {
+                    completionGeneration,
+                    currentGeneration: moduleRequestNonceRef.current,
+                },
+            );
+            setCompletedModules?.(settlement);
+            if (settlement.shouldClose) {
                 setRun(false);
-                trackOnboardingAnalytics(trackSettingsAction, outcome, sourceSurface);
+                moduleRequestNonceRef.current = 0;
+                setModuleRequest(null);
             }
-            return true;
+            trackOnboardingAnalytics(trackSettingsAction, outcome, sourceSurface, moduleId);
+            return settlement;
         } catch (saveError) {
-            if (isAuthenticationRequiredError(saveError)) return false;
-            setError(saveError?.message || 'Failed to save onboarding preference. Please retry.');
+            const classified = classifyOnboardingPersistenceError(saveError);
+            if (classified.authRequired) return false;
+            setError(classified.message);
             return false;
         } finally {
             inFlightRef.current = false;
             setPending(false);
         }
-    }, [savePreference, setOnboardingDone, sourceSurface, trackSettingsAction]);
+    }, [completeModule, setCompletedModules, sourceSurface, trackSettingsAction]);
 
-    const skip = React.useCallback(async () => {
-        const saved = await persist(true, 'skipped');
-        if (saved) resetModuleRequests();
-        return saved;
-    }, [persist, resetModuleRequests]);
-    const finish = React.useCallback(async () => {
-        const saved = await persist(true, 'completed');
-        if (saved) resetModuleRequests();
-        return saved;
-    }, [persist, resetModuleRequests]);
+    const skip = React.useCallback((moduleId = 'catch-up') => (
+        persistModule(moduleId, 'skipped')
+    ), [persistModule]);
+    const finish = React.useCallback((moduleId = 'catch-up') => (
+        persistModule(moduleId, 'completed')
+    ), [persistModule]);
     const replay = React.useCallback(async () => {
+        if (inFlightRef.current || typeof resetModules !== 'function') return false;
         replayPendingRef.current = true;
-        const saved = await persist(false, '');
-        if (!saved) {
+        inFlightRef.current = true;
+        setPending(true);
+        setError('');
+        let transition;
+        try {
+            const payload = await resetModules();
+            transition = resolveOnboardingReplayTransition({
+                run,
+                completedModules: normalizedCompletedModules,
+                requestNonce: moduleRequestNonceRef.current,
+                moduleRequest,
+            }, payload);
+            setCompletedModules?.(transition);
+        } catch (saveError) {
+            const classified = classifyOnboardingPersistenceError(saveError);
+            if (!classified.authRequired) setError(classified.message);
             replayPendingRef.current = false;
             return false;
+        } finally {
+            inFlightRef.current = false;
+            setPending(false);
         }
         closeSettings?.();
-        open('settings');
+        prepareCatchUp?.();
+        if (isOnboardingModuleStartAllowed(canStartModule, 'catch-up')) {
+            moduleRequestNonceRef.current = transition.requestNonce;
+            setModuleRequest(transition.moduleRequest);
+            setSourceSurface('settings');
+            setRun(transition.run);
+            trackOnboardingAnalytics(trackSettingsAction, 'started', 'settings', 'catch-up');
+        } else {
+            resetModuleRequests();
+            setRun(false);
+        }
         replayPendingRef.current = false;
         return true;
-    }, [closeSettings, open, persist]);
+    }, [canStartModule, closeSettings, moduleRequest, normalizedCompletedModules, prepareCatchUp, resetModuleRequests, resetModules, run, setCompletedModules, trackSettingsAction]);
 
     const requestModule = React.useCallback((moduleId) => {
-        if (!run) return false;
-        const requestNonce = moduleRequestNonceRef.current + 1;
-        moduleRequestNonceRef.current = requestNonce;
-        setModuleRequest({ moduleId: String(moduleId || ''), requestNonce });
-        return true;
-    }, [run]);
+        return openModule(moduleId, sourceSurface);
+    }, [openModule, sourceSurface]);
 
     const clearModuleRequest = React.useCallback((requestNonce) => {
         setModuleRequest((current) => (
             current?.requestNonce === requestNonce ? null : current
         ));
     }, []);
+
+    const interrupt = React.useCallback((moduleId) => {
+        if (!ONBOARDING_MODULE_IDS.includes(moduleId)) return false;
+        if (moduleId === 'catch-up') automaticStartedRef.current = false;
+        setError('');
+        setRun(false);
+        resetModuleRequests();
+        return true;
+    }, [resetModuleRequests]);
 
     React.useEffect(() => {
         const reset = () => resetModuleRequests();
@@ -150,6 +320,7 @@ export function useOnboardingController({
         moduleRequest,
         requestModule,
         clearModuleRequest,
+        interrupt,
         skip,
         finish,
         replay,
@@ -159,27 +330,40 @@ export function useOnboardingController({
 export default function useOnboardingTour({
     steps = [],
     run = false,
-    onboardingDone = true,
+    completedModules,
     onSkip,
     onFinish,
     activeSurface = 'catch-up',
     moduleRequest = null,
     onModuleRequestConsumed,
+    onModuleInterrupted,
 } = {}) {
     const [sessionState, setSessionState] = React.useState(() => ({
         sessionOpen: false,
         currentStepId: steps[0]?.id || '',
     }));
     const previousStepsRef = React.useRef(steps);
-    const [moduleSession, setModuleSession] = React.useState(createOnboardingModuleSession);
+    const normalizedCompletedModules = React.useMemo(
+        () => normalizeCompletedOnboardingModules(completedModules),
+        [completedModules],
+    );
+    const [moduleSession, setModuleSession] = React.useState(() => (
+        createOnboardingModuleSession(normalizedCompletedModules)
+    ));
     const consumedModuleRequestRef = React.useRef(0);
     const sessionCounterRef = React.useRef(0);
     const sessionOpenRef = React.useRef(false);
     const [unlockedStepKey, setUnlockedStepKey] = React.useState(null);
-    const activeSteps = moduleSession.activeModule === 'catch-up'
-        ? steps
-        : (ONBOARDING_STEPS_BY_MODULE[moduleSession.activeModule] || []);
-    const effectiveOpen = Boolean(run && !onboardingDone && steps.length);
+    const activeSteps = moduleSession.activeModule
+        ? (moduleSession.activeModule === 'catch-up'
+            ? steps
+            : (ONBOARDING_STEPS_BY_MODULE[moduleSession.activeModule] || []))
+        : [];
+    const activeModuleComplete = isOnboardingModuleComplete(
+        normalizedCompletedModules,
+        moduleSession.activeModule,
+    );
+    const effectiveOpen = Boolean(run && moduleSession.activeModule && !activeModuleComplete && activeSteps.length);
     let effectiveState = reconcileTourSessionState(sessionState, { isOpen: effectiveOpen, steps: activeSteps });
     if (effectiveState.sessionOpen) {
         const reconciledStepId = reconcileCurrentStepId({
@@ -198,7 +382,7 @@ export default function useOnboardingTour({
     const currentIndex = foundIndex < 0 ? 0 : foundIndex;
     const navigation = deriveTourNavigationState({
         run,
-        onboardingDone,
+        onboardingDone: !moduleSession.activeModule || activeModuleComplete,
         currentIndex,
         totalSteps: activeSteps.length,
     });
@@ -232,56 +416,51 @@ export default function useOnboardingTour({
     }, [activeSteps]);
 
     React.useEffect(() => {
-        if (effectiveOpen) return;
+        if (run) return;
         consumedModuleRequestRef.current = 0;
         clearStepUnlock();
-        setModuleSession(createOnboardingModuleSession());
-    }, [clearStepUnlock, effectiveOpen]);
+        setModuleSession(createOnboardingModuleSession(normalizedCompletedModules));
+    }, [clearStepUnlock, run]);
 
     React.useEffect(() => {
         const requestNonce = Number(moduleRequest?.requestNonce) || 0;
         const moduleId = String(moduleRequest?.moduleId || '');
         const expectedSurface = moduleId === 'configuration' ? 'settings' : moduleId;
-        if (!effectiveOpen
+        if (!run
             || !requestNonce
             || requestNonce <= consumedModuleRequestRef.current
+            || isOnboardingModuleComplete(normalizedCompletedModules, moduleId)
             || activeSurface !== expectedSurface) return;
 
         consumedModuleRequestRef.current = requestNonce;
         clearStepUnlock();
-        const currentCatchUpStep = steps.find((step) => step.id === effectiveState.currentStepId);
-        const currentIndex = steps.indexOf(currentCatchUpStep);
-        const resumeStepId = currentIndex >= 0 ? (steps[currentIndex + 1]?.id || 'complete') : 'complete';
         setModuleSession((state) => {
-            return activateOnboardingModule(state, { moduleId, requestNonce, resumeStepId });
+            return activateOnboardingModule({
+                ...state,
+                completedModules: normalizedCompletedModules,
+            }, { moduleId, requestNonce });
         });
-        if (!moduleSession.completedModules.includes(moduleId)) {
-            const contextualStepId = ONBOARDING_STEPS_BY_MODULE[moduleId]?.[0]?.id || '';
-            if (contextualStepId) {
-                setSessionState((state) => ({ ...state, currentStepId: contextualStepId }));
-            }
+        const moduleSteps = moduleId === 'catch-up' ? steps : (ONBOARDING_STEPS_BY_MODULE[moduleId] || []);
+        const firstStepId = moduleSteps[0]?.id || '';
+        if (firstStepId) {
+            setSessionState({ sessionOpen: false, currentStepId: firstStepId });
         }
         onModuleRequestConsumed?.(requestNonce);
-    }, [activeSurface, clearStepUnlock, effectiveOpen, effectiveState.currentStepId, moduleRequest, moduleSession.completedModules, onModuleRequestConsumed, steps]);
+    }, [activeSurface, clearStepUnlock, moduleRequest, normalizedCompletedModules, onModuleRequestConsumed, run, steps]);
 
     React.useEffect(() => {
-        if (!effectiveOpen || moduleSession.activeModule !== 'configuration') return;
-        if (activeSurface === 'settings') return;
+        const activeModule = moduleSession.activeModule;
+        if (!shouldCloseOnboardingModuleForSurface({
+            effectiveOpen,
+            activeModule,
+            activeSurface,
+            moduleRequest,
+        })) return;
         clearStepUnlock();
-        setModuleSession((state) => ({
-            ...state,
-            activeModule: 'catch-up',
-            resumeStepId: '',
-            suspendedSurface: '',
-        }));
-        setSessionState((state) => ({ ...state, currentStepId: 'launch-configuration' }));
-    }, [activeSurface, clearStepUnlock, effectiveOpen, moduleSession.activeModule]);
-
-    React.useEffect(() => {
-        if (!moduleSession.suspendedSurface) return;
-        const resumed = resumeOnboardingAfterSurfaceExit(moduleSession, activeSurface);
-        if (resumed !== moduleSession) setModuleSession(resumed);
-    }, [activeSurface, moduleSession]);
+        setModuleSession((state) => closeOnboardingModuleSession(state));
+        setSessionState((state) => ({ ...state, sessionOpen: false }));
+        onModuleInterrupted?.(activeModule);
+    }, [activeSurface, clearStepUnlock, effectiveOpen, moduleRequest, moduleSession.activeModule, onModuleInterrupted]);
 
     const goBack = React.useCallback(() => {
         if (!navigation.canGoBack) return;
@@ -306,46 +485,30 @@ export default function useOnboardingTour({
         });
     }, [activeSteps, clearStepUnlock, effectiveState.currentStepId, effectiveState.sessionOpen]);
 
-    const acknowledgeUnavailableModule = React.useCallback(() => {
-        const step = activeSteps[navigation.index];
-        if (step?.progression !== 'module-launch' || !step.moduleId) return;
-        setModuleSession((state) => acknowledgeUnavailableOnboardingModule(state, step.moduleId));
-        goNext();
-    }, [activeSteps, goNext, navigation.index]);
-
-    const completeCurrentModule = React.useCallback(() => {
-        const moduleId = moduleSession.activeModule;
-        if (moduleId === 'catch-up') return;
-        const resumeStepId = moduleSession.resumeStepId || 'complete';
-        clearStepUnlock();
-        setModuleSession((state) => completeOnboardingModule(state, {
-            moduleId,
-            surface: activeSurface,
-        }));
-        setSessionState((state) => ({ ...state, currentStepId: resumeStepId }));
-    }, [activeSurface, clearStepUnlock, moduleSession.activeModule, moduleSession.resumeStepId]);
-
     const resetSession = React.useCallback(() => {
         consumedModuleRequestRef.current = 0;
         clearStepUnlock();
-        setModuleSession(createOnboardingModuleSession());
-    }, [clearStepUnlock]);
+        setModuleSession(createOnboardingModuleSession(normalizedCompletedModules));
+        setSessionState((state) => ({ ...state, sessionOpen: false }));
+    }, [clearStepUnlock, normalizedCompletedModules]);
 
     const skip = React.useCallback(async () => {
         if (!navigation.isOpen) return false;
-        const saved = await onSkip?.();
-        if (saved === false) return false;
+        const moduleId = moduleSession.activeModule;
+        const settlement = await onSkip?.(moduleId);
+        if (!shouldCloseOnboardingTourAfterSettlement(settlement)) return settlement !== false;
         resetSession();
         return true;
-    }, [navigation.isOpen, onSkip, resetSession]);
+    }, [moduleSession.activeModule, navigation.isOpen, onSkip, resetSession]);
 
     const finish = React.useCallback(async () => {
-        if (!navigation.isOpen || !navigation.isLast || !allRequiredOnboardingModulesComplete(moduleSession)) return false;
-        const saved = await onFinish?.();
-        if (saved === false) return false;
+        if (!navigation.isOpen || !navigation.isLast) return false;
+        const moduleId = moduleSession.activeModule;
+        const settlement = await onFinish?.(moduleId);
+        if (!shouldCloseOnboardingTourAfterSettlement(settlement)) return settlement !== false;
         resetSession();
         return true;
-    }, [moduleSession, navigation.isLast, navigation.isOpen, onFinish, resetSession]);
+    }, [moduleSession.activeModule, navigation.isLast, navigation.isOpen, onFinish, resetSession]);
 
     return {
         ...navigation,
@@ -355,12 +518,9 @@ export default function useOnboardingTour({
         sessionId,
         stepUnlocked,
         moduleSession,
-        suspended: Boolean(moduleSession.suspendedSurface),
-        allRequiredModulesComplete: allRequiredOnboardingModulesComplete(moduleSession),
+        suspended: false,
         goBack,
         goNext,
-        acknowledgeUnavailableModule,
-        completeCurrentModule,
         resetSession,
         unlockStep,
         clearStepUnlock,

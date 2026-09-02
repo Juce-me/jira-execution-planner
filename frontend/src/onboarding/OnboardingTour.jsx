@@ -225,19 +225,6 @@ function sameGeometry(left, right) {
         && left.coachmarkSize.height === right.coachmarkSize.height;
 }
 
-function includeModuleLaunchSteps(steps, catalog) {
-    const launchSteps = catalog.filter((step) => step.progression === 'module-launch');
-    if (!launchSteps.length) return steps;
-    const withoutLaunchers = steps.filter((step) => step.progression !== 'module-launch');
-    const completeIndex = withoutLaunchers.findIndex((step) => step.id === 'complete');
-    if (completeIndex < 0) return [...withoutLaunchers, ...launchSteps];
-    return [
-        ...withoutLaunchers.slice(0, completeIndex),
-        ...launchSteps,
-        ...withoutLaunchers.slice(completeIndex),
-    ];
-}
-
 function readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords = [], catalog = ONBOARDING_STEP_CATALOG) {
     const viewport = viewportSize();
     const raw = resolveOnboardingSnapshot(document, { width: viewport.right, height: viewport.bottom }, {
@@ -245,24 +232,21 @@ function readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords
         tourOwnedSuppressionRecords,
         catalog,
     });
-    if (!eligibleTargets) return { ...raw, steps: includeModuleLaunchSteps(raw.steps, catalog) };
+    if (!eligibleTargets) return raw;
     const availability = {};
     catalog.forEach((step) => {
         const explicitlyEligible = eligibleTargets[step.id] !== false;
         availability[step.id] = explicitlyEligible && Boolean(raw.targets[step.id]);
     });
     return {
-        steps: includeModuleLaunchSteps(
-            buildVisibleOnboardingSteps(availability, { engReadiness, catalog }),
-            catalog,
-        ),
+        steps: buildVisibleOnboardingSteps(availability, { engReadiness, catalog }),
         targets: raw.targets,
     };
 }
 
 export default function OnboardingTour({
     run = false,
-    onboardingDone = true,
+    completedModules = [],
     eligibleTargets = null,
     onSkip,
     onFinish,
@@ -276,6 +260,7 @@ export default function OnboardingTour({
     activeSurface = 'catch-up',
     moduleRequest = null,
     onModuleRequestConsumed,
+    onModuleInterrupted,
     settingsDirty = false,
     settingsSaving = false,
 } = {}) {
@@ -293,12 +278,13 @@ export default function OnboardingTour({
     const tour = useOnboardingTour({
         steps: snapshot.catchUpSteps,
         run,
-        onboardingDone,
+        completedModules,
         onSkip,
         onFinish,
         activeSurface,
         moduleRequest,
         onModuleRequestConsumed,
+        onModuleInterrupted,
     });
     const skipTour = tour.skip;
     const panelRef = React.useRef(null);
@@ -496,8 +482,6 @@ export default function OnboardingTour({
         ? buildStepPresentation(tour.currentStep, target, { engReadiness })
         : { fallback: true, loading: false, title: '', body: '' };
     const previewStep = tour.currentStep?.progression === 'menu-preview';
-    const moduleLaunchStep = tour.currentStep?.progression === 'module-launch';
-    const moduleUnavailable = moduleLaunchStep && basePresentation.fallback;
     const targetReachableStep = tour.currentStep?.interaction === 'target-reachable';
     const settingsContextStep = tour.moduleSession.activeModule === 'configuration'
         && tour.currentStep?.progression === 'module-manual';
@@ -529,11 +513,10 @@ export default function OnboardingTour({
         && !basePresentation.loading
         && !basePresentation.fallback
         && !previewForcedFallback);
-    const interactive = shouldUseInteractiveCoachmark(interactiveEligible, rawPlacement)
-        || Boolean(moduleLaunchStep && interactiveEligible && rawPlacement.mode === 'fallback');
+    const interactive = shouldUseInteractiveCoachmark(interactiveEligible, rawPlacement);
     const presentation = previewForcedFallback
         || unsafeForcedFallback
-        || (rawPlacement.mode === 'fallback' && !moduleLaunchStep)
+        || rawPlacement.mode === 'fallback'
         ? buildStepPresentation(tour.currentStep, null, { engReadiness })
         : basePresentation;
     const matchedPreviewSession = descriptorsMatch(previewDescriptorRef.current, previewSession)
@@ -727,19 +710,6 @@ export default function OnboardingTour({
     }, [authLocked, interactive, mobileSuppressed, target, tour.currentStep, tour.isOpen, tour.suspended]);
 
     React.useLayoutEffect(() => {
-        if (!interactive || !moduleLaunchStep || rawPlacement.mode !== 'fallback' || !target) return undefined;
-        const root = document.getElementById('root');
-        const raisedPath = [];
-        let node = target;
-        while (node && node !== root) {
-            node.classList.add('onboarding-tour-raised-path');
-            raisedPath.push(node);
-            node = node.parentElement;
-        }
-        return () => raisedPath.forEach((entry) => entry.classList.remove('onboarding-tour-raised-path'));
-    }, [interactive, moduleLaunchStep, rawPlacement.mode, target]);
-
-    React.useLayoutEffect(() => {
         if (!interactive || !target) return;
         const frame = window.requestAnimationFrame(() => {
             if (!exactTargetHitTest(target, viewportSize())) setUnsafeTargetIdentity(targetIdentity);
@@ -913,12 +883,8 @@ export default function OnboardingTour({
 
     const handleNext = () => {
         requestCleanup('cleanup');
-        if (moduleUnavailable) {
-            tour.acknowledgeUnavailableModule();
-            return;
-        }
         if (moduleManualStep) {
-            tour.completeCurrentModule();
+            tour.finish();
             return;
         }
         tour.goNext();
@@ -1010,9 +976,7 @@ export default function OnboardingTour({
                             </button>
                         )}
                         {tour.isLast && !contextualModuleActive ? (
-                            tour.allRequiredModulesComplete && (
-                                <button type="button" className="primary" onClick={tour.finish} disabled={actionPending}>Finish</button>
-                            )
+                            <button type="button" className="primary" onClick={tour.finish} disabled={actionPending}>Finish</button>
                         ) : (
                             <button
                                 ref={nextButtonRef}
@@ -1023,7 +987,7 @@ export default function OnboardingTour({
                                     || presentation.loading
                                     || settingsBlocked
                                     || (previewStep && !tour.stepUnlocked)
-                                    || (moduleLaunchStep ? !moduleUnavailable : (!moduleManualStep && !tour.canGoNext))}
+                                    || (!moduleManualStep && !tour.canGoNext)}
                             >Next</button>
                         )}
                     </div>

@@ -16,6 +16,7 @@ import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
+import { isEngOnboardingModuleSurface } from './onboarding/onboardingModules.js';
 import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
 import { useOnboardingController } from './onboarding/useOnboardingTour.js';
 import AuthRequiredGate from './components/AuthRequiredGate.jsx';
@@ -38,7 +39,7 @@ import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
 import { useEngProjectTrackTransitions } from './eng/useEngProjectTrackTransitions.js';
 import { applyLocalEpicDetailsFieldUpdate, applyLocalIssueFieldUpdate } from './eng/engIssueLocalUpdates.js';
 import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/engStatusTransitionUtils.js';
-import { useEngModeState } from './eng/engModeState.js';
+import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
 import ProjectTrackTransitionMenu from './issues/ProjectTrackTransitionMenu.jsx';
@@ -136,7 +137,8 @@ import {
     fetchIssueTypesConfig as requestIssueTypesConfig,
     saveIssueTypesConfig as requestSaveIssueTypesConfig,
     fetchAvailableIssueTypes as requestAvailableIssueTypes,
-    saveOnboardingPreference as requestSaveOnboardingPreference,
+    completeOnboardingModule as requestCompleteOnboardingModule,
+    resetOnboardingModules as requestResetOnboardingModules,
 } from './api/configApi.js';
 import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.jsx';
 import FirstRunGroupSetupChoice from './settings/FirstRunGroupSetupChoice.jsx';
@@ -2497,8 +2499,8 @@ import {
                 }
             };
 
-            const openGroupManage = ({ contextualOnboarding = false } = {}) => {
-                setGroupManageTab(contextualOnboarding ? 'teams' : preferredSettingsTab);
+            const openGroupManage = (tab = preferredSettingsTab) => {
+                setGroupManageTab(tab);
                 setShowGroupManage(true);
             };
 
@@ -2861,13 +2863,25 @@ import {
                 if (!isGroupDraftDirty) return 'No changes to save';
                 return '';
             }, [groupSaving, epmConfigSaving, firstRunConfigurationActive, firstRunConfigurationSession.guideComplete, authMode, sharedConfigReady, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
+            const onboardingActiveSurface = showGroupManage
+                ? 'settings'
+                : (selectedView === 'eng'
+                    ? deriveActiveEngMode({ showScenario, showStats, showPlanning, showBoard })
+                    : selectedView);
+            const canStartOnboardingModule = React.useCallback(() => !isDashboardMobileViewport(), []);
             const onboarding = useOnboardingController({
                 bootstrapReady: groupsLoading === false
                     && onboardingAvailable
                     && groupPreferences.onboardingRequired === false,
-                onboardingDone: groupPreferences.onboardingDone,
-                setOnboardingDone: (onboardingDone) => setGroupPreferences((current) => ({ ...current, onboardingDone })),
-                savePreference: (onboardingDone) => requestSaveOnboardingPreference(BACKEND_URL, onboardingDone),
+                activeSurface: onboardingActiveSurface,
+                completedModules: groupPreferences.completedOnboardingModules,
+                setCompletedModules: (settlement) => setGroupPreferences((current) => ({
+                    ...current,
+                    completedOnboardingModules: settlement.completedModules,
+                    onboardingDone: settlement.onboardingDone,
+                })),
+                completeModule: (moduleId) => requestCompleteOnboardingModule(BACKEND_URL, moduleId),
+                resetModules: () => requestResetOnboardingModules(BACKEND_URL),
                 prepareCatchUp: () => {
                     setSelectedView('eng');
                     setShowPlanning(false);
@@ -2877,6 +2891,7 @@ import {
                 },
                 closeSettings: closeGroupManage,
                 trackSettingsAction,
+                canStartModule: canStartOnboardingModule,
             });
             const onboardingReplayDisabled = Boolean(
                 isGroupDraftDirty
@@ -13206,7 +13221,7 @@ import {
                     isFutureSprintSelected={isFutureSprintSelected}
                     onChange={(nextMode) => {
                         applyEngMode(nextMode);
-                        if (['planning', 'board', 'statistics'].includes(nextMode)) {
+                        if (isEngOnboardingModuleSurface(nextMode)) {
                             onboarding.requestModule(nextMode);
                         }
                     }}
@@ -13997,8 +14012,8 @@ import {
                                             onClick={(event) => {
                                                 event.stopPropagation();
                                                 trackSettingsAction('teams', 'open', { source_surface: 'dashboard' });
-                                                const contextualOnboarding = !isDashboardMobileViewport() && onboarding.requestModule('configuration');
-                                                openGroupManage({ contextualOnboarding });
+                                                const configurationTourRequested = !isDashboardMobileViewport() && onboarding.requestModule('configuration');
+                                                openGroupManage(configurationTourRequested ? 'teams' : preferredSettingsTab);
                                             }}
                                             disabled={groupsLoading}
                                             title="Manage team groups"
@@ -17021,7 +17036,7 @@ import {
                     )}
                     <OnboardingTour
                         run={onboarding.run}
-                        onboardingDone={groupPreferences.onboardingDone}
+                        completedModules={groupPreferences.completedOnboardingModules}
                         engReadiness={onboardingEngReadiness}
                         onSkip={onboarding.skip}
                         onFinish={onboarding.finish}
@@ -17031,9 +17046,10 @@ import {
                         previewSession={onboardingPreviewSession}
                         onPreviewTargetChange={handleOnboardingPreviewTargetChange}
                         onRequestPreviewClose={handleOnboardingPreviewCloseRequest}
-                        activeSurface={showGroupManage ? 'settings' : activeEngMode}
+                        activeSurface={onboardingActiveSurface}
                         moduleRequest={onboarding.moduleRequest}
                         onModuleRequestConsumed={onboarding.clearModuleRequest}
+                        onModuleInterrupted={onboarding.interrupt}
                         settingsDirty={showGroupManage && isGroupDraftDirty}
                         settingsSaving={showGroupManage && (groupSaving || epmConfigSaving || groupVisibilitySaving)}
                     />

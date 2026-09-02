@@ -253,6 +253,7 @@ link_type
 page_name
 method
 metric
+module_id
 override_count_bucket
 pending_unsaved_state
 point_bucket
@@ -342,7 +343,7 @@ Create only the following event-scoped custom dimensions initially. Do not regis
 | Subgoal Scope | Event | `subgoal_scope` |
 | Workflow Action | Event | `workflow_action` |
 
-Allowed but initially unregistered parameters include `conflict_count_bucket`, `conflict_state`, `dependency_state`, `dirty_state`, `from_mode`, `from_view`, `group_count_bucket`, `issue_count_bucket`, `method`, `override_count_bucket`, `pending_unsaved_state`, `point_bucket`, `previous_status`, `project_count_bucket`, `recoverable_state`, `scope_type`, `selected_count_bucket`, `selected_sp_bucket`, `series_type`, `sort_direction`, `sprint_selection_state`, `team_count_bucket`, `validation_count_bucket`, `value_state`, and `visible_count_bucket`. Register one later only when a named report needs it.
+Allowed but initially unregistered parameters include `conflict_count_bucket`, `conflict_state`, `dependency_state`, `dirty_state`, `from_mode`, `from_view`, `group_count_bucket`, `issue_count_bucket`, `method`, `module_id`, `override_count_bucket`, `pending_unsaved_state`, `point_bucket`, `previous_status`, `project_count_bucket`, `recoverable_state`, `scope_type`, `selected_count_bucket`, `selected_sp_bucket`, `series_type`, `sort_direction`, `sprint_selection_state`, `team_count_bucket`, `validation_count_bucket`, `value_state`, and `visible_count_bucket`. Register one later only when a named report needs it. Do not register `module_id` as a custom dimension without a named report reason.
 
 Registration rationale: every event-scoped custom dimension above must appear in at least one named report below. If a report stops using one, remove that custom definition instead of keeping it for possible future use. Unregistered parameters remain available for DebugView/source-guard validation and can be promoted only with a named report reason.
 

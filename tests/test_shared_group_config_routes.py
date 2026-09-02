@@ -526,7 +526,7 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         self.assertEqual(missing_requested_with.status_code, 403, missing_requested_with.get_data(as_text=True))
         self.assertEqual(missing_csrf.status_code, 403, missing_csrf.get_data(as_text=True))
 
-    def test_post_onboarding_updates_only_scalar_and_is_idempotent(self):
+    def test_post_onboarding_returns_canonical_legacy_true_and_false_payloads(self):
         self.assertEqual(self._save_personal_favorite().status_code, 200)
         before = self._get_groups_config(fallback={'version': 1}).get_json()
 
@@ -536,11 +536,32 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         after = self._get_groups_config(fallback={'version': 1}).get_json()
 
         self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
-        self.assertEqual(first.get_json(), {'onboardingDone': True})
+        self.assertEqual(first.get_json(), {
+            'completedOnboardingModules': [
+                'catch-up',
+                'configuration',
+                'planning',
+                'board',
+                'statistics',
+            ],
+            'onboardingDone': True,
+        })
         self.assertEqual(repeated.status_code, 200, repeated.get_data(as_text=True))
-        self.assertEqual(repeated.get_json(), {'onboardingDone': True})
+        self.assertEqual(repeated.get_json(), {
+            'completedOnboardingModules': [
+                'catch-up',
+                'configuration',
+                'planning',
+                'board',
+                'statistics',
+            ],
+            'onboardingDone': True,
+        })
         self.assertEqual(replay.status_code, 200, replay.get_data(as_text=True))
-        self.assertEqual(replay.get_json(), {'onboardingDone': False})
+        self.assertEqual(replay.get_json(), {
+            'completedOnboardingModules': [],
+            'onboardingDone': False,
+        })
         self.assertEqual(after['groups'], before['groups'])
         self.assertEqual(after['preferences']['visibleGroupIds'], ['platform'])
         self.assertEqual(after['preferences']['activeGroupId'], 'platform')
@@ -552,6 +573,36 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         self.assertEqual(rows[0].active_group_id, 'platform')
         self.assertTrue(rows[0].customized)
         self.assertFalse(rows[0].onboarding_done)
+
+    def test_post_onboarding_completes_one_canonical_module_idempotently(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+
+        first = self._post_onboarding({'completedModule': 'catch-up'})
+        repeated = self._post_onboarding({'completedModule': 'catch-up'})
+        remaining = [
+            self._post_onboarding({'completedModule': module_id})
+            for module_id in ('configuration', 'planning', 'board', 'statistics')
+        ]
+
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(first.get_json(), {
+            'completedOnboardingModules': ['catch-up'],
+            'onboardingDone': False,
+        })
+        self.assertEqual(repeated.status_code, 200, repeated.get_data(as_text=True))
+        self.assertEqual(repeated.get_json(), {
+            'completedOnboardingModules': ['catch-up'],
+            'onboardingDone': False,
+        })
+        expected_modules = ['catch-up']
+        for response, module_id in zip(remaining, ('configuration', 'planning', 'board', 'statistics')):
+            expected_modules.append(module_id)
+            with self.subTest(module_id=module_id):
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                self.assertEqual(response.get_json(), {
+                    'completedOnboardingModules': expected_modules,
+                    'onboardingDone': module_id == 'statistics',
+                })
 
     def test_post_onboarding_rejects_invalid_json_and_non_object_payloads(self):
         self._get_groups_config(fallback=self._favorite_config())
@@ -578,7 +629,7 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
             self.assertEqual(response.get_json(), {'error': 'invalid_json'})
 
-    def test_post_onboarding_rejects_extra_and_spoofed_fields_before_service(self):
+    def test_post_onboarding_rejects_extra_spoofed_and_mixed_fields_before_service(self):
         self._get_groups_config(fallback=self._favorite_config())
         unsupported_fields = (
             'workspaceId',
@@ -593,14 +644,34 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
             'account_id',
             'futureField',
         )
+        invalid_payloads = tuple(
+            {'onboardingDone': True, field: 'forbidden'}
+            for field in unsupported_fields
+        ) + (
+            {'completedModule': 'catch-up', 'onboardingDone': True},
+        )
 
-        for field in unsupported_fields:
-            with self.subTest(field=field):
-                response = self._post_onboarding({'onboardingDone': True, field: 'forbidden'})
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                response = self._post_onboarding(payload)
                 self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
                 self.assertEqual(response.get_json(), {'error': 'unsupported_onboarding_field'})
 
-    def test_post_onboarding_requires_a_boolean_done_field(self):
+    def test_post_onboarding_rejects_invalid_module_without_echoing_input(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        invalid_payloads = (
+            {'completedModule': 'scenario'},
+            {'completedModule': ['catch-up']},
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                response = self._post_onboarding(payload)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                self.assertEqual(response.get_json(), {'error': 'invalid_onboarding_module'})
+                self.assertNotIn(str(payload['completedModule']), response.get_data(as_text=True))
+
+    def test_post_onboarding_requires_exactly_one_valid_legacy_done_field(self):
         self._get_groups_config(fallback=self._favorite_config())
         invalid_payloads = (
             {},
@@ -753,7 +824,16 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         other_preferences = self._get_groups_config(fallback={'version': 1}).get_json()['preferences']
 
         self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
-        self.assertEqual(saved.get_json(), {'onboardingDone': True})
+        self.assertEqual(saved.get_json(), {
+            'completedOnboardingModules': [
+                'catch-up',
+                'configuration',
+                'planning',
+                'board',
+                'statistics',
+            ],
+            'onboardingDone': True,
+        })
         self.assertFalse(other_preferences['onboardingDone'])
 
     def test_post_onboarding_is_isolated_per_authenticated_workspace(self):

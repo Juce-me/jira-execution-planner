@@ -1,23 +1,31 @@
 export const ONBOARDING_MODULE_IDS = Object.freeze([
     'catch-up', 'configuration', 'planning', 'board', 'statistics',
 ]);
-export const REQUIRED_CONTEXTUAL_MODULE_IDS = Object.freeze([
-    'configuration', 'planning', 'board', 'statistics',
-]);
+const ONBOARDING_MODULE_SET = new Set(ONBOARDING_MODULE_IDS);
+const ENG_ONBOARDING_MODULE_SET = new Set(['catch-up', 'planning', 'board', 'statistics']);
 
-const CONTEXTUAL_MODULE_SET = new Set(REQUIRED_CONTEXTUAL_MODULE_IDS);
-
-function appendCompleted(completedModules, moduleId) {
-    const current = Array.isArray(completedModules) ? completedModules : [];
-    return current.includes(moduleId) ? current : [...current, moduleId];
+export function isEngOnboardingModuleSurface(moduleId) {
+    return ENG_ONBOARDING_MODULE_SET.has(moduleId);
 }
 
-export function createOnboardingModuleSession() {
+export function normalizeCompletedOnboardingModules(values) {
+    const requested = new Set(Array.isArray(values) ? values : []);
+    return ONBOARDING_MODULE_IDS.filter((moduleId) => requested.has(moduleId));
+}
+
+export function isOnboardingModuleComplete(completedModules, moduleId) {
+    return ONBOARDING_MODULE_SET.has(moduleId)
+        && normalizeCompletedOnboardingModules(completedModules).includes(moduleId);
+}
+
+export function allOnboardingModulesComplete(completedModules) {
+    return normalizeCompletedOnboardingModules(completedModules).length === ONBOARDING_MODULE_IDS.length;
+}
+
+export function createOnboardingModuleSession(completedModules = []) {
     return {
-        activeModule: 'catch-up',
-        completedModules: [],
-        resumeStepId: '',
-        suspendedSurface: '',
+        activeModule: '',
+        completedModules: normalizeCompletedOnboardingModules(completedModules),
         requestNonce: 0,
     };
 }
@@ -25,46 +33,59 @@ export function createOnboardingModuleSession() {
 export function activateOnboardingModule(state, request = {}) {
     const moduleId = String(request.moduleId || '');
     const requestNonce = Number(request.requestNonce) || 0;
-    if (!CONTEXTUAL_MODULE_SET.has(moduleId)
+    if (!ONBOARDING_MODULE_SET.has(moduleId)
         || !Number.isFinite(requestNonce)
         || requestNonce <= (Number(state?.requestNonce) || 0)
-        || state?.completedModules?.includes(moduleId)) return state;
+        || isOnboardingModuleComplete(state?.completedModules, moduleId)) return state;
     return {
         ...state,
         activeModule: moduleId,
-        resumeStepId: String(request.resumeStepId || ''),
-        suspendedSurface: '',
         requestNonce,
+    };
+}
+
+export function closeOnboardingModuleSession(state) {
+    if (!state?.activeModule) return state;
+    return {
+        ...state,
+        activeModule: '',
     };
 }
 
 export function completeOnboardingModule(state, options = {}) {
     const moduleId = String(options.moduleId || state?.activeModule || '');
-    if (!CONTEXTUAL_MODULE_SET.has(moduleId) || state?.activeModule !== moduleId) return state;
+    if (!ONBOARDING_MODULE_SET.has(moduleId) || state?.activeModule !== moduleId) return state;
     return {
         ...state,
-        activeModule: 'catch-up',
-        completedModules: appendCompleted(state.completedModules, moduleId),
-        suspendedSurface: moduleId === 'configuration' && options.surface === 'settings'
-            ? 'settings'
-            : '',
+        activeModule: '',
+        completedModules: normalizeCompletedOnboardingModules([
+            ...(state.completedModules || []),
+            moduleId,
+        ]),
     };
 }
 
-export function acknowledgeUnavailableOnboardingModule(state, moduleId) {
-    if (!CONTEXTUAL_MODULE_SET.has(moduleId) || state?.completedModules?.includes(moduleId)) return state;
+export function nextOnboardingModuleRequest(state, moduleId) {
+    const normalizedModuleId = String(moduleId || '');
+    if (!ONBOARDING_MODULE_SET.has(normalizedModuleId)
+        || isOnboardingModuleComplete(state?.completedModules, normalizedModuleId)) return state;
+    const requestNonce = (Number(state?.requestNonce) || 0) + 1;
     return {
         ...state,
-        completedModules: appendCompleted(state.completedModules, moduleId),
+        run: true,
+        activeModule: normalizedModuleId,
+        requestNonce,
+        moduleRequest: { moduleId: normalizedModuleId, requestNonce },
     };
 }
 
-export function resumeOnboardingAfterSurfaceExit(state, activeSurface) {
-    if (!state?.suspendedSurface || activeSurface === state.suspendedSurface) return state;
-    return { ...state, suspendedSurface: '' };
-}
-
-export function allRequiredOnboardingModulesComplete(state) {
-    const completed = new Set(state?.completedModules || []);
-    return REQUIRED_CONTEXTUAL_MODULE_IDS.every((moduleId) => completed.has(moduleId));
+export function resetOnboardingModuleRequest(state) {
+    return nextOnboardingModuleRequest({
+        ...state,
+        run: false,
+        activeModule: '',
+        completedModules: [],
+        requestNonce: 0,
+        moduleRequest: null,
+    }, 'catch-up');
 }

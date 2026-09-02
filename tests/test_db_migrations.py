@@ -474,7 +474,7 @@ class DbMigrationTests(unittest.TestCase):
                 self.assertIsNone(raised.exception.__context__)
                 self.assertNotIn("secret", rendered)
 
-    def test_onboarding_migration_backfills_existing_preferences_and_defaults_new_rows(self):
+    def test_screen_scoped_onboarding_migration_backfills_and_downgrades_only_modules(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'onboarding.db')}"
             config = self._config(database_url)
@@ -498,54 +498,95 @@ class DbMigrationTests(unittest.TestCase):
             command.upgrade(config, '20260829_0009')
             engine = create_engine(database_url, future=True)
             try:
-                inspector = inspect(engine)
-                onboarding_column = next(
-                    column for column in inspector.get_columns('user_group_preferences')
-                    if column['name'] == 'onboarding_done'
-                )
-                self.assertFalse(onboarding_column['nullable'])
-
                 with engine.begin() as connection:
-                    existing = connection.execute(text("""
-                        SELECT onboarding_done
-                        FROM user_group_preferences
-                        WHERE id = 'preference-existing'
-                    """)).scalar_one()
+                    connection.execute(text("""
+                        INSERT INTO user_group_preferences (
+                            id, workspace_id, user_id, payload_version, visible_group_ids,
+                            active_group_id, customized, onboarding_done, created_at, updated_at
+                        ) VALUES (
+                            'preference-new', 'workspace-2', 'user-2', 1, '[]',
+                            'platform', 1, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+            finally:
+                engine.dispose()
+
+            command.upgrade(config, 'head')
+            engine = create_engine(database_url, future=True)
+            try:
+                inspector = inspect(engine)
+                columns = {
+                    column['name']: column
+                    for column in inspector.get_columns('user_group_preferences')
+                }
+                self.assertFalse(columns['onboarding_done']['nullable'])
+                self.assertFalse(columns['onboarding_completed_modules']['nullable'])
+                with engine.begin() as connection:
                     connection.execute(text("""
                         INSERT INTO user_group_preferences (
                             id, workspace_id, user_id, payload_version, visible_group_ids,
                             active_group_id, customized, created_at, updated_at
                         ) VALUES (
-                            'preference-new', 'workspace-2', 'user-2', 1, '[]',
+                            'preference-defaults', 'workspace-3', 'user-3', 1, '[]',
                             'platform', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                         )
                     """))
-                    inserted = connection.execute(text("""
-                        SELECT onboarding_done
-                        FROM user_group_preferences
-                        WHERE id = 'preference-new'
-                    """)).scalar_one()
+                    rows = {
+                        row.id: row
+                        for row in connection.execute(text("""
+                            SELECT id, onboarding_done, onboarding_completed_modules
+                            FROM user_group_preferences
+                            ORDER BY id
+                        """)).mappings()
+                    }
 
-                self.assertTrue(bool(existing))
-                self.assertFalse(bool(inserted))
+                completed_modules = rows['preference-existing']['onboarding_completed_modules']
+                incomplete_modules = rows['preference-new']['onboarding_completed_modules']
+                default_modules = rows['preference-defaults']['onboarding_completed_modules']
+                if isinstance(completed_modules, str):
+                    completed_modules = json.loads(completed_modules)
+                if isinstance(incomplete_modules, str):
+                    incomplete_modules = json.loads(incomplete_modules)
+                if isinstance(default_modules, str):
+                    default_modules = json.loads(default_modules)
+                self.assertTrue(bool(rows['preference-existing']['onboarding_done']))
+                self.assertEqual(completed_modules, [
+                    'catch-up',
+                    'configuration',
+                    'planning',
+                    'board',
+                    'statistics',
+                ])
+                self.assertFalse(bool(rows['preference-new']['onboarding_done']))
+                self.assertEqual(incomplete_modules, [])
+                self.assertFalse(bool(rows['preference-defaults']['onboarding_done']))
+                self.assertEqual(default_modules, [])
             finally:
                 engine.dispose()
 
-            command.downgrade(config, '20260826_0007')
+            command.downgrade(config, '20260829_0009')
             engine = create_engine(database_url, future=True)
             try:
                 preference_columns = {
                     column['name']
                     for column in inspect(engine).get_columns('user_group_preferences')
                 }
-                self.assertNotIn('onboarding_done', preference_columns)
-                self.assertTrue({
-                    'workspace_id',
-                    'user_id',
-                    'visible_group_ids',
-                    'active_group_id',
-                    'customized',
-                }.issubset(preference_columns))
+                self.assertIn('onboarding_done', preference_columns)
+                self.assertNotIn('onboarding_completed_modules', preference_columns)
+                with engine.connect() as connection:
+                    legacy_values = {
+                        row.id: bool(row.onboarding_done)
+                        for row in connection.execute(text("""
+                            SELECT id, onboarding_done
+                            FROM user_group_preferences
+                            ORDER BY id
+                        """)).mappings()
+                    }
+                self.assertEqual(legacy_values, {
+                    'preference-defaults': False,
+                    'preference-existing': True,
+                    'preference-new': False,
+                })
             finally:
                 engine.dispose()
 

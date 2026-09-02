@@ -67,10 +67,6 @@ const FULL_AVAILABILITY = {
     'editing-track': true,
     'editing-status': true,
     'jira-export': true,
-    'launch-configuration': true,
-    'launch-planning': true,
-    'launch-board': true,
-    'launch-statistics': true,
 };
 
 const ENG_STEP_IDS = [
@@ -93,46 +89,26 @@ test('onboarding persistence is available only for Atlassian OAuth workspace DB 
     assert.equal(isOnboardingAvailable('', 'workspace_db'), false);
 });
 
-test('catch-up catalog keeps contextual module launchers between Jira export and completion', async () => {
+test('catch-up catalog ends with informational settings and tool-switching steps', async () => {
     const { ONBOARDING_STEP_CATALOG } = await loadModule();
     assert.deepEqual(
-        ONBOARDING_STEP_CATALOG.map((step) => [step.id, step.progression]),
-        [
-            ['sprint', 'manual'],
-            ['group', 'manual'],
-            ['teams', 'manual'],
-            ['refresh', 'manual'],
-            ['search', 'manual'],
-            ['filters', 'manual'],
-            ['hierarchy-initiative', 'manual'],
-            ['hierarchy-epic', 'manual'],
-            ['hierarchy-story', 'manual'],
-            ['editing-priority', 'menu-preview'],
-            ['editing-track', 'menu-preview'],
-            ['editing-status', 'menu-preview'],
-            ['jira-export', 'manual'],
-            ['launch-configuration', 'module-launch'],
-            ['launch-planning', 'module-launch'],
-            ['launch-board', 'module-launch'],
-            ['launch-statistics', 'module-launch'],
-            ['complete', 'finish'],
-        ]
+        ONBOARDING_STEP_CATALOG.slice(-4).map((step) => step.id),
+        ['jira-export', 'settings-info', 'eng-mode-info', 'complete'],
     );
-    const launchers = ONBOARDING_STEP_CATALOG.filter((step) => step.progression === 'module-launch');
-    assert.deepEqual(
-        launchers.map((step) => [step.id, step.moduleId]),
-        [
-            ['launch-configuration', 'configuration'],
-            ['launch-planning', 'planning'],
-            ['launch-board', 'board'],
-            ['launch-statistics', 'statistics'],
-        ]
-    );
-    launchers.forEach((step) => {
-        assert.equal(step.interaction, 'target-reachable', step.id);
-        assert.equal(step.requireEnabled, true, step.id);
-        assert.match(step.fallbackBody, /unavailable|not available/i, step.id);
+    const informational = ONBOARDING_STEP_CATALOG.slice(-3, -1);
+    assert.deepEqual(informational.map((step) => step.progression), ['manual', 'manual']);
+    assert.deepEqual(informational.map((step) => step.selectors), [
+        ['[data-onboarding-target="settings-launcher"]'],
+        ['[data-onboarding-target="eng-mode-control"]'],
+    ]);
+    informational.forEach((step) => {
+        assert.equal(Object.hasOwn(step, 'moduleId'), false, step.id);
     });
+    assert.match(informational[0].body, /add or manage Departments/i);
+    assert.match(informational[1].title, /tools/i);
+    assert.match(informational[1].body, /switch between Catch Up, Planning, Board, Statistics, and Scenario/i);
+    assert.doesNotMatch(informational.map((step) => step.body).join(' '), /\bopen (?:Settings|Planning|Board|Statistics)\b/i);
+    assert.equal(ONBOARDING_STEP_CATALOG.some((step) => step.progression === 'module-launch'), false);
     assert.equal(Object.isFrozen(ONBOARDING_STEP_CATALOG), true);
     const renderedCopy = ONBOARDING_STEP_CATALOG
         .flatMap((step) => [step.title, step.body, step.fallbackBody || ''])
@@ -213,21 +189,82 @@ test('Configuration fallback reads the real Team selector metadata and retains m
     }
 });
 
-test('contextual launcher and destination source contracts preserve native controls', () => {
+test('contextual destination source contracts preserve native controls', () => {
     const dashboard = readFileSync(new URL('../frontend/src/dashboard.jsx', `file://${__filename}`), 'utf8');
-    const modeControl = readFileSync(new URL('../frontend/src/eng/EngModeControl.jsx', `file://${__filename}`), 'utf8');
     const segmentedControl = readFileSync(new URL('../frontend/src/ui/SegmentedControl.jsx', `file://${__filename}`), 'utf8');
+    const engModeControl = readFileSync(new URL('../frontend/src/eng/EngModeControl.jsx', `file://${__filename}`), 'utf8');
     const board = readFileSync(new URL('../frontend/src/eng/EngBoardView.jsx', `file://${__filename}`), 'utf8');
 
     assert.ok(dashboard.includes('data-onboarding-target="settings-launcher"'));
-    assert.ok(modeControl.includes("'data-onboarding-target': 'planning-launcher'"));
-    assert.ok(modeControl.includes("'data-onboarding-target': 'board-launcher'"));
-    assert.ok(modeControl.includes("'data-onboarding-target': 'statistics-launcher'"));
     assert.match(segmentedControl, /<button\s+\{\.\.\.\(option\.domProps \|\| \{\}\)\}/);
     assert.equal((segmentedControl.match(/\{\.\.\.\(option\.domProps \|\| \{\}\)\}/g) || []).length, 1);
+    assert.match(segmentedControl, /containerProps\s*=\s*\{\}/);
+    assert.equal((segmentedControl.match(/\{\.\.\.containerProps\}/g) || []).length, 1);
+    assert.match(engModeControl, /containerProps=\{\{\s*'data-onboarding-target': 'eng-mode-control'\s*\}\}/);
+    assert.equal((engModeControl.match(/planning-launcher|board-launcher|statistics-launcher/g) || []).length, 0);
     assert.ok(dashboard.includes('data-onboarding-target="planning-overview"'));
     assert.ok(dashboard.includes('data-onboarding-target="statistics-overview"'));
     assert.ok(board.includes('data-onboarding-target="board-overview"'));
+});
+
+test('dashboard wires canonical module persistence and requests only real supported surfaces', () => {
+    const dashboard = readFileSync(new URL('../frontend/src/dashboard.jsx', `file://${__filename}`), 'utf8');
+    const controller = readFileSync(new URL('../frontend/src/onboarding/useOnboardingTour.js', `file://${__filename}`), 'utf8');
+
+    assert.match(dashboard, /completeOnboardingModule\s+as\s+requestCompleteOnboardingModule/);
+    assert.match(dashboard, /resetOnboardingModules\s+as\s+requestResetOnboardingModules/);
+    assert.doesNotMatch(dashboard, /saveOnboardingPreference\s+as\s+requestSaveOnboardingPreference/);
+    assert.match(dashboard, /completedModules:\s*groupPreferences\.completedOnboardingModules/);
+    assert.match(dashboard, /setCompletedModules:\s*\(settlement\)\s*=>\s*setGroupPreferences/);
+    assert.match(dashboard, /completedOnboardingModules:\s*settlement\.completedModules/);
+    assert.match(dashboard, /onboardingDone:\s*settlement\.onboardingDone/);
+    assert.match(controller, /setCompletedModules\?\.\(settlement\)/);
+    assert.match(controller, /setCompletedModules\?\.\(transition\)/);
+    assert.doesNotMatch(controller, /setCompletedModules\?\.\([^)]*,\s*payload\)/);
+    assert.match(dashboard, /completeModule:\s*\(moduleId\)\s*=>\s*requestCompleteOnboardingModule\(BACKEND_URL, moduleId\)/);
+    assert.match(dashboard, /resetModules:\s*\(\)\s*=>\s*requestResetOnboardingModules\(BACKEND_URL\)/);
+    assert.match(dashboard, /<OnboardingTour[\s\S]*?completedModules=\{groupPreferences\.completedOnboardingModules\}/);
+
+    const modeHandler = dashboard.match(/onChange=\{\(nextMode\)\s*=>\s*\{[\s\S]*?\}\}\s*selectedSprint=/)?.[0] || '';
+    assert.match(modeHandler, /applyEngMode\(nextMode\);[\s\S]*onboarding\.requestModule\(nextMode\)/);
+    assert.match(modeHandler, /if \(isEngOnboardingModuleSurface\(nextMode\)\)/);
+    assert.doesNotMatch(modeHandler, /['"]scenario['"][\s\S]*requestModule|requestModule\(['"]scenario['"]\)/);
+
+    const settingsHandler = dashboard.match(/data-onboarding-target="settings-launcher"[\s\S]{0,1200}?onClick|onClick[\s\S]{0,1200}?data-onboarding-target="settings-launcher"/)?.[0] || '';
+    assert.match(settingsHandler, /const configurationTourRequested = !isDashboardMobileViewport\(\) && onboarding\.requestModule\('configuration'\)/);
+    assert.match(settingsHandler, /openGroupManage\(configurationTourRequested \? 'teams' : preferredSettingsTab\)/);
+    assert.doesNotMatch(settingsHandler, /openGroupManage\('teams'\)/);
+    assert.doesNotMatch(settingsHandler, /contextualOnboarding|window\.matchMedia/);
+
+    assert.match(dashboard, /activeSurface:\s*onboardingActiveSurface/);
+    assert.match(dashboard, /activeSurface=\{onboardingActiveSurface\}/);
+    assert.match(dashboard, /const canStartOnboardingModule = React\.useCallback\(\(\) => !isDashboardMobileViewport\(\), \[\]\)/);
+    assert.match(dashboard, /canStartModule:\s*canStartOnboardingModule/);
+    assert.match(dashboard, /onModuleInterrupted=\{onboarding\.interrupt\}/);
+    const openModule = controller.match(/const openModule = React\.useCallback\([\s\S]*?\n\s*}, \[[^\]]*\]\);/)?.[0] || '';
+    assert.doesNotMatch(openModule, /prepareCatchUp/);
+    assert.match(controller, /const replay = React\.useCallback\([\s\S]*?prepareCatchUp\?\.\(\)/);
+    assert.match(controller, /canStartModule/);
+    assert.match(openModule, /isOnboardingModuleStartAllowed\(canStartModule, moduleId\)[\s\S]*?nextOnboardingModuleRequest/);
+    assert.match(controller, /isOnboardingModuleStartAllowed\(canStartModule, 'catch-up'\)[\s\S]*?trackOnboardingAnalytics[\s\S]*?else \{[\s\S]*?resetModuleRequests\(\)[\s\S]*?setRun\(false\)/);
+    assert.doesNotMatch(controller, /isDashboardMobileViewport|matchMedia/);
+    assert.match(controller, /const interrupt = React\.useCallback\([\s\S]*?automaticStartedRef\.current = false[\s\S]*?resetModuleRequests\(\)/);
+});
+
+test('tour source has no launcher insertion, unavailable acknowledgement, or all-required finish gate', () => {
+    const tour = readFileSync(new URL('../frontend/src/onboarding/OnboardingTour.jsx', `file://${__filename}`), 'utf8');
+    const controller = readFileSync(new URL('../frontend/src/onboarding/useOnboardingTour.js', `file://${__filename}`), 'utf8');
+    const sources = `${tour}\n${controller}`;
+
+    assert.doesNotMatch(sources, /includeModuleLaunchSteps|moduleLaunchStep|moduleUnavailable/);
+    assert.doesNotMatch(sources, /acknowledgeUnavailableModule|allRequiredModulesComplete/);
+    assert.doesNotMatch(controller, /adaptLegacyOnboarding(?:Completion|Replay)Payload|savePreference/);
+    assert.match(tour, /completedModules,/);
+    assert.match(tour, /completedModules,\s*onSkip,/s);
+    assert.match(tour, /onModuleInterrupted,[\s\S]*?useOnboardingTour\(\{[\s\S]*?onModuleInterrupted,/);
+    assert.match(controller, /onModuleInterrupted\?\.\(activeModule\)/);
+    assert.match(tour, /moduleManualStep[\s\S]*tour\.finish\(\)/);
+    assert.match(tour, /tour\.isLast[\s\S]*onClick=\{tour\.finish\}/);
 });
 
 test('all eligible steps are included in catalog order', async () => {
@@ -270,10 +307,8 @@ test('all-absent hierarchy compacts to one aggregate fallback before field previ
         'hierarchy-epic': false,
         'hierarchy-story': false,
         'jira-export': false,
-        'launch-configuration': false,
-        'launch-planning': false,
-        'launch-board': false,
-        'launch-statistics': false,
+        'settings-info': false,
+        'eng-mode-info': false,
     });
     assert.deepEqual(
         steps.map((step) => step.id),
@@ -281,9 +316,220 @@ test('all-absent hierarchy compacts to one aggregate fallback before field previ
             'sprint', 'group', 'teams', 'refresh', 'search', 'filters',
             'hierarchy',
             'editing-priority', 'editing-track', 'editing-status',
+            'settings-info', 'eng-mode-info',
             'complete',
         ]
     );
+});
+
+test('automatic Catch Up eligibility requires every bootstrap condition', async () => {
+    const { shouldAutomaticallyStartOnboarding } = await loadTourModule();
+    const eligible = {
+        bootstrapReady: true,
+        completedModules: [],
+        run: false,
+        automaticStarted: false,
+        replayPending: false,
+        activeSurface: 'catch-up',
+    };
+
+    assert.equal(shouldAutomaticallyStartOnboarding(eligible), true);
+    assert.equal(shouldAutomaticallyStartOnboarding({ ...eligible, bootstrapReady: false }), false);
+    assert.equal(shouldAutomaticallyStartOnboarding({ ...eligible, completedModules: ['catch-up'] }), false);
+    assert.equal(shouldAutomaticallyStartOnboarding({ ...eligible, run: true }), false);
+    assert.equal(shouldAutomaticallyStartOnboarding({ ...eligible, automaticStarted: true }), false);
+    assert.equal(shouldAutomaticallyStartOnboarding({ ...eligible, replayPending: true }), false);
+    for (const activeSurface of ['planning', 'board', 'statistics', 'scenario', 'settings', 'epm', '']) {
+        assert.equal(shouldAutomaticallyStartOnboarding({ ...eligible, activeSurface }), false, activeSurface);
+    }
+});
+
+test('module start eligibility defaults open and honors a controller boundary veto', async () => {
+    const { isOnboardingModuleStartAllowed } = await loadTourModule();
+    assert.equal(isOnboardingModuleStartAllowed(undefined, 'catch-up'), true);
+    assert.equal(isOnboardingModuleStartAllowed(() => true, 'planning'), true);
+    assert.equal(isOnboardingModuleStartAllowed(() => false, 'statistics'), false);
+});
+
+test('completion transition validates the active module and keeps the canonical server list', async () => {
+    const { resolveOnboardingCompletionTransition } = await loadTourModule();
+    const transition = resolveOnboardingCompletionTransition({
+        run: true,
+        requestNonce: 7,
+        moduleRequest: { moduleId: 'planning', requestNonce: 7 },
+        completedModules: ['catch-up'],
+        onboardingDone: false,
+    }, {
+        completedOnboardingModules: ['statistics', 'planning', 'catch-up', 'planning', 'unknown'],
+        onboardingDone: false,
+    }, 'planning');
+
+    assert.deepEqual(transition, {
+        run: false,
+        requestNonce: 0,
+        moduleRequest: null,
+        completedModules: ['catch-up', 'planning', 'statistics'],
+        onboardingDone: false,
+    });
+    for (const payload of [
+        {},
+        { completedOnboardingModules: ['catch-up'], onboardingDone: false },
+        { completedOnboardingModules: 'planning', onboardingDone: false },
+        { completedOnboardingModules: 'planning', onboardingDone: true },
+        { onboardingDone: true },
+    ]) {
+        assert.throws(
+            () => resolveOnboardingCompletionTransition({ run: true }, payload, 'planning'),
+            { message: 'Saved onboarding preference could not be verified. Please retry.' },
+        );
+    }
+
+});
+
+test('completion settlement closes only the generation that initiated the write', async () => {
+    const {
+        resolveOnboardingCompletionSettlement,
+        shouldCloseOnboardingTourAfterSettlement,
+    } = await loadTourModule();
+    const { nextOnboardingModuleRequest } = await import('../frontend/src/onboarding/onboardingModules.js');
+    const payload = {
+        completedOnboardingModules: ['configuration', 'unknown', 'catch-up', 'configuration'],
+        onboardingDone: false,
+    };
+    const configurationRequest = nextOnboardingModuleRequest({
+        run: false,
+        completedModules: ['catch-up'],
+        requestNonce: 3,
+        moduleRequest: null,
+    }, 'configuration');
+    const planningRequest = nextOnboardingModuleRequest(configurationRequest, 'planning');
+
+    const stale = resolveOnboardingCompletionSettlement(
+        payload,
+        'configuration',
+        {
+            completionGeneration: configurationRequest.requestNonce,
+            currentGeneration: planningRequest.requestNonce,
+        },
+    );
+    assert.deepEqual(stale, {
+        saved: true,
+        shouldClose: false,
+        moduleId: 'configuration',
+        completedModules: ['catch-up', 'configuration'],
+        onboardingDone: false,
+    });
+    assert.equal(shouldCloseOnboardingTourAfterSettlement(stale), false);
+    assert.equal(planningRequest.run, true);
+    assert.equal(planningRequest.activeModule, 'planning');
+    assert.deepEqual(planningRequest.moduleRequest, { moduleId: 'planning', requestNonce: 5 });
+
+    const current = resolveOnboardingCompletionSettlement(
+        payload,
+        'configuration',
+        {
+            completionGeneration: configurationRequest.requestNonce,
+            currentGeneration: configurationRequest.requestNonce,
+        },
+    );
+    assert.equal(current.shouldClose, true);
+    assert.equal(shouldCloseOnboardingTourAfterSettlement(current), true);
+    assert.equal(shouldCloseOnboardingTourAfterSettlement(false), false);
+});
+
+test('surface exit cannot close a newer module requested for the active surface', async () => {
+    const { shouldCloseOnboardingModuleForSurface } = await loadTourModule();
+    const configurationLeavingForPlanning = {
+        effectiveOpen: true,
+        activeModule: 'configuration',
+        activeSurface: 'planning',
+    };
+
+    assert.equal(shouldCloseOnboardingModuleForSurface({
+        ...configurationLeavingForPlanning,
+        moduleRequest: { moduleId: 'planning', requestNonce: 4 },
+    }), false);
+    assert.equal(shouldCloseOnboardingModuleForSurface({
+        ...configurationLeavingForPlanning,
+        moduleRequest: null,
+    }), true);
+    assert.equal(shouldCloseOnboardingModuleForSurface({
+        ...configurationLeavingForPlanning,
+        moduleRequest: { moduleId: 'board', requestNonce: 4 },
+    }), true);
+    assert.equal(shouldCloseOnboardingModuleForSurface({
+        effectiveOpen: true,
+        activeModule: 'planning',
+        activeSurface: 'settings',
+        moduleRequest: { moduleId: 'configuration', requestNonce: 5 },
+    }), false);
+    assert.equal(shouldCloseOnboardingModuleForSurface({
+        effectiveOpen: true,
+        activeModule: 'catch-up',
+        activeSurface: 'scenario',
+        moduleRequest: null,
+    }), true);
+    assert.equal(shouldCloseOnboardingModuleForSurface({
+        effectiveOpen: true,
+        activeModule: 'catch-up',
+        activeSurface: 'settings',
+        moduleRequest: { moduleId: 'configuration', requestNonce: 6 },
+    }), false);
+});
+
+test('replay transition accepts only a verified empty server list and prepares Catch Up', async () => {
+    const { resolveOnboardingReplayTransition } = await loadTourModule();
+    assert.deepEqual(resolveOnboardingReplayTransition({
+        run: false,
+        activeModule: '',
+        requestNonce: 9,
+        moduleRequest: null,
+        completedModules: ['catch-up', 'planning'],
+        onboardingDone: false,
+    }, {
+        completedOnboardingModules: [],
+        onboardingDone: false,
+    }), {
+        run: true,
+        activeModule: 'catch-up',
+        requestNonce: 1,
+        moduleRequest: { moduleId: 'catch-up', requestNonce: 1 },
+        completedModules: [],
+        onboardingDone: false,
+    });
+    for (const payload of [
+        {},
+        { completedOnboardingModules: ['catch-up'], onboardingDone: false },
+        { completedOnboardingModules: ['unknown'], onboardingDone: false },
+        { completedOnboardingModules: [], onboardingDone: true },
+        { completedOnboardingModules: 'invalid', onboardingDone: false },
+    ]) {
+        assert.throws(
+            () => resolveOnboardingReplayTransition({}, payload),
+            { message: 'Saved onboarding preference could not be verified. Please retry.' },
+        );
+    }
+});
+
+test('persistence error classification preserves global auth recovery and safe local errors', async () => {
+    const { classifyOnboardingPersistenceError } = await loadTourModule();
+    const authError = new Error('raw authentication detail');
+    authError.name = 'AuthenticationRequiredError';
+    authError.status = 401;
+    authError.code = 'auth_required';
+
+    assert.deepEqual(classifyOnboardingPersistenceError(authError), {
+        authRequired: true,
+        message: '',
+    });
+    assert.deepEqual(classifyOnboardingPersistenceError(new Error('Safe wrapper message.')), {
+        authRequired: false,
+        message: 'Safe wrapper message.',
+    });
+    assert.deepEqual(classifyOnboardingPersistenceError({}), {
+        authRequired: false,
+        message: 'Failed to save onboarding preference. Please retry.',
+    });
 });
 
 test('readiness enum uses only the exact ENG loading flags and terminal error', async () => {
@@ -700,7 +946,7 @@ test('field previews resolve Epic controls before Story fallbacks', async () => 
 test('progress is renumbered from the filtered visible list', async () => {
     const { buildVisibleOnboardingSteps, buildTourProgress } = await loadModule();
     const steps = buildVisibleOnboardingSteps({ group: false, teams: true, search: false, filters: true });
-    assert.deepEqual(buildTourProgress(steps, 2), { current: 3, total: 7, label: 'Step 3 of 7' });
+    assert.deepEqual(buildTourProgress(steps, 2), { current: 3, total: 9, label: 'Step 3 of 9' });
 });
 
 test('placement below a target remains viewport bounded', async () => {
@@ -894,15 +1140,22 @@ test('a new effective-open session resets synchronously to the first eligible st
     );
 });
 
-test('onboarding guide documents the shipped desktop contextual-module contract', () => {
+test('onboarding guide documents the shipped independent screen-module contract', () => {
     const guide = readFileSync(
         new URL('../docs/features/onboarding.md', `file://${__filename}`),
         'utf8'
     );
-    assert.match(guide, /Configuration, Planning, Board, and Statistics.*desktop contextual modules/i);
-    assert.match(guide, /starts only after the user opens the real area/i);
-    assert.match(guide, /Configuration never adds or saves a Team automatically/i);
+    assert.match(guide, /five independent modules: Catch Up, Configuration, Planning, Board, and Statistics/i);
+    assert.match(guide, /Scenario has no onboarding module/i);
+    assert.match(guide, /Completing one module never launches or navigates to another/i);
+    assert.match(guide, /Settings can add or manage Departments/i);
+    assert.match(guide, /Closing or leaving a module before completion writes nothing/i);
+    assert.match(guide, /legacy `onboardingDone: true` becomes all five modules complete/i);
+    assert.match(guide, /resets all five completed modules/i);
+    assert.match(guide, /canonical `module_id`/i);
+    assert.match(guide, /Configuration points to the real Department Team editor.*never adds, removes, or saves a Team automatically/is);
     assert.match(guide, /Mobile dashboard-tour work is deferred in GitHub issue #151/i);
+    assert.match(guide, /mobile-width dashboard[\s\S]*resets all modules[\s\S]*no tour is shown[\s\S]*next opened at desktop width/i);
 });
 
 test('onboarding implementation guards avoid programmatic activation and forced test navigation', () => {

@@ -31,7 +31,9 @@ test.beforeAll(() => {
 
                 function Harness() {
                     const [run, setRun] = React.useState(false);
-                    const [done, setDone] = React.useState(false);
+                    const [completedModules, setCompletedModules] = React.useState([]);
+                    const [moduleRequest, setModuleRequest] = React.useState(null);
+                    const requestNonceRef = React.useRef(0);
                     const [pending, setPending] = React.useState(false);
                     const [showPrimary, setShowPrimary] = React.useState(true);
                     const [showGroup, setShowGroup] = React.useState(true);
@@ -123,9 +125,18 @@ test.beforeAll(() => {
 
                     React.useLayoutEffect(() => {
                         window.__tourHarness = {
-                            open: () => { setDone(false); setRun(true); },
-                            closeWithDone: () => setDone(true),
-                            reopenWithRunUnchanged: () => setDone(false),
+                            open: () => {
+                                setCompletedModules([]);
+                                requestNonceRef.current += 1;
+                                setModuleRequest({ moduleId: 'catch-up', requestNonce: requestNonceRef.current });
+                                setRun(true);
+                            },
+                            closeWithDone: () => setCompletedModules(['catch-up']),
+                            reopenWithRunUnchanged: () => {
+                                setCompletedModules([]);
+                                requestNonceRef.current += 1;
+                                setModuleRequest({ moduleId: 'catch-up', requestNonce: requestNonceRef.current });
+                            },
                             setPending,
                             removePrimary: () => setShowPrimary(false),
                             removeGroup: () => setShowGroup(false),
@@ -234,7 +245,9 @@ test.beforeAll(() => {
                         <React.Profiler id="onboarding-tour" onRender={() => { tourRenderCountRef.current += 1; }}>
                             <OnboardingTour
                                 run={run}
-                                onboardingDone={done}
+                                completedModules={completedModules}
+                                activeSurface="catch-up"
+                                moduleRequest={moduleRequest}
                                 engReadiness={engReadiness}
                                 actionPending={pending}
                                 onSkip={skipTour}
@@ -265,13 +278,16 @@ test.beforeAll(() => {
             contents: `
                 import * as React from 'react';
                 import { createRoot } from 'react-dom/client';
-                import OnboardingTour from './frontend/src/onboarding/OnboardingTour.jsx';
+                import OnboardingTour, { isDashboardMobileViewport } from './frontend/src/onboarding/OnboardingTour.jsx';
                 import { isOnboardingAvailable } from './frontend/src/onboarding/onboardingSteps.js';
                 import { useOnboardingController } from './frontend/src/onboarding/useOnboardingTour.js';
 
                 function ControllerHarness() {
                     const [ready, setReady] = React.useState(false);
-                    const [done, setDone] = React.useState(true);
+                    const [completedModules, setCompletedModules] = React.useState([
+                        'catch-up', 'configuration', 'planning', 'board', 'statistics',
+                    ]);
+                    const [activeSurface, setActiveSurface] = React.useState('catch-up');
                     const [showSettings, setShowSettings] = React.useState(true);
                     const [dirty, setDirty] = React.useState(false);
                     const [saving, setSaving] = React.useState(false);
@@ -280,14 +296,17 @@ test.beforeAll(() => {
                     const behaviorRef = React.useRef({ type: 'success' });
                     const writesRef = React.useRef([]);
                     const eventsRef = React.useRef([]);
+                    const serverModulesRef = React.useRef([
+                        'catch-up', 'configuration', 'planning', 'board', 'statistics',
+                    ]);
                     const preservedRef = React.useRef({ sprint: 'S-42', group: 'platform', teams: ['alpha'], favorite: 'platform' });
-                    const modeRef = React.useRef({ selectedView: 'epm', planning: true, stats: true, scenario: true, board: true });
-                    const savePreference = React.useCallback((nextDone) => {
-                        writesRef.current.push(nextDone);
+                    const modeRef = React.useRef({ selectedView: 'eng', planning: false, stats: false, scenario: false, board: false });
+                    const settleWrite = React.useCallback((write, payload) => {
+                        writesRef.current.push(write);
                         const behavior = behaviorRef.current;
                         if (behavior.type === 'deferred') {
                             return new Promise((resolve, reject) => {
-                                window.__resolveOnboardingWrite = () => resolve({ onboardingDone: nextDone });
+                                window.__resolveOnboardingWrite = () => resolve(payload());
                                 window.__rejectOnboardingWrite = () => reject(new Error('Save failed.'));
                             });
                         }
@@ -306,29 +325,58 @@ test.beforeAll(() => {
                             return Promise.reject(error);
                         }
                         if (behavior.type === 'mismatch') {
-                            return Promise.resolve({ onboardingDone: !nextDone });
+                            return Promise.resolve({
+                                onboardingDone: false,
+                                completedOnboardingModules: [],
+                            });
                         }
-                        return Promise.resolve({ onboardingDone: nextDone });
+                        return Promise.resolve(payload());
                     }, []);
+                    const completeModule = React.useCallback((moduleId) => settleWrite(
+                        { completedModule: moduleId },
+                        () => {
+                            serverModulesRef.current = Array.from(new Set([...serverModulesRef.current, moduleId]));
+                            return {
+                                completedOnboardingModules: [...serverModulesRef.current],
+                                onboardingDone: serverModulesRef.current.length === 5,
+                            };
+                        },
+                    ), [settleWrite]);
+                    const resetModules = React.useCallback(() => settleWrite(
+                        { onboardingDone: false },
+                        () => {
+                            serverModulesRef.current = [];
+                            return { completedOnboardingModules: [], onboardingDone: false };
+                        },
+                    ), [settleWrite]);
                     const prepareCatchUp = React.useCallback(() => {
                         modeRef.current = { selectedView: 'eng', planning: false, stats: false, scenario: false, board: false };
+                        setActiveSurface('catch-up');
                     }, []);
                     const trackSettingsAction = React.useCallback((section, workflowAction, params) => {
                         eventsRef.current.push({ section, workflowAction, params });
                     }, []);
                     const onboardingAvailable = isOnboardingAvailable(authMode, groupsSource);
+                    const canStartModule = React.useCallback(() => !isDashboardMobileViewport(), []);
                     const controller = useOnboardingController({
                         bootstrapReady: ready && onboardingAvailable,
-                        onboardingDone: done,
-                        setOnboardingDone: setDone,
-                        savePreference,
+                        activeSurface,
+                        completedModules,
+                        setCompletedModules: (transition) => setCompletedModules(transition.completedModules),
+                        completeModule,
+                        resetModules,
                         prepareCatchUp,
                         closeSettings: () => setShowSettings(false),
                         trackSettingsAction,
+                        canStartModule,
                     });
                     React.useLayoutEffect(() => {
                         window.__onboardingController = {
-                            setBootstrap: (nextReady, nextDone) => { setReady(nextReady); setDone(nextDone); },
+                            setBootstrap: (nextReady, nextModules) => {
+                                setReady(nextReady);
+                                setCompletedModules(nextModules);
+                                if (Array.isArray(nextModules)) serverModulesRef.current = [...nextModules];
+                            },
                             setBehavior: (behavior) => { behaviorRef.current = behavior; },
                             setAvailability: (nextAuthMode, nextGroupsSource) => {
                                 setAuthMode(nextAuthMode);
@@ -337,8 +385,23 @@ test.beforeAll(() => {
                             setDirty,
                             setSaving,
                             replay: controller.replay,
+                            openSurface: (moduleId) => {
+                                const surface = moduleId === 'configuration' ? 'settings' : moduleId;
+                                if (moduleId === 'configuration') setShowSettings(true);
+                                setActiveSurface(surface);
+                                controller.requestModule(moduleId);
+                            },
+                            interrupt: () => {
+                                setActiveSurface('scenario');
+                                setShowSettings(false);
+                            },
+                            returnToCatchUp: () => setActiveSurface('catch-up'),
                             snapshot: () => ({
-                                ready, done, showSettings, dirty, saving, authMode, groupsSource,
+                                ready,
+                                completedModules: [...completedModules],
+                                done: completedModules.length === 5,
+                                activeSurface,
+                                showSettings, dirty, saving, authMode, groupsSource,
                                 run: controller.run, pending: controller.pending,
                                 error: controller.error,
                                 writes: [...writesRef.current], events: [...eventsRef.current],
@@ -350,6 +413,18 @@ test.beforeAll(() => {
                         <button data-onboarding-target="sprint">Sprint</button>
                         <button data-onboarding-target="refresh">Refresh</button>
                         <div data-onboarding-target="hierarchy">Hierarchy</div>
+                        <button data-onboarding-target="settings-launcher">Settings</button>
+                        <div className="segmented-control eng-mode-control" data-onboarding-target="eng-mode-control">
+                            <button type="button" onClick={() => { setActiveSurface('catch-up'); controller.requestModule('catch-up'); }}>Catch Up</button>
+                            <button type="button" onClick={() => { setActiveSurface('planning'); controller.requestModule('planning'); }}>Planning</button>
+                            <button type="button" onClick={() => { setActiveSurface('board'); controller.requestModule('board'); }}>Board</button>
+                            <button type="button" onClick={() => { setActiveSurface('statistics'); controller.requestModule('statistics'); }}>Statistics</button>
+                            <button type="button" onClick={() => setActiveSurface('scenario')}>Scenario</button>
+                        </div>
+                        {activeSurface === 'planning' && <div data-onboarding-target="planning-overview">Planning overview</div>}
+                        {activeSurface === 'board' && <div data-onboarding-target="board-overview">Board overview</div>}
+                        {activeSurface === 'statistics' && <div data-onboarding-target="statistics-overview">Statistics overview</div>}
+                        {activeSurface === 'settings' && <button data-onboarding-target="configuration-team-add">Add Department Team</button>}
                         {showSettings && onboardingAvailable && (
                             <button
                                 type="button"
@@ -359,7 +434,11 @@ test.beforeAll(() => {
                         )}
                         <OnboardingTour
                             run={controller.run}
-                            onboardingDone={done}
+                            completedModules={completedModules}
+                            activeSurface={activeSurface}
+                            moduleRequest={controller.moduleRequest}
+                            onModuleRequestConsumed={controller.clearModuleRequest}
+                            onModuleInterrupted={controller.interrupt}
                             onSkip={controller.skip}
                             onFinish={controller.finish}
                             actionPending={controller.pending}
@@ -390,13 +469,13 @@ test.beforeAll(() => {
     }).outputFiles[0].text;
 });
 
-async function installControllerHarness(page) {
+async function installControllerHarness(page, viewport = { width: 900, height: 700 }) {
     await page.route(controllerHarnessUrl, (route) => route.fulfill({
         status: 200,
         contentType: 'text/html',
         body: `<!doctype html><html><head><style>${dashboardCss}</style></head><body><div id="root"></div><script>${controllerHarnessJs}</script></body></html>`,
     }));
-    await page.setViewportSize({ width: 900, height: 700 });
+    await page.setViewportSize(viewport);
     await page.goto(controllerHarnessUrl);
     await page.waitForFunction(() => Boolean(window.__onboardingController));
 }
@@ -886,12 +965,19 @@ async function installProductionOnboardingFixture(page, {
     sprintState = 'active',
     hideBoardTarget = false,
     deferGroupSave = false,
+    deferOnboardingReset = false,
+    failOnboardingReset = false,
     projectsConfigured = true,
     environmentConfigExists = true,
+    completedOnboardingModules = [],
+    viewport = { width: 1280, height: 900 },
 } = {}) {
     const calls = [];
+    let savedOnboardingModules = [...completedOnboardingModules];
     let releaseGroupSave = () => {};
     const groupSaveGate = new Promise((resolve) => { releaseGroupSave = resolve; });
+    let releaseOnboardingReset = () => {};
+    const onboardingResetGate = new Promise((resolve) => { releaseOnboardingReset = resolve; });
     const stories = [
         productionStory('SYN-STORY-A', 'SYN-EPIC-A', 'High'),
         productionStory('SYN-STORY-B', 'SYN-EPIC-B', 'Medium'),
@@ -915,7 +1001,8 @@ async function installProductionOnboardingFixture(page, {
         }],
         preferences: {
             onboardingRequired: false,
-            onboardingDone: false,
+            onboardingDone: savedOnboardingModules.length === 5,
+            completedOnboardingModules: [...savedOnboardingModules],
             customized: true,
             visibleGroupIds: ['group-synthetic'],
             effectiveVisibleGroupIds: ['group-synthetic'],
@@ -923,7 +1010,7 @@ async function installProductionOnboardingFixture(page, {
         },
     };
 
-    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.setViewportSize(viewport);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
@@ -1016,7 +1103,20 @@ async function installProductionOnboardingFixture(page, {
         if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
         if (url.pathname === '/api/me/onboarding' && request.method() === 'POST') {
-            return json({ onboardingDone: true });
+            if (body?.onboardingDone === false) {
+                if (deferOnboardingReset) await onboardingResetGate;
+                if (failOnboardingReset) return json({ message: 'Synthetic onboarding reset failed.' }, 500);
+                savedOnboardingModules = [];
+            } else if (typeof body?.completedModule === 'string') {
+                savedOnboardingModules = Array.from(new Set([
+                    ...savedOnboardingModules,
+                    body.completedModule,
+                ]));
+            }
+            return json({
+                completedOnboardingModules: [...savedOnboardingModules],
+                onboardingDone: savedOnboardingModules.length === 5,
+            });
         }
 
         const contract = productionFieldContracts[field];
@@ -1051,8 +1151,8 @@ async function installProductionOnboardingFixture(page, {
         showAlertsPanel: false,
     });
     await page.goto(`${productionFixtureUrl}/`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible({ timeout: 15000 });
-    return { calls, releaseGroupSave };
+    await expect(page.getByRole('radio', { name: 'Catch Up' })).toBeVisible({ timeout: 15000 });
+    return { calls, releaseGroupSave, releaseOnboardingReset };
 }
 
 function launcherTransitionCount(events, moduleId) {
@@ -1090,7 +1190,6 @@ async function expectSingleLauncherTransition(page, moduleId, activate) {
 }
 
 async function completeConfigurationModule(page, inputPath, { screenshot = false } = {}) {
-    await advanceProductionTourTo(page, 'Configure this Department');
     const settingsLauncher = page.getByRole('button', { name: 'Manage team groups' });
     await expectSingleLauncherTransition(page, 'configuration', () => activateLauncher(settingsLauncher, inputPath));
     await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
@@ -1101,21 +1200,26 @@ async function completeConfigurationModule(page, inputPath, { screenshot = false
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
     await page.locator('[data-first-run-settings-cancel]').click();
-    await expect(page.getByRole('heading', { name: 'Open Planning' })).toBeVisible();
 }
 
 async function completeEngContextualModule(page, moduleId, inputPath, { screenshot = false } = {}) {
     const labels = { planning: 'Planning', board: 'Board', statistics: 'Statistics' };
     const headings = { planning: 'Review sprint planning', board: 'Review the Department Board', statistics: 'Review delivery statistics' };
     const screenshotNames = { planning: 'context-planning.png', board: 'context-board.png', statistics: 'context-statistics.png' };
-    const launcher = page.getByRole('radio', { name: labels[moduleId] });
+    const launcher = engModeButton(page, labels[moduleId]);
     await expectSingleLauncherTransition(page, moduleId, () => activateLauncher(launcher, inputPath));
-    await expect(page.locator(`[data-onboarding-target="${moduleId}-launcher"]`)).toHaveAttribute('aria-checked', 'true');
+    await expect(launcher).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator(`[data-onboarding-module="${moduleId}"]`)).toBeVisible();
     await expect(page.locator(`[data-onboarding-target="${moduleId}-overview"]`)).toBeVisible();
     await expect(page.getByRole('heading', { name: headings[moduleId] })).toBeVisible();
     if (screenshot) await captureSettledOnboardingScreenshot(page, screenshotNames[moduleId]);
     await page.getByRole('button', { name: 'Next' }).click();
+}
+
+function engModeButton(page, label) {
+    return page.locator('.eng-mode-control .segmented-control-button').filter({
+        hasText: new RegExp(`^${label}$`),
+    });
 }
 
 function productionTrigger(page, field, issueKey = 'SYN-EPIC-A') {
@@ -1357,33 +1461,43 @@ function assertNoUnsafePreviewAnalytics(events, contract, analyticsOptions) {
 }
 
 for (const inputPath of ['pointer', 'keyboard']) {
-    test(`production contextual module launchers use one ${inputPath} application transition`, async ({ page }) => {
-        await installProductionOnboardingFixture(page);
+    test(`production independent module launches use one ${inputPath} application transition`, async ({ page }) => {
+        const { calls } = await installProductionOnboardingFixture(page, {
+            completedOnboardingModules: ['catch-up'],
+        });
 
-        await completeConfigurationModule(page, inputPath, { screenshot: inputPath === 'pointer' });
-        await completeEngContextualModule(page, 'planning', inputPath, { screenshot: inputPath === 'pointer' });
-        await expect(page.getByRole('heading', { name: 'Open Board' })).toBeVisible();
-        await completeEngContextualModule(page, 'board', inputPath, { screenshot: inputPath === 'pointer' });
-        await expect(page.getByRole('heading', { name: 'Open Statistics' })).toBeVisible();
-        await completeEngContextualModule(page, 'statistics', inputPath, { screenshot: inputPath === 'pointer' });
+        await completeConfigurationModule(page, inputPath);
+        await completeEngContextualModule(page, 'planning', inputPath);
+        await completeEngContextualModule(page, 'board', inputPath);
+        await completeEngContextualModule(page, 'statistics', inputPath);
 
-        await expect(page.getByRole('heading', { name: 'Tour complete' })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Finish' })).toBeEnabled();
+        await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+        expect(fieldCalls(calls, '/api/me/onboarding', 'POST').map(call => call.body)).toEqual([
+            { completedModule: 'configuration' },
+            { completedModule: 'planning' },
+            { completedModule: 'board' },
+            { completedModule: 'statistics' },
+        ]);
         const events = await page.evaluate(() => window.dataLayer || []);
         for (const moduleId of ['configuration', 'planning', 'board', 'statistics']) {
             expect(launcherTransitionCount(events, moduleId), moduleId).toBe(1);
+            expect(events.some(entry => entry?.section === 'onboarding'
+                && entry?.workflow_action === 'completed'
+                && entry?.module_id === moduleId)).toBe(true);
         }
     });
 }
 
 for (const inputPath of ['pointer', 'keyboard']) {
     test(`production ${inputPath} contextual launches focus and describe each real destination region`, async ({ page }) => {
-        await installProductionOnboardingFixture(page);
+        await installProductionOnboardingFixture(page, {
+            completedOnboardingModules: ['catch-up'],
+        });
         await completeConfigurationModule(page, inputPath);
 
         const labels = { planning: 'Planning', board: 'Board', statistics: 'Statistics' };
         for (const moduleId of ['planning', 'board', 'statistics']) {
-            const launcher = page.getByRole('radio', { name: labels[moduleId] });
+            const launcher = engModeButton(page, labels[moduleId]);
             await expectSingleLauncherTransition(page, moduleId, () => activateLauncher(launcher, inputPath));
             const destination = page.locator(`[data-onboarding-target="${moduleId}-overview"]`);
             const description = page.locator('.onboarding-tour-card p');
@@ -1401,151 +1515,170 @@ for (const inputPath of ['pointer', 'keyboard']) {
 }
 
 test('production contextual module keeps Configuration incomplete across close and does not replay it after completion', async ({ page }) => {
-    await installProductionOnboardingFixture(page);
-    await advanceProductionTourTo(page, 'Configure this Department');
+    const { calls } = await installProductionOnboardingFixture(page, {
+        completedOnboardingModules: ['catch-up'],
+    });
 
     const settingsLauncher = page.getByRole('button', { name: 'Manage team groups' });
     await expectSingleLauncherTransition(page, 'configuration', () => settingsLauncher.click());
     await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
     await page.locator('[data-first-run-settings-cancel]').click();
-    await expect(page.getByRole('heading', { name: 'Configure this Department' })).toBeVisible();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
 
     await expectSingleLauncherTransition(page, 'configuration', () => settingsLauncher.click());
     await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
     await page.locator('[data-first-run-settings-cancel]').click();
-    await expect(page.getByRole('heading', { name: 'Open Planning' })).toBeVisible();
-
-    await page.getByRole('button', { name: 'Back' }).click();
-    await expect(page.getByRole('heading', { name: 'Configure this Department' })).toBeVisible();
+    expect(fieldCalls(calls, '/api/me/onboarding', 'POST').map(call => call.body)).toEqual([
+        { completedModule: 'configuration' },
+    ]);
     await expectSingleLauncherTransition(page, 'configuration', () => settingsLauncher.click());
     await expect(page.locator('[data-onboarding-module="configuration"]')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Choose Department Teams' })).toHaveCount(0);
 });
 
-test('production launcher fallback acknowledges disabled Planning without bypassing the control', async ({ page }) => {
-    await installProductionOnboardingFixture(page, { sprintState: 'closed' });
-    await completeConfigurationModule(page, 'pointer');
+test('production completed Planning does not replay when its real control is revisited', async ({ page }) => {
+    const { calls } = await installProductionOnboardingFixture(page, {
+        completedOnboardingModules: ['catch-up'],
+    });
 
-    await expect(page.getByRole('heading', { name: 'Open Planning' })).toBeVisible();
-    await expect(page.locator('[data-onboarding-target="planning-launcher"]')).toBeDisabled();
-    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
-    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
-    await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading', { name: 'Open Board' })).toBeVisible();
+    await completeEngContextualModule(page, 'planning', 'pointer');
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    await engModeButton(page, 'Catch Up').click();
+    await engModeButton(page, 'Planning').click();
+    await expect(engModeButton(page, 'Planning')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    expect(fieldCalls(calls, '/api/me/onboarding', 'POST').map(call => call.body)).toEqual([
+        { completedModule: 'planning' },
+    ]);
 });
 
-test('enabled Planning launcher stays required and natively activatable when a centered fallback card would overlap it', async ({ page }) => {
+test('production Settings replay waits for reset success before returning to Catch Up', async ({ page }) => {
+    const completedOnboardingModules = ['catch-up', 'configuration', 'planning', 'board', 'statistics'];
+    const { calls, releaseOnboardingReset } = await installProductionOnboardingFixture(page, {
+        completedOnboardingModules,
+        deferOnboardingReset: true,
+    });
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await expect(page.locator('.group-modal')).toBeVisible();
+    await page.getByRole('button', { name: 'Run onboarding again' }).click();
+    await expect.poll(() => fieldCalls(calls, '/api/me/onboarding', 'POST').map(call => call.body)).toEqual([
+        { onboardingDone: false },
+    ]);
+    await expect(page.locator('.group-modal')).toBeVisible();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+
+    releaseOnboardingReset();
+    await expect(page.locator('.group-modal')).toHaveCount(0);
+    await expect(engModeButton(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('[data-onboarding-module="catch-up"]')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible();
+});
+
+test('production failed Settings replay leaves Settings and completed state unchanged', async ({ page }) => {
+    const completedOnboardingModules = ['catch-up', 'configuration', 'planning', 'board', 'statistics'];
+    const { calls } = await installProductionOnboardingFixture(page, {
+        completedOnboardingModules,
+        failOnboardingReset: true,
+    });
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await expect(page.locator('.group-modal')).toBeVisible();
+    await page.getByRole('button', { name: 'Run onboarding again' }).click();
+    await expect.poll(() => fieldCalls(calls, '/api/me/onboarding', 'POST').map(call => call.body)).toEqual([
+        { onboardingDone: false },
+    ]);
+    await expect(page.locator('.group-modal')).toBeVisible();
+    await expect(page.getByRole('alert')).toContainText('Synthetic onboarding reset failed');
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+
+    await page.locator('[data-first-run-settings-cancel]').click();
+    await expect(page.locator('.group-modal')).toHaveCount(0);
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    await engModeButton(page, 'Planning').click();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+});
+
+test('production disabled Planning does not start onboarding without a real open', async ({ page }) => {
+    const { calls } = await installProductionOnboardingFixture(page, {
+        sprintState: 'closed',
+        completedOnboardingModules: ['catch-up'],
+    });
+    await expect(engModeButton(page, 'Planning')).toBeDisabled();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
+});
+
+test('Catch Up highlights the whole fixed-height tool switch without navigating', async ({ page }) => {
     await installProductionOnboardingFixture(page);
-    await completeConfigurationModule(page, 'pointer');
+    await advanceProductionTourTo(page, 'Manage Departments in Settings');
+    await expect(page.locator('.onboarding-tour-card')).toContainText('add or manage Departments');
+    await expect(engModeButton(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: 'Switch tools here' })).toBeVisible();
+    await expect(page.locator('.onboarding-tour-card')).toContainText('switch between Catch Up, Planning, Board, Statistics, and Scenario');
 
-    const launcher = page.getByRole('radio', { name: 'Planning' });
-    await expect(page.getByRole('heading', { name: 'Open Planning' })).toBeVisible();
-    await expect(launcher).toBeEnabled();
-    const cardHeight = await page.locator('.onboarding-tour-card').evaluate(node => node.getBoundingClientRect().height);
-    await launcher.evaluate((node, height) => {
-        Object.assign(node.style, {
-            position: 'fixed',
-            left: '320px',
-            top: '40px',
-            width: '60px',
-            height: '20px',
-            minHeight: '20px',
-            padding: '0',
-            margin: '0',
-            zIndex: '10000',
-        });
-        const state = { width: 700, height: Math.ceil(height) + 42, offsetLeft: 0, offsetTop: 0 };
-        ['width', 'height', 'offsetLeft', 'offsetTop'].forEach((key) => {
-            Object.defineProperty(window.visualViewport, key, {
-                configurable: true,
-                get: () => state[key],
-            });
-        });
-        window.visualViewport.dispatchEvent(new Event('resize'));
-    }, cardHeight);
-
-    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
-    await expect(page.locator('[data-onboarding-tour]')).toHaveClass(/is-interactive/);
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
-    await expect(launcher).toBeFocused();
-    await expect(launcher).toHaveAttribute('aria-describedby', /.+/);
-    const hitEvidence = await launcher.evaluate((node) => {
+    const control = page.locator('.segmented-control.eng-mode-control[data-onboarding-target="eng-mode-control"]');
+    await expect(control).toBeVisible();
+    const geometry = await control.evaluate((node) => {
         const rect = node.getBoundingClientRect();
-        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-        const stack = [];
-        let current = node;
-        while (current && stack.length < 8) {
-            const style = getComputedStyle(current);
-            stack.push({
-                tag: current.tagName,
-                className: String(current.className || ''),
-                position: style.position,
-                zIndex: style.zIndex,
-                transform: style.transform,
-                isolation: style.isolation,
-            });
-            current = current.parentElement;
-        }
+        const children = Array.from(node.querySelectorAll('button')).map(button => button.getBoundingClientRect());
         return {
-            targetReceivesHit: hit === node || node.contains(hit),
-            hitTag: hit?.tagName || '',
-            hitClassName: String(hit?.className || ''),
-            stack,
+            height: rect.height,
+            oneRow: children.every(child => child.top === children[0].top && child.bottom === children[0].bottom),
         };
     });
-    expect(hitEvidence, JSON.stringify(hitEvidence, null, 2)).toMatchObject({ targetReceivesHit: true });
-
-    await expectSingleLauncherTransition(page, 'planning', () => launcher.click());
-    await expect(page.locator('[data-onboarding-module="planning"]')).toBeVisible();
-    await page.evaluate(() => {
-        const restored = { width: window.innerWidth, height: window.innerHeight, offsetLeft: 0, offsetTop: 0 };
-        ['width', 'height', 'offsetLeft', 'offsetTop'].forEach((key) => {
-            Object.defineProperty(window.visualViewport, key, {
-                configurable: true,
-                get: () => restored[key],
-            });
-        });
-        window.visualViewport.dispatchEvent(new Event('resize'));
-    });
-    await expect(page.locator('[data-onboarding-target="planning-overview"]')).toBeFocused();
+    const spotlightAligned = await page.locator('.onboarding-tour-spotlight').evaluate((spotlight, selector) => {
+        const target = document.querySelector(selector);
+        const targetRect = target.getBoundingClientRect();
+        const spotlightRect = spotlight.getBoundingClientRect();
+        return Math.abs(spotlightRect.left - (targetRect.left - 6)) <= 1
+            && Math.abs(spotlightRect.top - (targetRect.top - 6)) <= 1
+            && Math.abs(spotlightRect.width - (targetRect.width + 12)) <= 1
+            && Math.abs(spotlightRect.height - (targetRect.height + 12)) <= 1;
+    }, '.segmented-control.eng-mode-control[data-onboarding-target="eng-mode-control"]');
+    expect(spotlightAligned).toBe(true);
+    expect(geometry.oneRow).toBe(true);
+    expect(geometry.height).toBeGreaterThanOrEqual(30);
+    expect(geometry.height).toBeLessThanOrEqual(44);
+    await expect(engModeButton(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
+    await captureSettledOnboardingScreenshot(page, 'catch-up-tool-switch.png');
 });
 
-test('production launcher fallback acknowledges disabled Statistics without bypassing the control', async ({ page }) => {
-    await installProductionOnboardingFixture(page, { sprintState: 'future' });
-    await completeConfigurationModule(page, 'pointer');
-    await completeEngContextualModule(page, 'planning', 'pointer');
-    await completeEngContextualModule(page, 'board', 'pointer');
-
-    await expect(page.getByRole('heading', { name: 'Open Statistics' })).toBeVisible();
-    await expect(page.locator('[data-onboarding-target="statistics-launcher"]')).toBeDisabled();
-    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
-    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
-    await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading', { name: 'Tour complete' })).toBeVisible();
+test('production disabled Statistics does not start onboarding without a real open', async ({ page }) => {
+    const { calls } = await installProductionOnboardingFixture(page, {
+        sprintState: 'future',
+        completedOnboardingModules: ['catch-up'],
+    });
+    await expect(engModeButton(page, 'Statistics')).toBeDisabled();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
 });
 
 test('production contextual module uses an honest fallback when the Board destination target is unavailable', async ({ page }) => {
-    await installProductionOnboardingFixture(page, { hideBoardTarget: true });
-    await completeConfigurationModule(page, 'pointer');
-    await completeEngContextualModule(page, 'planning', 'pointer');
-    await expect(page.getByRole('heading', { name: 'Open Board' })).toBeVisible();
+    await installProductionOnboardingFixture(page, {
+        hideBoardTarget: true,
+        completedOnboardingModules: ['catch-up'],
+    });
 
-    const board = page.getByRole('radio', { name: 'Board' });
+    const board = engModeButton(page, 'Board');
     await expectSingleLauncherTransition(page, 'board', () => board.click());
-    await expect(page.locator('[data-onboarding-target="board-launcher"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(board).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByRole('heading', { name: 'Review the Department Board' })).toBeVisible();
     await expect(page.locator('[data-onboarding-target="board-overview"]')).toBeHidden();
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
     await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading', { name: 'Open Statistics' })).toBeVisible();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
 });
 
 test('production Configuration contextual module defers to dirty Settings state', async ({ page }) => {
-    await installProductionOnboardingFixture(page);
-    await advanceProductionTourTo(page, 'Configure this Department');
+    await installProductionOnboardingFixture(page, {
+        completedOnboardingModules: ['catch-up'],
+    });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
 
@@ -1559,8 +1692,10 @@ test('production Configuration contextual module defers to dirty Settings state'
 });
 
 test('production Configuration contextual module defers to Settings while it is saving', async ({ page }) => {
-    const { releaseGroupSave } = await installProductionOnboardingFixture(page, { deferGroupSave: true });
-    await advanceProductionTourTo(page, 'Configure this Department');
+    const { releaseGroupSave } = await installProductionOnboardingFixture(page, {
+        deferGroupSave: true,
+        completedOnboardingModules: ['catch-up'],
+    });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
 
@@ -1577,8 +1712,8 @@ test('contextual Configuration routes editable unconfigured workspaces to the re
     const { calls } = await installProductionOnboardingFixture(page, {
         projectsConfigured: false,
         environmentConfigExists: false,
+        completedOnboardingModules: ['catch-up'],
     });
-    await advanceProductionTourTo(page, 'Configure this Department');
 
     const settingsLauncher = page.getByRole('button', { name: 'Manage team groups' });
     await settingsLauncher.click();
@@ -1593,8 +1728,6 @@ test('contextual Configuration routes editable unconfigured workspaces to the re
 
     await page.getByRole('button', { name: 'Next' }).click();
     await page.locator('[data-first-run-settings-cancel]').click();
-    await page.getByRole('button', { name: 'Skip onboarding' }).click();
-    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
     await settingsLauncher.click();
     await expect(page.locator('.group-modal > .group-modal-tabs > .group-modal-tab.active')).toHaveText('Admin');
     await expect(page.getByRole('tab', { name: 'Scope projects' })).toHaveAttribute('aria-selected', 'true');
@@ -1605,16 +1738,90 @@ test('mobile-suppressed onboarding preserves ordinary Settings routing in an unc
     const { calls } = await installProductionOnboardingFixture(page, {
         projectsConfigured: false,
         environmentConfigExists: false,
+        completedOnboardingModules: ['catch-up'],
     });
-    await advanceProductionTourTo(page, 'Configure this Department');
     await page.setViewportSize({ width: 390, height: 700 });
     await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const settingsLauncher = page.getByRole('button', { name: 'Manage team groups' });
+    await settingsLauncher.click();
     await expect(page.locator('.group-modal > .group-modal-tabs > .group-modal-tab.active')).toHaveText('Admin');
     await expect(page.getByRole('tab', { name: 'Scope projects' })).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('[data-onboarding-module="configuration"]')).toHaveCount(0);
+    expect((await page.evaluate(() => window.dataLayer || [])).filter(entry => (
+        entry?.section === 'onboarding'
+        && entry?.workflow_action === 'started'
+        && entry?.module_id === 'configuration'
+    ))).toEqual([]);
     expect(calls.filter(call => call.pathname === '/api/groups-config' && call.method !== 'GET')).toEqual([]);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(page.locator('[data-onboarding-module="configuration"]')).toHaveCount(0);
+    await expect(page.locator('.group-modal > .group-modal-tabs > .group-modal-tab.active')).toHaveText('Admin');
+    await page.locator('[data-first-run-settings-cancel]').click();
+
+    await settingsLauncher.click();
+    await expect(page.locator('[data-onboarding-module="configuration"]')).toBeVisible();
+    await expect(page.locator('.group-modal > .group-modal-tabs > .group-modal-tab.active')).toHaveText('Departments');
+    await expect(page.getByRole('tab', { name: 'Team groups' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[data-onboarding-target="configuration-team-add"]')).toBeVisible();
+    expect((await page.evaluate(() => window.dataLayer || [])).filter(entry => (
+        entry?.section === 'onboarding'
+        && entry?.workflow_action === 'started'
+        && entry?.module_id === 'configuration'
+    ))).toHaveLength(1);
+    expect(calls.filter(call => call.pathname === '/api/groups-config' && call.method !== 'GET')).toEqual([]);
+});
+
+test('production mobile bootstrap and real ENG mode selections never start onboarding', async ({ page }) => {
+    await installProductionOnboardingFixture(page, {
+        completedOnboardingModules: [],
+        viewport: { width: 390, height: 700 },
+    });
+    const startedEvents = async () => (await page.evaluate(() => window.dataLayer || [])).filter(entry => (
+        entry?.section === 'onboarding' && entry?.workflow_action === 'started'
+    ));
+
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    expect(await startedEvents()).toEqual([]);
+    for (const label of ['Planning', 'Catch Up', 'Board', 'Statistics']) {
+        const launcher = engModeButton(page, label);
+        await launcher.click();
+        await expect(launcher).toHaveAttribute('aria-checked', 'true');
+        await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+        expect(await startedEvents()).toEqual([]);
+    }
+});
+
+test('production mobile replay resets without starting until a later desktop Catch Up open', async ({ page }) => {
+    const completedOnboardingModules = ['catch-up', 'configuration', 'planning', 'board', 'statistics'];
+    const { calls } = await installProductionOnboardingFixture(page, {
+        completedOnboardingModules,
+        viewport: { width: 390, height: 700 },
+    });
+    const catchUpStartedEvents = async () => (await page.evaluate(() => window.dataLayer || [])).filter(entry => (
+        entry?.section === 'onboarding'
+        && entry?.workflow_action === 'started'
+        && entry?.module_id === 'catch-up'
+    ));
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await page.getByRole('button', { name: 'Run onboarding again' }).click();
+    await expect.poll(() => fieldCalls(calls, '/api/me/onboarding', 'POST').map(call => call.body)).toEqual([
+        { onboardingDone: false },
+    ]);
+    await expect(page.locator('.group-modal')).toHaveCount(0);
+    await expect(engModeButton(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    expect(await catchUpStartedEvents()).toEqual([]);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
+    expect(await catchUpStartedEvents()).toEqual([]);
+    await engModeButton(page, 'Scenario').click();
+    await engModeButton(page, 'Catch Up').click();
+    await expect(page.locator('[data-onboarding-module="catch-up"]')).toBeVisible();
+    expect(await catchUpStartedEvents()).toHaveLength(1);
 });
 
 test('production Catch Up Priority preview owns only the exact Epic control and never writes Jira', async ({ page }) => {
@@ -1945,7 +2152,7 @@ test('production cached Priority and Status repeat previews stay read-only witho
     assertNoPreviewMutationAnalytics(await page.evaluate(() => window.dataLayer || []));
 });
 
-test('production Status preview reaches required contextual modules before explicit Finish persists once', async ({ page }) => {
+test('production Catch Up Finish persists only Catch Up and never pushes another screen', async ({ page }) => {
     const { calls } = await installProductionOnboardingFixture(page, { field: 'status', mode: 'success' });
     await advanceProductionTourTo(page, 'Preview Status options');
     await productionTrigger(page, 'status').click();
@@ -1956,10 +2163,7 @@ test('production Status preview reaches required contextual modules before expli
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
 
     await page.getByRole('button', { name: 'Next' }).click();
-    await completeConfigurationModule(page, 'pointer');
-    await completeEngContextualModule(page, 'planning', 'pointer');
-    await completeEngContextualModule(page, 'board', 'pointer');
-    await completeEngContextualModule(page, 'statistics', 'pointer');
+    await advanceProductionTourTo(page, 'Tour complete');
     await expect(page.getByRole('heading')).toHaveText('Tour complete');
     await expect(page.locator('[data-onboarding-tour]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Finish' })).toBeVisible();
@@ -1970,13 +2174,18 @@ test('production Status preview reaches required contextual modules before expli
     await page.getByRole('button', { name: 'Finish' }).click();
     await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toHaveLength(1);
-    expect(fieldCalls(calls, '/api/me/onboarding', 'POST')[0].body).toEqual({ onboardingDone: true });
+    expect(fieldCalls(calls, '/api/me/onboarding', 'POST')[0].body).toEqual({ completedModule: 'catch-up' });
+    await expect(engModeButton(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
     assertProductionRequestSafety(calls);
     assertNoUnsafePreviewAnalytics(
         await page.evaluate(() => window.dataLayer || []),
         productionFieldContracts.status,
         { expectedOnboardingActions: ['completed'] },
     );
+    const completedEvent = (await page.evaluate(() => window.dataLayer || [])).find(entry => (
+        entry?.section === 'onboarding' && entry?.workflow_action === 'completed'
+    ));
+    expect(completedEvent?.module_id).toBe('catch-up');
 });
 
 test('step collector delegates preview lifecycle while explicit Next remains disabled', async ({ page }) => {
@@ -2025,7 +2234,7 @@ for (const previewState of ['ready', 'empty', 'error']) {
                 },
                 {
                     heading: 'Preview Status options',
-                    nextHeading: 'Configure this Department',
+                    nextHeading: 'Manage Departments in Settings',
                     trigger: '[data-status-transition-trigger]',
                     menu: '[data-status-transition-menu]',
                 },
@@ -3120,7 +3329,7 @@ test('interactive Priority, Project Track, and Status previews stay viewport-fix
             heading: 'Preview Status options',
             trigger: '[data-status-transition-trigger]',
             menu: '[data-status-transition-menu]',
-            nextHeading: 'Configure this Department',
+            nextHeading: 'Manage Departments in Settings',
         },
     ];
     const assertViewportContainedWithoutOverlap = async ({ trigger, menu }) => {
@@ -3217,7 +3426,7 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
                 await advancePreviewOrFallback(callbackPage, title, advanceFallback);
             },
         });
-        const expectedTotal = mask ? 14 : 12;
+        const expectedTotal = mask ? 12 : 10;
         expect(steps.map((step) => step.progress)).toEqual(
             Array.from({ length: expectedTotal }, (_value, index) => `Step ${index + 1} of ${expectedTotal}`)
         );
@@ -3254,7 +3463,7 @@ test('hierarchy matrix and editing presence matrix retain deterministic order an
                 }
             },
         });
-        const expectedTotal = mask ? 14 : 12;
+        const expectedTotal = mask ? 12 : 10;
         expect(steps.map((step) => step.progress)).toEqual(
             Array.from({ length: expectedTotal }, (_value, index) => `Step ${index + 1} of ${expectedTotal}`)
         );
@@ -3290,24 +3499,20 @@ test('active observers and window listeners clean up on unmount', async ({ page 
 
 test('automatic run waits for definitive bootstrap readiness and preserves scope state', async ({ page }, testInfo) => {
     await installControllerHarness(page);
-    await page.evaluate(() => window.__onboardingController.setBootstrap(false, false));
+    await page.evaluate(() => window.__onboardingController.setBootstrap(false, []));
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await page.evaluate(() => window.__onboardingController.setBootstrap(true, null));
-    await expect.poll(() => page.evaluate(() => window.__onboardingController.snapshot().done)).toBeNull();
-    await page.waitForTimeout(50);
-    await expect(page.getByRole('dialog')).toHaveCount(0);
-    await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, []));
     await expect(page.getByRole('dialog')).toBeVisible();
-    await page.evaluate(() => window.__onboardingController.setBootstrap(false, false));
+    await page.evaluate(() => window.__onboardingController.setBootstrap(false, []));
     await expect(page.getByRole('dialog')).toBeVisible();
-    await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, []));
     await expect(page.getByRole('dialog')).toBeVisible();
 
     const state = await page.evaluate(() => window.__onboardingController.snapshot());
     expect(state.writes).toEqual([]);
     expect(state.preserved).toEqual({ sprint: 'S-42', group: 'platform', teams: ['alpha'], favorite: 'platform' });
     expect(state.mode).toEqual({ selectedView: 'eng', planning: false, stats: false, scenario: false, board: false });
-    expect(state.events).toEqual([{ section: 'onboarding', workflowAction: 'started', params: { source_surface: 'first_run' } }]);
+    expect(state.events).toEqual([{ section: 'onboarding', workflowAction: 'started', params: { source_surface: 'first_run', module_id: 'catch-up' } }]);
     const actionGeometry = await page.getByRole('dialog').evaluate((dialog) => {
         const dialogRect = dialog.getBoundingClientRect();
         return Array.from(dialog.querySelectorAll('.onboarding-tour-actions button')).map((button) => {
@@ -3330,11 +3535,61 @@ test('automatic run waits for definitive bootstrap readiness and preserves scope
     });
 });
 
+test('controller mobile bootstrap and mode requests do not queue run or emit started', async ({ page }) => {
+    await installControllerHarness(page, { width: 390, height: 700 });
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, []));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__onboardingController.snapshot())).toMatchObject({
+        activeSurface: 'catch-up',
+        run: false,
+        events: [],
+        writes: [],
+    });
+
+    for (const label of ['Catch Up', 'Planning', 'Board', 'Statistics']) {
+        await page.getByRole('button', { name: label, exact: true }).click();
+        const expectedSurface = label.toLowerCase().replace(' ', '-');
+        await expect.poll(() => page.evaluate(() => window.__onboardingController.snapshot().activeSurface)).toBe(expectedSurface);
+        expect(await page.evaluate(() => window.__onboardingController.snapshot())).toMatchObject({
+            run: false,
+            events: [],
+            writes: [],
+        });
+    }
+});
+
+test('controller mobile replay defers started until a genuine desktop bootstrap', async ({ page }) => {
+    await installControllerHarness(page, { width: 390, height: 700 });
+    await page.getByRole('button', { name: 'Run onboarding again' }).click();
+    await expect.poll(() => page.evaluate(() => window.__onboardingController.snapshot().writes)).toEqual([
+        { onboardingDone: false },
+    ]);
+    await expect(page.getByRole('button', { name: 'Run onboarding again' })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__onboardingController.snapshot())).toMatchObject({
+        activeSurface: 'catch-up',
+        showSettings: false,
+        run: false,
+        events: [],
+        completedModules: [],
+    });
+
+    await page.setViewportSize({ width: 900, height: 700 });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).events).toEqual([]);
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, []));
+    await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible();
+    const state = await page.evaluate(() => window.__onboardingController.snapshot());
+    expect(state.run).toBe(true);
+    expect(state.events).toEqual([
+        { section: 'onboarding', workflowAction: 'started', params: { source_surface: 'first_run', module_id: 'catch-up' } },
+    ]);
+});
+
 test('automatic start and Settings replay require Atlassian OAuth workspace DB mode', async ({ page }) => {
     await installControllerHarness(page);
     await page.evaluate(() => {
         window.__onboardingController.setAvailability('basic', 'workspace_db');
-        window.__onboardingController.setBootstrap(true, false);
+        window.__onboardingController.setBootstrap(true, []);
     });
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Run onboarding again' })).toHaveCount(0);
@@ -3350,7 +3605,7 @@ test('automatic start and Settings replay require Atlassian OAuth workspace DB m
     const state = await page.evaluate(() => window.__onboardingController.snapshot());
     expect(state.writes).toEqual([]);
     expect(state.events).toEqual([
-        { section: 'onboarding', workflowAction: 'started', params: { source_surface: 'first_run' } },
+        { section: 'onboarding', workflowAction: 'started', params: { source_surface: 'first_run', module_id: 'catch-up' } },
     ]);
 });
 
@@ -3358,19 +3613,19 @@ test('skip persists before close and a shared pending guard deduplicates Escape'
     await installControllerHarness(page);
     await page.evaluate(() => {
         window.__onboardingController.setBehavior({ type: 'deferred' });
-        window.__onboardingController.setBootstrap(true, false);
+        window.__onboardingController.setBootstrap(true, []);
     });
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
     await page.getByRole('dialog').press('Escape');
     const pendingState = await page.evaluate(() => window.__onboardingController.snapshot());
-    expect(pendingState.writes).toEqual([true]);
+    expect(pendingState.writes).toEqual([{ completedModule: 'catch-up' }]);
     expect(pendingState.events.filter(event => event.workflowAction === 'skipped')).toEqual([]);
     await page.evaluate(() => window.__resolveOnboardingWrite());
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const state = await page.evaluate(() => window.__onboardingController.snapshot());
     expect(state.events.filter(event => event.workflowAction === 'skipped')).toEqual([
-        { section: 'onboarding', workflowAction: 'skipped', params: { source_surface: 'first_run', result: 'success' } },
+        { section: 'onboarding', workflowAction: 'skipped', params: { source_surface: 'first_run', result: 'success', module_id: 'catch-up' } },
     ]);
 });
 
@@ -3378,7 +3633,7 @@ test('authentication-required completion defers to the global lock and other fai
     await installControllerHarness(page);
     await page.evaluate(() => {
         window.__onboardingController.setBehavior({ type: 'auth_required', loginUrl: '/login?reason=session_expired' });
-        window.__onboardingController.setBootstrap(true, false);
+        window.__onboardingController.setBootstrap(true, []);
     });
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
@@ -3397,7 +3652,7 @@ test('authentication-required completion defers to the global lock and other fai
     await page.getByRole('button', { name: 'Skip onboarding' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect((await page.evaluate(() => window.__onboardingController.snapshot())).events.filter(event => event.workflowAction === 'skipped')).toEqual([
-        { section: 'onboarding', workflowAction: 'skipped', params: { source_surface: 'first_run', result: 'success' } },
+        { section: 'onboarding', workflowAction: 'skipped', params: { source_surface: 'first_run', result: 'success', module_id: 'catch-up' } },
     ]);
 });
 
@@ -3410,15 +3665,15 @@ test('settings replay is disabled while dirty and starts only after false persis
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Run onboarding again' })).toHaveCount(0);
     const state = await page.evaluate(() => window.__onboardingController.snapshot());
-    expect(state.writes).toEqual([false]);
-    expect(state.events.at(-1)).toEqual({ section: 'onboarding', workflowAction: 'started', params: { source_surface: 'settings' } });
+    expect(state.writes).toEqual([{ onboardingDone: false }]);
+    expect(state.events.at(-1)).toEqual({ section: 'onboarding', workflowAction: 'started', params: { source_surface: 'settings', module_id: 'catch-up' } });
 });
 
 test('Finish persists completion before closing and emits completed once', async ({ page }) => {
     await installControllerHarness(page);
     await page.evaluate(() => {
         window.__onboardingController.setBehavior({ type: 'deferred' });
-        window.__onboardingController.setBootstrap(true, false);
+        window.__onboardingController.setBootstrap(true, []);
     });
     await expect(page.getByRole('dialog')).toBeVisible();
     while (await page.getByRole('button', { name: 'Next' }).count()) {
@@ -3426,14 +3681,14 @@ test('Finish persists completion before closing and emits completed once', async
     }
     await page.getByRole('button', { name: 'Finish' }).click();
     const pendingState = await page.evaluate(() => window.__onboardingController.snapshot());
-    expect(pendingState.writes).toEqual([true]);
+    expect(pendingState.writes).toEqual([{ completedModule: 'catch-up' }]);
     expect(pendingState.events.filter(event => event.workflowAction === 'completed')).toEqual([]);
     await page.evaluate(() => window.__resolveOnboardingWrite());
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const state = await page.evaluate(() => window.__onboardingController.snapshot());
-    expect(state.writes).toEqual([true]);
+    expect(state.writes).toEqual([{ completedModule: 'catch-up' }]);
     expect(state.events.filter(event => event.workflowAction === 'completed')).toEqual([
-        { section: 'onboarding', workflowAction: 'completed', params: { source_surface: 'first_run', result: 'success' } },
+        { section: 'onboarding', workflowAction: 'completed', params: { source_surface: 'first_run', result: 'success', module_id: 'catch-up' } },
     ]);
 });
 
@@ -3441,7 +3696,7 @@ test('rejected terminal Finish preserves the completed session for a successful 
     await installControllerHarness(page);
     await page.evaluate(() => {
         window.__onboardingController.setBehavior({ type: 'error' });
-        window.__onboardingController.setBootstrap(true, false);
+        window.__onboardingController.setBootstrap(true, []);
     });
     await expect(page.getByRole('dialog')).toBeVisible();
     while (await page.getByRole('button', { name: 'Next' }).count()) {
@@ -3453,27 +3708,111 @@ test('rejected terminal Finish preserves the completed session for a successful 
     await expect(page.getByRole('alert')).toHaveText('Save failed.');
     await expect(page.getByRole('heading', { name: 'Tour complete' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Finish' })).toBeEnabled();
-    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([true]);
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([{ completedModule: 'catch-up' }]);
 
     await page.evaluate(() => window.__onboardingController.setBehavior({ type: 'success' }));
     await page.getByRole('button', { name: 'Finish' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const state = await page.evaluate(() => window.__onboardingController.snapshot());
-    expect(state.writes).toEqual([true, true]);
+    expect(state.writes).toEqual([{ completedModule: 'catch-up' }, { completedModule: 'catch-up' }]);
     expect(state.events.filter(event => event.workflowAction === 'completed')).toEqual([
-        { section: 'onboarding', workflowAction: 'completed', params: { source_surface: 'first_run', result: 'success' } },
+        { section: 'onboarding', workflowAction: 'completed', params: { source_surface: 'first_run', result: 'success', module_id: 'catch-up' } },
     ]);
 });
 
 test('interrupted reload restarts at the first eligible step', async ({ page }) => {
     await installControllerHarness(page);
-    await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, []));
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByRole('heading')).toHaveText('Request fresh data');
     await page.reload();
     await page.waitForFunction(() => Boolean(window.__onboardingController));
-    await page.evaluate(() => window.__onboardingController.setBootstrap(true, false));
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, []));
     await expect(page.getByRole('heading')).toHaveText('Choose a sprint');
+});
+
+test('independent surface requests restart interrupted modules and Scenario never starts onboarding', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, ['catch-up']));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await page.evaluate(() => window.__onboardingController.openSurface('planning'));
+    await expect(page.getByRole('heading', { name: 'Review sprint planning' })).toBeVisible();
+    await page.evaluate(() => window.__onboardingController.interrupt());
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([]);
+
+    await page.evaluate(() => window.__onboardingController.openSurface('planning'));
+    await expect(page.getByRole('heading', { name: 'Review sprint planning' })).toBeVisible();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([
+        { completedModule: 'planning' },
+    ]);
+
+    await page.evaluate(() => window.__onboardingController.openSurface('scenario'));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.evaluate(() => window.__onboardingController.openSurface('planning'));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('interrupted Catch Up restarts after Planning when the user returns', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, []));
+    await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: 'Request fresh data' })).toBeVisible();
+
+    await page.evaluate(() => window.__onboardingController.openSurface('planning'));
+    await expect(page.getByRole('heading', { name: 'Review sprint planning' })).toBeVisible();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.evaluate(() => window.__onboardingController.openSurface('catch-up'));
+    await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible();
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([
+        { completedModule: 'planning' },
+    ]);
+});
+
+test('plain Catch Up exits to unsupported surfaces interrupt without writes and restart on return', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, ['configuration']));
+    await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: 'Request fresh data' })).toBeVisible();
+
+    await page.evaluate(() => window.__onboardingController.openSurface('scenario'));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([]);
+    await page.evaluate(() => window.__onboardingController.returnToCatchUp());
+    await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible();
+
+    await page.evaluate(() => window.__onboardingController.openSurface('configuration'));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect((await page.evaluate(() => window.__onboardingController.snapshot())).writes).toEqual([]);
+    await page.evaluate(() => window.__onboardingController.returnToCatchUp());
+    await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible();
+});
+
+test('stale Configuration completion merges without closing a newer Planning tour', async ({ page }) => {
+    await installControllerHarness(page);
+    await page.evaluate(() => window.__onboardingController.setBootstrap(true, ['catch-up']));
+    await expect.poll(() => page.evaluate(() => window.__onboardingController.snapshot().completedModules)).toEqual(['catch-up']);
+    await page.evaluate(() => {
+        window.__onboardingController.setBehavior({ type: 'deferred' });
+        window.__onboardingController.openSurface('configuration');
+    });
+    await expect(page.getByRole('heading', { name: 'Choose Department Teams' })).toBeVisible();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+
+    await page.evaluate(() => window.__onboardingController.openSurface('planning'));
+    await expect(page.getByRole('heading', { name: 'Review sprint planning' })).toBeVisible();
+    await page.evaluate(() => window.__resolveOnboardingWrite());
+    await expect(page.getByRole('heading', { name: 'Review sprint planning' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.__onboardingController.snapshot().completedModules)).toEqual([
+        'catch-up', 'configuration',
+    ]);
 });
 
 test('mobile dashboard tour stays closed and desktop-to-mobile resize cleans an active preview without persistence', async ({ page }, testInfo) => {

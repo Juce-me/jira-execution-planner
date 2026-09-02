@@ -5,7 +5,7 @@ In authenticated workspace-database mode, first run has four phases:
 1. Choose an eligible existing Department, or choose **Add Department** to create, duplicate, or repair one.
 2. Configure the draft in the real Settings → Departments → Team Groups editor.
 3. Complete a verified **Save and continue**.
-4. Start the dashboard tour only when onboarding is still incomplete and the dashboard is on a desktop-sized viewport.
+4. Start the onboarding module for the screen the user is currently using, when that module is still incomplete and the dashboard is on a desktop-sized viewport.
 
 The configuration guide and dashboard tour never run together. Completed users are not replayed automatically. See [ENG Workflows](eng-workflows.md) for the full operational behavior and Jira discovery rules.
 
@@ -29,26 +29,28 @@ Cancelling before any shared save restores the captured Settings draft and retur
 
 Each successful shared save is verified against the returned workspace configuration. If a later shared section fails, retry continues with only the work that remains. If shared Department configuration succeeds but the private preference fails, the shared change remains saved and the user receives a preference-only retry. The dashboard does not load Department-scoped data until the verified personal selection succeeds.
 
-## Phase 4: dashboard tour
+## Phase 4: screen-scoped onboarding
 
-After Department setup succeeds, an incomplete user can start the guided ENG Catch Up tour. It covers dashboard controls, hierarchy, Jira handoff, and read-only Priority, Project Track, and Status menu previews. Opening a highlighted field control keeps **Next** disabled while the read-only preview is open. Closing a settled preview restores focus and enables **Next**; the tour never advances until the user explicitly chooses **Next**, and no preview chooses a value or mutates Jira. Missing or unavailable targets use explanatory fallback steps with manual navigation.
+Onboarding has five independent modules: Catch Up, Configuration, Planning, Board, and Statistics. Catch Up starts automatically only when Catch Up is the current screen. Configuration starts on the first real Settings open; Planning, Board, and Statistics start after the user selects each tool through the normal ENG mode control. Scenario has no onboarding module. Completing one module never launches or navigates to another.
 
-The dashboard tour is desktop only. At viewport widths of 760px or less it stays closed, while the first-run Department chooser and configuration continue to work. Mobile dashboard-tour work is deferred in GitHub issue #151.
+Catch Up covers its dashboard controls, hierarchy, Jira handoff, and read-only Priority, Project Track, and Status menu previews. Its final informational steps point out that Settings can add or manage Departments and that the whole ENG mode control switches tools. These steps do not click Settings, select another tool, or programmatically navigate. Opening a highlighted field control keeps **Next** disabled while the read-only preview is open. Closing a settled preview restores focus and enables **Next**; no preview chooses a value or mutates Jira. Missing or unavailable targets use explanatory fallback steps with manual navigation.
 
-Configuration, Planning, Board, and Statistics are desktop contextual modules. Each contextual module starts only after the user opens the real area through its existing launcher. Configuration never adds or saves a Team automatically; it only points to the real Department editor. These contextual modules are not available on mobile; mobile dashboard onboarding remains deferred in GitHub issue #151.
+Each module persists independently across logins. **Finish**, **Skip onboarding**, and Escape complete only the active module after the server confirms the canonical completed-module list. A failed write keeps that module open with a retryable error; an expired session uses the app-wide sign-in recovery. Closing or leaving a module before completion writes nothing, and that module restarts at its first step on its next real open. A stale completion from an older screen may update the canonical completed list, but it cannot close a newer screen's tour. The legacy `onboardingDone` value is derived as true only when all five modules are complete.
 
-The tour is skippable with **Skip onboarding** or Escape. **Finish** and Skip persist completion before closing. A failed write keeps the tour open with a retryable error; an expired session uses the app-wide sign-in recovery. The tour never changes the active sprint, Department scope, Teams, favorite, Priority, Project Track, or Jira Status.
+Configuration points to the real Department Team editor. It never adds, removes, or saves a Team automatically. The other modules likewise never change the active sprint, Department scope, Teams, favorite, Priority, Project Track, Jira Status, or selected tool except through the user's own normal interaction.
 
-Tour progress is session-only. Reloading an unfinished tour restarts at its first eligible step. A successful Finish or Skip prevents later automatic replay.
+Screen-scoped onboarding is desktop only. At viewport widths of 760px or less it stays closed, while the first-run Department chooser, configuration, and ordinary Settings routing continue to work. An incomplete module remains eligible and starts at its first step when that screen is next opened at desktop width. Mobile dashboard-tour work is deferred in GitHub issue #151.
+
+Existing boolean preferences migrate without replaying completed users: legacy `onboardingDone: true` becomes all five modules complete, while legacy `onboardingDone: false` becomes no modules complete.
 
 ## Replay from Settings
 
-In Atlassian OAuth workspace-database mode, **Run onboarding again** remains at the right of the Settings header across tabs. It is disabled while any Settings section is dirty or saving. Starting replay first marks onboarding as incomplete. If that save succeeds, Settings closes and ENG Catch Up becomes active. On a desktop-width dashboard, the tour opens immediately. A failed write keeps Settings open and leaves the previous state unchanged.
+In Atlassian OAuth workspace-database mode, **Run onboarding again** remains at the right of the Settings header across tabs. It is disabled while any Settings section is dirty or saving. Starting replay resets all five completed modules. Only after that reset succeeds does Settings close, ENG Catch Up become active, and the Catch Up module start on desktop. A failed write keeps Settings open and leaves the previous state unchanged.
 
-On a mobile-width dashboard, choosing **Run onboarding again** still marks onboarding as incomplete and closes Settings, but no tour is shown. It begins at the first eligible step when the dashboard is next opened at desktop width. Mobile dashboard-tour work remains deferred in GitHub issue #151.
+On a mobile-width dashboard, choosing **Run onboarding again** still resets all modules, closes Settings, and returns to Catch Up, but no tour is shown. Catch Up begins at its first eligible step when the dashboard is next opened at desktop width. Mobile dashboard-tour work remains deferred in GitHub issue #151.
 
 Replay does not alter Department visibility, the saved favorite, dashboard scope, sprint, or Team selection. Users who have already completed onboarding are not replayed automatically.
 
 ## Analytics and privacy
 
-Onboarding reuses `settings_action` with fixed `started`, `completed`, and `skipped` workflow actions. The source is only `first_run` or `settings`; successful completion and skip are emitted only after persistence succeeds. Individual step views, target activation, and Next/Back navigation add no onboarding-specific event. The normal Priority, Project Track, and Status menus retain their existing safe options-open analytics. Events never include step text or ids, Department/Team/sprint names, issue keys or summaries, URLs, search values, or user/workspace identity.
+Onboarding reuses `settings_action` with fixed `started`, `completed`, and `skipped` workflow actions. Every event includes the canonical `module_id`: `catch-up`, `configuration`, `planning`, `board`, or `statistics`. The source is only `first_run` or `settings`; successful completion and skip are emitted only after persistence succeeds. Individual step views, target activation, and Next/Back navigation add no onboarding-specific event. The normal Priority, Project Track, and Status menus retain their existing safe options-open analytics. Privacy is unchanged: events never include step text or ids, Department/Team/sprint names, issue keys or summaries, URLs, search values, or user/workspace identity.

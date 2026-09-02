@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-08-31. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-09-01. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,8 +15,8 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-08-31 |
-| Last result | FAIL insufficient_home_write_probe_input (probe not re-run: all required operator inputs and an approved disposable Home project were unavailable; the onboarding-tour work adds no Home write path or mutation) |
+| Checked on | 2026-09-01 |
+| Last result | FAIL insufficient_home_write_probe_input (probe not re-run: all required operator inputs and an approved disposable Home project were unavailable; screen-scoped onboarding adds no Home write path or mutation) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -129,6 +129,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-09-01: Startup sweep for screen-scoped onboarding confirmed the required operator inputs and an approved disposable Home project remain unavailable. No mutation probe was run, this implementation adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-31: Startup sweep for the onboarding-tour improvements confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this implementation adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-29: Acceptance/integration sweep confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this integration adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-08-28: Startup sweep for user-onboarding-tour execution confirmed all four required `HOME_WRITE_PROBE_*` inputs remain unavailable. No mutation probe was run, this implementation adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.

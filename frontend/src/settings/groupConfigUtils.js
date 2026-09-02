@@ -1,4 +1,5 @@
 import { effectiveVisibleGroupIds, normalizeGroupPreferences, resolveVisibleActiveGroupId } from './groupVisibilityUtils.js';
+import { ONBOARDING_MODULE_IDS } from '../onboarding/onboardingModules.js';
 
 const normalizeEpicKeys = (values) => {
     const source = Array.isArray(values) ? values : (typeof values === 'string' && values.trim() ? [values] : []);
@@ -40,13 +41,22 @@ export function normalizeGroupsConfig(config) {
                 : {}),
         }))
         .filter(group => group.id && group.name);
+    const source = String(config?.source || '').trim();
+    const normalizedPreferences = normalizeGroupPreferences({ preferences: config?.preferences || {} }).preferences;
+    const preferences = source === 'workspace_db'
+        ? normalizedPreferences
+        : {
+            ...normalizedPreferences,
+            completedOnboardingModules: [...ONBOARDING_MODULE_IDS],
+            onboardingDone: true,
+        };
     return {
         version: Number(config?.version) || 1,
         groups,
         defaultGroupId: String(config?.defaultGroupId || '').trim(),
         configRevision: Number.isFinite(Number(config?.configRevision)) ? Number(config.configRevision) : null,
-        source: String(config?.source || '').trim(),
-        preferences: normalizeGroupPreferences({ preferences: config?.preferences || {} }).preferences,
+        source,
+        preferences,
     };
 }
 
@@ -59,6 +69,7 @@ export function applyLocalGroupPreferences(config, prefs = {}) {
         customized: true,
         preferenceExists: true,
         onboardingRequired: false,
+        completedOnboardingModules: [...ONBOARDING_MODULE_IDS],
         onboardingDone: true,
         visibleGroupIds: saved.visibleGroupIds,
         activeGroupId: saved.activeGroupId || null,

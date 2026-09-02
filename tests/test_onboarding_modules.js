@@ -5,158 +5,129 @@ async function loadModule() {
     return import('../frontend/src/onboarding/onboardingModules.js');
 }
 
-test('creates a catch-up onboarding module session', async () => {
+test('exports the frozen canonical module order and normalization helpers', async () => {
+    const {
+        ONBOARDING_MODULE_IDS,
+        allOnboardingModulesComplete,
+        isOnboardingModuleComplete,
+        normalizeCompletedOnboardingModules,
+    } = await loadModule();
+
+    assert.equal(Object.isFrozen(ONBOARDING_MODULE_IDS), true);
+    assert.deepEqual(ONBOARDING_MODULE_IDS, [
+        'catch-up', 'configuration', 'planning', 'board', 'statistics',
+    ]);
+    assert.deepEqual(
+        normalizeCompletedOnboardingModules(['statistics', 'unknown', 'catch-up', 'statistics']),
+        ['catch-up', 'statistics'],
+    );
+    assert.equal(isOnboardingModuleComplete(['catch-up'], 'catch-up'), true);
+    assert.equal(isOnboardingModuleComplete(['catch-up'], 'planning'), false);
+    assert.equal(isOnboardingModuleComplete(ONBOARDING_MODULE_IDS, 'unknown'), false);
+    assert.equal(allOnboardingModulesComplete(ONBOARDING_MODULE_IDS), true);
+    assert.equal(allOnboardingModulesComplete(['configuration', 'planning', 'board', 'statistics']), false);
+});
+
+test('creates a closed onboarding module session', async () => {
     const { createOnboardingModuleSession } = await loadModule();
 
     assert.deepEqual(createOnboardingModuleSession(), {
+        activeModule: '',
+        completedModules: [],
+        requestNonce: 0,
+    });
+});
+
+test('next request opens only known incomplete modules even when run is false', async () => {
+    const {
+        nextOnboardingModuleRequest,
+    } = await loadModule();
+    const initial = { run: false, completedModules: ['catch-up'], requestNonce: 4, moduleRequest: null };
+    assert.deepEqual(nextOnboardingModuleRequest(initial, 'planning'), {
+        run: true,
+        completedModules: ['catch-up'],
+        activeModule: 'planning',
+        requestNonce: 5,
+        moduleRequest: { moduleId: 'planning', requestNonce: 5 },
+    });
+    assert.equal(nextOnboardingModuleRequest(initial, 'catch-up'), initial);
+    assert.equal(nextOnboardingModuleRequest(initial, 'unknown'), initial);
+
+    const fresh = { run: false, completedModules: [], requestNonce: 0, moduleRequest: null };
+    assert.equal(nextOnboardingModuleRequest(fresh, 'catch-up').activeModule, 'catch-up');
+});
+
+test('unfinished automatic Catch Up can restart after a user visits Planning and returns', async () => {
+    const {
+        isEngOnboardingModuleSurface,
+        nextOnboardingModuleRequest,
+    } = await loadModule();
+    const initial = { run: false, completedModules: [], requestNonce: 0, moduleRequest: null };
+    const automaticCatchUp = nextOnboardingModuleRequest(initial, 'catch-up');
+    const planning = nextOnboardingModuleRequest(automaticCatchUp, 'planning');
+    const restartedCatchUp = nextOnboardingModuleRequest(planning, 'catch-up');
+
+    assert.equal(isEngOnboardingModuleSurface('catch-up'), true);
+    assert.equal(isEngOnboardingModuleSurface('planning'), true);
+    assert.equal(isEngOnboardingModuleSurface('board'), true);
+    assert.equal(isEngOnboardingModuleSurface('statistics'), true);
+    assert.equal(isEngOnboardingModuleSurface('scenario'), false);
+    assert.equal(isEngOnboardingModuleSurface('configuration'), false);
+    assert.deepEqual(automaticCatchUp.moduleRequest, { moduleId: 'catch-up', requestNonce: 1 });
+    assert.deepEqual(planning.moduleRequest, { moduleId: 'planning', requestNonce: 2 });
+    assert.deepEqual(restartedCatchUp.moduleRequest, { moduleId: 'catch-up', requestNonce: 3 });
+    assert.deepEqual(restartedCatchUp.completedModules, []);
+});
+
+test('replay reset clears completions and prepares a fresh Catch Up request', async () => {
+    const { resetOnboardingModuleRequest } = await loadModule();
+
+    assert.deepEqual(resetOnboardingModuleRequest({
+        run: false,
+        activeModule: '',
+        completedModules: ['catch-up', 'planning'],
+        requestNonce: 8,
+        moduleRequest: null,
+    }), {
+        run: true,
         activeModule: 'catch-up',
         completedModules: [],
-        resumeStepId: '',
-        suspendedSurface: '',
-        requestNonce: 0,
+        requestNonce: 1,
+        moduleRequest: { moduleId: 'catch-up', requestNonce: 1 },
     });
 });
 
-test('activates contextual modules with a newer request nonce', async () => {
-    const { activateOnboardingModule, createOnboardingModuleSession } = await loadModule();
-    const initial = createOnboardingModuleSession();
-    const activated = activateOnboardingModule(initial, {
-        moduleId: 'planning',
-        resumeStepId: 'launch-board',
-        requestNonce: 1,
-    });
-
-    assert.equal(activated.activeModule, 'planning');
-    assert.equal(activated.resumeStepId, 'launch-board');
-    assert.equal(activated.requestNonce, 1);
-    assert.equal(activateOnboardingModule(activated, {
-        moduleId: 'board',
-        resumeStepId: 'launch-statistics',
-        requestNonce: 1,
-    }), activated, 'duplicate nonces are idempotent');
-    assert.equal(activateOnboardingModule(activated, {
-        moduleId: 'board',
-        requestNonce: 0,
-    }), activated, 'stale nonces are idempotent');
-    assert.equal(activateOnboardingModule(activated, {
-        moduleId: 'catch-up',
-        requestNonce: 2,
-    }), activated, 'invalid contextual ids are idempotent');
-    assert.equal(activateOnboardingModule(activated, {
-        moduleId: 'board',
-        requestNonce: Infinity,
-    }), activated, 'non-finite nonces are idempotent');
-});
-
-test('completes configuration and resumes after leaving settings', async () => {
+test('completion closes only the active module while interruption remains incomplete', async () => {
     const {
         activateOnboardingModule,
-        completeOnboardingModule,
-        createOnboardingModuleSession,
-        resumeOnboardingAfterSurfaceExit,
-    } = await loadModule();
-    const activeConfiguration = activateOnboardingModule(createOnboardingModuleSession(), {
-        moduleId: 'configuration',
-        resumeStepId: 'launch-planning',
-        requestNonce: 1,
-    });
-    const suspended = completeOnboardingModule(activeConfiguration, { surface: 'settings' });
-
-    assert.equal(suspended.suspendedSurface, 'settings');
-    assert.equal(resumeOnboardingAfterSurfaceExit(suspended, 'catch-up').activeModule, 'catch-up');
-    assert.equal(resumeOnboardingAfterSurfaceExit(suspended, 'catch-up').suspendedSurface, '');
-    assert.equal(completeOnboardingModule(suspended, { moduleId: 'configuration' }), suspended,
-        'duplicate completion is idempotent');
-    assert.equal(completeOnboardingModule(activeConfiguration, { moduleId: 'planning' }), activeConfiguration,
-        'stale completion is idempotent');
-});
-
-test('replay reset returns to catch-up and remains idempotent on a fresh session', async () => {
-    const {
-        activateOnboardingModule,
-        completeOnboardingModule,
-        createOnboardingModuleSession,
-        resumeOnboardingAfterSurfaceExit,
-    } = await loadModule();
-    const active = activateOnboardingModule(createOnboardingModuleSession(), {
-        moduleId: 'planning',
-        resumeStepId: 'launch-board',
-        requestNonce: 1,
-    });
-    const reset = completeOnboardingModule(active);
-
-    assert.equal(reset.activeModule, 'catch-up');
-    assert.equal(completeOnboardingModule(reset, { moduleId: 'planning' }), reset);
-
-    const fresh = createOnboardingModuleSession();
-    assert.equal(resumeOnboardingAfterSurfaceExit(fresh, 'catch-up'), fresh);
-    assert.equal(activateOnboardingModule(fresh, {
-        moduleId: 'planning',
-        resumeStepId: 'launch-board',
-        requestNonce: 1,
-    }).activeModule, 'planning');
-});
-
-test('acknowledges unavailable modules without duplicating completion entries', async () => {
-    const {
-        acknowledgeUnavailableOnboardingModule,
-        createOnboardingModuleSession,
-    } = await loadModule();
-    const initial = createOnboardingModuleSession();
-    const acknowledged = acknowledgeUnavailableOnboardingModule(initial, 'statistics');
-
-    assert.deepEqual(acknowledged.completedModules, ['statistics']);
-    assert.equal(acknowledgeUnavailableOnboardingModule(acknowledged, 'statistics'), acknowledged,
-        'duplicate fallback acknowledgement is idempotent');
-    assert.equal(acknowledgeUnavailableOnboardingModule(acknowledged, 'catch-up'), acknowledged,
-        'invalid fallback acknowledgement is idempotent');
-});
-
-test('detects completion of every required contextual module', async () => {
-    const { allRequiredOnboardingModulesComplete } = await loadModule();
-
-    assert.equal(allRequiredOnboardingModulesComplete({
-        completedModules: ['configuration', 'planning', 'board', 'statistics'],
-    }), true);
-    assert.equal(allRequiredOnboardingModulesComplete({
-        completedModules: ['configuration', 'planning', 'board'],
-    }), false);
-});
-
-test('reopens only incomplete modules and applies each newer request once', async () => {
-    const {
-        activateOnboardingModule,
+        closeOnboardingModuleSession,
         completeOnboardingModule,
         createOnboardingModuleSession,
     } = await loadModule();
     const first = activateOnboardingModule(createOnboardingModuleSession(), {
-        moduleId: 'configuration',
-        resumeStepId: 'launch-planning',
+        moduleId: 'planning',
         requestNonce: 1,
     });
-    const interrupted = {
-        ...first,
-        activeModule: 'catch-up',
-        resumeStepId: '',
-    };
+    const interrupted = closeOnboardingModuleSession(first);
+    assert.equal(interrupted.activeModule, '');
+    assert.deepEqual(interrupted.completedModules, []);
+
     const reopened = activateOnboardingModule(interrupted, {
-        moduleId: 'configuration',
-        resumeStepId: 'launch-planning',
+        moduleId: 'planning',
         requestNonce: 2,
     });
-
-    assert.equal(reopened.activeModule, 'configuration');
+    assert.equal(reopened.activeModule, 'planning');
     assert.equal(reopened.requestNonce, 2);
-    assert.equal(activateOnboardingModule(reopened, {
-        moduleId: 'configuration',
-        resumeStepId: 'launch-planning',
-        requestNonce: 2,
-    }), reopened, 'the same request cannot cause a second transition');
 
-    const completed = completeOnboardingModule(reopened, { surface: 'settings' });
+    const completed = completeOnboardingModule(reopened);
+    assert.equal(completed.activeModule, '');
+    assert.deepEqual(completed.completedModules, ['planning']);
     assert.equal(activateOnboardingModule(completed, {
-        moduleId: 'configuration',
-        resumeStepId: 'launch-planning',
+        moduleId: 'planning',
         requestNonce: 3,
     }), completed, 'a completed module cannot replay in the same session');
+    assert.equal(activateOnboardingModule(completed, {
+        moduleId: 'unknown',
+        requestNonce: 4,
+    }), completed, 'an unknown module cannot open');
 });

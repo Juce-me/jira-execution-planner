@@ -2,10 +2,12 @@ import os
 import tempfile
 import unittest
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import get_type_hints
 from unittest.mock import patch
 
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -189,6 +191,27 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         self.assertEqual(preferences['effectiveVisibleGroupIds'], ['default', 'platform'])
         self.assertEqual(preferences['activeGroupId'], 'default')
 
+    def test_completed_onboarding_modules_normalize_in_canonical_order(self):
+        self.assertEqual(
+            service.normalize_completed_onboarding_modules([
+                'planning',
+                'catch-up',
+                'planning',
+                'unknown',
+                7,
+                None,
+            ]),
+            ['catch-up', 'planning'],
+        )
+        self.assertFalse(service.all_onboarding_modules_complete(['catch-up', 'planning']))
+        self.assertTrue(service.all_onboarding_modules_complete([
+            'catch-up',
+            'configuration',
+            'planning',
+            'board',
+            'statistics',
+        ]))
+
     def test_missing_db_preferences_require_first_run_selection(self):
         preferences = service.normalize_group_preferences(
             {},
@@ -237,6 +260,11 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         self.assertFalse(preferences['customized'])
         self.assertFalse(preferences['onboardingRequired'])
         self.assertEqual(preferences['effectiveVisibleGroupIds'], ['default', 'platform'])
+        self.assertEqual(
+            preferences['completedOnboardingModules'],
+            list(service.ONBOARDING_MODULE_IDS),
+        )
+        self.assertTrue(preferences['onboardingDone'])
 
     def test_workspace_preferences_do_not_force_the_shared_default_visible(self):
         saved = service.save_group_preferences(
@@ -250,6 +278,12 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         self.assertEqual(saved['effectiveVisibleGroupIds'], ['platform'])
         self.assertEqual(saved['activeGroupId'], 'platform')
         self.assertFalse(saved['onboardingRequired'])
+        self.assertEqual(saved['completedOnboardingModules'], [])
+        self.assertFalse(saved['onboardingDone'])
+        with self.factory() as session:
+            stored = session.query(models.UserGroupPreference).one()
+        self.assertEqual(stored.onboarding_completed_modules, [])
+        self.assertFalse(stored.onboarding_done)
 
     def test_workspace_preferences_are_isolated_by_user_and_workspace(self):
         first = service.save_group_preferences(
@@ -407,6 +441,7 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
                         active_group_id='mobile',
                         customized=True,
                         onboarding_done=True,
+                        onboarding_completed_modules=list(service.ONBOARDING_MODULE_IDS),
                     ))
             return original_flush(session, *args, **kwargs)
 
@@ -421,6 +456,10 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         self.assertTrue(injected)
         self.assertEqual(saved['activeGroupId'], 'platform')
         self.assertTrue(saved['onboardingDone'])
+        self.assertEqual(
+            saved['completedOnboardingModules'],
+            list(service.ONBOARDING_MODULE_IDS),
+        )
         with self.factory() as session:
             stored = session.query(models.UserGroupPreference).one()
             self.assertEqual(stored.visible_group_ids, ['platform'])
@@ -433,10 +472,15 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
             self._db_groups(),
             database_url=self.database_url,
         )
+        self.assertEqual(missing['completedOnboardingModules'], [])
         self.assertFalse(missing['onboardingDone'])
 
-        for done in (False, True):
-            with self.subTest(done=done):
+        cases = (
+            ([], False),
+            (list(service.ONBOARDING_MODULE_IDS), True),
+        )
+        for completed_modules, done in cases:
+            with self.subTest(completed_modules=completed_modules):
                 with self.factory() as session:
                     session.query(models.UserGroupPreference).delete()
                     session.add(models.UserGroupPreference(
@@ -447,6 +491,7 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
                         active_group_id='platform',
                         customized=True,
                         onboarding_done=done,
+                        onboarding_completed_modules=completed_modules,
                     ))
                     session.commit()
 
@@ -455,6 +500,7 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
                     self._db_groups(),
                     database_url=self.database_url,
                 )
+                self.assertEqual(loaded['completedOnboardingModules'], completed_modules)
                 self.assertIs(loaded['onboardingDone'], done)
                 saved = service.save_group_preferences(
                     self.context,
@@ -462,11 +508,211 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
                     self._db_groups(),
                     database_url=self.database_url,
                 )
+                self.assertEqual(saved['completedOnboardingModules'], completed_modules)
                 self.assertIs(saved['onboardingDone'], done)
                 with self.factory() as session:
-                    self.assertIs(session.query(models.UserGroupPreference).one().onboarding_done, done)
+                    stored = session.query(models.UserGroupPreference).one()
+                    self.assertEqual(stored.onboarding_completed_modules, completed_modules)
+                    self.assertIs(stored.onboarding_done, done)
 
-    def test_set_onboarding_done_updates_only_the_scalar_idempotently_and_in_isolation(self):
+    def test_group_preference_responses_derive_done_from_canonical_modules(self):
+        with self.factory() as session:
+            session.add(models.UserGroupPreference(
+                workspace_id=self.workspace_id,
+                user_id=self.user_id,
+                payload_version=1,
+                visible_group_ids=['platform'],
+                active_group_id='platform',
+                customized=True,
+                onboarding_done=True,
+                onboarding_completed_modules=['planning', 'catch-up', 'planning', 'unknown'],
+            ))
+            session.commit()
+
+        loaded = service.load_group_preferences(
+            self.context,
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        saved = service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['mobile'], 'activeGroupId': 'mobile'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+
+        expected_modules = ['catch-up', 'planning']
+        self.assertEqual(loaded['completedOnboardingModules'], expected_modules)
+        self.assertFalse(loaded['onboardingDone'])
+        self.assertEqual(saved['completedOnboardingModules'], expected_modules)
+        self.assertFalse(saved['onboardingDone'])
+        with self.factory() as session:
+            stored = session.query(models.UserGroupPreference).one()
+        self.assertEqual(
+            stored.onboarding_completed_modules,
+            ['planning', 'catch-up', 'planning', 'unknown'],
+        )
+
+    def test_complete_onboarding_module_is_idempotent_and_isolated(self):
+        service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        service.save_group_preferences(
+            self.other_context,
+            {'visibleGroupIds': ['mobile'], 'activeGroupId': 'mobile'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        with self.factory() as session:
+            other_workspace = models.Workspace(
+                environment_key='module-other',
+                name='Module Other',
+                jira_site_url='https://module-other.example.atlassian.net',
+                jira_cloud_id='cloud-module-other',
+                created_by='test',
+            )
+            session.add(other_workspace)
+            session.commit()
+            other_workspace_context = SimpleNamespace(
+                workspace_id=other_workspace.id,
+                user_id=self.user_id,
+                auth_connection_id='connection-module-other',
+            )
+            session.add(models.UserGroupPreference(
+                workspace_id=other_workspace.id,
+                user_id=self.user_id,
+                payload_version=1,
+                visible_group_ids=['mobile'],
+                active_group_id='mobile',
+                customized=True,
+            ))
+            session.commit()
+
+        expected = {
+            'completedOnboardingModules': ['planning'],
+            'onboardingDone': False,
+        }
+        self.assertEqual(
+            service.complete_onboarding_module(
+                self.context,
+                'planning',
+                database_url=self.database_url,
+            ),
+            expected,
+        )
+        self.assertEqual(
+            service.complete_onboarding_module(
+                self.context,
+                'planning',
+                database_url=self.database_url,
+            ),
+            expected,
+        )
+
+        with self.factory() as session:
+            rows = {
+                (row.workspace_id, row.user_id): row
+                for row in session.query(models.UserGroupPreference).all()
+            }
+        current = rows[(self.workspace_id, self.user_id)]
+        other_user = rows[(self.workspace_id, self.other_user_id)]
+        other_workspace = rows[(other_workspace_context.workspace_id, self.user_id)]
+        self.assertEqual(current.onboarding_completed_modules, ['planning'])
+        self.assertFalse(current.onboarding_done)
+        self.assertEqual(other_user.onboarding_completed_modules, [])
+        self.assertFalse(other_user.onboarding_done)
+        self.assertEqual(other_workspace.onboarding_completed_modules, [])
+        self.assertFalse(other_workspace.onboarding_done)
+
+    def test_complete_onboarding_modules_incrementally_finishes_legacy_state_and_updates_timestamp(self):
+        service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        old_timestamp = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        with self.factory() as session:
+            row = session.query(models.UserGroupPreference).one()
+            row.updated_at = old_timestamp
+            session.commit()
+
+        for index, module_id in enumerate(service.ONBOARDING_MODULE_IDS):
+            saved = service.complete_onboarding_module(
+                self.context,
+                module_id,
+                database_url=self.database_url,
+            )
+            self.assertEqual(
+                saved['completedOnboardingModules'],
+                list(service.ONBOARDING_MODULE_IDS[:index + 1]),
+            )
+            self.assertIs(
+                saved['onboardingDone'],
+                index == len(service.ONBOARDING_MODULE_IDS) - 1,
+            )
+
+        with self.factory() as session:
+            stored = session.query(models.UserGroupPreference).one()
+        stored_timestamp = stored.updated_at
+        if stored_timestamp.tzinfo is None:
+            stored_timestamp = stored_timestamp.replace(tzinfo=timezone.utc)
+        self.assertEqual(
+            stored.onboarding_completed_modules,
+            list(service.ONBOARDING_MODULE_IDS),
+        )
+        self.assertTrue(stored.onboarding_done)
+        self.assertGreater(stored_timestamp, old_timestamp)
+
+    def test_onboarding_mutations_execute_scoped_postgresql_row_lock_queries(self):
+        service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+        original_execute = Session.execute
+        mutation_statements = []
+
+        def capture_execute(session, statement, *args, **kwargs):
+            mutation_statements.append(statement)
+            return original_execute(session, statement, *args, **kwargs)
+
+        with patch.object(Session, 'execute', capture_execute):
+            service.complete_onboarding_module(
+                self.context,
+                'planning',
+                database_url=self.database_url,
+            )
+            service.set_onboarding_done(
+                self.context,
+                False,
+                database_url=self.database_url,
+            )
+
+        self.assertEqual(len(mutation_statements), 2)
+        self.assertEqual(
+            [statement._for_update_arg is not None for statement in mutation_statements],
+            [True, True],
+        )
+        for statement in mutation_statements:
+            sql = str(statement.compile(dialect=postgresql.dialect()))
+            self.assertIn('user_group_preferences.workspace_id =', sql)
+            self.assertIn('user_group_preferences.user_id =', sql)
+            self.assertIn('FOR UPDATE', sql)
+
+    def test_complete_onboarding_module_rejects_unknown_module(self):
+        with self.assertRaises(service.InvalidOnboardingModule):
+            service.complete_onboarding_module(
+                self.context,
+                'unknown',
+                database_url=self.database_url,
+            )
+
+    def test_set_onboarding_done_fills_or_clears_modules_idempotently_and_in_isolation(self):
         service.save_group_preferences(
             self.context,
             {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
@@ -505,15 +751,26 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
             ))
             session.commit()
 
-        self.assertFalse(service.set_onboarding_done(
+        empty = {
+            'completedOnboardingModules': [],
+            'onboardingDone': False,
+        }
+        complete = {
+            'completedOnboardingModules': list(service.ONBOARDING_MODULE_IDS),
+            'onboardingDone': True,
+        }
+        self.assertEqual(service.set_onboarding_done(
             self.context, False, database_url=self.database_url,
-        ))
-        self.assertTrue(service.set_onboarding_done(
+        ), empty)
+        self.assertEqual(service.set_onboarding_done(
             self.context, True, database_url=self.database_url,
-        ))
-        self.assertTrue(service.set_onboarding_done(
+        ), complete)
+        self.assertEqual(service.set_onboarding_done(
             self.context, True, database_url=self.database_url,
-        ))
+        ), complete)
+        self.assertEqual(service.set_onboarding_done(
+            self.context, False, database_url=self.database_url,
+        ), empty)
 
         with self.factory() as session:
             rows = {
@@ -523,12 +780,15 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         current = rows[(self.workspace_id, self.user_id)]
         other_user = rows[(self.workspace_id, self.other_user_id)]
         other_workspace = rows[(other_workspace_context.workspace_id, self.user_id)]
-        self.assertTrue(current.onboarding_done)
+        self.assertFalse(current.onboarding_done)
+        self.assertEqual(current.onboarding_completed_modules, [])
         self.assertEqual(current.visible_group_ids, ['platform'])
         self.assertEqual(current.active_group_id, 'platform')
         self.assertFalse(other_user.onboarding_done)
+        self.assertEqual(other_user.onboarding_completed_modules, [])
         self.assertEqual(other_user.visible_group_ids, ['mobile'])
         self.assertFalse(other_workspace.onboarding_done)
+        self.assertEqual(other_workspace.onboarding_completed_modules, [])
         self.assertEqual(other_workspace.visible_group_ids, ['mobile'])
 
     def test_set_onboarding_done_rejects_missing_preference_with_dedicated_error(self):
@@ -537,11 +797,11 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
                 self.context, True, database_url=self.database_url,
             )
 
-    def test_set_onboarding_done_declares_boolean_interface(self):
+    def test_set_onboarding_done_declares_boolean_input_and_dict_output(self):
         type_hints = get_type_hints(service.set_onboarding_done)
 
         self.assertIs(type_hints['done'], bool)
-        self.assertIs(type_hints['return'], bool)
+        self.assertIs(type_hints['return'], dict)
 
     def test_set_onboarding_done_translates_query_storage_failure_with_cause(self):
         original_session_scope = service.db_engine.session_scope
@@ -641,9 +901,12 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
             ))
             session.commit()
 
-        self.assertTrue(service.set_onboarding_done(
+        self.assertEqual(service.set_onboarding_done(
             self.context, True, database_url=self.database_url,
-        ))
+        ), {
+            'completedOnboardingModules': list(service.ONBOARDING_MODULE_IDS),
+            'onboardingDone': True,
+        })
 
         with self.factory() as session:
             stored = session.query(models.UserGroupPreference).one()
@@ -652,6 +915,10 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         self.assertEqual(stored.active_group_id, 'not-visible')
         self.assertFalse(stored.customized)
         self.assertTrue(stored.onboarding_done)
+        self.assertEqual(
+            stored.onboarding_completed_modules,
+            list(service.ONBOARDING_MODULE_IDS),
+        )
 
     def test_set_onboarding_done_rejects_non_db_auth_context(self):
         service.save_group_preferences(

@@ -220,6 +220,9 @@ test('onboarding analytics use only the canonical settings action outcomes and s
         .map((filePath) => path.relative(repoRoot, filePath));
 
     assert.match(controllerSource, /trackOnboardingAnalytics\(/);
+    assert.match(helperSource, /module_id:\s*moduleId/);
+    assert.match(controllerSource, /trackOnboardingAnalytics\(trackSettingsAction, 'started', normalizedSource, moduleId\)/);
+    assert.match(controllerSource, /trackOnboardingAnalytics\(trackSettingsAction, outcome, sourceSurface, moduleId\)/);
     assert.deepEqual(bypasses, []);
     assert.doesNotMatch(controllerSource, /['"]onboarding['"]\s*,/);
     for (const forbidden of [
@@ -233,6 +236,27 @@ test('onboarding analytics use only the canonical settings action outcomes and s
         );
     }
     assert.doesNotMatch(analyticsSources, /trackEvent|trackProductEvent|settings_action/);
+});
+
+test('onboarding module_id stays typed, mapped through GTM, and intentionally unregistered', () => {
+    const analyticsSource = read('frontend/src/analytics/events.js');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const runbook = read('docs/plans/SUPPORT-ga4-user-configuration.md');
+    const yaml = read('docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml');
+
+    assert.ok(jsSetValues(analyticsSource, 'EVENT_PARAMS').has('module_id'));
+    assert.match(
+        analyticsSource,
+        /module_id:\s*new Set\(\['catch-up', 'configuration', 'planning', 'board', 'statistics'\]\)/,
+    );
+    assert.ok(analyticsDoc.includes('`module_id=catch-up|configuration|planning|board|statistics`'));
+    assert.ok(runbook.includes('module_id'));
+    assert.match(runbook, /Do not register `module_id` as a custom dimension[^.]*named report/i);
+    assert.match(yaml, /data_layer_variable_name: "module_id"/);
+    assert.match(yaml, /^\s{8}module_id: "\{\{DLV - module_id\}\}"$/m);
+    assert.doesNotMatch(yaml, /custom_dimensions:[\s\S]*?parameter_name: "module_id"/);
+    assert.equal((yaml.match(/event_name: "pageview"/g) || []).length, 1);
+    assert.equal((yaml.match(/event_name: "userevent"/g) || []).length, 1);
 });
 
 test('onboarding step navigation is untracked and its analytics contract is documented', () => {
@@ -328,11 +352,11 @@ test('onboarding operational guidance documents the shipped workflow boundaries'
     assert.ok(onboardingDoc.includes('preference-only retry'));
     assert.ok(onboardingDoc.includes('desktop only'));
     assert.ok(
-        onboardingDoc.includes('marks onboarding as incomplete and closes Settings, but no tour is shown'),
-        'Expected the mobile replay guide to document successful incomplete persistence and Settings close',
+        onboardingDoc.includes('resets all modules, closes Settings, and returns to Catch Up, but no tour is shown'),
+        'Expected the mobile replay guide to document successful module reset, Settings close, and Catch Up return',
     );
     assert.ok(
-        onboardingDoc.includes('begins at the first eligible step when the dashboard is next opened at desktop width'),
+        onboardingDoc.includes('Catch Up begins at its first eligible step when the dashboard is next opened at desktop width'),
         'Expected the mobile replay guide to document deferred desktop start',
     );
     assert.doesNotMatch(

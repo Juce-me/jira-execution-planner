@@ -65,11 +65,20 @@ export const saveGroupPreferences = (backendUrl, payload) =>
         featureName: 'settings'
     });
 
-export const saveOnboardingPreference = (backendUrl, onboardingDone) =>
-    postJsonWithCsrf(backendUrl, '/api/me/onboarding', { onboardingDone }, {
+const postOnboardingPreference = (backendUrl, payload) =>
+    postJsonWithCsrf(backendUrl, '/api/me/onboarding', payload, {
         apiSurface: 'settings_save',
         featureName: 'settings'
     }).then(response => jsonOrStructuredError(response, 'Onboarding preference'));
+
+export const completeOnboardingModule = (backendUrl, moduleId) =>
+    postOnboardingPreference(backendUrl, { completedModule: moduleId });
+
+export const resetOnboardingModules = (backendUrl) =>
+    postOnboardingPreference(backendUrl, { onboardingDone: false });
+
+export const saveOnboardingPreference = (backendUrl, onboardingDone) =>
+    postOnboardingPreference(backendUrl, { onboardingDone });
 
 export const fetchSelectedProjects = (backendUrl) =>
     apiFetch(`${backendUrl}/api/projects/selected`, {

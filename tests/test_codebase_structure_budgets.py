@@ -112,7 +112,14 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # coachmark behavior remain extracted in dedicated modules (+634).
     # The contextual onboarding follow-up adds launcher observation and requested-module wiring
     # while keeping the module state machine and coachmark behavior extracted (+2).
-    "frontend/src/dashboard.jsx": 17076,
+    # Screen-scoped onboarding Task 4 replaces the boolean compatibility write with canonical
+    # module completion/reset wrappers and merges both returned preference fields (+6).
+    # Task 4 review correction derives the current real surface before auto-starting Catch Up
+    # and passes the same value to the controller and tour without programmatic navigation (+6).
+    # Catch Up re-entry imports the canonical ENG onboarding-surface predicate (+1).
+    # Surface interruption passes the controller's non-persisting close callback to the tour (+1).
+    # Mobile start eligibility adds one stable viewport callback and passes it to the controller (+2).
+    "frontend/src/dashboard.jsx": 17092,
 }
 
 

@@ -16,6 +16,7 @@ export default function JiraExportButton({
     className = '',
     opener,
     sourceSurface = 'dashboard',
+    onboardingTarget = '',
 }) {
     const [isOpen, setIsOpen] = React.useState(false);
     const [warning, setWarning] = React.useState('');
@@ -106,6 +107,7 @@ export default function JiraExportButton({
                 aria-label="Open Jira issue menu"
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
+                data-onboarding-target={onboardingTarget || undefined}
             >
                 <JiraMarkIcon className="jira-export-icon" />
             </IconButton>

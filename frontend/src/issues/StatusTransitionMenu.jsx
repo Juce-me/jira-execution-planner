@@ -112,12 +112,20 @@ export default function StatusTransitionMenu({
     onToggleTargetSet,
     onSubmit,
     portalTarget = null,
+    previewOnly = null,
+    onPreviewLifecycleChange,
 }) {
     const issueKey = String(issue?.key || '').trim();
     // Owns the trigger anchor. The menu normally stays inside this wrapper; Board panel menus
     // portal to the panel root, and IssueFieldOptionMenu includes both nodes in outside-click
     // dismissal so option clicks are never mistaken for click-away gestures.
     const fieldRef = React.useRef(null);
+    const targetIdentity = React.useId().replace(/:/g, '');
+    const previewDescriptor = previewOnly?.fieldKind === 'status'
+        && previewOnly?.issueKey === issueKey
+        && previewOnly?.targetIdentity === targetIdentity
+        ? { ...previewOnly, targetIdentity }
+        : null;
 
     const isServerTooMany = errorCode === 'too_many_issues';
     const isPlanning = sourceSurface === 'planning';
@@ -143,8 +151,14 @@ export default function StatusTransitionMenu({
     const handleTriggerClick = () => {
         if (isOpen) {
             onClose?.();
+            if (previewDescriptor) {
+                onPreviewLifecycleChange?.(previewDescriptor, { state: 'closed', reason: 'same_trigger' });
+            }
         } else {
             onOpen?.(issue, fallbackIssueType);
+            if (previewDescriptor) {
+                onPreviewLifecycleChange?.(previewDescriptor, { state: 'loading', reason: '' });
+            }
         }
     };
 
@@ -163,8 +177,10 @@ export default function StatusTransitionMenu({
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
                 data-status-transition-trigger="true"
+                data-onboarding-target="editing-status"
                 data-issue-key={issueKey}
                 data-issue-kind={String(fallbackIssueType || '').toLowerCase()}
+                data-onboarding-target-identity={targetIdentity}
                 disabled={submitting && !isOpen}
             />
             {isOpen && (
@@ -198,12 +214,19 @@ export default function StatusTransitionMenu({
                             aria-hidden="true"
                         />
                     )}
-                    onSelect={(entry) => handleOptionClick(entry.name)}
+                    onSelect={(entry) => { if (!previewDescriptor) handleOptionClick(entry.name); }}
                     disabled={optionDisabled}
                     result={result ? resultMessage(result) : ''}
-                    onEscape={() => onClose?.()}
+                    onEscape={(reason) => {
+                        onClose?.();
+                        if (previewDescriptor) {
+                            onPreviewLifecycleChange?.(previewDescriptor, { state: 'closed', reason: reason || 'escape' });
+                        }
+                    }}
                     dismissRef={fieldRef}
                     portalTarget={portalTarget}
+                    previewOnly={previewDescriptor}
+                    onPreviewLifecycleChange={onPreviewLifecycleChange}
                 />
             )}
         </span>

@@ -81,7 +81,7 @@ export function epicHasExplicitlyEmptySprintValue(epic) {
     return getIssueSprintTokens(epic).length === 0;
 }
 
-function epicHasSelectedSprintLabel(epic, selectedSprintName) {
+export function epicHasSelectedSprintLabel(epic, selectedSprintName) {
     const target = String(selectedSprintName || '').trim().toLowerCase();
     if (!target) return false;
     return (epic?.labels || []).some((label) => String(label || '').trim().toLowerCase() === target);

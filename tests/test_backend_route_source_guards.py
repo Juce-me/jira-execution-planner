@@ -57,6 +57,7 @@ SETTINGS_ROUTE_PATHS = (
     "/api/config",
     "/api/version",
     "/api/groups-config",
+    "/api/me/onboarding",
     "/api/team-catalog",
     "/api/projects",
     "/api/components",
@@ -488,6 +489,16 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
         self.assertIn(
             'EndpointPolicy("jira-issue-status-catalog", "/api/issues/statuses/catalog", PUBLIC_METHODS, "authenticated_read"),',
             source,
+        )
+
+    def test_settings_routes_register_onboarding_with_exact_user_write_policy(self):
+        route_source = BACKEND_SETTINGS_ROUTES_PATH.read_text(encoding="utf8")
+        policy_source = BACKEND_SECURITY_POLICY_PATH.read_text(encoding="utf8")
+
+        self.assertIn("@bp.route('/api/me/onboarding', methods=['POST'])", route_source)
+        self.assertIn(
+            'EndpointPolicy("user-onboarding-write", "/api/me/onboarding", frozenset({"POST"}), "user_write"),',
+            policy_source,
         )
 
 

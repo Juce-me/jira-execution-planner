@@ -57,6 +57,7 @@ const EVENT_PARAMS = new Set([
     'method',
     'metric',
     'mode',
+    'module_id',
     'override_count',
     'override_count_bucket',
     'page_name',
@@ -114,6 +115,9 @@ const ADDRESS = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 const RAW_TEXT = /\s|{|}|\[|\]|stack trace|returned|sprint \d+|team [a-z]|draft-\d+|rnd-project|rnd_project_|bearer\s+[a-z0-9._-]+/i;
 const RESERVED_PREFIX = /^(ga_|google_|firebase_|_|gtag\.)/;
 const BUCKETS = new Set(['0', '1_5', '6_10', '11_25', '26_50', '51_100', 'over_100', 'under_1s', '1_3s', '3_10s', 'over_10s', '2xx', '3xx', '4xx', '5xx']);
+const EVENT_PARAM_VALUE_ALLOWLISTS = {
+    module_id: new Set(['catch-up', 'configuration', 'planning', 'board', 'statistics']),
+};
 
 function assertSafeName(name) {
     if (!EVENT_PARAMS.has(name) && !DATA_LAYER_FIELDS.has(name)) {
@@ -127,6 +131,11 @@ function assertSafeName(name) {
 function assertSafeValue(name, value) {
     if (value === undefined || value === null || value === '') return;
     if (DATA_LAYER_FIELDS.has(name)) return;
+    const allowedValues = EVENT_PARAM_VALUE_ALLOWLISTS[name];
+    if (allowedValues) {
+        if (!allowedValues.has(value)) throw new Error(`unsupported analytics value for ${name}`);
+        return;
+    }
     if (typeof value === 'number') {
         if (!Number.isFinite(value) || value < 0) {
             throw new Error(`unsupported analytics value for ${name}`);

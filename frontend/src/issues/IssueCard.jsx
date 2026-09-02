@@ -54,6 +54,8 @@ export default function IssueCard({
     onOpenPriorityTransition,
     onClosePriorityTransition,
     onSubmitPriorityTransition,
+    onboardingPreviewSession = null,
+    onPreviewLifecycleChange,
 }) {
     const statusName = task.fields.status?.name;
     const isKilled = statusName === 'Killed';
@@ -173,6 +175,7 @@ export default function IssueCard({
             data-task-key={task.key}
             data-task-id={task.id || task.key}
             data-issue-key={task.key}
+            data-onboarding-target="hierarchy-story"
         >
             <div className="task-header">
                 {onRemove && (
@@ -207,6 +210,8 @@ export default function IssueCard({
                             onOpen={onOpenPriorityTransition}
                             onClose={onClosePriorityTransition}
                             onSubmit={onSubmitPriorityTransition}
+                            previewOnly={onboardingPreviewSession}
+                            onPreviewLifecycleChange={onPreviewLifecycleChange}
                         />
                     ) : (
                         renderPriorityIcon(task.fields.priority?.name, task.key)
@@ -257,6 +262,8 @@ export default function IssueCard({
                             onOpen={onOpenStatusTransition}
                             onClose={onCloseStatusTransition}
                             onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task)}
+                            previewOnly={onboardingPreviewSession}
+                            onPreviewLifecycleChange={onPreviewLifecycleChange}
                         />
                     ) : (
                         <StatusPill
@@ -360,6 +367,8 @@ export default function IssueCard({
                                             onClose={onCloseStatusTransition}
                                             onToggleTargetSet={() => onToggleSubtaskStatusTarget?.(subtask.key)}
                                             onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, subtask)}
+                                            previewOnly={onboardingPreviewSession}
+                                            onPreviewLifecycleChange={onPreviewLifecycleChange}
                                         />
                                     ) : (
                                         <StatusPill

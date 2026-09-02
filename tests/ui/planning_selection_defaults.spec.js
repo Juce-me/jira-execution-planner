@@ -122,6 +122,10 @@ async function installPlanningFixture(page, {
         }],
         preferences: {
             onboardingRequired,
+            onboardingDone: !onboardingRequired,
+            completedOnboardingModules: onboardingRequired
+                ? []
+                : ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
             customized: false,
             visibleGroupIds: [],
             effectiveVisibleGroupIds: ['group-alpha'],
@@ -724,7 +728,7 @@ test('onboarding terminalizes staged recovery when sprint discovery is skipped',
     const fixture = await installPlanningFixture(page, { delayConfig: true, onboardingRequired: true });
     await page.goto(appBaseUrl);
 
-    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
     expect(fixture.calls.some(call => call.pathname === '/api/sprints')).toBe(false);
     fixture.releaseConfig();
 
@@ -744,7 +748,7 @@ test('onboarding waits for delayed config and Home auth before deciding capsule 
     });
     await page.goto(appBaseUrl);
 
-    await expect(page.getByRole('dialog', { name: 'Choose your group' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
     fixture.releaseConfig();
     await expect.poll(() => fixture.calls.some(call => call.pathname === '/api/projects/selected')).toBe(true);
     fixture.releaseShellAuth();

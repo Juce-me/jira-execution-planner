@@ -1,3 +1,5 @@
+import { ONBOARDING_MODULE_IDS, allOnboardingModulesComplete, normalizeCompletedOnboardingModules } from '../onboarding/onboardingModules.js';
+
 const normalizeId = (id) => String(id || '').trim();
 
 const uniqueIds = (ids) => {
@@ -18,11 +20,16 @@ const groupIds = (groupsConfig) =>
 export const normalizeGroupPreferences = (payload) => {
     const normalized = { ...(payload || {}) };
     const preferences = normalized.preferences || normalized;
+    const completedOnboardingModules = Array.isArray(preferences?.completedOnboardingModules)
+        ? normalizeCompletedOnboardingModules(preferences.completedOnboardingModules)
+        : (preferences?.onboardingDone === true ? [...ONBOARDING_MODULE_IDS] : []);
     normalized.preferences = {
         ...(preferences || {}),
         preferenceExists: Boolean(preferences?.preferenceExists),
         customized: Boolean(preferences?.customized),
         onboardingRequired: Boolean(preferences?.onboardingRequired),
+        completedOnboardingModules,
+        onboardingDone: allOnboardingModulesComplete(completedOnboardingModules),
         visibleGroupIds: uniqueIds(preferences?.visibleGroupIds),
         effectiveVisibleGroupIds: uniqueIds(preferences?.effectiveVisibleGroupIds),
         activeGroupId: normalizeId(preferences?.activeGroupId) || null,

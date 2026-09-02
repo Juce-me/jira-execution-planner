@@ -133,6 +133,8 @@ async function installEngProjectTrackFixture(page, {
         groups: [{ id: 'group-alpha', name: 'Alpha Department', teamIds: groupTeamIds, labels: ['alpha_label'], excludedCapacityEpics: [] }],
         preferences: {
             onboardingRequired: false,
+            onboardingDone: true,
+            completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
             customized: false,
             visibleGroupIds: [],
             effectiveVisibleGroupIds: ['group-alpha'],

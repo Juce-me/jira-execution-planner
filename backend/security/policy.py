@@ -73,6 +73,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("analytics-context", "/api/analytics/context", PUBLIC_METHODS, "public_context"),
     EndpointPolicy("admin-api", "/api/admin/", frozenset({"GET", "POST", "PATCH", "DELETE"}), "tool_admin", "prefix"),
     EndpointPolicy("user-views-api", "/api/me/views", frozenset({"GET", "POST", "PATCH"}), "user_write", "prefix"),
+    EndpointPolicy("user-onboarding-write", "/api/me/onboarding", frozenset({"POST"}), "user_write"),
     EndpointPolicy("user-connections-api", "/api/me/connections/", frozenset({"GET", "POST", "DELETE"}), "user_write", "prefix"),
     EndpointPolicy("eng-api", "/api/tasks", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("eng-api-team-name", "/api/tasks-with-team-name", PUBLIC_METHODS, "authenticated_read"),

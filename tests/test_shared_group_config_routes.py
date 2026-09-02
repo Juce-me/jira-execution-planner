@@ -2,9 +2,14 @@ import os
 import tempfile
 import time
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from backend.config.repository import ConfigStorageError
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
@@ -128,6 +133,47 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'load_dashboard_config', return_value=fallback):
             return self.client.get('/api/groups-config')
+
+    def _save_personal_favorite(self, favorite_group_id='platform'):
+        self._get_groups_config(fallback=self._favorite_config())
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            return self.client.post(
+                '/api/groups-preferences',
+                json={
+                    'visibleGroupIds': [favorite_group_id],
+                    'activeGroupId': favorite_group_id,
+                },
+                headers=self._csrf_headers(),
+            )
+
+    def _post_onboarding(self, payload, headers=None, **kwargs):
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            return self.client.post(
+                '/api/me/onboarding',
+                json=payload,
+                headers=headers or self._csrf_headers(),
+                **kwargs,
+            )
+
+    def _failing_onboarding_session_scope(self, method_name, detail):
+        original_session_scope = db_engine.session_scope
+
+        @contextmanager
+        def failing_session_scope(database_url=None):
+            if method_name == 'commit':
+                with patch.object(Session, 'commit', side_effect=SQLAlchemyError(detail)):
+                    with original_session_scope(database_url) as session:
+                        yield session
+                return
+            with original_session_scope(database_url) as session:
+                with patch.object(
+                    session,
+                    method_name,
+                    side_effect=SQLAlchemyError(detail),
+                ):
+                    yield session
+
+        return failing_session_scope
 
     def test_get_groups_config_imports_shared_catalog_and_requires_first_run(self):
         first = self._get_groups_config()
@@ -435,6 +481,34 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         self.assertEqual(after['preferences']['visibleGroupIds'], ['mobile'])
         self.assertEqual(after['preferences']['activeGroupId'], 'mobile')
 
+    def test_group_preference_responses_preserve_onboarding_done_without_changing_groups_or_favorite(self):
+        before = self._get_groups_config(fallback=self._favorite_config()).get_json()
+        self.assertFalse(before['preferences']['onboardingDone'])
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            saved = self.client.post(
+                '/api/groups-preferences',
+                json={'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+                headers=self._csrf_headers(),
+            )
+        after = self._get_groups_config(fallback={'version': 1}).get_json()
+
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        saved_body = saved.get_json()
+        self.assertFalse(saved_body['preferences']['onboardingDone'])
+        self.assertFalse(saved_body['groupsConfigSnapshot']['preferences']['onboardingDone'])
+        self.assertEqual(saved_body['preferences']['activeGroupId'], 'platform')
+        self.assertEqual(after['groups'], before['groups'])
+        self.assertEqual(after['preferences']['activeGroupId'], 'platform')
+        self.assertFalse(after['preferences']['onboardingDone'])
+
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}, clear=False), \
+             patch.object(jira_server, 'load_dashboard_config', return_value=self._favorite_config()):
+            json_mode = self.client.get('/api/groups-config')
+
+        self.assertEqual(json_mode.status_code, 200, json_mode.get_data(as_text=True))
+        self.assertTrue(json_mode.get_json()['preferences']['onboardingDone'])
+
     def test_post_group_preferences_requires_requested_with_and_token_bound_csrf(self):
         self._get_groups_config(fallback=self._favorite_config())
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -452,6 +526,366 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
 
         self.assertEqual(missing_requested_with.status_code, 403, missing_requested_with.get_data(as_text=True))
         self.assertEqual(missing_csrf.status_code, 403, missing_csrf.get_data(as_text=True))
+
+    def test_post_onboarding_returns_canonical_legacy_true_and_false_payloads(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        before = self._get_groups_config(fallback={'version': 1}).get_json()
+
+        first = self._post_onboarding({'onboardingDone': True})
+        repeated = self._post_onboarding({'onboardingDone': True})
+        replay = self._post_onboarding({'onboardingDone': False})
+        after = self._get_groups_config(fallback={'version': 1}).get_json()
+
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(first.get_json(), {
+            'completedOnboardingModules': [
+                'catch-up',
+                'configuration',
+                'planning',
+                'board',
+                'statistics',
+            ],
+            'onboardingDone': True,
+        })
+        self.assertEqual(repeated.status_code, 200, repeated.get_data(as_text=True))
+        self.assertEqual(repeated.get_json(), {
+            'completedOnboardingModules': [
+                'catch-up',
+                'configuration',
+                'planning',
+                'board',
+                'statistics',
+            ],
+            'onboardingDone': True,
+        })
+        self.assertEqual(replay.status_code, 200, replay.get_data(as_text=True))
+        self.assertEqual(replay.get_json(), {
+            'completedOnboardingModules': [],
+            'onboardingDone': False,
+        })
+        self.assertEqual(after['groups'], before['groups'])
+        self.assertEqual(after['preferences']['visibleGroupIds'], ['platform'])
+        self.assertEqual(after['preferences']['activeGroupId'], 'platform')
+        self.assertFalse(after['preferences']['onboardingDone'])
+        with self.factory() as session:
+            rows = session.query(models.UserGroupPreference).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].visible_group_ids, ['platform'])
+        self.assertEqual(rows[0].active_group_id, 'platform')
+        self.assertTrue(rows[0].customized)
+        self.assertFalse(rows[0].onboarding_done)
+
+    def test_post_onboarding_completes_one_canonical_module_idempotently(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+
+        first = self._post_onboarding({'completedModule': 'catch-up'})
+        repeated = self._post_onboarding({'completedModule': 'catch-up'})
+        remaining = [
+            self._post_onboarding({'completedModule': module_id})
+            for module_id in ('configuration', 'planning', 'board', 'statistics')
+        ]
+
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(first.get_json(), {
+            'completedOnboardingModules': ['catch-up'],
+            'onboardingDone': False,
+        })
+        self.assertEqual(repeated.status_code, 200, repeated.get_data(as_text=True))
+        self.assertEqual(repeated.get_json(), {
+            'completedOnboardingModules': ['catch-up'],
+            'onboardingDone': False,
+        })
+        expected_modules = ['catch-up']
+        for response, module_id in zip(remaining, ('configuration', 'planning', 'board', 'statistics')):
+            expected_modules.append(module_id)
+            with self.subTest(module_id=module_id):
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                self.assertEqual(response.get_json(), {
+                    'completedOnboardingModules': expected_modules,
+                    'onboardingDone': module_id == 'statistics',
+                })
+
+    def test_post_onboarding_rejects_invalid_json_and_non_object_payloads(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            malformed = self.client.post(
+                '/api/me/onboarding',
+                data='{',
+                content_type='application/json',
+                headers=self._csrf_headers(),
+            )
+            non_object = self.client.post(
+                '/api/me/onboarding',
+                json=['onboardingDone'],
+                headers=self._csrf_headers(),
+            )
+            wrong_content_type = self.client.post(
+                '/api/me/onboarding',
+                data='onboardingDone=true',
+                content_type='application/x-www-form-urlencoded',
+                headers=self._csrf_headers(),
+            )
+
+        for response in (malformed, non_object, wrong_content_type):
+            self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+            self.assertEqual(response.get_json(), {'error': 'invalid_json'})
+
+    def test_post_onboarding_rejects_extra_spoofed_and_mixed_fields_before_service(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        unsupported_fields = (
+            'workspaceId',
+            'workspace_id',
+            'userId',
+            'user_id',
+            'cloudId',
+            'cloud_id',
+            'siteUrl',
+            'site_url',
+            'accountId',
+            'account_id',
+            'futureField',
+        )
+        invalid_payloads = tuple(
+            {'onboardingDone': True, field: 'forbidden'}
+            for field in unsupported_fields
+        ) + (
+            {'completedModule': 'catch-up', 'onboardingDone': True},
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                response = self._post_onboarding(payload)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                self.assertEqual(response.get_json(), {'error': 'unsupported_onboarding_field'})
+
+    def test_post_onboarding_rejects_invalid_module_without_echoing_input(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        invalid_payloads = (
+            {'completedModule': 'scenario'},
+            {'completedModule': ['catch-up']},
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                response = self._post_onboarding(payload)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                self.assertEqual(response.get_json(), {'error': 'invalid_onboarding_module'})
+                self.assertNotIn(str(payload['completedModule']), response.get_data(as_text=True))
+
+    def test_post_onboarding_requires_exactly_one_valid_legacy_done_field(self):
+        self._get_groups_config(fallback=self._favorite_config())
+        invalid_payloads = (
+            {},
+            {'onboardingDone': None},
+            {'onboardingDone': 1},
+            {'onboardingDone': 'true'},
+            {'onboardingDone': []},
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                response = self._post_onboarding(payload)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                self.assertEqual(response.get_json(), {'error': 'onboarding_done_required'})
+
+    def test_post_onboarding_requires_current_personal_group_selection_without_creating_rows(self):
+        missing = self._post_onboarding({'onboardingDone': True})
+
+        self.assertEqual(missing.status_code, 409, missing.get_data(as_text=True))
+        self.assertEqual(missing.get_json(), {'error': 'group_selection_required'})
+        with self.factory() as session:
+            self.assertEqual(session.query(models.UserGroupPreference).count(), 0)
+            self.assertEqual(session.query(models.WorkspaceGroupConfig).count(), 0)
+
+    def test_post_onboarding_rejects_json_mode(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}, clear=False):
+            response = self.client.post(
+                '/api/me/onboarding',
+                json={'onboardingDone': True},
+                headers=self._csrf_headers(),
+            )
+
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {'error': 'onboarding_db_required'})
+
+    def test_post_onboarding_maps_config_selection_failure_to_safe_storage_error(self):
+        from backend.routes import settings_routes
+
+        with self._env_patch(), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            headers = self._csrf_headers()
+        with self._env_patch(), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(
+                 settings_routes,
+                 '_shared_group_db_auth_context',
+                 side_effect=ConfigStorageError('sensitive config selection detail'),
+             ):
+            response = self.client.post(
+                '/api/me/onboarding',
+                json={'onboardingDone': True},
+                headers=headers,
+            )
+
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {
+            'error': 'config_storage_unavailable',
+            'message': 'Onboarding preferences require database-backed configuration storage.',
+        })
+        self.assertNotIn('sensitive config selection detail', response.get_data(as_text=True))
+
+    def test_post_onboarding_maps_database_configuration_failure_to_safe_storage_error(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        from backend.routes import settings_routes
+
+        with patch.object(
+            settings_routes.shared_group_config,
+            'set_onboarding_done',
+            side_effect=db_engine.DatabaseConfigurationError('sensitive database detail'),
+        ):
+            response = self._post_onboarding({'onboardingDone': True})
+
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {
+            'error': 'config_storage_unavailable',
+            'message': 'Onboarding preferences require database-backed configuration storage.',
+        })
+        self.assertNotIn('sensitive database detail', response.get_data(as_text=True))
+
+    def test_post_onboarding_maps_sqlalchemy_failures_to_safe_storage_error(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+
+        for method_name in ('execute', 'flush', 'commit'):
+            sensitive_detail = f'sensitive {method_name} detail'
+            with self.subTest(method_name=method_name):
+                with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+                    headers = self._csrf_headers()
+                with self._env_patch(), \
+                     patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                     patch.object(
+                         db_engine,
+                         'session_scope',
+                         self._failing_onboarding_session_scope(method_name, sensitive_detail),
+                     ):
+                    response = self.client.post(
+                        '/api/me/onboarding',
+                        json={'onboardingDone': True},
+                        headers=headers,
+                    )
+
+                self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+                self.assertEqual(response.get_json(), {
+                    'error': 'config_storage_unavailable',
+                    'message': 'Onboarding preferences require database-backed configuration storage.',
+                })
+                self.assertNotIn(sensitive_detail, response.get_data(as_text=True))
+
+    def test_post_onboarding_requires_requested_with_and_token_bound_csrf(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            csrf_headers = self._csrf_headers()
+            missing_requested_with = self.client.post(
+                '/api/me/onboarding',
+                json={'onboardingDone': True},
+                headers={'X-CSRF-Token': csrf_headers['X-CSRF-Token']},
+            )
+            missing_csrf = self.client.post(
+                '/api/me/onboarding',
+                json={'onboardingDone': True},
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+
+        self.assertEqual(missing_requested_with.status_code, 403, missing_requested_with.get_data(as_text=True))
+        self.assertEqual(missing_csrf.status_code, 403, missing_csrf.get_data(as_text=True))
+
+    def test_post_onboarding_requires_authentication_with_safe_login_url(self):
+        unauthenticated_client = jira_server.app.test_client()
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = unauthenticated_client.post(
+                '/api/me/onboarding',
+                json={'onboardingDone': True},
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'auth_required')
+        self.assertEqual(response.get_json()['loginUrl'], '/login?reason=session_expired')
+        self.assertNotIn('code=', response.get_json()['loginUrl'])
+        self.assertNotIn('state=', response.get_json()['loginUrl'])
+
+    def test_post_onboarding_is_isolated_per_authenticated_user(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        self._install_session('session-2', 'account-2', self.other_connection_id)
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        self._install_session('session-1', 'account-1', self.connection_id)
+
+        saved = self._post_onboarding({'onboardingDone': True})
+        self._install_session('session-2', 'account-2', self.other_connection_id)
+        other_preferences = self._get_groups_config(fallback={'version': 1}).get_json()['preferences']
+
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        self.assertEqual(saved.get_json(), {
+            'completedOnboardingModules': [
+                'catch-up',
+                'configuration',
+                'planning',
+                'board',
+                'statistics',
+            ],
+            'onboardingDone': True,
+        })
+        self.assertFalse(other_preferences['onboardingDone'])
+
+    def test_post_onboarding_is_isolated_per_authenticated_workspace(self):
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        with self.factory() as session:
+            other_workspace = models.Workspace(
+                environment_key='other-workspace',
+                name='Other Workspace',
+                jira_site_url='https://other.example.atlassian.net',
+                jira_cloud_id='cloud-2',
+                created_by='test',
+            )
+            session.add(other_workspace)
+            session.flush()
+            other_connection = models.AuthConnection(
+                user_id=self.user_id,
+                workspace_id=other_workspace.id,
+                provider='atlassian_oauth',
+                site_url=other_workspace.jira_site_url,
+                cloud_id=other_workspace.jira_cloud_id,
+                scopes=FULL_OAUTH_SCOPE.split(),
+                scope_provenance='provider',
+                status='active',
+                token_version=1,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+            session.add(other_connection)
+            session.commit()
+            other_workspace_id = other_workspace.id
+            other_connection_id = other_connection.id
+
+        self._install_session(
+            'session-other-workspace',
+            'account-1',
+            other_connection_id,
+            site_url='https://other.example.atlassian.net',
+            cloud_id='cloud-2',
+        )
+        self.assertEqual(self._save_personal_favorite().status_code, 200)
+        self._install_session('session-1', 'account-1', self.connection_id)
+
+        saved = self._post_onboarding({'onboardingDone': True})
+
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        with self.factory() as session:
+            rows = {
+                row.workspace_id: row
+                for row in session.query(models.UserGroupPreference).filter_by(user_id=self.user_id)
+            }
+        self.assertTrue(rows[self.workspace_id].onboarding_done)
+        self.assertFalse(rows[other_workspace_id].onboarding_done)
 
 
 if __name__ == '__main__':

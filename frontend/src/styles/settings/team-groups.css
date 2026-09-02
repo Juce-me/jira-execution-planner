@@ -13,6 +13,31 @@
             gap: 0.6rem;
         }
 
+        .settings-onboarding-replay {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+        }
+
+        .settings-onboarding-replay button {
+            min-height: 44px;
+        }
+
+        @media (max-width: 720px) {
+            .group-modal-title-wrap {
+                flex-wrap: wrap;
+            }
+
+            .group-modal-header-action {
+                flex-basis: 100%;
+            }
+
+            .settings-onboarding-replay {
+                width: 100%;
+            }
+        }
+
         .group-modal-dirty {
             font-size: 0.6rem;
             text-transform: uppercase;

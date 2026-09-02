@@ -4,12 +4,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 function loadGroupVisibilityUtils() {
+    const onboardingPath = path.join(__dirname, '..', 'frontend', 'src', 'onboarding', 'onboardingModules.js');
     const modulePath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'groupVisibilityUtils.js');
     assert.ok(fs.existsSync(modulePath), 'Expected frontend/src/settings/groupVisibilityUtils.js to exist');
-    const source = fs.readFileSync(modulePath, 'utf8')
+    const onboardingSource = fs.readFileSync(onboardingPath, 'utf8')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
-    return new Function(`${source}; return {
+    const source = fs.readFileSync(modulePath, 'utf8')
+        .replace(/import .*onboardingModules\.js';\n/, '')
+        .replaceAll('export const ', 'const ')
+        .replaceAll('export function ', 'function ');
+    return new Function(`${onboardingSource}\n${source}; return {
         normalizeGroupPreferences,
         effectiveVisibleGroupIds,
         visibleGroupsForControls,
@@ -23,16 +28,22 @@ function loadGroupVisibilityUtils() {
 }
 
 function loadGroupConfigUtils() {
+    const onboardingPath = path.join(__dirname, '..', 'frontend', 'src', 'onboarding', 'onboardingModules.js');
     const visibilityPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'groupVisibilityUtils.js');
     const configPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'groupConfigUtils.js');
     assert.ok(fs.existsSync(configPath), 'Expected frontend/src/settings/groupConfigUtils.js to exist');
+    const onboardingSource = fs.readFileSync(onboardingPath, 'utf8')
+        .replaceAll('export const ', 'const ')
+        .replaceAll('export function ', 'function ');
     const visibilitySource = fs.readFileSync(visibilityPath, 'utf8')
+        .replace(/import .*onboardingModules\.js';\n/, '')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
     const configSource = fs.readFileSync(configPath, 'utf8')
         .replace(/import .*groupVisibilityUtils\.js';\n/, '')
+        .replace(/import .*onboardingModules\.js';\n/, '')
         .replaceAll('export function ', 'function ');
-    return new Function(`${visibilitySource}\n${configSource}; return { applyLocalGroupPreferences };`)();
+    return new Function(`${onboardingSource}\n${visibilitySource}\n${configSource}; return { normalizeGroupsConfig, applyLocalGroupPreferences };`)();
 }
 
 test('effectiveVisibleGroupIds shows all groups before customization', () => {
@@ -192,6 +203,10 @@ test('group preferences payloads use visibleGroupIds and activeGroupId', () => {
         buildFirstRunGroupPreferencesPayload('mobile'),
         { visibleGroupIds: ['mobile'], activeGroupId: 'mobile' }
     );
+    const firstRunPayload = buildFirstRunGroupPreferencesPayload('mobile');
+    assert.deepEqual(Object.keys(firstRunPayload).sort(), ['activeGroupId', 'visibleGroupIds']);
+    assert.equal(Object.hasOwn(firstRunPayload, 'defaultGroupId'), false);
+    assert.equal(Object.hasOwn(firstRunPayload, 'onboardingDone'), false);
     assert.deepEqual(
         buildFirstRunGroupPreferencesPayload(''),
         { visibleGroupIds: [], activeGroupId: null }
@@ -214,6 +229,7 @@ test('normalizeGroupPreferences preserves backend metadata and nested preference
             preferenceExists: true,
             customized: true,
             onboardingRequired: false,
+            onboardingDone: false,
             visibleGroupIds: ['platform'],
             effectiveVisibleGroupIds: ['default', 'platform'],
             activeGroupId: 'platform',
@@ -226,10 +242,50 @@ test('normalizeGroupPreferences preserves backend metadata and nested preference
         preferenceExists: true,
         customized: true,
         onboardingRequired: false,
+        completedOnboardingModules: [],
+        onboardingDone: false,
         visibleGroupIds: ['platform'],
         effectiveVisibleGroupIds: ['default', 'platform'],
         activeGroupId: 'platform',
     });
+});
+
+test('normalizeGroupPreferences uses the legacy boolean only when the module array is absent', () => {
+    const { normalizeGroupPreferences } = loadGroupVisibilityUtils();
+
+    assert.deepEqual(
+        normalizeGroupPreferences({ preferences: { onboardingDone: true } }).preferences.completedOnboardingModules,
+        ['catch-up', 'configuration', 'planning', 'board', 'statistics']
+    );
+    assert.deepEqual(
+        normalizeGroupPreferences({ preferences: { onboardingDone: false } }).preferences.completedOnboardingModules,
+        []
+    );
+    assert.deepEqual(normalizeGroupPreferences({ preferences: {} }).preferences.completedOnboardingModules, []);
+});
+
+test('normalizeGroupPreferences canonicalizes module arrays and derives onboardingDone', () => {
+    const { normalizeGroupPreferences } = loadGroupVisibilityUtils();
+    const partial = normalizeGroupPreferences({
+        preferences: {
+            completedOnboardingModules: ['statistics', 'unknown', 'catch-up', 'statistics'],
+            onboardingDone: true,
+        },
+    }).preferences;
+
+    assert.deepEqual(partial.completedOnboardingModules, ['catch-up', 'statistics']);
+    assert.equal(partial.onboardingDone, false);
+
+    const complete = normalizeGroupPreferences({
+        preferences: {
+            completedOnboardingModules: ['statistics', 'board', 'planning', 'configuration', 'catch-up'],
+            onboardingDone: false,
+        },
+    }).preferences;
+    assert.deepEqual(complete.completedOnboardingModules, [
+        'catch-up', 'configuration', 'planning', 'board', 'statistics',
+    ]);
+    assert.equal(complete.onboardingDone, true);
 });
 
 test('groupPreferencesSignature is stable for duplicate and unsorted visible ids', () => {
@@ -242,7 +298,7 @@ test('groupPreferencesSignature is stable for duplicate and unsorted visible ids
 });
 
 test('applyLocalGroupPreferences overlays browser visibility only for JSON sources', () => {
-    const { applyLocalGroupPreferences } = loadGroupConfigUtils();
+    const { normalizeGroupsConfig, applyLocalGroupPreferences } = loadGroupConfigUtils();
     const config = {
         version: 1,
         source: 'file',
@@ -259,6 +315,16 @@ test('applyLocalGroupPreferences overlays browser visibility only for JSON sourc
     assert.deepEqual(normalized.preferences.visibleGroupIds, ['platform']);
     assert.deepEqual(normalized.preferences.effectiveVisibleGroupIds, ['default', 'platform']);
     assert.equal(normalized.preferences.activeGroupId, 'platform');
+    assert.equal(normalized.preferences.onboardingDone, true);
+    assert.deepEqual(normalized.preferences.completedOnboardingModules, [
+        'catch-up', 'configuration', 'planning', 'board', 'statistics',
+    ]);
+
+    const localWithoutSavedVisibility = normalizeGroupsConfig(config);
+    assert.equal(localWithoutSavedVisibility.preferences.onboardingDone, true);
+    assert.deepEqual(localWithoutSavedVisibility.preferences.completedOnboardingModules, [
+        'catch-up', 'configuration', 'planning', 'board', 'statistics',
+    ]);
 
     const dbConfig = applyLocalGroupPreferences({ ...config, source: 'workspace_db' }, {
         groupVisibilityPreferences: { visibleGroupIds: ['platform'], activeGroupId: 'platform' },

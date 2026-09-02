@@ -99,6 +99,14 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
         self.assertEqual([policy.name for policy in matches], ["jira-issue-transitions-write"])
         self.assertEqual(matches[0].policy_class, "user_write")
 
+    def test_onboarding_write_route_has_user_write_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies("/api/me/onboarding", ["POST"], "settings_routes.save_onboarding_preference")
+
+        self.assertEqual([policy.name for policy in matches], ["user-onboarding-write"])
+        self.assertEqual(matches[0].policy_class, "user_write")
+
     def test_epm_configuration_policies_match_private_ownership(self):
         from backend.security.policy import classify_rule
 

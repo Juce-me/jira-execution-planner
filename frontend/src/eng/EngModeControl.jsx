@@ -14,20 +14,25 @@ export default function EngModeControl({
             ariaLabel="ENG view mode"
             value={activeMode}
             onChange={onChange}
+            containerProps={{ 'data-onboarding-target': 'eng-mode-control' }}
             options={[
                 { value: 'catch-up', label: 'Catch Up', title: 'Return to default state' },
                 {
                     value: 'planning',
                     label: 'Planning',
                     disabled: !selectedSprint || isCompletedSprintSelected,
-                    title: 'Show sprint planning panel'
+                    title: 'Show sprint planning panel',
                 },
-                { value: 'board', label: 'Board', title: 'Show the group board' },
+                {
+                    value: 'board',
+                    label: 'Board',
+                    title: 'Show the group board',
+                },
                 {
                     value: 'statistics',
                     label: 'Statistics',
                     disabled: isFutureSprintSelected,
-                    title: 'Show sprint statistics'
+                    title: 'Show sprint statistics',
                 },
                 {
                     value: 'scenario',

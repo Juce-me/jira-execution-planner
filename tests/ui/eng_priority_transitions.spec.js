@@ -171,6 +171,8 @@ async function installEngPriorityFixture(page, {
         groups: [{ id: 'group-alpha', name: 'Alpha Department', teamIds: groupTeamIds, teamLabels: groupTeamLabels, labels: ['alpha_label'], excludedCapacityEpics: [] }],
         preferences: {
             onboardingRequired: false,
+            onboardingDone: true,
+            completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
             customized: false,
             visibleGroupIds: [],
             effectiveVisibleGroupIds: ['group-alpha'],

@@ -40,6 +40,8 @@ export default function PriorityTransitionMenu({
     onOpen,
     onClose,
     onSubmit,
+    previewOnly = null,
+    onPreviewLifecycleChange,
 }) {
     const issueKey = String(issue?.key || '').trim();
     const kind = String(fallbackIssueType || '').toLowerCase();
@@ -60,6 +62,12 @@ export default function PriorityTransitionMenu({
     // Wraps BOTH the trigger and the menu; IssueFieldOptionMenu uses it to scope its
     // outside-click dismissal (an in-wrapper click is never treated as "outside").
     const fieldRef = React.useRef(null);
+    const targetIdentity = React.useId().replace(/:/g, '');
+    const previewDescriptor = previewOnly?.fieldKind === 'priority'
+        && previewOnly?.issueKey === issueKey
+        && previewOnly?.targetIdentity === targetIdentity
+        ? { ...previewOnly, targetIdentity }
+        : null;
 
     // Omit the current priority, mirroring how the status menu omits the current status.
     const priorities = sortPriorityOptionsByRank(options?.priorities)
@@ -68,8 +76,14 @@ export default function PriorityTransitionMenu({
     const handleTriggerClick = () => {
         if (isOpen) {
             onClose?.();
+            if (previewDescriptor) {
+                onPreviewLifecycleChange?.(previewDescriptor, { state: 'closed', reason: 'same_trigger' });
+            }
         } else {
             onOpen?.(issue, fallbackIssueType);
+            if (previewDescriptor) {
+                onPreviewLifecycleChange?.(previewDescriptor, { state: 'loading', reason: '' });
+            }
         }
     };
 
@@ -84,8 +98,10 @@ export default function PriorityTransitionMenu({
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
                 data-priority-transition-trigger="true"
+                data-onboarding-target="editing-priority"
                 data-issue-key={issueKey}
                 data-issue-kind={kind}
+                data-onboarding-target-identity={targetIdentity}
                 onClick={handleTriggerClick}
                 disabled={submitting && !isOpen}
             >
@@ -123,11 +139,18 @@ export default function PriorityTransitionMenu({
                             ? renderPriorityIcon(option.name, `${issueKey}-${option.id}`)
                             : null;
                     }}
-                    onSelect={(option) => onSubmit?.(option.id, issueKey)}
+                    onSelect={(option) => { if (!previewDescriptor) onSubmit?.(option.id, issueKey); }}
                     disabled={submitting}
                     result={priorityResultMessage(result)}
-                    onEscape={() => onClose?.()}
+                    onEscape={(reason) => {
+                        onClose?.();
+                        if (previewDescriptor) {
+                            onPreviewLifecycleChange?.(previewDescriptor, { state: 'closed', reason: reason || 'escape' });
+                        }
+                    }}
                     dismissRef={fieldRef}
+                    previewOnly={previewDescriptor}
+                    onPreviewLifecycleChange={onPreviewLifecycleChange}
                 />
             )}
         </span>

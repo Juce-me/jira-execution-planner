@@ -198,6 +198,21 @@ class SharedGroupConfigModelTests(unittest.TestCase):
             with self.assertRaises(IntegrityError):
                 session.commit()
 
+    def test_user_group_preference_defaults_onboarding_to_incomplete(self):
+        with self.factory() as session:
+            preference = models.UserGroupPreference(
+                workspace_id=self.workspace_id,
+                user_id=self.user_id,
+                payload_version=1,
+                visible_group_ids=['platform'],
+                active_group_id='platform',
+                customized=True,
+            )
+            session.add(preference)
+            session.commit()
+
+            self.assertFalse(preference.onboarding_done)
+
 
 if __name__ == '__main__':
     unittest.main()

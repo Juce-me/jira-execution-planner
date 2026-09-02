@@ -180,6 +180,7 @@
            scrollbar back out of `100vw`, which is the arithmetic D16 and D29 are both about:
            `100vw` counts the scrollbar and documentElement.clientWidth does not. */
         .eng-board .board {
+            --onboarding-spotlight-max-height: var(--board-strip-h);
             display: flex;
             gap: 0.5rem;
             align-items: flex-start;

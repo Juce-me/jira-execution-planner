@@ -1,14 +1,15 @@
 import * as React from 'react';
 
-export default function SegmentedControl({ className = '', ariaLabel, options, value, onChange }) {
+export default function SegmentedControl({ className = '', ariaLabel, options, value, onChange, containerProps = {} }) {
     const classes = ['segmented-control', className].filter(Boolean).join(' ');
 
     return (
-        <div className={classes} role="radiogroup" aria-label={ariaLabel}>
+        <div {...containerProps} className={classes} role="radiogroup" aria-label={ariaLabel}>
             {options.map((option) => {
                 const active = value === option.value;
                 return (
                     <button
+                        {...(option.domProps || {})}
                         key={option.value}
                         className={`segmented-control-button ${active ? 'active' : ''}`}
                         onClick={() => onChange(option.value)}

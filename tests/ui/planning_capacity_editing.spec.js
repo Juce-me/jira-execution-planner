@@ -409,7 +409,8 @@ async function openPlanning(page, options = {}) {
 
 function capacityCalls(calls, method) {
     return calls.filter(call => call.method === method && (
-        call.pathname === '/api/capacity' || call.pathname.startsWith('/api/capacity/')
+        call.pathname === '/api/capacity'
+        || (call.pathname.startsWith('/api/capacity/') && call.pathname !== '/api/capacity/config')
     ));
 }
 

@@ -3456,7 +3456,18 @@ import {
                     return true;
                 } catch (err) {
                     if (isAuthenticationRequiredError(err)) return false;
-                    if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict') {
+                    const isCapacityConfigConflict = err?.status === 409 && err?.payload?.error === 'capacity_config_conflict';
+                    const workspaceConflictPayload = isCapacityConfigConflict ? {
+                        error: 'workspace_config_conflict',
+                        message: 'Shared settings changed while you were editing. Your changes are still unsaved.',
+                        currentRevision: err.payload.current?.configRevision,
+                        current: {
+                            section: 'capacity',
+                            value: err.payload.current || {},
+                            configRevision: err.payload.current?.configRevision,
+                        },
+                    } : err?.payload;
+                    if (err?.status === 409 && workspaceConflictPayload?.error === 'workspace_config_conflict') {
                         const pendingSections = committedWorkspaceSectionLabels({
                             projects: isProjectsDraftDirty && !committedAdminSections.projects,
                             priorityWeights: isPriorityWeightsDirty && !committedAdminSections.priorityWeights,
@@ -3466,7 +3477,7 @@ import {
                             issueTypes: isIssueTypesDraftDirty && !committedAdminSections.issueTypes,
                         });
                         setWorkspaceConfigConflict({
-                            ...err.payload,
+                            ...workspaceConflictPayload,
                             savedSections: committedWorkspaceSectionLabels(committedAdminSections),
                             pendingSections,
                         });
@@ -4264,7 +4275,7 @@ import {
                 }
             };
 
-            const loadCapacityConfig = async () => {
+            const loadCapacityConfig = async ({ authMode: requestedAuthMode = authMode } = {}) => {
                 try {
                     const response = await requestCapacityConfig(BACKEND_URL);
                     if (!response.ok) return;
@@ -4273,6 +4284,12 @@ import {
                     setCapacityFieldIdDraft(data.fieldId || '');
                     setCapacityFieldNameDraft(data.fieldName || '');
                     capacityBaselineRef.current = JSON.stringify({ project: data.project || '', fieldId: data.fieldId || '', fieldName: data.fieldName || '' });
+                    setCapacityVerificationRequired(Boolean(
+                        requestedAuthMode === 'atlassian_oauth'
+                        && data.project
+                        && data.fieldId
+                        && data.mutationEnabled !== true
+                    ));
                 } catch (err) {
                     console.error('Failed to load capacity config:', err);
                 }
@@ -5866,7 +5883,16 @@ import {
                         setWorkspaceConfigConflict(null);
                     } else {
                         if (!shouldPreserveEpmDraft()) applySavedEpmConfig(config.viewConfig?.view?.epm || config.epm);
-                        await Promise.all([loadSelectedProjects(), loadPriorityWeightsConfig()]);
+                        const fallbackConfigLoads = [loadSelectedProjects(), loadPriorityWeightsConfig()];
+                        if (config.authMode === 'atlassian_oauth') {
+                            fallbackConfigLoads.push(
+                                loadBoardConfig(),
+                                loadCapacityConfig({ authMode: config.authMode }),
+                                loadAllFieldConfigs(),
+                                loadIssueTypesConfig(),
+                            );
+                        }
+                        await Promise.all(fallbackConfigLoads);
                     }
                 } catch (err) {
                     if (isAuthenticationRequiredError(err)) return;

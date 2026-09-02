@@ -110,9 +110,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # bugfix/multidevice-sessions-continuation adds per-tab auth-resume capture/restore,
     # staged Planning hydration, and terminal bootstrap-safe recovery wiring (+249).
     # feature/planning-capacity-editing adds the Capacity config lifecycle, one-at-a-time
-    # team card editor, mapping re-verification, and scoped empty-state refresh while
-    # retaining the global auth-lock and workspace-config flows (+45).
-    "frontend/src/dashboard.jsx": 16669,
+    # team card editor, mapping re-verification/conflict recovery, local-OAuth fallback,
+    # and scoped empty-state refresh while retaining global auth/config flows (+71).
+    "frontend/src/dashboard.jsx": 16695,
 }
 
 

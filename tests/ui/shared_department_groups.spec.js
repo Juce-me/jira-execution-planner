@@ -444,6 +444,13 @@ async function mockFirstRunDashboard(page, options = {}) {
         if (url.pathname === '/api/epics/search') {
             return json({ epics: options.epicSearchResults || [{ key: 'PROD-ADHOC', summary: 'Synthetic ad hoc' }] });
         }
+        if (url.pathname === '/api/team-catalog') {
+            const teamIds = ['team-platform', 'team-growth', ...Array.from({ length: 12 }, (_, index) => `team-${index + 1}`)];
+            return json({
+                catalog: Object.fromEntries(teamIds.map(teamId => [teamId, { id: teamId, name: teamId }])),
+                meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: '42', source: 'sprint' },
+            });
+        }
         if (url.pathname === '/api/projects/selected') {
             if (request.method() === 'POST') return json(requestBody(request));
             return json({ selected: options.sharedConfig?.projects?.selected || [] });

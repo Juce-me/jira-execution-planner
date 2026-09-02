@@ -131,6 +131,24 @@ class TestTeamCatalogAPI(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["catalog"]["t1"]["name"], "Team One")
 
+    def test_db_local_mode_team_catalog_get_uses_separate_repository(self):
+        repository = SimpleNamespace(
+            load_team_catalog=lambda context: {
+                "catalog": {"t1": {"id": "t1", "name": "Team One"}},
+                "meta": {"updatedAt": "2026-09-02T09:31:06Z", "source": "sprint"},
+            }
+        )
+        with patch.object(jira_server, "config_storage_db_enabled", return_value=True), \
+             patch.object(jira_server, "local_file_state_enabled", return_value=True), \
+             patch.object(settings_routes, "db_repository", return_value=repository), \
+             patch.object(jira_server, "current_request_auth_context", return_value=_verified_context()), \
+             patch.object(jira_server, "load_dashboard_config", side_effect=AssertionError("admin config fallback forbidden")):
+            response = self.client.get("/api/team-catalog")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["catalog"]["t1"]["name"], "Team One")
+        self.assertEqual(response.get_json()["meta"]["source"], "sprint")
+
     def test_db_team_catalog_post_uses_separate_repository(self):
         saved_catalogs = []
         repository = SimpleNamespace(

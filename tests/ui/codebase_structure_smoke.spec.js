@@ -808,7 +808,13 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (options.allowSettingsModalLookups) {
             if (url.pathname === '/api/projects') return json({ projects: [] });
-            if (url.pathname === '/api/team-catalog') return json({ catalog: {}, meta: {} });
+            if (url.pathname === '/api/team-catalog') return json({
+                catalog: {
+                    'team-alpha': { id: 'team-alpha', name: 'Alpha Team' },
+                    'team-beta': { id: 'team-beta', name: 'Beta Team' },
+                },
+                meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: String(selectedSprintId), source: 'sprint' },
+            });
             if (url.pathname === '/api/fields') return json({ fields: [] });
         }
         if (url.pathname === '/api/board-config') return json({ boardId: '5494', boardName: 'Synthetic Board', source: 'test' });

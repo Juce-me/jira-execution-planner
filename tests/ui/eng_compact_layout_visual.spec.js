@@ -7,6 +7,8 @@ const screenshotDir = 'test-results/eng-compact-layout-qa';
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
+const headerLongSprintEastName = '2026Q3 Sprint 43 — International Platform Reliability and Migration — East';
+const headerLongSprintWestName = '2026Q3 Sprint 44 — International Platform Reliability and Migration — West';
 const groupTeamIds = ['team-alpha', 'team-beta'];
 
 // The bar's fixed single-row height (styles/eng/filter-bar.css). D36 and §12.6 make this a
@@ -228,7 +230,13 @@ async function installEngCompactFixture(page, options = {}) {
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/sprints') {
-            return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: sprintState }] });
+            return json({
+                sprints: [
+                    { id: selectedSprintId, name: selectedSprintName, state: sprintState },
+                    { id: 34627, name: headerLongSprintEastName, state: 'future' },
+                    { id: 34628, name: headerLongSprintWestName, state: 'future' },
+                ],
+            });
         }
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
         if (url.pathname === '/api/tasks-with-team-name') {
@@ -459,7 +467,7 @@ async function expectAlertPanelToggleStates(page) {
     await expect(page.locator('.alert-panels')).toBeVisible();
 }
 
-async function expectSprintOptionsStaySingleLine(page) {
+async function expectHeaderSprintOptionsWrapInsidePanel(page) {
     await page.evaluate(() => window.scrollTo(0, 420));
     await expect(page.locator('.compact-sticky-header.is-visible')).toBeVisible();
     const sprintDropdown = page.locator('.compact-sticky-header .sprint-dropdown').first();
@@ -474,18 +482,29 @@ async function expectSprintOptionsStaySingleLine(page) {
                 .filter(rect => rect.width > 0 && rect.height > 0)
                 .map(rect => Math.round(rect.top));
             range.detach();
+            const panel = option.closest('.sprint-dropdown-panel').getBoundingClientRect();
+            const rect = option.getBoundingClientRect();
             return {
                 lines: new Set(lineTops).size,
                 overflowX: option.scrollWidth - option.clientWidth,
                 whiteSpace: style.whiteSpace,
+                left: rect.left,
+                right: rect.right,
+                panelLeft: panel.left,
+                panelRight: panel.right,
+                text: option.textContent,
             };
         });
     });
     metrics.forEach(metric => {
-        expect(metric.lines).toBe(1);
+        expect(metric.whiteSpace).toBe('normal');
         expect(metric.overflowX).toBeLessThanOrEqual(1);
-        expect(metric.whiteSpace).toBe('nowrap');
+        expect(metric.left).toBeGreaterThanOrEqual(metric.panelLeft - 1);
+        expect(metric.right).toBeLessThanOrEqual(metric.panelRight + 1);
     });
+    expect(metrics.some(metric => metric.text.includes('East'))).toBe(true);
+    expect(metrics.some(metric => metric.text.includes('West'))).toBe(true);
+    expect(metrics.some(metric => metric.lines > 1)).toBe(true);
     await page.screenshot({ path: `${screenshotDir}/desktop-sticky-sprint-dropdown.png`, fullPage: false });
 }
 
@@ -1160,9 +1179,9 @@ test('ENG epic rows stay readable on narrow screens', async ({ page }) => {
     await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-mobile.png` });
 });
 
-test('the compact sticky header keeps its sprint options on one line', async ({ page }) => {
+test('the compact sticky header wraps long sprint options inside its stable panel', async ({ page }) => {
     await openEngCatchUp(page, { width: 1440, height: 760 });
-    await expectSprintOptionsStaySingleLine(page);
+    await expectHeaderSprintOptionsWrapInsidePanel(page);
 });
 
 test('every control in the bar is legible and free of the global button styling', async ({ page }) => {

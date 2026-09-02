@@ -322,6 +322,18 @@ test('EPM control dropdowns size to short labels and long options', async ({ pag
 
     await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
     const controls = page.locator('.view-filters').first();
+    const mainSprint = controls.locator('.sprint-dropdown').first();
+    const mainProject = controls.locator('.epm-project-dropdown');
+    const mainSubGoal = controls.locator('.epm-subgoal-dropdown');
+    const mainSort = controls.locator('.epm-sort-dropdown');
+    await expect(mainSprint).toBeVisible();
+    await expect(mainProject).toBeVisible();
+    await expect(mainSubGoal).toBeVisible();
+    await expect(mainSort).toBeVisible();
+    await expect(mainSprint).not.toHaveClass(/header-filter-dropdown/);
+    await expect(mainProject).not.toHaveClass(/header-filter-dropdown/);
+    await expect(mainSubGoal).not.toHaveClass(/header-filter-dropdown/);
+    await expect(mainSort).not.toHaveClass(/header-filter-dropdown/);
     await expect(controls.getByRole('button', { name: 'Select sprint' })).toBeVisible();
 
     const sprintToggle = controls.locator('.sprint-dropdown-toggle').first();
@@ -451,6 +463,18 @@ test('EPM compact sticky controls show project picker without settings or state 
     await page.evaluate(() => window.scrollTo(0, 420));
     const sticky = page.locator('.compact-sticky-header.is-visible');
     await expect(sticky).toBeVisible();
+    const compactSprint = sticky.locator('.sprint-dropdown').first();
+    const compactProject = sticky.locator('.epm-project-dropdown');
+    const compactSubGoal = sticky.locator('.epm-subgoal-dropdown');
+    const compactSort = sticky.locator('.epm-sort-dropdown');
+    await expect(compactSprint).toBeVisible();
+    await expect(compactProject).toBeVisible();
+    await expect(compactSubGoal).toBeVisible();
+    await expect(compactSort).toBeVisible();
+    await expect(compactSprint).not.toHaveClass(/header-filter-dropdown/);
+    await expect(compactProject).not.toHaveClass(/header-filter-dropdown/);
+    await expect(compactSubGoal).not.toHaveClass(/header-filter-dropdown/);
+    await expect(compactSort).not.toHaveClass(/header-filter-dropdown/);
     await expect(sticky.getByRole('button', { name: 'Select sprint' })).toBeVisible();
     await expect(sticky.getByRole('button', { name: 'Filter EPM sub-goals' })).toBeVisible();
     await expect(sticky.getByRole('button', { name: 'Select Project' })).toBeVisible();

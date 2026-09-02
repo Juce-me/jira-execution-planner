@@ -740,10 +740,13 @@ test('the three sort orders reorder rows without changing the row layout', async
     // Exact matches: "Assignee, then status" contains both other option labels, and Playwright's
     // hasText is a case-insensitive substring.
     const sortControl = panel(page).locator('.epic-panel-sort-dropdown');
+    await expect(sortControl).toBeVisible();
+    await expect(sortControl).not.toHaveClass(/header-filter-dropdown/);
     const sortOption = (label) => sortControl.locator('.sprint-dropdown-option')
         .filter({ hasText: new RegExp(`^${label}$`) });
 
     await sortControl.locator('.sprint-dropdown-toggle').click();
+    await expect(sortControl.locator('.sprint-dropdown-panel')).toBeVisible();
     await sortOption('Status').click();
     // Board column order is Ready | Doing | Done, so Done falls last — never alphabetical.
     expect(await keys()).toEqual(['PLAT-1-b', 'PLAT-1-d', 'PLAT-1-c', 'PLAT-1-e', 'PLAT-1-a']);

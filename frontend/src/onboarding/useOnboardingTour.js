@@ -469,10 +469,10 @@ export default function useOnboardingTour({
     }, [activeSteps, clearStepUnlock, navigation.canGoBack, navigation.index]);
 
     const goNext = React.useCallback(() => {
-        if (!navigation.canGoNext || (currentStep?.progression === 'menu-preview' && !stepUnlocked)) return;
+        if (!navigation.canGoNext) return;
         clearStepUnlock();
         setSessionState((state) => ({ ...state, currentStepId: activeSteps[navigation.index + 1].id }));
-    }, [activeSteps, clearStepUnlock, currentStep, navigation.canGoNext, navigation.index, stepUnlocked]);
+    }, [activeSteps, clearStepUnlock, navigation.canGoNext, navigation.index]);
 
     const goToStep = React.useCallback((stepId) => {
         if (!effectiveState.sessionOpen

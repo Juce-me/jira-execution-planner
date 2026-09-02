@@ -211,11 +211,15 @@ function visibleStoryPayload(project = 'product') {
 }
 
 function defaultGroupPreferences(overrides = {}) {
+    const onboardingComplete = overrides.onboardingDone !== false;
     return {
         customized: false,
         preferenceExists: false,
         onboardingRequired: true,
         onboardingDone: true,
+        completedOnboardingModules: onboardingComplete
+            ? ['catch-up', 'configuration', 'planning', 'board', 'statistics']
+            : [],
         visibleGroupIds: [],
         activeGroupId: null,
         effectiveVisibleGroupIds: [],
@@ -236,6 +240,7 @@ async function mockFirstRunDashboard(page, options = {}) {
         source: 'workspace_db',
     };
     const preferences = options.preferences || defaultGroupPreferences();
+    let savedOnboardingModules = [...(preferences.completedOnboardingModules || [])];
     let latestGroupsConfig = structuredClone(groupsConfig);
     let onboardingComplete = !preferences.onboardingRequired;
     let sprintFailureCount = 0;
@@ -356,6 +361,7 @@ async function mockFirstRunDashboard(page, options = {}) {
                 preferenceExists: true,
                 onboardingRequired: false,
                 onboardingDone: preferences.onboardingDone !== false,
+                completedOnboardingModules: [...savedOnboardingModules],
                 visibleGroupIds: body.visibleGroupIds || ['platform'],
                 activeGroupId: body.activeGroupId || 'platform',
                 effectiveVisibleGroupIds: body.visibleGroupIds || ['platform'],
@@ -382,7 +388,18 @@ async function mockFirstRunDashboard(page, options = {}) {
         }
         if (url.pathname === '/api/me/onboarding') {
             const body = requestBody(request) || {};
-            return json({ onboardingDone: body.onboardingDone });
+            if (body.onboardingDone === false) {
+                savedOnboardingModules = [];
+            } else if (typeof body.completedModule === 'string') {
+                savedOnboardingModules = Array.from(new Set([
+                    ...savedOnboardingModules,
+                    body.completedModule,
+                ]));
+            }
+            return json({
+                completedOnboardingModules: [...savedOnboardingModules],
+                onboardingDone: savedOnboardingModules.length === 5,
+            });
         }
         if (url.pathname === '/api/teams') {
             return json({ teams: options.teams || [{ id: 'team-new', name: 'New Team' }] });
@@ -1137,7 +1154,7 @@ test('successful first-run selection starts the desktop dashboard tour before an
     await expect(page.locator('.group-modal')).toHaveCount(0);
     const writes = calls.filter(call => call.pathname === '/api/me/onboarding');
     expect(writes).toHaveLength(1);
-    expect(writes[0].body).toEqual({ onboardingDone: true });
+    expect(writes[0].body).toEqual({ completedModule: 'catch-up' });
 });
 
 test('existing users do not auto-start and can replay without changing dashboard scope', async ({ page }) => {

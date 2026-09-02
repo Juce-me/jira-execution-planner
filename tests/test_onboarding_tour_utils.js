@@ -67,6 +67,8 @@ const FULL_AVAILABILITY = {
     'editing-track': true,
     'editing-status': true,
     'jira-export': true,
+    'settings-info': true,
+    'eng-mode-info': true,
 };
 
 const ENG_STEP_IDS = [
@@ -97,6 +99,8 @@ test('catch-up catalog ends with informational settings and tool-switching steps
     );
     const informational = ONBOARDING_STEP_CATALOG.slice(-3, -1);
     assert.deepEqual(informational.map((step) => step.progression), ['manual', 'manual']);
+    assert.deepEqual(informational.map((step) => step.presence), ['conditional', 'conditional']);
+    assert.deepEqual(informational.map((step) => step.scroll), ['page-top', 'page-top']);
     assert.deepEqual(informational.map((step) => step.selectors), [
         ['[data-onboarding-target="settings-launcher"]'],
         ['[data-onboarding-target="eng-mode-control"]'],
@@ -114,6 +118,29 @@ test('catch-up catalog ends with informational settings and tool-switching steps
         .flatMap((step) => [step.title, step.body, step.fallbackBody || ''])
         .join(' ');
     assert.doesNotMatch(renderedCopy, /data-onboarding-target|hierarchy-epic|editing-priority/);
+});
+
+test('Catch Up top controls resolve while offscreen and disappear when genuinely absent', async () => {
+    const { ONBOARDING_STEP_CATALOG, resolveOnboardingSnapshot } = await loadModule();
+    const topControlIds = ['jira-export', 'settings-info', 'eng-mode-info'];
+    const offscreen = element({ left: 80, top: -900, right: 200, bottom: -860, width: 120, height: 40 });
+
+    for (const id of topControlIds) {
+        const step = ONBOARDING_STEP_CATALOG.find((entry) => entry.id === id);
+        assert.equal(step.scroll, 'page-top', id);
+        const [selector] = step.selectors;
+        const offscreenSnapshot = resolveOnboardingSnapshot(
+            rootWith({ [selector]: [offscreen] }),
+            VIEWPORT,
+            { catalog: [step] },
+        );
+        assert.equal(offscreenSnapshot.targets[id], offscreen, `${id} resolves before returning to top`);
+        assert.deepEqual(offscreenSnapshot.steps.map((entry) => entry.id), [id], `${id} remains available`);
+
+        const absentSnapshot = resolveOnboardingSnapshot(rootWith({}), VIEWPORT, { catalog: [step] });
+        assert.equal(absentSnapshot.targets[id], null, `${id} has no synthetic target`);
+        assert.deepEqual(absentSnapshot.steps, [], `${id} emits no absent-control bubble`);
+    }
 });
 
 test('contextual module catalogs expose exact manually advanced reachable destinations', async () => {
@@ -227,18 +254,19 @@ test('dashboard wires canonical module persistence and requests only real suppor
 
     const modeHandler = dashboard.match(/onChange=\{\(nextMode\)\s*=>\s*\{[\s\S]*?\}\}\s*selectedSprint=/)?.[0] || '';
     assert.match(modeHandler, /applyEngMode\(nextMode\);[\s\S]*onboarding\.requestModule\(nextMode\)/);
-    assert.match(modeHandler, /if \(isEngOnboardingModuleSurface\(nextMode\)\)/);
+    assert.match(modeHandler, /if \(onboardingBootstrapReady && isEngOnboardingModuleSurface\(nextMode\)\)/);
     assert.doesNotMatch(modeHandler, /['"]scenario['"][\s\S]*requestModule|requestModule\(['"]scenario['"]\)/);
 
     const settingsHandler = dashboard.match(/data-onboarding-target="settings-launcher"[\s\S]{0,1200}?onClick|onClick[\s\S]{0,1200}?data-onboarding-target="settings-launcher"/)?.[0] || '';
-    assert.match(settingsHandler, /const configurationTourRequested = !isDashboardMobileViewport\(\) && onboarding\.requestModule\('configuration'\)/);
+    assert.match(settingsHandler, /const configurationTourRequested = onboardingBootstrapReady[\s\S]*?!isDashboardMobileViewport\(\)[\s\S]*?onboarding\.requestModule\('configuration'\)/);
     assert.match(settingsHandler, /openGroupManage\(configurationTourRequested \? 'teams' : preferredSettingsTab\)/);
     assert.doesNotMatch(settingsHandler, /openGroupManage\('teams'\)/);
     assert.doesNotMatch(settingsHandler, /contextualOnboarding|window\.matchMedia/);
 
     assert.match(dashboard, /activeSurface:\s*onboardingActiveSurface/);
     assert.match(dashboard, /activeSurface=\{onboardingActiveSurface\}/);
-    assert.match(dashboard, /const canStartOnboardingModule = React\.useCallback\(\(\) => !isDashboardMobileViewport\(\), \[\]\)/);
+    assert.match(dashboard, /const onboardingBootstrapReady = groupsLoading === false[\s\S]*?!groupsError[\s\S]*?!serverConnectionError[\s\S]*?onboardingAvailable[\s\S]*?groupPreferences\.onboardingRequired === false/);
+    assert.match(dashboard, /const canStartOnboardingModule = React\.useCallback\([\s\S]*?onboardingBootstrapReady && !isDashboardMobileViewport\(\)[\s\S]*?\[onboardingBootstrapReady\]/);
     assert.match(dashboard, /canStartModule:\s*canStartOnboardingModule/);
     assert.match(dashboard, /onModuleInterrupted=\{onboarding\.interrupt\}/);
     const openModule = controller.match(/const openModule = React\.useCallback\([\s\S]*?\n\s*}, \[[^\]]*\]\);/)?.[0] || '';
@@ -316,7 +344,6 @@ test('all-absent hierarchy compacts to one aggregate fallback before field previ
             'sprint', 'group', 'teams', 'refresh', 'search', 'filters',
             'hierarchy',
             'editing-priority', 'editing-track', 'editing-status',
-            'settings-info', 'eng-mode-info',
             'complete',
         ]
     );
@@ -860,15 +887,15 @@ test('coachmark action hierarchy uses stable role classes and a 560px placement 
     );
 
     assert.match(source, /DEFAULT_COACHMARK_SIZE = \{ width: 560, height: 250 \}/);
-    assert.match(source, /className="secondary onboarding-tour-action-skip-all"[\s\S]*?>\s*Skip onboarding/);
-    assert.match(source, /className="secondary onboarding-tour-action-back"[\s\S]*?>\s*Back/);
-    assert.match(source, /className="secondary onboarding-tour-action-skip-section"[\s\S]*?>\s*Skip this section/);
-    assert.match(source, /className="primary onboarding-tour-action-next"[\s\S]*?>Next<\/button>/);
+    assert.match(source, /className="secondary compact onboarding-tour-action-skip-all"[\s\S]*?>\s*Skip onboarding/);
+    assert.match(source, /className="secondary compact onboarding-tour-action-back"[\s\S]*?>\s*Back/);
+    assert.match(source, /className="secondary compact onboarding-tour-action-skip-section"[\s\S]*?>\s*Skip this section/);
+    assert.match(source, /className="primary compact onboarding-tour-action-next"[\s\S]*?>Next<\/button>/);
     assert.match(styles, /\.onboarding-tour-card\s*\{[\s\S]*?width:\s*min\(560px, calc\(100vw - 32px\)\)/);
     assert.match(styles, /\.onboarding-tour-actions\s*\{[\s\S]*?display:\s*grid[\s\S]*?grid-template-columns:\s*max-content 1fr/);
     assert.match(styles, /\.onboarding-tour-navigation\s*\{[\s\S]*?display:\s*flex[\s\S]*?flex-wrap:\s*nowrap/);
     assert.match(styles, /\.onboarding-tour-card button:focus-visible\s*\{[\s\S]*?outline:\s*2px solid #1d39c4/);
-    assert.match(styles, /\.onboarding-tour-action-next:disabled\s*\{[\s\S]*?opacity:\s*1/);
+    assert.match(styles, /\.onboarding-tour-actions button\s*\{[\s\S]*?height:\s*var\(--control-height\)/);
 });
 
 test('search and field preview copy states the exact supported scope without requiring a change', async () => {
@@ -945,8 +972,12 @@ test('field previews resolve Epic controls before Story fallbacks', async () => 
 
 test('progress is renumbered from the filtered visible list', async () => {
     const { buildVisibleOnboardingSteps, buildTourProgress } = await loadModule();
-    const steps = buildVisibleOnboardingSteps({ group: false, teams: true, search: false, filters: true });
-    assert.deepEqual(buildTourProgress(steps, 2), { current: 3, total: 9, label: 'Step 3 of 9' });
+    const steps = buildVisibleOnboardingSteps({
+        ...FULL_AVAILABILITY,
+        group: false,
+        search: false,
+    });
+    assert.deepEqual(buildTourProgress(steps, 2), { current: 3, total: 14, label: 'Step 3 of 14' });
 });
 
 test('placement below a target remains viewport bounded', async () => {

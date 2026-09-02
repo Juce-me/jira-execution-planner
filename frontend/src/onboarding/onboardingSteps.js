@@ -195,6 +195,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         id: 'jira-export',
         presence: 'conditional',
         progression: 'manual',
+        scroll: 'page-top',
         group: CONTINUE_IN_JIRA,
         requireEnabled: true,
         selectors: [target('jira-export')],
@@ -203,8 +204,9 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     }),
     freezeStep({
         id: 'settings-info',
-        presence: 'required',
+        presence: 'conditional',
         progression: 'manual',
+        scroll: 'page-top',
         group: CONTINUE_IN_JIRA,
         selectors: [target('settings-launcher')],
         title: 'Manage Departments in Settings',
@@ -212,8 +214,9 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
     }),
     freezeStep({
         id: 'eng-mode-info',
-        presence: 'required',
+        presence: 'conditional',
         progression: 'manual',
+        scroll: 'page-top',
         group: CONTINUE_IN_JIRA,
         selectors: [target('eng-mode-control')],
         title: 'Switch tools here',
@@ -490,6 +493,8 @@ export function resolveOnboardingSnapshot(root, viewport, options = {}) {
             resolved = engReadiness === 'settled'
                 ? resolveRenderableTarget(step.selectors, root, viewport, targetOptions)
                 : null;
+        } else if (step.scroll === 'page-top') {
+            resolved = resolveRenderableTarget(step.selectors, root, viewport, targetOptions);
         } else {
             resolved = resolveVisibleTarget(step.selectors, root, viewport, targetOptions);
         }

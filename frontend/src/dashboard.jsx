@@ -2885,11 +2885,17 @@ import {
                 : (selectedView === 'eng'
                     ? deriveActiveEngMode({ showScenario, showStats, showPlanning, showBoard })
                     : selectedView);
-            const canStartOnboardingModule = React.useCallback(() => !isDashboardMobileViewport(), []);
+            const onboardingBootstrapReady = groupsLoading === false
+                && !groupsError
+                && !serverConnectionError
+                && onboardingAvailable
+                && groupPreferences.onboardingRequired === false;
+            const canStartOnboardingModule = React.useCallback(
+                () => onboardingBootstrapReady && !isDashboardMobileViewport(),
+                [onboardingBootstrapReady],
+            );
             const onboarding = useOnboardingController({
-                bootstrapReady: groupsLoading === false
-                    && onboardingAvailable
-                    && groupPreferences.onboardingRequired === false,
+                bootstrapReady: onboardingBootstrapReady,
                 activeSurface: onboardingActiveSurface,
                 completedModules: groupPreferences.completedOnboardingModules,
                 setCompletedModules: (settlement) => setGroupPreferences((current) => ({
@@ -13471,7 +13477,7 @@ import {
                     isFutureSprintSelected={isFutureSprintSelected}
                     onChange={(nextMode) => {
                         applyEngMode(nextMode);
-                        if (isEngOnboardingModuleSurface(nextMode)) {
+                        if (onboardingBootstrapReady && isEngOnboardingModuleSurface(nextMode)) {
                             onboarding.requestModule(nextMode);
                         }
                     }}
@@ -14262,7 +14268,9 @@ import {
                                             onClick={(event) => {
                                                 event.stopPropagation();
                                                 trackSettingsAction('teams', 'open', { source_surface: 'dashboard' });
-                                                const configurationTourRequested = !isDashboardMobileViewport() && onboarding.requestModule('configuration');
+                                                const configurationTourRequested = onboardingBootstrapReady
+                                                    && !isDashboardMobileViewport()
+                                                    && onboarding.requestModule('configuration');
                                                 openGroupManage(configurationTourRequested ? 'teams' : preferredSettingsTab);
                                             }}
                                             disabled={groupsLoading}
@@ -17300,8 +17308,6 @@ import {
                         moduleRequest={onboarding.moduleRequest}
                         onModuleRequestConsumed={onboarding.clearModuleRequest}
                         onModuleInterrupted={onboarding.interrupt}
-                        settingsDirty={showGroupManage && isGroupDraftDirty}
-                        settingsSaving={showGroupManage && (groupSaving || epmConfigSaving || groupVisibilitySaving)}
                     />
                     {showUpdateModal && updateNoticeVisible && (
                         <div

@@ -88,6 +88,8 @@ async function installSettingsFixture(page, {
                 customized: true,
                 preferenceExists: true,
                 onboardingRequired: false,
+                onboardingDone: true,
+                completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
                 visibleGroupIds: ['synthetic'],
                 activeGroupId: 'synthetic',
                 effectiveVisibleGroupIds: ['synthetic'],

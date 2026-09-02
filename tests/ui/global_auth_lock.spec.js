@@ -83,6 +83,8 @@ function groupsPayload() {
         }],
         preferences: {
             onboardingRequired: false,
+            onboardingDone: true,
+            completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
             customized: true,
             visibleGroupIds: [groupId],
             effectiveVisibleGroupIds: [groupId],

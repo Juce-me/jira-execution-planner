@@ -37,7 +37,7 @@ const DEFAULT_COACHMARK_SIZE = { width: 560, height: 250 };
 const SPOTLIGHT_PADDING = 6;
 const DASHBOARD_MOBILE_QUERY = '(max-width: 760px)';
 const PREVIEW_STATES = new Set(['loading', 'ready', 'empty', 'error']);
-const PROGRESS_CLOSE_REASONS = new Set(['same_trigger', 'escape']);
+const ADVANCE_CLOSE_REASONS = new Set(['same_trigger', 'preview_option']);
 
 function descriptorsMatch(left, right) {
     return Boolean(left && right
@@ -261,8 +261,6 @@ export default function OnboardingTour({
     moduleRequest = null,
     onModuleRequestConsumed,
     onModuleInterrupted,
-    settingsDirty = false,
-    settingsSaving = false,
 } = {}) {
     const [snapshot, setSnapshot] = React.useState(() => (
         typeof document === 'undefined'
@@ -404,7 +402,9 @@ export default function OnboardingTour({
         const isNewEntry = priorEntry.stepId !== tour.currentStep.id || priorEntry.target !== candidate;
         if (isNewEntry) {
             scrollEntryRef.current = { stepId: tour.currentStep.id, target: candidate };
-            if (candidate && !isVisibleInViewport(candidate, entryViewport, targetOptions)) {
+            if (candidate && tour.currentStep.scroll === 'page-top') {
+                window.scrollTo?.({ top: 0, left: window.scrollX, behavior: 'instant' });
+            } else if (candidate && !isVisibleInViewport(candidate, entryViewport, targetOptions)) {
                 candidate.scrollIntoView?.({ behavior: 'instant', block: 'center', inline: 'nearest' });
             }
         }
@@ -672,29 +672,19 @@ export default function OnboardingTour({
         if (previewState !== 'closed') return;
         progressCloseLatchRef.current = false;
         const reason = matchedPreviewSession.reason || '';
-        if (cleanupLatchRef.current || !PROGRESS_CLOSE_REASONS.has(reason)) {
+        if (cleanupLatchRef.current || !ADVANCE_CLOSE_REASONS.has(reason)) {
             cleanupLatchRef.current = false;
             previewSettledStateRef.current = '';
             previewFocusedRef.current = false;
             return;
         }
-        if (previewSettledStateRef.current === 'error') {
-            const descriptor = previewDescriptorRef.current;
-            const closedTargetIdentity = descriptor.targetIdentity;
-            previewDescriptorRef.current = null;
-            onPreviewTargetChange?.(null);
-            setPreviewFallbackStepId(tour.currentStepId);
-            setPreviewFallbackTargetIdentity(closedTargetIdentity);
-            tour.unlockStep({ sessionId: descriptor.sessionId, stepId: descriptor.stepId });
-        } else if ((previewSettledStateRef.current === 'ready' || previewSettledStateRef.current === 'empty')
-            && previewFocusedRef.current) {
-            const descriptor = previewDescriptorRef.current;
-            target?.focus?.();
-            tour.unlockStep({ sessionId: descriptor.sessionId, stepId: descriptor.stepId });
-        }
+        target?.focus?.();
+        previewDescriptorRef.current = null;
+        onPreviewTargetChange?.(null);
+        tour.goNext();
         previewSettledStateRef.current = '';
         previewFocusedRef.current = false;
-    }, [matchedPreviewSession, measure, onPreviewTargetChange, previewState, target, tour.currentStepId, tour.unlockStep]);
+    }, [matchedPreviewSession, measure, onPreviewTargetChange, previewState, target, tour.goNext]);
 
     React.useEffect(() => {
         setPreviewFallbackStepId('');
@@ -854,8 +844,6 @@ export default function OnboardingTour({
     const sectionSkipTargetId = resolveSectionSkipTargetId(tour.steps, tour.currentStepId);
     const contextualModuleActive = tour.moduleSession.activeModule !== 'catch-up';
     const moduleManualStep = tour.currentStep.progression === 'module-manual';
-    const settingsBlocked = settingsContextStep && (settingsDirty || settingsSaving);
-
     const requestCleanup = (reason = 'cleanup') => {
         tour.clearStepUnlock();
         if (!previewDescriptorRef.current) return;
@@ -882,6 +870,12 @@ export default function OnboardingTour({
     };
 
     const handleNext = () => {
+        if (actionPending) return;
+        if (previewStep && interactive && !previewOpen && target) {
+            target.focus?.();
+            target.click?.();
+            return;
+        }
         requestCleanup('cleanup');
         if (moduleManualStep) {
             tour.finish();
@@ -952,10 +946,8 @@ export default function OnboardingTour({
             >
                 <div className="onboarding-tour-progress" aria-live={previewOpen ? undefined : 'polite'}>{progress.label}</div>
                 <h2 id={headingId}>{presentation.title}</h2>
-                <p id={descriptionId}>{settingsBlocked
-                    ? 'Save or discard the current Settings changes before continuing.'
-                    : interactive && previewStep
-                    ? 'Click the highlighted control to preview its choices. Nothing will change.'
+                <p id={descriptionId}>{interactive && previewStep
+                    ? 'Click the highlighted control or Next to preview its choices. Nothing will change.'
                     : presentation.body}</p>
                 {actionError && (
                     <div className="onboarding-tour-error" role="alert">
@@ -963,31 +955,26 @@ export default function OnboardingTour({
                     </div>
                 )}
                 <div className="onboarding-tour-actions">
-                    <button ref={skipButtonRef} type="button" className="secondary onboarding-tour-action-skip-all" onClick={handleSkip} disabled={actionPending}>
+                    <button ref={skipButtonRef} type="button" className="secondary compact onboarding-tour-action-skip-all" onClick={handleSkip} disabled={actionPending}>
                         Skip onboarding
                     </button>
                     <div className="onboarding-tour-navigation">
-                        <button ref={backButtonRef} type="button" className="secondary onboarding-tour-action-back" onClick={handleBack} disabled={!tour.canGoBack || actionPending}>
+                        <button ref={backButtonRef} type="button" className="secondary compact onboarding-tour-action-back" onClick={handleBack} disabled={!tour.canGoBack || actionPending}>
                             Back
                         </button>
                         {sectionSkipTargetId && (
-                            <button ref={sectionSkipButtonRef} type="button" className="secondary onboarding-tour-action-skip-section" onClick={handleSectionSkip} disabled={actionPending}>
+                            <button ref={sectionSkipButtonRef} type="button" className="secondary compact onboarding-tour-action-skip-section" onClick={handleSectionSkip} disabled={actionPending}>
                                 Skip this section
                             </button>
                         )}
                         {tour.isLast && !contextualModuleActive ? (
-                            <button type="button" className="primary" onClick={tour.finish} disabled={actionPending}>Finish</button>
+                            <button type="button" className="primary compact onboarding-tour-action-finish" onClick={tour.finish} disabled={actionPending}>Finish</button>
                         ) : (
                             <button
                                 ref={nextButtonRef}
                                 type="button"
-                                className="primary onboarding-tour-action-next"
+                                className="primary compact onboarding-tour-action-next"
                                 onClick={handleNext}
-                                disabled={actionPending
-                                    || presentation.loading
-                                    || settingsBlocked
-                                    || (previewStep && !tour.stepUnlocked)
-                                    || (!moduleManualStep && !tour.canGoNext)}
                             >Next</button>
                         )}
                     </div>

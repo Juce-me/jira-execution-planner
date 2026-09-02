@@ -4,6 +4,8 @@
 
 > **Status:** Done. Executed on `feature/user-onboarding-tour` through verification commit `06bb1fd` with reproducible build commit `02f75e1`. Kept for audit context only.
 
+> **Current behavior note (2026-09-02):** The locked-Next and Catch Up launcher-sequence instructions below are historical and superseded. Next now stays enabled on every step; Next or the exact highlighted field opens a read-only preview; a preview choice/surface, the same field, or Next advances exactly once; Escape closes without advancing. Catch Up points out real header controls after returning to the page top but never requires or synthesizes navigation. See `docs/features/onboarding.md` for the canonical contract.
+
 **Goal:** Correct the desktop coachmark and Department Settings regressions, require explicit **Next** after safe field previews, and add contextual Configuration, Planning, Board, and Statistics onboarding that starts from the real user-clicked launcher.
 
 **Architecture:** Keep one persisted `onboarding_done` preference and add a session-only module state machine around the existing tour. The Catch Up sequence gains real launcher steps; native pointer or keyboard activation opens the application surface through its existing handler, then the tour switches to one target-reachable contextual module and returns to the remaining launcher sequence without synthesizing navigation. Jira field previews retain their read-only owner contract but close into an unlocked **Next** state instead of advancing automatically. Team Groups keeps one canonical favorite control in the left row and moves visibility into a compact right-pane preference row.

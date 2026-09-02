@@ -18,7 +18,8 @@ Teach users only the screen they are currently using. Catch Up must not require 
 - Catch Up also points out the `.segmented-control.eng-mode-control` as the control for switching tools.
 - These two steps are informational and do not require the user to leave Catch Up.
 - Opening Planning, Board, Statistics, or Configuration starts only that screen's unfinished tour.
-- The highlighted controls on the active screen remain usable where the existing tour interaction model permits safe, non-mutating exploration.
+- Catch Up field previews keep Next enabled: Next or the highlighted field opens the read-only preview, while a preview choice/surface, the same field, or Next advances exactly once without a Jira mutation.
+- Escape closes a field preview without advancing, and the final Catch Up informational steps return to the visible header controls without opening another surface.
 - Finishing or skipping a tour completes only its current module.
 - Returning to a completed screen does not replay its tour.
 - Replay onboarding clears all module completions and restarts Catch Up.

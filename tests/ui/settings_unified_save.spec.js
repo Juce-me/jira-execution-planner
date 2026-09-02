@@ -66,6 +66,8 @@ function baseGroupsConfig() {
             customized: true,
             preferenceExists: true,
             onboardingRequired: false,
+            onboardingDone: true,
+            completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
             visibleGroupIds: ['platform'],
             activeGroupId: 'platform',
             effectiveVisibleGroupIds: ['platform'],

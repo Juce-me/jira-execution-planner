@@ -206,6 +206,16 @@ export default function IssueFieldOptionMenu({
         wrapper?.querySelector(`[data-${blockClass}-trigger]`)?.focus();
     };
 
+    const activatePreviewOption = () => {
+        focusTrigger();
+        onEscape?.('preview_option');
+    };
+
+    const handlePreviewMenuClick = (event) => {
+        if (!preview || event.target.closest('button[role="menuitem"]')) return;
+        activatePreviewOption();
+    };
+
     const handleMenuKeyDown = (event) => {
         if (event.key === 'Escape') {
             event.stopPropagation();
@@ -223,6 +233,7 @@ export default function IssueFieldOptionMenu({
         else if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             event.stopPropagation();
+            activatePreviewOption();
             return;
         } else {
             return;
@@ -243,6 +254,7 @@ export default function IssueFieldOptionMenu({
             role="menu"
             data-issue-key={key}
             onKeyDown={handleMenuKeyDown}
+            onClick={handlePreviewMenuClick}
             ref={menuRef}
             tabIndex={preview ? -1 : undefined}
             aria-label={preview ? `${menuLabel}. Read-only preview.` : undefined}
@@ -278,16 +290,17 @@ export default function IssueFieldOptionMenu({
                 {!loading && list.length > 0 && (
                     <div className={`${blockClass}-menu-options`} aria-label={menuLabel}>
                         {list.map((option, index) => preview ? (
-                            <div
+                            <button
                                 key={resolveKey(option, index)}
                                 id={`${previewId}-option-${index}`}
+                                type="button"
                                 className={`${blockClass}-option${index === activePreviewIndex ? ' is-preview-active' : ''}`}
                                 role="menuitem"
-                                aria-disabled="true"
+                                onClick={activatePreviewOption}
                             >
                                 {renderMarker ? renderMarker(option) : null}
                                 <span className={`${blockClass}-option-label`}>{optionLabel ? optionLabel(option) : ''}</span>
-                            </div>
+                            </button>
                         ) : (
                             <button
                                 key={resolveKey(option, index)}

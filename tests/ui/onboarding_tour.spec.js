@@ -181,6 +181,8 @@ test.beforeAll(() => {
                         <button data-onboarding-target="sprint" style={{ position: 'fixed', left: 520, top: 30 }}>Sprint compact</button>
                         {showGroup && <button data-onboarding-target="group" style={{ position: 'fixed', left: 40, top: 120 }}>Department</button>}
                         <button data-onboarding-target="refresh" style={{ position: 'fixed', left: 40, top: 210 }}>Refresh</button>
+                        <button data-onboarding-target="settings-launcher" style={{ position: 'fixed', right: 20, top: 30 }}>Settings</button>
+                        <div data-onboarding-target="eng-mode-control" style={{ position: 'fixed', right: 120, top: 30, width: 220, height: 40 }}>Catch Up · Planning · Board · Statistics</div>
                         {Boolean(hierarchyMask & 4) && <div data-onboarding-target="hierarchy-initiative" style={{ position: 'absolute', left: 40, top: 300, width: 180, height: 40 }}>Initiative</div>}
                         {Boolean(hierarchyMask & 2) && <div data-onboarding-target="hierarchy-epic" style={{ position: 'absolute', left: 40, top: 350, width: 180, height: 40 }}>Epic</div>}
                         {Boolean(hierarchyMask & 1) && <div data-onboarding-target="hierarchy-story" style={{ position: 'absolute', left: 40, top: 400, width: 180, height: 40 }}>Story</div>}
@@ -735,12 +737,12 @@ test('coachmark action hierarchy gives every action a distinct accessible role a
     await captureSettledOnboardingScreenshot(page, 'coachmark-actions-desktop.png');
 
     await advanceToHeading(page, 'Preview Priority options');
-    await expect(next).toBeDisabled();
-    const lockedNext = (await readCoachmarkActionGeometry(page)).buttons.find((button) => button.name === 'Next');
-    expect(lockedNext.opacity).toBe('1');
-    expect(lockedNext.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
-    expect(contrastRatio(lockedNext.color, lockedNext.backgroundColor)).toBeGreaterThanOrEqual(4.5);
-    await captureSettledOnboardingScreenshot(page, 'preview-next-locked.png');
+    await expect(next).toBeEnabled();
+    const availableNext = (await readCoachmarkActionGeometry(page)).buttons.find((button) => button.name === 'Next');
+    expect(availableNext.opacity).toBe('1');
+    expect(availableNext.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(contrastRatio(availableNext.color, availableNext.backgroundColor)).toBeGreaterThanOrEqual(4.5);
+    await captureSettledOnboardingScreenshot(page, 'preview-next-available.png');
 
     await page.locator('[data-priority-transition-trigger]').click();
     await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
@@ -750,6 +752,30 @@ test('coachmark action hierarchy gives every action a distinct accessible role a
     await menu.press('Escape');
     await expect(next).toBeEnabled();
     await captureSettledOnboardingScreenshot(page, 'preview-next-ready.png');
+});
+
+test('coachmark uses readable copy and the shared system control height', async ({ page }) => {
+    await installHarness(page);
+    await page.setViewportSize({ width: 1200, height: 760 });
+    await openTour(page);
+
+    const metrics = await page.getByRole('dialog').evaluate((card) => {
+        const title = card.querySelector('h2');
+        const description = card.querySelector('p');
+        const controlHeight = Number.parseFloat(getComputedStyle(document.documentElement)
+            .getPropertyValue('--control-height'));
+        return {
+            controlHeight,
+            titleFontSize: Number.parseFloat(getComputedStyle(title).fontSize),
+            descriptionFontSize: Number.parseFloat(getComputedStyle(description).fontSize),
+            buttonHeights: Array.from(card.querySelectorAll('.onboarding-tour-actions button'))
+                .map((button) => button.getBoundingClientRect().height),
+        };
+    });
+    expect(metrics.titleFontSize).toBeGreaterThanOrEqual(17);
+    expect(metrics.descriptionFontSize).toBeGreaterThanOrEqual(16);
+    expect(metrics.buttonHeights.length).toBeGreaterThan(0);
+    metrics.buttonHeights.forEach((height) => expect(height).toBeCloseTo(metrics.controlHeight, 0));
 });
 
 test('coachmark geometry uses two deterministic action rows on narrow desktop', async ({ page }) => {
@@ -788,6 +814,10 @@ async function expectPreviewUnlockedAndAdvance(page, heading, nextHeading) {
     const next = page.getByRole('button', { name: 'Next' });
     await expect(next).toBeEnabled();
     await next.click();
+    if (await page.getByRole('heading', { name: heading }).count()) {
+        await expect(page.locator('[data-onboarding-preview-owner]')).toBeVisible();
+        await next.click();
+    }
     await expect(page.getByRole('heading')).toHaveText(nextHeading);
 }
 
@@ -819,29 +849,12 @@ async function collectTourSteps(page, { advancePreview } = {}) {
 
 async function advancePreviewOrFallback(page, title, advanceFallback) {
     const next = page.getByRole('button', { name: 'Next' });
-    if (await next.isEnabled()) {
-        expect(await advanceFallback()).toBe(true);
-        return;
-    }
-    const field = title.includes('Priority') ? 'priority'
-        : title.includes('Project Track') ? 'project-track'
-            : 'status';
-    const trigger = page.locator(`[data-${field}-transition-trigger][data-issue-key="EPIC-1"]`);
-    await trigger.click();
-    await page.evaluate(() => {
-        window.__tourHarness.setPreviewError('');
-        window.__tourHarness.setPreviewLoading(false);
-        window.__tourHarness.setPreviewOptions('ready');
-    });
-    const menu = page.locator(`[data-${field}-transition-menu]`);
-    await expect(menu).toBeFocused();
-    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-preview-settled', 'ready');
-    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-preview-focused', 'true');
-    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-preview-cleanup', 'false');
-    await menu.press('Escape');
-    await expect(page.getByRole('heading')).toHaveText(title);
     await expect(next).toBeEnabled();
-    await next.click();
+    expect(await advanceFallback()).toBe(true);
+    if (!await page.getByRole('heading', { name: title }).count()) return;
+    await expect(page.locator('[data-onboarding-preview-owner]')).toBeVisible();
+    expect(await advanceFallback()).toBe(true);
+    return;
 }
 
 const productionFixtureUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -1314,7 +1327,6 @@ async function expectProductionSpotlightAligned(page, field, issueKey = 'SYN-EPI
 }
 
 async function exerciseReadOnlyPreviewInputs(page, field, issueKey = 'SYN-EPIC-A') {
-    const contract = productionFieldContracts[field];
     const menu = productionMenu(page, field, issueKey);
     const options = menu.getByRole('menuitem');
     const optionCount = await options.count();
@@ -1331,26 +1343,6 @@ async function exerciseReadOnlyPreviewInputs(page, field, issueKey = 'SYN-EPIC-A
     await expect.poll(activeId).toBe(await optionId(optionCount - 1));
     await menu.press('Home');
     await expect.poll(activeId).toBe(await optionId(0));
-
-    await menu.press('Enter');
-    await expect(page.getByRole('heading')).toHaveText(contract.heading);
-    await expect(menu).toBeVisible();
-    await menu.press(' ');
-    await expect(page.getByRole('heading')).toHaveText(contract.heading);
-    await expect(menu).toBeVisible();
-    const clickableOption = options.last();
-    const optionBox = await clickableOption.boundingBox();
-    expect(optionBox).not.toBeNull();
-    const optionHit = await page.evaluate(({ x, y }) => (
-        document.elementFromPoint(x, y)?.closest('[role="menuitem"]')?.id || ''
-    ), {
-        x: optionBox.x + optionBox.width / 2,
-        y: optionBox.y + optionBox.height / 2,
-    });
-    expect(optionHit).toBe(await clickableOption.getAttribute('id'));
-    await page.mouse.click(optionBox.x + optionBox.width / 2, optionBox.y + optionBox.height / 2);
-    await expect(page.getByRole('heading')).toHaveText(contract.heading);
-    await expect(menu).toBeVisible();
 }
 
 async function invokeProductionOwnerBridge(page, field, descriptorOverride) {
@@ -1648,6 +1640,30 @@ test('Catch Up highlights the whole fixed-height tool switch without navigating'
     await captureSettledOnboardingScreenshot(page, 'catch-up-tool-switch.png');
 });
 
+test('Catch Up returns to the page top before targeting its real header controls', async ({ page }) => {
+    await installHarness(page);
+    await page.evaluate(() => window.__tourHarness.setDashboardFieldTop(1400));
+    await openTour(page);
+    await advanceToHeading(page, 'Preview Status options');
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+    const next = page.getByRole('button', { name: 'Next' });
+    await next.click();
+    await expect(page.locator('[data-status-transition-menu]')).toBeVisible();
+    await next.click();
+    await expect(page.getByRole('heading')).toHaveText('Manage Departments in Settings');
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await expect(page.locator('[data-onboarding-target="settings-launcher"]')).toBeVisible();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'target');
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+    await captureSettledOnboardingScreenshot(page, 'catch-up-settings-top.png');
+
+    await next.click();
+    await expect(page.getByRole('heading')).toHaveText('Switch tools here');
+    await expect(page.locator('[data-onboarding-target="eng-mode-control"]')).toBeVisible();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'target');
+});
+
 test('production disabled Statistics does not start onboarding without a real open', async ({ page }) => {
     const { calls } = await installProductionOnboardingFixture(page, {
         sprintState: 'future',
@@ -1685,8 +1701,7 @@ test('production Configuration contextual module defers to dirty Settings state'
     const departmentName = page.getByRole('textbox', { name: 'Department name' });
     const originalName = await departmentName.inputValue();
     await departmentName.fill(`${originalName} updated`);
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
-    await expect(page.locator('.onboarding-tour-card')).toContainText('Save or discard the current Settings changes before continuing.');
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     await departmentName.fill(originalName);
     await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
@@ -1703,8 +1718,7 @@ test('production Configuration contextual module defers to Settings while it is 
     await departmentName.fill(`${await departmentName.inputValue()} updated`);
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByRole('button', { name: 'Saving...' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
-    await expect(page.locator('.onboarding-tour-card')).toContainText('Save or discard the current Settings changes before continuing.');
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     releaseGroupSave();
 });
 
@@ -1836,8 +1850,8 @@ test('production Catch Up Priority preview owns only the exact Epic control and 
     const next = page.getByRole('button', { name: 'Next' });
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
     await expect(next).toBeVisible();
-    await expect(next).toBeDisabled();
-    await expect(page.locator('.onboarding-tour-card')).toContainText('Click the highlighted control to preview its choices. Nothing will change.');
+    await expect(next).toBeEnabled();
+    await expect(page.locator('.onboarding-tour-card')).toContainText('Click the highlighted control or Next to preview its choices. Nothing will change.');
     await expectProductionSpotlightAligned(page, 'priority');
 
     await siblingKind.evaluate(node => node.click());
@@ -1853,7 +1867,7 @@ test('production Catch Up Priority preview owns only the exact Epic control and 
     await expect(menu).toBeFocused();
     await expect(menu).toHaveAttribute('data-onboarding-preview-owner', identity);
     await expect(menu.locator('[role="menuitem"]')).toHaveCount(2);
-    await expect(menu.locator('button[role="menuitem"]')).toHaveCount(0);
+    await expect(menu.locator('button[role="menuitem"]')).toHaveCount(2);
     await expect(menu.locator('[role="menuitem"]:focus')).toHaveCount(0);
     await expect(siblingIssue).toHaveAttribute('aria-expanded', 'false');
     await expect(siblingIssue).not.toHaveAttribute('aria-describedby', /.+/);
@@ -1863,16 +1877,13 @@ test('production Catch Up Priority preview owns only the exact Epic control and 
     expect(await productionIssueSnapshot(page)).toEqual(before);
     assertProductionRequestSafety(calls);
 
-    await menu.press('Escape');
-    await expect(page.getByRole('heading')).toHaveText(contract.heading);
-    await expect(target).toBeFocused();
     await expect(next).toBeEnabled();
-    await expect(menu).toHaveCount(0);
-    await captureSettledOnboardingScreenshot(page, 'priority-preview-next-unlocked-desktop.png');
+    await captureSettledOnboardingScreenshot(page, 'priority-preview-next-available-desktop.png');
     assertProductionRequestSafety(calls);
     assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
     await next.click();
     await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
+    await expect(menu).toHaveCount(0);
 });
 
 for (const field of ['track', 'status']) {
@@ -1889,7 +1900,7 @@ for (const field of ['track', 'status']) {
         const next = page.getByRole('button', { name: 'Next' });
         await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
         await expect(next).toBeVisible();
-        await expect(next).toBeDisabled();
+        await expect(next).toBeEnabled();
         await expectProductionSpotlightAligned(page, field);
         await wrongTrigger.evaluate(node => node.click());
         await expect(page.getByRole('heading')).toHaveText(contract.heading);
@@ -1903,21 +1914,18 @@ for (const field of ['track', 'status']) {
         await expect(menu).toBeFocused();
         await expect(menu).toHaveAttribute('data-onboarding-preview-owner', identity);
         await expect(menu.locator('[role="menuitem"]')).toHaveCount(field === 'track' ? 1 : 2);
-        await expect(menu.locator('button[role="menuitem"]')).toHaveCount(0);
+        await expect(menu.locator('button[role="menuitem"]')).toHaveCount(field === 'track' ? 1 : 2);
         await expect(menu.locator('[role="menuitem"]:focus')).toHaveCount(0);
         await exerciseReadOnlyPreviewInputs(page, field);
         expect(await productionIssueSnapshot(page)).toEqual(before);
         assertProductionRequestSafety(calls);
 
-        await menu.press('Escape');
-        await expect(page.getByRole('heading')).toHaveText(contract.heading);
-        await expect(target).toBeFocused();
         await expect(next).toBeEnabled();
-        await expect(menu).toHaveCount(0);
         assertProductionRequestSafety(calls);
         assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
         await next.click();
         await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
+        await expect(menu).toHaveCount(0);
     });
 }
 
@@ -1982,8 +1990,8 @@ for (const field of ['priority', 'track', 'status']) {
         await expect(menu).toBeFocused();
         await expect(menu).toHaveAttribute('data-onboarding-preview-owner', targetIdentity);
         await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'preview_ready');
-        await menu.press('Escape');
-        await expectPreviewUnlockedAndAdvance(page, contract.heading, contract.nextHeading);
+        await page.getByRole('button', { name: 'Next' }).click();
+        await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
         assertProductionRequestSafety(calls);
         assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
     });
@@ -2010,8 +2018,8 @@ test('production dashboard reaches IssueCard Story preview owners when the Epic 
     );
     await expect(productionMenu(page, 'priority', 'SYN-STORY-B')).toHaveCount(0);
     await expect(productionTrigger(page, 'priority', 'SYN-STORY-B')).not.toHaveAttribute('aria-describedby', /.+/);
-    await storyPriorityMenu.press('Escape');
-    await expectPreviewUnlockedAndAdvance(page, 'Preview Priority options', 'Preview Project Track options');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
     const epicTrack = productionTrigger(page, 'track', 'SYN-EPIC-A');
     await expect(epicTrack).toHaveAttribute('aria-describedby', /.+/);
     await epicTrack.click();
@@ -2020,8 +2028,8 @@ test('production dashboard reaches IssueCard Story preview owners when the Epic 
     await page.locator('.epic-header [data-status-transition-trigger]').evaluateAll(nodes => {
         nodes.forEach(node => { node.disabled = true; });
     });
-    await trackMenu.press('Escape');
-    await expectPreviewUnlockedAndAdvance(page, 'Preview Project Track options', 'Preview Status options');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading')).toHaveText('Preview Status options');
     const storyStatus = productionTrigger(page, 'status', 'SYN-STORY-A');
     await expect(storyStatus).toHaveAttribute('aria-describedby', /.+/);
     await expect(storyStatus.locator('xpath=ancestor::*[@data-task-key="SYN-STORY-A"]')).toHaveCount(1);
@@ -2033,8 +2041,8 @@ test('production dashboard reaches IssueCard Story preview owners when the Epic 
         await storyStatus.getAttribute('data-onboarding-target-identity'),
     );
     await expect(productionMenu(page, 'status', 'SYN-STORY-B')).toHaveCount(0);
-    await storyStatusMenu.press('Escape');
-    await expectPreviewUnlockedAndAdvance(page, 'Preview Status options', 'Continue in Jira');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading')).toHaveText('Continue in Jira');
 
     assertProductionRequestSafety(calls);
     const analytics = await page.evaluate(() => window.dataLayer || []);
@@ -2045,7 +2053,7 @@ for (const field of ['priority', 'track', 'status']) {
     const contract = productionFieldContracts[field];
     const label = field === 'track' ? 'Project Track' : field[0].toUpperCase() + field.slice(1);
 
-    test(`production ${label} empty preview unlocks explicit Next only after keyboard close with zero Jira mutation`, async ({ page }) => {
+    test(`production ${label} empty preview keeps Next enabled and remains read-only`, async ({ page }) => {
         const { calls } = await installProductionOnboardingFixture(page, { field, mode: 'empty' });
         await advanceProductionTourTo(page, contract.heading);
         const before = await productionFieldValueSnapshot(page, field);
@@ -2057,21 +2065,19 @@ for (const field of ['priority', 'track', 'status']) {
         await expect(page.getByRole('heading')).toHaveText(contract.heading);
         const next = page.getByRole('button', { name: 'Next' });
         await expect(next).toBeVisible();
-        await expect(next).toBeDisabled();
+        await expect(next).toBeEnabled();
         expect(await productionFieldValueSnapshot(page, field)).toEqual(before);
         assertProductionRequestSafety(calls);
 
-        await menu.press('Escape');
-        await expect(page.getByRole('heading')).toHaveText(contract.heading);
         await expect(next).toBeEnabled();
-        await expect(menu).toHaveCount(0);
         assertProductionRequestSafety(calls);
         assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
         await next.click();
         await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
+        await expect(menu).toHaveCount(0);
     });
 
-    test(`production ${label} error preview unlocks explicit Next only after keyboard close with zero Jira mutation`, async ({ page }) => {
+    test(`production ${label} error preview keeps Next enabled and remains read-only`, async ({ page }) => {
         const errorStatus = field === 'track' ? 500 : 403;
         const { calls } = await installProductionOnboardingFixture(page, { field, mode: 'error', errorStatus });
         await advanceProductionTourTo(page, contract.heading);
@@ -2083,19 +2089,17 @@ for (const field of ['priority', 'track', 'status']) {
         await expect(menu.getByRole('status')).toContainText('Choices could not be loaded.');
         const next = page.getByRole('button', { name: 'Next' });
         await expect(next).toBeVisible();
-        await expect(next).toBeDisabled();
+        await expect(next).toBeEnabled();
         expect(fieldCalls(calls, contract.optionRoute)).toHaveLength(1);
         assertProductionRequestSafety(calls);
 
-        await menu.press('Escape');
-        await expect(page.getByRole('heading')).toHaveText(contract.heading);
         await expect(next).toBeEnabled();
-        await expect(menu).toHaveCount(0);
         expect(await productionFieldValueSnapshot(page, field)).toEqual(before);
         assertProductionRequestSafety(calls);
         assertNoUnsafePreviewAnalytics(await page.evaluate(() => window.dataLayer || []), contract);
         await next.click();
         await expect(page.getByRole('heading')).toHaveText(contract.nextHeading);
+        await expect(menu).toHaveCount(0);
     });
 
     test(`production ${label} options 401 enters the global auth lock and cleans preview state`, async ({ page }) => {
@@ -2118,32 +2122,31 @@ for (const field of ['priority', 'track', 'status']) {
 test('production cached Priority and Status repeat previews stay read-only without duplicate options-open events', async ({ page }) => {
     const { calls } = await installProductionOnboardingFixture(page, { field: 'priority', mode: 'success' });
     await advanceProductionTourTo(page, 'Preview Priority options');
-    const openClose = async (field) => {
+    const openAndAdvance = async (field) => {
         await productionTrigger(page, field).click();
         const menu = productionMenu(page, field);
         await expect(menu).toBeFocused();
-        await menu.press('Escape');
+        await page.getByRole('button', { name: 'Next' }).click();
     };
 
-    await openClose('priority');
-    await expectPreviewUnlockedAndAdvance(page, 'Preview Priority options', 'Preview Project Track options');
+    await openAndAdvance('priority');
+    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
     await page.getByRole('button', { name: 'Back' }).click();
     await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
-    await openClose('priority');
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+    await openAndAdvance('priority');
     expect(fieldCalls(calls, '/api/issues/priorities/options')).toHaveLength(1);
     expect((await page.evaluate(() => window.dataLayer || [])).filter(entry => (
         entry?.event_name === 'issue_priority_action' && entry.workflow_action === 'priority_options_open'
     ))).toHaveLength(1);
 
-    await expectPreviewUnlockedAndAdvance(page, 'Preview Priority options', 'Preview Project Track options');
-    await openClose('track');
-    await expectPreviewUnlockedAndAdvance(page, 'Preview Project Track options', 'Preview Status options');
-    await openClose('status');
-    await expectPreviewUnlockedAndAdvance(page, 'Preview Status options', 'Continue in Jira');
+    await openAndAdvance('track');
+    await expect(page.getByRole('heading')).toHaveText('Preview Status options');
+    await openAndAdvance('status');
+    await expect(page.getByRole('heading')).toHaveText('Continue in Jira');
     await page.getByRole('button', { name: 'Back' }).click();
     await expect(page.getByRole('heading')).toHaveText('Preview Status options');
-    await openClose('status');
+    await openAndAdvance('status');
     expect(fieldCalls(calls, '/api/issues/transitions/options')).toHaveLength(1);
     expect((await page.evaluate(() => window.dataLayer || [])).filter(entry => (
         entry?.event_name === 'issue_status_action' && entry.workflow_action === 'status_options_open'
@@ -2158,8 +2161,8 @@ test('production Catch Up Finish persists only Catch Up and never pushes another
     await productionTrigger(page, 'status').click();
     const menu = productionMenu(page, 'status');
     await expect(menu).toBeFocused();
-    await menu.press('Escape');
-    await expectPreviewUnlockedAndAdvance(page, 'Preview Status options', 'Continue in Jira');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading')).toHaveText('Continue in Jira');
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
 
     await page.getByRole('button', { name: 'Next' }).click();
@@ -2188,19 +2191,19 @@ test('production Catch Up Finish persists only Catch Up and never pushes another
     expect(completedEvent?.module_id).toBe('catch-up');
 });
 
-test('step collector delegates preview lifecycle while explicit Next remains disabled', async ({ page }) => {
+test('step collector delegates preview lifecycle while Next remains enabled', async ({ page }) => {
     await installHarness(page);
     await openTour(page);
     await expect(page.locator('[aria-live="polite"]')).toHaveCount(1);
     await expect(page.locator('.onboarding-tour-progress')).toHaveAttribute('aria-live', 'polite');
     await advanceToHeading(page, 'Preview Priority options');
     await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     await page.evaluate(() => { window.__previewCallbackCount = 0; });
 
     await collectTourSteps(page, {
         advancePreview: async ({ page: callbackPage }) => {
-            await expect(callbackPage.getByRole('button', { name: 'Next' })).toBeDisabled();
+            await expect(callbackPage.getByRole('button', { name: 'Next' })).toBeEnabled();
             await callbackPage.evaluate(() => {
                 window.__previewCallbackCount += 1;
                 window.__tourHarness.closeWithDone();
@@ -2212,9 +2215,39 @@ test('step collector delegates preview lifecycle while explicit Next remains dis
     expect(await page.evaluate(() => window.__previewCallbackCount)).toBe(1);
 });
 
-for (const previewState of ['ready', 'empty', 'error']) {
+test('Next opens closed field previews and every visible preview action advances once', async ({ page }) => {
+    await installHarness(page);
+    await openTour(page);
+    await advanceToHeading(page, 'Preview Priority options');
+    const next = page.getByRole('button', { name: 'Next' });
+    await expect(next).toBeEnabled();
+
+    await next.click();
+    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+    await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+    const priorityMenu = page.locator('[data-priority-transition-menu]');
+    await expect(priorityMenu).toBeFocused();
+    await priorityMenu.getByRole('menuitem').first().click();
+    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
+
+    const trackTrigger = page.locator('[data-project-track-transition-trigger]').first();
+    await trackTrigger.click();
+    await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+    const trackMenu = page.locator('[data-project-track-transition-menu]');
+    await trackMenu.getByRole('status').click();
+    await expect(page.getByRole('heading')).toHaveText('Preview Status options');
+
+    await next.click();
+    await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
+    const statusTrigger = page.locator('[data-status-transition-trigger]').first();
+    await statusTrigger.click();
+    await expect(page.getByRole('heading')).toHaveText('Manage Departments in Settings');
+    expect(await page.evaluate(() => window.__tourHarness.selections())).toEqual([]);
+});
+
+for (const previewState of ['loading', 'ready', 'empty', 'error']) {
     for (const closePath of ['pointer', 'keyboard']) {
-        test(`preview ${previewState} ${closePath} close unlocks explicit Next for Priority, Project Track, and Status`, async ({ page }) => {
+        test(`preview ${previewState} ${closePath} action advances once for Priority, Project Track, and Status`, async ({ page }) => {
             await installHarness(page);
             await page.evaluate((state) => window.__tourHarness.setPreviewOptions(state === 'empty' ? 'empty' : 'ready'), previewState);
             await openTour(page);
@@ -2245,25 +2278,23 @@ for (const previewState of ['ready', 'empty', 'error']) {
                 const next = page.getByRole('button', { name: 'Next' });
                 const highlightedTarget = page.locator(field.trigger).first();
                 await expect(heading).toBeVisible();
-                await expect(page.locator('.onboarding-tour-card')).toContainText('Click the highlighted control to preview its choices. Nothing will change.');
+                await expect(page.locator('.onboarding-tour-card')).toContainText('Click the highlighted control or Next to preview its choices. Nothing will change.');
                 await expect(next).toBeVisible();
-                await expect(next).toBeDisabled();
+                await expect(next).toBeEnabled();
                 await highlightedTarget.click();
                 await expect(page.locator('[data-onboarding-preview-owner]')).toBeVisible();
-                await page.evaluate((state) => {
-                    window.__tourHarness.setPreviewLoading(false);
-                    window.__tourHarness.setPreviewError(state === 'error' ? 'Choices unavailable.' : '');
-                }, previewState);
+                if (previewState !== 'loading') {
+                    await page.evaluate((state) => {
+                        window.__tourHarness.setPreviewLoading(false);
+                        window.__tourHarness.setPreviewError(state === 'error' ? 'Choices unavailable.' : '');
+                    }, previewState);
+                }
                 const menu = page.locator(field.menu);
                 await expect(menu).toBeFocused();
                 await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', `preview_${previewState}`);
                 if (closePath === 'pointer') await highlightedTarget.click();
-                else await page.keyboard.press('Escape');
-                await expect(heading).toBeVisible();
-                if (previewState !== 'error') await expect(highlightedTarget).toBeFocused();
-                await expect(next).toBeEnabled();
+                else await next.press('Enter');
                 await expect(menu).toHaveCount(0);
-                await next.click();
                 await expect(page.getByRole('heading', { name: field.nextHeading })).toBeVisible();
             }
             expect(await page.evaluate(() => window.__tourHarness.selections())).toEqual([]);
@@ -2278,7 +2309,7 @@ test('interactive preview uses an exact clickable hole, real owner lifecycle, an
     const trigger = page.locator('[data-priority-transition-trigger][data-issue-key="EPIC-1"]');
     const next = page.getByRole('button', { name: 'Next' });
     await expect(next).toBeVisible();
-    await expect(next).toBeDisabled();
+    await expect(next).toBeEnabled();
     await expect(page.locator('#root')).not.toHaveAttribute('inert', /.+/);
     const pointerAddsBeforeOpen = await page.evaluate(() => window.__tourLifecycle.documentListenerAdds.pointerdown);
 
@@ -2317,21 +2348,13 @@ test('interactive preview uses an exact clickable hole, real owner lifecycle, an
     await expect(menu).toBeFocused();
     const items = menu.getByRole('menuitem');
     await expect(items).toHaveCount(2);
-    await expect(items.first()).toHaveAttribute('aria-disabled', 'true');
+    await expect(items.first()).toBeEnabled();
     await menu.press('End');
     await expect(menu).toHaveAttribute('aria-activedescendant', await items.last().getAttribute('id'));
     await menu.press('Home');
     await expect(menu).toHaveAttribute('aria-activedescendant', await items.first().getAttribute('id'));
     await menu.press('ArrowDown');
     await expect(menu).toHaveAttribute('aria-activedescendant', await items.last().getAttribute('id'));
-    await menu.press('Enter');
-    await menu.press(' ');
-    const optionRect = await items.last().boundingBox();
-    await page.mouse.click(optionRect.x + optionRect.width / 2, optionRect.y + optionRect.height / 2);
-    await items.last().evaluate((node) => node.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-    await page.locator('.onboarding-tour-shield').first().dispatchEvent('pointerdown');
-    await page.locator('.onboarding-tour-card').dispatchEvent('pointerdown');
-    await expect(menu).toBeVisible();
     expect(await page.evaluate(() => window.__tourHarness.previewSession()?.state)).toBe('ready');
     expect(await page.evaluate(() => window.__tourHarness.selections())).toEqual([]);
 
@@ -2340,27 +2363,24 @@ test('interactive preview uses an exact clickable hole, real owner lifecycle, an
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-preview-cleanup', 'false');
     expect((await page.evaluate(() => window.__tourHarness.cleanupOrder()))
         .filter((entry) => entry.reason === 'target_loss')).toEqual([]);
-    await trigger.click();
-    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
-    await expect(trigger).toBeFocused();
-    await expect(next).toBeEnabled();
+    await captureSettledOnboardingScreenshot(page, 'preview-clickable-actions.png');
+    await items.last().click();
+    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
     expect((await page.evaluate(() => window.__tourHarness.lifecycle()))
-        .filter((entry) => entry.state === 'closed' && entry.reason === 'same_trigger')).toHaveLength(1);
+        .filter((entry) => entry.state === 'closed' && entry.reason === 'preview_option')).toHaveLength(1);
     expect((await page.evaluate(() => window.__tourHarness.cleanupOrder()))
         .filter((entry) => entry.reason === 'target_loss')).toEqual([]);
-    await next.click();
-    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
     const trackTrigger = page.locator('[data-project-track-transition-trigger][data-issue-key="EPIC-1"]');
     await trackTrigger.focus();
     await trackTrigger.press(' ');
     await expect.poll(() => page.evaluate(() => window.__tourHarness.previewSession()?.state)).toBe('loading');
     await trackTrigger.press(' ');
-    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('heading')).toHaveText('Preview Status options');
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     await expect(page.locator('[data-project-track-transition-menu]')).toHaveCount(0);
 });
 
-test('interactive explicit-empty preview is labelled, focused, and unlocks Next only after Escape', async ({ page }) => {
+test('interactive explicit-empty preview is labelled, focused, and keeps Next enabled after Escape', async ({ page }) => {
     await installHarness(page);
     await page.evaluate(() => window.__tourHarness.setPreviewOptions('empty'));
     await openTour(page);
@@ -2483,7 +2503,7 @@ test('interactive sibling issue and different field owners cannot become preview
         window.__tourHarness.emitLifecycle({ ...descriptor, issueKey: 'EPIC-2' }, { state: 'closed', reason: 'escape' });
     }, owned);
     await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     await page.evaluate(() => window.__tourHarness.setOpenField(''));
     await expect.poll(() => page.evaluate(() => window.__tourLifecycle.documentListenerRemoves.pointerdown))
         .toBe(await page.evaluate(() => window.__tourLifecycle.documentListenerAdds.pointerdown));
@@ -2536,14 +2556,17 @@ test('interactive loading, error fallback, duplicate lifecycle, and replacement 
     await trigger.click();
     await expect.poll(() => page.evaluate(() => window.__tourHarness.previewSession()?.state)).toBe('loading');
     await trigger.click();
-    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
     const next = page.getByRole('button', { name: 'Next' });
     await expect(next).toBeVisible();
-    await expect(next).toBeDisabled();
+    await expect(next).toBeEnabled();
+    await page.getByRole('button', { name: 'Back' }).click();
+    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
 
     await trigger.dblclick();
-    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
     await expect(page.locator('[data-priority-transition-menu]')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Back' }).click();
 
     await trigger.click();
     await page.evaluate(() => {
@@ -2560,7 +2583,7 @@ test('interactive loading, error fallback, duplicate lifecycle, and replacement 
         window.__tourHarness.setPreviewOptions('ready');
         window.__tourHarness.replacePriority();
     });
-    await expect(next).toBeDisabled();
+    await expect(next).toBeEnabled();
     await page.locator('[data-priority-transition-trigger][data-issue-key="EPIC-1"]').click();
     await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
     await expect(page.locator('[data-priority-transition-menu]')).toBeFocused();
@@ -2578,12 +2601,11 @@ test('interactive loading, error fallback, duplicate lifecycle, and replacement 
         }
     });
     await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
-    await next.click();
-    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
+    await expectPreviewUnlockedAndAdvance(page, 'Preview Priority options', 'Preview Project Track options');
     await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
 });
 
-test('interactive error preview target loss relocks Next while another field keeps the preview step mounted', async ({ page }) => {
+test('interactive error preview target loss keeps Next enabled while another field keeps the preview step mounted', async ({ page }) => {
     await installHarness(page);
     await openTour(page);
     await advanceToHeading(page, 'Preview Priority options');
@@ -2604,7 +2626,7 @@ test('interactive error preview target loss relocks Next while another field kee
     await expect(page.locator('[data-project-track-transition-trigger]')).toBeVisible();
     await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
     await expect(page.locator('[data-onboarding-tour]')).toBeVisible();
-    await expect(next).toBeDisabled();
+    await expect(next).toBeEnabled();
 });
 
 test('interactive focus islands, native keyboard activation, section cleanup, and manual fallback isolation remain exact', async ({ page }) => {
@@ -2617,12 +2639,15 @@ test('interactive focus islands, native keyboard activation, section cleanup, an
     const back = page.getByRole('button', { name: 'Back' });
     const sectionSkip = page.getByRole('button', { name: 'Skip this section' });
     const tourSkip = page.getByRole('button', { name: 'Skip onboarding' });
+    const next = page.getByRole('button', { name: 'Next' });
     await trigger.focus();
     await trigger.press('Tab');
     await expect(back).toBeFocused();
     await back.press('Tab');
     await expect(sectionSkip).toBeFocused();
     await sectionSkip.press('Tab');
+    await expect(next).toBeFocused();
+    await next.press('Tab');
     await expect(tourSkip).toBeFocused();
     await tourSkip.press('Tab');
     await expect(trigger).toBeFocused();
@@ -2649,7 +2674,7 @@ test('interactive focus islands, native keyboard activation, section cleanup, an
     expect(cleanup.filter((entry) => entry.phase === 'request' && entry.reason === 'cleanup')).toHaveLength(1);
 });
 
-test('interactive Escape closes the exact preview once from every focus-island location and unlocks Next only for settled states', async ({ page }) => {
+test('interactive Escape closes the exact preview once from every focus-island location while Next stays enabled', async ({ page }) => {
     await installHarness(page);
     const openPriorityPreview = async (state = 'ready') => {
         await openTour(page);
@@ -2694,7 +2719,7 @@ test('interactive Escape closes the exact preview once from every focus-island l
     await page.locator('[data-priority-transition-trigger]').focus();
     await page.locator('[data-priority-transition-trigger]').press('Escape');
     await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     await expect(page.locator('[data-priority-transition-menu]')).toHaveCount(0);
 
     await resetHarness();
@@ -2805,7 +2830,7 @@ test('interactive coarse-pointer targets reach 44px without row shift and unsafe
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-preview-settled', 'ready');
     await priorityMenu.press('Escape');
     await expectPreviewUnlockedAndAdvance(page, 'Preview Priority options', 'Preview Project Track options');
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'fallback');
 });
 
@@ -3021,7 +3046,7 @@ test('interactive target ancestor scroll lock restores exact prior overflow stat
     });
 });
 
-test('preview placement fallback preserves modal isolation without unlocking Next', async ({ page }) => {
+test('preview placement fallback preserves modal isolation while Next stays enabled', async ({ page }) => {
     await installHarness(page);
     await openTour(page);
     await advanceToHeading(page, 'Preview Priority options');
@@ -3039,13 +3064,13 @@ test('preview placement fallback preserves modal isolation without unlocking Nex
     await expect(page.locator('[data-onboarding-tour]')).not.toHaveClass(/is-interactive/);
     await expect(page.locator('.onboarding-tour-shield')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     await expect(page.locator('#root')).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('#root')).toHaveAttribute('inert', '');
     await expect(page.locator('[data-priority-transition-trigger]')).not.toHaveAttribute('aria-describedby', /.+/);
 });
 
-test('interactive late lifecycle responses and stale session descriptors are ignored after close', async ({ page }) => {
+test('interactive late lifecycle responses and stale session descriptors are ignored after advance', async ({ page }) => {
     await installHarness(page);
     await openTour(page);
     await advanceToHeading(page, 'Preview Priority options');
@@ -3067,10 +3092,9 @@ test('interactive late lifecycle responses and stale session descriptors are ign
         window.__tourHarness.emitLifecycle({ ...staleDescriptor, sessionId: staleDescriptor.sessionId - 1 }, { state: 'empty', reason: '' });
     }, descriptor);
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
-    expect(await page.evaluate(() => window.__tourHarness.previewSession()?.state)).toBe('closed');
-    await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
+    await expect(page.getByRole('heading')).toHaveText('Preview Project Track options');
     await expect(page.locator('[data-priority-transition-menu]')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
 
 test('interactive target replacement closes old ownership before rebinding and ignores its late response', async ({ page }) => {
@@ -3096,7 +3120,7 @@ test('interactive target replacement closes old ownership before rebinding and i
     expect(await page.evaluate(() => window.__tourHarness.previewSession()?.state)).toBe('closed');
     await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
     await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
 
 test('real authentication-required event performs owned preview cleanup without advancing and removes the tour surface', async ({ page }) => {
@@ -3264,7 +3288,7 @@ test('readiness holds hierarchy and editing steps during loading and terminal er
     await page.evaluate(() => window.__tourHarness.setReadiness('loading'));
     await openTour(page);
     await advanceToHeading(page, 'Start with the Initiative');
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
 
     await page.evaluate(() => window.__tourHarness.setReadiness('settled'));
@@ -3299,10 +3323,10 @@ test('offscreen target scrolls once on step entry, does not fight user scroll, a
     await page.evaluate(() => window.__tourHarness.setEditingMask(3));
     await expect(page.getByRole('heading')).toHaveText('Preview Priority options');
     await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
     await page.evaluate(() => window.__tourHarness.setEditingMask(7));
     await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
 
 test('interactive Priority, Project Track, and Status previews stay viewport-fixed on a scrolled dashboard', async ({ page }) => {
@@ -3804,7 +3828,7 @@ test('stale Configuration completion merges without closing a newer Planning tou
     });
     await expect(page.getByRole('heading', { name: 'Choose Department Teams' })).toBeVisible();
     await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled();
 
     await page.evaluate(() => window.__onboardingController.openSurface('planning'));
     await expect(page.getByRole('heading', { name: 'Review sprint planning' })).toBeVisible();

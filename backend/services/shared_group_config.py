@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from backend.auth.db_context import is_db_auth_context
 from backend.db import engine as db_engine
@@ -13,6 +13,13 @@ from backend.db import models
 GROUPS_SOURCE_DB = 'workspace_db'
 GROUPS_SOURCE_JSON = 'file'
 GROUPS_PAYLOAD_VERSION = 1
+ONBOARDING_MODULE_IDS = (
+    'catch-up',
+    'configuration',
+    'planning',
+    'board',
+    'statistics',
+)
 
 
 class GroupConfigConflict(Exception):
@@ -30,6 +37,47 @@ class InvalidSharedGroupConfig(ValueError):
 
 class InvalidGroupPreferences(ValueError):
     pass
+
+
+class OnboardingPreferencesUnavailable(ValueError):
+    pass
+
+
+class GroupSelectionRequired(ValueError):
+    pass
+
+
+class OnboardingStorageUnavailable(RuntimeError):
+    pass
+
+
+class InvalidOnboardingModule(ValueError):
+    pass
+
+
+def normalize_completed_onboarding_modules(values):
+    requested = {
+        value
+        for value in (values or [])
+        if isinstance(value, str)
+    }
+    return [
+        module_id
+        for module_id in ONBOARDING_MODULE_IDS
+        if module_id in requested
+    ]
+
+
+def all_onboarding_modules_complete(values):
+    return normalize_completed_onboarding_modules(values) == list(ONBOARDING_MODULE_IDS)
+
+
+def _onboarding_preference_payload(values):
+    completed_modules = normalize_completed_onboarding_modules(values)
+    return {
+        'completedOnboardingModules': completed_modules,
+        'onboardingDone': all_onboarding_modules_complete(completed_modules),
+    }
 
 
 def _group_ids(groups_config):
@@ -250,11 +298,18 @@ def _resolve_active_group_id(groups_config, visible_ids, active_group_id):
 def normalize_group_preferences(payload, groups_config, preference_exists=True, require_first_run=False):
     payload = payload or {}
     ids = _group_ids(groups_config)
+    completed_onboarding_modules = (
+        normalize_completed_onboarding_modules(payload.get('completedOnboardingModules'))
+        if _uses_personal_preferences(groups_config)
+        else list(ONBOARDING_MODULE_IDS)
+    )
+    onboarding = _onboarding_preference_payload(completed_onboarding_modules)
     if require_first_run and not preference_exists:
         return {
             'customized': False,
             'preferenceExists': False,
             'onboardingRequired': True,
+            **onboarding,
             'visibleGroupIds': [],
             'activeGroupId': None,
             'effectiveVisibleGroupIds': [],
@@ -266,6 +321,7 @@ def normalize_group_preferences(payload, groups_config, preference_exists=True, 
         'customized': customized,
         'preferenceExists': bool(preference_exists),
         'onboardingRequired': False,
+        **onboarding,
         'visibleGroupIds': visible,
     }
     effective = effective_visible_group_ids(groups_config, preferences)
@@ -301,6 +357,7 @@ def load_group_preferences(context, groups_config, database_url=None):
                 'visibleGroupIds': row.visible_group_ids or [],
                 'activeGroupId': row.active_group_id,
                 'customized': row.customized,
+                'completedOnboardingModules': row.onboarding_completed_modules,
             },
             groups_config,
             preference_exists=True,
@@ -345,9 +402,12 @@ def _validate_raw_group_preferences(payload, groups_config, preference_exists):
     }
 
 
-def _normalized_saved_preferences(payload, groups_config):
+def _normalized_saved_preferences(payload, groups_config, completed_onboarding_modules=None):
     return normalize_group_preferences(
-        payload,
+        {
+            **payload,
+            'completedOnboardingModules': completed_onboarding_modules or [],
+        },
         groups_config,
         preference_exists=True,
         require_first_run=False,
@@ -374,7 +434,13 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
         ).scalars().first()
         was_insert = row is None
         validated = _validate_raw_group_preferences(payload, groups_config, not was_insert)
-        preferences = _normalized_saved_preferences(validated, groups_config)
+        preferences = _normalized_saved_preferences(
+            validated,
+            groups_config,
+            completed_onboarding_modules=(
+                [] if was_insert else row.onboarding_completed_modules
+            ),
+        )
         if was_insert:
             row = models.UserGroupPreference(
                 workspace_id=context.workspace_id,
@@ -383,6 +449,8 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
                 visible_group_ids=preferences['visibleGroupIds'],
                 active_group_id=preferences['activeGroupId'],
                 customized=True,
+                onboarding_done=False,
+                onboarding_completed_modules=[],
             )
             session.add(row)
         else:
@@ -407,10 +475,71 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
         if row is None:
             raise insert_race_error
         validated = _validate_raw_group_preferences(payload, groups_config, True)
-        preferences = _normalized_saved_preferences(validated, groups_config)
+        preferences = _normalized_saved_preferences(
+            validated,
+            groups_config,
+            completed_onboarding_modules=row.onboarding_completed_modules,
+        )
         _apply_group_preferences(row, preferences)
         session.flush()
     return preferences
+
+
+def complete_onboarding_module(context, module_id, database_url=None) -> dict:
+    if module_id not in ONBOARDING_MODULE_IDS:
+        raise InvalidOnboardingModule('invalid_onboarding_module')
+    if not is_db_auth_context(context):
+        raise OnboardingPreferencesUnavailable('onboarding_db_required')
+
+    try:
+        with db_engine.session_scope(database_url) as session:
+            row = session.execute(
+                select(models.UserGroupPreference).where(
+                    models.UserGroupPreference.workspace_id == context.workspace_id,
+                    models.UserGroupPreference.user_id == context.user_id,
+                ).with_for_update()
+            ).scalars().first()
+            if row is None:
+                raise GroupSelectionRequired('personal group selection required')
+
+            completed_modules = normalize_completed_onboarding_modules([
+                *(row.onboarding_completed_modules or []),
+                module_id,
+            ])
+            onboarding = _onboarding_preference_payload(completed_modules)
+            row.onboarding_completed_modules = completed_modules
+            row.onboarding_done = onboarding['onboardingDone']
+            row.updated_at = models._utcnow()
+            session.flush()
+            return onboarding
+    except SQLAlchemyError as error:
+        raise OnboardingStorageUnavailable('onboarding_storage_unavailable') from error
+
+
+def set_onboarding_done(context, done: bool, database_url=None) -> dict:
+    if not is_db_auth_context(context):
+        raise OnboardingPreferencesUnavailable('onboarding_db_required')
+
+    try:
+        with db_engine.session_scope(database_url) as session:
+            row = session.execute(
+                select(models.UserGroupPreference).where(
+                    models.UserGroupPreference.workspace_id == context.workspace_id,
+                    models.UserGroupPreference.user_id == context.user_id,
+                ).with_for_update()
+            ).scalars().first()
+            if row is None:
+                raise GroupSelectionRequired('personal group selection required')
+
+            completed_modules = list(ONBOARDING_MODULE_IDS) if done else []
+            onboarding = _onboarding_preference_payload(completed_modules)
+            row.onboarding_completed_modules = completed_modules
+            row.onboarding_done = onboarding['onboardingDone']
+            row.updated_at = models._utcnow()
+            session.flush()
+            return onboarding
+    except SQLAlchemyError as error:
+        raise OnboardingStorageUnavailable('onboarding_storage_unavailable') from error
 
 
 def is_first_run_required(context, groups_config, preference_exists, database_url=None):

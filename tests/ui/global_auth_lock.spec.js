@@ -83,6 +83,8 @@ function groupsPayload() {
         }],
         preferences: {
             onboardingRequired: false,
+            onboardingDone: true,
+            completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
             customized: true,
             visibleGroupIds: [groupId],
             effectiveVisibleGroupIds: [groupId],
@@ -821,7 +823,14 @@ test('a delayed 401 consumes success completed after that request started', asyn
     await refresh;
 
     await expect.poll(() => documents.filter(pathname => pathname === '/').length).toBe(2);
-    expect(await page.evaluate(key => sessionStorage.getItem(key), recoveryConsumedKey)).toBe('attempt-delayed-401');
+    await expect.poll(async () => {
+        try {
+            return await page.evaluate(key => sessionStorage.getItem(key), recoveryConsumedKey);
+        } catch (error) {
+            if (/Execution context was destroyed/.test(error.message)) return 'navigating';
+            throw error;
+        }
+    }).toBe('attempt-delayed-401');
     expect(await page.evaluate(() => window.__oldDocumentMarker)).toBeUndefined();
     expect(auth401Calls).toBe(1);
     expect(oauthRequests).toBe(0);

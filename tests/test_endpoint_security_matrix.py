@@ -39,6 +39,7 @@ SECURITY_SAMPLES = {
     "user_write": [
         ("PATCH", "/api/capacity/CAP-101"),
         ("POST", "/api/me/views"),
+        ("POST", "/api/me/onboarding"),
         ("POST", "/api/epm/config"),
         ("POST", "/api/groups-preferences"),
         ("POST", "/api/export-excel"),

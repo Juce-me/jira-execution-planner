@@ -163,7 +163,7 @@ export default function EngFilterBar({
     });
 
     return (
-        <div className="filterbar-wrap" ref={wrapRef}>
+        <div className="filterbar-wrap" ref={wrapRef} data-onboarding-target="filters">
             <div className="filterbar">
                 <div className="pop-host" ref={popHostRef}>
                     <button

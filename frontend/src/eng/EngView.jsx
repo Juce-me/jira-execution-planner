@@ -187,6 +187,7 @@ export default function EngView({
                     ) : (
                         <div
                             className={`task-list ${activeDependencyFocus ? 'focus-mode' : ''}`}
+                            data-onboarding-target="hierarchy"
                             onClick={handleDependencyFocusClick}
                         >
                             {initiativeGroups ? (
@@ -200,7 +201,7 @@ export default function EngView({
                                         >
                                             {ini && (
                                                 <>
-                                                    <div className="initiative-header">
+                                                    <div className="initiative-header" data-onboarding-target="hierarchy-initiative">
                                                         <InitiativeIcon className="initiative-header-icon" />
                                                         <div className={`initiative-label ${isMultiEpic ? '' : 'initiative-label-only'}`}>
                                                             <span className="initiative-label-name">{ini.summary}</span>

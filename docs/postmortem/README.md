@@ -40,6 +40,7 @@ Postmortems serve to:
 | [MRT021](./MRT021-project-track-segmented-control-override.md) | Project Track Segmented Controls Overridden Instead of Reused | 2026-07-02 | Medium | Resolved | Recurrence of MRT020 on the sibling controls: Capacity/Mode reused SegmentedControl but a local CSS override forced wrap/auto-height and they missed the `eng-mode-control` class; shipped through a "READY TO MERGE" sign-off. Introduced by Claude, fixed by Codex (`c3fe99c`) with `eng-mode-control` reuse + single-row/fixed-height Playwright assertions |
 | [MRT022](./MRT022-agent-branded-branch-names.md) | Agent-Branded Branch Names Ignored Git Conventions | 2026-07-08 | Low | Resolved | Sessions repeatedly started on auto-generated `claude/*` branches despite AGENTS.md forbidding tool branding and requiring typed branch prefixes; fixed with a session-start rename rule in AGENTS.md section 11 |
 | [MRT023](./MRT023-alert-enrichment-blocked-first-screen.md) | Alert Enrichment Blocked the First Screen | 2026-08-08 | High | Resolved | Alert-only Epic distribution work consumed 10.367 seconds on the primary ENG task response and alert sources ran outside Catch Up |
+| [MRT024](./MRT024-head-stamped-schema-drift.md) | Head-Stamped Schema Drift | 2026-09-02 | High | Resolved | Alembic reported head while a preserved local PostgreSQL volume had duplicate onboarding columns and missing auth/capacity schema objects |
 
 ## Postmortem Template
 
@@ -93,8 +94,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 23
-- **Metadata complete (Date/Severity/Status)**: 23 (MRT001-MRT023)
+- **Total postmortems**: 24
+- **Metadata complete (Date/Severity/Status)**: 24 (MRT001-MRT024)
 
 ## Common Themes
 
@@ -152,5 +153,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-08-08*
-*Total Postmortems: 23*
+*Last Updated: 2026-09-02*
+*Total Postmortems: 24*

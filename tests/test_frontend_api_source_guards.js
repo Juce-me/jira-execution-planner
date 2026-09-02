@@ -8,6 +8,15 @@ const apiPathSegment = `${path.sep}api${path.sep}`;
 // Raw API endpoint literals belong under frontend/src/api.
 const allowedTransitionalWrappers = new Set();
 
+test('first-run guide owns no endpoint literals and save auth outcomes stay in dashboard state', () => {
+    const guide = readSource(path.join(frontendSrcPath, 'settings', 'FirstRunGroupConfigurationGuide.jsx'));
+    const dashboard = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    assert.doesNotMatch(guide, /\/api\//);
+    assert.ok(dashboard.includes('authRequired: true'));
+    assert.ok(dashboard.includes('pendingSections'));
+    assert.ok(dashboard.includes('committedSections'));
+});
+
 function listSourceFiles(root) {
     if (!fs.existsSync(root)) return [];
     const entries = fs.readdirSync(root, { withFileTypes: true });
@@ -631,6 +640,7 @@ test('settings config API module owns config request endpoint construction', () 
     assert.ok(configApiSource.includes('/api/config'), 'Expected app config URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/groups-config'), 'Expected groups config URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/groups-preferences'), 'Expected group preferences URL construction in configApi.js');
+    assert.ok(configApiSource.includes('/api/me/onboarding'), 'Expected onboarding preference URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/projects/selected'), 'Expected selected projects URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/board-config'), 'Expected board config URL construction in configApi.js');
     assert.ok(configApiSource.includes('/api/capacity/config'), 'Expected capacity config URL construction in configApi.js');
@@ -875,6 +885,192 @@ test('group preferences save wrapper uses settings analytics metadata', async ()
     assert.deepEqual(trackedCalls[0].analyticsParams, { featureName: 'settings' });
     assert.equal(new Headers(trackedCalls[0].options.headers).get('X-CSRF-Token'), 'csrf-token');
     assertJsonHeader(trackedCalls[0].options);
+});
+
+test('onboarding preference save wrapper posts exactly one field with CSRF and safe errors', async () => {
+    const { getJson, jsonOrStructuredError } = loadHttpHelpers();
+    const trackedCalls = [];
+    const configApi = loadApiModule('configApi.js', [
+        'saveOnboardingPreference',
+    ], {
+        getJson,
+        jsonOrStructuredError,
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            trackedCalls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ onboardingDone: false });
+        },
+    });
+
+    let payload;
+    await withMockFetch(async () => {
+        payload = await configApi.saveOnboardingPreference('http://backend', false);
+    }, (url) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: 'csrf-token' });
+        }
+        return jsonResponse({ onboardingDone: false });
+    });
+
+    assert.deepEqual(payload, { onboardingDone: false });
+    assert.equal(trackedCalls.length, 1);
+    assert.equal(trackedCalls[0].apiSurface, 'settings_save');
+    assert.equal(trackedCalls[0].url, 'http://backend/api/me/onboarding');
+    assert.deepEqual(trackedCalls[0].analyticsParams, { featureName: 'settings' });
+    assert.deepEqual(JSON.parse(trackedCalls[0].options.body), { onboardingDone: false });
+    assert.equal(new Headers(trackedCalls[0].options.headers).get('X-Requested-With'), 'jira-execution-planner');
+    assert.equal(new Headers(trackedCalls[0].options.headers).get('X-CSRF-Token'), 'csrf-token');
+    assertJsonHeader(trackedCalls[0].options);
+});
+
+test('onboarding preference save wrapper preserves structured auth recovery errors', async () => {
+    const { getJson, jsonOrStructuredError } = loadHttpHelpers();
+    const configApi = loadApiModule('configApi.js', [
+        'saveOnboardingPreference',
+    ], {
+        getJson,
+        jsonOrStructuredError,
+        trackedFetch: async () => ({
+            ok: false,
+            status: 401,
+            json: async () => ({
+                error: 'auth_required',
+                message: 'Sign in required.',
+                loginUrl: '/login?reason=session_expired',
+            }),
+        }),
+    });
+
+    await withMockFetch(async () => {
+        await assert.rejects(
+            () => configApi.saveOnboardingPreference('http://backend', true),
+            (error) => {
+                assert.equal(error.status, 401);
+                assert.equal(error.code, 'auth_required');
+                assert.equal(error.loginUrl, '/login?reason=session_expired');
+                return true;
+            }
+        );
+    }, (url) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: 'csrf-token' });
+        }
+        return jsonResponse({});
+    });
+});
+
+test('screen-scoped onboarding wrappers post exact CSRF request bodies', async () => {
+    const { getJson, jsonOrStructuredError } = loadHttpHelpers();
+    const trackedCalls = [];
+    const configApi = loadApiModule('configApi.js', [
+        'completeOnboardingModule',
+        'resetOnboardingModules',
+    ], {
+        getJson,
+        jsonOrStructuredError,
+        trackedFetch: async (apiSurface, url, options, analyticsParams) => {
+            trackedCalls.push({ apiSurface, url, options, analyticsParams });
+            return jsonResponse({ completedOnboardingModules: [], onboardingDone: false });
+        },
+    });
+
+    await withMockFetch(async () => {
+        await configApi.completeOnboardingModule('http://backend', 'planning');
+        await configApi.resetOnboardingModules('http://backend');
+    }, (url) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: 'csrf-token' });
+        }
+        return jsonResponse({});
+    });
+
+    assert.equal(trackedCalls.length, 2);
+    assert.deepEqual(
+        trackedCalls.map(({ apiSurface, url, analyticsParams }) => ({ apiSurface, url, analyticsParams })),
+        [
+            {
+                apiSurface: 'settings_save',
+                url: 'http://backend/api/me/onboarding',
+                analyticsParams: { featureName: 'settings' },
+            },
+            {
+                apiSurface: 'settings_save',
+                url: 'http://backend/api/me/onboarding',
+                analyticsParams: { featureName: 'settings' },
+            },
+        ],
+    );
+    assert.deepEqual(JSON.parse(trackedCalls[0].options.body), { completedModule: 'planning' });
+    assert.deepEqual(JSON.parse(trackedCalls[1].options.body), { onboardingDone: false });
+    for (const { options } of trackedCalls) {
+        assert.equal(new Headers(options.headers).get('X-Requested-With'), 'jira-execution-planner');
+        assert.equal(new Headers(options.headers).get('X-CSRF-Token'), 'csrf-token');
+        assertJsonHeader(options);
+    }
+});
+
+test('screen-scoped onboarding wrappers preserve structured auth recovery errors', async () => {
+    const { getJson, jsonOrStructuredError } = loadHttpHelpers();
+    const configApi = loadApiModule('configApi.js', [
+        'completeOnboardingModule',
+        'resetOnboardingModules',
+    ], {
+        getJson,
+        jsonOrStructuredError,
+        trackedFetch: async () => ({
+            ok: false,
+            status: 401,
+            json: async () => ({
+                error: 'auth_required',
+                message: 'Sign in required.',
+                loginUrl: '/login?reason=session_expired',
+            }),
+        }),
+    });
+
+    await withMockFetch(async () => {
+        for (const request of [
+            () => configApi.completeOnboardingModule('http://backend', 'board'),
+            () => configApi.resetOnboardingModules('http://backend'),
+        ]) {
+            await assert.rejects(request, (error) => {
+                assert.equal(error.status, 401);
+                assert.equal(error.code, 'auth_required');
+                assert.equal(error.loginUrl, '/login?reason=session_expired');
+                return true;
+            });
+        }
+    }, (url) => {
+        if (String(url).endsWith('/api/auth/csrf')) {
+            return jsonResponse({ csrfToken: 'csrf-token' });
+        }
+        return jsonResponse({});
+    });
+});
+
+test('dashboard onboarding writes use only the module-scoped CSRF wrappers', () => {
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    const onboardingSources = listSourceFiles(path.join(frontendSrcPath, 'onboarding'))
+        .map(readSource)
+        .join('\n');
+    const integrationSource = `${dashboardSource}\n${onboardingSources}`;
+
+    assert.match(
+        dashboardSource,
+        /completeOnboardingModule\s+as\s+requestCompleteOnboardingModule/,
+        'Expected dashboard integration to import the module completion wrapper',
+    );
+    assert.match(
+        dashboardSource,
+        /resetOnboardingModules\s+as\s+requestResetOnboardingModules/,
+        'Expected dashboard integration to import the module reset wrapper',
+    );
+    assert.match(integrationSource, /requestCompleteOnboardingModule\(\s*BACKEND_URL\s*,\s*moduleId\s*\)/);
+    assert.match(integrationSource, /requestResetOnboardingModules\(\s*BACKEND_URL\s*\)/);
+    assert.doesNotMatch(integrationSource, /requestSaveOnboardingPreference\(/);
+    assert.doesNotMatch(integrationSource, /\/api\/me\/onboarding/);
+    assert.doesNotMatch(integrationSource, /\/api\/groups-preferences/);
+    assert.doesNotMatch(onboardingSources, /setFavoriteGroupDraft|saveGroupPreferences/);
+    assert.doesNotMatch(onboardingSources, /fetchOnboarding|loadOnboarding|method:\s*['"]GET['"]/i);
 });
 
 test('excluded capacity stats source wrapper can request a backend refresh', async () => {

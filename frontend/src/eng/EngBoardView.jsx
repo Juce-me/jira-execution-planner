@@ -774,7 +774,13 @@ export default function EngBoardView({
                     <span className="pip"><b>{offFrame.left}</b>◀</span>
                 </button>
 
-                <div className="board" ref={boardRef} onScroll={handleBoardScroll}>
+                <div
+                    className="board"
+                    ref={boardRef}
+                    onScroll={handleBoardScroll}
+                    data-onboarding-target="board-overview"
+                    tabIndex={-1}
+                >
                     {columns.map((column) => {
                         const isFocused = column.id === focusedId;
                         const isStarred = column.id === starredId;

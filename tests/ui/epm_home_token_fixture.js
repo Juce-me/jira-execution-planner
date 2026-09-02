@@ -247,6 +247,11 @@ async function installDashboardShell(page) {
         contentType: 'text/html',
         body: dashboardHtml,
     }));
+    await page.route('**/frontend/dist/auth-focus-refresh.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: authFocusRefreshJs,
+    }));
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
         contentType: 'application/javascript',

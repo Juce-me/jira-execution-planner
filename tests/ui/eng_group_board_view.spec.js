@@ -1121,6 +1121,7 @@ test('non-rail Board interactions never reveal the page vertically', async ({ pa
     expect(await focusedId(page)).toBe('col-5e6f7081');
 
     await openPinnedBoard();
+    const transitionOptionBodies = [];
     const transitionWrites = [];
     await page.route('**/api/board-config/statuses', (route) => route.fulfill({
         status: 200,
@@ -1129,19 +1130,22 @@ test('non-rail Board interactions never reveal the page vertically', async ({ pa
             statuses: [{ id: '10003', name: 'Blocked', statusCategoryKey: 'new' }],
         }),
     }));
-    await page.route('**/api/issues/transitions/options', (route) => route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-            issues: [{
-                key: 'PLAT-8',
-                issueType: 'Epic',
-                currentStatus: 'In Progress',
-                transitions: [{ name: 'Go Blocked', toStatus: 'Blocked' }],
-            }],
-            targetStatuses: [{ name: 'Blocked', availableCount: 1, blockedCount: 0 }],
-        }),
-    }));
+    await page.route('**/api/issues/transitions/options', (route) => {
+        transitionOptionBodies.push(JSON.parse(route.request().postData() || '{}'));
+        return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                issues: [{
+                    key: 'PLAT-8',
+                    issueType: 'Epic',
+                    currentStatus: 'In Progress',
+                    transitions: [{ name: 'Go Blocked', toStatus: 'Blocked' }],
+                }],
+                targetStatuses: [{ name: 'Blocked', availableCount: 1, blockedCount: 0 }],
+            }),
+        });
+    });
     await page.route('**/api/issues/transitions', (route) => {
         const body = JSON.parse(route.request().postData() || '{}');
         transitionWrites.push(body);
@@ -1185,6 +1189,7 @@ test('non-rail Board interactions never reveal the page vertically', async ({ pa
     );
     expect(dragOutcome).toEqual({ started: true, overAccepted: true });
     await expect.poll(() => transitionWrites.length).toBe(1);
+    expect(transitionOptionBodies).toEqual([{ issueKeys: ['PLAT-8'] }]);
     expect(transitionWrites).toEqual([{ issueKeys: ['PLAT-8'], targetStatus: 'Blocked' }]);
     await expect(source).toHaveCount(0);
     await expect(target.locator('.col-strip .n')).toHaveText('2');

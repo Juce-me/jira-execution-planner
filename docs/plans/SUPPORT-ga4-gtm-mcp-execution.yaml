@@ -145,6 +145,7 @@ gtm_web:
     - { name: "DLV - method", data_layer_variable_name: "method", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - metric", data_layer_variable_name: "metric", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - mode", data_layer_variable_name: "mode", version: 2, purpose: "approved event parameter" }
+    - { name: "DLV - module_id", data_layer_variable_name: "module_id", version: 2, purpose: "approved onboarding event parameter; intentionally unregistered without a named report" }
     - { name: "DLV - override_count", data_layer_variable_name: "override_count", version: 2, purpose: "approved event metric" }
     - { name: "DLV - override_count_bucket", data_layer_variable_name: "override_count_bucket", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - page_name", data_layer_variable_name: "page_name", version: 2, purpose: "approved page parameter" }
@@ -221,6 +222,7 @@ gtm_web:
         source_surface: "{{DLV - source_surface}}"
         result: "{{DLV - result}}"
         workflow_action: "{{DLV - workflow_action}}"
+        module_id: "{{DLV - module_id}}"
         dashboard_view: "{{DLV - dashboard_view}}"
         eng_mode: "{{DLV - eng_mode}}"
         epm_tab: "{{DLV - epm_tab}}"

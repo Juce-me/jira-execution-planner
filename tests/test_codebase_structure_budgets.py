@@ -103,18 +103,38 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # bugfix/shared-admin-configuration wires one atomic shared snapshot/revision into the
     # existing Settings drafts, threads sequential compare-and-swap saves, and renders conflict
     # plus safe auth-recovery actions. Pure conflict copy/rebase logic stays extracted (+113).
+    # feature/user-onboarding-tour adds the first-run Configure-your-own state and suppresses
+    # personal favorite validation while the mandatory group editor is active (+8).
+    # Task 5 wires the extracted onboarding controller, replay props, stable target attributes,
+    # and the single portal mount; tour state and persistence behavior remain extracted (+55).
+    # The replay focus fix adds one stable Settings-opener ref and passes it to the tour (+3).
     # bugfix/user-owned-epm-config Task 4 replaces workspace EPM draft/save wiring with the
     # private-view contract while preserving unified Settings save behavior (+36). Task 5
     # integrates the terminal global authentication gate across existing async consumers,
     # keyboard handlers, Scenario polling/SSE, and removes feature-local recovery UI (+43).
+    # feature/user-onboarding-tour-improvements wires the first-run create/duplicate guide,
+    # verified shared-then-private save recovery, dashboard readiness/preview lifecycle, and
+    # Settings-header replay through the legacy composition root. State machines, menus, and
+    # coachmark behavior remain extracted in dedicated modules (+634).
+    # The contextual onboarding follow-up adds launcher observation and requested-module wiring
+    # while keeping the module state machine and coachmark behavior extracted (+2).
+    # Screen-scoped onboarding Task 4 replaces the boolean compatibility write with canonical
+    # module completion/reset wrappers and merges both returned preference fields (+6).
+    # Task 4 review correction derives the current real surface before auto-starting Catch Up
+    # and passes the same value to the controller and tour without programmatic navigation (+6).
+    # Catch Up re-entry imports the canonical ENG onboarding-surface predicate (+1).
+    # Surface interruption passes the controller's non-persisting close callback to the tour (+1).
+    # Mobile start eligibility adds one stable viewport callback and passes it to the controller (+2).
+    # Contextual module launch eligibility now shares the resolved bootstrap/server-error guard (+6).
     # bugfix/multidevice-sessions-continuation adds per-tab auth-resume capture/restore,
-    # staged Planning hydration, and terminal bootstrap-safe recovery wiring (+249).
+    # staged Planning hydration, and terminal bootstrap-safe recovery wiring (+250).
     # feature/planning-capacity-editing adds the Capacity config lifecycle, one-at-a-time
     # team card editor, mapping re-verification/conflict recovery, local-OAuth fallback,
     # and scoped empty-state refresh while retaining global auth/config flows (+71).
     # bugfix/team-cache-persistence adds sprint-aware empty-cache hydration/readiness state,
     # stale-load protection, and persistence gating before Department editing unlocks (+74).
-    "frontend/src/dashboard.jsx": 16770,
+    # Merge resolution retains contextual onboarding wiring alongside both changes (+75).
+    "frontend/src/dashboard.jsx": 17493,
 }
 
 

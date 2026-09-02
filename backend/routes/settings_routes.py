@@ -68,6 +68,13 @@ def _workspace_conflict_response(error):
     }), 409
 
 
+def _onboarding_storage_error_response(_error):
+    return jsonify({
+        'error': 'config_storage_unavailable',
+        'message': 'Onboarding preferences require database-backed configuration storage.',
+    }), 503
+
+
 def _persist_shared_section(section, value, base_revision):
     if config_storage_db_enabled():
         return save_dashboard_config_section(section, value, base_revision=base_revision).config_revision
@@ -101,6 +108,7 @@ _UNSUPPORTED_GROUP_CONFIG_FIELDS = {
 }
 
 _GROUP_PREFERENCE_FIELDS = {'visibleGroupIds', 'activeGroupId'}
+_ONBOARDING_PREFERENCE_FIELDS = {'completedModule', 'onboardingDone'}
 
 
 def _unsupported_group_fields(payload):
@@ -615,6 +623,65 @@ def save_groups_preferences():
         'preferences': preferences,
         'groupsConfigSnapshot': groups_config_snapshot,
     })
+
+
+@bp.route('/api/me/onboarding', methods=['POST'])
+def save_onboarding_preference():
+    """Persist the current user's onboarding completion state."""
+    if not request.is_json:
+        return jsonify({'error': 'invalid_json'}), 400
+    try:
+        payload = request.get_json()
+    except BadRequest:
+        return jsonify({'error': 'invalid_json'}), 400
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_json'}), 400
+    if set(payload) - _ONBOARDING_PREFERENCE_FIELDS:
+        return jsonify({'error': 'unsupported_onboarding_field'}), 400
+    if not payload:
+        return jsonify({'error': 'onboarding_done_required'}), 400
+    if len(payload) != 1:
+        return jsonify({'error': 'unsupported_onboarding_field'}), 400
+
+    completed_module = payload.get('completedModule')
+    if 'completedModule' in payload:
+        if (
+            not isinstance(completed_module, str)
+            or completed_module not in shared_group_config.ONBOARDING_MODULE_IDS
+        ):
+            return jsonify({'error': 'invalid_onboarding_module'}), 400
+    else:
+        onboarding_done = payload.get('onboardingDone')
+        if not isinstance(onboarding_done, bool):
+            return jsonify({'error': 'onboarding_done_required'}), 400
+
+    try:
+        auth_context = _shared_group_db_auth_context()
+        if auth_context is None:
+            return jsonify({'error': 'onboarding_db_required'}), 409
+        if 'completedModule' in payload:
+            saved_onboarding = shared_group_config.complete_onboarding_module(
+                auth_context,
+                completed_module,
+            )
+        else:
+            saved_onboarding = shared_group_config.set_onboarding_done(
+                auth_context,
+                onboarding_done,
+            )
+    except (
+        ConfigStorageError,
+        DatabaseConfigurationError,
+        shared_group_config.OnboardingStorageUnavailable,
+    ) as error:
+        return _onboarding_storage_error_response(error)
+    except shared_group_config.OnboardingPreferencesUnavailable:
+        return jsonify({'error': 'onboarding_db_required'}), 409
+    except shared_group_config.InvalidOnboardingModule:
+        return jsonify({'error': 'invalid_onboarding_module'}), 400
+    except shared_group_config.GroupSelectionRequired:
+        return jsonify({'error': 'group_selection_required'}), 409
+    return jsonify(saved_onboarding)
 
 
 @bp.route('/api/team-catalog', methods=['GET'])

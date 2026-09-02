@@ -13,6 +13,14 @@ function read(relativePath) {
     return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
+function listSourceFiles(root) {
+    return fs.readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+        const fullPath = path.join(root, entry.name);
+        if (entry.isDirectory()) return listSourceFiles(fullPath);
+        return /\.(?:js|jsx|mjs|cjs)$/.test(entry.name) ? [fullPath] : [];
+    });
+}
+
 function jsSetValues(source, setName) {
     const match = source.match(new RegExp(`const ${setName} = new Set\\(\\[([\\s\\S]*?)\\]\\);`));
     assert.ok(match, `${setName} must be declared as a Set literal`);
@@ -170,6 +178,8 @@ test('Lead Times capacity exclusions change local state without an app-owned eve
 test('personal group favorite analytics omit identity and retain existing event ownership', () => {
     const preferencesSource = read('frontend/src/settings/useGroupVisibilityPreferences.js');
     const dashboardSource = read('frontend/src/dashboard.jsx');
+    const firstRunPickerSource = read('frontend/src/settings/FirstRunGroupSelectionModal.jsx');
+    const firstRunChoiceSource = read('frontend/src/settings/FirstRunGroupSetupChoice.jsx');
     const analyticsDoc = read('docs/README_ANALYTICS.md');
 
     assert.doesNotMatch(
@@ -182,8 +192,246 @@ test('personal group favorite analytics omit identity and retain existing event 
     }
     assert.match(dashboardSource, /trackFilterChanged\('group'/);
     assert.doesNotMatch(preferencesSource, /trackSettingsAction\([^\n]*star/);
+    assert.doesNotMatch(firstRunPickerSource, /trackSettingsAction|trackEvent|fetch\(/);
+    assert.doesNotMatch(firstRunChoiceSource, /trackSettingsAction|trackEvent|fetch\(/);
+    const handlersStart = dashboardSource.indexOf('const openFirstRunSetupChoice = React.useCallback');
+    const handlersEnd = dashboardSource.indexOf('useEffect(() => {', handlersStart);
+    assert.ok(handlersStart >= 0 && handlersEnd > handlersStart, 'Expected first-run setup handlers');
+    const firstRunSetupHandlers = dashboardSource.slice(handlersStart, handlersEnd);
+    assert.match(firstRunSetupHandlers, /buildFirstRunGroupDraft\(/);
+    assert.match(firstRunSetupHandlers, /mode: 'repair'/);
+    assert.doesNotMatch(
+        firstRunSetupHandlers,
+        /trackSettingsAction|trackEvent|fetch\(|onboardingDone|groupSearchQuery/,
+        'Add, create, duplicate, and repair staging must not emit analytics, write onboarding, or consume the picker query'
+    );
     assert.ok(analyticsDoc.includes('first-run selection uses `group_count_bucket` only'));
     assert.ok(analyticsDoc.includes('Personal group favorite render/change'));
+});
+
+test('onboarding analytics use only the canonical settings action outcomes and safe parameters', () => {
+    const helperSource = read('frontend/src/onboarding/onboardingAnalytics.js');
+    const controllerSource = read('frontend/src/onboarding/useOnboardingTour.js');
+    const analyticsSources = `${helperSource}\n${controllerSource}`;
+    const frontendSource = path.join(repoRoot, 'frontend', 'src');
+    const helperPath = path.join(frontendSource, 'onboarding', 'onboardingAnalytics.js');
+    const directOnboardingPatterns = [
+        /trackSettingsAction\s*(?:\?\.)?\s*\(\s*['"]onboarding['"]/,
+        /track(?:Event|ProductEvent)\s*(?:\?\.)?\s*\(\s*['"]settings_action['"]\s*,\s*\{[\s\S]{0,1000}?\bsection\s*:\s*['"]onboarding['"]/,
+    ];
+    const bypasses = listSourceFiles(frontendSource)
+        .filter((filePath) => filePath !== helperPath)
+        .filter((filePath) => {
+            const source = fs.readFileSync(filePath, 'utf8');
+            return directOnboardingPatterns.some((pattern) => pattern.test(source));
+        })
+        .map((filePath) => path.relative(repoRoot, filePath));
+
+    assert.match(controllerSource, /trackOnboardingAnalytics\(/);
+    assert.match(helperSource, /module_id:\s*moduleId/);
+    assert.match(controllerSource, /trackOnboardingAnalytics\(trackSettingsAction, 'started', normalizedSource, moduleId\)/);
+    assert.match(controllerSource, /trackOnboardingAnalytics\(trackSettingsAction, outcome, sourceSurface, moduleId\)/);
+    assert.deepEqual(bypasses, []);
+    assert.doesNotMatch(controllerSource, /['"]onboarding['"]\s*,/);
+    for (const forbidden of [
+        'step', 'group', 'team', 'sprint', 'issue', 'summary', 'url', 'search',
+        'account', 'email', 'user', 'workspace', 'name', 'key', 'raw', 'content',
+    ]) {
+        assert.equal(
+            helperSource.toLowerCase().includes(forbidden),
+            false,
+            `onboarding analytics helper must not reference ${forbidden}`,
+        );
+    }
+    assert.doesNotMatch(analyticsSources, /trackEvent|trackProductEvent|settings_action/);
+});
+
+test('onboarding module_id stays typed, mapped through GTM, and intentionally unregistered', () => {
+    const analyticsSource = read('frontend/src/analytics/events.js');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const runbook = read('docs/plans/SUPPORT-ga4-user-configuration.md');
+    const yaml = read('docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml');
+
+    assert.ok(jsSetValues(analyticsSource, 'EVENT_PARAMS').has('module_id'));
+    assert.match(
+        analyticsSource,
+        /module_id:\s*new Set\(\['catch-up', 'configuration', 'planning', 'board', 'statistics'\]\)/,
+    );
+    assert.ok(analyticsDoc.includes('`module_id=catch-up|configuration|planning|board|statistics`'));
+    assert.ok(runbook.includes('module_id'));
+    assert.match(runbook, /Do not register `module_id` as a custom dimension[^.]*named report/i);
+    assert.match(yaml, /data_layer_variable_name: "module_id"/);
+    assert.match(yaml, /^\s{8}module_id: "\{\{DLV - module_id\}\}"$/m);
+    assert.doesNotMatch(yaml, /custom_dimensions:[\s\S]*?parameter_name: "module_id"/);
+    assert.equal((yaml.match(/event_name: "pageview"/g) || []).length, 1);
+    assert.equal((yaml.match(/event_name: "userevent"/g) || []).length, 1);
+});
+
+test('onboarding step navigation is untracked and its analytics contract is documented', () => {
+    const controllerSource = read('frontend/src/onboarding/useOnboardingTour.js');
+    const tourSource = read('frontend/src/onboarding/OnboardingTour.jsx');
+    const stepsSource = read('frontend/src/onboarding/onboardingSteps.js');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const featureDoc = read('docs/features/onboarding.md');
+
+    assert.doesNotMatch(tourSource, /track(?:SettingsAction|Event)|settings_action/);
+    assert.doesNotMatch(stepsSource, /track(?:SettingsAction|Event)|settings_action/);
+    assert.doesNotMatch(controllerSource, /trackEvent|trackProductEvent|settings_action/);
+    assert.ok(analyticsDoc.includes('`section=onboarding`'));
+    assert.ok(analyticsDoc.includes('`workflow_action=started|completed|skipped`'));
+    assert.ok(analyticsDoc.includes('Step navigation is intentionally untracked'));
+    assert.ok(featureDoc.includes('Mandatory Department selection'));
+    assert.ok(featureDoc.includes('Run onboarding again'));
+    assert.ok(featureDoc.includes('JSON, file, and environment configuration modes'));
+    assert.ok(featureDoc.includes('Basic-auth mode'));
+    assert.ok(featureDoc.includes('do not automatically run or replay the tour'));
+    assert.ok(featureDoc.includes('do not write onboarding state'));
+});
+
+test('onboarding operational guidance documents the shipped workflow boundaries', () => {
+    assert.ok(
+        fs.existsSync(path.join(repoRoot, 'docs/features/eng-workflows.md')),
+        'Expected docs/features/eng-workflows.md to exist',
+    );
+    const guide = read('docs/features/eng-workflows.md');
+    const onboardingDoc = read('docs/features/onboarding.md');
+    const favoriteDoc = read('docs/features/personal-group-star.md');
+    const featureIndex = read('docs/features/README.md');
+
+    for (const heading of [
+        'Choose or add a Department',
+        'Configure the Department',
+        'Make expected Epics and Stories visible',
+        'Planning',
+        'Board (Kanban)',
+        'Filters and search',
+        'Continue in Jira',
+    ]) {
+        assert.ok(guide.includes(`## ${heading}`), `Expected operational heading: ${heading}`);
+    }
+    for (const required of [
+        'zero through three Departments',
+        'four or more',
+        '**Add Department**',
+        '**Save and continue**',
+        '**Continue without components**',
+        '**Show in Department selector**',
+        'Missing Information and Lead Times',
+        'Story Team',
+        'mapped team label',
+        'selected-sprint-name label',
+        '`Accepted`, `To Do`, `Postponed`, `Awaiting Val.`, and `Select All`',
+        'permission-gated Jira workflow transition',
+        'session-only',
+        'Delivery Owner',
+        'Initiative, Epic, and Story',
+        'Epic and Story only',
+        'does not perform an in-app bulk mutation',
+        'desktop only',
+    ]) {
+        assert.ok(guide.includes(required), `Expected operational guidance for: ${required}`);
+    }
+    assert.ok(
+        guide.includes('requires both the configured mapped team label and the exact selected-sprint-name label'),
+        'Expected future sprint-ready guidance to require both the mapped team label and selected-sprint-name label',
+    );
+    assert.doesNotMatch(
+        guide,
+        /requires the configured mapped team label and either the Epic's Jira Sprint value or the exact selected-sprint-name label/i,
+        'Future sprint-ready guidance must not allow the Jira Sprint field to replace the required sprint label',
+    );
+    assert.ok(
+        guide.includes('opens a menu with separate **Open epics** and **Open stories** choices'),
+        'Expected the Jira handoff guide to document the two shipped issue-scope choices',
+    );
+    assert.ok(
+        guide.includes('opens only that currently scoped subset in Jira'),
+        'Expected the Jira handoff guide to preserve the selected Epic-or-Story scope',
+    );
+    assert.doesNotMatch(
+        guide,
+        /opens the currently scoped issue set in Jira/i,
+        'The Jira control must not be documented as directly opening a combined issue set',
+    );
+    assert.ok(onboardingDoc.includes('four phases'));
+    assert.ok(onboardingDoc.includes('configuration guide and dashboard tour never run together'));
+    assert.ok(onboardingDoc.includes('shared Department configuration'));
+    assert.ok(onboardingDoc.includes('private preferences'));
+    assert.ok(onboardingDoc.includes('preference-only retry'));
+    assert.ok(onboardingDoc.includes('desktop only'));
+    assert.ok(
+        onboardingDoc.includes('resets all modules, closes Settings, and returns to Catch Up, but no tour is shown'),
+        'Expected the mobile replay guide to document successful module reset, Settings close, and Catch Up return',
+    );
+    assert.ok(
+        onboardingDoc.includes('Catch Up begins at its first eligible step when the dashboard is next opened at desktop width'),
+        'Expected the mobile replay guide to document deferred desktop start',
+    );
+    assert.doesNotMatch(
+        onboardingDoc,
+        /Starting replay first persists incomplete onboarding, closes Settings, prepares ENG Catch Up, and opens the desktop tour\./,
+        'Replay guidance must not claim that a mobile invocation immediately opens the desktop tour',
+    );
+    assert.ok(onboardingDoc.includes('not replayed automatically'));
+    assert.ok(onboardingDoc.includes('[ENG Workflows](eng-workflows.md)'));
+    assert.ok(favoriteDoc.includes('Direct picker selection'));
+    assert.ok(favoriteDoc.includes('Configure and use'));
+    assert.ok(favoriteDoc.includes('pending private favorite'));
+    assert.ok(favoriteDoc.includes('before any shared save'));
+    assert.ok(favoriteDoc.includes('preference-only retry'));
+    assert.ok(featureIndex.includes('[ENG Workflows](eng-workflows.md)'));
+});
+
+test('Statistics guide uses shipped labels and accurately defines Mono vs Cross', () => {
+    const statisticsDoc = read('docs/features/statistics.md');
+    for (const term of [
+        '### Burndown',
+        '### Lead Times',
+        '### Excluded Capacity',
+        '### Mono vs Cross',
+        '### Project Track',
+        'Cross Epic SP',
+        'Total SP',
+        'Cross Share',
+        'Cross-Team Epic Footprint',
+        'Team Cross Share',
+        'team cross SP / total team story points',
+        'assignee',
+    ]) {
+        assert.ok(statisticsDoc.includes(term), `Expected Statistics documentation for: ${term}`);
+    }
+    assert.doesNotMatch(statisticsDoc, /^### Burnout$/m);
+    assert.doesNotMatch(statisticsDoc, /hover[^.\n]*(?:task key|task summary|individual task|assignee detail)/i);
+});
+
+test('tour target activation adds no onboarding event and retains safe field options-open analytics', () => {
+    const tourSource = read('frontend/src/onboarding/OnboardingTour.jsx');
+    const onboardingAnalyticsSource = read('frontend/src/onboarding/onboardingAnalytics.js');
+    const prioritySource = read('frontend/src/eng/useEngPriorityTransitions.js');
+    const trackSource = read('frontend/src/eng/useEngProjectTrackTransitions.js');
+    const statusSource = read('frontend/src/eng/useEngStatusTransitions.js');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+
+    assert.doesNotMatch(tourSource, /track(?:OnboardingAnalytics|SettingsAction|Event|ProductEvent)/);
+    assert.match(onboardingAnalyticsSource, /new Set\(\['started', 'completed', 'skipped'\]\)/);
+    assert.match(prioritySource, /trackIssuePriorityAction\('priority_options_open'/);
+    assert.match(trackSource, /trackIssueProjectTrackAction\('project_track_options_open'/);
+    assert.match(statusSource, /trackIssueStatusAction\('status_options_open'/);
+    assert.ok(analyticsDoc.includes('Dashboard tour target activation'));
+    assert.ok(analyticsDoc.includes('no new onboarding event'));
+    for (const token of ['priority_options_open', 'project_track_options_open', 'status_options_open']) {
+        assert.ok(analyticsDoc.includes(`\`${token}\``), `Expected safe options-open documentation for ${token}`);
+    }
+});
+
+test('first-run guide recovery and focus ownership add no new analytics surface', () => {
+    const guide = read('frontend/src/settings/FirstRunGroupConfigurationGuide.jsx');
+    const dashboard = read('frontend/src/dashboard.jsx');
+    const recoveryStart = dashboard.indexOf('const retryFirstRunConfiguration');
+    const recoveryEnd = dashboard.indexOf('const filteredGroupDrafts', recoveryStart);
+    assert.equal(guide.includes('trackSettingsAction'), false);
+    assert.equal(guide.includes('trackEvent'), false);
+    assert.doesNotMatch(dashboard.slice(recoveryStart, recoveryEnd), /trackSettingsAction|trackEvent/);
 });
 
 test('Jira issue transition API module sends the eng_status_transitions surface for both endpoints', () => {

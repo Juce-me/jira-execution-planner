@@ -83,13 +83,13 @@ If the team is missing, unknown, or cannot be matched, the epic stops here and d
 
 ### Missing Labels
 
-Shows epics that are already in the selected future sprint but are still missing the configured team-specific epic label.
+Shows epics that match the selected future sprint by Jira Sprint value or sprint-name label but are still missing either the exact selected-sprint-name label or the configured team-specific epic label.
 
 This also covers the case where the active group has no label mapping configured for that team yet.
 
 ### Needs Stories
 
-Shows epics that are already configured for the selected future sprint, either by sprint field or selected sprint label, but still are not sprint-ready because they do not yet have an actionable child story in that sprint.
+Shows epics that have both the exact selected-sprint-name label and the configured mapped team label, but still are not sprint-ready because they do not yet have an actionable child story in that sprint.
 
 Each epic row shows the specific reason:
 - `No stories yet for this sprint.` when the epic has no child stories

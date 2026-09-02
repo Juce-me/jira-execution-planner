@@ -146,12 +146,23 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Expected output: one personal starred Department group per authenticated workspace/user, single-select first-run search UI, personal Settings star controls, and strict separation between the persisted favorite and temporary dashboard Group scope. Shared `defaultGroupId` remains a file/JSON compatibility field and is never shown or mutated as a DB user's favorite.
    - This plan owns star persistence and UI only. It adds no onboarding completion state, guided tour, configure guidance, skip action, or replay action.
 
-12. `EXEC-user-onboarding-tour.md`
-   - Ready for execution on `feature/user-onboarding-tour`; prerequisite `DONE-personal-group-star.md` is complete.
-   - Expected output: configure/duplicate guidance after the mandatory group gate, followed by a guided tour of dashboard scope controls, actions, filters, issue hierarchy, and editable Jira fields. Per-user/workspace `onboarding_done` supports completion, skip, interruption recovery, and an explicit Settings replay action without another startup request.
-   - The tour consumes the personal-star contract read-only and must not change star persistence or UI. Existing users are backfilled as complete; JSON/basic mode stays unchanged; privacy-safe `settings_action` events measure only started/completed/skipped outcomes.
+12. `DONE-user-onboarding-tour.md`
+    - Completed, verified, and accepted for remote integration on `feature/user-onboarding-tour` on 2026-09-01. Use for audit context only. The prerequisite `DONE-personal-group-star.md` remains satisfied.
+    - Expected output: configure/duplicate guidance after the mandatory group gate, followed by a guided tour of dashboard scope controls, actions, filters, issue hierarchy, and editable Jira fields. Per-user/workspace `onboarding_done` supports completion, skip, interruption recovery, and an explicit Settings replay action without another startup request.
+    - The tour consumes the personal-star contract read-only and must not change star persistence or UI. Existing users are backfilled as complete; JSON/basic mode stays unchanged; privacy-safe `settings_action` events measure only started/completed/skipped outcomes.
 
-13. `EXEC-hide-single-option-view-mode-control.md`
+13. `DONE-user-onboarding-tour-improvements.md`
+   - Tasks 0–9 are implemented and verified on `feature/user-onboarding-tour`. The dashboard tour is desktop-only; first-run Department selection and configuration still work on mobile, while the mobile dashboard tour is deferred in GitHub issue #151.
+   - Implemented output includes direct existing-Department selection or persistent **Add Department**, guided create/duplicate/repair in the real Team Groups editor, automatic pending favorite/visibility with ordered shared/private save recovery, a single left-list name input, Settings-header replay, safe target-driven Priority/Project Track/Status previews, deterministic hierarchy fallbacks, analytics review, source guards, and operational guidance.
+   - Task 9 used the authorized fresh Node 20 verification worktree. The clean final ref passed 1,396 Python tests with 7 skips, 1,027 frontend unit tests, and 563 Playwright tests with 2 skips; reproducible generated output and all 15 settled screenshots were verified and inspected. Completed and accepted for remote integration on 2026-09-01; use for audit context only.
+
+14. `DONE-user-onboarding-contextual-follow-up.md`
+   - Tasks 0–8 plus the final whole-branch review fixes are implemented, verified, and accepted for remote integration on `feature/user-onboarding-tour` through build commit `02f75e1`. Use for audit context only.
+   - Delivered output: a wider desktop coachmark with blue/red/neutral action hierarchy, explicit Next after safe field previews, contextual Configuration/Planning/Board/Statistics modules launched by native activation of the real controls, persistence-safe terminal retries, focusable destination regions, exact launcher hit-testing through centered placement, desktop-only contextual Settings routing, one canonical left-row Department favorite, and a compact right-pane visibility layout.
+   - Final verification under pinned Node 20: 96 focused Node tests; both unchanged named baseline cases; 151 combined onboarding/Settings Playwright tests; 1,396 Python tests run with 1,389 passed and 7 skipped; 1,044 frontend unit tests; and 589 full Playwright tests with 2 skips. Generated output reproduced cleanly from `02f75e1`, and all 11 required screenshots passed original-resolution inspection.
+   - Mobile dashboard onboarding remains deferred to issue #151. The final review added no backend, ownership, persistence-schema, Jira-mutation, dependency, or analytics-event change. See the final whole-branch review evidence in `DONE-user-onboarding-contextual-follow-up.md` for RED/GREEN history and residual risks.
+
+15. `EXEC-hide-single-option-view-mode-control.md`
    - Ready for execution as a small frontend-only task suitable for a 5.3 coding model.
    - Expected output: the ENG/EPM segmented control is absent when EPM navigation is unavailable, remains a two-option control when EPM is available, and updates correctly after Home-token connection, revocation, or backend prerequisite changes. Existing availability, analytics, auth, request, and shared-control contracts remain unchanged.
 

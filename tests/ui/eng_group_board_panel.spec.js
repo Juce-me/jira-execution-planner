@@ -391,6 +391,35 @@ test('Escape inside an open transition menu closes the menu, not the panel', asy
     await expect(card(page, 'PLAT-1')).toBeFocused();
 });
 
+test('normal Board panel menus keep first-option focus, trigger restoration, capture dismissal, and portal behavior', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls);
+    await openPanel(page, 'PLAT-1');
+
+    const storyRow = panel(page).locator('.story-subtask-row[data-story-key="PLAT-1-b"]');
+    const trigger = storyRow.locator('[data-status-transition-trigger]');
+    await trigger.click();
+    const menu = panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1-b"]');
+    await expect(menu).toBeVisible();
+    await expect(menu).toHaveClass(/is-portalled/);
+    await expect(menu).not.toHaveClass(/is-preview-only/);
+    await expect(menu).not.toHaveAttribute('data-onboarding-preview-owner', /.+/);
+    await expect(menu).not.toHaveAttribute('aria-activedescendant', /.+/);
+    await expect(menu.locator('button[role="menuitem"]').first()).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await expect(panel(page)).toBeVisible();
+
+    await trigger.click();
+    await expect(menu.locator('button[role="menuitem"]').first()).toBeFocused();
+    await panel(page).locator('.m-title').click();
+    await expect(menu).toHaveCount(0);
+    await expect(panel(page)).toBeVisible();
+    expect(calls.filter(call => call.pathname === '/api/issues/transitions')).toEqual([]);
+});
+
 /* ── The four description states (§9.2) ─────────────────────────────────────────────────────── */
 
 test('the description block shows a skeleton while loading, and the story list stays usable', async ({ page }) => {

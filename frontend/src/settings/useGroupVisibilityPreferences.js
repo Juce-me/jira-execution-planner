@@ -16,6 +16,7 @@ const EMPTY_GROUP_PREFERENCES = {
     customized: false,
     preferenceExists: false,
     onboardingRequired: false,
+    onboardingDone: true,
     visibleGroupIds: [],
     effectiveVisibleGroupIds: [],
     activeGroupId: null,
@@ -158,18 +159,18 @@ export function useGroupVisibilityPreferences({
         setFirstRunFavoriteGroupId(normalizedId);
     }, [groupsConfig.groups]);
 
-    const saveFirstRunGroupPreferences = React.useCallback(async () => {
-        if (firstRunSaveInFlightRef.current) return;
-        const selectedGroup = (groupsConfig.groups || []).find(group => group.id === firstRunFavoriteGroupId);
+    const saveFirstRunGroupPreferences = React.useCallback(async ({ groupsSnapshot = groupsConfig, selectedGroupId = firstRunFavoriteGroupId } = {}) => {
+        if (firstRunSaveInFlightRef.current) return { ok: false, inFlight: true };
+        const selectedGroup = (groupsSnapshot.groups || []).find(group => group.id === selectedGroupId);
         const isEligible = (selectedGroup?.teamIds || []).some(teamId => String(teamId || '').trim());
-        if (!firstRunFavoriteGroupId || !isEligible) return;
+        if (!selectedGroupId || !isEligible) return { ok: false, invalidSelection: true };
         firstRunSaveInFlightRef.current = true;
         setFirstRunSaving(true);
         setFirstRunError('');
         try {
             const response = await requestSaveGroupPreferences(
                 backendUrl,
-                buildFirstRunGroupPreferencesPayload(firstRunFavoriteGroupId)
+                buildFirstRunGroupPreferencesPayload(selectedGroupId)
             );
             if (!response.ok) {
                 const errorPayload = await response.json().catch(() => ({}));
@@ -185,14 +186,14 @@ export function useGroupVisibilityPreferences({
             }).preferences;
             const snapshot = normalizeGroupPreferences(payload.groupsConfigSnapshot || {});
             const snapshotPreferences = snapshot.preferences;
-            const snapshotGroup = (snapshot.groups || []).find(group => group.id === firstRunFavoriteGroupId);
+            const snapshotGroup = (snapshot.groups || []).find(group => group.id === selectedGroupId);
             const snapshotHasTeams = (snapshotGroup?.teamIds || []).some(teamId => String(teamId || '').trim());
             const preferencesMatch = groupPreferencesSignature(nextPreferences) === groupPreferencesSignature(snapshotPreferences);
             if (
                 snapshot.source !== 'workspace_db'
                 || !preferencesMatch
                 || nextPreferences.onboardingRequired
-                || nextPreferences.activeGroupId !== firstRunFavoriteGroupId
+                || nextPreferences.activeGroupId !== selectedGroupId
                 || !snapshotHasTeams
             ) {
                 throw new Error('Saved group scope could not be verified. Please retry.');
@@ -203,12 +204,14 @@ export function useGroupVisibilityPreferences({
             groupPreferencesBaselineRef.current = groupPreferencesSignature(nextPreferences);
             setActiveGroupId(nextPreferences.activeGroupId);
             trackSettingsAction('departments', 'first_run_selection', {
-                group_count_bucket: bucketCount((groupsConfig.groups || []).length),
+                group_count_bucket: bucketCount((groupsSnapshot.groups || []).length),
             });
+            return { ok: true, groupsSnapshot: snapshot, preferences: nextPreferences };
         } catch (error) {
-            if (isAuthenticationRequiredError(error)) return;
+            if (isAuthenticationRequiredError(error)) return { ok: false, authRequired: true };
             setFirstRunError(error?.message || 'Failed to save departments.');
             trackSettingsAction('departments', 'save_result', { result: 'failure', source_surface: 'first_run' });
+            return false;
         } finally {
             firstRunSaveInFlightRef.current = false;
             setFirstRunSaving(false);
@@ -224,6 +227,7 @@ export function useGroupVisibilityPreferences({
                     customized: true,
                     preferenceExists: true,
                     onboardingRequired: false,
+                    onboardingDone: true,
                     visibleGroupIds: payload.visibleGroupIds,
                     activeGroupId: payload.activeGroupId,
                 };
@@ -283,12 +287,6 @@ export function useGroupVisibilityPreferences({
         }
     }, [backendUrl, visibleGroupDraftIds, favoriteGroupDraftId, activeGroupId, setActiveGroupId, trackSettingsAction, bucketCount, useBackendPreferences, applyPreferenceGroupsSnapshot]);
 
-    const openFirstRunAddGroup = React.useCallback(() => {
-        setGroupManageTab('teams');
-        setDepartmentSettingsTab('teams');
-        setShowGroupManage(true);
-    }, [setDepartmentSettingsTab, setGroupManageTab, setShowGroupManage]);
-
     return {
         groupPreferences,
         setGroupPreferences,
@@ -296,6 +294,7 @@ export function useGroupVisibilityPreferences({
         visibleGroupDraftIds,
         setVisibleGroupDraftIds,
         favoriteGroupDraftId,
+        setFavoriteGroupDraftId,
         setFavoriteGroupDraft,
         favoriteGroupValidationError,
         groupPreferencesSaving,
@@ -310,7 +309,6 @@ export function useGroupVisibilityPreferences({
         firstRunFavoriteGroupId,
         selectFirstRunFavoriteGroup,
         saveFirstRunGroupPreferences,
-        openFirstRunAddGroup,
         firstRunSaving,
         firstRunError,
         persistGroupPreferences,

@@ -14,7 +14,7 @@
 
 **Tech Stack:** Python 3.10+, Flask, SQLAlchemy, React 19, Node test runner, Playwright, esbuild, existing GA4/GTM `settings_action` and `filter_changed` contracts.
 
-**Spec:** Approved product corrections in the 2026-08-25 and 2026-08-26 task conversation. This plan is the canonical star behavior and selection-UI contract; `EXEC-user-onboarding-tour.md` consumes it without redefining it.
+**Spec:** Approved product corrections in the 2026-08-25 and 2026-08-26 task conversation. This plan is the canonical star behavior and selection-UI contract; `DONE-user-onboarding-tour.md` consumes it without redefining it.
 
 ## Global Constraints
 
@@ -115,13 +115,13 @@ React state updates for the valid `200` must be committed as one release boundar
 - `docs/README_ANALYTICS.md`: narrow analytics impact decision.
 - `docs/features/README.md`: index the feature guide.
 - `docs/plans/README.md`: review the existing prerequisite index during implementation and update it only in the completion/rename task.
-- `docs/plans/EXEC-user-onboarding-tour.md`: update only the prerequisite filename/status after this plan is fully verified; do not change onboarding behavior.
+- `docs/plans/DONE-user-onboarding-tour.md`: update only the prerequisite filename/status after this plan is fully verified; do not change onboarding behavior.
 - `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, `frontend/dist/dashboard.css`: generated output.
 
 ### Read Only / Must Not Modify
 
 - `backend/db/models.py`: `active_group_id` already provides the correct user/workspace storage boundary; do not add or rename a column.
-- Onboarding tour behavior and `onboarding_done`: owned only by `EXEC-user-onboarding-tour.md`; Task 6 may mechanically update this prerequisite plan's filename/status references.
+- Onboarding tour behavior and `onboarding_done`: owned only by `DONE-user-onboarding-tour.md`; Task 6 may mechanically update this prerequisite plan's filename/status references.
 - Jira/Home/Townsquare mutation and credential paths.
 
 ---
@@ -702,7 +702,7 @@ git commit -m "build: update personal group star bundle"
 **Files:**
 - Rename: `docs/plans/EXEC-personal-group-star.md` → `docs/plans/DONE-personal-group-star.md`
 - Modify: `docs/plans/README.md`
-- Modify: `docs/plans/EXEC-user-onboarding-tour.md` (dependency references only)
+- Modify: `docs/plans/DONE-user-onboarding-tour.md` (dependency references only)
 
 **Interfaces:**
 - Consumes: actual PASS evidence from Task 5; near-complete or environment-blocked verification is not sufficient.
@@ -721,7 +721,7 @@ Run:
 git mv docs/plans/EXEC-personal-group-star.md docs/plans/DONE-personal-group-star.md
 ```
 
-Update the existing `docs/plans/README.md` entry to the `DONE-*` filename and completed status. In `docs/plans/EXEC-user-onboarding-tour.md`, replace only `EXEC-personal-group-star.md` dependency references with `DONE-personal-group-star.md` and mark the prerequisite satisfied; do not edit its design or implementation tasks.
+Update the existing `docs/plans/README.md` entry to the `DONE-*` filename and completed status. In `docs/plans/DONE-user-onboarding-tour.md`, replace only `EXEC-personal-group-star.md` dependency references with `DONE-personal-group-star.md` and mark the prerequisite satisfied; do not edit its design or implementation tasks.
 
 - [x] **Step 3: Verify the closeout diff and commit**
 
@@ -738,7 +738,7 @@ Expected: every reported external reference uses `DONE-personal-group-star.md`, 
 Commit:
 
 ```bash
-git add docs/plans/DONE-personal-group-star.md docs/plans/README.md docs/plans/EXEC-user-onboarding-tour.md
+git add docs/plans/DONE-personal-group-star.md docs/plans/README.md docs/plans/DONE-user-onboarding-tour.md
 git commit -m "docs: close personal group star plan"
 ```
 

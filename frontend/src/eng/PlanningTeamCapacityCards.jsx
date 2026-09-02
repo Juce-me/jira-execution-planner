@@ -129,6 +129,7 @@ export default function PlanningTeamCapacityCards({
     capacityLoading = false,
     capacityReadError = '',
     capacityDataStale = false,
+    futureSprintCapacityIssuesMissing = false,
     capacityShareLabel = '',
     updateCapacityRequest,
     onCapacitySaved,
@@ -394,6 +395,7 @@ export default function PlanningTeamCapacityCards({
     const retryMessage = capacityDataStale
         ? 'Capacity could not be refreshed. Showing last loaded values.'
         : 'Capacity is unavailable. Retry.';
+    const showFutureSprintEmptyStatus = futureSprintCapacityIssuesMissing && !capacityReadError;
 
     return (
         <section className="planning-team-capacity-cards" aria-label="Selected story points by team">
@@ -415,6 +417,22 @@ export default function PlanningTeamCapacityCards({
                         aria-label={capacityLoading ? 'Retrying capacity' : 'Retry capacity'}
                     >
                         {capacityLoading ? 'Retrying capacity' : 'Retry'}
+                    </button>
+                </div>
+            )}
+            {showFutureSprintEmptyStatus && (
+                <div className="team-capacity-read-status" role="status" aria-busy={capacityLoading}>
+                    <span>Team capacity Jira issues have not been created yet for this future sprint.</span>
+                    <button
+                        type="button"
+                        className="secondary compact"
+                        onClick={() => {
+                            if (!capacityLoading) onCapacityRetry?.();
+                        }}
+                        disabled={capacityLoading}
+                        aria-label={capacityLoading ? 'Refreshing capacity' : 'Refresh capacity'}
+                    >
+                        {capacityLoading ? 'Refreshing capacity' : 'Refresh capacity'}
                     </button>
                 </div>
             )}

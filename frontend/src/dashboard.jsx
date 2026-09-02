@@ -671,6 +671,7 @@ import {
             const [capacityFieldIdDraft, setCapacityFieldIdDraft] = useState('');
             const [capacityFieldNameDraft, setCapacityFieldNameDraft] = useState('');
             const capacityBaselineRef = useRef('');
+            const [capacityVerificationRequired, setCapacityVerificationRequired] = useState(false);
             const [capacityProjectSearchQuery, setCapacityProjectSearchQuery] = useState('');
             const [capacityProjectSearchOpen, setCapacityProjectSearchOpen] = useState(false);
             const [capacityProjectSearchIndex, setCapacityProjectSearchIndex] = useState(0);
@@ -857,7 +858,7 @@ import {
             const [showSprintDropdown, setShowSprintDropdown] = useState(false);
             const sprintDropdownRefs = useRef({ main: null, compact: null });
             const [capacityEnabled, setCapacityEnabled] = useState(false);
-            const [capacityState, setCapacityState] = useState(() => ({ capacityByTeam: {}, capacityTargetsByTeam: {}, mutationEnabled: false, scopeSignature: '' }));
+            const [capacityState, setCapacityState] = useState(() => ({ capacityByTeam: {}, capacityTargetsByTeam: {}, capacityIssueCount: null, mutationEnabled: false, scopeSignature: '' }));
             const capacityStateRef = useRef(capacityState);
             capacityStateRef.current = capacityState;
             const [capacityLoading, setCapacityLoading] = useState(false);
@@ -1757,7 +1758,7 @@ import {
                 setExcludedCapacityData(null);
                 setExcludedCapacityError('');
                 setExcludedCapacityLoading(false);
-                setCapacityState({ capacityByTeam: {}, capacityTargetsByTeam: {}, mutationEnabled: false, scopeSignature: '' });
+                setCapacityState({ capacityByTeam: {}, capacityTargetsByTeam: {}, capacityIssueCount: null, mutationEnabled: false, scopeSignature: '' });
                 setCapacityLoading(false);
                 setCapacityReadError('');
                 setCapacityDataStale(false);
@@ -2477,7 +2478,10 @@ import {
 
             const isBoardConfigDirty = React.useMemo(() => Boolean(boardConfigBaselineRef.current) && JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }) !== boardConfigBaselineRef.current, [boardIdDraft, boardNameDraft]);
 
-            const isCapacityDraftDirty = React.useMemo(() => Boolean(capacityBaselineRef.current) && JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current, [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft]);
+            const isCapacityDraftDirty = React.useMemo(() => Boolean(capacityBaselineRef.current) && (
+                JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current
+                || (capacityVerificationRequired && Boolean(capacityProjectDraft && capacityFieldIdDraft))
+            ), [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft, capacityVerificationRequired]);
 
             const isIssueTypesDraftDirty = React.useMemo(() => {
                 return JSON.stringify(issueTypesDraft) !== issueTypesBaselineRef.current;
@@ -4282,6 +4286,7 @@ import {
                 );
                 commitSharedConfigRevision(payload);
                 capacityBaselineRef.current = JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
+                setCapacityVerificationRequired(false);
             };
 
             const loadIssueTypesConfig = async () => {
@@ -5839,6 +5844,12 @@ import {
                         setCapacityFieldIdDraft(capacity.fieldId || '');
                         setCapacityFieldNameDraft(capacity.fieldName || '');
                         capacityBaselineRef.current = JSON.stringify({ project: capacity.project || '', fieldId: capacity.fieldId || '', fieldName: capacity.fieldName || '' });
+                        setCapacityVerificationRequired(Boolean(
+                            config.authMode === 'atlassian_oauth'
+                            && capacity.project
+                            && capacity.fieldId
+                            && config.capacityMutationEnabled !== true
+                        ));
                         const weightRows = clonePriorityWeightRows(sharedConfig.statsPriorityWeights);
                         setPriorityWeightsDraft(weightRows);
                         setEffectivePriorityWeightsRows(weightRows);
@@ -11727,7 +11738,7 @@ import {
             const effectiveCapacityState = React.useMemo(() => (
                 capacityState.scopeSignature === capacityScopeSignature
                     ? capacityState
-                    : { capacityByTeam: {}, capacityTargetsByTeam: {}, mutationEnabled: false, scopeSignature: capacityScopeSignature }
+                    : { capacityByTeam: {}, capacityTargetsByTeam: {}, capacityIssueCount: null, mutationEnabled: false, scopeSignature: capacityScopeSignature }
             ), [capacityState, capacityScopeSignature]);
             const { capacityByTeam, capacityTargetsByTeam } = effectiveCapacityState;
             const capacityMutationEnabled = effectiveCapacityState.mutationEnabled === true;
@@ -15825,6 +15836,7 @@ import {
                             capacityLoading={capacityLoading}
                             capacityReadError={capacityReadError}
                             capacityDataStale={capacityDataStale}
+                            futureSprintCapacityIssuesMissing={isFutureSprintSelected && effectiveCapacityState.capacityIssueCount === 0}
                             capacityShareLabel={capacityShareLabel}
                             updateCapacityRequest={(issueKey, payload, options) =>
                                 updateCapacity(BACKEND_URL, issueKey, payload, options)}

@@ -1270,6 +1270,81 @@ test('capacity scope and read-only gates detach editors and keep unsafe actions 
     await expect(page.locator('.team-capacity-action-rail')).toHaveCount(0);
 });
 
+test('an empty future sprint explains missing issues and refreshes only Capacity', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1028, height: 720 });
+    const fixture = await openPlanning(page, {
+        nextCapacityPayload: {
+            enabled: true,
+            mutationEnabled: true,
+            sprint: nextSprintName,
+            capacities: {},
+            entries: [],
+        },
+    });
+
+    await selectSprint(page, nextSprintName);
+    const emptyStatus = page.locator('.team-capacity-read-status');
+    await expect(emptyStatus).toContainText(
+        'Team capacity Jira issues have not been created yet for this future sprint.',
+    );
+    const refreshButton = emptyStatus.getByRole('button', { name: 'Refresh capacity' });
+    await expect(refreshButton).toBeEnabled();
+    await captureCapacityScreenshot(page, testInfo, 'capacity-future-sprint-no-issues');
+
+    await page.setViewportSize({ width: 375, height: 720 });
+    await emptyStatus.scrollIntoViewIfNeeded();
+    const mobileGeometry = await emptyStatus.evaluate(status => {
+        const text = status.querySelector('span');
+        const button = status.querySelector('button');
+        const dimensions = node => ({
+            rect: node.getBoundingClientRect(),
+            scrollWidth: node.scrollWidth,
+            clientWidth: node.clientWidth,
+            scrollHeight: node.scrollHeight,
+            clientHeight: node.clientHeight,
+        });
+        return {
+            status: dimensions(status),
+            text: dimensions(text),
+            button: dimensions(button),
+            viewportWidth: window.innerWidth,
+        };
+    });
+    for (const element of [mobileGeometry.status, mobileGeometry.text, mobileGeometry.button]) {
+        expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth);
+        expect(element.scrollHeight).toBeLessThanOrEqual(element.clientHeight);
+        expect(element.rect.left).toBeGreaterThanOrEqual(0);
+        expect(element.rect.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+    }
+    await captureCapacityScreenshot(page, testInfo, 'capacity-future-sprint-no-issues-mobile', { fullPage: true });
+    await page.setViewportSize({ width: 1028, height: 720 });
+
+    const capacityGetsBefore = capacityCalls(fixture.calls, 'GET').length;
+    const taskGetsBefore = fixture.calls.filter(call => call.method === 'GET'
+        && call.pathname === '/api/tasks-with-team-name').length;
+    const sprintGetsBefore = fixture.calls.filter(call => call.method === 'GET'
+        && call.pathname === '/api/sprints').length;
+    let finishRefresh;
+    fixture.state.capacityGetGate = new Promise(resolve => { finishRefresh = resolve; });
+    fixture.state.nextCapacityPayload = structuredClone(nextCapacityPayload);
+
+    await refreshButton.click();
+    const refreshingButton = emptyStatus.getByRole('button', { name: 'Refreshing capacity' });
+    await expect(refreshingButton).toBeDisabled();
+    await expect.poll(() => capacityCalls(fixture.calls, 'GET').length).toBe(capacityGetsBefore + 1);
+    expect(fixture.calls.filter(call => call.method === 'GET'
+        && call.pathname === '/api/tasks-with-team-name')).toHaveLength(taskGetsBefore);
+    expect(fixture.calls.filter(call => call.method === 'GET'
+        && call.pathname === '/api/sprints')).toHaveLength(sprintGetsBefore);
+
+    finishRefresh();
+    fixture.state.capacityGetGate = null;
+    await expect(emptyStatus).toHaveCount(0);
+    const alpha = page.locator('.team-stat-card', { hasText: 'Alpha' });
+    await alpha.hover();
+    await expect(alpha.getByRole('button', { name: 'Edit Alpha capacity' })).toBeVisible();
+});
+
 test('capacity reference states remain settled, bounded, and visible in Planning', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const fixture = await openPlanning(page);

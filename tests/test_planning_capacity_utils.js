@@ -392,6 +392,7 @@ test('buildCapacityReadState preserves zero and groups exact Jira targets withou
     });
 
     assert.deepEqual(state.capacityByTeam, { alpha: 0, beta: 5 });
+    assert.equal(state.capacityIssueCount, 4);
     assert.equal(state.mutationEnabled, true);
     assert.deepEqual(state.capacityTargetsByTeam.alpha, {
         state: 'matched',
@@ -557,6 +558,7 @@ function createCapacityReadModel(scopeSignature = '') {
         capacityState: {
             capacityByTeam: {},
             capacityTargetsByTeam: {},
+            capacityIssueCount: null,
             mutationEnabled: false,
             scopeSignature,
         },
@@ -805,4 +807,21 @@ test('capacity failures preserve only same-scope numbers and retry success alone
     assert.deepEqual(newScopeFailure.capacityState.capacityByTeam, {});
     assert.equal(newScopeFailure.capacityDataStale, false);
     assert.equal(newScopeFailure.capacityReadRevision, 2);
+});
+
+test('only an enabled successful read records that zero Capacity issues were fetched', async () => {
+    const utils = await loadUtils();
+    const enabledEmpty = utils.reduceCapacityReadLifecycle(createCapacityReadModel('scope-a'), {
+        type: 'success',
+        scopeSignature: 'scope-a',
+        payload: { enabled: true, capacities: {}, entries: [], mutationEnabled: true },
+    });
+    assert.equal(enabledEmpty.capacityState.capacityIssueCount, 0);
+
+    const disabled = utils.reduceCapacityReadLifecycle(createCapacityReadModel('scope-a'), {
+        type: 'success',
+        scopeSignature: 'scope-a',
+        payload: { enabled: false, capacities: {}, entries: [], mutationEnabled: false },
+    });
+    assert.equal(disabled.capacityState.capacityIssueCount, null);
 });

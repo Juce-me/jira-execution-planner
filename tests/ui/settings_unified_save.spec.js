@@ -949,6 +949,39 @@ test('settings save persists dirty department and EPM sections together', async 
     ))).toBe(false);
 });
 
+test('unverified saved Capacity mapping is re-attested without changing the selection', async ({ page }) => {
+    const capacity = {
+        project: 'DEMO',
+        fieldId: 'customfield_10050',
+        fieldName: 'Capacity',
+    };
+    const workspace = sharedWorkspaceSnapshot();
+    workspace.capacityProject = capacity.project;
+    workspace.capacityMutationEnabled = false;
+    workspace.sharedConfig.capacity = capacity;
+    const calls = await mockConfigSettings(page, {
+        workspaceSnapshots: [workspace],
+        capacityConfig: { ...capacity, mutationEnabled: true, configRevision: 4 },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+
+    const saveButton = dialog.getByRole('button', { name: /^Save$/ });
+    await expect(saveButton).toBeEnabled();
+    await expect(dialog.locator('.group-modal-dirty')).toHaveText('Unsaved changes · 1');
+    await dialog.screenshot({ path: `${screenshotDir}/capacity-reverification-ready.png`, animations: 'disabled' });
+    await saveButton.click();
+
+    await expect(dialog).toHaveCount(0);
+    const posts = workspacePosts(calls, '/api/capacity/config');
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toEqual({ ...capacity, baseRevision: 3 });
+});
+
 test('EPM save auth expiry preserves the private draft and exposes safe recovery without replay', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
         epmSaveResponse: {

@@ -86,7 +86,9 @@ export function buildCapacityReadState(payload = {}) {
     }
 
     const capacityTargetsByTeam = {};
+    let capacityIssueCount = 0;
     for (const [key, issues] of targetsByKey.entries()) {
+        capacityIssueCount += issues.size;
         capacityTargetsByTeam[key] = issues.size === 1
             ? issues.values().next().value
             : { state: 'ambiguous' };
@@ -94,6 +96,7 @@ export function buildCapacityReadState(payload = {}) {
     return {
         capacityByTeam,
         capacityTargetsByTeam,
+        capacityIssueCount,
         mutationEnabled: payload?.mutationEnabled === true,
     };
 }
@@ -139,6 +142,7 @@ function emptyCapacityState(scopeSignature) {
     return {
         capacityByTeam: {},
         capacityTargetsByTeam: {},
+        capacityIssueCount: null,
         mutationEnabled: false,
         scopeSignature,
     };
@@ -169,7 +173,7 @@ export function reduceCapacityReadLifecycle(model, event) {
     if (event.type === 'success') {
         const readState = event.payload?.enabled === true
             ? buildCapacityReadState(event.payload)
-            : buildCapacityReadState({ mutationEnabled: false });
+            : { ...buildCapacityReadState({ mutationEnabled: false }), capacityIssueCount: null };
         return {
             ...model,
             capacityState: { ...readState, scopeSignature },
@@ -189,6 +193,7 @@ export function reduceCapacityReadLifecycle(model, event) {
             capacityState: {
                 capacityByTeam,
                 capacityTargetsByTeam: {},
+                capacityIssueCount: previousState.capacityIssueCount ?? null,
                 mutationEnabled: false,
                 scopeSignature,
             },

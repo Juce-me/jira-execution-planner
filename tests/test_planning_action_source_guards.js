@@ -269,7 +269,7 @@ test('capacity read state is atomic, scope-tagged, and advances revision only af
     const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
 
     assert.match(source, /const \[capacityState, setCapacityState\] = useState/);
-    assert.match(source, /capacityByTeam:\s*\{\},\s*capacityTargetsByTeam:\s*\{\},\s*mutationEnabled:\s*false,\s*scopeSignature:\s*''/);
+    assert.match(source, /capacityByTeam:\s*\{\},\s*capacityTargetsByTeam:\s*\{\},\s*capacityIssueCount:\s*null,\s*mutationEnabled:\s*false,\s*scopeSignature:\s*''/);
     assert.match(source, /const \[capacityReadRevision, setCapacityReadRevision\] = useState\(0\)/);
     assert.match(source, /const \[capacityReadError, setCapacityReadError\] = useState\(''\)/);
     assert.match(source, /const \[capacityDataStale, setCapacityDataStale\] = useState\(false\)/);

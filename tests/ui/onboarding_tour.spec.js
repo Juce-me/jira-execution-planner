@@ -1683,7 +1683,7 @@ test('production disabled Statistics does not start onboarding without a real op
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
 });
 
-test('production Board and Statistics onboarding target compact real controls with contextual guidance', async ({ page }) => {
+test('production Board and Statistics onboarding target the Board canvas and real statistics control', async ({ page }) => {
     await installProductionOnboardingFixture(page, {
         completedOnboardingModules: ['catch-up'],
     });
@@ -1691,11 +1691,15 @@ test('production Board and Statistics onboarding target compact real controls wi
     await engModeButton(page, 'Board').click();
     const boardTarget = page.locator('[data-onboarding-target="board-overview"]');
     await expect(boardTarget).toBeVisible();
-    await expect(boardTarget).toHaveClass(/\bcol\b/);
-    await expect(boardTarget.locator('.col-strip')).toBeVisible();
-    const boardHeight = await boardTarget.evaluate(node => node.getBoundingClientRect().height);
-    expect(boardHeight).toBeGreaterThanOrEqual(339);
-    expect(boardHeight).toBeLessThanOrEqual(341);
+    await expect(boardTarget).toHaveClass(/\bboard\b/);
+    await expect(boardTarget.locator('.col:not(.is-open):not(.is-focused) .col-strip').first()).toBeVisible();
+    await expect(boardTarget.locator('.col.is-focused .ecard').first()).toBeVisible();
+    const boardTargetRect = await boardTarget.evaluate(node => node.getBoundingClientRect().toJSON());
+    const boardSpotlightRect = await page.locator('.onboarding-tour-spotlight').evaluate(node => node.getBoundingClientRect().toJSON());
+    expect(boardTargetRect.width).toBeGreaterThanOrEqual(1279);
+    expect(boardSpotlightRect.width).toBeGreaterThanOrEqual(1279);
+    expect(boardSpotlightRect.height).toBeGreaterThanOrEqual(351);
+    expect(boardSpotlightRect.height).toBeLessThanOrEqual(353);
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
     await expect(page.locator('.onboarding-tour-card p')).toContainText('Epic view');
     await expect(page.locator('.onboarding-tour-card p')).toContainText('configure your group Board in Settings');

@@ -4297,6 +4297,7 @@ button.toggle.applied-filter.active {
   position: relative;
 }
 .eng-board .board {
+  --onboarding-spotlight-max-height: var(--board-strip-h);
   display: flex;
   gap: 0.5rem;
   align-items: flex-start;

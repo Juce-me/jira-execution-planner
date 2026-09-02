@@ -686,9 +686,6 @@ export default function EngBoardView({
     // visible. An affordance that promises nothing is the review stop D38/D46 were both written
     // about, so it is gated on there being somewhere else for focus to go, not styled away.
     const hasMultipleColumns = columns.length > 1;
-    const onboardingColumnId = columns.find((column) => (
-        column.id !== focusedId && column.id !== starredId
-    ))?.id || null;
 
     // §1's acceptance point 4, as narrowed to what O6 permits: no SINGLE facet can ever admit
     // nothing (D20's hide-at-zero and §7.3's last-option lock are both per-facet), but two facets
@@ -777,7 +774,13 @@ export default function EngBoardView({
                     <span className="pip"><b>{offFrame.left}</b>◀</span>
                 </button>
 
-                <div className="board" ref={boardRef} onScroll={handleBoardScroll}>
+                <div
+                    className="board"
+                    ref={boardRef}
+                    onScroll={handleBoardScroll}
+                    data-onboarding-target="board-overview"
+                    tabIndex={-1}
+                >
                     {columns.map((column) => {
                         const isFocused = column.id === focusedId;
                         const isStarred = column.id === starredId;
@@ -795,8 +798,6 @@ export default function EngBoardView({
                                     dropOverId === column.id ? 'is-drop' : '',
                                 ].filter(Boolean).join(' ')}
                                 data-column-id={column.id}
-                                data-onboarding-target={column.id === onboardingColumnId ? 'board-overview' : undefined}
-                                tabIndex={column.id === onboardingColumnId ? -1 : undefined}
                                 style={{ '--board-column-accent': column.colour }}
                                 // Every column is a target, open or FOLDED — the section wraps the
                                 // rail as well as the body, so a folded column accepts a drop

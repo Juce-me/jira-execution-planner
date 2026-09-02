@@ -145,8 +145,26 @@ function restoreTargetAncestorScroll(records) {
     records.slice().reverse().forEach(restoreOverflow);
 }
 
-function exactTargetHitTest(target, viewport = viewportSize()) {
+function onboardingTargetRect(target) {
     const rect = target?.getBoundingClientRect?.();
+    if (!rect) return null;
+    const maxHeight = parseFloat(
+        target.ownerDocument?.defaultView?.getComputedStyle?.(target)
+            ?.getPropertyValue('--onboarding-spotlight-max-height'),
+    );
+    if (!Number.isFinite(maxHeight) || maxHeight <= 0 || rect.height <= maxHeight) return rect;
+    return {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.top + maxHeight,
+        width: rect.width,
+        height: maxHeight,
+    };
+}
+
+function exactTargetHitTest(target, viewport = viewportSize()) {
+    const rect = onboardingTargetRect(target);
     if (!rect || rect.width <= 0 || rect.height <= 0) return false;
     const points = [
         [rect.left + rect.width / 2, rect.top + rect.height / 2],
@@ -412,7 +430,7 @@ export default function OnboardingTour({
         const target = candidate && isVisibleInViewport(candidate, measuredViewport, targetOptions)
             ? candidate
             : null;
-        const rect = target?.getBoundingClientRect?.() || null;
+        const rect = onboardingTargetRect(target);
         const previewMenu = previewDescriptorRef.current
             ? document.querySelector(`[data-onboarding-preview-owner="${CSS.escape(previewDescriptorRef.current.targetIdentity)}"]`)
             : null;

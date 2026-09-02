@@ -226,7 +226,6 @@ test('contextual destination source contracts preserve native controls', () => {
     const dashboard = readFileSync(new URL('../frontend/src/dashboard.jsx', `file://${__filename}`), 'utf8');
     const segmentedControl = readFileSync(new URL('../frontend/src/ui/SegmentedControl.jsx', `file://${__filename}`), 'utf8');
     const engModeControl = readFileSync(new URL('../frontend/src/eng/EngModeControl.jsx', `file://${__filename}`), 'utf8');
-    const board = readFileSync(new URL('../frontend/src/eng/EngBoardView.jsx', `file://${__filename}`), 'utf8');
 
     assert.ok(dashboard.includes('data-onboarding-target="settings-launcher"'));
     assert.match(segmentedControl, /<button\s+\{\.\.\.\(option\.domProps \|\| \{\}\)\}/);
@@ -237,7 +236,6 @@ test('contextual destination source contracts preserve native controls', () => {
     assert.equal((engModeControl.match(/planning-launcher|board-launcher|statistics-launcher/g) || []).length, 0);
     assert.ok(dashboard.includes('data-onboarding-target="planning-overview"'));
     assert.ok(dashboard.includes("'data-onboarding-target': 'statistics-overview'"));
-    assert.ok(board.includes("data-onboarding-target={column.id === onboardingColumnId ? 'board-overview' : undefined}"));
 });
 
 test('dashboard wires canonical module persistence and requests only real supported surfaces', () => {

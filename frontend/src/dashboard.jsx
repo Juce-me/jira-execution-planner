@@ -14929,16 +14929,15 @@ import {
                     )}
 
                     {selectedView === 'eng' && showStats && (
-                    <div className={`stats-panel ${showStats ? 'open' : ''}`} data-onboarding-target="statistics-overview" tabIndex={-1}>
+                    <div className={`stats-panel ${showStats ? 'open' : ''}`}>
                         {showStats && !canRenderStatsPanel && (
                             <div className="stats-note">Load stats for the selected sprint.</div>
                         )}
-
                         {canRenderStatsPanel && (
                             <>
                                 <SegmentedControl
                                     className="eng-mode-control stats-view-toggle"
-                                    ariaLabel="Statistics view"
+                                    ariaLabel="Statistics view" containerProps={{ 'data-onboarding-target': 'statistics-overview', tabIndex: -1 }}
                                     value={statsView}
                                     onChange={(nextView) => {
                                         trackStatsAction('stats_action', nextView, { workflow_action: 'view_change' });

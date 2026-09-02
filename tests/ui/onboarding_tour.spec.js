@@ -1011,6 +1011,13 @@ async function installProductionOnboardingFixture(page, {
             teamLabels: { 'team-synthetic': 'synthetic_team_label' },
             labels: ['synthetic_team_label'],
             excludedCapacityEpics: [],
+            board: {
+                columns: [
+                    { id: 'col-00000001', name: 'To Do', colour: '#8c8c8c', star: false, min: null, max: null, statuses: ['To Do'] },
+                    { id: 'col-00000002', name: 'In Progress', colour: '#2f80ed', star: true, min: null, max: null, statuses: ['In Progress'] },
+                    { id: 'col-00000003', name: 'Done', colour: '#52a832', star: false, min: null, max: null, statuses: ['Done'] },
+                ],
+            },
         }],
         preferences: {
             onboardingRequired: false,
@@ -1674,6 +1681,37 @@ test('production disabled Statistics does not start onboarding without a real op
     await expect(engModeButton(page, 'Statistics')).toBeDisabled();
     await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
+});
+
+test('production Board and Statistics onboarding target compact real controls with contextual guidance', async ({ page }) => {
+    await installProductionOnboardingFixture(page, {
+        completedOnboardingModules: ['catch-up'],
+    });
+
+    await engModeButton(page, 'Board').click();
+    const boardTarget = page.locator('[data-onboarding-target="board-overview"]');
+    await expect(boardTarget).toBeVisible();
+    await expect(boardTarget).toHaveClass(/\bcol\b/);
+    await expect(boardTarget.locator('.col-strip')).toBeVisible();
+    const boardHeight = await boardTarget.evaluate(node => node.getBoundingClientRect().height);
+    expect(boardHeight).toBeGreaterThanOrEqual(339);
+    expect(boardHeight).toBeLessThanOrEqual(341);
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
+    await expect(page.locator('.onboarding-tour-card p')).toContainText('Epic view');
+    await expect(page.locator('.onboarding-tour-card p')).toContainText('configure your group Board in Settings');
+    await captureSettledOnboardingScreenshot(page, 'context-board.png');
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    await engModeButton(page, 'Statistics').click();
+    const statisticsTarget = page.locator('[data-onboarding-target="statistics-overview"]');
+    await expect(statisticsTarget).toBeVisible();
+    await expect(statisticsTarget).toHaveClass(/\bsegmented-control\b/);
+    await expect(statisticsTarget).toHaveClass(/\beng-mode-control\b/);
+    await expect(statisticsTarget).toHaveClass(/\bstats-view-toggle\b/);
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
+    await expect(page.locator('.onboarding-tour-card p')).toContainText('different statistics');
+    await expect(page.locator('.onboarding-tour-card p')).toContainText('delivery, planning, and collaboration');
+    await captureSettledOnboardingScreenshot(page, 'context-statistics.png');
 });
 
 test('production contextual module uses an honest fallback when the Board destination target is unavailable', async ({ page }) => {

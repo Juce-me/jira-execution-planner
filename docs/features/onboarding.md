@@ -39,6 +39,8 @@ Each module persists independently across logins. **Finish**, **Skip onboarding*
 
 Configuration points to the real Department Team editor. It never adds, removes, or saves a Team automatically. The other modules likewise never change the active sprint, Department scope, Teams, favorite, Priority, Project Track, Jira Status, or selected tool except through the user's own normal interaction.
 
+Board guidance focuses one real collapsed workflow column, keeping the spotlight to the column's 340-pixel rail instead of the full Epic list. Its copy identifies Board as the Department Epic view and points to Settings for group Board configuration. Statistics guidance focuses the real statistics view selector and explains that its views cover delivery, planning, and collaboration.
+
 Screen-scoped onboarding is desktop only. At viewport widths of 760px or less it stays closed, while the first-run Department chooser, configuration, and ordinary Settings routing continue to work. An incomplete module remains eligible and starts at its first step when that screen is next opened at desktop width. Mobile dashboard-tour work is deferred in GitHub issue #151.
 
 Existing boolean preferences migrate without replaying completed users: legacy `onboardingDone: true` becomes all five modules complete, while legacy `onboardingDone: false` becomes no modules complete.

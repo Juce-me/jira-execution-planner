@@ -161,11 +161,11 @@ test('contextual module catalogs expose exact manually advanced reachable destin
         },
         board: {
             targetId: 'board-overview',
-            body: 'Board groups scoped Epics into the Department\'s configured workflow columns.',
+            body: 'Board is the Epic view for this Department. You can configure your group Board in Settings.',
         },
         statistics: {
             targetId: 'statistics-overview',
-            body: 'Statistics compares delivery, priority, lead-time, capacity, and collaboration views for the selected scope.',
+            body: 'Choose among different statistics covering delivery, planning, and collaboration for the current scope.',
         },
     };
 
@@ -236,8 +236,8 @@ test('contextual destination source contracts preserve native controls', () => {
     assert.match(engModeControl, /containerProps=\{\{\s*'data-onboarding-target': 'eng-mode-control'\s*\}\}/);
     assert.equal((engModeControl.match(/planning-launcher|board-launcher|statistics-launcher/g) || []).length, 0);
     assert.ok(dashboard.includes('data-onboarding-target="planning-overview"'));
-    assert.ok(dashboard.includes('data-onboarding-target="statistics-overview"'));
-    assert.ok(board.includes('data-onboarding-target="board-overview"'));
+    assert.ok(dashboard.includes("'data-onboarding-target': 'statistics-overview'"));
+    assert.ok(board.includes("data-onboarding-target={column.id === onboardingColumnId ? 'board-overview' : undefined}"));
 });
 
 test('dashboard wires canonical module persistence and requests only real supported surfaces', () => {

@@ -7,11 +7,14 @@ const { installDashboardShell } = require('./epm_home_token_fixture');
 const repoRoot = path.join(__dirname, '..', '..');
 const screenshotDir = path.join(repoRoot, 'test-results', 'codebase-structure-smoke');
 const capacityArtifactDir = path.join(repoRoot, '.superpowers', 'sdd', 'EXEC-planning-capacity-editing', 'task-8-artifacts');
+const headerDropdownAfterDir = path.join(repoRoot, 'tmp', 'shared-header-dropdown-width-contract', 'after');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
 const longSprintId = 34626;
 const longSprintName = '2026Q3 Sprint 43 — International Platform Reliability and Migration';
+const headerLongSprintEastName = '2026Q3 Sprint 43 — International Platform Reliability and Migration — East';
+const headerLongSprintWestName = '2026Q3 Sprint 44 — International Platform Reliability and Migration — West';
 const groupTeamIds = ['team-alpha', 'team-beta'];
 let dashboardJs;
 let statsUtils;
@@ -443,27 +446,99 @@ async function captureCapacitySmokeScreenshot(page, name) {
     await page.screenshot({ path: `${capacityArtifactDir}/${name}.png`, fullPage: true });
 }
 
-async function expectOpenDropdownInputGeometry(input, kind) {
-    const geometry = await input.evaluate((node, dropdownKind) => {
-        const toggle = node.closest(`.${dropdownKind}-dropdown-toggle`);
-        const dropdown = node.closest(`.${dropdownKind}-dropdown`);
-        const panel = dropdown?.querySelector(`.${dropdownKind}-dropdown-panel`);
-        const inputRect = node.getBoundingClientRect();
-        const toggleRect = toggle?.getBoundingClientRect();
-        const panelRect = panel?.getBoundingClientRect();
-        const hit = panelRect && document.elementFromPoint(panelRect.left + 12, panelRect.top + 12);
+async function readHeaderDropdownGeometry(dropdown, kind) {
+    return dropdown.evaluate((root, dropdownKind) => {
+        const toggle = root.querySelector(`.${dropdownKind}-dropdown-toggle`);
+        const panel = root.querySelector(`.${dropdownKind}-dropdown-panel`);
+        const input = toggle?.querySelector('input');
+        const caret = toggle?.querySelector('svg');
+        const rect = (node) => node?.getBoundingClientRect();
+        const rootRect = rect(root);
+        const toggleRect = rect(toggle);
+        const panelRect = rect(panel);
+        const inputRect = rect(input);
+        const caretRect = rect(caret);
+        const ownsPanelHit = (x, y) => {
+            const hit = document.elementFromPoint(x, y);
+            return Boolean(hit && panel?.contains(hit));
+        };
         return {
-            inputInsideToggle: Boolean(toggleRect) && inputRect.left >= toggleRect.left && inputRect.right <= toggleRect.right,
-            inputNotClipped: node.scrollWidth <= node.clientWidth,
-            panelBelowToggle: Boolean(toggleRect && panelRect) && panelRect.top >= toggleRect.bottom,
-            panelOwnsHitPoint: Boolean(hit?.closest?.(`.${dropdownKind}-dropdown-panel`)),
+            hasToggle: Boolean(toggle), hasPanel: Boolean(panel), hasInput: Boolean(input), hasCaret: Boolean(caret),
+            rootWidth: rootRect?.width, rootLeft: rootRect?.left, rootRight: rootRect?.right,
+            toggleWidth: toggleRect?.width, toggleLeft: toggleRect?.left, toggleRight: toggleRect?.right, toggleBottom: toggleRect?.bottom,
+            panelWidth: panelRect?.width, panelLeft: panelRect?.left, panelRight: panelRect?.right, panelTop: panelRect?.top,
+            inputWidth: inputRect?.width, inputLeft: inputRect?.left, inputRight: inputRect?.right,
+            caretWidth: caretRect?.width, caretLeft: caretRect?.left, caretRight: caretRect?.right,
+            inputCaretGap: inputRect && caretRect ? caretRect.left - inputRect.right : undefined,
+            panelWithinViewport: Boolean(panelRect) && panelRect.left >= 0 && panelRect.right <= document.documentElement.clientWidth + 1,
+            panelLeftHitOwned: Boolean(panelRect) && ownsPanelHit(panelRect.left + 2, panelRect.top + 2),
+            panelRightHitOwned: Boolean(panelRect) && ownsPanelHit(panelRect.right - 2, panelRect.top + 2),
         };
     }, kind);
-    expect(geometry).toEqual({
-        inputInsideToggle: true,
-        inputNotClipped: true,
-        panelBelowToggle: true,
-        panelOwnsHitPoint: true,
+}
+
+function expectOpenHeaderDropdownGeometry(geometry, closedWidth) {
+    expect(geometry.hasToggle).toBe(true);
+    expect(geometry.hasPanel).toBe(true);
+    expect(geometry.hasInput).toBe(true);
+    expect(geometry.hasCaret).toBe(true);
+    expect(geometry.toggleWidth).toBeGreaterThan(0);
+    expect(geometry.panelWidth).toBeGreaterThan(0);
+    expect(geometry.inputWidth).toBeGreaterThan(0);
+    expect(geometry.caretWidth).toBeGreaterThan(0);
+    expect(Math.abs(geometry.rootWidth - closedWidth)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.toggleWidth - geometry.rootWidth)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.panelWidth - geometry.rootWidth)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.toggleLeft - geometry.rootLeft)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.toggleRight - geometry.rootRight)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.panelLeft - geometry.rootLeft)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.panelRight - geometry.rootRight)).toBeLessThanOrEqual(1);
+    expect(geometry.inputLeft).toBeGreaterThanOrEqual(geometry.toggleLeft - 1);
+    expect(geometry.inputRight).toBeLessThanOrEqual(geometry.toggleRight + 1);
+    expect(geometry.inputCaretGap).toBeGreaterThanOrEqual(0);
+    expect(geometry.caretRight).toBeLessThanOrEqual(geometry.toggleRight + 1);
+    expect(geometry.panelTop).toBeGreaterThanOrEqual(geometry.toggleBottom - 1);
+    expect(geometry.panelWithinViewport).toBe(true);
+    expect(geometry.panelLeftHitOwned).toBe(true);
+    expect(geometry.panelRightHitOwned).toBe(true);
+}
+
+async function readHeaderRowGeometry(filters) {
+    return filters.evaluate((row) => {
+        const rowRect = row.getBoundingClientRect();
+        const visibleChildren = [...row.children].filter((child) => {
+            const rect = child.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        });
+        const childEdges = visibleChildren.map((child) => {
+            const rect = child.getBoundingClientRect();
+            return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+        });
+        const childLineTops = childEdges.map(edge => edge.top);
+        const childLineBottoms = childEdges.map(edge => edge.bottom);
+        const rowCount = childLineBottoms.reduce((lines, bottom) => (
+            lines.some(lineBottom => Math.abs(lineBottom - bottom) <= 2) ? lines : [...lines, bottom]
+        ), []).length;
+        const textOverflowingChildren = [...row.querySelectorAll('*')].filter((node) => {
+            const style = getComputedStyle(node);
+            const hasText = Boolean(node.textContent?.trim()) && node.children.length === 0;
+            return hasText
+                && !node.closest('.eng-mode-control')
+                && node.scrollWidth > node.clientWidth + 1
+                && style.overflowX === 'visible';
+        }).length;
+        return {
+            rowLeft: rowRect.left, rowRight: rowRect.right, rowTop: rowRect.top, rowBottom: rowRect.bottom,
+            flexWrap: getComputedStyle(row).flexWrap,
+            rowScrollWidth: row.scrollWidth, rowClientWidth: row.clientWidth,
+            viewportWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            rowCount,
+            childEdges,
+            childLineTops,
+            childLineBottoms,
+            textOverflowingChildren,
+        };
     });
 }
 
@@ -788,6 +863,26 @@ async function installApiMocks(page, calls, options = {}) {
                 userCanEditEpmConfig: true,
                 projectsConfigured: true,
                 epm: epmConfig,
+                ...(options.sharedStartupSnapshot ? {
+                    sharedConfigRevision: 1,
+                    sharedConfig: {
+                        version: 1,
+                        projects: { selected: [] },
+                        board: { boardId: '5494', boardName: 'Synthetic Board' },
+                        capacity: {
+                            project: options.capacityProject || '',
+                            fieldId: options.capacityProject ? 'customfield_10050' : '',
+                            fieldName: options.capacityProject ? 'Capacity' : '',
+                        },
+                        sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+                        parentNameField: { fieldId: 'customfield_10021', fieldName: 'Parent Link' },
+                        storyPointsField: { fieldId: 'customfield_10022', fieldName: 'Story points' },
+                        teamField: { fieldId: 'customfield_10023', fieldName: 'Team' },
+                        deliveryOwnerField: { fieldId: 'customfield_10024', fieldName: 'Delivery owner' },
+                        statsPriorityWeights: [],
+                        issueTypes: ['Story'],
+                    },
+                } : {}),
             });
         }
         if (url.pathname === '/api/version') return json({ enabled: false });
@@ -803,6 +898,19 @@ async function installApiMocks(page, calls, options = {}) {
                 }],
                 defaultGroupId: 'grp-default',
                 source: 'test',
+                ...(options.sharedStartupSnapshot ? {
+                    configRevision: 1,
+                    preferences: {
+                        customized: true,
+                        preferenceExists: true,
+                        onboardingRequired: false,
+                        onboardingDone: true,
+                        completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
+                        visibleGroupIds: ['grp-default'],
+                        effectiveVisibleGroupIds: ['grp-default'],
+                        activeGroupId: 'grp-default',
+                    },
+                } : {}),
             });
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
@@ -1066,6 +1174,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, {
         authMode: 'atlassian_oauth',
+        sharedStartupSnapshot: true,
         capacityProject: 'CAP',
         deferCapacityPatch: true,
         capacityPayload: {
@@ -1117,13 +1226,13 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     expect(startupCounts['GET /api/config']).toBe(1);
     expect(startupCounts['GET /api/version']).toBe(1);
     expect(startupCounts['GET /api/groups-config']).toBe(1);
-    expect(startupCounts['GET /api/projects/selected']).toBe(1);
     expect(startupCounts['GET /api/sprints']).toBe(1);
-    expect(startupCounts['GET /api/stats/priority-weights-config']).toBe(1);
     expect(startupCounts['GET /api/issue-types'] || 0).toBe(0);
     [
+        '/api/projects/selected',
         '/api/board-config',
         '/api/capacity/config',
+        '/api/stats/priority-weights-config',
         '/api/sprint-field/config',
         '/api/story-points-field/config',
         '/api/parent-name-field/config',
@@ -1706,6 +1815,10 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await expect(cohortSummary).toContainText('Epics Overview');
     await expect(cohortSummary.getByRole('heading', { name: 'Workflow Status', exact: true })).toBeVisible();
     await expect(cohortSummary).toContainText('1 in progress · 0 postponed · 1 awaiting validation');
+    const statsSprintDropdowns = page.locator('[data-stats-range]:visible .sprint-dropdown');
+    await expect(statsSprintDropdowns).not.toHaveCount(0);
+    await expect(statsSprintDropdowns.first()).toBeVisible();
+    await expect(page.locator('[data-stats-range] .sprint-dropdown.header-filter-dropdown')).toHaveCount(0);
     const leadTimesJiraLink = cohortSummary.getByRole('link', { name: 'Open in progress, postponed, and awaiting validation epics in Jira' });
     await expect(leadTimesJiraLink).toBeVisible();
     const leadTimesJql = decodeURIComponent(new URL(await leadTimesJiraLink.getAttribute('href')).searchParams.get('jql'));
@@ -2442,6 +2555,9 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     await expect(rangeGroup.locator('select')).toHaveCount(0);
     await expect(rangeGroup.getByRole('button', { name: 'Start sprint' })).toBeVisible();
     await expect(rangeGroup.getByRole('button', { name: 'End sprint' })).toBeVisible();
+    const excludedCapacityEpicDropdown = page.locator('.excluded-capacity-epic-dropdown');
+    await expect(excludedCapacityEpicDropdown).toBeVisible();
+    await expect(excludedCapacityEpicDropdown).not.toHaveClass(/header-filter-dropdown/);
 
     // The merged range group must lay Start/End out side by side (not stacked)
     // with no clipped toggle text, and get enough width for both (MRT020).
@@ -2521,54 +2637,119 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
         sprints: [
             { id: selectedSprintId, name: selectedSprintName, state: 'active' },
             { id: 34624, name: '2026Q2 Sprint 41', state: 'closed' },
-            { id: 34626, name: '2026Q3 Sprint 43', state: 'future' },
+            { id: 34627, name: headerLongSprintEastName, state: 'future' },
+            { id: 34628, name: headerLongSprintWestName, state: 'future' },
         ],
     });
 
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     const controls = page.locator('.view-selector').first();
+    const dropdownCases = [
+        { kind: 'sprint', inputName: 'Filter sprints', query: 'International Platform Reliability and Migration', expectedMainWidth: 136 },
+        { kind: 'group', inputName: 'Filter groups', query: 'platform delivery '.repeat(6), expectedMainWidth: 200 },
+        { kind: 'team', inputName: 'Filter teams', query: 'alpha team '.repeat(8), expectedMainWidth: 200 },
+    ];
+    const readClosedWidth = async (dropdown, kind) => {
+        const geometry = await dropdown.evaluate((root, dropdownKind) => {
+            const toggle = root.querySelector(`.${dropdownKind}-dropdown-toggle`)?.getBoundingClientRect();
+            const rect = root.getBoundingClientRect();
+            return { rootWidth: rect.width, rootLeft: rect.left, rootRight: rect.right, toggleWidth: toggle?.width, toggleLeft: toggle?.left, toggleRight: toggle?.right };
+        }, kind);
+        expect(Math.abs(geometry.rootWidth - geometry.toggleWidth)).toBeLessThanOrEqual(1);
+        expect(Math.abs(geometry.rootLeft - geometry.toggleLeft)).toBeLessThanOrEqual(1);
+        expect(Math.abs(geometry.rootRight - geometry.toggleRight)).toBeLessThanOrEqual(1);
+        return geometry.rootWidth;
+    };
+    const assertLongSprintOptions = async (dropdown) => {
+        const options = dropdown.locator('.sprint-dropdown-option');
+        await expect(options).toHaveCount(2);
+        expect(await options.allTextContents()).toEqual([expect.stringContaining('East'), expect.stringContaining('West')]);
+        const metrics = await options.evaluateAll((nodes) => nodes.map((option) => {
+            const panel = option.closest('.sprint-dropdown-panel').getBoundingClientRect();
+            const rect = option.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(option);
+            const lines = new Set([...range.getClientRects()].filter(item => item.width > 0).map(item => Math.round(item.top))).size;
+            range.detach();
+            return { whiteSpace: getComputedStyle(option).whiteSpace, overflow: option.scrollWidth - option.clientWidth, left: rect.left, right: rect.right, panelLeft: panel.left, panelRight: panel.right, lines };
+        }));
+        metrics.forEach(metric => {
+            expect(metric.whiteSpace).toBe('normal');
+            expect(metric.overflow).toBeLessThanOrEqual(1);
+            expect(metric.left).toBeGreaterThanOrEqual(metric.panelLeft - 1);
+            expect(metric.right).toBeLessThanOrEqual(metric.panelRight + 1);
+        });
+        expect(metrics.some(metric => metric.lines > 1)).toBe(true);
+    };
+    const exerciseOpenStates = async (dropdown, { kind, inputName, query }, closedWidth, screenshotPrefix) => {
+        const toggle = dropdown.locator(`.${kind}-dropdown-toggle`);
+        const input = dropdown.getByRole('textbox', { name: inputName });
+        await toggle.focus();
+        await page.keyboard.press('Enter');
+        await expect(input).toBeFocused();
+        expectOpenHeaderDropdownGeometry(await readHeaderDropdownGeometry(dropdown, kind), closedWidth);
+        await input.fill(query);
+        expectOpenHeaderDropdownGeometry(await readHeaderDropdownGeometry(dropdown, kind), closedWidth);
+        if (kind === 'sprint') {
+            await assertLongSprintOptions(dropdown);
+            await waitForVisualSettled(page);
+            await page.screenshot({ path: path.join(headerDropdownAfterDir, `${screenshotPrefix}-typed-open.png`), fullPage: false });
+        }
+        await page.keyboard.press('Escape');
+        await expect(input).toHaveCount(0);
+        await toggle.focus();
+        await page.keyboard.press('Enter');
+        await expect(input).toBeFocused();
+        await expect(input).toHaveValue('');
+        expectOpenHeaderDropdownGeometry(await readHeaderDropdownGeometry(dropdown, kind), closedWidth);
+        if (kind === 'sprint') {
+            await waitForVisualSettled(page);
+            await page.screenshot({ path: path.join(headerDropdownAfterDir, `${screenshotPrefix}-reopened.png`), fullPage: false });
+        }
+        await page.keyboard.press('Escape');
+    };
 
-    const group = controls.locator('.group-dropdown');
+    const epicSort = page.locator('.eng-epic-sort-dropdown');
+    await expect(epicSort).toBeVisible();
+    await expect(epicSort).not.toHaveClass(/header-filter-dropdown/);
+
+    for (const dropdownCase of dropdownCases) {
+        const dropdown = controls.locator(`.${dropdownCase.kind}-dropdown.header-filter-dropdown`);
+        await expect(dropdown).toHaveClass(new RegExp(`header-filter-dropdown--${dropdownCase.kind}`));
+        const closedWidth = await readClosedWidth(dropdown, dropdownCase.kind);
+        expect(closedWidth).toBeCloseTo(dropdownCase.expectedMainWidth, 0);
+        await exerciseOpenStates(dropdown, dropdownCase, closedWidth, 'stable-header-dropdown');
+    }
+
+    const selectedSprint = controls.locator('.sprint-dropdown.header-filter-dropdown');
+    await selectedSprint.locator('.sprint-dropdown-toggle').focus();
+    await page.keyboard.press('Enter');
+    await selectedSprint.getByRole('textbox', { name: 'Filter sprints' }).fill('International Platform Reliability and Migration');
+    await selectedSprint.locator('.sprint-dropdown-option', { hasText: headerLongSprintEastName }).click();
+    await expect(selectedSprint.getByRole('textbox', { name: 'Filter sprints' })).toHaveCount(0);
+
+    // Preserve sibling reset, selection, checkbox, and outside-click paths after the geometry contracts.
+    const group = controls.locator('.group-dropdown.header-filter-dropdown');
+    const teams = controls.locator('.team-dropdown.header-filter-dropdown');
     await group.locator('.group-dropdown-toggle').click();
     const groupInput = group.getByRole('textbox', { name: 'Filter groups' });
-    await expect(groupInput).toBeFocused();
-    await expect(groupInput).toHaveValue('');
-    await expect(groupInput).toHaveAttribute('placeholder', 'Default');
     await groupInput.fill('platform');
     await expect(group.locator('.group-dropdown-option')).toHaveCount(1);
-    await expect(group.locator('.group-dropdown-option')).toContainText('Platform Delivery');
-    await expectOpenDropdownInputGeometry(groupInput, 'group');
-
-    // Opening a sibling is a close path: its query must reset before the original control is reopened.
-    const teams = controls.locator('.team-dropdown');
     await teams.locator('.team-dropdown-toggle').click();
     await expect(groupInput).toHaveCount(0);
+    await group.locator('.group-dropdown-toggle').click();
+    await expect(groupInput).toHaveValue('');
+    await expect(group.locator('.group-dropdown-option')).toHaveCount(2);
+    await page.keyboard.press('Escape');
+
+    await teams.locator('.team-dropdown-toggle').click();
     const teamInput = teams.getByRole('textbox', { name: 'Filter teams' });
-    await expect(teamInput).toBeFocused();
     await teamInput.fill('beta');
-    await expect(teams.locator('label.team-dropdown-option')).toHaveCount(1);
-    await expect(teams.locator('label.team-dropdown-option')).toContainText('Beta Team');
     const filteredTeamCheckbox = teams.locator('label.team-dropdown-option').getByRole('checkbox');
     await expect(filteredTeamCheckbox).not.toBeChecked();
     await filteredTeamCheckbox.check();
     await expect(filteredTeamCheckbox).toBeChecked();
-    await expect(teamInput).toBeVisible();
-    await expect(teams.locator('.team-dropdown-panel')).toBeVisible();
-    await expectOpenDropdownInputGeometry(teamInput, 'team');
-
-    await group.locator('.group-dropdown-toggle').click();
-    await expect(groupInput).toBeFocused();
-    await expect(groupInput).toHaveValue('');
-    await expect(group.locator('.group-dropdown-option')).toHaveCount(2);
-    await page.keyboard.press('Escape');
-    await expect(groupInput).toHaveCount(0);
-
-    // Outside-click close uses the same reset path as Escape and sibling opens.
-    await teams.locator('.team-dropdown-toggle').click();
-    await expect(teamInput).toBeFocused();
-    await expect(teamInput).toHaveValue('');
-    await expect(teams.locator('label.team-dropdown-option')).toHaveCount(3);
-    await teamInput.fill('beta');
     const outsidePoint = await page.evaluate(() => ({ x: window.innerWidth - 8, y: window.innerHeight - 8 }));
     await page.mouse.click(outsidePoint.x, outsidePoint.y);
     await expect(teamInput).toHaveCount(0);
@@ -2577,52 +2758,61 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
     await expect(teams.locator('label.team-dropdown-option')).toHaveCount(3);
     await page.keyboard.press('Escape');
 
-    const sprint = controls.locator('.sprint-dropdown');
-    await sprint.locator('.sprint-dropdown-toggle').click();
-    const sprintInput = sprint.getByRole('textbox', { name: 'Filter sprints' });
-    await expect(sprintInput).toBeFocused();
-    await sprintInput.fill('f');
-    await expect(sprint.locator('.sprint-dropdown-search')).toHaveCount(0);
-    await expect(sprint.locator('.sprint-dropdown-option')).toHaveCount(1);
-    await expect(sprint.locator('.sprint-dropdown-option')).toContainText('2026Q3 Sprint 43');
-    await expectOpenDropdownInputGeometry(sprintInput, 'sprint');
-    await sprint.locator('.sprint-dropdown-option').click();
-    await expect(sprintInput).toHaveCount(0);
-    await sprint.locator('.sprint-dropdown-toggle').click();
-    await expect(sprintInput).toHaveValue('');
-    await expect(sprint.locator('.sprint-dropdown-option')).toHaveCount(3);
-    await page.keyboard.press('Escape');
+    for (const viewportWidth of [1440, 1028]) {
+        await page.setViewportSize({ width: viewportWidth, height: 900 });
+        await page.evaluate(() => window.scrollTo(0, 600));
+        const compactHeader = page.locator('.compact-sticky-header.is-visible');
+        await expect(compactHeader).toBeVisible();
+        for (const dropdownCase of dropdownCases) {
+            const dropdown = compactHeader.locator(`.${dropdownCase.kind}-dropdown.header-filter-dropdown`);
+            await expect(dropdown).toHaveClass(new RegExp(`header-filter-dropdown--${dropdownCase.kind}`));
+            const closedWidth = await readClosedWidth(dropdown, dropdownCase.kind);
+            expect(closedWidth).toBeGreaterThanOrEqual(24);
+            expect(closedWidth).toBeLessThanOrEqual(170);
+            const compactBounds = await dropdown.evaluate((root) => {
+                const rect = root.getBoundingClientRect();
+                return { left: rect.left, right: rect.right };
+            });
+            expect(compactBounds.left).toBeGreaterThanOrEqual(0);
+            expect(compactBounds.right).toBeLessThanOrEqual(viewportWidth + 1);
+            await exerciseOpenStates(dropdown, dropdownCase, closedWidth, 'stable-compact-header-dropdown');
+        }
+        if (viewportWidth === 1440) {
+            const sprint = compactHeader.locator('.sprint-dropdown.header-filter-dropdown');
+            await sprint.locator('.sprint-dropdown-toggle').click();
+            await waitForVisualSettled(page);
+            await page.screenshot({ path: path.join(headerDropdownAfterDir, 'stable-compact-header-dropdown-open.png'), fullPage: false });
+            await page.keyboard.press('Escape');
+        }
+    }
 
-    await page.evaluate(() => window.scrollTo(0, 600));
-    const compactHeader = page.locator('.compact-sticky-header.is-visible');
-    await expect(compactHeader).toBeVisible();
+    for (const width of [760, 390, 375]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate(() => window.scrollTo(0, 600));
+        await waitForVisualSettled(page);
+        const compactHeader = page.locator('.compact-sticky-header.is-visible');
+        await expect(compactHeader).toBeVisible();
+        const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(documentOverflow).toBeLessThanOrEqual(1);
+        await compactHeader.screenshot({ path: path.join(headerDropdownAfterDir, `stable-compact-header-${width}-after.png`) });
 
-    const compactGroup = compactHeader.locator('.group-dropdown');
-    await compactGroup.locator('.group-dropdown-toggle').click();
-    const compactGroupInput = compactGroup.getByRole('textbox', { name: 'Filter groups' });
-    await expect(compactGroupInput).toBeFocused();
-    await compactGroupInput.fill('platform');
-    await expect(compactGroup.locator('.group-dropdown-option')).toHaveCount(1);
-    await expectOpenDropdownInputGeometry(compactGroupInput, 'group');
-    await page.keyboard.press('Escape');
-
-    const compactTeams = compactHeader.locator('.team-dropdown');
-    await compactTeams.locator('.team-dropdown-toggle').click();
-    const compactTeamInput = compactTeams.getByRole('textbox', { name: 'Filter teams' });
-    await expect(compactTeamInput).toBeFocused();
-    await compactTeamInput.fill('beta');
-    await expect(compactTeams.locator('label.team-dropdown-option')).toHaveCount(1);
-    await expectOpenDropdownInputGeometry(compactTeamInput, 'team');
-    await page.keyboard.press('Escape');
-
-    const compactSprint = compactHeader.locator('.sprint-dropdown');
-    await compactSprint.locator('.sprint-dropdown-toggle').click();
-    const compactSprintInput = compactSprint.getByRole('textbox', { name: 'Filter sprints' });
-    await expect(compactSprintInput).toBeFocused();
-    await compactSprintInput.fill('f');
-    await expect(compactSprint.locator('.sprint-dropdown-option')).toHaveCount(1);
-    await expectOpenDropdownInputGeometry(compactSprintInput, 'sprint');
-    await captureSmokeScreenshot(page, 'filterable-header-dropdown-input');
+        await page.keyboard.press('Escape');
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await waitForVisualSettled(page);
+        const inactiveCompact = page.locator('.compact-sticky-header');
+        await expect(inactiveCompact).not.toHaveClass(/is-visible/);
+        await expect(inactiveCompact).toHaveAttribute('aria-hidden', 'true');
+        const mainSprint = controls.locator('.sprint-dropdown.header-filter-dropdown');
+        await expect(mainSprint).toBeVisible();
+        const closedWidth = await readClosedWidth(mainSprint, 'sprint');
+        expect(closedWidth).toBeCloseTo(136, 0);
+        await exerciseOpenStates(mainSprint, dropdownCases[0], closedWidth, `stable-main-header-sprint-${width}-open`);
+        await mainSprint.locator('.sprint-dropdown-toggle').focus();
+        await page.keyboard.press('Enter');
+        await waitForVisualSettled(page);
+        await page.screenshot({ path: path.join(headerDropdownAfterDir, `stable-main-header-sprint-${width}-open.png`), fullPage: false });
+        await page.keyboard.press('Escape');
+    }
 
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
@@ -2762,6 +2952,32 @@ test('multiple groups keep the main controls on one row and settings beside refr
     expect(wideGeometry.modeMarginLeft).toBeGreaterThan(0);
     expect(Math.abs(wideGeometry.teamToModeGap - wideGeometry.columnGap - wideGeometry.modeMarginLeft)).toBeLessThanOrEqual(1);
     await captureSmokeScreenshot(page, 'stable-multi-group-header-controls-wide');
+
+    for (const viewport of [
+        { width: 1440, height: 900 }, { width: 1091, height: 800 },
+        { width: 1028, height: 800 }, { width: 768, height: 800 },
+        { width: 761, height: 800 }, { width: 760, height: 800 },
+        { width: 390, height: 900 }, { width: 375, height: 900 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await waitForVisualSettled(page);
+        const responsiveGeometry = await readHeaderRowGeometry(filters);
+        expect(responsiveGeometry.flexWrap).toBe('wrap');
+        expect(responsiveGeometry.textOverflowingChildren).toBe(0);
+        expect(responsiveGeometry.rowScrollWidth - responsiveGeometry.rowClientWidth).toBeLessThanOrEqual(1);
+        expect(responsiveGeometry.documentScrollWidth - responsiveGeometry.viewportWidth).toBeLessThanOrEqual(1);
+        responsiveGeometry.childEdges.forEach((edge) => {
+            expect(edge.left).toBeGreaterThanOrEqual(responsiveGeometry.rowLeft - 1);
+            expect(edge.right).toBeLessThanOrEqual(responsiveGeometry.rowRight + 1);
+            expect(edge.left).toBeGreaterThanOrEqual(-1);
+            expect(edge.right).toBeLessThanOrEqual(responsiveGeometry.viewportWidth + 1);
+        });
+        if ([1440, 1091].includes(viewport.width)) expect(responsiveGeometry.rowCount).toBe(1);
+        if ([760, 390, 375].includes(viewport.width)) expect(responsiveGeometry.rowCount).toBeGreaterThan(1);
+        if ([1440, 1091, 760, 390, 375].includes(viewport.width)) {
+            await page.screenshot({ path: path.join(headerDropdownAfterDir, `stable-main-header-${viewport.width}.png`), fullPage: false });
+        }
+    }
 
     // The reported regression was captured at 2418 physical pixels on a 2x display.
     await page.setViewportSize({ width: 1209, height: 800 });

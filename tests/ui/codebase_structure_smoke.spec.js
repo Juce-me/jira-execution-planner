@@ -446,30 +446,6 @@ async function captureCapacitySmokeScreenshot(page, name) {
     await page.screenshot({ path: `${capacityArtifactDir}/${name}.png`, fullPage: true });
 }
 
-async function expectOpenDropdownInputGeometry(input, kind) {
-    const geometry = await input.evaluate((node, dropdownKind) => {
-        const toggle = node.closest(`.${dropdownKind}-dropdown-toggle`);
-        const dropdown = node.closest(`.${dropdownKind}-dropdown`);
-        const panel = dropdown?.querySelector(`.${dropdownKind}-dropdown-panel`);
-        const inputRect = node.getBoundingClientRect();
-        const toggleRect = toggle?.getBoundingClientRect();
-        const panelRect = panel?.getBoundingClientRect();
-        const hit = panelRect && document.elementFromPoint(panelRect.left + 12, panelRect.top + 12);
-        return {
-            inputInsideToggle: Boolean(toggleRect) && inputRect.left >= toggleRect.left && inputRect.right <= toggleRect.right,
-            inputNotClipped: node.scrollWidth <= node.clientWidth,
-            panelBelowToggle: Boolean(toggleRect && panelRect) && panelRect.top >= toggleRect.bottom,
-            panelOwnsHitPoint: Boolean(hit?.closest?.(`.${dropdownKind}-dropdown-panel`)),
-        };
-    }, kind);
-    expect(geometry).toEqual({
-        inputInsideToggle: true,
-        inputNotClipped: true,
-        panelBelowToggle: true,
-        panelOwnsHitPoint: true,
-    });
-}
-
 async function readHeaderDropdownGeometry(dropdown, kind) {
     return dropdown.evaluate((root, dropdownKind) => {
         const toggle = root.querySelector(`.${dropdownKind}-dropdown-toggle`);
@@ -2728,6 +2704,12 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
     await expect(group.locator('.group-dropdown-option')).toHaveCount(1);
     await teams.locator('.team-dropdown-toggle').click();
     await expect(groupInput).toHaveCount(0);
+    await group.locator('.group-dropdown-toggle').click();
+    await expect(groupInput).toHaveValue('');
+    await expect(group.locator('.group-dropdown-option')).toHaveCount(2);
+    await page.keyboard.press('Escape');
+
+    await teams.locator('.team-dropdown-toggle').click();
     const teamInput = teams.getByRole('textbox', { name: 'Filter teams' });
     await teamInput.fill('beta');
     const filteredTeamCheckbox = teams.locator('label.team-dropdown-option').getByRole('checkbox');
@@ -2737,6 +2719,10 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
     const outsidePoint = await page.evaluate(() => ({ x: window.innerWidth - 8, y: window.innerHeight - 8 }));
     await page.mouse.click(outsidePoint.x, outsidePoint.y);
     await expect(teamInput).toHaveCount(0);
+    await teams.locator('.team-dropdown-toggle').click();
+    await expect(teamInput).toHaveValue('');
+    await expect(teams.locator('label.team-dropdown-option')).toHaveCount(3);
+    await page.keyboard.press('Escape');
 
     for (const viewportWidth of [1440, 1028]) {
         await page.setViewportSize({ width: viewportWidth, height: 900 });
@@ -2769,6 +2755,7 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
     for (const width of [760, 390, 375]) {
         await page.setViewportSize({ width, height: 900 });
         await page.evaluate(() => window.scrollTo(0, 600));
+        await waitForVisualSettled(page);
         const compactHeader = page.locator('.compact-sticky-header.is-visible');
         await expect(compactHeader).toBeVisible();
         const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

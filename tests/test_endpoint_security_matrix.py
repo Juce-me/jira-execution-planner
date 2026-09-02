@@ -10,6 +10,7 @@ SECURITY_SAMPLES = {
     "public_page": [("GET", "/health"), ("GET", "/jira-dashboard.html")],
     "public_context": [("GET", "/api/analytics/context")],
     "authenticated_read": [
+        ("GET", "/api/test"),
         ("GET", "/api/config"),
         ("GET", "/api/projects/selected"),
         ("GET", "/api/tasks"),
@@ -103,7 +104,8 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
             "shared_admin_write",
             "tool_admin",
         ]
-        with self._oauth_mode():
+        with self._oauth_mode(), \
+             patch.object(jira_server, "current_jira_get", side_effect=AssertionError("Jira boundary reached")):
             for policy_class in protected_classes:
                 for method, path in SECURITY_SAMPLES[policy_class]:
                     with self.subTest(policy_class=policy_class, path=path):
@@ -250,6 +252,24 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["error"], "csrf_required")
         self.assertIn("X-Requested-With", response.get_json()["message"])
+
+    def test_oauth_logout_requires_requested_with_but_not_token_bound_csrf(self):
+        """OAuth logout requires the requested-with header but not token-bound CSRF."""
+        install_oauth_session(self.client, account_id='account-123')
+        with self._oauth_mode():
+            missing_header = self.client.post('/api/auth/logout')
+
+        self.assertEqual(missing_header.status_code, 403)
+        self.assertEqual(missing_header.get_json()['error'], 'csrf_required')
+
+        with self._oauth_mode():
+            response = self.client.post(
+                '/api/auth/logout',
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {'ok': True})
 
     def test_unsafe_write_requests_require_token_bound_csrf_before_route_code(self):
         install_oauth_session(self.client, account_id="tool-admin-account")

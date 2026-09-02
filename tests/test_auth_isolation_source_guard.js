@@ -2,6 +2,10 @@ const fs = require('fs');
 const assert = require('assert');
 
 const source = fs.readFileSync('frontend/src/dashboard.jsx', 'utf8');
+const gateSource = fs.readFileSync('frontend/src/components/AuthRequiredGate.jsx', 'utf8');
+const authRequiredSource = fs.readFileSync('frontend/src/api/authRequired.js', 'utf8');
+const resumeSource = fs.readFileSync('frontend/src/api/authResumeState.js', 'utf8');
+const coordinatorSource = fs.readFileSync('frontend/src/api/authRecoveryCoordinator.js', 'utf8');
 const localStorageAtlassianPattern = /localStorage[\s\S]{0,160}atlassian|atlassian[\s\S]{0,160}localStorage/i;
 
 assert(
@@ -32,6 +36,61 @@ assert(
 assert(
   !localStorageAtlassianPattern.test(source),
   'dashboard must not store Atlassian tokens in localStorage'
+);
+
+assert(
+  !/localStorage|sessionStorage/.test(authRequiredSource),
+  'the terminal auth-required latch must remain window-local'
+);
+assert(
+  !resumeSource.includes('localStorage'),
+  'the allowlisted recovery capsule must remain tab-local in sessionStorage'
+);
+assert(
+  !/window\.(?:localStorage|sessionStorage)/.test(gateSource),
+  'the gate must obtain both storage boundaries through getAuthRecoveryStores'
+);
+assert(
+  gateSource.includes('getAuthRecoveryStores(window)')
+    && gateSource.includes('claimAuthRecovery(')
+    && gateSource.includes('consumeAuthRecoverySuccess(')
+    && gateSource.includes('readLiveAuthRecoveryLease('),
+  'the terminal gate must integrate only through guarded coordinator helpers'
+);
+assert(
+  !/fetch\s*\(|apiFetch\s*\(|trackedFetch\s*\(|publishAuthenticationRequired\s*\(/.test(gateSource),
+  'the gate must not call an API, publish another latch, or replay the failed request'
+);
+assert(
+  !gateSource.includes('lockedAt')
+    && gateSource.includes('requestStartedAt: authRequired.requestStartedAt'),
+  'recovery causality must use requestStartedAt and never lockedAt'
+);
+assert(
+  gateSource.includes("window.location.assign(loginUrl)")
+    && gateSource.includes("window.location.assign('/')")
+    && !/window\.open|target=|location\.replace/.test(gateSource),
+  'recovery must stay in the same tab with only the sanitized login target and root reload'
+);
+assert(
+  source.includes('getAuthRecoveryStores(window)')
+    && source.includes('canComplete: () => !readPendingAuthenticationRequired(),'),
+  'authenticated config bootstrap must recheck its terminal latch inside coordinator completion'
+);
+const configFetchIndex = source.indexOf('const config = await fetchAppConfig(BACKEND_URL);');
+const completionIndex = source.indexOf('await completeAuthRecovery(', configFetchIndex);
+const resumeReadIndex = source.indexOf('readAuthResumeState(', configFetchIndex);
+assert(
+  configFetchIndex >= 0 && completionIndex > configFetchIndex && completionIndex < resumeReadIndex,
+  'authenticated success must publish after principal config and before capsule or feature hydration'
+);
+assert(
+  !/(?:email|accessToken|apiToken|responseBody|configPayload|issuePayload)/i.test(coordinatorSource),
+  'shared coordinator records must not accept identity, credential, config, or issue payload fields'
+);
+assert(
+  !/AUTH_RECOVERY_(?:LEASE|SUCCESS)_KEY[\s\S]{0,120}(?:loginUrl|workspaceId|viewConfigId|selectedTaskKeys)/.test(coordinatorSource),
+  'shared recovery records must contain only opaque attempt ids and timestamps'
 );
 
 const epmSaveStart = source.indexOf('const saveEpmConfig = async () => {');

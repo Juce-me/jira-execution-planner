@@ -4,7 +4,15 @@ import {
 } from '../api/engApi.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 
-const AUTHENTICATION_REQUIRED_RESULT = Symbol('authentication-required');
+export const ENG_TASK_LOAD_OUTCOME = Object.freeze({
+    APPLIED: 'applied',
+    NON_AUTH_FAILURE: 'non_auth_failure',
+    AUTH_REQUIRED: 'auth_required',
+    IGNORED: 'ignored',
+});
+const AUTHENTICATION_REQUIRED_RESULT = ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
+const NON_AUTH_FAILURE_RESULT = ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
+const IGNORED_RESULT = ENG_TASK_LOAD_OUTCOME.IGNORED;
 import {
     PRIORITY_ORDER,
     filterEpicsByTaskEpicKeys,
@@ -144,7 +152,7 @@ export function useEngSprintData({
                 activeGroupTeamLabels
             );
             const filteredEpics = filterEpicsByTaskEpicKeys(data.epics || {}, filteredTasks);
-            if (options.shouldApplyResult?.() === false) return [];
+            if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
 
             if (options.updateEpics !== false) {
                 setEpicDetails(prev => ({ ...prev, ...filteredEpics }));
@@ -160,10 +168,10 @@ export function useEngSprintData({
             return filteredTasks;
         } catch (err) {
             if (err.name === 'AbortError') {
-                return [];
+                return IGNORED_RESULT;
             }
             if (isAuthenticationRequiredError(err)) return AUTHENTICATION_REQUIRED_RESULT;
-            if (options.shouldApplyResult?.() === false) return [];
+            if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
             const handledServerConnection = onServerConnectionFailure?.(err) === true;
             if (setErrors) {
                 setError(handledServerConnection ? '' : taskLoadErrorMessage(err, backendUrl));
@@ -171,7 +179,7 @@ export function useEngSprintData({
             if (!handledServerConnection) {
                 console.error('Full error details:', err);
             }
-            return [];
+            return NON_AUTH_FAILURE_RESULT;
         } finally {
             cleanupSprintFetch(controller);
             if (useLoading && options.shouldApplyResult?.() !== false) {
@@ -192,7 +200,7 @@ export function useEngSprintData({
         setProductTasksLoading(true);
         try {
             if (activeGroupId && activeGroupTeamIds.length === 0) {
-                if (shouldApplyResult?.() === false) return;
+                if (shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
                 setProductTasks([]);
                 setLoadedProductTasks([]);
                 setTasksFetched(true);
@@ -205,11 +213,12 @@ export function useEngSprintData({
                 if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
                     lastLoadedSprintRef.current = sprintId;
                 }
-                return;
+                return ENG_TASK_LOAD_OUTCOME.APPLIED;
             }
             const data = await fetchTasks('product', { forceRefresh, shouldApplyResult });
-            if (data === AUTHENTICATION_REQUIRED_RESULT) return;
-            if (shouldApplyResult?.() === false) return;
+            if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
+            if (data === NON_AUTH_FAILURE_RESULT) return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
+            if (data === IGNORED_RESULT || shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
             setProductTasks(data);
             setLoadedProductTasks(data);
             setTasksFetched(true);
@@ -222,6 +231,7 @@ export function useEngSprintData({
             if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
                 lastLoadedSprintRef.current = sprintId;
             }
+            return ENG_TASK_LOAD_OUTCOME.APPLIED;
         } finally {
             if (shouldApplyResult?.() !== false) {
                 setProductTasksLoading(false);
@@ -234,7 +244,7 @@ export function useEngSprintData({
         setTechTasksLoading(true);
         try {
             if (activeGroupId && activeGroupTeamIds.length === 0) {
-                if (shouldApplyResult?.() === false) return;
+                if (shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
                 setTechTasks([]);
                 setLoadedTechTasks([]);
                 setTechLoaded(true);
@@ -248,11 +258,12 @@ export function useEngSprintData({
                 if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
                     lastLoadedSprintRef.current = sprintId;
                 }
-                return;
+                return ENG_TASK_LOAD_OUTCOME.APPLIED;
             }
             const data = await fetchTasks('tech', { forceRefresh, shouldApplyResult });
-            if (data === AUTHENTICATION_REQUIRED_RESULT) return;
-            if (shouldApplyResult?.() === false) return;
+            if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
+            if (data === NON_AUTH_FAILURE_RESULT) return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
+            if (data === IGNORED_RESULT || shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
             setTechTasks(data);
             setLoadedTechTasks(data);
             setTechLoaded(true);
@@ -266,6 +277,7 @@ export function useEngSprintData({
             if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
                 lastLoadedSprintRef.current = sprintId;
             }
+            return ENG_TASK_LOAD_OUTCOME.APPLIED;
         } finally {
             if (shouldApplyResult?.() !== false) {
                 setTechTasksLoading(false);
@@ -325,7 +337,7 @@ export function useEngSprintData({
             shouldApplyResult,
             signal
         });
-        if (data === AUTHENTICATION_REQUIRED_RESULT) return;
+        if (!Array.isArray(data)) return;
         if (shouldApplyResult?.() === false) return;
         setReadyToCloseProductTasks(data);
     };
@@ -358,7 +370,7 @@ export function useEngSprintData({
             shouldApplyResult,
             signal
         });
-        if (data === AUTHENTICATION_REQUIRED_RESULT) return;
+        if (!Array.isArray(data)) return;
         if (shouldApplyResult?.() === false) return;
         setReadyToCloseTechTasks(data);
     };

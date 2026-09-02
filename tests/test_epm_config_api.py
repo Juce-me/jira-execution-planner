@@ -283,7 +283,7 @@ class TestEpmConfigApi(unittest.TestCase):
                          patch.object(jira_server, 'current_request_auth_context', return_value=request_context), \
                          patch.object(jira_server, 'current_jira_session_data', return_value={
                              'access_token': f'access-{index}', 'cloudid': f'cloud-{index}',
-                         }), patch.object(jira_server, 'remember_db_oauth_browser_session'), \
+                         }), \
                          patch.object(auth_routes.epm_home, 'run_home_graphql_oauth_probe', return_value={
                              'ok': True,
                          }) as home_probe:

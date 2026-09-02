@@ -426,6 +426,23 @@ class AuthConnection(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
 
+class BrowserSession(Base):
+    __tablename__ = 'browser_sessions'
+    __table_args__ = (
+        Index('ix_browser_sessions_connection', 'auth_connection_id'),
+        Index('ix_browser_sessions_user_workspace', 'user_id', 'workspace_id'),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    auth_connection_id: Mapped[str] = mapped_column(
+        ForeignKey('auth_connections.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
 class AuthToken(Base):
     __tablename__ = 'auth_tokens'
     __table_args__ = (

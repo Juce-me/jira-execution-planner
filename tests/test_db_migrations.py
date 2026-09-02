@@ -10,8 +10,10 @@ from unittest.mock import patch
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, pool, text
+from sqlalchemy.orm import Session
 
 from backend.db import engine as db_engine
+from backend.db import models
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +53,94 @@ class DbMigrationTests(unittest.TestCase):
         finally:
             engine.dispose()
         return columns, indexes
+
+    def test_browser_sessions_migration_contract(self):
+        """Browser-session migration preserves the required table and index contract."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'browser-sessions.db')}"
+            config = self._config(database_url)
+
+            command.upgrade(config, '20260830_0009')
+            engine = create_engine(database_url, future=True)
+            try:
+                inspector = inspect(engine)
+                self.assertIn('browser_sessions', inspector.get_table_names())
+                self.assertEqual(
+                    {column['name'] for column in inspector.get_columns('browser_sessions')},
+                    {'id', 'user_id', 'workspace_id', 'auth_connection_id', 'created_at'},
+                )
+                index_names = {index['name'] for index in inspector.get_indexes('browser_sessions')}
+                self.assertEqual(index_names, {
+                    'ix_browser_sessions_connection',
+                    'ix_browser_sessions_user_workspace',
+                })
+                foreign_keys = {
+                    foreign_key['constrained_columns'][0]: (
+                        foreign_key['referred_table'],
+                        foreign_key['options'].get('ondelete'),
+                    )
+                    for foreign_key in inspector.get_foreign_keys('browser_sessions')
+                }
+                self.assertEqual(foreign_keys, {
+                    'user_id': ('users', 'CASCADE'),
+                    'workspace_id': ('workspaces', 'CASCADE'),
+                    'auth_connection_id': ('auth_connections', 'CASCADE'),
+                })
+                self.assertNotIn('access_token', str(inspector.get_columns('browser_sessions')))
+            finally:
+                engine.dispose()
+
+            command.downgrade(config, '20260827_0008')
+            engine = create_engine(database_url, future=True)
+            try:
+                self.assertNotIn('browser_sessions', inspect(engine).get_table_names())
+                self.assertIn('auth_connections', inspect(engine).get_table_names())
+            finally:
+                engine.dispose()
+
+    def test_browser_session_model_cascades_with_auth_connection_delete(self):
+        """Deleting an auth connection cascades to its browser-session rows."""
+        engine = create_engine('sqlite+pysqlite:///:memory:', future=True)
+        try:
+            with engine.begin() as connection:
+                connection.exec_driver_sql('PRAGMA foreign_keys=ON')
+            models.Base.metadata.create_all(engine)
+            with Session(engine) as session:
+                user = models.User(
+                    external_provider='atlassian',
+                    external_subject='browser-session-user',
+                    created_by='test',
+                )
+                workspace = models.Workspace(
+                    environment_key='browser-session-test',
+                    name='Browser session test',
+                    created_by='test',
+                )
+                session.add_all([user, workspace])
+                session.flush()
+                connection = models.AuthConnection(
+                    user_id=user.id,
+                    workspace_id=workspace.id,
+                    provider='atlassian_oauth',
+                    status='active',
+                )
+                session.add(connection)
+                session.flush()
+                browser_session = models.BrowserSession(
+                    user_id=user.id,
+                    workspace_id=workspace.id,
+                    auth_connection_id=connection.id,
+                )
+                session.add(browser_session)
+                session.commit()
+                browser_session_id = browser_session.id
+
+                self.assertEqual(session.get(models.BrowserSession, browser_session_id).auth_connection_id, connection.id)
+                session.delete(connection)
+                session.commit()
+                self.assertIsNone(session.get(models.BrowserSession, browser_session_id))
+        finally:
+            engine.dispose()
 
     def test_initial_auth_migration_upgrades_downgrades_and_reruns(self):
         with tempfile.TemporaryDirectory() as tmpdir:

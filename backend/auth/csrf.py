@@ -10,7 +10,25 @@ CSRF_SESSION_KEY = 'csrf_token_hashes'
 MAX_CSRF_TOKENS = 8
 
 
+def csrf_session_data_for_auth_context(context) -> dict:
+    data = {
+        'db_browser_session_id': str(getattr(context, 'browser_session_id', '') or ''),
+        'db_auth_connection_id': str(getattr(context, 'auth_connection_id', '') or ''),
+        'account_id': str(getattr(context, 'atlassian_account_id', '') or ''),
+    }
+    if not data['db_browser_session_id']:
+        data['db_token_version'] = str(getattr(context, 'token_version', '') or '')
+    return data
+
+
 def _binding(session_id: str, session_data: dict) -> str:
+    browser_session_id = str((session_data or {}).get('db_browser_session_id') or '')
+    if browser_session_id:
+        return ':'.join([
+            browser_session_id,
+            str((session_data or {}).get('db_auth_connection_id') or ''),
+            str((session_data or {}).get('account_id') or ''),
+        ])
     return ':'.join([
         str(session_id or ''),
         str((session_data or {}).get('db_auth_connection_id') or ''),

@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 from alembic import command
 from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import create_engine, inspect, pool, text
 from sqlalchemy.orm import Session
 
@@ -609,6 +611,33 @@ class DbMigrationTests(unittest.TestCase):
         self.assertIn('ALTER TABLE workspace_dashboard_configs ADD COLUMN capacity_field_verified_at', sql)
         self.assertIn('ALTER TABLE auth_connections ADD COLUMN scope_provenance', sql)
         self.assertIn('ck_auth_connections_scope_provenance', sql)
+
+    def test_scope_provenance_reconciliation_repairs_stamped_schema(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'scope-provenance-drift.db')}"
+            config = self._config(database_url)
+            command.upgrade(config, '20260902_0011')
+
+            engine = create_engine(database_url, future=True)
+            try:
+                with engine.begin() as connection:
+                    operations = Operations(MigrationContext.configure(connection))
+                    with operations.batch_alter_table('auth_connections') as batch_op:
+                        batch_op.drop_constraint('ck_auth_connections_scope_provenance', type_='check')
+                        batch_op.drop_column('scope_provenance')
+
+                command.upgrade(config, 'head')
+
+                inspector = inspect(engine)
+                columns = {column['name'] for column in inspector.get_columns('auth_connections')}
+                constraints = {
+                    constraint['name']
+                    for constraint in inspector.get_check_constraints('auth_connections')
+                }
+                self.assertIn('scope_provenance', columns)
+                self.assertIn('ck_auth_connections_scope_provenance', constraints)
+            finally:
+                engine.dispose()
 
     def test_screen_scoped_onboarding_migration_backfills_and_downgrades_only_modules(self):
         with tempfile.TemporaryDirectory() as tmpdir:

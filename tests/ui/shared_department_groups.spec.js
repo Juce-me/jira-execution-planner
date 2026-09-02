@@ -2569,6 +2569,21 @@ test('personal favorite star is separate from shared default and temporary group
     ];
     const rows = dialog.locator('.group-list-item');
     await expect(rows).toHaveCount(rowExpectations.length);
+    const platformGroupSelect = rows.nth(1).locator('.group-list-select');
+    await platformGroupSelect.hover();
+    await expect.poll(() => platformGroupSelect.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return {
+            backgroundColor: style.backgroundColor,
+            boxShadow: style.boxShadow,
+            transform: style.transform,
+        };
+    })).toEqual({
+        backgroundColor: 'rgba(0, 0, 0, 0)',
+        boxShadow: 'none',
+        transform: 'none',
+    });
+    await captureSettledDepartmentScreenshot(page, 'department-row-selector-hover.png');
     await rows.nth(1).click();
     await expect(dialog.locator('.group-star-button')).toHaveCount(0);
     for (let index = 0; index < rowExpectations.length; index += 1) {

@@ -1756,6 +1756,12 @@ h1 {
   text-align: left;
   color: inherit;
 }
+.group-list-select:hover {
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  transform: none;
+}
 .group-list-name-input {
   min-width: 0;
   min-height: 44px;

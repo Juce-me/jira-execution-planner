@@ -201,7 +201,7 @@ def _resolve_bootstrap_view_config(auth_context):
 
 
 def _load_team_catalog_dashboard_config():
-    if config_storage_db_enabled() and not local_file_state_enabled():
+    if config_storage_db_enabled():
         return db_repository().load_team_catalog(current_request_auth_context()) or {}
     return load_dashboard_config() or {}
 

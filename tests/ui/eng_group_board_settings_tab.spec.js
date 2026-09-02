@@ -147,6 +147,13 @@ async function mockConfigSettings(page, { groupsConfig = baseGroupsConfig() } = 
         if (url.pathname === '/api/sprints') return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
         if (url.pathname === '/api/tasks-with-team-name') return json({ issues: [], epics: {}, epicsInScope });
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [] });
+        if (url.pathname === '/api/team-catalog') return json({
+            catalog: {
+                'team-a': { id: 'team-a', name: 'Team A' },
+                'team-b': { id: 'team-b', name: 'Team B' },
+            },
+            meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: '42', source: 'sprint' },
+        });
         if (url.pathname === '/api/projects/selected') return json({ selected: [{ key: 'DEMO', type: 'product' }] });
         if (url.pathname === '/api/board-config' && request.method() === 'GET') return json({ boardId: fixture.REFERENCE_BOARD_ID, boardName: 'Delivery Board' });
         if (url.pathname === '/api/board-config/statuses') return json(fixture.referenceStatusesResponse());

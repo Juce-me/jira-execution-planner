@@ -569,6 +569,10 @@ import {
             const [groupTestMessage, setGroupTestMessage] = useState('');
             const [availableTeams, setAvailableTeams] = useState([]);
             const [loadingTeams, setLoadingTeams] = useState(false);
+            const [teamCatalogReady, setTeamCatalogReady] = useState(false);
+            const [teamCatalogHydrationNeeded, setTeamCatalogHydrationNeeded] = useState(false);
+            const teamCatalogInitializationGenerationRef = useRef(0);
+            const teamCatalogHydrationInFlightRef = useRef(null);
             const [teamSearchQuery, setTeamSearchQuery] = useState({});
             const [teamSearchOpen, setTeamSearchOpen] = useState({});
             const [teamSearchIndex, setTeamSearchIndex] = useState({});
@@ -1860,6 +1864,8 @@ import {
             }, [groupsLoading, groupConfigSource]);
 
             useEffect(() => {
+                const initializationGeneration = teamCatalogInitializationGenerationRef.current + 1;
+                teamCatalogInitializationGenerationRef.current = initializationGeneration;
                 if (!showGroupManage) return;
                 const normalized = normalizeGroupsConfig(groupsConfig);
                 setGroupDraft(normalized);
@@ -1889,9 +1895,40 @@ import {
                 fetchAvailableIssueTypes();
                 if (!jiraProjects.length) fetchJiraProjects();
                 setAvailableTeams(loadTeamsFromCurrentView());
-                setLoadingTeams(false);
-                loadTeamCatalog();
+                setTeamCatalogReady(false);
+                setTeamCatalogHydrationNeeded(false);
+                setLoadingTeams(true);
+                const initializeTeamCatalog = async () => {
+                    const isCurrentInitialization = () => (
+                        teamCatalogInitializationGenerationRef.current === initializationGeneration
+                    );
+                    const data = await loadTeamCatalog({ shouldApplyResult: isCurrentInitialization });
+                    if (!isCurrentInitialization()) return;
+                    if (!data) {
+                        setLoadingTeams(false);
+                        return;
+                    }
+                    if (Object.keys(data.catalog || {}).length > 0) {
+                        setTeamCatalogReady(true);
+                        setLoadingTeams(false);
+                        return;
+                    }
+                    setLoadingTeams(false);
+                    setTeamCatalogHydrationNeeded(true);
+                };
+                void initializeTeamCatalog();
+                return () => {
+                    if (teamCatalogInitializationGenerationRef.current === initializationGeneration) {
+                        teamCatalogInitializationGenerationRef.current += 1;
+                    }
+                };
             }, [showGroupManage]);
+
+            useEffect(() => {
+                if (!showGroupManage || !teamCatalogHydrationNeeded || !selectedSprintInfo) return;
+                setTeamCatalogHydrationNeeded(false);
+                void fetchAllTeamsFromJira();
+            }, [showGroupManage, teamCatalogHydrationNeeded, selectedSprintInfo]);
 
             useEffect(() => {
                 if (!showGroupManage || groupManageTab !== 'epm') return;
@@ -2296,29 +2333,40 @@ import {
                 }
             };
 
-            const loadTeamCatalog = async () => {
+            const loadTeamCatalog = async ({ shouldApplyResult = () => true } = {}) => {
                 try {
                     const response = await requestTeamCatalog(BACKEND_URL);
-                    if (!response.ok) return;
-                    const data = await response.json();
-                    setTeamCatalogState({
-                        catalog: data.catalog || {},
-                        meta: data.meta || {}
-                    });
-                    const catalogTeams = buildTeamCatalogList(data.catalog || {});
-                    if (catalogTeams.length) {
-                        setAvailableTeams(catalogTeams);
+                    if (!response.ok) {
+                        throw new Error(`Team catalog error ${response.status}`);
                     }
+                    const data = await response.json();
+                    if (shouldApplyResult()) {
+                        setTeamCatalogState({
+                            catalog: data.catalog || {},
+                            meta: data.meta || {}
+                        });
+                        const catalogTeams = buildTeamCatalogList(data.catalog || {});
+                        if (catalogTeams.length) {
+                            setAvailableTeams(catalogTeams);
+                        }
+                    }
+                    return data;
                 } catch (err) {
                     if (isAuthenticationRequiredError(err)) return;
                     console.warn('Failed to load team catalog:', err);
+                    if (shouldApplyResult()) {
+                        setGroupDraftError('Failed to load the team cache. Refresh teams to try again.');
+                    }
+                    return null;
                 }
             };
 
             const saveTeamCatalog = async (catalog, meta, merge = false) => {
                 try {
                     const response = await requestSaveTeamCatalog(BACKEND_URL, { catalog, meta, merge });
-                    if (!response.ok) return;
+                    if (!response.ok) {
+                        throw new Error(`Team catalog save error ${response.status}`);
+                    }
                     const data = await response.json();
                     setTeamCatalogState({
                         catalog: data.catalog || {},
@@ -2328,6 +2376,7 @@ import {
                 } catch (err) {
                     if (isAuthenticationRequiredError(err)) return;
                     console.warn('Failed to save team catalog:', err);
+                    return null;
                 }
             };
 
@@ -2347,48 +2396,70 @@ import {
             };
 
             const fetchAllTeamsFromJira = async () => {
-                setLoadingTeams(true);
-                setGroupDraftError('');
-
-                try {
-                    const response = await requestAllTeams(BACKEND_URL, { sprint: selectedSprint });
-
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        throw new Error(`HTTP ${response.status}: ${errorText}`);
-                    }
-
-                    const data = await response.json();
-                    const fetchedTeams = data.teams || [];
-
-                    if (fetchedTeams.length === 0) {
-                        setGroupDraftError('No teams found in Jira for this sprint.');
-                        setLoadingTeams(false);
-                        return;
-                    }
-
-                    // Merge with existing teams, avoiding duplicates
-                    setAvailableTeams(prevTeams => {
-                        const existingIds = new Set(prevTeams.map(t => t.id));
-                        const newTeams = fetchedTeams.filter(t => !existingIds.has(t.id));
-                        const merged = [...prevTeams, ...newTeams].sort((a, b) => a.name.localeCompare(b.name));
-                        console.log(`Loaded ${fetchedTeams.length} teams from Jira (${newTeams.length} new)`);
-                        return merged;
-                    });
-                    const mergedCatalog = mergeTeamCatalog(teamCatalogState.catalog, fetchedTeams);
-                    saveTeamCatalog(mergedCatalog, {
-                        updatedAt: new Date().toISOString(),
-                        sprintId: String(selectedSprint || ''),
-                        sprintName: selectedSprintInfo?.name ? String(selectedSprintInfo.name) : '',
-                        source: 'sprint'
-                    });
-                } catch (err) {
-                    if (isAuthenticationRequiredError(err)) return;
-                    console.error('Error fetching teams from Jira:', err);
-                    setGroupDraftError(`Failed to fetch teams: ${err.message}`);
-                } finally {
-                    setLoadingTeams(false);
+                if (!selectedSprintInfo) {
+                    setGroupDraftError('Wait for sprint loading to finish before refreshing teams.');
+                    return false;
                 }
+                const sprintId = String(selectedSprintInfo.id);
+                const inFlightHydration = teamCatalogHydrationInFlightRef.current;
+                if (inFlightHydration?.sprintId === sprintId) {
+                    setLoadingTeams(true);
+                    return inFlightHydration.promise;
+                }
+
+                const hydrationPromise = (async () => {
+                    setLoadingTeams(true);
+                    setGroupDraftError('');
+                    try {
+                        const response = await requestAllTeams(BACKEND_URL, { sprint: selectedSprint });
+
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            throw new Error(`HTTP ${response.status}: ${errorText}`);
+                        }
+
+                        const data = await response.json();
+                        const fetchedTeams = data.teams || [];
+
+                        if (fetchedTeams.length === 0) {
+                            setGroupDraftError('No teams found in Jira for this sprint.');
+                            return false;
+                        }
+
+                        // Merge with existing teams, avoiding duplicates
+                        setAvailableTeams(prevTeams => {
+                            const existingIds = new Set(prevTeams.map(t => t.id));
+                            const newTeams = fetchedTeams.filter(t => !existingIds.has(t.id));
+                            const merged = [...prevTeams, ...newTeams].sort((a, b) => a.name.localeCompare(b.name));
+                            console.log(`Loaded ${fetchedTeams.length} teams from Jira (${newTeams.length} new)`);
+                            return merged;
+                        });
+                        const mergedCatalog = mergeTeamCatalog(teamCatalogState.catalog, fetchedTeams);
+                        const savedCatalog = await saveTeamCatalog(mergedCatalog, {
+                            updatedAt: new Date().toISOString(),
+                            sprintId: String(selectedSprint || ''),
+                            sprintName: selectedSprintInfo?.name ? String(selectedSprintInfo.name) : '',
+                            source: 'sprint'
+                        });
+                        if (!savedCatalog) {
+                            throw new Error('The refreshed teams could not be saved.');
+                        }
+                        setTeamCatalogReady(true);
+                        return true;
+                    } catch (err) {
+                        if (isAuthenticationRequiredError(err)) return;
+                        console.error('Error fetching teams from Jira:', err);
+                        setGroupDraftError(`Failed to fetch teams: ${err.message}`);
+                        return false;
+                    } finally {
+                        if (teamCatalogHydrationInFlightRef.current?.promise === hydrationPromise) {
+                            teamCatalogHydrationInFlightRef.current = null;
+                        }
+                        setLoadingTeams(false);
+                    }
+                })();
+                teamCatalogHydrationInFlightRef.current = { sprintId, promise: hydrationPromise };
+                return hydrationPromise;
             };
 
             const resolveMissingTeamNames = async (teamIds) => {
@@ -2777,11 +2848,12 @@ import {
             const saveBlockedReason = React.useMemo(() => {
                 if (groupSaving || epmConfigSaving) return 'Save in progress';
                 if (authMode === 'atlassian_oauth' && !sharedConfigReady) return 'Shared settings are loading';
+                if (loadingTeams || !teamCatalogReady) return 'Team cache is loading';
                 if (canEditEpmConfiguration && isEpmConfigDirty && epmConfigLoading) return 'EPM settings are loading';
                 if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
                 if (!isGroupDraftDirty) return 'No changes to save';
                 return '';
-            }, [groupSaving, epmConfigSaving, authMode, sharedConfigReady, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
+            }, [groupSaving, epmConfigSaving, authMode, sharedConfigReady, loadingTeams, teamCatalogReady, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
 
             const requestCloseGroupManage = () => {
                 if (groupSaving) return;
@@ -4610,6 +4682,7 @@ import {
                 }
                 return `Teams: Cached • ${availableTeams.length} available • Updated ${formatted}`;
             }, [teamCacheMeta, availableTeams]);
+            const teamCatalogCanRefresh = Boolean(selectedSprintInfo);
 
             const activeTeamQuery = activeGroupDraft ? (teamSearchQuery[activeGroupDraft.id] || '') : '';
             const activeTeamResults = React.useMemo(() => {
@@ -16421,6 +16494,8 @@ import {
                                         groupDraftError,
                                         fetchAllTeamsFromJira,
                                         loadingTeams,
+                                        teamCatalogReady,
+                                        teamCatalogCanRefresh,
                                         teamCacheLabel,
                                         updateGroupDraftName,
                                         toggleDefaultGroupDraft,

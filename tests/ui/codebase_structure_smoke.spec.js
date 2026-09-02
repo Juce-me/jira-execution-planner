@@ -863,6 +863,26 @@ async function installApiMocks(page, calls, options = {}) {
                 userCanEditEpmConfig: true,
                 projectsConfigured: true,
                 epm: epmConfig,
+                ...(options.sharedStartupSnapshot ? {
+                    sharedConfigRevision: 1,
+                    sharedConfig: {
+                        version: 1,
+                        projects: { selected: [] },
+                        board: { boardId: '5494', boardName: 'Synthetic Board' },
+                        capacity: {
+                            project: options.capacityProject || '',
+                            fieldId: options.capacityProject ? 'customfield_10050' : '',
+                            fieldName: options.capacityProject ? 'Capacity' : '',
+                        },
+                        sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+                        parentNameField: { fieldId: 'customfield_10021', fieldName: 'Parent Link' },
+                        storyPointsField: { fieldId: 'customfield_10022', fieldName: 'Story points' },
+                        teamField: { fieldId: 'customfield_10023', fieldName: 'Team' },
+                        deliveryOwnerField: { fieldId: 'customfield_10024', fieldName: 'Delivery owner' },
+                        statsPriorityWeights: [],
+                        issueTypes: ['Story'],
+                    },
+                } : {}),
             });
         }
         if (url.pathname === '/api/version') return json({ enabled: false });
@@ -878,6 +898,19 @@ async function installApiMocks(page, calls, options = {}) {
                 }],
                 defaultGroupId: 'grp-default',
                 source: 'test',
+                ...(options.sharedStartupSnapshot ? {
+                    configRevision: 1,
+                    preferences: {
+                        customized: true,
+                        preferenceExists: true,
+                        onboardingRequired: false,
+                        onboardingDone: true,
+                        completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
+                        visibleGroupIds: ['grp-default'],
+                        effectiveVisibleGroupIds: ['grp-default'],
+                        activeGroupId: 'grp-default',
+                    },
+                } : {}),
             });
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
@@ -1141,6 +1174,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, {
         authMode: 'atlassian_oauth',
+        sharedStartupSnapshot: true,
         capacityProject: 'CAP',
         deferCapacityPatch: true,
         capacityPayload: {
@@ -1192,13 +1226,13 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     expect(startupCounts['GET /api/config']).toBe(1);
     expect(startupCounts['GET /api/version']).toBe(1);
     expect(startupCounts['GET /api/groups-config']).toBe(1);
-    expect(startupCounts['GET /api/projects/selected']).toBe(1);
     expect(startupCounts['GET /api/sprints']).toBe(1);
-    expect(startupCounts['GET /api/stats/priority-weights-config']).toBe(1);
     expect(startupCounts['GET /api/issue-types'] || 0).toBe(0);
     [
+        '/api/projects/selected',
         '/api/board-config',
         '/api/capacity/config',
+        '/api/stats/priority-weights-config',
         '/api/sprint-field/config',
         '/api/story-points-field/config',
         '/api/parent-name-field/config',

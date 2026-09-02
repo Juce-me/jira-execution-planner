@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** Implementation locally complete on `bugfix/shared-dropdown-width-contract` and merged with `origin/main` at `c82b6f7`; final Task 3 verification is blocked by one inherited Playwright fixture regression. This is a bounded follow-up to the filterable header controls merged in PR #125; do not re-execute `EXEC-filterable-header-dropdown-inputs.md`.
+> **Status:** Implementation and code verification are locally complete on `bugfix/shared-dropdown-width-contract`, merged with `origin/main` at `c82b6f7`, and awaiting acceptance. This is a bounded follow-up to the filterable header controls merged in PR #125; do not re-execute `EXEC-filterable-header-dropdown-inputs.md`.
 
-> **Outcome:** Tasks 1 and 2 are implemented in `6a30287` and `6c0d925`; the structure-budget correction is in `c2189fc`, and `79f1af5` merges the current online onboarding implementation. Post-merge verification passed the Node 20 build, 1,144 frontend unit tests, 1,538 Python tests in an isolated file-mode baseline, 100 onboarding-tour browser tests, and 220 onboarding integration browser tests. The four-file dropdown run passed 71 of 72 tests; its only failure is the inherited scoped-startup fixture, which models DB OAuth without a unified shared-config response and therefore observes the compatibility `/api/board-config` request that its stale zero-request assertion forbids. The real local startup preflight remains blocked because the configured PostgreSQL socket is unavailable.
+> **Outcome:** Tasks 1 and 2 are implemented in `6a30287` and `6c0d925`; the structure-budget correction is in `c2189fc`, and `79f1af5` merges the current online onboarding implementation. The final fixture correction makes the scoped DB/OAuth startup test opt into the merged unified shared-config snapshot without changing product behavior or other fixtures. Post-merge verification passed the Node 20 build, 1,144 frontend unit tests, 1,538 Python tests with 9 skips in the isolated file/basic baseline, all 72 tests in the four-file dropdown suite, 100 onboarding-tour browser tests, and 220 onboarding integration browser tests. The real local startup preflight remains blocked because the configured PostgreSQL socket is unavailable.
 
-> **Current accuracy:** The merged implementation, focused browser evidence, and onboarding coexistence checks match the contract. Full-regression acceptance remains incomplete until the scoped-startup Playwright fixture is corrected in a separately authorized change; no production failure was observed.
+> **Current accuracy:** The merged implementation, full browser suite, onboarding coexistence checks, and after-state screenshots match the contract. The original ignored before-state screenshots are no longer present, so the narrow compact 760/390/375 result is supported by geometry/no-overflow assertions and reviewed after-state images rather than a retained pixel-for-pixel before comparison. Configured DB-mode startup verification remains unavailable until local PostgreSQL is running; the isolated full Python baseline passes.
 
 **Goal:** Keep the ENG header Sprint, Group, and Teams dropdown shells visually stable while closed, open, and filtered, with each open panel aligned to the same outer width as its trigger.
 
@@ -29,7 +29,7 @@
 - Preserve selection, filtering, focus-on-open, Escape, outside-click, checkbox, analytics, request, and persistence behavior. Focus restoration after Escape is outside this width-only slice.
 - This passive layout correction adds no analytics event. Expand the existing no-event allowlist entry without collecting query text or selected names.
 - Do not hand-edit `frontend/dist`; regenerate it with `npm run build` before GREEN Playwright verification and again during final verification.
-- Allowed files are `frontend/src/dashboard.jsx`, `frontend/src/styles/shared/header.css`, `tests/ui/codebase_structure_smoke.spec.js`, `tests/ui/eng_compact_layout_visual.spec.js`, `tests/ui/eng_group_board_panel.spec.js`, `tests/ui/epm_multi_subgoal_visual.spec.js`, `docs/README_ANALYTICS.md`, this plan, `docs/plans/README.md`, and generated `frontend/dist/dashboard.css`, `frontend/dist/dashboard.js`, and `frontend/dist/dashboard.js.map`.
+- Allowed files are `frontend/src/dashboard.jsx`, `frontend/src/styles/shared/header.css`, `tests/ui/codebase_structure_smoke.spec.js`, `tests/ui/eng_compact_layout_visual.spec.js`, `tests/ui/eng_group_board_panel.spec.js`, `tests/ui/epm_multi_subgoal_visual.spec.js`, `docs/README_ANALYTICS.md`, this plan, `docs/plans/README.md`, the workflow-required `docs/plans/GATE-05-home-write-capability.md` gate record, and generated `frontend/dist/dashboard.css`, `frontend/dist/dashboard.js`, and `frontend/dist/dashboard.js.map`.
 - Do not rename the already-executed `EXEC-filterable-header-dropdown-inputs.md` without separate approval; `docs/plans/AGENTS.md` requires approval before that file move.
 
 ---
@@ -394,7 +394,7 @@ Replace the `Header dropdown query typing` allowlist row with:
 | Header dropdown query typing and width stabilization | `frontend/src/dashboard.jsx`, `frontend/src/styles/shared/header.css` | Query text only filters already-loaded local options and is discarded on close; the stable shell/panel width is passive presentation. Existing `filter_changed` events remain attached to committed Sprint, Group, and Teams selections. No separate `userevent` is emitted, and raw query text, sprint names, group names, and team names are never collected. | 2026-09-02 |
 ```
 
-- [ ] **Step 2: Run complete verification in the required order**
+- [x] **Step 2: Run complete verification in the required order**
 
 Run:
 
@@ -409,7 +409,9 @@ git status --short
 
 Expected: build, frontend unit tests, full Python suite, all four Playwright files, and diff check pass. The second build leaves no unexpected generated diff. Screenshot artifacts stay untracked/ignored and are not staged.
 
-- [ ] **Step 3: Review the exact diff and scope**
+Result: the Node 20 build and all 1,144 frontend unit tests passed; the isolated file/basic full Python suite passed all 1,538 tests with 9 skips; and the four-file Playwright suite passed all 72 tests after the scoped startup fixture was aligned with the unified shared-config bootstrap. The configured DB-mode run and startup preflight remain unavailable because local PostgreSQL is not running.
+
+- [x] **Step 3: Review the exact diff and scope**
 
 Run:
 
@@ -422,6 +424,8 @@ git log --oneline -5
 ```
 
 Expected: no local paths, secrets, real Jira identifiers, unrelated formatting, or files outside the allowed map. Every line traces to the width contract, verification, analytics review, generated build, or plan bookkeeping.
+
+Result: controller and independent subagent reviews found no product-source scope leak, onboarding-hook regression, local path, secret, real Jira fixture, or unrelated file change. The only final correction is the scoped Playwright bootstrap fixture plus truthful plan/index bookkeeping.
 
 - [ ] **Step 4: Commit only after explicit user authorization**
 

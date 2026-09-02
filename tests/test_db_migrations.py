@@ -726,6 +726,41 @@ class DbMigrationTests(unittest.TestCase):
             finally:
                 engine.dispose()
 
+    def test_user_onboarding_migration_handles_existing_column_and_backfills(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'onboarding-existing-column.db')}"
+            config = self._config(database_url)
+
+            command.upgrade(config, '20260604_0006')
+            engine = create_engine(database_url, future=True)
+            try:
+                with engine.begin() as connection:
+                    connection.execute(text("""
+                        INSERT INTO user_group_preferences (
+                            id, workspace_id, user_id, payload_version, visible_group_ids,
+                            active_group_id, customized, created_at, updated_at
+                        ) VALUES (
+                            'preference-existing-column', 'workspace-1', 'user-1', 1, '[]',
+                            'platform', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+                    connection.execute(text("""
+                        ALTER TABLE user_group_preferences
+                        ADD COLUMN onboarding_done BOOLEAN NOT NULL DEFAULT false
+                    """))
+
+                command.upgrade(config, '20260829_0009')
+
+                with engine.connect() as connection:
+                    onboarding_done = connection.execute(text("""
+                        SELECT onboarding_done
+                        FROM user_group_preferences
+                        WHERE id = 'preference-existing-column'
+                    """)).scalar_one()
+                self.assertTrue(bool(onboarding_done))
+            finally:
+                engine.dispose()
+
 
 if __name__ == '__main__':
     unittest.main()

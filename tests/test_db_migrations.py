@@ -726,7 +726,7 @@ class DbMigrationTests(unittest.TestCase):
             finally:
                 engine.dispose()
 
-    def test_user_onboarding_migration_handles_existing_column_and_backfills(self):
+    def test_onboarding_migrations_handle_existing_columns_and_backfill(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'onboarding-existing-column.db')}"
             config = self._config(database_url)
@@ -748,16 +748,30 @@ class DbMigrationTests(unittest.TestCase):
                         ALTER TABLE user_group_preferences
                         ADD COLUMN onboarding_done BOOLEAN NOT NULL DEFAULT false
                     """))
+                    connection.execute(text("""
+                        ALTER TABLE user_group_preferences
+                        ADD COLUMN onboarding_completed_modules JSON NOT NULL DEFAULT '[]'
+                    """))
 
-                command.upgrade(config, '20260829_0009')
+                command.upgrade(config, 'head')
 
                 with engine.connect() as connection:
-                    onboarding_done = connection.execute(text("""
-                        SELECT onboarding_done
+                    row = connection.execute(text("""
+                        SELECT onboarding_done, onboarding_completed_modules
                         FROM user_group_preferences
                         WHERE id = 'preference-existing-column'
-                    """)).scalar_one()
-                self.assertTrue(bool(onboarding_done))
+                    """)).mappings().one()
+                completed_modules = row['onboarding_completed_modules']
+                if isinstance(completed_modules, str):
+                    completed_modules = json.loads(completed_modules)
+                self.assertTrue(bool(row['onboarding_done']))
+                self.assertEqual(completed_modules, [
+                    'catch-up',
+                    'configuration',
+                    'planning',
+                    'board',
+                    'statistics',
+                ])
             finally:
                 engine.dispose()
 

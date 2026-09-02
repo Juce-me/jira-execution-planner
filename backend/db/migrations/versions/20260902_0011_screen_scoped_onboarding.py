@@ -11,6 +11,7 @@ import json
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 revision = '20260902_0011'
@@ -23,15 +24,23 @@ ALL_MODULES = ['catch-up', 'configuration', 'planning', 'board', 'statistics']
 
 
 def upgrade() -> None:
-    op.add_column(
-        'user_group_preferences',
-        sa.Column(
-            'onboarding_completed_modules',
-            sa.JSON(),
-            nullable=False,
-            server_default=sa.text("'[]'"),
-        ),
-    )
+    completed_modules_exists = False
+    if not op.get_context().as_sql:
+        completed_modules_exists = any(
+            column['name'] == 'onboarding_completed_modules'
+            for column in inspect(op.get_bind()).get_columns('user_group_preferences')
+        )
+
+    if not completed_modules_exists:
+        op.add_column(
+            'user_group_preferences',
+            sa.Column(
+                'onboarding_completed_modules',
+                sa.JSON(),
+                nullable=False,
+                server_default=sa.text("'[]'"),
+            ),
+        )
     preferences = sa.table(
         'user_group_preferences',
         sa.column('onboarding_done', sa.Boolean()),

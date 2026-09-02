@@ -319,3 +319,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - When the user explicitly excludes a gate document from an execution plan, do not read or modify that gate during the execution.
 - Catch Up onboarding must never require cross-surface activation; keep Next enabled, let Next open field previews, and advance exactly once from the preview surface, a preview choice, the same field, or Next without mutating Jira.
 - When a persisted shared mapping is complete but unverified, Settings must expose it as an unsaved re-verification state and call the owning verification endpoint even when its visible values are unchanged.
+- When repairing migration drift caused by model-created columns ahead of Alembic, inspect later migrations for sibling pre-created columns and add one upgrade-to-head regression covering the complete drifted schema.

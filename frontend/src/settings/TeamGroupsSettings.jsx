@@ -23,6 +23,8 @@ export default function TeamGroupsSettings(props) {
         groupDraftError,
         fetchAllTeamsFromJira,
         loadingTeams,
+        teamCatalogReady,
+        teamCatalogCanRefresh,
         teamCacheLabel,
         updateGroupDraftName,
         toggleDefaultGroupDraft,
@@ -97,7 +99,11 @@ export default function TeamGroupsSettings(props) {
         <>
                                 {groupManageTab === 'teams' && (
                                 <div className="group-modal-body group-modal-split">
-                                    <div className={`group-pane group-pane-left ${showGroupListMobile ? 'is-mobile-active' : ''}`}>
+                                    <fieldset
+                                        className={`group-pane group-pane-left team-catalog-edit-lock ${showGroupListMobile ? 'is-mobile-active' : ''}`}
+                                        disabled={loadingTeams || !teamCatalogReady}
+                                        aria-busy={loadingTeams}
+                                    >
                                         <div className="group-pane-header">
                                             <div className="group-pane-header-row">
                                                 <div className="group-pane-title">Groups</div>
@@ -156,7 +162,7 @@ export default function TeamGroupsSettings(props) {
                                                 );
                                             })}
                                         </div>
-                                    </div>
+                                    </fieldset>
                                     <div className="group-pane group-pane-right">
                                         <div className="group-pane-mobile-header">
                                             <button
@@ -188,7 +194,7 @@ export default function TeamGroupsSettings(props) {
                                                 className="secondary compact"
                                                 onClick={fetchAllTeamsFromJira}
                                                 type="button"
-                                                disabled={loadingTeams}
+                                                disabled={loadingTeams || !teamCatalogCanRefresh}
                                             >
                                                 {loadingTeams ? 'Refreshing...' : 'Refresh teams'}
                                             </button>
@@ -197,14 +203,22 @@ export default function TeamGroupsSettings(props) {
                                                 Scoped to sprint
                                             </span>
                                         </div>
-                                        {loadingTeams && (
-                                            <div className="group-modal-meta">Loading teams...</div>
+                                        {(loadingTeams || !teamCatalogReady) && (
+                                            <div className="group-modal-meta">
+                                                {loadingTeams
+                                                    ? 'Loading teams...'
+                                                    : (teamCatalogCanRefresh ? 'Refresh teams to enable editing.' : 'Waiting for sprint data...')}
+                                            </div>
                                         )}
                                         {(groupDraft?.groups || []).length === 0 && (
                                             <div className="group-pane-empty">No groups yet. Click "Add group" to create one.</div>
                                         )}
                                         {activeGroupDraft ? (
-                                            <div className="group-editor">
+                                            <fieldset
+                                                className="group-editor team-catalog-edit-lock"
+                                                disabled={loadingTeams || !teamCatalogReady}
+                                                aria-busy={loadingTeams}
+                                            >
                                                 <div className="group-editor-header">
                                                     <input
                                                         type="text"
@@ -500,7 +514,7 @@ export default function TeamGroupsSettings(props) {
                                                         Delete group
                                                     </button>
                                                 </div>
-                                            </div>
+                                            </fieldset>
                                         ) : (
                                             <div className="group-pane-empty">Select a group to edit, or add a new one.</div>
                                         )}

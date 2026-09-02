@@ -112,7 +112,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # feature/planning-capacity-editing adds the Capacity config lifecycle, one-at-a-time
     # team card editor, mapping re-verification/conflict recovery, local-OAuth fallback,
     # and scoped empty-state refresh while retaining global auth/config flows (+71).
-    "frontend/src/dashboard.jsx": 16695,
+    # bugfix/team-cache-persistence adds sprint-aware empty-cache hydration/readiness state,
+    # stale-load protection, and persistence gating before Department editing unlocks (+74).
+    "frontend/src/dashboard.jsx": 16770,
 }
 
 

@@ -106,11 +106,24 @@ async function mockConfigSettings(page, {
     keepServerConnectionError = false,
     failFirstSelectedProjectsConnection = false,
     groupsRetryAuthRequired = false,
+    initialTeamCatalog = {
+        catalog: { 'team-platform': { id: 'team-platform', name: 'Platform Team' } },
+        meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: '42', source: 'sprint' },
+    },
+    teamCatalogLoadGate = null,
+    teamCatalogSaveGate = null,
+    sprintsLoadGate = null,
+    refreshedTeams = [
+        { id: 'team-platform', name: 'Platform Team' },
+        { id: 'team-data', name: 'Data Team' },
+    ],
 } = {}) {
     const calls = [];
     const epicsInScope = epicsFromCounts(fixture.REFERENCE_EPICS_BY_STATUS);
     let groupsPostCount = 0;
     let configGetCount = 0;
+    let teamCatalogGetCount = 0;
+    let persistedTeamCatalog = JSON.parse(JSON.stringify(initialTeamCatalog));
     const workspaceResponseQueues = Object.fromEntries(
         Object.entries(workspaceSaveResponses).map(([pathname, responses]) => [pathname, [...responses]])
     );
@@ -240,8 +253,22 @@ async function mockConfigSettings(page, {
         if (url.pathname === '/api/epm/projects/configuration') return json({ projects: [] });
         if (url.pathname === '/api/sprints') {
             if (keepServerConnectionError) return json({ error: 'unavailable' }, 500);
+            if (sprintsLoadGate) await sprintsLoadGate.promise;
             return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
         }
+        if (url.pathname === '/api/team-catalog' && request.method() === 'GET') {
+            teamCatalogGetCount += 1;
+            const catalogSnapshot = JSON.parse(JSON.stringify(persistedTeamCatalog));
+            if (teamCatalogLoadGate && teamCatalogGetCount === 1) await teamCatalogLoadGate.promise;
+            return json(catalogSnapshot);
+        }
+        if (url.pathname === '/api/team-catalog' && request.method() === 'POST') {
+            const body = requestBody(request);
+            if (teamCatalogSaveGate) await teamCatalogSaveGate.promise;
+            persistedTeamCatalog = { catalog: body.catalog || {}, meta: body.meta || {} };
+            return json(persistedTeamCatalog);
+        }
+        if (url.pathname === '/api/teams') return json({ teams: refreshedTeams });
         if (url.pathname === '/api/tasks-with-team-name') return json({ issues: [], epics: {}, epicsInScope });
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [] });
         if (url.pathname === '/api/projects/selected') {
@@ -342,6 +369,78 @@ async function makeTwoWorkspaceSectionsDirty(dialog) {
 function workspacePosts(calls, pathname) {
     return calls.filter(call => call.method === 'POST' && call.pathname === pathname);
 }
+
+test('empty team catalog locks editing, auto-refreshes once, and reuses the saved cache on reopen', async ({ page }) => {
+    const sprintsLoadGate = deferred();
+    const teamCatalogSaveGate = deferred();
+    const calls = await mockConfigSettings(page, {
+        initialTeamCatalog: { catalog: {}, meta: {} },
+        sprintsLoadGate,
+        teamCatalogSaveGate,
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    const groupName = dialog.getByPlaceholder('Group name');
+    const addGroup = dialog.getByRole('button', { name: '+ Add group' });
+    const save = dialog.getByRole('button', { name: /^Save$/ });
+
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(1);
+    await expect(groupName).toBeDisabled();
+    await expect(addGroup).toBeDisabled();
+    await expect(save).toBeDisabled();
+    await expect(save).toHaveAttribute('title', 'Team cache is loading');
+    await expect(dialog).toContainText('Waiting for sprint data...');
+    expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/teams')).toHaveLength(0);
+    await dialog.screenshot({ path: `${screenshotDir}/team-catalog-auto-refresh-loading.png`, animations: 'disabled' });
+
+    sprintsLoadGate.resolve();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/team-catalog').length).toBe(1);
+    await expect(groupName).toBeDisabled();
+    await dialog.getByRole('tab', { name: 'Boards' }).click();
+    await expect(save).toHaveAttribute('title', 'Team cache is loading');
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    await expect(groupName).toBeDisabled();
+
+    teamCatalogSaveGate.resolve();
+    await expect(dialog).toContainText('Teams: Cached');
+    await expect(groupName).toBeEnabled();
+    await expect(addGroup).toBeEnabled();
+    await dialog.screenshot({ path: `${screenshotDir}/team-catalog-auto-refresh-ready.png`, animations: 'disabled' });
+
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await expect(dialog).toContainText('Teams: Cached');
+    await expect(groupName).toBeEnabled();
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(2);
+    expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/teams')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/team-catalog')).toHaveLength(1);
+});
+
+test('stale cache load after cancel and reopen cannot trigger a duplicate refresh', async ({ page }) => {
+    const teamCatalogLoadGate = deferred();
+    const calls = await mockConfigSettings(page, {
+        initialTeamCatalog: { catalog: {}, meta: {} },
+        teamCatalogLoadGate,
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(1);
+
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(2);
+    await expect(dialog).toContainText('Teams: Cached');
+
+    teamCatalogLoadGate.resolve();
+    await page.waitForTimeout(100);
+    expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/teams')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/team-catalog')).toHaveLength(1);
+    await expect(dialog.getByPlaceholder('Group name')).toBeEnabled();
+});
 
 test('workspace conflict preserves later drafts and Keep mine rebases onto the server revision', async ({ page }) => {
     const calls = await mockConfigSettings(page, {

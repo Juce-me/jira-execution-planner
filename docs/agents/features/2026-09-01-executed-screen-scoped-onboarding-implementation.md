@@ -33,7 +33,7 @@ The configured local PostgreSQL endpoint was offline, so the full Python verific
 
 ## Current Accuracy
 
-Accurate for the screen-scoped persistence and launcher behavior. A 2026-09-02 follow-up keeps Next enabled on every step, lets Next open field previews, advances exactly once from a preview choice/surface, the same field, or Next, and scrolls the final Catch Up informational targets back to the real page header. Production code, tests, `docs/features/onboarding.md`, and the analytics documentation are the current source of truth; the verification totals above remain the historical execution record.
+Accurate for the screen-scoped persistence and launcher behavior. A 2026-09-02 follow-up keeps Next enabled on every step, lets Next open field previews, advances exactly once from a preview choice/surface, the same field, or Next, and scrolls the final Catch Up controls back to the real page header in this order: Switch tools, Search, Open in Jira, Refresh data, Settings, then Tour complete. Production code, tests, `docs/features/onboarding.md`, and the analytics documentation are the current source of truth; the verification totals above remain the historical execution record.
 
 ---
 

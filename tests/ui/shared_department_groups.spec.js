@@ -445,9 +445,12 @@ async function mockFirstRunDashboard(page, options = {}) {
             return json({ epics: options.epicSearchResults || [{ key: 'PROD-ADHOC', summary: 'Synthetic ad hoc' }] });
         }
         if (url.pathname === '/api/team-catalog') {
-            const teamIds = ['team-platform', 'team-growth', ...Array.from({ length: 12 }, (_, index) => `team-${index + 1}`)];
+            const teamIds = ['team-platform', 'team-growth', 'team-new', ...Array.from({ length: 12 }, (_, index) => `team-${index + 1}`)];
             return json({
-                catalog: Object.fromEntries(teamIds.map(teamId => [teamId, { id: teamId, name: teamId }])),
+                catalog: Object.fromEntries(teamIds.map(teamId => [teamId, {
+                    id: teamId,
+                    name: teamId === 'team-new' ? 'New Team' : teamId,
+                }])),
                 meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: '42', source: 'sprint' },
             });
         }
@@ -514,7 +517,8 @@ async function finishFirstRunConfigurationGuideWithTeamRepair(page) {
     const guide = dialog.locator('.first-run-configuration-guide');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     if (await guide.getByRole('button', { name: 'Continue', exact: true }).isDisabled()) {
-        await dialog.getByRole('button', { name: 'Refresh teams' }).click();
+        const refreshTeams = dialog.getByRole('button', { name: 'Refresh teams' });
+        if (await refreshTeams.isEnabled()) await refreshTeams.click();
         await dialog.getByPlaceholder('Search teams to add...').fill('new');
         await dialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
     }
@@ -920,7 +924,9 @@ test('duplicate existing Department stages one cleaned copy and preserves its so
     await expect(settings.getByPlaceholder('Group name')).toBeFocused();
     await expect(settings.locator('.group-list-item')).toHaveCount(2);
     await expect(settings.locator('.group-list-item:has(input[placeholder="Group name"])')).toHaveCount(1);
-    await expect(settings.getByText('No teams available. Load tasks first or refresh teams above.')).toBeVisible();
+    await expect(settings.getByText('Teams 0/12')).toBeVisible();
+    await expect(settings.getByText('Add at least one team. Teams define which Jira work appears for this Department.')).toBeVisible();
+    await expect(settings.getByPlaceholder('Search teams to add...')).toBeVisible();
     await expect(settings.getByText('Backend', { exact: true })).toHaveCount(0);
     const sourceRow = settings.locator('.group-list-item', { hasText: 'Source', hasNotText: 'Source Copy' });
     await expect(sourceRow).toHaveCount(1);
@@ -1507,7 +1513,6 @@ test('first-run no-groups configuration recovers from validation, saves a team g
 
     const guide = settingsDialog.locator('.first-run-configuration-guide');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await settingsDialog.getByRole('button', { name: 'Refresh teams' }).click();
     const teamSearch = settingsDialog.getByPlaceholder('Search teams to add...');
     await expect(teamSearch).toBeVisible();
     await teamSearch.fill('new');
@@ -1656,7 +1661,6 @@ test('first-run configuration blocks Save until Done and Cancel restores exact p
     await openFirstRunCreateDepartment(page);
     await expect(settingsDialog.getByPlaceholder('Group name')).toHaveValue('New Department');
     await settingsDialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Continue', exact: true }).click();
-    await settingsDialog.getByRole('button', { name: 'Refresh teams' }).click();
     await settingsDialog.getByPlaceholder('Search teams to add...').fill('new');
     await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
     const guide = settingsDialog.locator('.first-run-configuration-guide');
@@ -1683,7 +1687,6 @@ test('first-run preference pending recovery survives Done and retries only the p
     const settingsDialog = page.locator('.group-modal');
     const guide = settingsDialog.locator('.first-run-configuration-guide');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await settingsDialog.getByRole('button', { name: 'Refresh teams' }).click();
     await settingsDialog.getByPlaceholder('Search teams to add...').fill('new');
     await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -2079,7 +2082,7 @@ test('guide 401 yields focus and normal click ownership to the auth recovery lin
     expect(await page.evaluate(() => window.__authRecoveryClicks)).toBe(1);
 });
 
-test('teams guide Tab reaches the allow-marked Refresh teams control without scripted focus', async ({ page }) => {
+test('teams guide Tab reaches the cached-team search without scripted focus', async ({ page }) => {
     await mockFirstRunDashboard(page, { teams: [] });
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await openFirstRunCreateDepartment(page);
@@ -2087,7 +2090,7 @@ test('teams guide Tab reaches the allow-marked Refresh teams control without scr
     await dialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(dialog.locator('[data-first-run-guide-target="teams"]')).toBeFocused();
     await page.keyboard.press('Tab');
-    await expect(dialog.getByRole('button', { name: 'Refresh teams' })).toBeFocused();
+    await expect(dialog.getByPlaceholder('Search teams to add...')).toBeFocused();
 });
 
 test('guide placement recomputes for Settings scroll and target or coachmark resize', async ({ page }) => {

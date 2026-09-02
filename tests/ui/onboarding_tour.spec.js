@@ -902,7 +902,7 @@ const productionFieldContracts = {
     },
     status: {
         heading: 'Preview Status options',
-        nextHeading: 'Continue in Jira',
+        nextHeading: 'Switch tools here',
         triggerHook: 'status',
         menuHook: 'status',
         optionRoute: '/api/issues/transitions/options',
@@ -1096,7 +1096,11 @@ async function installProductionOnboardingFixture(page, {
                     'team-synthetic': { id: 'team-synthetic', name: 'Synthetic Team' },
                     'team-onboarding': { id: 'team-onboarding', name: 'Onboarding Team' },
                 },
-                meta: { source: 'synthetic' },
+                meta: {
+                    updatedAt: '2026-09-02T09:00:00Z',
+                    sprintId: String(productionSprintId),
+                    source: 'sprint',
+                },
             });
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
@@ -1606,10 +1610,7 @@ test('production disabled Planning does not start onboarding without a real open
 
 test('Catch Up highlights the whole fixed-height tool switch without navigating', async ({ page }) => {
     await installProductionOnboardingFixture(page);
-    await advanceProductionTourTo(page, 'Manage Departments in Settings');
-    await expect(page.locator('.onboarding-tour-card')).toContainText('add or manage Departments');
-    await expect(engModeButton(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
-    await page.getByRole('button', { name: 'Next' }).click();
+    await advanceProductionTourTo(page, 'Switch tools here');
     await expect(page.getByRole('heading', { name: 'Switch tools here' })).toBeVisible();
     await expect(page.locator('.onboarding-tour-card')).toContainText('switch between Catch Up, Planning, Board, Statistics, and Scenario');
 
@@ -1651,17 +1652,18 @@ test('Catch Up returns to the page top before targeting its real header controls
     await next.click();
     await expect(page.locator('[data-status-transition-menu]')).toBeVisible();
     await next.click();
-    await expect(page.getByRole('heading')).toHaveText('Manage Departments in Settings');
-    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
-    await expect(page.locator('[data-onboarding-target="settings-launcher"]')).toBeVisible();
-    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'target');
-    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
-    await captureSettledOnboardingScreenshot(page, 'catch-up-settings-top.png');
-
-    await next.click();
     await expect(page.getByRole('heading')).toHaveText('Switch tools here');
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
     await expect(page.locator('[data-onboarding-target="eng-mode-control"]')).toBeVisible();
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'target');
+    await expect(page.locator('.onboarding-tour-spotlight')).toBeVisible();
+    await captureSettledOnboardingScreenshot(page, 'catch-up-tool-switch-top.png');
+
+    await next.click();
+    await expect(page.getByRole('heading')).toHaveText('Request fresh data');
+    await next.click();
+    await expect(page.getByRole('heading')).toHaveText('Manage Departments in Settings');
+    await expect(page.locator('[data-onboarding-target="settings-launcher"]')).toBeVisible();
 });
 
 test('production disabled Statistics does not start onboarding without a real open', async ({ page }) => {
@@ -2042,7 +2044,7 @@ test('production dashboard reaches IssueCard Story preview owners when the Epic 
     );
     await expect(productionMenu(page, 'status', 'SYN-STORY-B')).toHaveCount(0);
     await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading')).toHaveText('Continue in Jira');
+    await expect(page.getByRole('heading')).toHaveText('Switch tools here');
 
     assertProductionRequestSafety(calls);
     const analytics = await page.evaluate(() => window.dataLayer || []);
@@ -2143,7 +2145,7 @@ test('production cached Priority and Status repeat previews stay read-only witho
     await openAndAdvance('track');
     await expect(page.getByRole('heading')).toHaveText('Preview Status options');
     await openAndAdvance('status');
-    await expect(page.getByRole('heading')).toHaveText('Continue in Jira');
+    await expect(page.getByRole('heading')).toHaveText('Switch tools here');
     await page.getByRole('button', { name: 'Back' }).click();
     await expect(page.getByRole('heading')).toHaveText('Preview Status options');
     await openAndAdvance('status');
@@ -2162,7 +2164,7 @@ test('production Catch Up Finish persists only Catch Up and never pushes another
     const menu = productionMenu(page, 'status');
     await expect(menu).toBeFocused();
     await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading')).toHaveText('Continue in Jira');
+    await expect(page.getByRole('heading')).toHaveText('Switch tools here');
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
 
     await page.getByRole('button', { name: 'Next' }).click();
@@ -2241,7 +2243,7 @@ test('Next opens closed field previews and every visible preview action advances
     await page.evaluate(() => window.__tourHarness.setPreviewLoading(false));
     const statusTrigger = page.locator('[data-status-transition-trigger]').first();
     await statusTrigger.click();
-    await expect(page.getByRole('heading')).toHaveText('Manage Departments in Settings');
+    await expect(page.getByRole('heading')).toHaveText('Switch tools here');
     expect(await page.evaluate(() => window.__tourHarness.selections())).toEqual([]);
 });
 
@@ -2267,7 +2269,7 @@ for (const previewState of ['loading', 'ready', 'empty', 'error']) {
                 },
                 {
                     heading: 'Preview Status options',
-                    nextHeading: 'Manage Departments in Settings',
+                    nextHeading: 'Switch tools here',
                     trigger: '[data-status-transition-trigger]',
                     menu: '[data-status-transition-menu]',
                 },
@@ -3271,7 +3273,7 @@ test('mutation retargets visible duplicates, removes vanished optional steps, an
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByRole('heading')).toHaveText('Set your Department scope');
     await page.evaluate(() => window.__tourHarness.removeGroup());
-    await expect(page.getByRole('heading')).toHaveText('Request fresh data');
+    await expect(page.getByRole('heading')).toHaveText('Start with the Initiative');
 
     await page.evaluate(() => window.__tourHarness.closeWithDone());
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -3353,7 +3355,7 @@ test('interactive Priority, Project Track, and Status previews stay viewport-fix
             heading: 'Preview Status options',
             trigger: '[data-status-transition-trigger]',
             menu: '[data-status-transition-menu]',
-            nextHeading: 'Manage Departments in Settings',
+            nextHeading: 'Switch tools here',
         },
     ];
     const assertViewportContainedWithoutOverlap = async ({ trigger, menu }) => {
@@ -3748,7 +3750,7 @@ test('interrupted reload restarts at the first eligible step', async ({ page }) 
     await installControllerHarness(page);
     await page.evaluate(() => window.__onboardingController.setBootstrap(true, []));
     await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading')).toHaveText('Request fresh data');
+    await expect(page.getByRole('heading')).toHaveText('Follow work from goal to delivery');
     await page.reload();
     await page.waitForFunction(() => Boolean(window.__onboardingController));
     await page.evaluate(() => window.__onboardingController.setBootstrap(true, []));
@@ -3785,7 +3787,7 @@ test('interrupted Catch Up restarts after Planning when the user returns', async
     await page.evaluate(() => window.__onboardingController.setBootstrap(true, []));
     await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible();
     await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading', { name: 'Request fresh data' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Follow work from goal to delivery' })).toBeVisible();
 
     await page.evaluate(() => window.__onboardingController.openSurface('planning'));
     await expect(page.getByRole('heading', { name: 'Review sprint planning' })).toBeVisible();
@@ -3803,7 +3805,7 @@ test('plain Catch Up exits to unsupported surfaces interrupt without writes and 
     await page.evaluate(() => window.__onboardingController.setBootstrap(true, ['configuration']));
     await expect(page.getByRole('heading', { name: 'Choose a sprint' })).toBeVisible();
     await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading', { name: 'Request fresh data' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Follow work from goal to delivery' })).toBeVisible();
 
     await page.evaluate(() => window.__onboardingController.openSurface('scenario'));
     await expect(page.getByRole('dialog')).toHaveCount(0);

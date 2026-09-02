@@ -107,6 +107,10 @@ async function installSettingsFixture(page, {
         }
         if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/sprints') return json({ sprints: [{ id: 42, name: 'Synthetic Sprint', state: 'active' }] });
+        if (url.pathname === '/api/team-catalog') return json({
+            catalog: { 'team-1': { id: 'team-1', name: 'Synthetic Team' } },
+            meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: '42', source: 'sprint' },
+        });
         if (url.pathname === '/api/tasks-with-team-name') return json({ issues: [], epics: {}, epicsInScope: [] });
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [] });
         if (url.pathname === '/api/projects/selected') return json({ selected: [{ key: 'DEMO', type: 'product' }] });

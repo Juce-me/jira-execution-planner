@@ -91,27 +91,30 @@ test('onboarding persistence is available only for Atlassian OAuth workspace DB 
     assert.equal(isOnboardingAvailable('', 'workspace_db'), false);
 });
 
-test('catch-up catalog ends with informational settings and tool-switching steps', async () => {
+test('catch-up catalog ends with the approved top-control sequence', async () => {
     const { ONBOARDING_STEP_CATALOG } = await loadModule();
     assert.deepEqual(
-        ONBOARDING_STEP_CATALOG.slice(-4).map((step) => step.id),
-        ['jira-export', 'settings-info', 'eng-mode-info', 'complete'],
+        ONBOARDING_STEP_CATALOG.slice(-6).map((step) => step.id),
+        ['eng-mode-info', 'search', 'jira-export', 'refresh', 'settings-info', 'complete'],
     );
-    const informational = ONBOARDING_STEP_CATALOG.slice(-3, -1);
-    assert.deepEqual(informational.map((step) => step.progression), ['manual', 'manual']);
-    assert.deepEqual(informational.map((step) => step.presence), ['conditional', 'conditional']);
-    assert.deepEqual(informational.map((step) => step.scroll), ['page-top', 'page-top']);
-    assert.deepEqual(informational.map((step) => step.selectors), [
-        ['[data-onboarding-target="settings-launcher"]'],
+    const topControls = ONBOARDING_STEP_CATALOG.slice(-6, -1);
+    assert.deepEqual(topControls.map((step) => step.progression), Array(5).fill('manual'));
+    assert.deepEqual(topControls.map((step) => step.scroll), Array(5).fill('page-top'));
+    assert.deepEqual(topControls.map((step) => step.group), Array(5).fill('Continue in Jira'));
+    assert.deepEqual(topControls.map((step) => step.selectors), [
         ['[data-onboarding-target="eng-mode-control"]'],
+        ['[data-onboarding-target="search"]'],
+        ['[data-onboarding-target="jira-export"]'],
+        ['[data-onboarding-target="refresh"]'],
+        ['[data-onboarding-target="settings-launcher"]'],
     ]);
-    informational.forEach((step) => {
+    topControls.forEach((step) => {
         assert.equal(Object.hasOwn(step, 'moduleId'), false, step.id);
     });
-    assert.match(informational[0].body, /add or manage Departments/i);
-    assert.match(informational[1].title, /tools/i);
-    assert.match(informational[1].body, /switch between Catch Up, Planning, Board, Statistics, and Scenario/i);
-    assert.doesNotMatch(informational.map((step) => step.body).join(' '), /\bopen (?:Settings|Planning|Board|Statistics)\b/i);
+    assert.match(topControls[0].title, /tools/i);
+    assert.match(topControls[0].body, /switch between Catch Up, Planning, Board, Statistics, and Scenario/i);
+    assert.match(topControls[4].body, /add or manage Departments/i);
+    assert.doesNotMatch(topControls.map((step) => step.body).join(' '), /\bopen (?:Settings|Planning|Board|Statistics)\b/i);
     assert.equal(ONBOARDING_STEP_CATALOG.some((step) => step.progression === 'module-launch'), false);
     assert.equal(Object.isFrozen(ONBOARDING_STEP_CATALOG), true);
     const renderedCopy = ONBOARDING_STEP_CATALOG
@@ -122,7 +125,7 @@ test('catch-up catalog ends with informational settings and tool-switching steps
 
 test('Catch Up top controls resolve while offscreen and disappear when genuinely absent', async () => {
     const { ONBOARDING_STEP_CATALOG, resolveOnboardingSnapshot } = await loadModule();
-    const topControlIds = ['jira-export', 'settings-info', 'eng-mode-info'];
+    const topControlIds = ['eng-mode-info', 'search', 'jira-export', 'refresh', 'settings-info'];
     const offscreen = element({ left: 80, top: -900, right: 200, bottom: -860, width: 120, height: 40 });
 
     for (const id of topControlIds) {
@@ -137,9 +140,11 @@ test('Catch Up top controls resolve while offscreen and disappear when genuinely
         assert.equal(offscreenSnapshot.targets[id], offscreen, `${id} resolves before returning to top`);
         assert.deepEqual(offscreenSnapshot.steps.map((entry) => entry.id), [id], `${id} remains available`);
 
-        const absentSnapshot = resolveOnboardingSnapshot(rootWith({}), VIEWPORT, { catalog: [step] });
-        assert.equal(absentSnapshot.targets[id], null, `${id} has no synthetic target`);
-        assert.deepEqual(absentSnapshot.steps, [], `${id} emits no absent-control bubble`);
+        if (step.presence === 'conditional') {
+            const absentSnapshot = resolveOnboardingSnapshot(rootWith({}), VIEWPORT, { catalog: [step] });
+            assert.equal(absentSnapshot.targets[id], null, `${id} has no synthetic target`);
+            assert.deepEqual(absentSnapshot.steps, [], `${id} emits no absent-control bubble`);
+        }
     }
 });
 
@@ -187,6 +192,7 @@ test('contextual module catalogs expose exact manually advanced reachable destin
 test('Configuration fallback reads the real Team selector metadata and retains manual Next', async () => {
     const { ONBOARDING_STEPS_BY_MODULE, buildStepPresentation } = await loadModule();
     const [configurationStep] = ONBOARDING_STEPS_BY_MODULE.configuration;
+    assert.equal(configurationStep.requireEnabled, true);
     const previousDocument = globalThis.document;
     const selector = '[data-onboarding-configuration-team-count]';
     const presentationFromTeamSelector = (teamCount, catalogUnavailable) => {
@@ -341,9 +347,10 @@ test('all-absent hierarchy compacts to one aggregate fallback before field previ
     assert.deepEqual(
         steps.map((step) => step.id),
         [
-            'sprint', 'group', 'teams', 'refresh', 'search', 'filters',
+            'sprint', 'group', 'teams', 'filters',
             'hierarchy',
             'editing-priority', 'editing-track', 'editing-status',
+            'search', 'refresh',
             'complete',
         ]
     );

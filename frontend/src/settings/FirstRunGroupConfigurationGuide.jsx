@@ -261,6 +261,7 @@ export default function FirstRunGroupConfigurationGuide({
     status = 'editing',
     busy = false,
     error = '',
+    interactionReady = true,
 }) {
     const coachmarkRef = React.useRef(null);
     const [placement, setPlacement] = React.useState({ top: 12, left: 12 });
@@ -390,7 +391,7 @@ export default function FirstRunGroupConfigurationGuide({
             if (priorDescription) target.setAttribute('aria-describedby', priorDescription);
             else target.removeAttribute('aria-describedby');
         };
-    }, [descriptionId, step]);
+    }, [descriptionId, interactionReady, step]);
 
     const copy = COPY[step] || COPY.name;
     const continueLabel = step === 'components' && !(group?.missingInfoComponents || []).length

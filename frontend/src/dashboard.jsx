@@ -17253,6 +17253,7 @@ import {
                                         onRetry={retryFirstRunConfiguration}
                                         onReturn={returnFromFirstRunConfigurationRecovery}
                                         status={firstRunConfigurationSession.status}
+                                        interactionReady={teamCatalogReady}
                                         busy={firstRunConfigurationSession.status === 'saving_sections'
                                             || (firstRunConfigurationSession.status === 'preference_pending' && !firstRunConfigurationSession.error)}
                                         error={firstRunConfigurationSession.error}

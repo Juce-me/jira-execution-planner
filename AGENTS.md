@@ -319,4 +319,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - When the user explicitly excludes a gate document from an execution plan, do not read or modify that gate during the execution.
 - Catch Up onboarding must never require cross-surface activation; keep Next enabled, let Next open field previews, and advance exactly once from the preview surface, a preview choice, the same field, or Next without mutating Jira.
 - When a persisted shared mapping is complete but unverified, Settings must expose it as an unsaved re-verification state and call the owning verification endpoint even when its visible values are unchanged.
-- When repairing migration drift, inspect later migrations for sibling pre-created columns, add a forward reconciliation revision for schema missing behind an already-stamped head, and cover the complete upgrade-to-head plus ORM read contracts.
+- When head-stamped migration drift affects multiple objects, stop piecemeal repairs: collect a schema-only inventory, diff it against a clean current head, reconcile the complete gap set in one forward revision, and verify exact schema parity plus affected ORM contracts.

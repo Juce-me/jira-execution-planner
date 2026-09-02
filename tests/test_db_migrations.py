@@ -4,6 +4,7 @@ import os
 import tempfile
 import traceback
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,6 +15,7 @@ from alembic.operations import Operations
 from sqlalchemy import create_engine, inspect, pool, text
 from sqlalchemy.orm import Session
 
+from backend.auth.db_browser_sessions import create_browser_session
 from backend.db import engine as db_engine
 from backend.db import models
 
@@ -636,6 +638,133 @@ class DbMigrationTests(unittest.TestCase):
                 }
                 self.assertIn('scope_provenance', columns)
                 self.assertIn('ck_auth_connections_scope_provenance', constraints)
+            finally:
+                engine.dispose()
+
+    def test_head_schema_reconciliation_repairs_browser_sessions_and_capacity_columns(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'head-schema-drift.db')}"
+            config = self._config(database_url)
+            command.upgrade(config, '20260902_0012')
+
+            engine = create_engine(database_url, future=True)
+            try:
+                with engine.begin() as connection:
+                    operations = Operations(MigrationContext.configure(connection))
+                    operations.drop_table('browser_sessions')
+                    with operations.batch_alter_table('workspace_dashboard_configs') as batch_op:
+                        batch_op.drop_column('capacity_field_verified_at')
+                        batch_op.drop_column('capacity_field_schema_type')
+                        batch_op.drop_column('capacity_jira_cloud_id')
+                        batch_op.drop_column('capacity_jira_site_url')
+                    connection.execute(text("""
+                        INSERT INTO users (
+                            id, external_provider, external_subject, account_type,
+                            status, created_by, created_at, updated_at
+                        ) VALUES (
+                            'user-reconciliation', 'atlassian', 'subject-reconciliation',
+                            'user', 'active', 'migration-test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+                    connection.execute(text("""
+                        INSERT INTO workspaces (
+                            id, environment_key, name, created_by, created_at, updated_at
+                        ) VALUES (
+                            'workspace-reconciliation', 'migration-test', 'Migration Test',
+                            'migration-test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+                    connection.execute(text("""
+                        INSERT INTO workspace_dashboard_configs (
+                            id, workspace_id, payload_version, payload, config_revision,
+                            created_by, updated_by, created_at, updated_at
+                        ) VALUES (
+                            'dashboard-reconciliation', 'workspace-reconciliation', 1, '{}', 7,
+                            'user-reconciliation', 'user-reconciliation',
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+
+                command.upgrade(config, 'head')
+
+                inspector = inspect(engine)
+                self.assertIn('browser_sessions', inspector.get_table_names())
+                browser_columns = {
+                    column['name']: (str(column['type']), column['nullable'])
+                    for column in inspector.get_columns('browser_sessions')
+                }
+                self.assertEqual(browser_columns, {
+                    'id': ('VARCHAR(36)', False),
+                    'user_id': ('VARCHAR(36)', False),
+                    'workspace_id': ('VARCHAR(36)', False),
+                    'auth_connection_id': ('VARCHAR(36)', False),
+                    'created_at': ('DATETIME', False),
+                })
+                self.assertEqual(
+                    {index['name'] for index in inspector.get_indexes('browser_sessions')},
+                    {'ix_browser_sessions_connection', 'ix_browser_sessions_user_workspace'},
+                )
+                browser_foreign_keys = {
+                    foreign_key['constrained_columns'][0]: (
+                        foreign_key['referred_table'],
+                        foreign_key['options'].get('ondelete'),
+                    )
+                    for foreign_key in inspector.get_foreign_keys('browser_sessions')
+                }
+                self.assertEqual(browser_foreign_keys, {
+                    'user_id': ('users', 'CASCADE'),
+                    'workspace_id': ('workspaces', 'CASCADE'),
+                    'auth_connection_id': ('auth_connections', 'CASCADE'),
+                })
+
+                dashboard_columns = {
+                    column['name']: (str(column['type']), column['nullable'])
+                    for column in inspector.get_columns('workspace_dashboard_configs')
+                }
+                self.assertEqual(dashboard_columns['capacity_jira_site_url'], ('VARCHAR(512)', True))
+                self.assertEqual(dashboard_columns['capacity_jira_cloud_id'], ('VARCHAR(255)', True))
+                self.assertEqual(dashboard_columns['capacity_field_schema_type'], ('VARCHAR(64)', True))
+                self.assertEqual(dashboard_columns['capacity_field_verified_at'], ('DATETIME', True))
+
+                with engine.begin() as connection:
+                    connection.execute(text("""
+                        INSERT INTO auth_connections (
+                            id, user_id, workspace_id, provider, site_url, cloud_id,
+                            scopes, scope_provenance, status, token_version, created_at, updated_at
+                        ) VALUES (
+                            'connection-reconciliation', 'user-reconciliation',
+                            'workspace-reconciliation', 'atlassian_oauth',
+                            'https://example.invalid', 'cloud-reconciliation', '[]',
+                            'provider', 'active', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+
+                with Session(engine) as session:
+                    dashboard_config = session.get(
+                        models.WorkspaceDashboardConfig,
+                        'dashboard-reconciliation',
+                    )
+                    self.assertIsNotNone(dashboard_config)
+                    self.assertEqual(dashboard_config.config_revision, 7)
+                    dashboard_config.capacity_jira_site_url = 'https://example.invalid'
+                    dashboard_config.capacity_jira_cloud_id = 'cloud-reconciliation'
+                    dashboard_config.capacity_field_schema_type = 'option'
+                    dashboard_config.capacity_field_verified_at = datetime(
+                        2026, 9, 2, 12, 0, tzinfo=timezone.utc,
+                    )
+                    handle = create_browser_session(
+                        session,
+                        user_id='user-reconciliation',
+                        workspace_id='workspace-reconciliation',
+                        auth_connection_id='connection-reconciliation',
+                    )
+                    session.commit()
+                    session.refresh(dashboard_config)
+                self.assertEqual(handle.auth_connection_id, 'connection-reconciliation')
+                self.assertEqual(dashboard_config.capacity_jira_site_url, 'https://example.invalid')
+                self.assertEqual(dashboard_config.capacity_jira_cloud_id, 'cloud-reconciliation')
+                self.assertEqual(dashboard_config.capacity_field_schema_type, 'option')
+                self.assertEqual(dashboard_config.capacity_field_verified_at.year, 2026)
             finally:
                 engine.dispose()
 

@@ -472,6 +472,13 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Completed and merged in [PR #58](https://github.com/Juce-me/jira-execution-planner/pull/58). GA4/GTM dataLayer instrumentation implemented in app code on 2026-05-30. Use for audit context only.
    - Output: two-trigger GTM dataLayer contract (`pageview`/`userevent`), `GA4_ENABLED` transport gate with no in-app consent UI, and typed event params per `docs/README_ANALYTICS.md`.
 
+## Deferred Product Options
+
+1. `FUTURE-dynamic-jira-catch-up-webhooks.md`
+   - Deferred and not selected. Catch Up continues to use the existing full Jira refresh path.
+   - If explicitly reopened, evaluate one dynamically scoped Jira webhook per Atlassian site or workspace for the union of projects used by departments with active Catch Up sessions, then route assignee-change invalidations to affected sessions through authenticated SSE.
+   - Do not implement directly from the future document; first resolve public HTTPS delivery, webhook ownership and authorization, renewal, active-session leases, distributed coordination, and scoped refresh behavior in a reviewed `EXEC-*` plan.
+
 ## Legacy Unclassified Date-Only Plans
 
 These files predate the `EXEC`/`DONE`/`GATE`/`SUPPORT`/`FUTURE` taxonomy. Treat them as unclassified historical context, not executable current plans, until a reviewer classifies and renames them or moves them to `docs/agents/`:

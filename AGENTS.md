@@ -320,3 +320,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Catch Up onboarding must never require cross-surface activation; keep Next enabled, let Next open field previews, and advance exactly once from the preview surface, a preview choice, the same field, or Next without mutating Jira.
 - When a persisted shared mapping is complete but unverified, Settings must expose it as an unsaved re-verification state and call the owning verification endpoint even when its visible values are unchanged.
 - When head-stamped migration drift affects multiple objects, stop piecemeal repairs: collect a schema-only inventory, diff it against a clean current head, reconcile the complete gap set in one forward revision, and verify exact schema parity plus affected ORM contracts.
+- For missing-configuration guidance, prefer concise explanatory copy; do not add automatic Settings navigation, focus, or highlight animation unless the user explicitly confirms those interactions.
+- In ENG Board, keep the Teams selector visible and disabled rather than hiding it; Board scope must not use the private Team selection.
+- In ENG Board, Project Track/Delivery track is an Epic property; never derive it from child issues or conflate it with the child-derived Product/Tech Projects facet.
+- In ENG, Product/Tech is a Jira-project classification inherited by issues through their Jira project; never derive it from issue type.

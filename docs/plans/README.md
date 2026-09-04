@@ -402,7 +402,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - No Home/Townsquare or EPM mutation; `GATE-05` unaffected.
 
 4. `EXEC-eng-group-board.md`
-   - Design agreed with the requester; implementation not started. **Open the two approved design
+   - Partially executed on `feature/eng-group-board-design`; not merge-ready. **Open the two approved design
      assets in `docs/plans/assets/eng-group-board/` before executing** — self-contained HTML using
      the app's real classes and geometry. They are authoritative for appearance and interaction;
      the plan is authoritative for data, routes and constraints. This is the "separate future plan"
@@ -413,24 +413,44 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      configured at Settings → Departments → **Boards** (a dedicated third sub-tab beside Team groups
      and Group labels, reached from a one-line *Configure board* pointer in Team groups); one focused
      column always centred with at most one starred column that never folds; folded columns act as the
-     epic-count bar chart; epics sorted by `PRIORITY_AXIS` with assignee and Delivery Owner
-     (`customfield_11147`) both shown; an epic detail panel reusing the existing priority/track/status
+     epic-count bar chart; epics sorted by `PRIORITY_AXIS` with assignee and the configured, shaped
+     Delivery Owner both shown; an epic detail panel reusing the existing priority/track/status
      controls and `.story-subtask-row` unchanged; and a single sticky filter bar with orthogonal facets
      that cannot reach an empty set. Catch Up keeps its existing status filters.
    - Board config is stored in the shared group payload on `/api/groups-config` (`user_write`), not
-     `/api/board-config`. Read §4.3 first: epic `description`, `customfield_11147`, and a board-status
-     source do not exist in the current payload and must be added before UI work. Open decisions are
-     listed in §11 (ten items, one superseded); whether Group Board editing should be admin-guarded is
-     resolved there (O1: no).
+     `/api/board-config`. The Execution status table is authoritative for what has landed; the older
+     pre-execution gap table is historical. Delivery Owner, epic description/updated shaping, and the
+     Board status route now exist. Open decisions are listed in §11 (ten items, one superseded);
+     whether Group Board editing should be admin-guarded is resolved there (O1: no).
 
-5. `DONE-board-epic-description-smart-links.md`
+5. `EXEC-eng-board-optional-sprint-measurement-spike.md`
+   - Ready-to-execute local OAuth measurement plan for GitHub issue #137. It may add only a
+     local/loopback diagnostic harness, strict candidate query engine, sanitizer, and tests; it must
+     not add a production Board endpoint or frontend behavior.
+   - Produces five matched cold/warm comparisons of the current selected-sprint source, complete
+     Component-scoped selected-sprint and All-work candidates, and the no-Component/all-saved-Team
+     selected-sprint fallback. All saved output is aggregate, sanitized, and outside the repository.
+   - Execution stops after `PASS`, `FAIL`, or `STOP` for review of transport, refresh, limits, and
+     completion budgets.
+
+6. `SUPPORT-eng-board-optional-sprint-design.md`
+   - Reviewed non-executable design for GitHub issue #137 and input to the measurement spike.
+   - Settled behavior: Board initially inherits the selected sprint; All work is the explicit empty
+     sprint filter; `missingInfoComponents` is the Epic scope; Teams stays visible but disabled;
+     Project Track is Epic-index data; Product/Tech Projects is inherited from each child's Jira
+     project; directly-created terminal Epics use `created` for retention; Unmapped remains before
+     the structural terminal column.
+   - Production transport, refresh granularity, final completion budgets, and final safety ceilings
+     remain measurement-gated.
+
+7. `DONE-board-epic-description-smart-links.md`
    - Accepted by the requester and executed in `3770d2b`; use for audit context only.
    - Jira ADF `inlineCard` and `blockCard` nodes in Board Epic descriptions render as escaped,
      allowlisted links using the URL as fallback text. Unsafe or missing URLs render nothing; the
      existing lazy description fetch, sanitization boundary, clamp, cache, and analytics privacy
      contract remain unchanged.
 
-6. `EXEC-sticky-board-column-chrome.md`
+8. `EXEC-sticky-board-column-chrome.md`
    - Implementation complete and uncommitted; retain as `EXEC-*` pending acceptance or merge.
      The focused Board regression and analytics allowlist are verified. The matrix retains the
      unrelated drag-gate failure, an alert-toolbar setup failure, and an environment-blocked full
@@ -439,7 +459,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      or column trees, remains horizontally aligned and interactive, preserves layout, and releases
      at the board bottom.
 
-7. `EXEC-board-help-title-adf-tables.md`
+9. `EXEC-board-help-title-adf-tables.md`
    - Implementation complete and uncommitted; retain as `EXEC-*` pending acceptance or merge.
      The executed record is
      `docs/agents/features/2026-08-08-executed-board-help-title-and-adf-tables.md`.

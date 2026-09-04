@@ -8,10 +8,12 @@
 | Design source | [`assets/eng-group-board/board.html`](assets/eng-group-board/board.html) · [`assets/eng-group-board/group-board-settings.html`](assets/eng-group-board/group-board-settings.html) — approved, in-repo, open them directly |
 
 > **Read before executing:** root `AGENTS.md`, `docs/plans/AGENTS.md`, and this file's
-> Data contract (§4) and Jira API surface (§9) sections. Three fields (Delivery Owner, epic
-> `updated`, epic `description`) and one endpoint named here do not exist yet and must land
-> before any UI work. §5.5 is the reference configuration the tests assert — implement against
-> it rather than reinterpreting the mockups.
+> Data contract (§4) and Jira API surface (§9) sections. The Execution status table is the current
+> source of truth: Delivery Owner, epic `updated`, epic description, Initiative shaping, and the
+> Board status route now exist. Pre-execution gap statements later in this document are historical,
+> not current blockers. This plan does not define optional-sprint Board transport; use
+> `SUPPORT-eng-board-optional-sprint-design.md` for that work. §5.5 is the reference configuration
+> the tests assert — implement against it rather than reinterpreting the mockups.
 >
 > **Open the two design assets first** (row above). They are the approved design, not a
 > reference: real class names, real geometry, working interactions. Where this document and an
@@ -47,7 +49,7 @@ not as "verified working against this Jira tenant".
 | §5.7, D45 | 409 must not discard a dirty Board draft | ✅ executed |
 | §6.5 | Fifth ENG mode + all fallthrough sites | ✅ executed |
 | §6.1, §6.1.2 | Board columns + the one-focused-column invariant | ✅ executed |
-| §6.2, §8 | Epic card, Tech/Product derivation, board search | ✅ executed |
+| §6.2, §8, D41 | Epic card and Board search | ✅ executed; Product/Tech Jira-project inheritance correction pending the optional-sprint production follow-up |
 | §7.2 | Board's own facet set | ✅ executed |
 | §6.3 | Epic detail panel | ✅ executed |
 | §6.4, §9.5, D42 | Card drag-and-drop + unresolved-story gate | ✅ executed |
@@ -218,7 +220,7 @@ without asking.
 | D24 | **Min/Max warn, they never block** | They control nothing: no transition is prevented and Save is not blocked. A column whose epic count falls outside its range glows red — in settings, in the preview, and on the board — and states the breach in words. The work is already in that state in Jira, so refusing to show it would only hide the problem. |
 | D25 | The configuration UI inherits the app's settings design | No popup of its own and no new control vocabulary: it *is* the settings modal. Sections use `.component-selector` + `.component-selector-label`, statuses use `.component-chip` + `.component-name` + `.remove-btn`, counts use `.group-modal-meta`, warnings use `.group-modal-warning`. The only new CSS is the side-by-side column arrangement, because nothing in the app lays configuration out in columns. |
 | D26 | The whole column header folds the column | Not only the `Fold` label. The star inside the header is exempt — it is its own control. A **starred column has no fold action at all**: its header carries `cursor: default` and clicking it does nothing. |
-| D27 | Search also matches Delivery Owner | Search resolves against epic key, summary, assignee **and Delivery Owner** (`customfield_11147`), so a card can be found by the person accountable for delivery, not only its assignee. See §8. |
+| D27 | Search also matches Delivery Owner | Search resolves against epic key, summary, assignee **and the shaped Delivery Owner when `deliveryOwnerField` is configured**, so a card can be found by the person accountable for delivery, not only its assignee. See §8. |
 | D28 | Normal sticky tiers follow `shell.css`: epic `--sticky-epic-z` 50 < filter bar `--sticky-filterbar-z` 55 < Planning `--sticky-planning-z` 60 < compact `--sticky-compact-z` 70 < overlay `--sticky-control-overlay-z` 80 | Physical adjacency, not overlap, is the contract: Dashboard derives compact `C`, open-Planning `P`, and measured responsive outer filter-wrapper `F`; Planning top is `C`, filter-bar top is `C + P`, and epic top is `C + P + F`. Planning and the filter bar are not peers. `--sticky-controls-z` remains an asset-only name and must not ship. An open facet popover or Catch Up sort panel lifts the filter bar's sticky parent to `calc(overlay + 2)` while the child keeps `calc(overlay + 3)`. |
 | D29 | The filter popover is sized at open time, not in CSS | `100vw` counts the scrollbar (375 vs 360 usable, which produced 11px of document overflow), and the trigger sits in a sticky bar so the room below it changes with scroll. A CSS-only `max-height` left the last facet at y=901 in a 667px viewport — unreachable, since the pinned bar means page scroll cannot reveal it. Width and max-height come from `documentElement.clientWidth` and the trigger's rect; the panel scrolls internally. |
 | D30 | Sort and grouping are view controls, not facets | They change order and structure, not membership, so they never appear as chips. `ENG_EPIC_SORT_OPTIONS` verbatim (`engTaskUtils.js:180`): Priority (default) · Status · Committed ⬇ · Flexible ⬇, every one tie-broken by priority. `groupByInitiative` stays a boolean toggle. Both are Catch Up only — the Board sorts by priority inside columns (D11) and its columns *are* the grouping. |
@@ -232,7 +234,7 @@ without asking.
 | D38 | **Status → column assignment has an explicit non-drag path** | `+ Add status` on each column opens an in-place list and assigns on click. Drag-only was undiscoverable — chips carried `draggable` with no grip, no grab cursor and a drop target that only appeared mid-drag — and unreachable by keyboard. The picker offers every status the column does not already hold, orphans first, so it also moves a status between columns; the leftover pool is a drop target too, so a chip can be dragged back out. |
 | D39 | **Production widths and shared controls are authoritative; the mockup mirrors them** | The app has one container, `.container` at `max-width: 1040px` (`shared/shell.css:45`) — there is no `.shell` and no 1560px layout. The ENG mode switch is `SegmentedControl` (`ui/SegmentedControl.jsx`) rendered by `EngModeControl` with the `eng-mode-control` hook; the sprint/group/teams pickers are `.control-field` + `.control-label` + a `*-dropdown-toggle`; search is `.search-input`; the compact lane is `.compact-sticky-header-controls`. Consumers pass the class hook and nothing else — no local CSS may change a shared control's `display`, `flex-wrap` or `height` (MRT021), and no `min-width` magic numbers or overflowing `nowrap` (MRT020). The mockup previously carried `.shell`, `.seg`, `.field` and `.compact-inner`, which existed in no stylesheet; it now renders the production classes so what an implementer lifts is what ships. |
 | D40 | **Board is a fourth boolean, not an enum member** | There is no ENG mode enum: `showPlanning` / `showStats` / `showScenario` are independent booleans and Catch Up is the all-false fallthrough (`dashboard.jsx:655-657`, `:12337-12343`). So Board inherits Catch Up everywhere by default — including rendering the entire Catch Up task list beneath itself. §6.5.4 lists all eleven fallthrough sites; each is an explicit keep-or-change. Board persists in `localStorage` like the others, is available in **every** sprint state, and triggers no fetch on entry. |
-| D41 | **An epic's Tech/Product side is derived from its stories, and an epic may be both** | Story classification is intrinsic and single-sourced: `classifyCapacityIssue` (`frontend/src/capacityClassification.mjs:20-40`) matches `fields.projectKey` against the config-derived Tech key set, with Ad Hoc epic membership overriding to Product. **Epics have no such field** — the epic payload carries no `projectKey` at all (`backend/services/alert_epics.py:18-30`), and the fetch provenance that did know is discarded at the merge (`dashboard.jsx:6367-6376`). The board therefore uses the app's existing epic-level derivation — `some()` over the epic's stories (`dashboard.jsx:11275-11277`) — which means an epic with stories on both sides is **both**, and shows under either Projects facet. That is the honest answer, not a defect. See §4.4. |
+| D41 | **Product/Tech is inherited from each story's Jira project; an Epic may inherit both** | Classify each story only through the configured mapping for `fields.projectKey`; issue type and Ad Hoc membership never determine Board classification. The Epic's Projects membership is the union of its complete story cohort, so an Epic spanning Product and Tech projects matches both. A story in a project mapped to `other` matches neither option. See §4.4. |
 | D42 | **Moving an epic to a resolved column with open stories warns, it never blocks** | Jira's workflow decides what is *allowed* (§6.4); this decides what is *sensible*. Dropping into a column whose chosen status is `Done`, `Killed` or `Incomplete` while the epic has unresolved stories inserts one confirmation step into the same `StatusTransitionMenu` — *"DEMO-1001 has 5 open stories" · Move to Done anyway · Keep it where it is*. Blocking is wrong for the same reason D24 gives for Min/Max: the board reports on work, it does not police it. |
 | D43 | **Exactly one column is focused, always** | §6.1 asserted this but nothing enforced it, and the dead state was reachable: unstar the starred column, fold the focused one, and every column folds — the board becomes bare rails with no content. Focus is now resolved through one function that cannot return nothing, and folding the focused column **transfers** focus rather than clearing it. See §6.1.2. |
 | D44 | **The group validator stays pure; live-status checking is a separate, injected concern** | `backend/services/group_config.py` imports only `json` and runs on **every read** (`settings_routes.py:348,376`, `shared_group_config.py:58-66`), so it structurally cannot call Jira — and must not start, or every config load becomes a network round-trip inside a DB session. Structural validation of `board` is pure and follows the `teamLabels` precedent: an injected `normalize_group_board_fn`. Status-existence checking is advisory, happens in the composer against `/api/board-config/statuses`, and never blocks a save. See §5.6. |
@@ -302,57 +304,26 @@ Local write-back after a transition goes through `applyLocalEpicDetailsFieldUpda
 confirmation that `status`, `priority` and `projectTrack` are strings, and the shape the board's
 drag-and-drop (§6.4) must write.
 
-### 4.4 Tech vs Product: intrinsic for stories, derived for epics (D41)
+### 4.4 Product vs Tech: inherited from Jira project (D41)
 
-The board's Projects facet filters **epics**, so it needs an epic-level rule. The app does not have
-one — it has three, and they disagree. Stating this precisely is the point of this section.
+The Board Projects facet filters **Epics**, but its source classification belongs to each child
+story's Jira project. Normalize the configured Jira project mapping to explicit
+`product|tech|other` values and classify each story from `fields.projectKey`. Issue type, Epic type,
+key prefix, and Ad Hoc membership do not participate.
 
-**Stories are intrinsic and single-sourced.** `classifyCapacityIssue`
-(`frontend/src/capacityClassification.mjs:20-40`) is the one classifier:
+An Epic's Projects membership is the union of classifications in its complete in-scope story
+cohort. Therefore an Epic with stories from both Product and Tech projects matches both options but
+is still counted once. An Epic with no in-scope stories, or only stories from projects classified
+`other`, matches neither narrowed option and remains visible only while the Projects facet is
+neutral. Counts and filtering must wait until the complete child cohort is authoritative.
 
-1. If the story's epic is in the group's Ad Hoc set → **Product** (Ad Hoc wins over everything).
-2. Else if `fields.projectKey` ∈ the Tech key set → **Tech**.
-3. Else → **Product**.
-
-The Tech key set comes from `dashboard-config.json` → `projects.selected[]` entries typed `tech`,
-read into `techProjectKeys` (`dashboard.jsx:575-583`). **Tech is enumerated; Product is the
-complement** — nothing tests `type === 'product'`. The repo's rule against classifying by key
-prefix is followed: a prefix match survives only as a last-resort fallback inside the classifier
-when `projectKey` is missing, and the key set itself falls back to a single default only when the
-configuration is empty.
-
-**Epics have no intrinsic side.** The epic payload carries no `projectKey`
-(`backend/services/alert_epics.py:18-30`), and the fetch provenance that *did* know — product
-response vs tech response — is discarded when the two lists merge
-(`dashboard.jsx:6367-6376`). The three coexisting derivations:
-
-| Derivation | Where | Problem |
-| --- | --- | --- |
-| Fetch provenance | `useEngSprintData.js:193-200` | Thrown away at the merge |
-| Story-derived, `some()` | `dashboard.jsx:11275-11277` | Non-exclusive — an epic can be **both** |
-| The epic's own `projectKey` | cohort path only (`capacityClassification.mjs:32-34`) | Not available on this payload |
-
-**Decision (D41): the board uses the story-derived rule**, the same one the app already uses at
-`dashboard.jsx:11275-11277`, because it is the only one whose inputs the board actually has.
-Consequences, all deliberate:
-
-- An epic whose stories span both sides matches **both** Projects facet options and appears
-  whichever one is ticked. It is not double-counted: the readout counts epics, and each epic is one
-  epic.
-- An epic with **no** stories in scope matches neither and is filtered out by any non-neutral
-  Projects selection. It still occupies its column when the facet is neutral.
-- The board's Projects facet is therefore *not* comparable to a project-key breakdown, and must not
-  be described as one in the UI. The facet reads `Tech` / `Product`, matching Catch Up's toggles.
-
-**Reuse, do not re-derive.** Catch Up's own display toggles inline the raw predicate rather than
-calling the classifier (`dashboard.jsx:6436-6442`), which is why they ignore Ad Hoc. The board must
-call the shared classifier for stories and the shared epic derivation for epics — a fourth copy of
-`techProjectKeys.has(...)` in board code is a review stop.
-
-**Do not merge the product and tech fetches.** They differ only by the `project` query param
-(`frontend/src/api/engApi.js:50-58`), which the backend turns into a JQL project clause and which is part of the
-server cache key (`jira_server.py:2506-2512`). Merging them would repartition that cache. The board
-adds no fetch of its own (§6.5.5); it renders from what Catch Up already loaded.
+The current Board seam injects Boolean `isTechTask` into its filter pipeline and
+`engBoardCardModel.js` currently defines Product as its negation. That executed seam does **not**
+satisfy D41 because it classifies `other` as Product. The optional-sprint production follow-up must
+replace it end to end with `classifyBoardProject(task) -> 'product'|'tech'|'other'`, including the
+dashboard caller, card model, facet counts, and admission predicate. Never call
+`classifyCapacityIssue`, apply its Ad Hoc override, inspect issue type, or implement Product as “not
+Tech” for Board classification. Sibling Catch Up/capacity behavior is out of scope.
 
 ### 4.2 Measured distributions
 
@@ -369,12 +340,12 @@ configured projects. These numbers drive the empty-state and scale decisions bel
 | Board 1042 columns | 3 columns over 12 statuses | Importing board columns verbatim is worse than composing |
 | Epic vs story workflow | Identical; all 12 epic statuses are on the board | Epic status → column mapping is safe |
 
-### 4.3 Known gaps — blocking UI work
+### 4.3 Historical pre-execution gaps — closed by the Execution status slices
 
 | Gap | Detail |
 | --- | --- |
 | **Epic description absent** | `fetch_epic_details_bulk` returns key, summary, status, priority, reporter, assignee, projectTrack, initiative — no `description`. Jira serves it as ADF, not HTML. |
-| **Delivery Owner absent** | `customfield_11147` is not requested by any current fetch. |
+| **Delivery Owner absent** | When `deliveryOwnerField` is unset, no Delivery Owner field is requested and the shaped value is absent. |
 | **Epic `updated` absent** | Same fetch never requests it either. Needed for §6.2 row 2. |
 | **Board status source** | `GET /api/board-config/statuses` reads each configured ENG project's workflow catalog and flattens only its Epic statuses; the saved board's project location is a legacy fallback when no projects are configured. It never calls the admin-scoped board-configuration resource or global status catalog. |
 
@@ -1443,7 +1414,7 @@ Fields searched, on the Board:
 | `key` | Case-insensitive substring | Existing behaviour — reuse `matchesEngTaskSearch` (`frontend/src/eng/engTaskUtils.js:21-44`), which has **no separate exact-full-key path**; drop that claim, it is not real |
 | `summary` | Case-insensitive substring | Existing behaviour, same function |
 | `assignee.displayName` | Case-insensitive substring | Existing behaviour, same function |
-| **`customfield_11147` Delivery Owner `.displayName`** | Case-insensitive substring | **New.** It names a different person from the assignee 90% of the time (§4.2), so without it there is no way to find the work someone is accountable for delivering. |
+| **Configured `deliveryOwner` `.displayName`** | Case-insensitive substring | When `deliveryOwnerField` is configured, it names a different person from the assignee 90% of the time (§4.2), so search includes the shaped value without assuming a site-specific field id. |
 
 `engBoardSearch.js` (§13) is a **new** OR-predicate function for epics — it is not
 `matchesEngTaskSearch` reused as-is (that function matches stories against an epic-keyed lookup;
@@ -1452,9 +1423,9 @@ case-insensitive-substring semantics, not a fresh implementation style.
 
 Rules:
 
-- Matching is **client-side over the already-fetched epic set** — no extra request, no JQL
-  change. `customfield_11147` is already in the payload for the card (§9), so search costs
-  nothing beyond a comparison.
+- Matching is **client-side over the already-fetched epic set** — no extra request or JQL change.
+  When configured, Delivery Owner is already shaped as `epic.deliveryOwner` for the card (§9), so
+  search costs nothing beyond a comparison; when unset, that candidate is absent.
 - A match on Delivery Owner is not visually distinguished from a match on assignee; both simply
   keep the card. The card already shows both people, so the reason is visible.
 - Epics with no Delivery Owner are unmatchable by that field, and must not be excluded by a
@@ -1625,8 +1596,8 @@ real coverage point is a new `("GET", "/api/board-config/statuses")` sample unde
 
 - No new JQL, and no change to the base JQL. Columns are a client-side grouping of epics already
   in scope, not seven queries.
-- No per-epic fan-out for card data. Everything on the card comes from the existing bulk fetch
-  plus `customfield_11147`.
+- No per-epic fan-out for card data. Everything on the card comes from the existing bulk fetch,
+  including configured `deliveryOwner` when that field is set.
 - No new write path to Jira from this feature beyond the transitions that already exist (status,
   priority, project track), all through the signed-in user's OAuth context. Card drag-and-drop
   (D37) is a new *trigger* for the existing status transition, not a new write path — see §9.5.
@@ -1922,7 +1893,7 @@ the height, not the appearance.
 | Focus is a total (D43) | After **every** focus-affecting action — load, focus, fold, star, unstar, column delete — `.col.is-focused` has exactly one element. Assert the total, not the cases |
 | Zero-star config | With no starred column the board still opens exactly one, chosen by the §6.1.2 rule |
 | Fold transfers focus | Folding the focused column leaves a different column focused, never none; folding the first column falls right |
-| Epic side is derived (D41) | An epic with stories in both a Tech and a Product project matches **both** Projects options and renders under either; the readout still counts it once |
+| Epic side is project-inherited (D41) | Stories with different issue types but the same Jira project classify identically; an Epic with stories in both a Tech and a Product project matches **both** Projects options and is counted once; `other` matches neither |
 | Resolved-column gate (D42) | Dropping an epic with open stories on Done shows the confirmation and moves nothing; *Move anyway* completes it; an epic with everything done skips the confirmation entirely |
 | Schema (D44) | Each row of §5.6 has a validator unit test — zero columns, malformed and duplicate ids, blank and duplicate names, two stars, `min > max`, duplicate status across columns, empty status list. Arbitrary imported members return `errors`, never exceptions; an omitted group `board` remains legal while a present `{ columns: [] }` blocks unified Save |
 | Stale status warns | The composer retains and visibly warns about a saved status missing from the live catalog; it remains non-blocking and matches no epic at runtime. The pure backend validator has no live catalog and emits no stale-status `warnings` |
@@ -2022,12 +1993,15 @@ Beyond the standard suites, this change also requires:
 | `frontend/src/eng/engProjectTrackTransitionUtils.js` | Edit — added during execution. It collapsed anything not `'planning'` to `'catch_up'`, so a board track change reported the wrong `source_surface` |
 | `frontend/src/eng/engBoardPanelStories.js` | Create — added during execution: the panel's story-list model (the three sort orders, status ordered by the board's own column order). Pure, so the orders are testable without a DOM |
 | `frontend/src/eng/engEpicDescriptionCache.js` | Create — added during execution: the per-session description cache §9.2 requires. Keyed on backend URL + normalized epic key, and a failed entry is evicted so *Retry* re-requests. §9.3 deliberately added no server cache, which is why the client owns one |
-| `frontend/src/eng/useEngBoardFilters.js` | Create — added during execution: the Board's filter pipeline, extracted from `dashboard.jsx` to stay inside its line budget |
+| `frontend/src/eng/engBoardCardModel.js` | Edit in the optional-sprint production follow-up — replace Boolean `isTechTask`/negation with exact `classifyBoardProject` tri-state union; `other` matches neither option |
+| `frontend/src/eng/engBoardFilters.js` | Edit in the optional-sprint production follow-up — carry the same tri-state classifier through Projects counts and admission |
+| `frontend/src/eng/useEngBoardFilters.js` | Edit in the optional-sprint production follow-up — pass `classifyBoardProject` through the Board filter pipeline; this file was created during the original execution to keep `dashboard.jsx` within budget |
+| `tests/test_eng_board_card_model.js`, `tests/test_eng_board_filters.js`, `tests/ui/eng_group_board_filters.spec.js` | Edit in the optional-sprint production follow-up — prove `other` matches neither and issue type cannot change a Jira-project classification |
 | `frontend/src/eng/engModeState.js` | Create — lift `activeEngMode`, `applyEngMode` and the mutual-exclusion effects out of `dashboard.jsx`. This is how the fifth mode fits in 7 lines of budget headroom (§6.5.7) |
-| `frontend/src/capacityClassification.mjs` | **Not edited** — the board calls `classifyCapacityIssue` as it stands (D41). A fourth inline copy of the Tech-key predicate is a review stop |
+| `frontend/src/capacityClassification.mjs` | **Not edited** — its capacity/Ad Hoc rules are not the Board contract. Board Projects membership comes from the caller's explicit Jira-project tri-state classifier (D41); issue type must not affect it |
 | `backend/services/group_config.py` | Edit — inject `normalize_group_board_fn` (mirroring `normalize_group_team_labels_fn` at `:29,99`), add `board` to the normalized dict at `:100-108`, and to `build_default_groups_config` `:140-151` (§5.6) |
 | `backend/services/group_board.py` | Create — the pure `normalize_group_board` validator. Pure by contract: no imports that can perform I/O (§5.6) |
-| `jira_server.py` | Edit — wire `normalize_group_board_fn` into the `validate_groups_config` call at `:2475-2485`; add `description` to no bulk field list (§9.2 is a separate route); add `DELIVERY_OWNER_FIELD_DEFAULT` + `get_delivery_owner_field_id()`, mirroring `PROJECT_TRACK_FIELD_DEFAULT`/`get_project_track_field_id()` at `:2305,2357-2369` (§9.1, O11) |
+| `jira_server.py` | Edit — wire `normalize_group_board_fn` into the `validate_groups_config` call at `:2475-2485`; add `description` to no bulk field list (§9.2 is a separate route); add `get_delivery_owner_field_config()`/`get_delivery_owner_field_id()` with an empty no-default result until Settings saves `deliveryOwnerField` (§9.1, O11) |
 | `frontend/src/settings/JiraFieldSettings.jsx` | Edit — add **Delivery Owner Field** as a fifth entry in the `groupManageTab === 'mapping'` block, alongside Parent Name Field / Story Points Field / Team Field, reusing the same search/chip/toggle markup (§9.1, O11) |
 | `tests/ui/settings_unified_save.spec.js` | Edit — the 409 cases and the all-sections-dirty case (§5.7) |
 | `docs/README_ANALYTICS.md` | Edit — add the `board` source surface to the status-action taxonomy (§9.5) |
@@ -2044,7 +2018,7 @@ Beyond the standard suites, this change also requires:
 | `frontend/src/api/boardConfigApi.js` | Create — fetch board statuses and the lazy epic description, each with `X-Requested-With` and a tracked surface (`tests/test_frontend_api_source_guards.js`) |
 | `frontend/src/eng/engBoardSearch.js` | Create — the OR predicate over key, summary, assignee and Delivery Owner (§8) |
 | `tests/fixtures/groupBoardReference.*` | Create — the two §5.5 fixtures, shared by the Python and Playwright suites |
-| `frontend/src/dashboard.jsx` | Edit — **budget is 16000 lines and the file is at 15993** (`tests/test_codebase_structure_budgets.py:74`). Wiring must live in the new modules; raise the budget only with an itemized comment if genuinely required. |
+| `frontend/src/dashboard.jsx` | Edit — wire the optional-sprint follow-up's `classifyBoardProject` into the Board-only pipeline. **Budget is 16000 lines and the file is at 15993** (`tests/test_codebase_structure_budgets.py:74`); logic stays in the new modules, and the budget changes only with an itemized justification. |
 | `docs/plans/assets/eng-group-board/board.html` | Edit — **done, last task.** Epic-detail-panel description body replaced with lorem-ipsum placeholder prose of the same shape (six headings, nested lists, ~2,650 characters), per §6.3. Design notes sentences that called the body real are corrected. |
 
 ## 14. Risks

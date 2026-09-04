@@ -187,6 +187,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Ready implementation contract for GitHub issue #150, grounded in the reviewed support design and current ENG filter architecture.
    - Adds test-first Project Track four-state semantics and `7 / 4 / 0` count coverage, shared Status/Priority option visuals across every task-list mode plus Priority/Track visuals on Board, scoped accessibility/layout safeguards, analytics non-event verification, and full generated-build/browser/Python gates without increasing the `dashboard.jsx` structure budget.
 
+21. `EXEC-catch-up-project-track-filter.md`
+   - Approved follow-up to issue #150 defining Project Track as Epic-owned in the canonical ontology.
+   - Adds the same four-state Track facet to Catch Up by filtering Stories through parent Epics, keeps Track counts Epic-based, softens Status backgrounds, and adds no request, persistence key, backend route, Jira mutation, or analytics event.
+
 ## Capacity Reporting Workflow
 
 1. `SUPPORT-excluded-capacity-control-row-design.md`

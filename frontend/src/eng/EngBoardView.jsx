@@ -724,6 +724,8 @@ export default function EngBoardView({
                 onChange={onFacetChange}
                 onClearAll={() => onFacetChange?.({})}
                 onHeightChange={onFilterBarHeightChange}
+                boardColumns={board?.columns || []}
+                renderPriorityIcon={renderPriorityIcon}
                 viewControls={<EngBoardHelp scaleMax={scaleMax} />}
             />
             <div className="eng-board" role="region" aria-label="Group board">

@@ -5,7 +5,7 @@ async function loadModule() {
     return import('../frontend/src/eng/engTaskUtils.js');
 }
 
-test('resetEngFacetFilters resets only the four Catch Up facet setters and emits no analytics', async () => {
+test('resetEngFacetFilters resets all Catch Up facet setters and emits no analytics', async () => {
     const { resetEngFacetFilters } = await loadModule();
     const calls = [];
     const setter = (name) => (value) => calls.push([name, value]);
@@ -14,6 +14,7 @@ test('resetEngFacetFilters resets only the four Catch Up facet setters and emits
     resetEngFacetFilters({
         setEngStatusFilter: setter('status'),
         setEngPriorityFilter: setter('priority'),
+        setEngProjectTrackFilter: setter('track'),
         defaultEngStatusFilter: { hidden: ['Killed'] },
         setShowTech: setter('tech'),
         setShowProduct: setter('product'),
@@ -23,6 +24,7 @@ test('resetEngFacetFilters resets only the four Catch Up facet setters and emits
     assert.deepEqual(calls, [
         ['status', { hidden: ['Killed'] }],
         ['priority', null],
+        ['track', undefined],
         ['tech', true],
         ['product', true],
     ]);

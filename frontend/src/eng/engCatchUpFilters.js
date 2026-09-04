@@ -24,6 +24,11 @@ import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import { getPriorityLabel } from '../stats/statsUtils.js';
 import { getStatusPhaseRank } from './engTaskUtils.js';
 import { buildFacetView, countActiveFacets, reconcileSelection } from './engFilterFacets.js';
+import {
+    classifyEpicProjectTrack,
+    PROJECT_TRACK_COMMITTED,
+    PROJECT_TRACK_FLEXIBLE,
+} from './engProjectTrack.js';
 
 export const ENG_CATCH_UP_SUBJECT = 'Filtering stories';
 
@@ -106,21 +111,40 @@ function statusOptionsInWorkflowOrder(statusCounts) {
         .map((name) => ({ id: name, label: name }));
 }
 
-export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false } = {}) {
+function epicForTask(task, epicDetails) {
+    const epicKey = String(task?.fields?.epicKey || '').trim();
+    return epicKey ? epicDetails?.[epicKey] || null : null;
+}
+
+export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false, epicDetails = {} } = {}) {
     const statusCounts = countBy(tasks, (task) => task.fields?.status?.name);
     const priorityCounts = countBy(tasks, (task) => priorityAxisLabel(task.fields?.priority?.name));
     const projectCounts = { tech: 0, product: 0 };
+    const trackCounts = { [PROJECT_TRACK_COMMITTED]: 0, [PROJECT_TRACK_FLEXIBLE]: 0 };
+    const countedEpicKeys = new Set();
+    let trackEpicTotal = 0;
+    let unsetTrackEpicTotal = 0;
     tasks.forEach((task) => {
         projectCounts[isTechTask(task) ? 'tech' : 'product'] += 1;
+        const epicKey = String(task?.fields?.epicKey || '').trim();
+        const epic = epicForTask(task, epicDetails);
+        if (!epicKey || !epic || countedEpicKeys.has(epicKey)) return;
+        countedEpicKeys.add(epicKey);
+        trackEpicTotal += 1;
+        const classification = classifyEpicProjectTrack(epic);
+        if (classification.kind === 'recognized') trackCounts[classification.id] += 1;
+        if (classification.kind === 'unset') unsetTrackEpicTotal += 1;
     });
     const scopeTotal = tasks.length;
 
     return {
         scopeTotal,
+        epicDetails,
         counts: {
             status: statusCounts,
             priority: PRIORITY_AXIS.reduce((all, label) => ({ ...all, [label]: priorityCounts[label] || 0 }), {}),
             projects: projectCounts,
+            track: trackCounts,
         },
         facets: [
             {
@@ -144,6 +168,21 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
                 neutralTotal: scopeTotal,
                 options: [{ id: 'tech', label: 'Tech' }, { id: 'product', label: 'Product' }],
             },
+            {
+                id: 'track',
+                label: 'Project Track',
+                kind: 'multi',
+                allowEmpty: true,
+                showZeroCountOptions: true,
+                emptyLabel: 'No Project Track',
+                emptyDescription: 'No Project Track — showing stories under epics without a value',
+                emptyTotal: unsetTrackEpicTotal,
+                neutralTotal: trackEpicTotal,
+                options: [
+                    { id: PROJECT_TRACK_COMMITTED, label: 'Committed' },
+                    { id: PROJECT_TRACK_FLEXIBLE, label: 'Flexible' },
+                ],
+            },
         ],
     };
 }
@@ -165,20 +204,22 @@ export function resolveEngCatchUpFilters({
     priority = null,
     showTech = true,
     showProduct = true,
+    track,
 } = {}) {
     const { facets, counts, scopeTotal } = model;
-    const [statusFacet, priorityFacet, projectsFacet] = facets;
+    const [statusFacet, priorityFacet] = facets;
 
     const rawSelection = {
         status: tickedIdsFor(status, visibleIdsOf(statusFacet, counts)),
         priority: tickedIdsFor(priority, visibleIdsOf(priorityFacet, counts)),
         projects: [showTech ? 'tech' : null, showProduct ? 'product' : null].filter(Boolean),
+        ...(Array.isArray(track) ? { track } : {}),
     };
     // Scope changes recompute counts, which can hide every option a stored filter names.
     // Reconciling here is what stops that reaching the empty set §7.3 forbids.
     const selection = reconcileSelection({ facets, selection: rawSelection, counts });
     const facetViews = buildFacetView({ facets, selection, counts, scopeTotal });
-    const [statusView, priorityView, projectsView] = facetViews;
+    const [statusView, priorityView, projectsView, trackView] = facetViews;
 
     const admits = (view, value) => view.isNeutral || view.activeOptionIds.some((id) => normalizeId(id) === normalizeId(value));
 
@@ -203,6 +244,12 @@ export function resolveEngCatchUpFilters({
         admitsStatusForPlanning: (statusName) => !statusExcludes || admits(statusView, statusName),
         admitsPriority: (priorityName) => admits(priorityView, priorityAxisLabel(priorityName)),
         admitsProject: (isTech) => admits(projectsView, isTech ? 'tech' : 'product'),
+        admitsProjectTrack: (task) => {
+            if (trackView.isNeutral) return true;
+            const classification = classifyEpicProjectTrack(epicForTask(task, model.epicDetails));
+            if (trackView.isEmptySelection) return classification.kind === 'unset';
+            return classification.kind === 'recognized' && trackView.activeOptionIds.includes(classification.id);
+        },
     };
 }
 
@@ -239,10 +286,18 @@ function storedFromTicked(tickedIds, visibleIds, prior) {
 export function readEngCatchUpFilterState(selection, facetViews, stored = {}) {
     const [statusView, priorityView] = facetViews;
     const projects = selection.projects || [];
-    return {
+    const next = {
         status: storedFromTicked(selection.status, statusView.visibleOptions.map((option) => option.id), stored.status),
         priority: storedFromTicked(selection.priority, priorityView.visibleOptions.map((option) => option.id), stored.priority),
         showTech: projects.includes('tech'),
         showProduct: projects.includes('product'),
     };
+    if (Object.prototype.hasOwnProperty.call(selection, 'track')) {
+        const track = Array.isArray(selection.track) ? selection.track : [];
+        const trackView = facetViews.find((facet) => facet.id === 'track');
+        const visibleIds = (trackView?.visibleOptions || []).map((option) => option.id);
+        const ordered = visibleIds.filter((id) => track.includes(id));
+        if (track.length === 0 || ordered.length < visibleIds.length) next.track = ordered;
+    }
+    return next;
 }

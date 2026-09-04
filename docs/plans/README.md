@@ -179,6 +179,18 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented and locally verified on 2026-09-01; retain as `EXEC-*` pending acceptance or merge.
    - Delivers workspace-shared Capacity configuration, OAuth-only Jira field editing through the signed-in user, provider-verified scope enforcement, revision-aware saves, safe analytics, and responsive/sticky UI verification.
 
+19. `SUPPORT-eng-filter-option-visuals-design.md`
+   - Approved design reference for GitHub issue #150's ENG filter-popover visual improvements.
+   - Colors each Status label directly from the active Department board with a contrast-safe classic/neutral fallback, reuses the existing priority SVGs, labels the facet `Project Track`, keeps Committed/Flexible visible at zero, shows the full admitted heading total independently of their counts, and treats both unchecked as only genuinely unset `No Project Track` Epics. Preserves the existing per-scope reset lifecycle and adds no request, persistence, analytics event, or backend route.
+
+20. `EXEC-eng-filter-option-visuals.md`
+   - Implemented and verified locally on 2026-09-04; retain as `EXEC-*` pending acceptance or merge. The user-approved Catch Up extension is recorded separately below.
+   - Adds test-first Project Track four-state semantics and `7 / 4 / 0` count coverage, shared Status/Priority option visuals across every task-list mode plus Priority/Track visuals on Board, scoped accessibility/layout safeguards, analytics non-event verification, and full generated-build/browser/Python gates without increasing the `dashboard.jsx` structure budget.
+
+21. `EXEC-catch-up-project-track-filter.md`
+   - Implemented and verified locally on 2026-09-04; retain as `EXEC-*` pending acceptance or merge. Defines Project Track as Epic-owned in the canonical ontology.
+   - Adds the same four-state Track facet to Catch Up by filtering Stories through parent Epics, keeps Track counts Epic-based, softens Status backgrounds, and adds no request, persistence key, backend route, Jira mutation, or analytics event.
+
 ## Capacity Reporting Workflow
 
 1. `SUPPORT-excluded-capacity-control-row-design.md`

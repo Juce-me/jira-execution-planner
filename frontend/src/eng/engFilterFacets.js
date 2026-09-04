@@ -18,14 +18,25 @@ function optionCount(counts, facetId, optionId) {
 function visibleOptionsOf(facet, counts) {
     return facet.options
         .map((option) => ({ id: option.id, label: option.label, count: optionCount(counts, facet.id, option.id) }))
-        .filter((option) => option.count > 0);
+        .filter((option) => facet.showZeroCountOptions || option.count > 0);
+}
+
+function isExplicitEmptySelection(selection, facet) {
+    return Boolean(
+        facet.allowEmpty
+        && selection
+        && Object.prototype.hasOwnProperty.call(selection, facet.id)
+        && Array.isArray(selection[facet.id])
+        && selection[facet.id].length === 0
+    );
 }
 
 // The one place that decides what an absent or explicitly empty selection means. For a `multi`
-// facet, both mean neutral — every visible option ticked; an empty multi selection is not a
-// representable state in this design, so there is no second meaning worth preserving for it. For
-// a `single` facet, both mean `defaultOptionId`.
+// facet, an absent selection is neutral — every visible option ticked. An explicit empty array is
+// distinct only for facets that opt into `allowEmpty`; ordinary multi facets still cannot empty.
+// For a `single` facet, both absent and empty mean `defaultOptionId`.
 function selectedIdsOf(selection, facet, counts) {
+    if (isExplicitEmptySelection(selection, facet)) return [];
     const selected = selection && selection[facet.id];
     const hasSelection = Array.isArray(selected) && selected.length > 0;
     if (facet.kind === 'single') {
@@ -45,20 +56,23 @@ export function buildFacetView({ facets = [], selection = {}, counts = {}, scope
     return facets.map((facet) => {
         const visibleOptions = visibleOptionsOf(facet, counts);
         const isSingle = facet.kind === 'single';
+        const isEmptySelection = !isSingle && isExplicitEmptySelection(selection, facet);
         const ticked = new Set(selectedIdsOf(selection, facet, counts));
         const activeOptions = visibleOptions.filter((option) => ticked.has(option.id));
         const activeOptionIds = activeOptions.map((option) => option.id);
-        const isNeutral = isSingle
+        const isNeutral = isEmptySelection ? false : isSingle
             ? ticked.has(facet.defaultOptionId)
             : activeOptionIds.length === visibleOptions.length;
         // D34/D33: neutral means the facet is not filtering, so its heading reads the whole scope.
         // Delivery track's options do not partition the scope — summing them would omit every
         // epic with no track at all — which is what neutralTotal exists to express.
-        const admittedTotal = isNeutral
+        const admittedTotal = isEmptySelection
+            ? (facet.emptyTotal ?? 0)
+            : isNeutral
             ? (facet.neutralTotal ?? scopeTotal)
             : activeOptions.reduce((total, option) => total + option.count, 0);
         // §7.3: the last ticked visible option of a multi facet locks, so no facet can empty.
-        const lockedOptionIds = !isSingle && activeOptionIds.length === 1 ? [activeOptionIds[0]] : [];
+        const lockedOptionIds = !isSingle && !facet.allowEmpty && activeOptionIds.length === 1 ? [activeOptionIds[0]] : [];
 
         return {
             id: facet.id,
@@ -66,6 +80,7 @@ export function buildFacetView({ facets = [], selection = {}, counts = {}, scope
             kind: facet.kind,
             visibleOptions,
             isNeutral,
+            isEmptySelection,
             admittedTotal,
             activeOptionIds,
             lockedOptionIds,
@@ -73,8 +88,8 @@ export function buildFacetView({ facets = [], selection = {}, counts = {}, scope
     });
 }
 
-// Returns a new selection; the input is never mutated. A multi facet refuses to untick its last
-// ticked visible option and returns the selection unchanged, so no facet can reach an empty set.
+// Returns a new selection; the input is never mutated. An ordinary multi facet refuses to untick
+// its last visible option; an `allowEmpty` facet deliberately preserves that explicit state.
 export function toggleFacetOption(selection, facet, optionId, counts) {
     if (facet.kind === 'single') {
         return { ...selection, [facet.id]: [optionId] };
@@ -84,7 +99,7 @@ export function toggleFacetOption(selection, facet, optionId, counts) {
     const ticked = new Set(selectedIdsOf(selection, facet, counts));
     if (ticked.has(optionId)) {
         const tickedVisibleIds = visibleIds.filter((id) => ticked.has(id));
-        if (tickedVisibleIds.length === 1 && tickedVisibleIds[0] === optionId) return selection;
+        if (!facet.allowEmpty && tickedVisibleIds.length === 1 && tickedVisibleIds[0] === optionId) return selection;
         ticked.delete(optionId);
     } else {
         ticked.add(optionId);
@@ -97,8 +112,8 @@ export function toggleFacetOption(selection, facet, optionId, counts) {
 }
 
 // A scope change recomputes counts, which can hide a ticked option or remove it outright. This
-// drops those references and resets a facet that would be left with nothing ticked to neutral,
-// so a scope change can never strand the UI in the empty state §7.3 forbids.
+// drops stale references and resets an ordinary facet left with nothing ticked to neutral. An
+// `allowEmpty` facet keeps an explicitly chosen empty array across scope changes.
 export function reconcileSelection({ facets = [], selection = {}, counts = {} } = {}) {
     const reconciled = {};
 
@@ -111,12 +126,25 @@ export function reconcileSelection({ facets = [], selection = {}, counts = {} } 
                 : neutralFacetSelection(facet, counts);
             return;
         }
+        if (isExplicitEmptySelection(selection, facet)) {
+            reconciled[facet.id] = [];
+            return;
+        }
         const ticked = new Set(selectedIdsOf(selection, facet, counts));
         const kept = visibleIds.filter((id) => ticked.has(id));
         reconciled[facet.id] = kept.length ? kept : neutralFacetSelection(facet, counts);
     });
 
     return reconciled;
+}
+
+export function resetFacetSelection(selection, facet, counts) {
+    if (facet.allowEmpty) {
+        const next = { ...selection };
+        delete next[facet.id];
+        return next;
+    }
+    return { ...selection, [facet.id]: neutralFacetSelection(facet, counts) };
 }
 
 // D35: a chip states the shorter truth about its facet. Enumerating everything ticked produced a
@@ -136,6 +164,10 @@ function chipCopy(facetLabel, verb, names) {
 
 export function describeFacetChip(facetView, facet) {
     if (!facetView || facetView.isNeutral) return null;
+
+    if (facetView.isEmptySelection) {
+        return chipCopy(facetView.label, 'only', [facet.emptyLabel]);
+    }
 
     if (facetView.kind === 'single') {
         // Radio facets carry no verb: "Assignee Unassigned only" is already the shorter truth.

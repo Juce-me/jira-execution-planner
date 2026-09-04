@@ -184,11 +184,11 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Colors each Status label directly from the active Department board with a contrast-safe classic/neutral fallback, reuses the existing priority SVGs, labels the facet `Project Track`, keeps Committed/Flexible visible at zero, shows the full admitted heading total independently of their counts, and treats both unchecked as only genuinely unset `No Project Track` Epics. Preserves the existing per-scope reset lifecycle and adds no request, persistence, analytics event, or backend route.
 
 20. `EXEC-eng-filter-option-visuals.md`
-   - Ready implementation contract for GitHub issue #150, grounded in the reviewed support design and current ENG filter architecture.
+   - Implemented and verified locally on 2026-09-04; retain as `EXEC-*` pending acceptance or merge. The user-approved Catch Up extension is recorded separately below.
    - Adds test-first Project Track four-state semantics and `7 / 4 / 0` count coverage, shared Status/Priority option visuals across every task-list mode plus Priority/Track visuals on Board, scoped accessibility/layout safeguards, analytics non-event verification, and full generated-build/browser/Python gates without increasing the `dashboard.jsx` structure budget.
 
 21. `EXEC-catch-up-project-track-filter.md`
-   - Approved follow-up to issue #150 defining Project Track as Epic-owned in the canonical ontology.
+   - Implemented and verified locally on 2026-09-04; retain as `EXEC-*` pending acceptance or merge. Defines Project Track as Epic-owned in the canonical ontology.
    - Adds the same four-state Track facet to Catch Up by filtering Stories through parent Epics, keeps Track counts Epic-based, softens Status backgrounds, and adds no request, persistence key, backend route, Jira mutation, or analytics event.
 
 ## Capacity Reporting Workflow

@@ -465,8 +465,7 @@ import {
                     priority: savedPrefsRef.current.engPriorityFilter ?? null
                 }
                 : migrateEngCatchUpFilters(savedPrefsRef.current);
-            const [engStatusFilter, setEngStatusFilter] = useState(initialEngFilters.status);
-            const [engPriorityFilter, setEngPriorityFilter] = useState(initialEngFilters.priority);
+            const [engStatusFilter, setEngStatusFilter] = useState(initialEngFilters.status); const [engPriorityFilter, setEngPriorityFilter] = useState(initialEngFilters.priority); const [engProjectTrackFilter, setEngProjectTrackFilter] = useState(undefined);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
             const [showProduct, setShowProduct] = useState(savedPrefsRef.current.showProduct ?? true);
             const savedInitialViewRef = useRef(savedPrefsRef.current.selectedView ?? 'eng');
@@ -5615,7 +5614,7 @@ import {
                     techLoaded: false,
                     error: '',
                     engStatusFilter: initialEngFilters.status,
-                    engPriorityFilter: initialEngFilters.priority,
+                    engPriorityFilter: initialEngFilters.priority, engProjectTrackFilter: undefined,
                     showTech: savedPrefsRef.current.showTech ?? true,
                     showProduct: savedPrefsRef.current.showProduct ?? true,
                     groupByInitiativeChoice: savedPrefsRef.current.groupByInitiativeChoice ?? null,
@@ -5721,7 +5720,7 @@ import {
                 techLoaded,
                 error,
                 engStatusFilter,
-                engPriorityFilter,
+                engPriorityFilter, engProjectTrackFilter,
                 showTech,
                 showProduct,
                 groupByInitiativeChoice,
@@ -5828,7 +5827,7 @@ import {
                 setTechLoaded(Boolean(nextState.techLoaded));
                 setError(nextState.error || '');
                 setEngStatusFilter(nextState.engStatusFilter ?? null);
-                setEngPriorityFilter(nextState.engPriorityFilter ?? null);
+                setEngPriorityFilter(nextState.engPriorityFilter ?? null); setEngProjectTrackFilter(Array.isArray(nextState.engProjectTrackFilter) ? nextState.engProjectTrackFilter : undefined);
                 setShowTech(nextState.showTech ?? true);
                 setShowProduct(nextState.showProduct ?? true);
                 setGroupByInitiativeChoice(nextState.groupByInitiativeChoice ?? null);
@@ -5939,7 +5938,7 @@ import {
                 techLoaded,
                 error,
                 engStatusFilter,
-                engPriorityFilter,
+                engPriorityFilter, engProjectTrackFilter,
                 showTech,
                 showProduct,
                 groupByInitiativeChoice,
@@ -7593,16 +7592,16 @@ import {
             ]);
             // O6: counts recompute on scope change only, never on a facet tick.
             const engCatchUpFacetModel = React.useMemo(
-                () => buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask }),
-                [engFilterScopeTasks, isTechTask]
+                () => buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails }),
+                [engFilterScopeTasks, isTechTask, epicDetails]
             );
             const engCatchUpFilters = React.useMemo(() => resolveEngCatchUpFilters({
                 model: engCatchUpFacetModel,
                 status: engStatusFilter,
-                priority: engPriorityFilter,
+                priority: engPriorityFilter, track: engProjectTrackFilter,
                 showTech,
                 showProduct
-            }), [engCatchUpFacetModel, engStatusFilter, engPriorityFilter, showTech, showProduct]);
+            }), [engCatchUpFacetModel, engStatusFilter, engPriorityFilter, engProjectTrackFilter, showTech, showProduct]);
             // The stored values go in as well as out: a facet edit only speaks for the options
             // the bar can show, so an exclusion for an option absent from this scope has to be
             // carried forward rather than recomputed away.
@@ -7613,11 +7612,12 @@ import {
                 });
                 setEngStatusFilter(next.status);
                 setEngPriorityFilter(next.priority);
+                setEngProjectTrackFilter(next.track);
                 setShowTech(next.showTech);
                 setShowProduct(next.showProduct);
             }, [engCatchUpFilters, engStatusFilter, engPriorityFilter]);
             const scopedTasks = React.useMemo(
-                () => engFilterScopeTasks.filter(task => engCatchUpFilters.admitsProject(isTechTask(task))),
+                () => engFilterScopeTasks.filter(task => engCatchUpFilters.admitsProject(isTechTask(task)) && engCatchUpFilters.admitsProjectTrack(task)),
                 [engFilterScopeTasks, engCatchUpFilters, isTechTask]
             );
 
@@ -13591,8 +13591,8 @@ import {
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
             const showGroupControl = (visibleControlGroups || []).length > 1; const searchActive = Boolean(String(searchInput || searchQuery || '').trim()); const searchPanelActive = searchActive || searchFocused;
-            const clearEngFacetFilters = React.useCallback(() => resetEngFacetFilters({ setEngStatusFilter, setEngPriorityFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct }), []);
-            const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
+            const clearEngFacetFilters = React.useCallback(() => resetEngFacetFilters({ setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct }), []);
+            const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
             const renderSearchControl = (surface, extraClassName = '') => (
                 <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter applied-filter' : ''} ${extraClassName}`.trim()}>
@@ -16736,7 +16736,7 @@ import {
                                             }}
                                         />
                                     ) : null}
-                                    engFilters={engCatchUpFilters}
+                                    engFilters={engCatchUpFilters} boardColumns={activeGroup?.board?.columns || []} renderPriorityIcon={renderPriorityIcon}
                                     onFacetChange={handleEngFacetChange}
                                     hasInitiativeData={hasInitiativeData}
                                     groupByInitiative={groupByInitiative}

@@ -53,7 +53,7 @@ function admittedKeys(filters, epicGroups = SCOPE) {
 test('buildEngBoardFacetModel exposes exactly the Board facets, in order', async () => {
     const model = await modelFor();
     assert.deepEqual(model.facets.map((facet) => facet.id), ['priority', 'projects', 'assignee', 'track']);
-    assert.deepEqual(model.facets.map((facet) => facet.label), ['Priority', 'Projects', 'Assignee', 'Delivery track']);
+    assert.deepEqual(model.facets.map((facet) => facet.label), ['Priority', 'Projects', 'Assignee', 'Project Track']);
     assert.deepEqual(model.facets.map((facet) => facet.kind), ['multi', 'multi', 'single', 'multi']);
 });
 
@@ -122,6 +122,47 @@ test('resolveEngBoardFilters: narrowing to Committed excludes Flexible and untra
     const scope = [epicGroup('T-1', { track: 'Committed' }), epicGroup('T-2', { track: 'Flexible' }), epicGroup('T-3', { track: null })];
     const filters = await resolved({ track: ['committed'] }, scope);
     assert.deepEqual(admittedKeys(filters, scope), ['T-1']);
+});
+
+test('Project Track keeps canonical zero-count rows and implements strict no-value membership', async () => {
+    const missing = epicGroup('MISSING', { track: null });
+    delete missing.epic.projectTrack;
+    const scope = [
+        ...Array.from({ length: 4 }, (_, i) => epicGroup(`C-${i}`, { track: ' committed ' })),
+        epicGroup('NULL', { track: null }),
+        missing,
+        epicGroup('BLANK', { track: '   ' }),
+        epicGroup('OTHER', { track: 'Other' }),
+    ];
+    const module = await loadModule();
+    const model = module.buildEngBoardFacetModel({ epicGroups: scope, isTechTask });
+    const trackFacet = model.facets.find((facet) => facet.id === 'track');
+    assert.deepEqual(model.counts.track, { committed: 4, flexible: 0 });
+    assert.equal(trackFacet.emptyTotal, 3);
+    const neutral = module.resolveEngBoardFilters({ model, selection: {} });
+    assert.equal(neutral.facetViews.at(-1).admittedTotal, 8);
+    assert.deepEqual(neutral.facetViews.at(-1).visibleOptions.map((option) => option.count), [4, 0]);
+    const empty = module.resolveEngBoardFilters({ model, selection: { track: [] } });
+    assert.equal(empty.facetViews.at(-1).isEmptySelection, true);
+    assert.deepEqual(admittedKeys(empty, scope), ['NULL', 'MISSING', 'BLANK']);
+    assert.equal(admittedKeys(empty, scope).includes('OTHER'), false);
+});
+
+test('Project Track explicit empty excludes a synthetic group without an Epic entity', async () => {
+    const scope = [
+        epicGroup('UNSET', { track: null }),
+        { key: 'NO-EPIC', epic: null, tasks: [] },
+    ];
+    const filters = await resolved({ track: [] }, scope);
+    assert.deepEqual(admittedKeys(filters, scope), ['UNSET']);
+});
+
+test('explicit no-track survives same-snapshot reconciliation even when it admits zero', async () => {
+    const scope = [epicGroup('C', { track: 'Committed' })];
+    const filters = await resolved({ track: [] }, scope);
+    assert.deepEqual(filters.selection.track, []);
+    assert.equal(filters.facetViews.at(-1).admittedTotal, 0);
+    assert.deepEqual(admittedKeys(filters, scope), []);
 });
 
 // ── Assignee is a single facet (§7.2) ────────────────────────────────────────

@@ -5,10 +5,17 @@
 | Field | Value |
 | --- | --- |
 | Date | 2026-09-03 |
-| Status | Ready for execution |
+| Status | Implemented and verified locally; pending acceptance or merge |
 | Issue | [#150 — Improve Filters UI](https://github.com/Juce-me/jira-execution-planner/issues/150) |
 | Design | [`SUPPORT-eng-filter-option-visuals-design.md`](./SUPPORT-eng-filter-option-visuals-design.md) |
 | Surfaces | Shared ENG task-list filter popovers and Board filter popover |
+
+> **Execution note (2026-09-04):** The user explicitly extended the approved behavior during
+> implementation: Catch Up now has the same Epic-owned Project Track four-state facet as Board,
+> Status backgrounds are surface-mixed rather than solid, and no mobile-specific adaptation was
+> added. The ontology, exact follow-up contract, completed checks, and verification evidence are in
+> [`EXEC-catch-up-project-track-filter.md`](./EXEC-catch-up-project-track-filter.md). Where this
+> original immutable contract differs, that approved follow-up governs the implemented behavior.
 
 ## Goal
 

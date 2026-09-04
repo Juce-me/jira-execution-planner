@@ -129,13 +129,31 @@ test('ENG Board high-frequency view and draft interactions stay on the no-event 
     const analyticsDoc = read('docs/README_ANALYTICS.md');
     for (const action of [
         'ENG Board column focus/fold/star',
-        'ENG Board/Catch Up filter facet ticks, chip clears, and +n more',
+        'ENG Board/Catch Up filter facet ticks, chip clears, +n more, passive option visuals, and explicit No Project Track state',
         'ENG Board epic detail panel open',
         'Group Board composer draft edits',
     ]) {
         assert.ok(analyticsDoc.includes(action), `Expected no-event allowlist row for ${action}`);
     }
     assert.ok(analyticsDoc.includes('ENG Board card drag: cancelled or refused'));
+});
+
+test('ENG filter option visuals and explicit No Project Track state emit no analytics', () => {
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const files = [
+        'frontend/src/eng/engFilterOptionVisuals.js',
+        'frontend/src/eng/engFilterFacets.js',
+        'frontend/src/eng/engBoardFilters.js',
+        'frontend/src/eng/engCatchUpFilters.js',
+        'frontend/src/eng/engProjectTrack.js',
+        'frontend/src/eng/EngFilterBar.jsx',
+    ];
+    files.forEach((filePath) => {
+        const source = read(filePath);
+        assert.equal(source.includes('trackEvent'), false, `${filePath} must not emit analytics`);
+        assert.equal(source.includes('dataLayer.push'), false, `${filePath} must not push analytics`);
+    });
+    assert.ok(analyticsDoc.includes('passive option visuals, and explicit No Project Track state'));
 });
 
 test('effort split chart_action sends only the safe series_type enum token, never raw epic keys', () => {

@@ -44,9 +44,9 @@ const EPIC_SPECS = [
     ['EPX-6', 'To Do', 'Low', ['PROD'], 'Dev Dutta', null],
 ];
 
-function epicPayload() {
+function epicPayload(epicSpecs = EPIC_SPECS) {
     const epics = {};
-    EPIC_SPECS.forEach(([key, status, priority, , assigneeName, track]) => {
+    epicSpecs.forEach(([key, status, priority, , assigneeName, track]) => {
         epics[key] = {
             key,
             summary: `${key} epic summary`,
@@ -61,9 +61,9 @@ function epicPayload() {
     return epics;
 }
 
-function storyPayload() {
+function storyPayload(epicSpecs = EPIC_SPECS) {
     const rows = [];
-    EPIC_SPECS.forEach(([key, status, priority, projectKeys]) => {
+    epicSpecs.forEach(([key, status, priority, projectKeys]) => {
         projectKeys.forEach((projectKey, index) => {
             rows.push({
                 id: `${key}-${index + 1}`,
@@ -89,7 +89,7 @@ function storyPayload() {
     return rows;
 }
 
-async function installBoardFixture(page, { analyticsContext = { enabled: false }, groups = null } = {}) {
+async function installBoardFixture(page, { analyticsContext = { enabled: false }, groups = null, epicSpecs = EPIC_SPECS } = {}) {
     await installDashboardShell(page);
     await page.route('**/api/**', (route) => {
         const request = route.request();
@@ -143,8 +143,8 @@ async function installBoardFixture(page, { analyticsContext = { enabled: false }
             if (purpose === 'ready-to-close' || project === 'tech') {
                 return json({ issues: [], epics: {}, epicsInScope: [], names: {} });
             }
-            const epics = epicPayload();
-            return json({ issues: storyPayload(), epics, epicsInScope: Object.values(epics), names: {} });
+            const epics = epicPayload(epicSpecs);
+            return json({ issues: storyPayload(epicSpecs), epics, epicsInScope: Object.values(epics), names: {} });
         }
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json({ epics: [] });
@@ -154,12 +154,13 @@ async function installBoardFixture(page, { analyticsContext = { enabled: false }
     });
 }
 
-async function openBoard(page, { width = 1280, height = 900, analyticsContext, groups } = {}) {
+async function openBoard(page, { width = 1280, height = 900, analyticsContext, groups, epicSpecs } = {}) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width, height });
     await installBoardFixture(page, {
         ...(analyticsContext ? { analyticsContext } : {}),
         ...(groups ? { groups } : {}),
+        ...(epicSpecs ? { epicSpecs } : {}),
     });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -399,16 +400,20 @@ test('a facet tick with search text active fires no new app_search event', async
     const before = await appSearchCount();
 
     await tickOption(page, 'assignee', 'unassigned'); // narrows the FACET-filtered count, not the search-only one
+    await tickOption(page, 'track', 'flexible');
+    await tickOption(page, 'track', 'committed');
     await closeFilters(page);
     await waitForVisualSettled(page);
 
     const after = await appSearchCount();
     expect(after, 'a facet tick must fire no new app_search event').toBe(before);
+    await page.locator('.chip-clear').click();
+    expect(await appSearchCount(), 'resetting explicit No Project Track must emit no app_search').toBe(before);
 });
 
 /* ── D19/§12.3: the facet set differs by mode, and the test proves both sides ─────────────────── */
 
-test('Board filters epics with no Status facet; Catch Up filters stories and keeps Status', async ({ page }) => {
+test('Board filters epics with no Status facet; Catch Up filters stories with Status and Project Track', async ({ page }) => {
     await openBoard(page);
     await openFilters(page);
     await expect(page.locator('.pop-subject')).toHaveText('Filtering epics');
@@ -417,7 +422,7 @@ test('Board filters epics with no Status facet; Catch Up filters stories and kee
     await expect(facetGroup(page, 'projects')).toHaveCount(1);
     await expect(facetGroup(page, 'assignee')).toHaveCount(1);
     await expect(facetGroup(page, 'track')).toHaveCount(1);
-    // §7.2's order, with Delivery track last (D21).
+    // §7.2's order, with Project Track last (D21).
     await expect(popover(page).locator('.pop-group')).toHaveCount(4);
     const facetOrder = await popover(page).locator('.pop-group').evaluateAll(
         (nodes) => nodes.map((node) => node.dataset.facet)
@@ -433,11 +438,11 @@ test('Board filters epics with no Status facet; Catch Up filters stories and kee
     await expect(facetGroup(page, 'priority')).toHaveCount(1);
     await expect(facetGroup(page, 'projects')).toHaveCount(1);
     await expect(facetGroup(page, 'assignee')).toHaveCount(0);
-    await expect(facetGroup(page, 'track')).toHaveCount(0);
+    await expect(facetGroup(page, 'track')).toHaveCount(1);
 });
 
 // §12.4's last row: every facet heading carries a total, and none of them is blank or NaN. The
-// Delivery-track rows below assert the two totals that are interesting; this one asserts that the
+// Project Track rows below assert the totals that are interesting; this one asserts that the
 // other three exist at all, which is what an `admittedTotal` wired only into `track` would fail.
 test('every facet heading carries a numeric total, on both surfaces', async ({ page }) => {
     await openBoard(page);
@@ -464,7 +469,7 @@ test('every facet heading carries a numeric total, on both surfaces', async ({ p
     await openFilters(page);
 
     const catchUpTotals = await readTotals();
-    expect(catchUpTotals.map((entry) => entry.facet)).toEqual(['status', 'priority', 'projects']);
+    expect(catchUpTotals.map((entry) => entry.facet)).toEqual(['status', 'priority', 'projects', 'track']);
     catchUpTotals.forEach(({ facet, total }) => {
         expect(Number.isFinite(Number(total)), `Catch Up ${facet}'s total "${total}" is a number`).toBe(true);
     });
@@ -550,12 +555,12 @@ test('a facet narrows the open column cards, both column counts, and the folded 
    empties it says so, rather than going silently blank (docs/plans/EXEC-eng-group-board.md,
    "Narrowed during execution, to what the plan actually specifies") ──────────────────────────── */
 
-test('a combination that admits zero epics says so, keeps the chips reachable, and the lock states why', async ({ page }) => {
+test('a combination that admits zero epics says so and ordinary facets still lock their final option', async ({ page }) => {
     await openBoard(page);
-    // Track -> Committed only locks Committed (the last ticked visible option of a 2-option
-    // multi), and Assignee -> Unassigned only admits no Committed epic in this fixture — the two
-    // together admit zero epics without emptying either facet.
-    await tickOption(page, 'track', 'flexible');
+    await tickOption(page, 'priority', 'Critical');
+    await tickOption(page, 'priority', 'Major');
+    await tickOption(page, 'priority', 'Minor');
+    await tickOption(page, 'priority', 'Low');
     await tickOption(page, 'assignee', 'unassigned');
     await closeFilters(page);
     await waitForVisualSettled(page);
@@ -577,12 +582,12 @@ test('a combination that admits zero epics says so, keeps the chips reachable, a
     await expect(page.locator('.chip-clear')).toBeVisible();
 
     await openFilters(page);
-    const locked = facetOption(page, 'track', 'committed');
+    const locked = facetOption(page, 'priority', 'Blocker');
     await expect(locked).toHaveAttribute('aria-disabled', 'true');
     await expect(locked).toHaveAttribute('title', /empty|nothing/i);
     // `aria-disabled` makes Playwright refuse a plain .click() on this element (it never
     // resolves "enabled") — that refusal, not a forced click, is the proof the lock is real.
-    await expect(facetGroup(page, 'track').locator('.pop-opt[aria-pressed="true"]')).toHaveCount(1);
+    await expect(facetGroup(page, 'priority').locator('.pop-opt[aria-pressed="true"]')).toHaveCount(1);
 
     // Escaping via Clear all restores the board.
     await closeFilters(page);
@@ -593,9 +598,56 @@ test('a combination that admits zero epics says so, keeps the chips reachable, a
     expect(await readout(page)).toBe('6 of 6 epics');
 });
 
+test('Project Track exposes fixed visuals and both unchecked means genuinely unset epics', async ({ page }) => {
+    await openBoard(page);
+    await openFilters(page);
+    const track = facetGroup(page, 'track');
+    await expect(track.locator('.pop-facet')).toHaveText('Project Track');
+    await expect(track.locator('.pop-total')).toHaveText('6');
+    const committed = facetOption(page, 'track', 'committed');
+    const flexible = facetOption(page, 'track', 'flexible');
+    await expect(committed.locator('.pop-opt-visual')).toHaveText('🔒');
+    await expect(flexible.locator('.pop-opt-visual')).toHaveText('🤷');
+    await expect(committed).toHaveAttribute('aria-pressed', 'true');
+    await expect(flexible).toHaveAttribute('aria-pressed', 'true');
+    await flexible.click();
+    await committed.click();
+    await expect(committed).toHaveAttribute('aria-pressed', 'false');
+    await expect(flexible).toHaveAttribute('aria-pressed', 'false');
+    await expect(track.locator('.pop-total')).toHaveText('3');
+    await expect(track.getByRole('status')).toHaveText('No Project Track — showing epics without a value');
+    await expect(track.locator('.pop-list')).toHaveAttribute('aria-describedby', /empty-description/);
+    await waitForVisualSettled(page);
+    await page.screenshot({ path: `${screenshotDir}/project-track-empty-desktop.png`, fullPage: false });
+    await page.setViewportSize({ width: 375, height: 667 });
+    await track.scrollIntoViewIfNeeded();
+    await waitForVisualSettled(page);
+    await page.screenshot({ path: `${screenshotDir}/project-track-empty-mobile.png`, fullPage: false });
+    await closeFilters(page);
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toContainText('Project TrackonlyNo Project Track');
+    expect(await cardKeys(page, 'col-open')).toEqual(['EPX-3', 'EPX-4', 'EPX-6']);
+    expect(await readout(page)).toBe('3 of 6 epics');
+});
+
+test('Project Track neutral heading preserves the approved 7 / 4 / 0 contract', async ({ page }) => {
+    const specs = [
+        ...Array.from({ length: 4 }, (_, index) => [`COM-${index}`, 'To Do', 'Major', ['PROD'], 'Owner', 'Committed']),
+        ...Array.from({ length: 3 }, (_, index) => [`UNSET-${index}`, 'In Progress', 'Minor', ['PROD'], null, null]),
+    ];
+    await openBoard(page, { width: 1440, height: 900, epicSpecs: specs });
+    await openFilters(page);
+    const track = facetGroup(page, 'track');
+    await expect(track.locator('.pop-total')).toHaveText('7');
+    await expect(facetOption(page, 'track', 'committed').locator('.n')).toHaveText('4');
+    await expect(facetOption(page, 'track', 'flexible').locator('.n')).toHaveText('0');
+    await expect(facetOption(page, 'track', 'flexible')).toBeEnabled();
+    await waitForVisualSettled(page);
+    await page.screenshot({ path: `${screenshotDir}/project-track-neutral-7-4-0-desktop.png`, fullPage: false });
+});
+
 /* ── D33: delivery track's neutral state ───────────────────────────────────────────────────────── */
 
-test("delivery track's neutral heading reads the full scope, not the 8+14-style option sum", async ({ page }) => {
+test("Project Track's neutral heading reads the full scope, not the 8+14-style option sum", async ({ page }) => {
     await openBoard(page);
     expect(await readout(page)).toBe('6 of 6 epics');
     await openFilters(page);
@@ -618,13 +670,14 @@ test("delivery track's neutral heading reads the full scope, not the 8+14-style 
 
 /* ── D19: no facet state carries across a mode round trip, and Board's own state survives it ──── */
 
-test('switching Board -> Catch Up -> Board carries no facet state across, and restores the Board chip', async ({ page }) => {
+test('switching Board -> Catch Up -> Board preserves explicit No Project Track only in Board', async ({ page }) => {
     await openBoard(page);
-    await tickOption(page, 'assignee', 'unassigned');
+    await tickOption(page, 'track', 'flexible');
+    await tickOption(page, 'track', 'committed');
     await closeFilters(page);
     await waitForVisualSettled(page);
-    expect(await readout(page)).toBe('2 of 6 epics');
-    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toContainText('Unassigned only');
+    expect(await readout(page)).toBe('3 of 6 epics');
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toContainText('No Project Track');
 
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
     await page.waitForSelector('.filterbar');
@@ -638,8 +691,8 @@ test('switching Board -> Catch Up -> Board carries no facet state across, and re
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Board' }).click();
     await page.waitForSelector('.eng-board .col');
     await settle(page);
-    expect(await readout(page)).toBe('2 of 6 epics');
-    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toContainText('Unassigned only');
+    expect(await readout(page)).toBe('3 of 6 epics');
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toContainText('No Project Track');
 });
 
 // The other direction: a Catch Up facet must not leak into Board either, and Catch Up's own

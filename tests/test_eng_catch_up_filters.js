@@ -6,13 +6,14 @@ async function loadModule() {
 }
 
 // Task shape mirrors the app's: fields.status.name, fields.priority.name, fields.projectKey.
-function story(key, status, priority, projectKey = 'PROD') {
+function story(key, status, priority, projectKey = 'PROD', epicKey = null) {
     return {
         key,
         fields: {
             status: { name: status },
             priority: priority ? { name: priority } : undefined,
             projectKey,
+            epicKey,
         },
     };
 }
@@ -30,13 +31,13 @@ const SCOPE = [
     story('TECH-2', 'To Do', 'Medium', 'TECH'),
 ];
 
-function modelFor(tasks = SCOPE) {
-    return loadModule().then((module) => module.buildEngCatchUpFacetModel({ tasks, isTechTask }));
+function modelFor(tasks = SCOPE, epicDetails = {}) {
+    return loadModule().then((module) => module.buildEngCatchUpFacetModel({ tasks, isTechTask, epicDetails }));
 }
 
-async function resolved(overrides = {}, tasks = SCOPE) {
+async function resolved(overrides = {}, tasks = SCOPE, epicDetails = {}) {
     const module = await loadModule();
-    const model = module.buildEngCatchUpFacetModel({ tasks, isTechTask });
+    const model = module.buildEngCatchUpFacetModel({ tasks, isTechTask, epicDetails });
     return module.resolveEngCatchUpFilters({
         model,
         status: null,
@@ -50,6 +51,7 @@ async function resolved(overrides = {}, tasks = SCOPE) {
 function admittedKeys(filters, tasks = SCOPE) {
     return tasks
         .filter((task) => filters.admitsProject(isTechTask(task)))
+        .filter((task) => !filters.admitsProjectTrack || filters.admitsProjectTrack(task))
         .filter((task) => filters.admitsStatus(task.fields.status?.name))
         .filter((task) => filters.admitsPriority(task.fields.priority?.name))
         .map((task) => task.key);
@@ -59,15 +61,15 @@ function admittedKeys(filters, tasks = SCOPE) {
 
 test('buildEngCatchUpFacetModel exposes exactly the Catch Up facets, in order', async () => {
     const model = await modelFor();
-    assert.deepEqual(model.facets.map((facet) => facet.id), ['status', 'priority', 'projects']);
-    assert.deepEqual(model.facets.map((facet) => facet.label), ['Status', 'Priority', 'Projects']);
-    assert.deepEqual(model.facets.map((facet) => facet.kind), ['multi', 'multi', 'multi']);
+    assert.deepEqual(model.facets.map((facet) => facet.id), ['status', 'priority', 'projects', 'track']);
+    assert.deepEqual(model.facets.map((facet) => facet.label), ['Status', 'Priority', 'Projects', 'Project Track']);
+    assert.deepEqual(model.facets.map((facet) => facet.kind), ['multi', 'multi', 'multi', 'multi']);
 });
 
-test('buildEngCatchUpFacetModel has no Delivery track and no Assignee facet', async () => {
+test('buildEngCatchUpFacetModel has an Epic-owned Project Track facet and no Assignee facet', async () => {
     const model = await modelFor();
     const ids = model.facets.map((facet) => facet.id);
-    assert.equal(ids.includes('track'), false);
+    assert.equal(ids.includes('track'), true);
     assert.equal(ids.includes('assignee'), false);
 });
 
@@ -124,13 +126,66 @@ test('buildEngCatchUpFacetModel counts projects as Tech and Product', async () =
 test('buildEngCatchUpFacetModel reports the scope total as every facet neutral total', async () => {
     const model = await modelFor();
     assert.equal(model.scopeTotal, 7);
-    model.facets.forEach((facet) => assert.equal(facet.neutralTotal, 7));
+    model.facets.slice(0, 3).forEach((facet) => assert.equal(facet.neutralTotal, 7));
 });
 
 test('buildEngCatchUpFacetModel hides a status with no story in scope', async () => {
     const model = await modelFor([story('PROD-1', 'To Do', 'Low')]);
     const statusFacet = model.facets.find((facet) => facet.id === 'status');
     assert.deepEqual(statusFacet.options.map((option) => option.id), ['To Do']);
+});
+
+const TRACK_EPICS = {
+    'EPIC-C1': { key: 'EPIC-C1', projectTrack: 'Committed' },
+    'EPIC-C2': { key: 'EPIC-C2', projectTrack: ' committed ' },
+    'EPIC-F1': { key: 'EPIC-F1', projectTrack: 'Flexible' },
+    'EPIC-U1': { key: 'EPIC-U1', projectTrack: null },
+    'EPIC-X1': { key: 'EPIC-X1', projectTrack: 'Other' },
+};
+
+const TRACK_SCOPE = [
+    story('C1-A', 'To Do', 'Major', 'PROD', 'EPIC-C1'),
+    story('C1-B', 'In Progress', 'Minor', 'PROD', 'EPIC-C1'),
+    story('C2-A', 'To Do', 'Major', 'PROD', 'EPIC-C2'),
+    story('F1-A', 'To Do', 'Minor', 'PROD', 'EPIC-F1'),
+    story('U1-A', 'Blocked', 'Low', 'PROD', 'EPIC-U1'),
+    story('U1-B', 'To Do', 'Low', 'PROD', 'EPIC-U1'),
+    story('X1-A', 'To Do', 'Low', 'PROD', 'EPIC-X1'),
+    story('NO-EPIC', 'To Do', 'Low'),
+];
+
+test('Catch Up Project Track counts unique existing Epics, not Stories', async () => {
+    const model = await modelFor(TRACK_SCOPE, TRACK_EPICS);
+    const track = model.facets.find((facet) => facet.id === 'track');
+    assert.equal(track.label, 'Project Track');
+    assert.equal(track.allowEmpty, true);
+    assert.equal(track.showZeroCountOptions, true);
+    assert.equal(track.neutralTotal, 5);
+    assert.equal(track.emptyTotal, 1);
+    assert.deepEqual(model.counts.track, { committed: 2, flexible: 1 });
+    assert.deepEqual(track.options, [
+        { id: 'committed', label: 'Committed' },
+        { id: 'flexible', label: 'Flexible' },
+    ]);
+});
+
+test('Catch Up Project Track filters Stories through their parent Epic', async () => {
+    const neutral = await resolved({}, TRACK_SCOPE, TRACK_EPICS);
+    assert.deepEqual(admittedKeys(neutral, TRACK_SCOPE), TRACK_SCOPE.map((task) => task.key));
+
+    const committed = await resolved({ track: ['committed'] }, TRACK_SCOPE, TRACK_EPICS);
+    assert.deepEqual(admittedKeys(committed, TRACK_SCOPE), ['C1-A', 'C1-B', 'C2-A']);
+
+    const flexible = await resolved({ track: ['flexible'] }, TRACK_SCOPE, TRACK_EPICS);
+    assert.deepEqual(admittedKeys(flexible, TRACK_SCOPE), ['F1-A']);
+});
+
+test('Catch Up explicit empty admits only Stories under genuinely unset existing Epics', async () => {
+    const filters = await resolved({ track: [] }, TRACK_SCOPE, TRACK_EPICS);
+    assert.deepEqual(admittedKeys(filters, TRACK_SCOPE), ['U1-A', 'U1-B']);
+    const trackView = filters.facetViews.find((facet) => facet.id === 'track');
+    assert.equal(trackView.isEmptySelection, true);
+    assert.equal(trackView.admittedTotal, 1);
 });
 
 // ── Closed work (the two Display toggles' reach) ─────────────────────────────
@@ -360,6 +415,21 @@ test('readEngCatchUpFilterState round-trips a stored filter through resolve unch
     const next = module.readEngCatchUpFilterState(filters.selection, filters.facetViews);
     assert.deepEqual(next.status, { hidden: ['Killed'] });
     assert.deepEqual(next.priority, null);
+});
+
+test('readEngCatchUpFilterState preserves explicit empty Track and omits neutral Track', async () => {
+    const module = await loadModule();
+    const neutral = await resolved({}, TRACK_SCOPE, TRACK_EPICS);
+    const neutralState = module.readEngCatchUpFilterState(neutral.selection, neutral.facetViews);
+    assert.equal(Object.prototype.hasOwnProperty.call(neutralState, 'track'), false);
+
+    const emptySelection = { ...neutral.selection, track: [] };
+    const emptyState = module.readEngCatchUpFilterState(emptySelection, neutral.facetViews);
+    assert.deepEqual(emptyState.track, []);
+
+    const committedSelection = { ...neutral.selection, track: ['committed'] };
+    const committedState = module.readEngCatchUpFilterState(committedSelection, neutral.facetViews);
+    assert.deepEqual(committedState.track, ['committed']);
 });
 
 // ── Out-of-scope entries survive an edit to any facet ────────────────────────

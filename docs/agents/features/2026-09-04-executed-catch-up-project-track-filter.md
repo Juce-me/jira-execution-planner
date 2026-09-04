@@ -1,6 +1,6 @@
 # Catch Up Project Track Filter Follow-up
 
-Status: planned
+Status: executed locally; pending acceptance or merge
 Type: feature
 
 ## Goal
@@ -86,8 +86,26 @@ plan's rule.
 
 ## Outcome
 
-Not yet implemented.
+Implemented on `feature/issue-150-filter-option-visuals` from the required
+`f359ade2cf01233d3694b3e0bc1da8f994254bf0` base. Catch Up now uses the shared
+Epic Project Track classifier, counts unique parent Epics in the facet, filters the shared Story
+task list through those Epics, and preserves the explicit-empty state across mode and Teams
+changes. Board continues to use the same fixed vocabulary and four-state contract. Status labels
+use surface-mixed backgrounds with fully opaque, contrast-readable text.
+
+Verification on 2026-09-04:
+
+- focused model/source tests: 153 passed;
+- complete frontend unit suite: 1,163 passed;
+- focused ENG Playwright: 45 passed;
+- complete Playwright suite: 665 passed, 2 skipped;
+- complete Python suite: 1,538 passed, 9 skipped;
+- `frontend/src/dashboard.jsx`: 17,493 lines, with the existing structure budget unchanged;
+- two consecutive Node 20 builds produced identical hashes;
+- startup preflight passed with migrations at head;
+- isolated browser checks used the authorized local service without accessing a personal browser.
 
 ## Current Accuracy
 
-Accurate for the approved follow-up design. Implementation has not started.
+Accurate for the locally implemented, verified follow-up. No push, PR, merge, or issue closure has
+been performed.

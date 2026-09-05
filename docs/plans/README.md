@@ -424,14 +424,15 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      whether Group Board editing should be admin-guarded is resolved there (O1: no).
 
 5. `EXEC-eng-board-optional-sprint-measurement-spike.md`
-   - Ready-to-execute local OAuth measurement plan for GitHub issue #137. It may add only a
-     local/loopback diagnostic harness, strict candidate query engine, sanitizer, and tests; it must
-     not add a production Board endpoint or frontend behavior.
-   - Produces five matched cold/warm comparisons of the current selected-sprint source, complete
-     Component-scoped selected-sprint and All-work candidates, and the no-Component/all-saved-Team
-     selected-sprint fallback. All saved output is aggregate, sanitized, and outside the repository.
-   - Execution stops after `PASS`, `FAIL`, or `STOP` for review of transport, refresh, limits, and
-     completion budgets.
+   - Ready to execute for diagnostic implementation only; all twenty issue #137 findings have
+     verified endpoint/file-map/task/test/gate closures. No measurement run; live work requires the
+     implementation verification gates, including a working test DB.
+   - Local strict DB-OAuth diagnostic only: read-only existing-row options, CSP-compatible runner,
+     isolated campaigns/transport, explicit cache states, workload/content/retry/memory checks.
+   - Five rounds characterize saved Product/Tech Boards at 28-day retention with selected-sprint,
+     All-work and all-saved-Team fallback candidates. Legacy calls are contextual, not equal work.
+   - Cooperative deadline schema cannot PASS: only STOP/FAIL, never production authorization.
+     Hard-bound evidence and excluded production scope profiles remain prerequisites to production.
 
 6. `SUPPORT-eng-board-optional-sprint-design.md`
    - Reviewed non-executable design for GitHub issue #137 and input to the measurement spike.
@@ -440,8 +441,9 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      Project Track is Epic-index data; Product/Tech Projects is inherited from each child's Jira
      project; directly-created terminal Epics use `created` for retention; Unmapped remains before
      the structural terminal column.
-   - Production transport, refresh granularity, final completion budgets, and final safety ceilings
-     remain measurement-gated.
+   - Production transport, refresh granularity, hard deadlines, excluded-scope coverage, completion
+     budgets and safety ceilings remain measurement-gated. The validated pure core must be reused;
+     Board request retirement, mutation generation ordering and bounded telemetry are specified.
 
 7. `DONE-board-epic-description-smart-links.md`
    - Accepted by the requester and executed in `3770d2b`; use for audit context only.

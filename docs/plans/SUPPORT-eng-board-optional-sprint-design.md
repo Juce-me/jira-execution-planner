@@ -1,9 +1,10 @@
 # ENG Board Optional Sprint And Component Scope Design
 
-> **Status:** Reviewed support design updated on 2026-09-03. This is not a production
+> **Status:** Reviewed support design updated on 2026-09-05. This is not a production
 > implementation plan. Execute
 > [`EXEC-eng-board-optional-sprint-measurement-spike.md`](EXEC-eng-board-optional-sprint-measurement-spike.md)
-> first, review its evidence, and only then create the production `EXEC-*` plan that fixes the
+> first for non-authorizing characterization. Its cooperative deadline mode cannot PASS. Close the
+> hard-bound and excluded-scope gates before creating the production `EXEC-*` plan that fixes the
 > transport, refresh, completion-budget, and safety-ceiling choices.
 
 | Field | Value |
@@ -50,7 +51,10 @@ MRT004, MRT010, and MRT023.
    `board.components` field is added. Settings and ENG documentation must explain that this shared
    field controls Board Epic scope as well as Missing Information and Lead Times.
 5. With configured Components, matching any configured Component admits the Epic. Component
-   matching occurs only at the Epic boundary.
+   matching occurs only at the Epic boundary. Saved names intentionally broadcast to every exact-name
+   Component across all server-selected projects, including same-named Components in two projects.
+   Never choose the first Component id or accept browser-supplied project scope. A project-qualified
+   Component storage design would require a separate approved change.
 6. With a selected sprint, an Epic qualifies only when at least one included direct child carries
    that sprint; only matching direct children render. With **All work**, no sprint clause is applied
    to direct children.
@@ -115,9 +119,10 @@ MRT004, MRT010, and MRT023.
 - `frontend/src/dashboard.jsx::loadSprints` restores or auto-selects the current/last sprint. Board
   needs its own per-Department sentinel/state; it must not set global `selectedSprint` to null.
 - The ENG load effect in `frontend/src/dashboard.jsx` currently launches Product and Tech
-  `/api/tasks-with-team-name` calls for Board. Production work must gate and abort that legacy path
-  while `showBoard` is true. Board may adapt a compatible request already completed for another
-  mode, but it must not launch the capped legacy endpoint merely to seed itself.
+  `/api/tasks-with-team-name` calls for Board. Production work must retire the whole inherited
+  request family in Board, including dependency and issue-lookup effects, per the transition
+  contract below. Board may adapt compatible completed data provisionally, never launch the
+  capped endpoint to seed itself.
 - `jira_server.py::fetch_tasks` caps collected issues at 250 and combines task search, Epic
   enrichment, and Epic-in-scope work. It remains unchanged for sibling modes and is forbidden as a
   Board completeness source.
@@ -147,7 +152,8 @@ MRT004, MRT010, and MRT023.
 ## Ownership and immutable request snapshot
 
 Before starting Jira work, the route captures one immutable `RequestAuthContext`, one workspace
-dashboard-config snapshot, and one shared Department/group snapshot. In request context it resolves:
+dashboard-config snapshot with explicit source, and one shared Department/group snapshot. In request
+context it resolves:
 
 - normalized Jira project key-to-Product/Tech mapping, normalized server-owned Product and Tech
   project-name sets, and the one-project saved-board compatibility fallback. Product/Tech belongs to
@@ -169,7 +175,10 @@ dashboard-config snapshot, and one shared Department/group snapshot. In request 
 Workers receive only that immutable snapshot, injected Jira search functions, and the captured auth
 context. They must not read Flask request/session globals or request-context configuration getters.
 DB/config storage failures return sanitized `503 config_storage_unavailable` and never fall back to
-service credentials or another configuration owner.
+service credentials or another configuration owner. In DB mode, require an existing workspace row
+and `source=workspace_db`; include source in signatures and revalidate it with fresh uncached reads.
+A legacy JSON fallback is not workspace-DB evidence. Any later Basic/JSON compatibility path must be
+named, separately measured and partitioned, never silently used to satisfy the DB gate.
 
 ### Project scope and Jira authorization
 
@@ -387,6 +396,62 @@ Status/priority success in Board must not call legacy Product/Tech task loaders.
 write routes, auth, CSRF, analytics, and recovery contracts remain unchanged; this feature adds no
 new mutation permission.
 
+### Board entry/exit retirement contract
+
+The production task must modify `dashboard.jsx`, `eng/useEngSprintData.js` and the Board data hook
+as one ownership change, with API wrappers remaining under `frontend/src/api/`. On Board entry,
+synchronously advance the ENG request generation before effects run, abort Product/Tech task calls,
+`fetchDependencies` and `requestIssuesLookup`, clear dependency focus/hover/loading and detach the
+legacy dependency cache from Board. For the ENG branch, gate all three effect families on
+`selectedView === 'eng' && !showBoard`; keep the separate EPM branches and existing sibling gates.
+Checking only task loading is insufficient.
+
+Each async handler captures its owner surface, scope/auth/config signature and generation; check all
+three after fetch, after body parsing and immediately before every setter/cache write, including
+finally/loading/error paths. Aborted legacy bodies resolving late cannot clear Board loading,
+repopulate dependencies or poison cache. Board never reads legacy dependency lookup cache or issues
+calls using stale Product/Tech keys. This feature introduces no eager Board dependency request; existing
+lazy Epic description/status option controls retain their separately owned API contracts.
+
+Keep compatible legacy task cache for sibling modes, partitioned by its original scope/auth. On Board
+mutation success invalidate all legacy task/dependency/lookup entries in the originating auth partition
+that may contain the changed issue; when membership is unknown, evict that partition's legacy entries
+without refetching. On exit, start one new sibling generation, reuse only still-compatible data and
+load its task cohort before dependent requests. Config save/auth change invalidates incompatible
+Board and legacy caches together; no stale Board-to-Catch-Up reuse. Merely entering Board does not
+clear another user's caches.
+
+### Mutation versus progress: generation restart
+
+Use one monotonically increasing generation integer per mounted Board data hook, paired with the
+immutable scope signature. Every index/column/frame/cache publication carries both. Select the
+**generation restart** strategy; do not invent per-issue rebasing or run old hydration behind writes.
+
+1. Enable status/priority/Project Track writes only when the current whole Board is authoritative
+   and no Board write is pending. Keep existing controls mounted with readiness reasons when disabled.
+2. Before the optimistic write, increment generation synchronously, cancel all reads/queued work,
+   mark authority stale, retain the last committed snapshot and apply the optimistic patch to a new
+   canonical store. Serialize Board writes: no second write until outcome/reconciliation completes.
+3. Suspend read scheduling while the write is pending. Any old progress/index/error/finally callback
+   fails its generation check, including a callback queued before the increment.
+4. On success, apply returned per-issue outcomes only to that mutation generation, invalidate Board
+   and affected legacy cache partitions, advance generation again and refetch the authoritative index
+   and children. Existing terminal-retention rules decide membership from fresh Jira evidence.
+5. On failed write, restore only the captured snapshot if its scope/generation still matches, mark
+   it stale and start a new reconciliation generation. A network/partial-write result may have reached
+   Jira: do not present rollback as server truth. No write is automatically replayed.
+6. If scope/config changes during the write, its result cannot render in the new scope. Invalidate
+   the originating cache partition on success/uncertain outcome, but never restore that old snapshot
+   or schedule old-scope reads. Authentication failure enters the existing terminal global lock.
+
+Add deterministic reducer/hook tests in **Create** `tests/test_eng_board_data.js`: old index arrives
+before/after optimistic patch; old child frame after successful write; successful status moves columns;
+Project Track patch changes only Epic facet; failed/partial write rollback; queued second write is
+inert; scope switch/config save/auth loss while write pending; stale finally cannot clear new loading.
+Playwright `tests/ui/eng_group_board_view.spec.js` must hold and release real mocked response barriers
+for Board entry with both task lanes/dependency/lookup pending and for mutation/progress interleavings.
+Assert request absence, canonical values, cache invalidation and restored sibling loading, not sleeps.
+
 ## Terminal-column configuration and compatibility
 
 The additive shared group shape is:
@@ -492,8 +557,8 @@ replace them if the measurement chooses another transport.
 
 | Intent | Method/path | Auth/ownership | Client input | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| Board index | `GET /api/eng/board/index` | Explicit `authenticated_read`; current `RequestAuthContext`; server-owned workspace/group/config | `departmentId`, `scope=all_work|sprint`, numeric `sprintId` only for sprint, `refresh=0|1` | Structural/synthetic columns and exact scope/config version; authoritative All-work Epic membership/counts and Epic-native Priority/Assignee/Project Track facets while child-derived Product/Tech Projects remains pending, or selected-sprint candidate shells with global membership/counts and all facets explicitly pending; cache state and `Server-Timing` | `400 invalid_board_scope`, `400 board_sprint_required`, `409 board_components_required` only for All work, `409 board_team_scope_required` only for selected-sprint fallback, `409 board_project_scope_required`, `409 board_config_invalid`, `422 board_scope_too_large`, sanitized Jira/auth/storage errors |
-| Board column | `GET /api/eng/board/column` | Same partition; server revalidates column and index/scope contract | `departmentId`, server-issued scope token/version, `columnId`, `refresh=0|1`; no arbitrary Epic keys/JQL | One atomically complete child map plus counts/readiness/cache state and `Server-Timing` | Above plus `409 board_index_stale`, `409 board_column_unknown`, strict page/batch failures |
+| Board index | `GET /api/eng/board/index` | Explicit `authenticated_read`; current `RequestAuthContext`; server-owned workspace/group/config | `departmentId`, `scope=all_work\|sprint`, numeric `sprintId` only for sprint, `refresh=0\|1` | Structural/synthetic columns and exact scope/config version; authoritative All-work Epic membership/counts and Epic-native Priority/Assignee/Project Track facets while child-derived Product/Tech Projects remains pending, or selected-sprint candidate shells with global membership/counts and all facets explicitly pending; cache state and `Server-Timing` | `400 invalid_board_scope`, `400 board_sprint_required`, `409 board_components_required` only for All work, `409 board_team_scope_required` only for selected-sprint fallback, `409 board_project_scope_required`, `409 board_config_invalid`, `422 board_scope_too_large`, sanitized Jira/auth/storage errors |
+| Board column | `GET /api/eng/board/column` | Same partition; server revalidates column and index/scope contract | `departmentId`, server-issued scope token/version, `columnId`, `refresh=0\|1`; no arbitrary Epic keys/JQL | One atomically complete child map plus counts/readiness/cache state and `Server-Timing` | Above plus `409 board_index_stale`, `409 board_column_unknown`, strict page/batch failures |
 
 For `scope=sprint`, an absent Department Board is the supported compatibility shape, not
 `board_config_invalid`: the server issues one synthetic **All epics** column with the existing stable
@@ -547,24 +612,48 @@ The current endpoint with Sprint omitted is invalid evidence because its 250-ite
 while incomplete.
 
 The spike must measure strict complete discovery/hydration through production-intended scope,
-pagination, shaping, and auth seams for selected sprint and **All work**, with cold/warm matched runs.
-It records aggregate HTTP wall time plus service-internal index-ready, focused-ready, and full-ready
+pagination, shaping, and auth seams for selected sprint and **All work**, with
+candidate-data-cache miss/hit pairs and explicitly separate metadata-cache states.
+It records aggregate HTTP wall time plus service-internal index-ready, bootstrap-column-ready and
+full-ready
 timings; request/page/batch counts; bytes; unique counts; maximum concurrency; cache state; and memory
-delta. Internal readiness timestamps are transport-selection evidence, not user-visible first-content
-proof. It must not commit raw Jira data, JQL, identifiers, names, URLs, or credentials.
+delta. Internal readiness timestamps are characterization only, not user-visible first-content
+proof or transport authorization under the cooperative deadline mode. It must not commit raw Jira
+data, JQL, identifiers, names, URLs or credentials.
 
 Provisional gates to confirm or replace from evidence:
 
-- aggregate cold All-work response target of 3 seconds and no candidate aggregate response beyond
-  6 seconds;
+- aggregate candidate-data-cache-miss All-work response target of 3 seconds and no candidate
+  aggregate response beyond 6 seconds;
 - compatible cached aggregate response near 1 second; and
-- service-internal focused-ready and full-ready evidence sufficient to choose the production
-  transport.
+- service-internal bootstrap-column-ready and full-ready characterization; it cannot choose the
+  production transport until the hard-bound and UI-readiness gates pass.
 
 Loading feedback within 100 ms, user-visible first content, selected-sprint median first-content
 regression no greater than 10%, and final focused/full completion budgets remain mandatory production
 UI gates after transport is chosen. Do not raise a cap, omit rows, or relabel partial work as
 complete to pass the spike.
+
+### Authorization exclusions and core reuse gate
+
+The current spike deliberately measures only existing workspace-DB configurations, saved Product/Tech
+Boards with effective 28-day retention/nonempty terminal statuses, Component exact-name broadcast,
+and the no-Component all-saved-Team selected-sprint fallback. It rejects `other`, synthetic Board,
+saved-board-only project fallback, other retention days and empty terminal-status sets. Its cooperative
+30-second budget can return STOP or FAIL only. This is not first-load evidence: OAuth, DB pools,
+HTTP/TLS/process/Jira caches remain uncontrolled even when both diagnostic caches miss.
+
+Before full production execution, amend and rerun the measurement gate for every excluded path,
+including retention 1/28/90 and no-status behavior, `other` children, absent Board, fallback project,
+Basic/JSON compatibility and selected multi-worker transport. Require nontrivial workload, exercised
+paging/batching/concurrency, projection-content stability, retry/rate-limit evidence and a proven
+hard deadline. No empty or fast cooperative campaign authorizes any of them. A partial release that
+omits settled product scope needs explicit user approval; this support design grants none.
+
+The pure scope/pager/projection core must be reused or moved into production; harness and tests must
+follow it. Measure actual UI focus via `EngBoardView`'s `resolveFocus` result (restored preference,
+star, first-with-work, first) after transport selection. `bootstrapColumnReadyMs` cannot substitute
+for visible-focused-column readiness or prove streaming's benefit.
 
 ## Analytics impact
 
@@ -573,9 +662,23 @@ complete to pass the spike.
   `sprint_selection_state=all_work|sprint`. Never send sprint/Department/Component/project names or
   ids, issue keys, statuses, JQL, search text, or raw counts. Initialization from the mandatory
   sprint and attempted activation of a disabled All-work option emit no event.
-- Candidate fetch adapters add allowlisted `api_result` surfaces `eng_board_index` and
-  `eng_board_column` (or the selected aggregate replacement) with `feature_name=eng`; automatic
-  aborts are not failures.
+- After transport selection, the Board data module emits at most one terminal `api_result` per
+  logical Board generation through the shared analytics facade, with fixed `api_surface=eng_board`,
+  `feature_name=eng`, existing typed `result=success|failure`, numeric `duration_ms`, and bounded
+  `scope_type=all_work|sprint`. A generation is one scope load, explicit refresh or user Retry.
+  A column error keeps the generation open while other queued columns finish; then emit one failure
+  if any column remains failed. User Retry supersedes the old generation and starts a new one,
+  reusing compatible successful columns. Superseded unfinished generations emit nothing.
+  Use `trigger=userevent`, `event_type=event`, `event_name=api_result`; emit success only on
+  whole-generation authority and failure only on terminal failure. Automatic supersession/abort and auth lock emit no Board event; the existing global auth boundary owns recovery.
+  Set an emitted flag before dispatch to survive duplicate callbacks; no generation id, column id,
+  page/batch number, progress percent or dynamic surface names enter analytics.
+- API wrappers use the shared HTTP/auth boundary with transport-level tracking suppressed for Board
+  progress mechanics. No per-page/column/frame/reconnect/automatic retry event. The production task
+  must wire this once after choosing aggregate/stream/cursor transport and add taxonomy/schema tests
+  in `tests/test_analytics_events.js`, `tests/test_analytics_source_guards.js`, the new Board data tests,
+  and `docs/README_ANALYTICS.md`. Preserve only the `userevent`/`pageview` dataLayer triggers and
+  GA4_ENABLED gate; no new custom dimensions or consent UI.
 - No Team `filter_changed` event is emitted from the disabled Board control.
 - Manual refresh adds no separate product event. Board API-result telemetry covers reliability and a
   refresh event would duplicate the action.
@@ -589,15 +692,18 @@ complete to pass the spike.
 The post-measurement production `EXEC-*` plan must retrace symbols and then constrain changes to an
 exact subset of this inventory:
 
-- `backend/services/eng_board.py` (**Create**) — strict scope, pager, index, batching, shaping, and
-  selected transport orchestration.
+- `backend/services/eng_board.py` (**Create by moving/reusing the validated pure core**) — transport
+  orchestration around the measured scope/pager/index/batching/projection/classifier. Reuse or move
+  `backend/services/eng_board_measurement.py`; update the diagnostic harness/tests to import that
+  same implementation. Never maintain a second unvalidated query/shaping service. Any changed field,
+  query, scheduler, cache, timeout or transport requires rerunning the same gates and byte tests.
 - `backend/services/group_board.py`, `backend/services/group_config.py` — retention grammar and
   delegating group compatibility.
 - `backend/routes/eng_routes.py`, `backend/security/policy.py`, `jira_server.py` only for thin route
   binding/invalidation registration; no orchestration in `jira_server.py`.
 - `frontend/src/api/engApi.js` or `frontend/src/api/engBoardApi.js` (**Create**) and
   `frontend/src/eng/useEngBoardData.js` (**Create**).
-- `frontend/src/dashboard.jsx`, `frontend/src/eng/EngBoardView.jsx`,
+- `frontend/src/dashboard.jsx`, `frontend/src/eng/useEngSprintData.js`, `frontend/src/eng/EngBoardView.jsx`,
   `frontend/src/eng/EngBoardHelp.jsx`, `frontend/src/eng/EngFilterBar.jsx`,
   `frontend/src/eng/engFilterFacets.js`,
   `frontend/src/eng/EngBoardEpicCard.jsx`, `frontend/src/eng/EngBoardEpicPanel.jsx`,
@@ -611,15 +717,22 @@ exact subset of this inventory:
   adapter/generation seam.
 - `frontend/src/styles/shared/header.css`, `frontend/src/styles/shared/controls.css`, and existing
   Board styles only for disabled/readiness states; reuse current dropdown and Board grammar.
-- `docs/features/eng-workflows.md`, `docs/README_ANALYTICS.md`, and `frontend/dist/` generated only by
-  `npm run build`.
-- Create `tests/test_eng_board_service.py` and `tests/test_eng_board_source_guards.py`.
+- `frontend/src/analytics/analytics.js` — allowlist fixed `eng_board` surface and accept bounded
+  optional `scopeType` forwarded as `scope_type`; existing callers retain their current schema.
+  `frontend/src/analytics/events.js` — reuse existing param/trigger allowlists and validate enums.
+- `docs/features/eng-workflows.md`, `docs/README_ANALYTICS.md`,
+  `docs/plans/SUPPORT-ga4-user-configuration.md` only if runbook steps change, and `frontend/dist/`
+  generated only by `npm run build`.
+- Create `tests/test_eng_board_service.py`, `tests/test_eng_board_source_guards.py` and
+  `tests/test_eng_board_data.js`; update the measurement harness/tests after core relocation.
 - Update Board/group model tests, `tests/test_oauth_eng_routes.py`,
   `tests/test_jira_search_pagination_source_guard.py`, `tests/test_backend_route_source_guards.py`,
   `tests/test_endpoint_policy_inventory.py`, `tests/test_endpoint_security_matrix.py`,
   `tests/endpoint_security_samples.py` only if paths are dynamic,
   `tests/test_oauth_cache_isolation.py`, `tests/test_cache_partitioning.py`, analytics tests, and the
   existing Board Playwright suites.
+- Update `tests/test_frontend_api_source_guards.js` and `tests/test_analytics_source_guards.js` for
+  exact API ownership, shared auth boundary, signal propagation and bounded generation telemetry.
 - Update `tests/test_eng_board_card_model.js`, `tests/test_eng_board_filters.js`,
   `tests/test_jira_export_source_guards.js`, `tests/test_jira_export_utils.js`, and
   `tests/ui/eng_group_board_filters.spec.js` for the tri-state project and per-kind export contracts.
@@ -674,6 +787,13 @@ budgets only when a legitimate guarded entrypoint grows.
   id, returns complete children, and a mismatched/present-Board request rejects it. The view uses
   configured Components or every saved Department Team, ignores private Team selection, and
   launches no legacy Product/Tech request.
+- Run `node --test tests/test_frontend_api_source_guards.js` explicitly. Extend its endpoint-literal
+  and native-fetch ownership tests for the selected Board API module; verify AbortSignal reaches
+  every transport read/CSRF request, structured auth errors reach the terminal shared lock, and
+  Board data hooks/components contain no endpoint literals or native fetch. Do not exempt Board.
+- Run `node --test tests/test_eng_board_data.js tests/test_analytics_events.js tests/test_analytics_source_guards.js`
+  with deterministic mutation/progress ordering and 1/100-column workloads proving ≤1 terminal API
+  event per generation regardless of pages/retries/frames.
 - Focused suites during iteration, then `python3 -m unittest discover -s tests`,
   `npm run test:frontend:unit`, focused and full Playwright as required, `npm run build` followed by a
   clean generated diff check, startup with `.venv/bin/python jira_server.py`, and `/api/test`.
@@ -683,9 +803,11 @@ budgets only when a legitimate guarded entrypoint grows.
 1. Aggregate, streamed, durable-manifest, or stateless-sequential transport.
 2. Full-Board versus true per-column refresh after index reconciliation.
 3. Final Epic/child/batch/URL/concurrency safety limits.
-4. Cold/warm focused-column and full-Board completion budgets.
+4. Candidate/metadata cache miss/hit, actual UI-focused-column and full-Board completion budgets.
+5. Hard-bound cancellation/DB/auth contract and measured profiles for every excluded production scope.
 
-No other product decision in this support design remains open.
+The settled product scope remains unchanged; these evidence gates cannot silently narrow the shipped
+feature or authorize unmeasured compatibility paths.
 
 ## Residual risks
 

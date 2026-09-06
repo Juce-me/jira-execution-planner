@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-09-02. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-09-06. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,8 +15,8 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-09-02 |
-| Last result | FAIL insufficient_home_write_probe_input (probe not run: all four operator inputs and an approved disposable Home project were unavailable; this dropdown-width implementation adds no Home/Townsquare write path) |
+| Checked on | 2026-09-06 |
+| Last result | FAIL insufficient_home_write_probe_input (probe not run: all four operator inputs and an approved disposable Home project were unavailable; the Excluded Capacity group-statistics design adds no Home/Townsquare write path) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -129,6 +129,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-09-06: Startup sweep for the Excluded Capacity group-statistics design confirmed the four `HOME_WRITE_PROBE_*` inputs and an approved disposable Home project are unavailable. No mutation probe was run, and this read-only Statistics/configuration design adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-02: Startup sweep for the shared header dropdown width implementation confirmed the four `HOME_WRITE_PROBE_*` inputs and an approved disposable Home project are unavailable. No mutation probe was run, and this frontend layout change adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-01: Startup sweep for screen-scoped onboarding confirmed the required operator inputs and an approved disposable Home project remain unavailable. No mutation probe was run, this implementation adds no Home/Townsquare write route or mutation, and the gate remains blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-01: The Planning Capacity merge adds a signed-in-user Jira REST field write only. The required Home probe inputs and an approved disposable Home project remain unavailable, so no Home mutation probe was run. Keep blocked with `FAIL insufficient_home_write_probe_input`.

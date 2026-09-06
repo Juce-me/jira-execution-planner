@@ -193,19 +193,23 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Capacity Reporting Workflow
 
-1. `SUPPORT-excluded-capacity-control-row-design.md`
+1. `SUPPORT-excluded-capacity-group-statistics-design.md`
+   - Proposed design for issue #156; review before creating an `EXEC-*` implementation plan.
+   - Expected output after later implementation: workspace-wide shared Excluded Capacity plus optional shared Ad Hoc, retained department Ad Hoc additions, all-department Group-mode charts, active-department-first focus, five-group progressive loading, and principal-partitioned completed-sprint aggregate caching shared across application processes through the database.
+
+2. `SUPPORT-excluded-capacity-control-row-design.md`
    - Approved design for compacting Excluded Capacity into one desktop control row: Sprint first, Excluded Epics flexible in the middle, and both segmented controls grouped on the right.
    - Presentation-only scope; existing state, analytics, requests, and calculations remain unchanged.
 
-2. `DONE-excluded-capacity-control-row.md`
+3. `DONE-excluded-capacity-control-row.md`
    - Completed and merged in [PR #110](https://github.com/Juce-me/jira-execution-planner/pull/110).
    - Output: Sprint first, Excluded Epics flexible in the middle, and both segmented controls aligned on the right, with focused source and rendered-geometry verification.
 
-3. `DONE-ad-hoc-capacity-epics.md`
+4. `DONE-ad-hoc-capacity-epics.md`
    - Completed and merged in [PR #88](https://github.com/Juce-me/jira-execution-planner/pull/88). Adds department/team-group Ad Hoc capacity epic configuration as included Product capacity, separate from excluded capacity. Use for audit context only.
    - Output: `teamGroups.groups[].adHocCapacityEpics` round-trips through shared group config, Settings exposes a separate epic selector, Ad Hoc stories remain included in Product Planning and reporting, excluded capacity behavior remains driven only by `excludedCapacityEpics`, and affected Planning, Stats, Burndown, Lead Times, Mono vs Cross, and Scenario paths have focused verification.
 
-4. `DONE-statistics-consistency-bugfix.md`
+5. `DONE-statistics-consistency-bugfix.md`
    - Completed and merged in [PR #108](https://github.com/Juce-me/jira-execution-planner/pull/108) (branch `bugfix/statistics-consistency-exec`, integrated via `bugfix/statistics-colors-capacity-lead-time`, commits `a42e7ca..c4fb36c`). Shared Statistics team colors, removal of the redundant Excluded Capacity Range card, and a bounded Lead Times creation cohort with inclusive End Quarter. Decisions recorded in `SUPPORT-statistics-consistency-bugfix-design.md`.
    - Expected output: Priority, Burndown, Excluded Capacity, and Mono vs Cross consume one deterministic active-group color map; Excluded Capacity drops only its Range card; Lead Times adds an inclusive End Quarter with last-control-wins reconciliation, half-open Jira creation-date JQL, matching Jira links, and terminal dates preserved beyond the cohort boundary.
 

@@ -1,12 +1,31 @@
 # Team Lifecycle And On-Demand Historical Statistics
 
-Status: planned
+Status: obsolete
+Disposition: parked
 Type: feature
 
 ## Outcome
 
-Revised design awaiting final review and an implementation plan. No application behavior has
-changed yet.
+Obsolete before execution. The feature is parked and must not be used as an implementation plan
+without a fresh product review. No application behavior changed.
+
+## Parking note
+
+Dragging historical Statistics across previously archived Teams could become too complicated and
+expensive: it requires lifecycle inference, historical Jira queries, access reconciliation, and
+careful handling of incomplete results. That complexity is not justified for the supported product
+scope.
+
+For now, supporting up to 12 active Teams per Department/group is enough. Statistics remain live
+and on demand, with no additional Statistics persistence, backfill, or archived-Team aggregation.
+The 12-Team support statement records the product boundary; this parked document does not add or
+change a validation limit in application code.
+
+## Current Accuracy
+
+Historical design context only. The lifecycle migration, Archived Teams configuration, access
+probe, and loading changes below were not implemented or approved for execution. The current
+direction is the Parking note above.
 
 ## Problem
 

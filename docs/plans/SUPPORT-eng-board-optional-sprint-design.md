@@ -1,6 +1,6 @@
 # ENG Board Optional Sprint And Component Scope Design
 
-> **Status:** Reviewed support design updated on 2026-09-05. This is not a production
+> **Status:** Reviewed support design updated on 2026-09-07. This is not a production
 > implementation plan. Execute
 > [`EXEC-eng-board-optional-sprint-measurement-spike.md`](EXEC-eng-board-optional-sprint-measurement-spike.md)
 > first for non-authorizing characterization. Its cooperative deadline mode cannot PASS. Close the
@@ -266,10 +266,13 @@ wrong data. Include field-catalog calls in timing, bytes, errors, and cache sign
 2. Optionally adapt already-loaded Catch Up data only when auth, Department, project, issue-type,
    complete Department-Team set, and sprint signatures all match.
 3. Mark any adapted cards provisional and keep every count/action that needs completeness disabled.
-4. Run a strict paginated Department-Team plus sprint completeness search.
-5. Derive Epic keys from the complete child cohort, then fetch them in bounded batches with the same
-   selected-project, `issuetype = Epic`, and terminal-retention predicates as Component scope, but no
-   Component predicate. Reject missing, duplicate, or unexpected Epic keys.
+4. First run a strict bounded Epic index with the same selected-project, `issuetype = Epic`, and
+   terminal-retention predicates as Component scope, omitting only Components. With no saved Board,
+   omit retention as specified for the synthetic column. Enforce the Epic ceiling before qualification.
+5. Query direct children only under those indexed Epic batches with selected sprint AND all saved
+   Department Teams. Reuse fetched rows for hydration, remove zero-match Epics, and reject unexpected
+   parents/duplicate children. Never derive the index from child keys; retention-excluded Epics are
+   absent by design and must not produce a missing-key error.
 6. Atomically reconcile into the same canonical Epic map. On any failure, discard provisional
    authority and show the error.
 
@@ -295,7 +298,8 @@ The Board-private pager accepts only a Jira `/rest/api/3/search/jql` response wh
 
 An empty non-final page is legal and must continue. HTTP/JSON failures, malformed rows, duplicate
 normalized keys across pages, missing/repeated tokens, contradictory terminal state, or a defensive
-page-bound breach fail the owning transaction. Partial rows are never returned or cached.
+page-bound breach fail the owning transaction. Partial rows are never returned as canonical results
+or cached; validated pages may produce only the explicitly provisional display projection below.
 
 Use a provisional page size of 100, at most 101 pages per logical search, at most 2,600 Jira search
 pages per Board generation, and at most 7,000 UTF-8 bytes for the fully URL-encoded Jira search query
@@ -329,13 +333,23 @@ Jira project, server-derived `projectClassification=product|tech|other`, and spr
 request or return `subtasks` or `subtaskSummary`. Duplicate child
 keys and unknown parents are contract errors, not silently dropped rows.
 
+Maintain a generation-owned provisional display projection separately from canonical child data
+and caches. After each validated child page, update visible per-Epic **Loaded so far** Story counts
+and status distribution; their denominator is loaded work, never total or complete work. Candidate
+Epic cards may show this progress before selected-sprint membership qualifies. Progress does not
+authorize filters, search counts, exports, writes, drag safety or cache publication. Discard it on
+failure/cancellation/supersession; install canonical children atomically only after their complete
+cohort passes validation. This preserves the root progressive-rendering requirement.
+
 The UI readiness contract is:
 
 - For All work, Epic counts/search, Priority, Assignee, Delivery track/Project Track, and Epic Jira
   export become usable after the canonical index. For selected sprint, those become usable only when
   all column membership is authoritative; the Project Track value itself always comes from the Epic.
-- Child rows, Story points, progress, unresolved-child terminal-drag warning, Product/Tech Projects
-  facet, and child Jira export remain loading/disabled until their required cohort is authoritative.
+- Child rows and authoritative Story points/progress remain pending until their cohort completes;
+  provisional Story counts/status distribution follow the display contract above. Unresolved-child
+  terminal-drag safety, Product/Tech Projects filters and child export stay disabled until all
+  required child pages complete.
 - The Stories/work-item export remains visibly disabled with a loading reason until the entire Board
   generation is authoritative; it never exports a completed subset of columns. Once authoritative,
   an empty child set displays **No work items** rather than emitting an empty/partial analytics event.
@@ -480,12 +494,17 @@ Save succeeds; until then the supported live synthetic **All epics** column rema
 
 ### Existing Board
 
-1. If one column contains exact Jira status `Done`, pure compatibility normalization preserves that
+1. Only when raw persisted `doneEpicRetentionDays` is absent, apply legacy compatibility: if one
+   column contains exact Jira status `Done`, pure normalization preserves that
    column's id/name/color/limits/status set and moves it right in both the live in-memory model and
    Settings draft without a shared write. The first successful Save materializes the order.
-2. If no column contains exact `Done`, preserve the current final stored column as terminal. Save is
-   not blocked merely because the Jira workflow lacks exact `Done`.
-3. Read a missing retention value as 28 without an automatic shared write.
+2. For that legacy shape without exact `Done`, preserve the current final stored column as terminal.
+   With an explicit valid retention value, always preserve the final stored column as terminal,
+   regardless of Done assignments. The retention key marks normalization; no new terminal-id field.
+3. Read missing retention as 28 without a shared write; normalized output and every successful Save
+   include the explicit value. Backend and frontend inspect raw presence before defaulting, so
+   repeated normalization is idempotent and moving/removing Done after Save cannot transfer terminal
+   identity or silently change the retention status set. Malformed present retention is invalid.
 4. Insert new columns before terminal. Pointer and keyboard reordering clamp before it. Delete is
    disabled for terminal. Status assignments remain editable and do not transfer terminal identity.
    The structural terminal alone may have `statuses: []`; every non-terminal configured column still
@@ -502,7 +521,7 @@ background rewrite; the first successful user Save materializes the field.
 
 | Event/state | Required behavior |
 | --- | --- |
-| First Board visit | Initialize that Department's Board scope from the current mandatory sprint; do not mutate sibling state. |
+| First Board visit | Inherit the first valid mandatory sprint once. While it is absent and discovery is pending/failed, keep the distinct uninitialized state and issue no Board query. Enabled All work remains an explicit user choice; later catalog completion cannot overwrite that choice. Do not mutate sibling state. |
 | User selects All work | Store the explicit empty Board sprint value only; global sprint and private Team state remain unchanged. |
 | Enter Board with Team menu open | Close the menu; render both header Team controls visibly disabled and non-filtering. Keep each toggle keyboard-focusable with `aria-disabled="true"`, the **Not used on Board** value, and the settled `aria-describedby` explanation; click, Enter, and Space are inert and emit no request or analytics. |
 | No saved Board configuration | Use the strict selected-sprint service with one synthetic **All epics** column and complete children; do not launch legacy Product/Tech loaders. Show All work disabled with an explanation until a valid Board is saved. |
@@ -545,10 +564,21 @@ The measurement review must select one production architecture:
 3. a stateless signed sequential cursor, accepting sequential rather than two-way concurrent column
    hydration.
 
-If a single complete response meets the full-Board budget, prefer it and avoid cross-request state.
-If focused-column delivery materially improves useful-content time, choose streaming or durable
-shared state. Any multi-request choice must prove cross-worker acceptance, tamper rejection, atomic
-global counts, expiration, auth/config partitioning, and whole-scope invalidation.
+Streaming has a concrete prerequisite: `frontend/src/api/http.js::apiFetch` currently awaits
+`response.clone().arrayBuffer()` before returning. Production must add an opt-in header-first
+stream reader at that shared boundary before selecting streaming, preserving the existing default
+behavior and terminal auth lock. The boundary owns reader cancellation, checks shared auth lock
+and AbortSignal before each delivery, and sanitizes auth failures; hooks never bypass it with native
+fetch. A held-EOF browser test must publish the first column before completion, then prove midstream
+abort and a sibling API 401 suppress all later frames. This is conditional production work, not
+part of the diagnostic or permission to select streaming without measurement.
+
+The selected production transport must show visible page-progress updates before hydration
+completes. Aggregate timing remains useful characterization, but a buffered-only response cannot
+satisfy the root progressive-rendering contract; choosing it as the sole production transport
+requires an explicitly approved change to that requirement. Prefer a single-request lifetime when
+it meets these gates, but do not choose streaming or durable state before the required evidence.
+Any multi-request choice must prove cross-worker acceptance, tamper rejection, atomic global counts, expiration, auth/config partitioning, and whole-scope invalidation.
 
 ## Candidate endpoint contract matrix
 
@@ -701,6 +731,8 @@ exact subset of this inventory:
   delegating group compatibility.
 - `backend/routes/eng_routes.py`, `backend/security/policy.py`, `jira_server.py` only for thin route
   binding/invalidation registration; no orchestration in `jira_server.py`.
+- `frontend/src/api/http.js` only if streaming is selected, for the opt-in auth-safe streaming
+  boundary above; preserve all existing buffered callers and add shared-boundary regression tests.
 - `frontend/src/api/engApi.js` or `frontend/src/api/engBoardApi.js` (**Create**) and
   `frontend/src/eng/useEngBoardData.js` (**Create**).
 - `frontend/src/dashboard.jsx`, `frontend/src/eng/useEngSprintData.js`, `frontend/src/eng/EngBoardView.jsx`,
@@ -743,13 +775,16 @@ budgets only when a legitimate guarded entrypoint grows.
 ## Required production verification
 
 - Pure config/model tests: absent retention compatibility, 1–90 validation, default terminal,
-  exact-Done and no-Done migration, fixed final controls, Unmapped-before-terminal, unrelated-field
-  preservation, and revision conflicts.
+  exact-Done and no-Done migration, raw-retention migration discrimination,
+  Done reassignment/removal after save/reload, normalization idempotence, fixed final controls,
+  Unmapped-before-terminal, unrelated-field preservation, and revision conflicts.
 - Backend: strict `nextPageToken`/`isLast`, duplicate/malformed rows, exact/over ceilings, Component
   OR, selected-project and saved-board fallback, configured/empty issue types, direct-parent/Epic
   Link precedence, sprint/All-work/no-Component scope, JQL escaping, currently-terminal
   created-within-window fallback,
   cross-worker behavior for the selected transport, cache partitions, and `Server-Timing`.
+- Fallback scope tests prove bounded Epic-first indexing before sprint/all-saved-Team child queries,
+  old terminal exclusion before hydration, zero-match removal and no private-Team dependence.
 - Saved-board-only worker test with config getters forced to fail after capture: the pure immutable
   project classifier still resolves Product, Tech, and `other` from returned `fields.project`, and
   different issue types in the same Jira project do not change classification; overlapping fallback
@@ -765,6 +800,9 @@ budgets only when a legitimate guarded entrypoint grows.
 - Transport/readiness assertions must prove the All-work index publishes Epic-native Project Track
   but not child-inherited Product/Tech Projects, and that identical issue types in differently mapped
   Jira projects classify differently while different issue types in one project classify identically.
+- Hold page two in Playwright: cards appear first, page-one counts/status distribution are visibly
+  provisional, filters/export remain disabled; release page two and prove atomic authority. Repeat
+  with page-two failure, scope switch and auth lock: no partial cache or stale progress publication.
 - Search unit and Playwright coverage must start with a preserved query and type during cold
   hydration; verify neutral admission/no premature empty state/no `app_search`, one application and
   event after authoritative membership, retained focus/query through stale refresh failure and Retry,
@@ -773,8 +811,9 @@ budgets only when a legitimate guarded entrypoint grows.
 - Export unit and Playwright coverage must prove selected-sprint cold loading, All-work index-ready
   with Stories still pending, authoritative empty, cold error/Retry, compatible stale refresh, menu
   keyboard focus, accessible reason copy, no partial keys, and no analytics from disabled actions.
-- Playwright: first Board visit inherits the mandatory sprint without `filter_changed`; All work is
-  first, keyboard selectable, and remains usable during sprint-catalog failure with Components; it
+- Playwright: first Board visit inherits the mandatory sprint without `filter_changed`; delayed/failed
+  catalog keeps uninitialized distinct from All work, and explicit All work survives later catalog
+  success; All work is first, keyboard selectable, and remains usable during sprint-catalog failure with Components; it
   remains visible but disabled/described without Components; Board restores scope separately per
   Department during the mounted session and resets from the mandatory sprint on reload; verify normal
   click/focus/layering in both header geometries. Also verify the sibling sprint contract, permanent

@@ -424,11 +424,12 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      whether Group Board editing should be admin-guarded is resolved there (O1: no).
 
 5. `EXEC-eng-board-optional-sprint-measurement-spike.md`
-   - Ready to execute for diagnostic implementation only; all twenty issue #137 findings have
-     verified endpoint/file-map/task/test/gate closures. No measurement run; live work requires the
-     implementation verification gates, including a working test DB.
+   - Ready for diagnostic implementation only after the 2026-09-07 three-reviewer revalidation;
+     the original twenty findings plus the follow-up closures are recorded in the plan (§11).
+     No measurement run; live work requires the implementation verification gates, including a working test DB.
    - Local strict DB-OAuth diagnostic only: read-only existing-row options, CSP-compatible runner,
-     isolated campaigns/transport, explicit cache states, workload/content/retry/memory checks.
+     isolated campaigns/transport, guarded legacy cache returns, Epic-first Team fallback,
+     explicit cache states, private row-incarnation checks and consistent workload/retry/memory metrics.
    - Five rounds characterize saved Product/Tech Boards at 28-day retention with selected-sprint,
      All-work and all-saved-Team fallback candidates. Legacy calls are contextual, not equal work.
    - Cooperative deadline schema cannot PASS: only STOP/FAIL, never production authorization.
@@ -444,6 +445,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Production transport, refresh granularity, hard deadlines, excluded-scope coverage, completion
      budgets and safety ceilings remain measurement-gated. The validated pure core must be reused;
      Board request retirement, mutation generation ordering and bounded telemetry are specified.
+     Follow-up review closes terminal-identity migration, delayed sprint initialization and provisional
+     page-progress contracts; streaming needs an opt-in shared HTTP boundary before selection.
 
 7. `DONE-board-epic-description-smart-links.md`
    - Accepted by the requester and executed in `3770d2b`; use for audit context only.

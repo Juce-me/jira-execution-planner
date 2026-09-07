@@ -1,13 +1,13 @@
 # EXEC — ENG Board optional-sprint measurement spike
 
-> **Status:** Ready to execute — diagnostic implementation only. Revalidated on 2026-09-05.
+> **Status:** Ready to execute — diagnostic implementation only. Revalidated on 2026-09-07; see §11 for the follow-up review.
 > Measurement has not been implemented or run; live characterization remains gated by Tasks 0–5.
 > This is a local diagnostic implementation contract, never production authorization. The current
 > cooperative deadline mode cannot produce PASS; see §8. No live spike is part of this repair.
 
 | Field | Value |
 | --- | --- |
-| Revised | 2026-09-05 |
+| Revised | 2026-09-07 |
 | Issue | [#137](https://github.com/Juce-me/jira-execution-planner/issues/137) |
 | Input design | [SUPPORT-eng-board-optional-sprint-design.md](SUPPORT-eng-board-optional-sprint-design.md) |
 | Component source | Existing shared `groups[].missingInfoComponents` |
@@ -82,12 +82,12 @@ allowed. No new dependency, schema, persistent diagnostic table, configuration f
 | `docs/plans/README.md` | Modify | Align status, Tasks 0/7 |
 | `docs/plans/GATE-05-home-write-capability.md` | Modify | Checked on/Last result only; no PASS without probe |
 | `backend/services/eng_board_measurement.py` | Create | Pure immutable scope/query/pager/projection/cache core, Task 3 |
-| `backend/services/eng_board_measurement_runtime.py` | Create | Process-local campaign lease, transport ContextVar, counters, private breaker, Task 2 |
-| `backend/routes/dev_routes.py` | Modify | Exact runner/options/control/sample adapters, Tasks 1/4 |
+| `backend/services/eng_board_measurement_runtime.py` | Create | Campaign lease/state shell in Task 1; transport ContextVar, counters, private breaker in Task 2 |
+| `backend/routes/dev_routes.py` | Modify | Exact adapters and private dashboard-row snapshot helper, Tasks 1/4 |
 | `backend/services/shared_group_config.py` | Modify | `require_existing_shared_groups_snapshot`, no fallback writes, Task 1 |
 | `backend/security/policy.py` | Modify | Exact `dev_local` asset GETs, `dev_local_oauth_read` options, `dev_local_preview` POSTs, Task 1 |
 | `backend/security/guards.py` | Modify | Composed strict DB auth and guarded legacy transport binding/teardown, Tasks 1/2 |
-| `jira_server.py` | Modify | Optional diagnostic transport propagation through current-user Jira GET/search and DB materialization; no Board orchestration, Task 2 |
+| `jira_server.py` | Modify | Opt-in transport/auth propagation and guarded tagged-legacy cache publication; no Board orchestration, Task 2 |
 | `backend/jira_client.py` | Modify | Opt-in diagnostic attempt observer, streamed-body budget checks, private breaker; defaults unchanged, Task 2 |
 | `backend/auth/jira_auth.py` | Modify | Optional cooperative refresh budget/observer, Task 2 |
 | `backend/auth/db_tokens.py` | Modify | Propagate optional cooperative budget through token materialization/refresh, Task 2 |
@@ -138,8 +138,15 @@ Option `profileEligibility` contains only the three candidate profile enums in �
 when eligible; id/label are strings, sprintInput is the fixed enum, and no other fields are returned.
 Group labels are transient authenticated display data, never logs or results.
 
-Options reads the shared-group helper and `db_repository().load_dashboard_config_snapshot(context,
-fallback_loader=None)` afresh. Require source `workspace_db`, positive revision and existing row;
+Options reads the shared-group helper and diagnostic-only
+`dev_routes.require_existing_measurement_dashboard_snapshot(context, *, database_url=None)` afresh.
+The latter uses a read-only workspace-scoped SELECT of `WorkspaceDashboardConfig` and the existing
+pure dashboard payload normalization; it captures row id, payload version, revision and payload
+together, with no fallback loader, creator or writer. Both helpers retain private row ids and payload
+versions alongside revisions/content in every campaign/cache signature. This detects delete/recreate
+with the same payload/revision but a new row id; no row id leaves process memory. Do not change the
+public `WorkspaceConfigSnapshot` contract or add a DB schema field.
+Require source `workspace_db`, positive revision and existing row;
 absence is `409 measurement_config_source_required`. The group helper reads exactly one workspace
 row without `ensure_workspace_group_config`, `load_shared_groups`, JSON loader, audit or migration
 writer. A saved-empty row returns an empty options list; a missing row is
@@ -192,7 +199,7 @@ one constant per enum and contain no submitted value. Exact domain status mappin
 | 400 | `invalid_measurement_scope` → `invalid_campaign`; `measurement_sprint_required` → `invalid_scope` |
 | 404 | `measurement_group_not_found` → `invalid_scope`; unknown/foreign campaign → `invalid_campaign` |
 | 409 | `db_oauth_required` → `oauth_unavailable`; `measurement_shared_groups_required`, `measurement_config_source_required`, `measurement_board_invalid`, `measurement_project_scope_required`, `measurement_components_required`, `measurement_team_scope_required`, `measurement_field_config_invalid`, `measurement_sprint_invalid` → `invalid_scope` |
-| 409 | `measurement_config_changed` → `configuration_drift`; `measurement_data_changed` → `content_drift`; `measurement_cache_miss` → `cache_miss`; `measurement_campaign_busy` → `campaign_busy`; `measurement_campaign_expired` → `campaign_expired` |
+| 409 | `measurement_config_changed` → `configuration_drift`; `measurement_membership_changed` → `membership_drift`; `measurement_data_changed` → `content_drift`; `measurement_cache_miss` → `cache_miss`; `measurement_campaign_busy` → `campaign_busy`; `measurement_campaign_expired` → `campaign_expired` |
 | 422 | `measurement_scope_too_large` → `scope_ceiling`; `measurement_unrepresentative_scope` → `unrepresentative_scope`; `measurement_projection_invalid` → `candidate_incomplete` |
 | 429 | `measurement_rate_limited` → `rate_limited` |
 | 502 | `measurement_jira_failed` → `jira_rejected`; `measurement_breaker_contaminated` → `breaker_contaminated` |
@@ -232,7 +239,8 @@ This is an explicit limitation of cooperative cancellation, not a claim that TTL
 ### 4.1 Immutable configuration and authorization limits
 
 Capture after auth-owned token materialization: workspace/user/connection/browser session/cloud/token
-version/access snapshot; uncached dashboard source/revision/digest; existing group revisions/digests;
+version/access snapshot; uncached dashboard source/row id/payload version/revision/digest;
+existing group row ids/payload versions/revisions/digests;
 selected project mapping; Component strings, all saved Teams, Board/status/retention; field/type
 catalog snapshots. Workers receive immutable inputs and captured auth only, no Flask globals or
 configuration getters. Revalidate uncached DB source/revisions/content and auth before publication.
@@ -271,8 +279,11 @@ hierarchy fails. Sprint/SP/Team/Project Track defaults are `customfield_10101`, 
 `customfield_30101`, `customfield_35024`; Delivery Owner is optional without a default. Validate
 `customfield_<digits>`. Resolve Epic Link by stable schema/id, then a unique eligible name only if
 schema unavailable; zero fields selects parent-only JQL; ambiguity fails closed.
-Move the column containing exact Done to the end in memory, otherwise preserve final stored column
-as terminal. Preserve every unrelated saved field and never persist normalization.
+Only when RAW stored `doneEpicRetentionDays` is absent, move the column containing exact Done to
+the end in memory, otherwise preserve the final stored column as terminal. An explicit valid
+retention value marks the already-normalized grammar: its final stored column remains terminal
+regardless of Done assignments. The spike accepts only effective 28 days, preserves unrelated
+fields, and never persists normalization. Test repeated normalization and moved Done assignments.
 
 ### 4.2 Epic index query
 
@@ -341,13 +352,16 @@ UTF-8 JSON byte size of the complete internal production-shaped Epic shells plus
 with sorted object keys and compact separators; it excludes the small aggregate HTTP response,
 diagnostic cache metadata, and container overhead.
 
-For `candidate_team_fallback_selected_sprint`, query selected-sprint children with the resolved Team
-field constrained to every Team id saved on the fallback Department, then derive their Epic keys.
-Fetch those Epics in bounded key batches using the same project predicate, `issuetype = Epic`, and
-terminal-retention predicate as the Component index, but no Component predicate. Reject missing,
-duplicate, or unexpected Epic keys and remove terminal-retention-ineligible Epics before column
-membership. Private Team selection is never an input. Apply the same project/type/field,
-pagination, completeness, ceiling, and focused-order rules as Component scope.
+For `candidate_team_fallback_selected_sprint`, first run the same bounded project/Epic/retention
+index as §4.2, omitting only the Component predicate. Then hydrate those indexed Epic-key batches
+with §4.3 direct-child JQL plus selected sprint AND the resolved Team field constrained to every
+Team id saved on the fallback Department. Remove Epics with zero qualifying children and reuse the
+same child rows; never discover the index from children or Catch Up data. This follows the root
+Epic-first contract and excludes old terminal Epics before hydration, without mistaking their
+intentional exclusion for missing-key failure. Unknown parents, duplicate or unexpected child keys
+still fail projection. `candidateEpicCount` is the pre-qualification Epic index size for every
+candidate profile; the 1,000-Epic ceiling applies before Team/sprint qualification. Private Team
+selection is never an input. Apply the same project/type/field, paging and bootstrap-first rules.
 
 ### 4.4 Exact contextual legacy Board union
 
@@ -462,7 +476,7 @@ workers. Exactly a count limit is legal only on a final page. Every fully URL-en
 string (JQL, fields, maxResults, token) must be ≤7,000 UTF-8 bytes; split child batches before sending,
 fail unsplittable queries. Test exact/one-over all limits, token growth and races. No retry resets
 these counters. A logical page is not counted twice when retried. `jiraBatchCount` counts each distinct child Epic-key
-batch or fallback Epic-fetch key batch started once, independent of its pages/retries;
+batch started once, independent of its pages/retries;
 `maxBatchesPerColumn` counts child batches for one column, and `maxPagesPerSearch` counts accepted
 pages in one logical paginated search. `maxConcurrency` counts simultaneous child searches only.
 
@@ -503,8 +517,14 @@ cannot satisfy the populated-bootstrap coverage requirement.
   TCP/TLS, HTTP sessions and Jira caches are not reset; no process/first-load claim is permitted.
 - Atomic cache publication only after config/auth/source/drift/budget checks; failures never return
   stale as fresh. Candidate data and metadata are destroyed on end/abort/expiry. No persisted diagnostic cache.
-  The contextual legacy endpoint retains its existing TASKS_CACHE behavior; cleanup never clears
-  application caches or treats them as campaign-owned state.
+  The contextual legacy endpoint retains its cache policy only for a still-valid tagged sample.
+  Task 2 adds an opt-in publication check in `jira_server.fetch_tasks` immediately before its
+  TASKS_CACHE assignment and success response: revalidate uncached config/auth, then under the
+  campaign publication lock check owner/step/budget/cancellation before taking `_cache_lock` and
+  assigning. Apply the same authorization to the early `cached_response` return as well as the
+  fresh response; cache hits do not bypass validation. Abort/expiry uses the same publication lock;
+  never hold it across DB/Jira waits. A late/invalid sample neither caches nor returns success.
+  Unbound ordinary calls keep existing behavior. Cleanup never clears application caches or treats them as campaign-owned state.
 
 ### Stability
 
@@ -512,10 +532,11 @@ Use a fresh random private HMAC key per campaign. For each profile, round 1 cold
 private baselines: normalized key membership and canonical production projection PLUS configured
 column membership/classification. Round 2–5 cold compares with previous successful cold for the same
 profile. `membershipStable` and `contentStable` expose booleans only; warm copies its paired cold's
-booleans and canonical shape/counts. A changed same-key parent, status, SP, summary, classification,
-column or serialized byte length stops content_drift. No digest, Jira key or raw value leaves process
-memory. Stable samples are bounded observation, not an atomic Jira snapshot or guarantee against an
-unobserved edit-and-revert between requests. Selected and All-work projections need not equal.
+booleans and canonical shape/counts. Compare membership first: changed keys stop `membership_drift`
+through `measurement_membership_changed`; only unchanged membership with a changed parent, status, SP,
+summary, classification, column or serialized byte length stops `content_drift`. No digest, Jira key
+or raw value leaves process memory. Stable samples are bounded observation, not an atomic Jira
+snapshot or guarantee against an unobserved edit-and-revert between requests. Selected and All-work projections need not equal.
 
 ### Memory ownership
 
@@ -527,10 +548,14 @@ run one explicit GC (included in timings), then collect `retainedCurrent,peak`. 
 `memoryPeakDeltaBytes=max(0,peak-baselineCurrent)` and
 `memoryRetainedDeltaBytes=max(0,retainedCurrent-baselineCurrent)`. Peak must be ≥ retained delta.
 Also record absolute `candidateCacheBytes` and `metadataCacheBytes` after publication; retained delta
-can be zero when refresh replaced an equal-sized entry. Serialized bytes are not Python heap size.
+measures only newly traced allocations still alive after publication/GC, not net cache growth.
+Tracing restarts per candidate sample: pre-existing cached objects and their later deallocation
+are untraced. A same-sized cold replacement can therefore yield a positive retained delta.
+Serialized bytes are not Python heap size.
 Finally stop tracing only if this sample started it, including all exception paths; memory is Python
-traced allocations only, not process RSS/native HTTP/TLS buffers. Warm baseline includes its cached
-objects; do not present warm allocation delta as total resident memory. No other request or sample
+traced allocations only, not process RSS/native HTTP/TLS buffers. Warm baseline excludes its already-cached
+objects; do not present warm allocation delta as total resident memory. Cache byte fields separately
+report the serialized resident projection sizes. No other request or sample
 may overlap measurement; reject contamination, never turn it into zero memory cost.
 
 ## 7. Closed result schema and checker
@@ -618,10 +643,18 @@ Checker invariants, each with a one-field corruption test:
   `productChildCount+techChildCount+otherChildCount=childCount`; zero other; empty/terminal/unmapped
   Epic counts individually ≤ epicCount; `maxConcurrency≤2`, maxBatchSize≤40, request bytes≤7000,
   maxPagesPerSearch≤101, pageCount≤2600, nonzero batch implies nonzero search calls.
-- Cold catalogs=2, maxPagesPerSearch≥1, jiraSearchCallCount≥1, jiraBatchCount≥1; warm logical/catalog/search/page/batch/attempt/retry/failure/429/fast-fail/bytes/sleep/
-  refresh counts all zero; both warm caches hit; warm shape, cardinality and byte size equal cold.
+- Cold catalogs=2, maxPagesPerSearch≥1, jiraSearchCallCount≥1; jiraBatchCount≥1 only when
+  candidateEpicCount>0, otherwise jiraBatchCount=0. An empty index is structurally valid but fails
+  coverage as unrepresentative_scope, never invalid_campaign merely for zero batches.
+  Warm logical/catalog/search/page/batch/attempt/retry/failure/429/fast-fail/bytes/sleep/refresh counts
+  are all zero; both warm caches hit; warm shape, cardinality and byte size equal cold.
   Coverage maxPagesPerSearch/maxBatchesPerColumn on warm are zero because no work ran; maxima used
   for coverage come only from cold, not replayed counters.
+- `maxBatchesPerColumn≤jiraBatchCount≤jiraSearchCallCount`, `maxPagesPerSearch≤jiraPageCount`,
+  `maxConcurrency≤min(2,jiraBatchCount)`, and maxBatchSize>0 iff jiraBatchCount>0. Warm operational
+  maxima (including batch size/concurrency/request bytes) are zero, not copied from cold.
+- Complete candidate `jiraFailureAttemptCount=jiraRetryCount`, jiraFastFailCount=jiraRateLimitCount=0,
+  and all OAuth counters=0: initial refresh precedes begin capture and later refresh stops the sample.
 - `jiraFailedResponseBytes≤jiraResponseBytes`; retry/attempt equations above;
   peak≥retained; caches ≤32 MiB/2 MiB; positive qualified projection has positive shaped bytes.
 - `complete`, membershipStable, contentStable must be true for candidate; headroom equals
@@ -712,22 +745,27 @@ index/bootstrap/full timings cannot prove visible first content, 100-ms loading 
   Modify/verification-only exist. Use the existing checkout on the requested feature branch.
 - [ ] Sweep every `GATE-*.md`; only run a live probe with its required approved target/inputs. Record
   Checked on/Last result, never invent PASS. Review MRT004, MRT010 and MRT023.
+- [ ] Verify Node 20 and the pinned `.venv` runtime before implementation. Provide an explicit
+  disposable PostgreSQL `TEST_DATABASE_URL` through the documented test workflow before the real
+  refresh-lock check; never infer a test target from the application database.
 - [ ] Run full Python baseline before implementation; retain failures as evidence, not a plan fix.
 
 ### Task 1 — RED/GREEN: security, existing-row preflight and campaign sequencing
 
-Files: shared-group helper, dev routes, policy/guards, new measurement tests, shared-group DB,
+Files: shared-group helper, dev routes (including the private dashboard-row reader), runtime
+lease/state shell, policy/guards, new measurement tests, shared-group DB,
 endpoint matrix and DB OAuth tests in §2. Add the tests first and observe failure before implementing:
 
 - [ ] `test_options_missing_shared_row_never_creates_it`: insert dashboard only, assert group row
   count=0; GET options, begin and rejected candidate all leave count=0 and call no ensure/load/save/
   audit/migration writer (patch those symbols to raise). Saved-empty row remains unchanged; missing
   dashboard with legacy JSON present still fails source. Two-workspace tests forbid foreign ids.
-- [ ] `test_all_diagnostic_methods_require_exact_local_policy`: all four diagnostic paths and methods,
+- [ ] `test_all_diagnostic_methods_require_exact_local_policy`: all five diagnostic paths and methods,
   including HEAD/OPTIONS and runner JS; no flag, remote address, hosted, Basic/pre-DB token store,
   missing/revoked/disabled/stale DB session, requested-with and spent/wrong CSRF cases.
 - [ ] `test_config_source_and_raw_retention_revalidated`: same payload with source changed, revision
-  changed, deleted/recreated rows, raw retention 1/90 before lossy normalizer, empty terminal statuses,
+  changed, deleted/recreated rows with identical payload/revision but new private row ids, raw
+  retention 1/90 before lossy normalizer, empty terminal statuses,
   synthetic Board, fallback-only/other projects; no Jira/cache writes on rejection.
 - [ ] `test_campaign_sequence_and_two_tab_lease`: server table 0–39, duplicate/reserve/finish/replay/
   wrong profile route/foreign id/out-of-order end, A active+B begin, A end cannot be replayed on B.
@@ -737,7 +775,7 @@ endpoint matrix and DB OAuth tests in §2. Add the tests first and observe failu
   the runtime cannot start a thread or add production startup work.
 - [ ] Add `require_existing_shared_groups_snapshot(context, *, database_url=None)` using a read-only
   SELECT of `WorkspaceGroupConfig`, raising a fixed missing-row error and returning raw payload,
-  revision/source plus in-memory validated groups. No fallback creator. All other shared-group
+  private row id/payload version/revision/source plus in-memory validated groups. No fallback creator. All other shared-group
   callers remain unchanged.
 - [ ] Implement exact endpoint adapters/policies and reserve/finish validation. Normalize errors
   through one closed constant map (§3/7). Missing functions are deliberately Create work, never an
@@ -745,7 +783,10 @@ endpoint matrix and DB OAuth tests in §2. Add the tests first and observe failu
 
 Run `.venv/bin/python -m unittest tests.test_eng_board_measurement tests.test_shared_group_config_db
  tests.test_endpoint_security_matrix tests.test_db_oauth_cutover` (one shell line). Expect all pass
-before Task 2. The new tests must fail before their implementation, not merely match source prose.
+before Task 2. Task 1 implements the lease/sequence shell in the runtime file; Task 2 adds its
+transport and observers. Candidate guard tests inject a synthetic sample executor until Tasks 3/4
+wire the real core; Task 1 does not claim end-to-end measurement success. The new tests must fail
+before their implementation, not merely match source prose.
 
 ### Task 2 — RED/GREEN: cooperative runtime, auth and retry observer
 
@@ -768,6 +809,10 @@ resilience/auth/OAuth tests plus measurement tests in §2.
   Jira searches through real `jira_search_request`; no ordinary request inherits binding afterward.
 - [ ] `test_sibling_failure_cancels_before_join`: deterministic barriers prove pending sibling cannot
   publish into cache/finished step, even when it ignores cancellation until released.
+- [ ] `test_tagged_legacy_publication_rechecks_cancellation`: hold a barrier after the last real Jira
+  wrapper returns, before TASKS_CACHE assignment/response; abort, expire, or change config/auth, then
+  release. Repeat at the early warm-cache return with zero upstream requests. Assert no cache/success,
+  no next step, and unchanged behavior without a diagnostic binding.
 - [ ] Implement optional diagnostic transport/budget/observer propagation exactly in the named seams.
   Never add a default-path budget, auth fallback or DB engine timeout. The runtime and tests must
   explicitly report cooperative mode and preserve its unreachable-PASS contract.
@@ -781,10 +826,12 @@ Expected all pass; absent deadline controls in unchanged paths must retain exist
 Files: new pure core and measurement tests in §2. Inject clock/search/catalog/auth snapshot/cache/
 cancellation/memory primitives; no Flask, requests, credential, Home or legacy helper imports.
 
-- [ ] `test_query_projection_contract`: Component broadcast and escaping, all saved Teams fallback,
+- [ ] `test_query_projection_contract`: Component broadcast and escaping, Epic-first all-saved-Teams fallback,
   project/type/default field resolution, duplicate eligible issue names, Epic Link parent precedence,
   empty/nonempty Sprint filtering, direct-parent-only path, terminal CHANGED/created predicate with
-  no updated proxy. Test current terminal re-entry and created-window conservative admission.
+  no updated proxy. Test current terminal re-entry and created-window conservative admission. Fallback tests must
+  exclude an old terminal Epic before child fetching, keep an eligible Epic with a saved-Team child,
+  reject unexpected child parents, and prove no child-first discovery or private-Team dependence.
 - [ ] `test_strict_pager_and_global_limits`: final/nonfinal empty pages, malformed/duplicate/repeated
   tokens, 100/101 pages, 1,000/1,001 candidate Epics, 10,000/10,001 fetched children, 2,600/2,601 pages,
   40-key/7,000-byte exact and one-over, cancellation race and cache size limits. All failures discard
@@ -797,8 +844,9 @@ cancellation/memory primitives; no Flask, requests, credential, Home or legacy h
   parent/status/SP/classification/summary/column change contentStable and stop. Different sample
   order does not create cross-profile HMAC comparison. No digests emitted.
 - [ ] `test_memory_ownership_and_post_publication_retention`: include snapshot, shaping and published
-  cache; positive retained allocation survives response; refresh replacement can yield zero retained
-  delta; warm includes cached baseline; pre-existing tracemalloc untouched; cleanup on every failure.
+  cache; positive retained allocation survives response; real tracemalloc cold→warm→replacement test proves prior cached
+  allocations are untraced after restart and an equal-sized replacement adds newly traced bytes;
+  pre-existing tracemalloc untouched; cleanup on every failure.
   While candidate tracing is active, reject unrelated diagnostic options/assets/parallel requests
   before sample allocation; abort invalidates sample rather than claiming uncontaminated success.
 - [ ] Implement the smallest pure query/pager/projection pipeline and prove fixed bootstrap-first
@@ -826,7 +874,9 @@ Files: runner HTML/JS, checker, measurement tests and runner Playwright spec in 
   not raw sum or orphan count. Legacy stays contextual despite identical candidate counts.
 - [ ] `checker_rejects_each_cross_field_corruption`: mutate each invariant in §7, body/header drift,
   fractional/bool/NaN counters, failed bytes > bytes, warm retry/cold timing replay, memory ownership,
-  unknown stop context, identifiers and local-value canaries. Valid stops preserve only enums/numbers.
+  unknown stop context, identifiers and local-value canaries. Route/runner/checker tests distinguish
+  membership drift from same-key content drift with membership-first precedence, and exercise empty
+  index→unrepresentative_scope plus every batch/concurrency/retry cross-field inequality. Valid stops preserve only enums/numbers.
 - [ ] `checker_never_passes_cooperative_campaign`: fast representative success prints exactly
   `STOP deadline_bound_unproven`; schema mutation cannot switch to a hidden PASS mode. Above-threshold
   representative campaign prints specified FAIL; empty/trivial prints STOP unrepresentative_scope.
@@ -931,3 +981,60 @@ cooperative characterization cannot authorize production; hard-bound cancellatio
 measurement require separate reviewed amendments. The support design remains non-executable.
 The diagnostic emits no GA4 event because it is local tooling. The support design specifies the later
 bounded product telemetry; `docs/README_ANALYTICS.md` changes belong to that production implementation.
+
+
+## 11. Follow-up readiness review — 2026-09-07
+
+Three independent reviews traced backend/auth, measurement/checker and frontend state against
+baseline `97a035d`; the linked measurement/support files still matched `e846578` before this edit.
+The original twenty dispositions in §1 remain baseline requirements, not newly introduced regressions.
+The following additional flaws were confirmed and corrected. Source citations are baseline evidence;
+new negative tests below are implementation requirements, not tests claimed to exist or pass today.
+
+### P1 — corrected before diagnostic implementation or production handoff
+
+| Finding / evidence | Failure mode | Contract and verification closure |
+| --- | --- | --- |
+| Epic-first fallback — baseline EXEC §4.3:344–349, SUPPORT:269–273; root `AGENTS.md:328` | Child-first discovery followed by a retention-filtered lookup calls expected exclusions missing data and violates the required index boundary. | §4.3 and support fallback now index bounded project Epics first; Team/sprint qualification reuses child rows. Task 3 tests old-terminal exclusion, saved Teams, zero matches, unknown parents and pre-qualification ceilings. Batch counters count child batches only. |
+| Legacy publication — `jira_server.py:3249–3255,3613–3619::fetch_tasks` | Cancellation after the final Jira read can still return/cache a tagged legacy response; warm return bypasses the final branch entirely. | §6 and Task 2 guard both early cache-hit and fresh publication under the campaign lock, with fresh config/auth checks, abort/drift barriers and unchanged unbound behavior. |
+| Memory meaning — baseline EXEC §6:522–533; real local tracemalloc restart experiment | Per-sample tracing cannot include previously allocated cache objects or subtract their later deallocation as net cache growth. | §6 defines newly traced retained allocations only; Task 3 uses real cold→warm→replacement allocation tests. Serialized cache sizes remain separate from heap deltas. |
+| Terminal identity — baseline SUPPORT:483–490; `backend/services/group_board.py:99::normalize_group_board` | Repeatedly selecting the Done-owning column transfers terminal identity after a status reassignment and changes retention scope. | Support uses raw retention-key absence for one-time legacy inference, then final-column identity. Matching diagnostic normalization and production Python/JS save/reload/idempotence tests are required. No new stored terminal-id field. |
+
+### P2 — corrected contracts and proof gaps
+
+| Finding / evidence | Failure mode | Contract and verification closure |
+| --- | --- | --- |
+| Row incarnation — `backend/services/workspace_dashboard_config.py:20–24,56–66`; `backend/db/models.py:200,215` | Same-payload/same-revision row recreation evades the promised drift check. | §3 read-only dashboard adapter and group helper capture private row id/payload version with the row; Task 1 tests identical recreation. No public snapshot/schema change or emitted id. |
+| Drift mapping — baseline EXEC:195,224–225,511–516 | Membership drift lacks an error in the closed route map and can collapse into content drift. | Dedicated `measurement_membership_changed`, membership-first precedence, route/runner/checker coverage in Task 4. |
+| Empty scope verdict — baseline EXEC:621–624 | An empty index with zero batches fails schema validation before the intended workload gate. | §7 permits zero batches for zero candidates; Task 4 proves `unrepresentative_scope` while corrupt counters remain invalid. |
+| Counter consistency — baseline EXEC:612–628 | Independent upper bounds allow one batch to claim two-batch/concurrent coverage and accept inconsistent retry/auth evidence. | §7 ties batch/page/search/concurrency maxima together, clears warm operational maxima, and constrains completed retry/OAuth counters. Task 4 corrupts each relationship independently. |
+| Progressive transport — `frontend/src/api/http.js:16–18,40–49`; root `AGENTS.md:329` | The shared helper buffers to EOF; a buffered-only production response cannot deliver required page progress. | Support adds a conditional shared-boundary file/test seam and separates provisional display counts from canonical data. Held-page/EOF, failure, scope and auth-lock tests gate production transport selection. No streaming implementation is authorized by this review. |
+| Sprint bootstrap — `frontend/src/dashboard.jsx:488,6704` | An initial null mandatory sprint can be mistaken for All work or overwrite a deliberate choice when discovery completes. | Support keeps uninitialized pending/failed discovery distinct, inherits once, and preserves explicit All work; unit/browser race coverage required. |
+
+Task ordering was also clarified: Task 1 owns the runtime lease/state shell and tests candidate
+security with an injected executor; Tasks 2–4 add transport/core/real runner wiring. The exact local
+route inventory contains five diagnostic paths. This avoids requiring the full later pipeline merely
+to pass Task 1.
+
+### Verification and readiness
+
+- `git fetch origin` succeeded; the working branch has no incoming commits and preserves its one
+  existing local documentation commit. Upstream instruction template remains version 2026-08-29.
+- `git diff --check`, file-map/relative-link checks and the existing design-asset sanitizer pass.
+- `.venv/bin/python -m unittest tests.test_env_config_docs`: 11 passed.
+- `node --test tests/test_frontend_api_source_guards.js`: 62 passed under the available Node 26.
+  This is source-regression evidence only; Node 20 remains an explicit Task 0 prerequisite, and no
+  frontend build or project-runtime acceptance is claimed from this run.
+- Real local tracemalloc experiment: holding a roughly 1 MiB allocation across stop/start produced
+  a zero new baseline and a positive roughly 1 MiB replacement delta, confirming the corrected meaning.
+- No application code, live measurement, mutation probe, commit or push was performed. Full Python,
+  DB locking, runner/browser and startup implementation gates were not rerun in this plan-only review;
+  the historical full-suite failures in §10 are retained, not described as resolved.
+- No explicit disposable PostgreSQL test target is configured. The sole Home gate was rechecked:
+  zero required operator inputs and no approved disposable target, so it remains Blocked.
+
+**Verdict:** the revised contract is ready to start diagnostic Tasks 0–5, with runtime prerequisites
+checked in Task 0. This is not a verified implementation. Task 6 remains a separate live step after
+all required checks pass. Production remains blocked by hard-bound cancellation, excluded-scope,
+transport and visible-progress evidence; schema v2 still has no reachable PASS. The support document
+remains non-executable, and no remote execution handoff is published from these local edits.

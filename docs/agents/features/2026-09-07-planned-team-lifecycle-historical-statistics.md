@@ -1,84 +1,130 @@
-# Team Lifecycle And Historical Statistics
+# Team Lifecycle And On-Demand Historical Statistics
 
 Status: planned
 Type: feature
 
 ## Outcome
 
-Approved design awaiting an implementation plan. No application behavior has changed yet.
+Revised design awaiting final review and an implementation plan. No application behavior has
+changed yet.
 
 ## Problem
 
-Departments retain configured Jira Teams after those Teams have been renamed or archived. Jira
-often exposes archived Team names with an `[ARCHIVED]` prefix. Because a Department's current
-`teamIds` list is authoritative for dropdowns and Jira requests, these former Teams add noise to
-current and future scopes and cause unnecessary Jira work. Removing them outright would lose the
+Departments retain configured Jira Teams after those Teams have been renamed or archived. The
+company convention marks archived Team names with an `[ARCHIVED]` prefix. Because a Department's
+current `teamIds` list drives dropdowns and Jira requests, those former Teams add noise and
+unnecessary Jira work in later quarters. Removing them outright would lose the Department
 membership needed to interpret earlier quarters.
 
-The product also repeatedly obtains sprint-scoped Statistics data from Jira. Completed-sprint
-aggregates should be reusable by everyone attached to the same configured Jira entity without
-publishing issue-level or person-level Jira data across authorization boundaries.
+The initial design also proposed durable Jira facts and workspace-shared Statistics aggregates.
+That would create a new data service, retention rules, database migrations, invalidation logic, and
+cross-user authorization risk. This revision deliberately removes that scope: Statistics remain
+live, user-authorized Jira reads with visible loading progress.
 
 ## Goals
 
-- Represent Team participation as a sprint-effective relationship with a Department.
-- Keep current and future Department controls and requests free of archived Teams.
-- Preserve archived Team participation when a historical sprint is selected.
-- Lazily migrate already-selected `[ARCHIVED]` Teams when their configured Department is next
-  edited.
-- Infer the archived membership's first and last participating sprints from Jira, while allowing
-  the user to correct the inference before saving.
-- Persist reusable, non-identifying, workspace-shared aggregates for the sprint-scoped Statistics
-  views.
-- Keep Jira issue facts within the authorization context that fetched them.
+- Move a configured Department's already-selected archived Teams into a separate Archived Teams
+  section the next time that Department is edited.
+- Infer one editable `lastActiveSprintId` for each candidate without searching all Jira history.
+- Exclude an archived membership from every sprint after its saved boundary while preserving it in
+  earlier quarters.
+- Remove archived-name noise from active Team selection.
+- Fetch Statistics from Jira on demand without adding facts, aggregate tables, or durable result
+  caches.
+- Check the current user's access to every configured Product/Tech Jira project before lifecycle or
+  Statistics data is queried or rendered.
+- Show honest determinate or indeterminate loading progress instead of leaving an apparently empty
+  surface.
 - Define the Team lifecycle ontology canonically and require future agents to preserve it.
 
 ## Non-goals
 
-- Automatically mutating configuration when Settings or a Department is merely read.
+- Discovering when an active Team was created.
+- Modeling multiple active/archive/reactivation periods for one Department membership.
+- Searching seven years of Jira history to find an old Team's first issue.
+- Automatically saving a lifecycle suggestion when Settings or a Department is opened.
 - Migrating unused Team catalog entries or creating Department memberships for them.
-- Treating `[ARCHIVED]` as the lifecycle source of truth after migration.
-- Sharing issue keys, Epic keys, summaries, URLs, descriptions, comments, changelogs, or assignee
-  identities through workspace aggregate storage.
-- Persisting Burndown or Lead Times data in the first implementation. Those views use changelog and
-  cross-quarter datasets that do not fit the sprint/team aggregate contract.
-- Introducing a service-account statistics ingestion system.
+- Adding a Statistics database schema, background ingestion service, service-account snapshot, or
+  cross-user Statistics cache.
+- Guaranteeing that two users receive identical totals when Jira issue-security rules give them
+  different issue visibility.
 
 ## Chosen approach
 
-Use a lazy draft migration. Only the configured Department the user edits is inspected. Detection
-is read-only, the inferred lifecycle change is staged in the existing Department draft, and the
-normal Save action persists it with the established revision and conflict protections.
+Use a lazy draft migration plus on-demand Jira reads.
 
-This is preferred over a configuration-read migration, which would make reads mutate shared state,
-and over UI-only hiding, which could not restore historical scope or consistently reduce backend
-requests.
+Only the persisted Department that the user edits is inspected. A configurable company archive
+prefix identifies candidates. The application stages matching Teams in the existing Department
+draft, makes a bounded Jira request to suggest the last active sprint, and uses the existing Save
+action and revision conflict protections for persistence.
+
+Statistics continue to load only when requested. The current user's existing Jira authorization
+context is used for every read. The backend may reuse its existing short-lived,
+authorization-partitioned process cache, but no fetched issue facts or calculated Statistics are
+written to the database or browser storage.
 
 ## Domain ontology
 
 The canonical ontology in `docs/DOMAIN_ONTOLOGY.md` must define these concepts:
 
+- **Workspace** is the shared application entity for the configured Jira site. The existing
+  workspace record uses Atlassian cloud ID, with normalized configured Jira URL as fallback.
 - **Team** is a stable Jira entity keyed by Jira Team ID. The workspace Team catalog owns its
-  current display name. Renaming a Team does not create a new Team identity.
+  current display name. Renaming a Team does not create a new Team identity, and this feature does
+  not reconstruct historical Team names.
 - **Department Team Membership** is the relationship between one Department and one Team. The
-  relationship, not the Team catalog entity, owns sprint-effective lifecycle fields.
-- **Active Team** is the UI projection of a Department Team Membership used for current and future
-  Department scope.
-- **Archived Team** is the UI projection of a membership with a finite
-  `activeThroughSprintId`. It is not a separate kind of Team and does not mean the Team is globally
-  archived.
+  relationship, not the Team catalog entity, owns lifecycle state.
+- **Active Team** is the UI projection of a membership stored in `teamIds`. It has no tracked start
+  date or end date.
+- **Archived Team** is the UI projection of a membership stored in `archivedTeams` with one
+  inclusive `lastActiveSprintId`. It is not a separate Team type and does not mean that the Team is
+  globally archived.
 - The same Jira Team may be active in one Department and archived in another.
-- An `[ARCHIVED]` name prefix is migration evidence only. Persisted lifecycle fields are
-  authoritative after Save.
+- The admin-owned archive-name prefix detects unsaved migration candidates. After Save, the
+  membership's persisted location and boundary are authoritative.
+
+This deliberately asymmetric model does not know when an active Team was created. An active Team
+may therefore remain available in an old-quarter selector even when Jira returns no work for it.
+That limitation is accepted to avoid expensive historical discovery and multiple lifecycle
+periods.
 
 The root `AGENTS.md` must require reading `docs/DOMAIN_ONTOLOGY.md` before changing Department,
-Team, sprint-scope, dropdown, Jira-query, or Statistics behavior. It must also state the invariant
-that archival belongs to Department Team Membership, never to the Team catalog entity.
+Team, sprint-scope, dropdown, Jira-query, or Statistics behavior. It must also state that lifecycle
+belongs to Department Team Membership, never to the Team catalog entity.
 
-## Shared Department configuration
+## Configuration contracts
 
-Preserve `teamIds` as the backward-compatible list of active Team IDs. Add an `archivedTeams` list
-to each Department:
+### Admin-owned archive convention
+
+Add one workspace administrator setting:
+
+```json
+{
+  "teamLifecycle": {
+    "archivedNamePrefix": "[ARCHIVED]"
+  }
+}
+```
+
+Rules:
+
+- Missing configuration uses `[ARCHIVED]` as the default.
+- Matching is case-insensitive after leading whitespace is ignored.
+- The value is a literal prefix, not a regular expression. This avoids invalid expressions and
+  denial-of-service-prone patterns.
+- An empty prefix is invalid because it would classify every Team as a candidate.
+- The setting is shared once per workspace and editable only through the existing workspace-admin
+  configuration gate.
+- Changing the setting affects future candidate detection and active-Team search. It does not
+  rewrite already-saved Department memberships.
+
+Place the compact control with the existing Jira Team field administration rather than adding it
+to every Department editor.
+
+### Department membership payload
+
+Preserve `teamIds` as the backward-compatible list of active Team IDs. Add the smallest necessary
+`archivedTeams` record to each Department:
 
 ```json
 {
@@ -88,10 +134,7 @@ to each Department:
   "archivedTeams": [
     {
       "teamId": "former-team-id",
-      "activeFromSprintId": "first-sprint-id",
-      "activeThroughSprintId": "last-sprint-id",
-      "detectionSource": "jira_history",
-      "archivedAt": "2026-09-07T00:00:00Z"
+      "lastActiveSprintId": "last-participating-sprint-id"
     }
   ]
 }
@@ -99,226 +142,281 @@ to each Department:
 
 Rules:
 
-- A Team ID cannot appear in both `teamIds` and `archivedTeams` in the same Department.
+- A Team ID cannot appear in both lists or appear twice in either list.
 - Missing `archivedTeams` normalizes to an empty list.
-- `activeFromSprintId` and `activeThroughSprintId` must refer to known sprints, and the first sprint
-  must not follow the last sprint.
-- `detectionSource` distinguishes Jira-inferred and manually corrected values. Editing either
-  inferred boundary changes the source to manual.
-- Restoring a Team removes its archived membership and adds its ID back to `teamIds` in the draft.
+- `lastActiveSprintId` is required before Save. The backend validates a non-empty scalar ID; the
+  editor and inference endpoint accept a new value only from the current ordered sprint catalog.
+- Restoring a Team removes its archived record and adds its ID back to `teamIds` in the draft. It
+  does not create a second lifecycle period.
 - The Team remains in the workspace Team catalog throughout migration and restoration.
-- Active `teamIds` retain their existing open-ended historical behavior. A former Team receives
-  explicit bounds when it is archived, which removes it from later sprints without losing its
-  earlier scope.
+- No detection source, archive timestamp, first-active sprint, or name snapshot is stored. The
+  shared configuration row already supplies update revision, actor, and timestamp metadata.
 
-## Lazy migration flow
+This is an existing JSON-payload extension, not a database-table change. Readers accept version 1
+payloads and normalize missing `archivedTeams` in memory. Writers emit group payload version 2.
+`GROUPS_CONFIG_VERSION` and `GROUPS_PAYLOAD_VERSION` must remain aligned. The backend normalizer
+must be updated before the frontend can round-trip the field, because it currently reconstructs a
+fixed allowlist of Department keys.
 
-1. The user opens an existing Department that has persisted `teamIds`.
-2. The client examines only that Department's selected Team names from the Team catalog.
-3. If no selected name begins with `[ARCHIVED]`, it makes no lifecycle detection request.
-4. Otherwise, one read-only endpoint receives all matching Team IDs together.
-5. The backend runs one paginated Jira search for those Teams, requesting only the Team and Sprint
-   fields and following Jira's `nextPageToken` / `isLast` pagination contract.
-6. The backend maps issue participation to the existing quarterly sprint catalog and returns the
-   earliest and latest participating sprint plus evidence of current or future work.
-7. A candidate with historical work and no current or future work moves from `teamIds` to
-   `archivedTeams` in the local draft. The inferred boundaries remain editable.
-8. No shared state changes until the normal Department Save succeeds.
+## Lazy migration and bounded inference
 
-Detection is per Department membership. Opening or editing one Department never migrates a sibling
-Department, even when both contain the same Team ID.
+The migration runs only when the user opens the editor for a Department that already exists in the
+persisted configuration. It does not run for a new draft, an empty Department, an unopened
+Department, or a sibling Department.
 
-## Detection failures and conflicting evidence
+1. Resolve the current admin-configured archive prefix.
+2. Compare it only with the edited Department's selected `teamIds` using current Team catalog
+   names.
+3. Move matching Teams into the local Archived Teams draft immediately. No shared state changes.
+4. Before requesting Jira evidence, run the all-configured-project access gate described below.
+5. In one bounded lifecycle operation, query all unresolved candidate Team IDs against:
+   - the current and known future sprints; and
+   - at most the eight most recent completed quarterly sprints.
+6. Request only the configured Team and Sprint fields and follow Jira's `nextPageToken` / `isLast`
+   pagination contract. Do not make one Jira request per Team.
+7. Suggest the latest observed sprint, including current or future activity when it exists, as
+   `lastActiveSprintId`.
+8. If no activity is found in the bounded window, leave the field empty and require the user to
+   select the last active sprint manually. Do not automatically scan older Jira history.
+9. The normal Department Save confirms and persists all resolved draft moves.
 
-- A Jira request failure keeps every candidate active and shows a retryable migration notice.
-- A candidate with no historical sprint evidence stays active and requires an explicit sprint
-  selection before it can be archived; the application does not invent a boundary.
-- A prefixed Team with current or future work stays active and shows a warning because activity is
-  stronger evidence than the display-name prefix.
-- An existing `archivedTeams` record is never migrated again.
-- A save conflict preserves the user's migrated draft and uses the existing Department conflict
-  workflow.
-- Authentication failures use the existing global same-tab authentication recovery behavior.
+The eight-completed-quarter bound limits Jira fan-out and corresponds to two years of recent
+history. Older Teams remain configurable because manual selection uses the existing sprint catalog.
+This fixed product bound is intentionally not another setting.
+
+An existing `archivedTeams` record is never re-inferred on edit. The user may change its last active
+sprint manually. A later archive-prefix change also leaves it untouched.
+
+## Detection and save failures
+
+- A Jira failure preserves the staged Archived Teams rows, leaves unresolved sprint fields empty,
+  and offers Retry or manual selection. It never silently chooses a boundary.
+- If current or future work is observed, the latest such sprint is visibly suggested. The user may
+  correct it before Save; the prefix does not hide real work inside the saved boundary.
+- Save remains disabled while any archived record lacks a valid last active sprint.
+- Cancel discards every suggested move and boundary.
+- A save conflict preserves the user's draft and uses the existing Department conflict workflow.
+- Authentication failures use the existing terminal same-tab authentication recovery behavior.
+- A project-access failure renders the access-required state described below and performs no
+  lifecycle or Statistics data query.
+
+## Project-access and privacy gate
+
+Before lifecycle inference or a Statistics view shows Jira-derived data, resolve every project in
+the workspace admin `projects.selected` configuration whose type is Product or Tech.
+
+- In per-user OAuth mode, every configured key must have an `accessible` status for the current Jira
+  connection. One accessible project of a type is not sufficient.
+- Reuse the existing `jira_project_access` snapshots. The current code has no lightweight exact-key
+  revalidator, so add one bounded current-user project-catalog probe for missing or `unknown` keys
+  and update the existing snapshots before the data query. Do not infer access from an empty issue
+  search result and do not fetch issue data merely to test access. The same request must use the
+  probe result directly rather than continuing with the stale context snapshot loaded before the
+  update.
+- If any key is `inaccessible`, remains `unknown`, or the probe fails, fail closed with the existing
+  `missing_project_access` recovery contract plus the unresolved project keys. Show no partial or
+  previously loaded Statistics.
+- In Basic/service-account mode, the configured workspace Jira credential remains the single
+  authorization context and follows the existing Basic-mode gate.
+- Empty Product/Tech project configuration is a configuration-required state, not permission to
+  query all Jira projects.
+
+The strict helper applies to every configured Product/Tech project included by the pending Jira
+query. Combined lifecycle and Statistics queries therefore require all selected Product/Tech
+projects. Existing Product-only or Tech-only views keep their narrower per-view access behavior;
+this feature must not turn unrelated partial-access views into a global all-or-nothing dashboard.
+Run this gate before consulting browser or backend Statistics caches so a cached payload cannot
+bypass the current request's access decision.
+
+No fetched lifecycle evidence, Jira issue facts, or calculated Statistics are shared between user
+connections. Jira responses and UI-derived totals remain scoped to the authorization context that
+requested them.
+
+Project access is necessary but not sufficient for identical cross-user totals: Jira issue-level
+security may still give two project members different issue visibility. The UI must therefore say
+“Based on Jira items visible to your account” in Statistics help/error context and must not claim
+workspace-wide snapshot consistency. Exact identical totals would require the shared snapshot or
+service-account design that is explicitly out of scope.
 
 ## Settings behavior
 
-Active Teams retain the existing compact selected-Team control. Active-Team search excludes Team
-catalog entries whose names begin with `[ARCHIVED]`, so unrelated legacy entries do not pollute the
-normal add flow.
+Active Teams retain the existing compact selected-Team interaction. Active-Team search excludes
+catalog entries matching the configured archive prefix so unrelated archived entries do not
+pollute the normal add flow.
 
-A configured Department renders a separate collapsed `Archived Teams · N` section below Active
-Teams. Expanding it shows compact rows with:
+The edited Department renders a separate `Archived Teams · N` section below Active Teams. It is
+collapsed when unchanged and automatically expands when lazy migration stages candidates. Its
+banner says: “Found N Teams matching the archived prefix. Review Last active sprint before Save.”
 
-- the Team name without the visual `[ARCHIVED]` prefix;
-- Active from sprint;
-- Active through sprint;
-- inferred or manual status; and
-- a Restore action.
+Each compact row shows:
 
-Editing dates or restoring a Team updates only the current draft. The existing Save action commits
-the change. Archived catalog entries that were never selected in the Department do not appear in
-its Archived Teams section.
+- the current Team name with the visual archive prefix removed;
+- one `Last active sprint` selector;
+- an `Inferred` or `Needs selection` draft status; and
+- `Return to Active Teams`.
 
-Import and export remain selected-Department scoped and include `archivedTeams` while preserving
-the Department ID, name, sibling Departments, and shared default according to the existing import
-contract.
+Helper text says: “Archived for this Department; the Jira Team is not deleted.” The Save summary
+states how many Teams will move. Import and export remain selected-Department scoped and include
+`archivedTeams` without changing sibling Departments or the shared default.
 
 ## Effective sprint scope
 
-Current and future Department dropdowns and Jira requests use only `teamIds`.
+For each selected sprint, the effective Department Team set is:
 
-For a historical sprint, the effective scope is:
+1. every Team in `teamIds`; plus
+2. each archived membership whose selected sprint is not later than its inclusive
+   `lastActiveSprintId`.
 
-1. the Department's active `teamIds`; plus
-2. archived memberships whose inclusive `activeFromSprintId` through `activeThroughSprintId` range
-   contains the selected sprint.
+There is intentionally no lower bound for either kind of membership. For a current or future
+sprint, an archived membership appears only if the user explicitly saved a boundary at or after
+that sprint.
 
-Multi-sprint Statistics requests resolve the effective Team set separately for each sprint. A Team
-archived after one sprint must not be sent in Jira requests for later sprints merely because the
-selected Statistics range spans both.
+Dropdowns and Jira requests must use this same pure resolver. Sprint order comes from the catalog's
+quarter/date ordering, never lexical comparison of opaque sprint IDs. A saved boundary that is
+temporarily absent from the catalog is preserved and shown as needing repair; it is never silently
+converted back to active. Multi-sprint Statistics resolve the effective Team IDs independently for
+every sprint, so a Team is not sent in later requests merely because the range also includes its
+last active sprint. In historical Team controls, archived memberships are labelled `Former Team`
+to explain why they are available.
 
-## Statistics persistence architecture
+An explicitly resolved empty Team set means zero Teams. The client must skip the Jira request and
+produce an empty result for that sprint. It must never send `teamIds: []` to an endpoint where the
+existing meaning is “remove the Team filter,” because that would expand a Department-scoped request
+to all Teams.
 
-Statistics storage has two layers.
+## On-demand Statistics and loading states
 
-### Authorization-partitioned facts
+Do not add Statistics tables, fact repositories, aggregate repositories, browser persistence,
+scheduled jobs, or backfills. Each Statistics range is requested when the user opens or refreshes
+it, using the current user's authorization context and the per-sprint effective Team set. Existing
+page-session memory and the existing short-lived authorization-partitioned backend process cache
+may deduplicate compatible requests. Neither is durable or shared across authorization contexts,
+and explicit Refresh bypasses the existing cache.
 
-Minimal normalized Jira facts remain private to the authorization context that fetched them. The
-partition includes workspace, user, Jira connection, sprint, Team, source configuration signature,
-and schema version. These facts may contain the identifiers needed to calculate projections, but
-they are never returned to another user through the shared cache.
+The current progressive per-sprint Statistics source already exposes loaded and total sprint
+counts. Make that progress visible:
 
-The source configuration signature covers the selected Jira project scope, configured issue types,
-and relevant Jira field mappings. Changing those inputs creates a new fact partition rather than
-silently reusing incompatible data.
+- Start with `Checking Jira project access…` while the strict access gate runs.
+- During a range load, show a determinate progress bar and text such as `Loading sprint 3 of 8…`.
+- Keep the Statistics region `aria-busy="true"`; expose status changes through an accessible live
+  region.
+- Render progressive results only after the access gate has passed. Mark them as incomplete until
+  all sprint requests settle.
+- If some sprint requests fail, keep successful results, show `Loaded 6 of 8; 2 failed`, and offer
+  Retry. If access or authentication fails, clear all results instead of showing a partial set.
+- Refresh repeats the live Jira requests; it does not invalidate or overwrite persistent data.
 
-### Workspace-shared aggregates
+Lifecycle inference is one bounded paginated HTTP operation and does not expose reliable page
+totals to the client. Show an indeterminate bar with `Checking archived Team history in Jira…` and,
+after a delay, `Still checking Jira; you can select a sprint manually.` Do not display a fabricated
+percentage and do not introduce a background-job API solely to report progress.
 
-Final non-identifying projections are shared within the application workspace. The application
-workspace is the entity bootstrapped from the configured Jira URL and canonically identified by the
-existing workspace record, using Atlassian cloud ID with normalized Jira site URL as fallback.
+## Database and regression safety
 
-The aggregate partition includes:
-
-```text
-workspaceId
-+ departmentId
-+ sprintId
-+ teamId
-+ aggregationConfigSignature
-+ schemaVersion
-```
-
-The aggregation signature covers the relevant Department exclusions and Ad Hoc configuration plus
-the source configuration signature. Shared payloads may contain only final counts, story-point
-totals, percentages, and fixed categorical buckets needed by:
-
-- Teams;
-- Priority;
-- Excluded Capacity;
-- Mono vs Cross; and
-- Project Track Team mode and other Team-level totals.
-
-Project Track Epic/assignee detail remains authorization-partitioned and on-demand. Burndown and
-Lead Times remain outside this persistence slice.
-
-Any authenticated workspace user may read a shared aggregate. A user with valid Jira access may
-generate or explicitly refresh it. Users in another workspace cannot read or overwrite it. The
-shared aggregate contract must be added to `backend/security/CONFIGURATION_OWNERSHIP.md`.
-
-## Statistics read and refresh flow
-
-1. Resolve effective Team IDs independently for each requested sprint.
-2. Read compatible workspace aggregate partitions.
-3. For missing partitions, reuse compatible private facts or fetch only the missing sprint/Team
-   partitions from Jira, batched where possible.
-4. Calculate the allowed projections, persist the shared aggregates, and return them.
-5. Subsequent workspace users read those projections without repeating the Jira request.
-
-Future sprint data is never snapshotted. Active sprint data is refreshable and is not final. Once
-Jira marks a sprint closed, its next successful fetch creates the durable projection. Archiving a
-Team does not block Department Save on a historical backfill; missing closed-sprint partitions are
-filled lazily when Statistics first requests them. Explicit Refresh may replace a closed-sprint
-projection to capture Jira corrections.
-
-## Access and privacy contract
-
-- The configured Jira site/workspace is the deliberate sharing boundary for aggregate Statistics.
-- Sharing aggregates does not imply sharing the Jira issue facts used to calculate them.
-- Shared payload validation rejects issue keys, Epic keys, summaries, URLs, assignee identifiers or
-  names, free text, descriptions, comments, and changelog material.
-- Database uniqueness and every repository query include `workspace_id`.
-- An authorization-partitioned fact row includes its owning user and Jira connection and cannot be
-  read through another user's context.
-- Disconnecting or deleting a Jira connection invalidates or cascades its private facts without
-  deleting valid workspace aggregate projections.
+- Add no database models, migrations, Statistics rows, lifecycle-evidence rows, or cleanup jobs.
+- Extend only the existing workspace group JSON payload and existing workspace admin JSON payload.
+- Preserve `workspace_group_configs` revision checks and all-or-nothing Settings Save behavior.
+- Reject duplicate active/archived Team IDs and unknown properties in archived Team records
+  server-side. Do not reject a stable Team ID merely because a transient catalog refresh omitted
+  it.
+- Preserve version 1 reads, JSON-file fallback, import/export, empty `teamIds`, Department board,
+  labels, exclusions, Ad Hoc capacity, user favorites, visibility, and active-group preferences.
+- Never let an older normalizer silently drop `archivedTeams`; add explicit round-trip regression
+  tests before enabling frontend Save.
+- Do not change `jira_project_access` schema. Add the exact-key revalidation path and a strict
+  all-referenced-project helper without weakening existing route-specific partial-access behavior.
 
 ## Analytics impact
 
-No new event is required. Detection and inference are passive reads, and persistence occurs through
-the existing Department Settings save action. The analytics taxonomy must record this allowlist
-decision. Events must not include Department IDs or names, Team IDs or names, sprint IDs or names,
-inferred boundaries, Jira query text, or stored metrics.
+No new event is required. Detection and inference are passive reads, loading progress is a status
+presentation, and persistence occurs through the existing Department Settings Save action. Record
+this allowlist decision in `docs/README_ANALYTICS.md`. Existing API-result events must not add
+Department IDs or names, Team IDs or names, sprint IDs or names, Jira query text, project keys, or
+inferred boundaries.
 
 ## Documentation changes required during implementation
 
-- Update `docs/DOMAIN_ONTOLOGY.md` with Team, Department Team Membership, Active Team, Archived
-  Team, and workspace aggregate concepts.
-- Update root `AGENTS.md` with the ontology reading requirement and lifecycle invariants.
-- Update `backend/security/CONFIGURATION_OWNERSHIP.md` with shared aggregate and private fact
-  ownership.
+- Update `docs/DOMAIN_ONTOLOGY.md` with Workspace, Team, Department Team Membership, Active Team,
+  Archived Team, and the accepted no-start-date limitation.
+- Update root `AGENTS.md` with the ontology reading requirement and membership lifecycle invariant.
+- Update `backend/security/CONFIGURATION_OWNERSHIP.md` with the admin-owned archive prefix and the
+  existing shared Department ownership of archived memberships. Do not add Statistics ownership.
 - Update Department workflow and Statistics feature documentation.
 - Update `docs/README_ANALYTICS.md` with the no-new-event decision.
 
+## Files allowed during implementation
+
+The implementation plan may touch only the relevant existing files in these areas, plus focused
+tests and generated frontend output:
+
+- root `AGENTS.md` and the documentation named above;
+- `backend/services/group_config.py`, `backend/services/shared_group_config.py`, and shared admin
+  configuration validation/routes;
+- the existing project-access helper and only the lifecycle/Statistics routes that consume it;
+- Department Settings, Team/sprint selection helpers, and Statistics loading components under
+  `frontend/src/`;
+- `jira_server.py` only where the existing monolith still owns the required route/config bridge;
+- focused Python, JavaScript, and Playwright tests.
+
+No new persistence subsystem, migration file, background worker, or service directory is allowed.
+
 ## Acceptance criteria
 
-1. Editing a configured Department lazily identifies its already-selected `[ARCHIVED]` Teams with
-   one batched, paginated Jira history request.
-2. A valid candidate moves only in the local draft, receives editable first/last sprint boundaries,
-   and persists only through the existing Save flow.
-3. Empty, new, unopened, and sibling Departments are not migrated.
-4. Current/future controls and API requests exclude archived memberships.
-5. Historical controls and requests include an archived membership only inside its inclusive sprint
-   range.
-6. Active-Team search excludes unassigned `[ARCHIVED]` catalog noise.
-7. Restoring and manually correcting an archived membership work without bypassing revision or
-   conflict protections.
-8. Shared aggregates for the five selected sprint-scoped Statistics views are reused by other
-   authenticated users in the same workspace without a Jira refetch.
-9. Cross-workspace access is impossible, and shared payloads contain no banned issue-level,
-   person-level, or free-text fields.
-10. The canonical ontology, ownership contract, feature docs, analytics decision, and root
+1. Opening one persisted Department editor stages only that Department's selected Teams whose
+   current names match the admin-configured archive prefix.
+2. The default prefix is `[ARCHIVED]`; only workspace admins may change it, and the value is treated
+   as a literal case-insensitive prefix.
+3. Inference queries at most current/future plus eight completed quarterly sprints, batches
+   candidate Teams, and never scans older history automatically.
+4. Every staged archived Team has an editable last-active sprint; unresolved rows block Save and
+   support manual selection.
+5. New, empty, unopened, and sibling Departments are not migrated. Cancel writes nothing.
+6. Current, future, and historical dropdowns and Jira requests all use the same per-sprint effective
+   Team resolver.
+7. Active-Team search hides unselected catalog entries matching the archive prefix; archived rows
+   stay visible only in the separate Department section and eligible historical scopes.
+8. Version 1 group payloads load without mutation, version 2 round-trips `archivedTeams`, and no
+   existing Department fields or user preferences are lost.
+9. Before any lifecycle or Statistics data query, the current authorization context has confirmed
+   access to every configured Product/Tech project included by that query; combined queries require
+   all selected projects, and failures show no partial data.
+10. Statistics make on-demand Jira requests, create no durable result data, and show accessible
+    determinate per-sprint progress. Lifecycle inference shows an honest indeterminate state.
+11. Statistics disclose that results reflect the Jira items visible to the current account and do
+    not claim identical cross-user totals.
+12. The canonical ontology, ownership contract, feature docs, analytics decision, and root
     `AGENTS.md` agree with the shipped behavior.
+13. A sprint with no effective Teams makes no Jira issue request and can never expand to the
+    endpoint's legacy unfiltered `teamIds: []` behavior.
 
 ## Verification strategy
 
-Backend tests must cover configuration normalization, duplicate rejection, sprint boundary
-validation, paginated lifecycle detection, activity-over-prefix precedence, private fact ownership,
-workspace aggregate uniqueness, same-workspace sharing, cross-workspace isolation, banned-field
-validation, cache misses, cache hits, refresh, and closed-versus-active sprint persistence.
+Backend tests must cover v1-to-v2 normalization, full field round-trips, duplicate rejection,
+invalid or missing boundaries, bounded/paginated inference, manual fallback, all-project access,
+missing/unknown/inaccessible snapshots, Basic mode, and absence of any new persistence writes.
 
-Frontend unit tests must cover lazy trigger conditions, no-request conditions, draft migration,
-manual correction, restore, error preservation, effective per-sprint Team resolution, search
-filtering, and import/export.
+Frontend unit tests must cover lazy trigger conditions, configurable-prefix matching, draft moves,
+inferred and unresolved boundaries, cancel, manual correction, restore, failure preservation,
+effective per-sprint Team resolution, explicit empty scope, search filtering, progressive loading,
+and import/export.
 
-Playwright tests must cover settled Active Teams plus collapsed and expanded Archived Teams states,
-editable sprint controls, normal Save/Cancel/conflict behavior, and historical versus current Team
-dropdown contents. Screenshots must be captured after transitions settle.
+Playwright tests must cover settled Active Teams plus collapsed and auto-expanded Archived Teams,
+last-active sprint editing, Save/Cancel/conflict behavior, historical versus current Team dropdowns,
+access-required states, determinate Statistics progress, and indeterminate lifecycle progress.
+Screenshots must be captured after transitions settle.
 
-Performance verification must prove that lifecycle detection is one batched Jira query rather than
-one request per Team, that multi-sprint requests omit out-of-range Teams per sprint, and that a
-compatible shared aggregate hit does not contact Jira.
-
-Run focused tests during iteration, `npm run build` after frontend changes, the complete Python and
-JavaScript test suites before push, and the applicable Playwright coverage with visual inspection.
+Performance verification must show that lifecycle inference is bounded and batched rather than
+one request per Team, and that a multi-sprint Statistics range sends only effective Team IDs for
+each sprint. Run focused tests during iteration, `npm run build` after frontend source changes, the
+complete Python and JavaScript test suites before push, and applicable Playwright coverage with
+visual inspection.
 
 ## Implementation sequencing
 
-The implementation plan should split this design into independently verifiable slices:
+After approval, the implementation plan should use these independently verifiable slices:
 
-1. ontology, configuration schema, and pure effective-scope helpers;
-2. read-only lifecycle detection API and lazy draft migration;
-3. Archived Teams Settings UI and import/export support;
-4. private fact and workspace aggregate database models and repositories;
-5. Statistics source integration and per-sprint effective Team routing; and
-6. documentation, analytics, performance, and full regression verification.
+1. ontology, admin prefix, group payload v2, and pure effective-scope helpers;
+2. strict all-configured-project access gate and bounded read-only lifecycle inference;
+3. Archived Teams Settings UI, lazy draft migration, and import/export;
+4. on-demand Statistics routing plus determinate/indeterminate loading states; and
+5. documentation, analytics, performance, and full regression verification.

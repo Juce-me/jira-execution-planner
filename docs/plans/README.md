@@ -465,13 +465,15 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      without changing product drag or transition behavior.
 
 8. `EXEC-board-configuration-horizontal-scroll.md`
-   - Ready for execution on `bugfix/board-configuration-horizontal-scroll`.
+   - Ready for execution on `bugfix/board-configuration-horizontal-scroll` after independent
+     feasibility, Playwright, and UX/process reviews.
    - Expected output: overflowing Board Configuration columns are reachable with an ordinary
-     vertical mouse wheel, explicit keyboard-accessible left/right controls, and drag-only edge
-     auto-scroll, while the status picker and settings pane retain their vertical-scroll ownership
-     at the correct boundaries.
+     vertical mouse wheel normalized across wheel units, shared keyboard-accessible left/right
+     controls, and drag-only edge auto-scroll with explicit cleanup, while the status picker and
+     settings pane retain their vertical-scroll ownership at the correct boundaries.
    - Frontend-only local interaction; no API, persistence, schema, credential, or new analytics-event
-     contract. Generated frontend output and settled real-modal Playwright proof are required.
+     contract. Generated frontend output, desktop/narrow real-modal proof, and an isolated clean-build
+     gate are required.
 
 ## Stats Project Track By Sprint
 

@@ -464,6 +464,15 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      1,219 tests with 1,218 passed and 1 skipped. Finalization corrected a stale drag-fixture route
      without changing product drag or transition behavior.
 
+8. `EXEC-board-configuration-horizontal-scroll.md`
+   - Ready for execution on `bugfix/board-configuration-horizontal-scroll`.
+   - Expected output: overflowing Board Configuration columns are reachable with an ordinary
+     vertical mouse wheel, explicit keyboard-accessible left/right controls, and drag-only edge
+     auto-scroll, while the status picker and settings pane retain their vertical-scroll ownership
+     at the correct boundaries.
+   - Frontend-only local interaction; no API, persistence, schema, credential, or new analytics-event
+     contract. Generated frontend output and settled real-modal Playwright proof are required.
+
 ## Stats Project Track By Sprint
 
 1. `DONE-stats-project-track-by-sprint.md`

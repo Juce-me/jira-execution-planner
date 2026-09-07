@@ -324,3 +324,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In ENG Board, keep the Teams selector visible and disabled rather than hiding it; Board scope must not use the private Team selection.
 - In ENG Board, Project Track/Delivery track is an Epic property; never derive it from child issues or conflate it with the child-derived Product/Tech Projects facet.
 - In ENG, Product/Tech is a Jira-project classification inherited by issues through their Jira project; never derive it from issue type.
+- In ENG Board data loading, separate Product and Tech Jira requests are acceptable; optimize completeness, pagination, and progressive rendering before combining them.
+- ENG Board data must come from a Board-owned Epic-first pipeline with complete paginated child hydration; when Components are absent, index bounded Epics from configured Jira projects before applying selected sprint plus all saved Department Teams, and never use Catch Up data as the Board source of truth.
+- In ENG Board progressive loading, render columns and Epic cards first, update visibly provisional Story counts and status distribution as pages arrive, and unlock child-derived filters and export only after every child page completes.
+- When reviewing a dirty implementation plan against origin, treat origin's recorded findings as baseline requirements and report whether the local changes close them; do not report those baseline findings as newly introduced regressions.

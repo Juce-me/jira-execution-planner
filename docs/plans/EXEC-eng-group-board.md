@@ -12,7 +12,9 @@
 > source of truth: Delivery Owner, epic `updated`, epic description, Initiative shaping, and the
 > Board status route now exist. Pre-execution gap statements later in this document are historical,
 > not current blockers. This plan does not define optional-sprint Board transport; use
-> `SUPPORT-eng-board-optional-sprint-design.md` for that work. §5.5 is the reference configuration
+> `SUPPORT-eng-board-optional-sprint-design.md` for that work. That support design supersedes every
+> clause below that says Board reuses Catch Up/data.epics, issues no read on entry, or uses no new
+> Board JQL; retain this plan's UI, grouping, write-path, and no-per-Epic-fan-out contracts. §5.5 is the reference configuration
 > the tests assert — implement against it rather than reinterpreting the mockups.
 >
 > **Open the two design assets first** (row above). They are the approved design, not a
@@ -233,7 +235,7 @@ without asking.
 | D37 | **Dragging an epic card to another column changes its status** | A column is a *set* of statuses, so a drop is not always one answer: one status transitions straight away, several open the app's own `StatusTransitionMenu` scoped to that column. Only transitions Jira actually offers are eligible; a drop with no eligible transition is refused and nothing moves. Drag is an accelerator layered on the existing action — see §6.4 and §9.5. |
 | D38 | **Status → column assignment has an explicit non-drag path** | `+ Add status` on each column opens an in-place list and assigns on click. Drag-only was undiscoverable — chips carried `draggable` with no grip, no grab cursor and a drop target that only appeared mid-drag — and unreachable by keyboard. The picker offers every status the column does not already hold, orphans first, so it also moves a status between columns; the leftover pool is a drop target too, so a chip can be dragged back out. |
 | D39 | **Production widths and shared controls are authoritative; the mockup mirrors them** | The app has one container, `.container` at `max-width: 1040px` (`shared/shell.css:45`) — there is no `.shell` and no 1560px layout. The ENG mode switch is `SegmentedControl` (`ui/SegmentedControl.jsx`) rendered by `EngModeControl` with the `eng-mode-control` hook; the sprint/group/teams pickers are `.control-field` + `.control-label` + a `*-dropdown-toggle`; search is `.search-input`; the compact lane is `.compact-sticky-header-controls`. Consumers pass the class hook and nothing else — no local CSS may change a shared control's `display`, `flex-wrap` or `height` (MRT021), and no `min-width` magic numbers or overflowing `nowrap` (MRT020). The mockup previously carried `.shell`, `.seg`, `.field` and `.compact-inner`, which existed in no stylesheet; it now renders the production classes so what an implementer lifts is what ships. |
-| D40 | **Board is a fourth boolean, not an enum member** | There is no ENG mode enum: `showPlanning` / `showStats` / `showScenario` are independent booleans and Catch Up is the all-false fallthrough (`dashboard.jsx:655-657`, `:12337-12343`). So Board inherits Catch Up everywhere by default — including rendering the entire Catch Up task list beneath itself. §6.5.4 lists all eleven fallthrough sites; each is an explicit keep-or-change. Board persists in `localStorage` like the others, is available in **every** sprint state, and triggers no fetch on entry. |
+| D40 | **Board is a fourth boolean, not an enum member** | There is no ENG mode enum: `showPlanning` / `showStats` / `showScenario` are independent booleans and Catch Up is the all-false fallthrough (`dashboard.jsx:655-657`, `:12337-12343`). So Board inherits Catch Up everywhere by default — including rendering the entire Catch Up task list beneath itself. §6.5.4 lists all eleven fallthrough sites; each is an explicit keep-or-change. Board persists in `localStorage` like the others and is available in every sprint state. **Optional-sprint source update:** the old “triggers no fetch” requirement is superseded by `SUPPORT-eng-board-optional-sprint-design.md`; Board now requires its own strict read pipeline. |
 | D41 | **Product/Tech is inherited from each story's Jira project; an Epic may inherit both** | Classify each story only through the configured mapping for `fields.projectKey`; issue type and Ad Hoc membership never determine Board classification. The Epic's Projects membership is the union of its complete story cohort, so an Epic spanning Product and Tech projects matches both. A story in a project mapped to `other` matches neither option. See §4.4. |
 | D42 | **Moving an epic to a resolved column with open stories warns, it never blocks** | Jira's workflow decides what is *allowed* (§6.4); this decides what is *sensible*. Dropping into a column whose chosen status is `Done`, `Killed` or `Incomplete` while the epic has unresolved stories inserts one confirmation step into the same `StatusTransitionMenu` — *"DEMO-1001 has 5 open stories" · Move to Done anyway · Keep it where it is*. Blocking is wrong for the same reason D24 gives for Min/Max: the board reports on work, it does not police it. |
 | D43 | **Exactly one column is focused, always** | §6.1 asserted this but nothing enforced it, and the dead state was reachable: unstar the starred column, fold the focused one, and every column folds — the board becomes bare rails with no content. Focus is now resolved through one function that cannot return nothing, and folding the focused column **transfers** focus rather than clearing it. See §6.1.2. |
@@ -283,15 +285,18 @@ Priority vocabulary is exactly the six `PRIORITY_AXIS` values. Jira's
 
 #### Two epic shapes exist, and they disagree — check which one you have
 
-This is the trap. The app carries **two** differently-shaped epic payloads, and the board consumes
-the first:
+This is the historical shape trap. The app carries **two** differently-shaped Epic payloads, and the
+original Board consumed the first. Optional-sprint production must consume the canonical Board-owned
+shape from `SUPPORT-eng-board-optional-sprint-design.md`, not adapt either payload:
 
 | Payload | Container | `status` | `assignee` | Also carries |
 | --- | --- | --- | --- | --- |
-| `data.epics` — the board's source | **dict keyed by epic key** (`jira_server.py:3396`) | `str` | `{displayName}` | `projectTrack`, `initiative` |
+| `data.epics` — the original Board source, now historical for optional-sprint work | **dict keyed by epic key** (`jira_server.py:3396`) | `str` | `{displayName}` | `projectTrack`, `initiative` |
 | `epicsInScope` — the alerts source | list (`backend/services/alert_epics.py:18-30`) | **`{name}`** | `{displayName}` | `labels`, `team`, `teamName`, `teamId` |
 
-`data.epics` is a **dict, not a list** — iterate its values. Because both shapes are live,
+For maintenance of the original path, `data.epics` is a **dict, not a list** — iterate its values.
+Optional-sprint Board code instead consumes its normalized Board-owned Epic map. Because both legacy
+shapes remain live for sibling modes,
 `engTaskUtils.js:216-220` exports a defensive, named helper, `epicStatusName`, doing
 `typeof x.status === 'string' ? x.status : x.status?.name`. `dashboard.jsx` carries its **own**
 unnamed inline duplicate of the same ternary at `:12644-12646` — it does **not** call the named
@@ -757,18 +762,12 @@ Backend 409 is covered (`tests/test_shared_group_config_routes.py:131-148`,
   Matching is trimmed and case-insensitive, catalog order is preserved, duplicate names appear once,
   and empty phases are omitted so Reset never creates an invalid stored column.
 
-  > **Corrected during execution: this default is a *composer* action, not a board-render-time
-  > derivation.** The status catalog is loaded only by the composer, while the payload the board
-  > renders from carries epic `status` as a bare string, so the derivation is **unreachable without
-  > a fetch**. §6.5.5 forbids
-  > exactly that ("Board additionally must not trigger any new fetch on entry… Entering Board is a
-  > pure re-render"), and §9.3's own table names the composer as that endpoint's only consumer. Two
-  > statements against one, and the no-fetch side is the one with a committed Playwright assertion
-  > behind it. So the default is produced by the composer — *Reset to default columns*, and the board
-  > a group gets when it is first composed — and **a group with no `board` config renders a
-  > first-run state on the board, not a derived default**. Do not relax §6.5.5 to buy a nicer
-  > first-run screen: one catalog request on Board entry would cost the plan's only hard performance
-  > guarantee.
+  > **Corrected during the original execution: this default is a *composer* action, not a
+  > board-render-time derivation.** The status catalog is loaded by the composer; a group with no
+  > `board` config therefore renders a first-run state rather than a derived default. The original
+  > no-fetch rationale is superseded by the optional-sprint Board-owned read pipeline, but that does
+  > not move default-column derivation out of the composer or authorize a separate status-catalog
+  > request solely to build default columns on Board entry.
 
 - **A group with no `board` config** renders a single first-run column holding every epic in scope,
   which must say plainly that the board is unconfigured and link to Settings → Departments →
@@ -1130,12 +1129,14 @@ Board's entry and exit must therefore be explicit about what they do **not** do 
 existing modes:
 
 - Does **not** clear `selectedTasks` (the Planning selection survives a mode round-trip today).
-- Does **not** abort in-flight fetches — `abortSprintFetches()` runs only on sprint change, called
-  from inside `resetSprintScopedState()` (`dashboard.jsx:5122`), which the sprint-change effect at
-  `:5148-5151` invokes.
+- The original mode switch did not abort in-flight fetches because `abortSprintFetches()` ran only on
+  sprint change. **Superseded for optional-sprint production:** entering Board must abort only the
+  in-flight legacy Product/Tech task requests that could contaminate Board state, without clearing
+  sibling sprint state; leaving or changing Board scope aborts the Board-owned generation.
 - Does **not** reset scroll.
-- Board additionally **must not** trigger any new fetch on entry: it renders from the same
-  `data.epics` and task data Catch Up already loaded (§9.4). Entering Board is a pure re-render.
+- **Superseded for optional-sprint production:** Board no longer renders from Catch Up `data.epics`
+  or task state. Entering Board starts or resumes only the strict Board-owned progressive read in
+  `SUPPORT-eng-board-optional-sprint-design.md`; it must not start legacy Product/Tech task loaders.
 
 On exit, Board must clear only its own transient UI: the drop menu, the drag highlight and the
 `aria-live` message. It owns no other state.
@@ -1555,7 +1556,7 @@ table-local scroll region, while Jira-provided table attributes remain ignored. 
 
 | State | Renders |
 | --- | --- |
-| Loading | A skeleton in the description block only; the rest of the panel (title, controls, story list) is already populated from `data.epics` and must not wait on it |
+| Loading | A skeleton in the description block only. Under the optional-sprint contract, title and Epic metadata come from the Board-owned shell while the Story section independently follows `pending|streaming|complete|error`; it never falls back to `data.epics` or displays missing children as zero. |
 | Empty (`isEmpty`) | *No description* in `.group-modal-meta` grammar — not an empty box |
 | Error | The failure and a **Retry** button in the block; the panel stays open and the story list stays usable |
 | Loaded | Clamped to **`11.5rem`** with the fade, *Show full description* toggles it (§6.3) |
@@ -1594,10 +1595,11 @@ real coverage point is a new `("GET", "/api/board-config/statuses")` sample unde
 
 ### 9.4 What must not happen
 
-- No new JQL, and no change to the base JQL. Columns are a client-side grouping of epics already
-  in scope, not seven queries.
-- No per-epic fan-out for card data. Everything on the card comes from the existing bulk fetch,
-  including configured `deliveryOwner` when that field is set.
+- **Superseded for optional-sprint production:** Board uses the strict Board-private Epic-index and
+  batched child JQL from `SUPPORT-eng-board-optional-sprint-design.md`; it does not change sibling
+  modes' base JQL and never issues one query per visual column.
+- No per-Epic fan-out for card data. Epic shells come from the Board index and direct children from
+  bounded multi-Epic batches, including configured `deliveryOwner` when that field is set.
 - No new write path to Jira from this feature beyond the transitions that already exist (status,
   priority, project track), all through the signed-in user's OAuth context. Card drag-and-drop
   (D37) is a new *trigger* for the existing status transition, not a new write path — see §9.5.

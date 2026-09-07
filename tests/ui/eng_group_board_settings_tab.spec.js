@@ -514,6 +514,224 @@ test('the Boards split uses the real 30/70 panes, and the composer pane scrolls 
     await expect(dialog.locator('.board-column')).toHaveCount(8);
 });
 
+test('overflowing Board columns expose controls and route wheel input by scroll boundary', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 480 });
+    await mockConfigSettings(page);
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await openBoardsTab(page, dialog);
+    await expect(dialog.locator('.board-column')).toHaveCount(7);
+
+    const rail = dialog.locator('.board-columns');
+    const pane = dialog.locator('.group-pane-right');
+    const left = dialog.getByRole('button', { name: 'Scroll board columns left' });
+    const right = dialog.getByRole('button', { name: 'Scroll board columns right' });
+    const movePointerOverVisibleRail = async (requestedX = 180, requestedY = 100) => {
+        const [currentRailBox, currentPaneBox] = await Promise.all([rail.boundingBox(), pane.boundingBox()]);
+        await page.mouse.move(
+            currentRailBox.x + Math.min(requestedX, currentRailBox.width - 3),
+            Math.min(currentRailBox.y + requestedY, currentPaneBox.y + currentPaneBox.height - 3),
+        );
+    };
+    await expect(left).toBeVisible();
+    await expect(left).toBeDisabled();
+    await expect(right).toBeEnabled();
+    await expect(left).toHaveAttribute('aria-controls', await rail.getAttribute('id'));
+    await expect(left).toHaveClass(/icon-button--md/);
+    await expect(right).toHaveClass(/icon-button--md/);
+    for (const control of [left, right]) {
+        const box = await control.boundingBox();
+        expect(Math.round(box.width)).toBe(28);
+        expect(Math.round(box.height)).toBe(28);
+        expect(await control.evaluate((node) => getComputedStyle(node).marginRight)).toBe('0px');
+    }
+    const desktopGeometry = await dialog.evaluate((node) => {
+        const paneNode = node.querySelector('.group-pane-right');
+        const toolbar = node.querySelector('.board-columns-toolbar');
+        const railNode = node.querySelector('.board-columns');
+        const controls = [...node.querySelectorAll('.board-columns-scroll-controls button')];
+        const paneBox = paneNode.getBoundingClientRect();
+        const toolbarBox = toolbar.getBoundingClientRect();
+        const railRect = railNode.getBoundingClientRect();
+        return {
+            toolbarInsidePane: toolbarBox.left >= paneBox.left - 1 && toolbarBox.right <= paneBox.right + 1,
+            railInsidePane: railRect.left >= paneBox.left - 1 && railRect.right <= paneBox.right + 1,
+            controlsInsideToolbar: controls.every((control) => {
+                const box = control.getBoundingClientRect();
+                return box.left >= toolbarBox.left - 1 && box.right <= toolbarBox.right + 1;
+            }),
+            controlsSeparated: controls[0].getBoundingClientRect().right <= controls[1].getBoundingClientRect().left,
+            dialogFits: node.scrollWidth <= node.clientWidth + 1,
+            documentFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+        };
+    });
+    expect(desktopGeometry).toEqual({
+        toolbarInsidePane: true,
+        railInsidePane: true,
+        controlsInsideToolbar: true,
+        controlsSeparated: true,
+        dialogFits: true,
+        documentFits: true,
+    });
+
+    const restingLeft = await rail.evaluate((node) => node.scrollLeft);
+    const expectedStep = await rail.evaluate((node) => {
+        const column = node.querySelector('.board-column');
+        return column.getBoundingClientRect().width + (parseFloat(getComputedStyle(node).columnGap) || 0);
+    });
+    const railBox = await rail.boundingBox();
+    await movePointerOverVisibleRail(railBox.width - 3);
+    await page.waitForTimeout(100);
+    await expect(rail).toHaveJSProperty('scrollLeft', restingLeft);
+
+    await right.focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(async () => Math.abs(
+        (await rail.evaluate((node) => node.scrollLeft)) - expectedStep,
+    )).toBeLessThanOrEqual(1);
+    await expect(left).toBeEnabled();
+    await expect(pane).toHaveJSProperty('scrollTop', 0);
+
+    await left.click();
+    await expect.poll(() => rail.evaluate((node) => node.scrollLeft)).toBeLessThanOrEqual(1);
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await right.click();
+    expect(Math.abs((await rail.evaluate((node) => node.scrollLeft)) - expectedStep)).toBeLessThanOrEqual(1);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+    await rail.evaluate((node) => { node.scrollLeft = 0; });
+    await movePointerOverVisibleRail();
+    await page.mouse.wheel(120, 0);
+    await expect.poll(() => rail.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+    expect(await rail.evaluate((node) => node.scrollLeft)).toBeLessThanOrEqual(140);
+    await expect(pane).toHaveJSProperty('scrollTop', 0);
+
+    const wheelUnits = await rail.evaluate((node) => {
+        const dispatch = (deltaY, deltaMode, extra = {}) => {
+            node.scrollLeft = 0;
+            const event = new WheelEvent('wheel', {
+                bubbles: true,
+                cancelable: true,
+                deltaY,
+                deltaMode,
+                ...extra,
+            });
+            const allowed = node.dispatchEvent(event);
+            return { cancelled: !allowed, left: node.scrollLeft };
+        };
+        return {
+            line: dispatch(3, WheelEvent.DOM_DELTA_LINE),
+            page: dispatch(1, WheelEvent.DOM_DELTA_PAGE),
+            zoom: dispatch(120, WheelEvent.DOM_DELTA_PIXEL, { ctrlKey: true }),
+            pageExpected: Math.min(node.clientWidth, node.scrollWidth - node.clientWidth),
+        };
+    });
+    expect(wheelUnits.line.cancelled).toBe(true);
+    expect(wheelUnits.line.left).toBeGreaterThanOrEqual(40);
+    expect(wheelUnits.page.cancelled).toBe(true);
+    expect(Math.abs(wheelUnits.page.left - wheelUnits.pageExpected)).toBeLessThanOrEqual(1);
+    expect(wheelUnits.zoom).toEqual({ cancelled: false, left: 0 });
+
+    await rail.evaluate((node) => { node.scrollLeft = 0; });
+    await expect(left).toBeDisabled();
+    await movePointerOverVisibleRail();
+    await page.mouse.wheel(0, 260);
+    await expect.poll(() => rail.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+    await expect(pane).toHaveJSProperty('scrollTop', 0);
+
+    const beforeReverse = await rail.evaluate((node) => node.scrollLeft);
+    await page.mouse.wheel(0, -120);
+    await expect.poll(() => rail.evaluate((node) => node.scrollLeft)).toBeLessThan(beforeReverse);
+    await expect(pane).toHaveJSProperty('scrollTop', 0);
+
+    await pane.evaluate((node) => { node.scrollTop = 200; });
+    await rail.evaluate((node) => { node.scrollLeft = 0; });
+    await page.mouse.wheel(0, -120);
+    await expect.poll(() => pane.evaluate((node) => node.scrollTop)).toBeLessThan(200);
+
+    await pane.evaluate((node) => { node.scrollTop = 0; });
+    await rail.evaluate((node) => { node.scrollLeft = node.scrollWidth; });
+    await expect(right).toBeDisabled();
+    await movePointerOverVisibleRail();
+    await page.mouse.wheel(0, 260);
+    await expect.poll(() => pane.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+
+    await pane.evaluate((node) => { node.scrollTop = 0; });
+    await rail.evaluate((node) => { node.scrollLeft = 0; });
+    await dialog.locator('.board-column').first().locator('.board-add-status').click();
+    const picker = dialog.locator('.board-column').first().locator('.board-pick');
+    expect(await picker.evaluate((node) => node.scrollHeight)).toBeGreaterThan(
+        await picker.evaluate((node) => node.clientHeight),
+    );
+    await picker.hover();
+    const pickerPaneTop = await pane.evaluate((node) => node.scrollTop);
+    await page.mouse.wheel(0, 120);
+    await expect.poll(() => picker.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    await expect(rail).toHaveJSProperty('scrollLeft', 0);
+    await expect(pane).toHaveJSProperty('scrollTop', pickerPaneTop);
+
+    await picker.locator('xpath=..').locator('.board-add-status').click();
+    await pane.evaluate((node) => { node.scrollTop = 0; });
+    await page.waitForTimeout(300);
+    await dialog.screenshot({
+        path: `${screenshotDir}/boards-tab-horizontal-scroll-controls.png`,
+        animations: 'disabled',
+    });
+
+    await dialog.locator('.group-pane-list .group-list-item', { hasText: 'Southridge' }).click();
+    await expect(dialog.locator('.board-columns-scroll-controls')).toHaveCount(0);
+
+    await dialog.getByRole('button', { name: 'Reset to default columns' }).click();
+    await expect(dialog.locator('.board-columns-scroll-controls')).toBeVisible();
+    await dialog.locator('.board-column .remove-btn[title="Delete column"]').first().click();
+    await expect(dialog.locator('.board-columns-scroll-controls')).toHaveCount(0);
+
+    await page.setViewportSize({ width: 375, height: 760 });
+    await expect(dialog.locator('.board-columns-scroll-controls')).toBeVisible();
+    const narrowGeometry = await dialog.evaluate((node) => {
+        const paneNode = node.querySelector('.group-pane-right');
+        const toolbar = node.querySelector('.board-columns-toolbar');
+        const controls = [...node.querySelectorAll('.board-columns-scroll-controls button')];
+        const paneBox = paneNode.getBoundingClientRect();
+        const toolbarBox = toolbar.getBoundingClientRect();
+        return {
+            toolbarInsidePane: toolbarBox.left >= paneBox.left - 1 && toolbarBox.right <= paneBox.right + 1,
+            controlsInsideToolbar: controls.every((control) => {
+                const box = control.getBoundingClientRect();
+                return box.left >= toolbarBox.left - 1 && box.right <= toolbarBox.right + 1;
+            }),
+            dialogFits: node.scrollWidth <= node.clientWidth + 1,
+            documentFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+        };
+    });
+    expect(narrowGeometry).toEqual({
+        toolbarInsidePane: true,
+        controlsInsideToolbar: true,
+        dialogFits: true,
+        documentFits: true,
+    });
+    await page.waitForTimeout(300);
+    await dialog.screenshot({
+        path: `${screenshotDir}/boards-tab-horizontal-scroll-controls-narrow.png`,
+        animations: 'disabled',
+    });
+    await right.focus();
+    await page.setViewportSize({ width: 1280, height: 480 });
+    await expect(dialog.locator('.board-columns-scroll-controls')).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'Reset to default columns' })).toBeFocused();
+
+    await pane.evaluate((node) => { node.scrollTop = 0; });
+    await movePointerOverVisibleRail();
+    await page.mouse.wheel(0, 120);
+    await expect(rail).toHaveJSProperty('scrollLeft', 0);
+    await expect.poll(() => pane.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+
+    await dialog.getByRole('button', { name: '+ Add column' }).click();
+    await expect(dialog.locator('.board-columns-scroll-controls')).toBeVisible();
+});
+
 test('at a narrow viewport, the Boards tab group list is reachable via the mobile Groups button and returns to the composer on pick', async ({ page }) => {
     // No spec in the suite exercised a narrow viewport on any group pane before this test: at
     // <=820px .group-pane-left defaults to translateX(-105%) (off-screen) and, unlike Team

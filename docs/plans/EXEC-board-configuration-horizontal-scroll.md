@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** Ready for execution on `bugfix/board-configuration-horizontal-scroll` after three independent feasibility, Playwright, and UX/process reviews. This plan changes only the Board Configuration interaction and its generated frontend output.
+> **Status:** Implemented and verified; pending acceptance and Git publication on `bugfix/board-configuration-horizontal-scroll`. This plan changes only the Board Configuration interaction and its generated frontend output.
 
 **Goal:** Make every Board Configuration column reachable with an ordinary mouse, keyboard-accessible controls, and drag-edge scrolling without breaking the settings pane's vertical scrolling.
 
@@ -83,7 +83,7 @@ No new file or shared abstraction is needed. The behavior belongs to the only Bo
 - Modify: `tests/ui/eng_group_board_settings_tab.spec.js:484-519`
 - Modify: `tests/ui/group_board_composer.spec.js:130-160, 560-613`
 
-- [ ] **Step 1: Verify the execution baseline and file map**
+- [x] **Step 1: Verify the execution baseline and file map**
 
 Run:
 
@@ -101,7 +101,7 @@ test -f docs/plans/README.md
 
 Expected: execution is on `bugfix/board-configuration-horizontal-scroll`; all file checks exit `0`; unrelated changes are identified and preserved. Stop if uncertain user edits overlap an allowed file.
 
-- [ ] **Step 2: Confirm the current focused suites are green before changing tests**
+- [x] **Step 2: Confirm the current focused suites are green before changing tests**
 
 No Flask server is required: the composer spec fulfills its harness document and API route, while the real-modal fixture fulfills the dashboard document, committed `frontend/dist` assets, fonts, and API routes. The real-modal fixture reads generated assets when its module loads, so rerun it only after the required build when source changes.
 
@@ -115,7 +115,7 @@ cp test-results/eng-group-board-settings-tab/boards-tab-reference-configuration.
 
 Expected: both existing specs PASS and the ignored `tmp/board-configuration-horizontal-scroll/boards-tab-before.png` records the settled pre-change modal. Record any unrelated baseline failure before editing. Do not commit the screenshot.
 
-- [ ] **Step 3: Add the real-modal wheel, controls, boundary, and picker regression**
+- [x] **Step 3: Add the real-modal wheel, controls, boundary, and picker regression**
 
 Add this test after `the Boards split uses the real 30/70 panes...` in `tests/ui/eng_group_board_settings_tab.spec.js`:
 
@@ -332,7 +332,7 @@ test('overflowing Board columns expose controls and route wheel input by scroll 
 
 Keep the assertion on `.group-pane-right` rather than a harness override: the regression is specifically the production nested-overflow boundary.
 
-- [ ] **Step 4: Add an open-drag helper and both-direction edge regression**
+- [x] **Step 4: Add an open-drag helper and both-direction edge regression**
 
 Add this helper beside `dispatchDrag` in `tests/ui/group_board_composer.spec.js`:
 
@@ -586,7 +586,7 @@ test('drag-edge scrolling stops on neutral, leave, drop, boundary, and unmount',
 
 Every dragover target is derived from `document.elementFromPoint()` at the supplied coordinate; do not dispatch to a mismatched hard-coded element. If Chromium reports `started`/`accepted` differently, correct the helper's boolean capture only; do not weaken the behavioral `scrollLeft`, boundary, and post-cleanup assertions.
 
-- [ ] **Step 5: Run the new tests and verify RED for the intended reasons**
+- [x] **Step 5: Run the new tests and verify RED for the intended reasons**
 
 Run:
 
@@ -609,7 +609,7 @@ Expected: the modal test FAILS because the named controls do not exist and wheel
 - Generate: `frontend/dist/dashboard.js.map`
 - Generate: `frontend/dist/dashboard.css`
 
-- [ ] **Step 1: Import the shared control and add geometry/wheel calculations**
+- [x] **Step 1: Import the shared control and add geometry/wheel calculations**
 
 Import `IconButton` beside `StatusPill`, then add below `COLOUR_NAMES` in `GroupBoardSettings.jsx`:
 
@@ -645,7 +645,7 @@ function boardWheelPixelDelta(event, element) {
 
 Keep these private to this file. They contain no product state and introduce no reusable public contract.
 
-- [ ] **Step 2: Add local scroll state, refs, synchronization, and cleanup**
+- [x] **Step 2: Add local scroll state, refs, synchronization, and cleanup**
 
 Add with the component's existing state/refs:
 
@@ -710,7 +710,7 @@ Add with the component's existing state/refs:
 
 The layout effect covers add/delete/reset. A group switch remounts this component through `key={activeGroupDraft.id}` in `GroupBoardsTab`, so scroll and control state reset without an extra group listener. The observer covers modal/viewport width changes without a window-global listener. The existing pending-focus effect executes the Reset focus transfer after a resize or layout change removes focused controls.
 
-- [ ] **Step 3: Add boundary-aware wheel and explicit one-column scrolling**
+- [x] **Step 3: Add boundary-aware wheel and explicit one-column scrolling**
 
 Add before the existing drag systems:
 
@@ -751,7 +751,7 @@ Add before the existing drag systems:
 
 Do not replace the native listener with JSX `onWheel`: React DOM 19.2.4 registers delegated wheel listeners as passive, so `preventDefault()` cannot enforce the nested-scroll boundary there. Do not call `preventDefault()` when the rail cannot move in the requested direction. That boundary rule gives vertical scrolling back to `.group-pane-right`. Preserve browser-native horizontal-dominant gestures and `ctrlKey` zoom gestures.
 
-- [ ] **Step 4: Add one animation-frame loop for active drag-edge scrolling**
+- [x] **Step 4: Add one animation-frame loop for active drag-edge scrolling**
 
 Add before `resetDragState`, then call `stopColumnDragScroll()` as the first line of `resetDragState`:
 
@@ -815,7 +815,7 @@ Also stop the loop when a drag leaves the rail:
 
 Keep all existing `resetDragState()` calls. They already cover refused/cancelled dragend and successful status/column drops; adding cleanup there prevents any surviving frame loop.
 
-- [ ] **Step 5: Render labelled controls and wire the rail**
+- [x] **Step 5: Render labelled controls and wire the rail**
 
 Replace the Reset-only button row and `.board-columns` opening markup with:
 
@@ -884,7 +884,7 @@ Replace the Reset-only button row and `.board-columns` opening markup with:
 
 Retain the existing reset button logic, mapped columns, `+ Add column`, and drag handlers verbatim around this replacement. The arrow instances must keep `IconButton`'s documented `icon-button--md` geometry; do not add `compact` or local width/height overrides.
 
-- [ ] **Step 6: Make the rail axis and compact control layout explicit**
+- [x] **Step 6: Make the rail axis and compact control layout explicit**
 
 Update the opening rules in `frontend/src/styles/settings/group-board.css`:
 
@@ -930,7 +930,7 @@ Update the opening rules in `frontend/src/styles/settings/group-board.css`:
 
 The shared icon buttons are the guaranteed visible fallback when native scrollbars are system-hidden. The toolbar may arrange them, but must not override `IconButton` display, flex, margin, padding, width, or height. Do not hide the native scrollbar or create a custom fake thumb.
 
-- [ ] **Step 7: Rebuild generated frontend output from an isolated dependency tree**
+- [x] **Step 7: Rebuild generated frontend output from an isolated dependency tree**
 
 Repository rules require `npm ci` in a fresh Git worktree before `npm run build`, while also forbidding a secondary worktree without explicit user authorization. Obtain that authorization before this step. Keep all implementation edits in the active checkout; use the temporary worktree only to install dependencies and generate output. After authorization, run:
 
@@ -951,7 +951,7 @@ git worktree remove "$board_scroll_build_dir"
 
 Expected: `npm ci` and the build exit `0`; before restore, the temporary worktree reports only the two copied sources and the three expected generated files; the active checkout receives exactly `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, and `frontend/dist/dashboard.css`; the temporary worktree is removed cleanly. Investigate any other generated-file change; never edit dist manually or execute feature work in the temporary checkout.
 
-- [ ] **Step 8: Run the new regressions and verify GREEN**
+- [x] **Step 8: Run the new regressions and verify GREEN**
 
 Run:
 
@@ -973,7 +973,7 @@ Expected: all three tests PASS. The wheel test proves normalized input, both dir
 - Modify at completion: `docs/plans/README.md`
 - Verify: all files named in this plan
 
-- [ ] **Step 1: Extend the existing no-event allowlist row**
+- [x] **Step 1: Extend the existing no-event allowlist row**
 
 Replace the existing `Group Board composer draft edits` row in `docs/README_ANALYTICS.md` with:
 
@@ -983,7 +983,7 @@ Replace the existing `Group Board composer draft edits` row in `docs/README_ANAL
 
 Do not add or change analytics code, event schemas, GTM triggers, GA4 dimensions, or tests that expect a new event.
 
-- [ ] **Step 2: Run both complete affected UI specs**
+- [x] **Step 2: Run both complete affected UI specs**
 
 Run:
 
@@ -993,7 +993,7 @@ npx playwright test tests/ui/group_board_composer.spec.js tests/ui/eng_group_boa
 
 Expected: all tests in both files PASS, including existing assignment, reorder, focus, validation, save, narrow-viewport drawer, and screenshot coverage.
 
-- [ ] **Step 3: Inspect settled desktop and narrow visual proof**
+- [x] **Step 3: Inspect settled desktop and narrow visual proof**
 
 Open all three with the available image-viewing tool:
 
@@ -1013,7 +1013,7 @@ Expected:
 
 Compare both after screenshots with the generated pre-change fixture screenshot and the supplied report image. The tests must already assert shared 28px control geometry, zero margins, toolbar/rail containment, control separation, and modal/document scroll widths; visual inspection remains required because geometry alone cannot detect every rendering defect. All screenshots are temporary ignored QA evidence; do not commit them.
 
-- [ ] **Step 4: Run focused unit, analytics, and diff verification**
+- [x] **Step 4: Run focused unit, analytics, and diff verification**
 
 Run:
 
@@ -1025,7 +1025,7 @@ git diff --check
 
 Expected: every command exits `0`; the analytics contract still accepts no new Group Board scroll event; `git diff --check` is silent. Generated-output reproducibility is checked from a fresh dependency tree after an authorized commit in Step 7, not by rebuilding from an ancestor-resolved `node_modules` directory in the active checkout.
 
-- [ ] **Step 5: Review scope and forbidden regressions**
+- [x] **Step 5: Review scope and forbidden regressions**
 
 Run:
 
@@ -1037,13 +1037,13 @@ git diff --stat -- frontend/dist/dashboard.js frontend/dist/dashboard.js.map fro
 
 Expected: every implementation change is in the allowed file map and traces to wheel routing, visible controls, drag-edge scrolling, tests, analytics rationale, or required generated output. There is no API, persistence, schema, shared modal, group-selection, Save, or unrelated formatting change.
 
-- [ ] **Step 6: Record implementation status and current accuracy**
+- [x] **Step 6: Record implementation status and current accuracy**
 
 Keep the `EXEC-*` filename until acceptance or merge. Change the top status note and the `docs/plans/README.md` entry to **Implemented and verified; pending acceptance and Git publication**. Add an `## Outcome` section naming the exact verification results and an `## Current Accuracy` section stating whether implementation matched this contract or listing each approved divergence.
 
 Expected: the plan and index no longer look unexecuted, yet are not renamed to `DONE-*` prematurely.
 
-- [ ] **Step 7: Report completion and stop before Git publication**
+- [x] **Step 7: Report completion and stop before Git publication**
 
 Report the exact commands/results, inspected screenshot path, and final changed-file list. Do not commit, push, merge, or open a PR unless the user explicitly authorizes that Git action.
 
@@ -1066,6 +1066,24 @@ git worktree remove "$board_scroll_verify_dir"
 ```
 
 Expected: the build exits `0` and `git diff --exit-code -- frontend/dist` is silent, proving committed source and generated output agree under a fresh local dependency tree. If it differs, stop, preserve the diff for diagnosis, and do not push. Before any later push, also run the repository's full Python suite, review `git log --oneline -5`, and wait for explicit user confirmation as required by `AGENTS.md`.
+
+## Outcome
+
+Implemented and verified locally on `bugfix/board-configuration-horizontal-scroll`; pending operator acceptance and Git publication.
+
+- The unchanged two-spec baseline passed 61/61 tests. The new modal regression then failed because the labelled controls did not exist, and both drag regressions failed because edge drag left `scrollLeft` unchanged, establishing the intended RED states.
+- The focused GREEN runs passed 1/1 real-modal wheel/control test and 2/2 composer drag-edge tests. The complete affected Playwright matrix passed 64/64 tests under Node 20.20.0.
+- The frontend unit suite passed 1,163/1,163 tests. The focused analytics event/source guards passed 59/59 tests. `git diff --check` was silent.
+- The generated dashboard assets were produced after `npm ci` and `npm run build` under Node 20.20.0 in the operator-authorized ignored local build worktree, which contained exactly the two copied source changes and three expected generated diffs before it was restored and removed.
+- The settled pre-change, desktop-after, and 375px-after screenshots were visually inspected. Reset and the shared arrows remain separated and contained; disabled state is distinguishable; columns, labels, footer actions, modal width, and document width remain intact.
+- The complete Python suite ran 1,538 tests with 3 failures, 1 error, and 9 skips. All four non-passing tests are the known infrastructure baseline: local PostgreSQL at `127.0.0.1:5432` refused connections. No result was suppressed or reported as passing.
+- No commit, push, merge, or pull request was created.
+
+## Current Accuracy
+
+The implementation matches the behavioral, architecture, file-map, analytics, and forbidden-regression contract. The operator approved one execution-only divergence: the temporary build worktree lived under the checkout's ignored `tmp/board-configuration-horizontal-scroll/` folder instead of a global `/tmp` path. Test-only mechanics were corrected without weakening coverage: drag handle selection resolves the same first node as `querySelector`; synthetic drag coordinates still resolve targets through `document.elementFromPoint()`; real-modal wheel input uses a raw pointer point inside the visible rail intersection so Playwright does not pre-scroll the parent; picker isolation compares the parent position after Playwright brings the picker into view; and the pane is returned to the top before settled desktop capture.
+
+Post-commit fresh-worktree reproducibility remains intentionally pending because Git publication was not authorized. The local PostgreSQL outage remains the only verification blocker.
 
 ## Acceptance criteria
 

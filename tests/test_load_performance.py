@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect
 from alembic.migration import MigrationContext
@@ -25,6 +25,16 @@ def observation(duration=1000, completeness='complete', outcome='success'):
                             cacheState='miss', completeness=completeness,
                             stages={'total': duration}, jiraRequests=None,
                             jiraPages=None, jiraRetries=None) for project in ('product', 'tech')])
+
+
+def board_observation(duration=1000, scope_type='all_work', outcome='success'):
+    return dict(schemaVersion=1, loadId=str(uuid.uuid4()), groupId='department-a',
+                sprintId=None if scope_type == 'all_work' else 'sprint-a', surface='eng_board',
+                scopeType=scope_type, outcome=outcome, durationMs=duration, indexMs=100,
+                firstFocusedContentMs=150, focusedCompleteMs=600, dependencyDurationMs=100,
+                epicCount=12, issueCount=40, payloadBytes=5000, jiraRequests=4,
+                jiraPages=4, jiraRetries=0, completeness='complete', cacheState='miss',
+                peakChildSearches=2, scopeCohortDigest='a' * 64)
 
 
 class LoadPerformanceTests(unittest.TestCase):
@@ -167,17 +177,126 @@ class LoadPerformanceTests(unittest.TestCase):
         payload['firstContentMs'] = None
         performance.validate_load(payload)
 
+    def test_board_variant_roundtrips_without_a_fabricated_sprint_or_lanes(self):
+        payload = board_observation()
+        self.save(payload)
+        sample = performance.load_report(
+            self.session, 'workspace-a',
+            {'surface': 'eng_board', 'scopeType': 'all_work', 'cacheState': 'miss',
+             'scopeCohortDigest': 'a' * 64},
+        )['samples'][0]
+        self.assertIsNone(sample['sprintId'])
+        self.assertEqual(sample['lanes'], [])
+        self.assertEqual(sample['firstFocusedContentMs'], 150)
+        self.assertEqual(sample['peakChildSearches'], 2)
+        self.assertEqual(sample['scopeCohortDigest'], 'a' * 64)
+
+    def test_board_cache_filter_is_applied_before_the_query_limit(self):
+        older = board_observation(800)
+        older['cacheState'] = 'miss'
+        newer = board_observation(700)
+        newer['cacheState'] = 'hit'
+        self.save(older, now=datetime(2026, 9, 8, 10, 0, tzinfo=timezone.utc))
+        self.save(newer, now=datetime(2026, 9, 8, 10, 1, tzinfo=timezone.utc))
+        report = performance.load_report(
+            self.session, 'workspace-a', {'surface': 'eng_board', 'cacheState': 'miss'},
+            limit=1, environment='local',
+        )
+        self.assertEqual(1, report['summary']['sampleCount'])
+        self.assertEqual('miss', report['samples'][0]['cacheState'])
+        unscoped = performance.load_report(
+            self.session, 'workspace-a', {'cacheState': 'miss'}, limit=1, environment='local',
+        )
+        self.assertEqual(1, unscoped['summary']['sampleCount'])
+        self.assertEqual('miss', unscoped['samples'][0]['cacheState'])
+
+    def test_board_schema_rejects_incomplete_success_and_unbounded_diagnostics(self):
+        for key, value in (
+            ('sprintId', 'fabricated'), ('scopeCohortDigest', 'not-a-digest'),
+            ('peakChildSearches', 3), ('cacheState', 'unknown'),
+            ('focusedCompleteMs', 1001),
+        ):
+            payload = board_observation()
+            payload[key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                performance.validate_load(payload)
+        payload = board_observation(outcome='cancelled')
+        for key in ('indexMs', 'firstFocusedContentMs', 'focusedCompleteMs', 'dependencyDurationMs',
+                    'epicCount', 'issueCount', 'payloadBytes', 'jiraRequests', 'jiraPages',
+                    'jiraRetries', 'peakChildSearches', 'scopeCohortDigest'):
+            payload[key] = None
+        payload['completeness'] = 'partial'
+        payload['cacheState'] = 'unknown'
+        performance.validate_load(payload)
+
+    def test_mixed_measurement_cohorts_do_not_produce_combined_percentiles(self):
+        self.save(board_observation(800))
+        changed = board_observation(1500)
+        changed['scopeCohortDigest'] = 'b' * 64
+        self.save(changed)
+        summary = performance.load_report(self.session, 'workspace-a', {'surface': 'eng_board'})['summary']
+        self.assertTrue(summary['mixedCohorts'])
+        self.assertIsNone(summary['p50Ms'])
+        self.assertIsNone(summary['p95Ms'])
+
+    def test_candidate_eligibility_requires_known_complete_board_cohort(self):
+        self.save(board_observation())
+        cancelled = board_observation(outcome='cancelled')
+        cancelled['completeness'] = 'partial'
+        cancelled['cacheState'] = 'unknown'
+        cancelled['scopeCohortDigest'] = None
+        cancelled['peakChildSearches'] = None
+        self.save(cancelled)
+        summary = performance.load_report(
+            self.session, 'workspace-a', {'surface': 'eng_board', 'scopeCohortDigest': 'a' * 64},
+        )['summary']
+        self.assertEqual(summary['eligibleCount'], 1)
+
     def test_migration_matches_model_and_downgrades(self):
         migration = importlib.import_module('backend.db.migrations.versions.20260908_0014_load_performance')
+        board_migration = importlib.import_module(
+            'backend.db.migrations.versions.20260908_0015_board_load_performance')
         engine = create_engine('sqlite://')
         self.addCleanup(engine.dispose)
         with engine.begin() as connection:
             with Operations.context(MigrationContext.configure(connection)):
                 migration.upgrade()
+                connection.execute(text("""
+                    INSERT INTO load_performance
+                        (workspace_id, load_id, group_id, sprint_id, surface, outcome, duration_ms,
+                         dependency_duration_ms, first_content_ms, lanes, environment, revision, recorded_at)
+                    VALUES
+                        ('workspace-a', '00000000-0000-0000-0000-000000000001', 'group-a', 'sprint-a',
+                         'eng_sprint', 'success', 100, NULL, 50, '[]', 'test', 'legacy',
+                         '2026-09-08 10:00:00')
+                """))
+                board_migration.upgrade()
                 inspector = inspect(connection)
                 self.assertEqual({c['name'] for c in inspector.get_columns('load_performance')},
                                  set(performance.LoadPerformance.__table__.columns.keys()))
                 self.assertEqual(inspector.get_foreign_keys('load_performance'), [])
+                legacy = connection.execute(text("""
+                    SELECT sprint_id, schema_version, scope_type, scope_cohort_digest
+                    FROM load_performance WHERE revision = 'legacy'
+                """)).one()
+                self.assertEqual(('sprint-a', None, None, None), tuple(legacy))
+                connection.execute(text("""
+                    INSERT INTO load_performance
+                        (workspace_id, load_id, group_id, sprint_id, surface, schema_version,
+                         scope_type, outcome, duration_ms, lanes, environment, revision, recorded_at)
+                    VALUES
+                        ('workspace-a', '00000000-0000-0000-0000-000000000002', 'group-a', NULL,
+                         'eng_board', 1, 'all_work', 'cancelled', 100, '[]', 'test', 'board',
+                         '2026-09-08 10:01:00')
+                """))
+                board_migration.downgrade()
+                remaining = connection.execute(text(
+                    'SELECT revision, sprint_id FROM load_performance ORDER BY revision'
+                )).all()
+                self.assertEqual([('legacy', 'sprint-a')], [tuple(row) for row in remaining])
+                board_migration.upgrade()
+                self.assertEqual({c['name'] for c in inspect(connection).get_columns('load_performance')},
+                                 set(performance.LoadPerformance.__table__.columns.keys()))
                 migration.downgrade()
                 self.assertNotIn('load_performance', inspect(connection).get_table_names())
 

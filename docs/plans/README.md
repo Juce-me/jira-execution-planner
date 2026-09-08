@@ -16,7 +16,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 ## Current DB Workflow
 
 - [In-app load performance](DONE-in-app-load-performance.md): implemented, verified and user-accepted; three local contextual sprint observations recorded.
-- [ENG Board All work implementation](EXEC-eng-board-all-work.md): execution started; gates use verified existing DB evidence (four observations and saved Component/Team/Board scope). Source-review amendments specify token rotation, ordered focus, measurement cohorts, mixed-type export and retained release thresholds. Independent development may continue; hard termination still blocks dependent production activation and the supervisor proposal awaits review. Synthetic tests do not close excluded-profile release evidence.
+- [ENG Board All work implementation](EXEC-eng-board-all-work.md): execution continued after merging current main. The strict service/config grammar, protocol-v1 parser/shared stream boundary, isolated Board state owner, and Board measurement schema/migration are implemented and verified. Hard termination still blocks Task 3 and all dependent production activation; the dedicated supervisor/security-boundary amendment awaits review. No production Board route, dashboard switch, candidate evidence or rollout is claimed.
 - [All work subagent handoff](SUPPORT-eng-board-all-work-handoff.md): published-base and worker ownership instructions; execute only within the plan gates.
 
 1. `SUPPORT-db-migration-claude-review-workflow.md`

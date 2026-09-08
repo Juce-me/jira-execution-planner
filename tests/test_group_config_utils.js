@@ -95,6 +95,7 @@ test('normalizeGroupsConfig preserves the board field instead of silently droppi
         columns: [
             { id: 'col-00000001', name: 'To do', statuses: ['To Do'], colour: '#8c8c8c', star: false, min: null, max: null },
         ],
+        doneEpicRetentionDays: 90,
     };
     const normalized = normalizeGroupsConfig({
         version: 1,
@@ -103,6 +104,21 @@ test('normalizeGroupsConfig preserves the board field instead of silently droppi
     });
 
     assert.deepEqual(normalized.groups[0].board, board);
+});
+
+test('normalizeGroupsConfig materializes legacy retention without mutating the source board', async () => {
+    const { normalizeGroupsConfig } = await import('../frontend/src/settings/groupConfigUtils.js');
+    const board = {
+        columns: [
+            { id: 'col-00000001', name: 'Done', statuses: ['Done'] },
+            { id: 'col-00000002', name: 'Release', statuses: ['Release'] },
+        ],
+    };
+    const normalized = normalizeGroupsConfig({ groups: [{ id: 'alpha', name: 'Alpha', board }] });
+    assert.equal(normalized.groups[0].board.doneEpicRetentionDays, 28);
+    assert.deepEqual(normalized.groups[0].board.columns.map((column) => column.id), ['col-00000002', 'col-00000001']);
+    assert.deepEqual(board.columns.map((column) => column.id), ['col-00000001', 'col-00000002']);
+    assert.equal(Object.hasOwn(board, 'doneEpicRetentionDays'), false);
 });
 
 test('normalizeGroupsConfig copies the board columns array instead of aliasing it', async () => {

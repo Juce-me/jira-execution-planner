@@ -29,6 +29,9 @@ export const MAX_BOARD_COLUMNS = 12;
 export const MAX_COLUMN_NAME_LENGTH = 40;
 export const MIN_COLUMN_BOUND = 0;
 export const MAX_COLUMN_BOUND = 9999;
+export const MIN_DONE_EPIC_RETENTION_DAYS = 1;
+export const MAX_DONE_EPIC_RETENTION_DAYS = 90;
+export const DEFAULT_DONE_EPIC_RETENTION_DAYS = 28;
 
 const COLUMN_ID_PREFIX = 'col-';
 const COLUMN_ID_HEX_LENGTH = 8;
@@ -86,6 +89,7 @@ export function createColumn({ usedIds = [], name = 'New column', random = Math.
 
 const NOT_A_NUMBER_REASON = 'Enter a whole number, or leave it empty for no threshold.';
 const OUT_OF_RANGE_REASON = `Enter a whole number between ${MIN_COLUMN_BOUND} and ${MAX_COLUMN_BOUND}, or leave it empty for no threshold.`;
+const RETENTION_REASON = `Enter a whole number between ${MIN_DONE_EPIC_RETENTION_DAYS} and ${MAX_DONE_EPIC_RETENTION_DAYS}.`;
 
 function normalizeBound(value) {
     if (typeof value === 'number' && Number.isInteger(value) && value >= MIN_COLUMN_BOUND && value <= MAX_COLUMN_BOUND) {
@@ -114,6 +118,18 @@ export function parseBoundInput(raw, previousValue = null) {
     return { value, ok: true, reason: '' };
 }
 
+export function parseRetentionDaysInput(raw, previousValue = DEFAULT_DONE_EPIC_RETENTION_DAYS) {
+    const trimmed = String(raw ?? '').trim();
+    if (!/^\d+$/.test(trimmed)) {
+        return { value: previousValue, ok: false, reason: RETENTION_REASON };
+    }
+    const value = Number(trimmed);
+    if (value < MIN_DONE_EPIC_RETENTION_DAYS || value > MAX_DONE_EPIC_RETENTION_DAYS) {
+        return { value: previousValue, ok: false, reason: RETENTION_REASON };
+    }
+    return { value, ok: true, reason: '' };
+}
+
 /* ── Column order (D46) — the board's left-to-right reading order, and nothing else stores it ── */
 
 // Insert before the column whose horizontal midpoint the pointer has not yet passed; past the
@@ -130,9 +146,12 @@ export function resolveInsertIndex(midpoints = [], pointerX = 0) {
 // the caller can keep focus on its handle.
 export function moveColumn(columns = [], fromIndex, insertIndex) {
     if (fromIndex < 0 || fromIndex >= columns.length) return { columns: columns.slice(), index: fromIndex };
+    const terminalIndex = columns.length - 1;
+    if (fromIndex === terminalIndex) return { columns: columns.slice(), index: fromIndex };
     const next = columns.slice();
     const [moved] = next.splice(fromIndex, 1);
-    const target = Math.max(0, Math.min(next.length, insertIndex > fromIndex ? insertIndex - 1 : insertIndex));
+    const requested = insertIndex > fromIndex ? insertIndex - 1 : insertIndex;
+    const target = Math.max(0, Math.min(next.length - 1, requested));
     next.splice(target, 0, moved);
     return { columns: next, index: target };
 }
@@ -142,6 +161,17 @@ export function shiftColumn(columns = [], index, delta) {
     const target = index + delta;
     if (target < 0 || target >= columns.length) return { columns: columns.slice(), index };
     return moveColumn(columns, index, delta > 0 ? target + 1 : target);
+}
+
+export function insertColumnBeforeTerminal(columns = [], column) {
+    if (!column) return columns.slice();
+    if (!columns.length) return [column];
+    return [...columns.slice(0, -1), column, columns[columns.length - 1]];
+}
+
+export function removeNonTerminalColumn(columns = [], columnId) {
+    if (!columns.length || columns[columns.length - 1]?.id === columnId) return columns.slice();
+    return columns.filter((column) => column?.id !== columnId);
 }
 
 export function describeColumnMove(name, index, total) {
@@ -239,7 +269,7 @@ function columnLabel(column, index) {
 // Mirrors every §5.6 rule the composer can reach, either by editing or by loading a stored board.
 // It deliberately validates the raw draft: repairing ids or member shapes first would hide the
 // exact errors that must block Save.
-export function validateComposerBoard(columns = []) {
+export function validateComposerBoard(columns = [], doneEpicRetentionDays = DEFAULT_DONE_EPIC_RETENTION_DAYS) {
     const errors = [];
     if (!Array.isArray(columns) || columns.length === 0) {
         errors.push('A board needs at least one column.');
@@ -248,6 +278,15 @@ export function validateComposerBoard(columns = []) {
 
     if (columns.length > MAX_BOARD_COLUMNS) {
         errors.push(`A board can have at most ${MAX_BOARD_COLUMNS} columns.`);
+    }
+
+    if (
+        typeof doneEpicRetentionDays !== 'number'
+        || !Number.isInteger(doneEpicRetentionDays)
+        || doneEpicRetentionDays < MIN_DONE_EPIC_RETENTION_DAYS
+        || doneEpicRetentionDays > MAX_DONE_EPIC_RETENTION_DAYS
+    ) {
+        errors.push(RETENTION_REASON.replace('Enter', 'Retention must be'));
     }
 
     const seenIds = new Set();
@@ -278,7 +317,7 @@ export function validateComposerBoard(columns = []) {
         const statuses = Array.isArray(column.statuses)
             ? column.statuses.filter((status) => typeof status === 'string')
             : [];
-        if (!statuses.length) {
+        if (!statuses.length && index !== columns.length - 1) {
             errors.push(`${label} has no statuses. Add a status or delete the column.`);
         }
 
@@ -312,7 +351,7 @@ export function validatePresentGroupBoards(groups = []) {
     groups.forEach((group) => {
         if (!group || typeof group !== 'object' || !Object.prototype.hasOwnProperty.call(group, 'board')) return;
         const groupName = String(group.name || group.id || 'Group').trim();
-        validateComposerBoard(group.board?.columns).errors
+        validateComposerBoard(group.board?.columns, retentionDaysFromStoredBoard(group.board)).errors
             .forEach((message) => errors.push(`${groupName}: ${message}`));
     });
     return errors;
@@ -324,7 +363,7 @@ function coerceColour(value) {
     return BOARD_COLUMN_COLOURS.includes(value) ? value : DEFAULT_COLUMN_COLOUR;
 }
 
-export function toStoredBoard(columns = []) {
+export function toStoredBoard(columns = [], doneEpicRetentionDays = DEFAULT_DONE_EPIC_RETENTION_DAYS) {
     return {
         columns: columns.map((column) => ({
             id: column.id,
@@ -335,6 +374,7 @@ export function toStoredBoard(columns = []) {
             min: normalizeBound(column.min),
             max: normalizeBound(column.max),
         })),
+        doneEpicRetentionDays,
     };
 }
 
@@ -346,8 +386,32 @@ function asStoredColumn(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+export function retentionDaysFromStoredBoard(board) {
+    return Object.prototype.hasOwnProperty.call(board || {}, 'doneEpicRetentionDays')
+        ? board.doneEpicRetentionDays
+        : DEFAULT_DONE_EPIC_RETENTION_DAYS;
+}
+
+export function normalizeStoredBoard(board) {
+    const stored = Array.isArray(board?.columns) ? board.columns.slice() : [];
+    const retentionPresent = Object.prototype.hasOwnProperty.call(board || {}, 'doneEpicRetentionDays');
+    if (!retentionPresent) {
+        const doneIndex = stored.findIndex((entry) => {
+            const column = asStoredColumn(entry);
+            return Array.isArray(column.statuses) && column.statuses.includes('Done');
+        });
+        if (doneIndex >= 0 && doneIndex !== stored.length - 1) {
+            stored.push(stored.splice(doneIndex, 1)[0]);
+        }
+    }
+    return {
+        columns: stored,
+        doneEpicRetentionDays: retentionDaysFromStoredBoard(board),
+    };
+}
+
 export function fromStoredBoard(board, { random = Math.random } = {}) {
-    const stored = Array.isArray(board?.columns) ? board.columns : [];
+    const stored = normalizeStoredBoard(board).columns;
     const usedIds = new Set(stored.map((entry) => asStoredColumn(entry).id).filter(isValidColumnId));
     return stored.map((entry) => {
         const column = asStoredColumn(entry);

@@ -1,6 +1,6 @@
 # Issue #137 All work — subagent execution handoff
 
-Status: Execution started on `feature/issue-137-board-all-work`. Local gate revision uses verified DB evidence and permits independent development while production runtime gates remain unresolved. The supervisor proposal remains unapproved. Publish and verify these local amendments before distributing the revised handoff.
+Status: Execution continued on `feature/issue-137-board-all-work` after merging current `origin/main`. Independent strict-core, parser/shared-stream, state-owner, settings-retention and measurement-schema slices are implemented and verified. Production Task 3 remains blocked because runtime review rejected the current Gunicorn/thread boundary as a hard-termination mechanism. The dedicated supervisor/security-boundary proposal remains unapproved; do not distribute this as a production-integration handoff.
 
 ## Base and intended outcome
 

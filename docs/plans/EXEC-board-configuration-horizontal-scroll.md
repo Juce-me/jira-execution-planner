@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** Implemented and verified; pending acceptance and Git publication on `bugfix/board-configuration-horizontal-scroll`. This plan changes only the Board Configuration interaction and its generated frontend output.
+> **Status:** Implemented, verified, and published for review in [PR #170](https://github.com/Juce-me/jira-execution-planner/pull/170); pending acceptance. This plan changes only the Board Configuration interaction and its generated frontend output.
 
 **Goal:** Make every Board Configuration column reachable with an ordinary mouse, keyboard-accessible controls, and drag-edge scrolling without breaking the settings pane's vertical scrolling.
 
@@ -1069,21 +1069,21 @@ Expected: the build exits `0` and `git diff --exit-code -- frontend/dist` is sil
 
 ## Outcome
 
-Implemented and verified locally on `bugfix/board-configuration-horizontal-scroll`; pending operator acceptance and Git publication.
+Implemented and verified on `bugfix/board-configuration-horizontal-scroll`, then published for review in [PR #170](https://github.com/Juce-me/jira-execution-planner/pull/170); pending operator acceptance.
 
 - The unchanged two-spec baseline passed 61/61 tests. The new modal regression then failed because the labelled controls did not exist, and both drag regressions failed because edge drag left `scrollLeft` unchanged, establishing the intended RED states.
 - The focused GREEN runs passed 1/1 real-modal wheel/control test and 2/2 composer drag-edge tests. The complete affected Playwright matrix passed 64/64 tests under Node 20.20.0.
 - The frontend unit suite passed 1,163/1,163 tests. The focused analytics event/source guards passed 59/59 tests. `git diff --check` was silent.
 - The generated dashboard assets were produced after `npm ci` and `npm run build` under Node 20.20.0 in the operator-authorized ignored local build worktree, which contained exactly the two copied source changes and three expected generated diffs before it was restored and removed.
 - The settled pre-change, desktop-after, and 375px-after screenshots were visually inspected. Reset and the shared arrows remain separated and contained; disabled state is distinguishable; columns, labels, footer actions, modal width, and document width remain intact.
-- The complete Python suite ran 1,538 tests with 3 failures, 1 error, and 9 skips. All four non-passing tests are the known infrastructure baseline: local PostgreSQL at `127.0.0.1:5432` refused connections. No result was suppressed or reported as passing.
-- No commit, push, merge, or pull request was created.
+- The implementation checkpoint accurately recorded 1,538 Python tests with 3 failures, 1 error, and 9 skips while local PostgreSQL at `127.0.0.1:5432` refused connections. Before final publication, PostgreSQL was available and the cleaned branch rerun passed all 1,538 tests with 9 skips.
+- Commits `7addded` and `9429b55` were pushed to `bugfix/board-configuration-horizontal-scroll`, and PR #170 was opened against `main`. The final PR diff contains exactly the ten allowed files; unrelated local-runner work remains excluded.
 
 ## Current Accuracy
 
 The implementation matches the behavioral, architecture, file-map, analytics, and forbidden-regression contract. The operator approved one execution-only divergence: the temporary build worktree lived under the checkout's ignored `tmp/board-configuration-horizontal-scroll/` folder instead of a global `/tmp` path. Test-only mechanics were corrected without weakening coverage: drag handle selection resolves the same first node as `querySelector`; synthetic drag coordinates still resolve targets through `document.elementFromPoint()`; real-modal wheel input uses a raw pointer point inside the visible rail intersection so Playwright does not pre-scroll the parent; picker isolation compares the parent position after Playwright brings the picker into view; and the pane is returned to the top before settled desktop capture.
 
-Post-commit fresh-worktree reproducibility remains intentionally pending because Git publication was not authorized. The local PostgreSQL outage remains the only verification blocker.
+Post-commit fresh-worktree reproducibility passed at final commit `9429b55` under Node 20: `npm ci` and `npm run build` exited `0`, and `git diff --exit-code -- frontend/dist` was silent. No implementation or verification blocker remains; acceptance and merge review remain pending in PR #170.
 
 ## Acceptance criteria
 

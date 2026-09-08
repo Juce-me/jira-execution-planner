@@ -465,11 +465,11 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      without changing product drag or transition behavior.
 
 8. `EXEC-board-configuration-horizontal-scroll.md`
-   - Implemented and verified on `bugfix/board-configuration-horizontal-scroll`; pending operator
-     acceptance and Git publication. The complete affected UI matrix passed 64/64 tests, frontend
-     units passed 1,163/1,163, and analytics guards passed 59/59. The full Python suite repeated
-     the known infrastructure baseline: 1,538 tests with 3 failures, 1 error, and 9 skips because
-     local PostgreSQL at `127.0.0.1:5432` refused connections.
+   - Implemented and verified on `bugfix/board-configuration-horizontal-scroll`, then published for
+     review in [PR #170](https://github.com/Juce-me/jira-execution-planner/pull/170); pending
+     acceptance. The complete affected UI matrix passed 64/64 tests, frontend units passed
+     1,163/1,163, analytics guards passed 59/59, and the final full Python rerun passed all 1,538
+     tests with 9 skips. The final Node 20 committed-revision build left `frontend/dist` clean.
    - Expected output: overflowing Board Configuration columns are reachable with an ordinary
      vertical mouse wheel normalized across wheel units, shared keyboard-accessible left/right
      controls, and drag-only edge auto-scroll with explicit cleanup, while the status picker and

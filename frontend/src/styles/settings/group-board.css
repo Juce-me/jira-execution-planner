@@ -9,12 +9,42 @@
            --board-column-accent is always set inline by the component, on the element that reads
            it, so no declaration here can be dropped by an undefined custom property. */
 
+        .board-columns-toolbar {
+            flex-wrap: nowrap;
+            justify-content: space-between;
+        }
+
+        .board-columns-scroll-controls {
+            display: flex;
+            flex: none;
+            gap: 0.35rem;
+            margin-left: auto;
+        }
+
         .board-columns {
             display: flex;
             gap: 0.5rem;
             overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+            scrollbar-color: var(--text-secondary) var(--bg-secondary);
             padding-bottom: 0.7rem;
             align-items: flex-start;
+        }
+
+        .board-columns::-webkit-scrollbar {
+            height: 10px;
+        }
+
+        .board-columns::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 999px;
+        }
+
+        .board-columns::-webkit-scrollbar-thumb {
+            background: var(--text-secondary);
+            border: 2px solid var(--bg-secondary);
+            border-radius: 999px;
         }
 
         /* 200px, not the mockup's 168px. The mockup was drawn in a 1400px shell; the real pane is

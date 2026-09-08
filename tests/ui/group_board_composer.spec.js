@@ -158,6 +158,107 @@ async function dispatchDrag(page, sourceSelector, targetSelector, point = null) 
     return outcome;
 }
 
+async function startOpenBoardDrag(page, { sourceSelector, handleSelector, edge }) {
+    await pressHandle(page, page.locator(handleSelector).first());
+    return page.evaluate(({ sourceSelector: source, edge: requestedEdge }) => {
+        const sourceNode = document.querySelector(source);
+        const rail = document.querySelector('.board-columns');
+        const dataTransfer = new DataTransfer();
+        const rect = rail.getBoundingClientRect();
+        const point = {
+            x: requestedEdge === 'left' ? rect.left + 3 : rect.right - 3,
+            y: rect.top + 24,
+        };
+        const make = (type, at = point, relatedTarget = null) => new DragEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer,
+            clientX: at.x,
+            clientY: at.y,
+            relatedTarget,
+        });
+        const sourceRect = sourceNode.getBoundingClientRect();
+        const start = make('dragstart', { x: sourceRect.left + 8, y: sourceRect.top + 8 });
+        sourceNode.dispatchEvent(start);
+        const targetNode = document.elementFromPoint(point.x, point.y) || rail;
+        targetNode.dispatchEvent(make('dragenter'));
+        const over = make('dragover');
+        targetNode.dispatchEvent(over);
+        window.__openBoardDrag = { sourceNode, rail, dataTransfer, point };
+        return {
+            started: !start.defaultPrevented,
+            accepted: over.defaultPrevented,
+            targetClass: targetNode.className,
+        };
+    }, { sourceSelector, edge });
+}
+
+async function moveOpenBoardDrag(page, position) {
+    return page.evaluate((requestedPosition) => {
+        const drag = window.__openBoardDrag;
+        const rect = drag.rail.getBoundingClientRect();
+        const point = {
+            x: requestedPosition === 'left'
+                ? rect.left + 3
+                : requestedPosition === 'right'
+                    ? rect.right - 3
+                    : rect.left + (rect.width / 2),
+            y: rect.top + 24,
+        };
+        const target = document.elementFromPoint(point.x, point.y) || drag.rail;
+        const event = new DragEvent('dragover', {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: drag.dataTransfer,
+            clientX: point.x,
+            clientY: point.y,
+        });
+        target.dispatchEvent(event);
+        drag.point = point;
+        return { accepted: event.defaultPrevented, targetClass: target.className };
+    }, position);
+}
+
+async function leaveOpenBoardDrag(page) {
+    await page.evaluate(() => {
+        const drag = window.__openBoardDrag;
+        if (!drag) return;
+        const rect = drag.rail.getBoundingClientRect();
+        drag.rail.dispatchEvent(new DragEvent('dragleave', {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: drag.dataTransfer,
+            clientX: rect.right + 20,
+            clientY: rect.top + 24,
+            relatedTarget: document.body,
+        }));
+    });
+}
+
+async function endOpenBoardDrag(page, { drop = false } = {}) {
+    await page.evaluate((shouldDrop) => {
+        const drag = window.__openBoardDrag;
+        if (!drag) return;
+        if (shouldDrop) {
+            const target = document.elementFromPoint(drag.point.x, drag.point.y) || drag.rail;
+            target.dispatchEvent(new DragEvent('drop', {
+                bubbles: true,
+                cancelable: true,
+                dataTransfer: drag.dataTransfer,
+                clientX: drag.point.x,
+                clientY: drag.point.y,
+            }));
+        }
+        drag.sourceNode.dispatchEvent(new DragEvent('dragend', {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: drag.dataTransfer,
+        }));
+        delete window.__openBoardDrag;
+    }, drop);
+    await page.mouse.up();
+}
+
 // getComputedStyle always reports colours as rgb(), so the fixture's hex has to be converted
 // rather than the computed value parsed — that way the expectation is derived from §5.5's own
 // data and a fixture edit cannot silently pass.
@@ -608,6 +709,159 @@ test('a handle drag inserts before the column whose midpoint the pointer has not
         'Analysis', 'Ready to start', 'To do', 'Accepted in Q', 'External block', 'In progress', 'Done',
     ]);
     expect((await boardState(page)).columns.map((column) => column.name)[2]).toBe('To do');
+});
+
+test('status and column drags auto-scroll in both directions and stop after dragend', async ({ page }) => {
+    await openComposer(page);
+    const rail = page.locator('.board-columns');
+
+    const cases = [
+        {
+            kind: 'status',
+            edge: 'right',
+            sourceSelector: '.board-column:first-of-type .component-chip',
+            handleSelector: '.board-column:first-of-type .component-chip .chip-grip',
+        },
+        {
+            kind: 'status',
+            edge: 'left',
+            sourceSelector: '.board-column:last-of-type .component-chip',
+            handleSelector: '.board-column:last-of-type .component-chip .chip-grip',
+        },
+        {
+            kind: 'column',
+            edge: 'right',
+            sourceSelector: '.board-column:first-of-type',
+            handleSelector: '.board-column:first-of-type .board-column-drag',
+        },
+        {
+            kind: 'column',
+            edge: 'left',
+            sourceSelector: '.board-column:last-of-type',
+            handleSelector: '.board-column:last-of-type .board-column-drag',
+        },
+    ];
+
+    for (const scenario of cases) {
+        await rail.evaluate((node, edge) => {
+            node.scrollLeft = edge === 'right' ? 0 : node.scrollWidth;
+        }, scenario.edge);
+        const before = await rail.evaluate((node) => node.scrollLeft);
+        const drag = await startOpenBoardDrag(page, scenario);
+        expect(drag.started, `${scenario.kind} drag should start`).toBe(true);
+        expect(drag.accepted, `${scenario.kind} ${scenario.edge} target should accept`).toBe(true);
+        if (scenario.edge === 'right') {
+            await expect.poll(() => rail.evaluate((node) => node.scrollLeft)).toBeGreaterThan(before);
+        } else {
+            await expect.poll(() => rail.evaluate((node) => node.scrollLeft)).toBeLessThan(before);
+        }
+        await endOpenBoardDrag(page);
+        const stopped = await rail.evaluate((node) => node.scrollLeft);
+        await page.waitForTimeout(100);
+        await expect(rail).toHaveJSProperty('scrollLeft', stopped);
+    }
+});
+
+test('drag-edge scrolling stops on neutral, leave, drop, boundary, and unmount', async ({ page }) => {
+    await openComposer(page);
+    const rail = page.locator('.board-columns');
+
+    const startStatusRight = async () => {
+        await rail.evaluate((node) => { node.scrollLeft = 0; });
+        const drag = await startOpenBoardDrag(page, {
+            edge: 'right',
+            sourceSelector: '.board-column:first-of-type .component-chip',
+            handleSelector: '.board-column:first-of-type .component-chip .chip-grip',
+        });
+        expect(drag.started).toBe(true);
+        await expect.poll(() => rail.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+    };
+
+    await startStatusRight();
+    await moveOpenBoardDrag(page, 'neutral');
+    let stopped = await rail.evaluate((node) => node.scrollLeft);
+    await page.waitForTimeout(100);
+    await expect(rail).toHaveJSProperty('scrollLeft', stopped);
+    await endOpenBoardDrag(page);
+
+    await rail.evaluate((node) => { node.scrollLeft = 18; });
+    await startOpenBoardDrag(page, {
+        edge: 'left',
+        sourceSelector: '.board-column:first-of-type',
+        handleSelector: '.board-column:first-of-type .board-column-drag',
+    });
+    await expect.poll(() => rail.evaluate((node) => node.scrollLeft)).toBeLessThanOrEqual(1);
+    stopped = await rail.evaluate((node) => node.scrollLeft);
+    await page.waitForTimeout(100);
+    await expect(rail).toHaveJSProperty('scrollLeft', stopped);
+    await endOpenBoardDrag(page);
+
+    await rail.evaluate((node) => { node.scrollLeft = 0; });
+    await startOpenBoardDrag(page, {
+        edge: 'right',
+        sourceSelector: '.board-column:first-of-type',
+        handleSelector: '.board-column:first-of-type .board-column-drag',
+    });
+    await expect.poll(() => rail.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+    await leaveOpenBoardDrag(page);
+    stopped = await rail.evaluate((node) => node.scrollLeft);
+    await page.waitForTimeout(100);
+    await expect(rail).toHaveJSProperty('scrollLeft', stopped);
+    await endOpenBoardDrag(page);
+
+    await startStatusRight();
+    await endOpenBoardDrag(page, { drop: true });
+    stopped = await rail.evaluate((node) => node.scrollLeft);
+    await page.waitForTimeout(100);
+    await expect(rail).toHaveJSProperty('scrollLeft', stopped);
+
+    await rail.evaluate((node) => {
+        node.scrollLeft = node.scrollWidth - node.clientWidth - 18;
+    });
+    await startOpenBoardDrag(page, {
+        edge: 'right',
+        sourceSelector: '.board-column:last-of-type',
+        handleSelector: '.board-column:last-of-type .board-column-drag',
+    });
+    await expect.poll(async () => rail.evaluate(
+        (node) => Math.abs(node.scrollLeft - (node.scrollWidth - node.clientWidth)),
+    )).toBeLessThanOrEqual(1);
+    stopped = await rail.evaluate((node) => node.scrollLeft);
+    await page.waitForTimeout(100);
+    await expect(rail).toHaveJSProperty('scrollLeft', stopped);
+    await endOpenBoardDrag(page);
+
+    await rail.evaluate((node) => { node.scrollLeft = 0; });
+    await startOpenBoardDrag(page, {
+        edge: 'right',
+        sourceSelector: '.board-column:nth-of-type(2) .component-chip',
+        handleSelector: '.board-column:nth-of-type(2) .component-chip .chip-grip',
+    });
+    await expect.poll(() => rail.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+    await page.evaluate(() => {
+        window.__retiredBoardRail = window.__openBoardDrag.rail;
+    });
+    await page.evaluate(async () => {
+        const nativeSetTimeout = window.setTimeout;
+        window.setTimeout = (callback, delay, ...args) => nativeSetTimeout(
+            callback,
+            delay === 0 ? 50 : delay,
+            ...args,
+        );
+        try {
+            await window.__groupBoardHarnessRemount();
+        } finally {
+            window.setTimeout = nativeSetTimeout;
+        }
+    });
+    const retiredAtUnmount = await page.evaluate(() => window.__retiredBoardRail.scrollLeft);
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => window.__retiredBoardRail.scrollLeft)).toBe(retiredAtUnmount);
+    await page.mouse.up();
+    await page.evaluate(() => {
+        delete window.__openBoardDrag;
+        delete window.__retiredBoardRail;
+    });
 });
 
 /* ── D46: the colour grid ───────────────────────────────────────────────────────────────────── */

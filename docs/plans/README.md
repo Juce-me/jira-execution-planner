@@ -464,6 +464,20 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      1,219 tests with 1,218 passed and 1 skipped. Finalization corrected a stale drag-fixture route
      without changing product drag or transition behavior.
 
+8. `EXEC-board-configuration-horizontal-scroll.md`
+   - Implemented and verified on `bugfix/board-configuration-horizontal-scroll`, then published for
+     review in [PR #170](https://github.com/Juce-me/jira-execution-planner/pull/170); pending
+     acceptance. The complete affected UI matrix passed 64/64 tests, frontend units passed
+     1,163/1,163, analytics guards passed 59/59, and the final full Python rerun passed all 1,538
+     tests with 9 skips. The final Node 20 committed-revision build left `frontend/dist` clean.
+   - Expected output: overflowing Board Configuration columns are reachable with an ordinary
+     vertical mouse wheel normalized across wheel units, shared keyboard-accessible left/right
+     controls, and drag-only edge auto-scroll with explicit cleanup, while the status picker and
+     settings pane retain their vertical-scroll ownership at the correct boundaries.
+   - Frontend-only local interaction; no API, persistence, schema, credential, or new analytics-event
+     contract. Generated frontend output, desktop/narrow real-modal proof, and an isolated clean-build
+     gate are required.
+
 ## Stats Project Track By Sprint
 
 1. `DONE-stats-project-track-by-sprint.md`

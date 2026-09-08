@@ -16,7 +16,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | --- | --- |
 | Status | Blocked |
 | Checked on | 2026-09-08 |
-| Last result | Not run — 2026-09-08 Board plan review/amendment supplied no approved disposable Home-write target and authorizes no mutation probe. Earlier execution preflight found 0 of 4 required inputs; that input count was not remeasured during this documentation task. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. |
+| Last result | Not run — 2026-09-08 Board implementation preparation rechecked this gate; no approved disposable Home-write target was supplied and no mutation probe is authorized. Earlier execution preflight found 0 of 4 required inputs; that input count was not remeasured during this documentation task. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 

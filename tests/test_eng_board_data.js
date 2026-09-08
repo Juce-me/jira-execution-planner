@@ -63,6 +63,84 @@ test('missing first-visit sprint stays uninitialized and is not mistaken for All
     assert.equal(calls, 0);
 });
 
+test('delayed first valid sprint initializes once and starts exactly one Board stream', async () => {
+    const mod = loadModule();
+    const calls = [];
+    const owner = mod.createEngBoardDataOwner({
+        streamBoard: async options => {
+            calls.push(options);
+            options.onFrame(start('g1'));
+            options.onFrame(frame('g1', 1, 'index', { epics: [], membership: 'candidate' }));
+            options.onFrame(frame('g1', 2, 'column', {
+                columnId: 'todo', epics: [], children: [], authoritative: true,
+            }));
+            options.onFrame(frame('g1', 3, 'complete', {
+                outcome: 'success', authoritative: true, epicCount: 0, childCount: 0, diagnostics: {},
+            }));
+        },
+    });
+
+    owner.selectGroup('a', null, 'r1');
+    assert.equal(await owner.load(), 'uninitialized');
+    assert.equal(calls.length, 0);
+
+    const changed = owner.selectGroup('a', 42, 'r1');
+    assert.equal(changed, true);
+    assert.equal(await owner.load(), 'success');
+    assert.equal(calls.length, 1);
+    assert.deepEqual(owner.getState().scopesByGroup.a, { type: 'sprint', sprintId: 42 });
+    assert.equal(calls[0].departmentId, 'a');
+    assert.equal(calls[0].scope, 'sprint');
+    assert.equal(calls[0].sprintId, 42);
+
+    const loaded = owner.getState();
+    assert.equal(owner.selectGroup('a', 42, 'r1'), false);
+    assert.equal(owner.selectGroup('a', 99, 'r1'), false);
+    assert.deepEqual(owner.getState().scopesByGroup.a, { type: 'sprint', sprintId: 42 });
+    assert.equal(owner.getState().activeKey, loaded.activeKey);
+    assert.equal(owner.getState().requestId, loaded.requestId);
+    assert.equal(owner.getState().working, loaded.working);
+    assert.equal(calls.length, 1);
+
+    owner.selectGroup('b', null, 'r1');
+    assert.equal(await owner.load(), 'uninitialized');
+    assert.equal(owner.selectGroup('b', 77, 'r1'), true);
+    assert.deepEqual(owner.getState().scopesByGroup, {
+        a: { type: 'sprint', sprintId: 42 }, b: { type: 'sprint', sprintId: 77 },
+    });
+    owner.selectGroup('a', 100, 'r1');
+    assert.deepEqual(owner.getState().scopesByGroup.a, { type: 'sprint', sprintId: 42 });
+    assert.equal(calls.length, 1);
+});
+
+test('explicit All work survives a later successful sprint catalog', async () => {
+    const mod = loadModule();
+    const calls = [];
+    const owner = mod.createEngBoardDataOwner({
+        streamBoard: async options => {
+            calls.push(options);
+            options.onFrame({ ...start('g1'), scope: 'all_work' });
+            options.onFrame(frame('g1', 1, 'index', { epics: [], membership: 'authoritative' }));
+            options.onFrame(frame('g1', 2, 'column', {
+                columnId: 'todo', epics: [], children: [], authoritative: true,
+            }));
+            options.onFrame(frame('g1', 3, 'complete', {
+                outcome: 'success', authoritative: true, epicCount: 0, childCount: 0, diagnostics: {},
+            }));
+        },
+    });
+
+    owner.selectGroup('a', null, 'r1');
+    assert.equal(await owner.setScope({ type: 'all_work' }), 'success');
+    const loaded = owner.getState();
+    assert.equal(owner.selectGroup('a', 42, 'r1'), false);
+    assert.deepEqual(owner.getState().scopesByGroup.a, { type: 'all_work' });
+    assert.equal(owner.getState().activeKey, loaded.activeKey);
+    assert.equal(owner.getState().requestId, loaded.requestId);
+    assert.equal(owner.getState().working, loaded.working);
+    assert.equal(calls.length, 1);
+});
+
 test('late frames from an old request or generation cannot publish into the active load', () => {
     const mod = loadModule();
     let state = mod.createEngBoardDataState();
@@ -77,6 +155,68 @@ test('late frames from an old request or generation cannot publish into the acti
     });
     assert.equal(unchanged, state);
     assert.deepEqual(unchanged.working.epicsByKey, {});
+});
+
+test('index Epics must reference a column declared by start', async t => {
+    const mod = loadModule();
+    for (const membership of ['candidate', 'authoritative']) {
+        await t.test(membership, () => {
+            let state = mod.createEngBoardDataState();
+            state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+            state = reduce(mod, state, { type: 'start_load', requestId: 1, refresh: false });
+            state = reduce(mod, state, {
+                type: 'frame', requestId: 1, frame: start('g1', 'scope-v1', ['board-unconfigured']),
+            });
+            state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', {
+                epics: [epic('E-1', 'board-unmapped')], membership,
+            }) });
+            assert.equal(state.error?.code, 'invalid_frame');
+        });
+    }
+});
+
+test('column-frame Epics must reference the column carrying the frame', () => {
+    const mod = loadModule();
+    let state = mod.createEngBoardDataState();
+    state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+    state = reduce(mod, state, { type: 'start_load', requestId: 1, refresh: false });
+    state = reduce(mod, state, {
+        type: 'frame', requestId: 1, frame: start('g1', 'scope-v1', ['todo', 'done']),
+    });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', {
+        epics: [epic('E-1', 'todo')], membership: 'candidate',
+    }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, 'column', {
+        columnId: 'todo', epics: [epic('E-1', 'done')], children: [], authoritative: true,
+    }) });
+    assert.equal(state.error?.code, 'invalid_frame');
+});
+
+test('synthetic absent Board completes through its declared board-unconfigured column', async () => {
+    const mod = loadModule();
+    const owner = mod.createEngBoardDataOwner({
+        streamBoard: async options => {
+            options.onFrame(start('g1', 'scope-v1', ['board-unconfigured']));
+            options.onFrame(frame('g1', 1, 'index', {
+                epics: [epic('E-1', 'board-unconfigured')], membership: 'candidate',
+            }));
+            options.onFrame(frame('g1', 2, 'column', {
+                columnId: 'board-unconfigured',
+                epics: [epic('E-1', 'board-unconfigured')],
+                children: [child('C-1', 'E-1')],
+                authoritative: true,
+            }));
+            options.onFrame(frame('g1', 3, 'complete', {
+                outcome: 'success', authoritative: true, epicCount: 1, childCount: 1, diagnostics: {},
+            }));
+        },
+    });
+
+    owner.selectGroup('a', 42, 'r1');
+    assert.equal(await owner.load(), 'success');
+    assert.equal(owner.getState().status, 'success');
+    assert.deepEqual(owner.getState().working.columnEpicKeys, { 'board-unconfigured': ['E-1'] });
+    assert.deepEqual(Object.keys(owner.getState().working.childrenByKey), ['C-1']);
 });
 
 test('changing Department invalidates the old request before its next frame', () => {

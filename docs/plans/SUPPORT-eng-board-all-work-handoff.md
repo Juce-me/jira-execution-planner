@@ -1,14 +1,14 @@
 # Issue #137 All work — subagent execution handoff
 
-Status: Execution continued on `feature/issue-137-board-all-work` after merging current `origin/main`. Independent strict-core, parser/shared-stream, state-owner, settings-retention and measurement-schema slices are implemented and verified. Production Task 3 remains blocked because runtime review rejected the current Gunicorn/thread boundary as a hard-termination mechanism. The dedicated supervisor/security-boundary proposal remains unapproved; do not distribute this as a production-integration handoff.
+Status: Local draft; the exact amended revision is not yet verified published/fetchable. The plan’s reopened Task 2 and Task 4 corrective slices are implemented, independently reviewed and verified locally. Production Task 3 remains blocked because runtime review rejected the current Gunicorn/thread boundary and found the supervisor/security proposal incomplete. Do not distribute this as a production-integration handoff.
 
 ## Base and intended outcome
 
-The accepted measurement implementation is commit `fc4d6a4`. The full handoff base is the published branch tip containing this file and [EXEC-eng-board-all-work.md](EXEC-eng-board-all-work.md). Verify both files are fetchable before delegating.
+The accepted measurement implementation is commit `fc4d6a4`. The eventual handoff base must be an exact published revision containing this file and [EXEC-eng-board-all-work.md](EXEC-eng-board-all-work.md). No such revision is certified by this local amendment. Follow the root publication contract and verify both files at that revision before distributing an execution prompt. Local preparation is not publication authorization.
 
 Resume the existing `feature/issue-137-board-all-work` branch, created from `ea587d984013d5926f8dee5df06b543286b8560a`. Do not recreate it or switch to main. Check PR #172's current state before choosing a future PR base; a merged measurement branch does not require restarting implementation. Preserve local work and avoid history rewrites. No push/merge/deploy authorization is inherited from this reusable prompt.
 
-## Copyable orchestrator prompt
+## Prepared orchestrator prompt — not cleared for distribution
 
 ```text
 Resume issue #137, ENG Board All work, on feature/issue-137-board-all-work using
@@ -20,6 +20,8 @@ not permission to skip prototype, runtime, completeness or SLO evidence.
    backend/security/CONFIGURATION_OWNERSHIP.md, the complete implementation plan,
    SUPPORT-eng-board-optional-sprint-design.md and MRT004/MRT010/MRT023/MRT026.
    Inspect every referenced existing symbol. Verify the actual file map and migration head.
+   Measurement migration 0015 already exists locally; the proposed control migration is 0016
+   only if the actual branch source head is still 0015. Never duplicate or rewrite 0015.
 2. Verify the measurement commit and the latest revised All work documents in the current
    branch. Before remote delegation, verify those exact revisions are committed, pushed and
    fetchable; the old measurement ref alone does not contain these gate amendments.
@@ -34,9 +36,10 @@ not permission to skip prototype, runtime, completeness or SLO evidence.
    collector or another auth profile, and never fabricate percentile or completeness claims.
 4. Delegate only bounded independent work using the ownership map below. Share exact typed
    contracts first. The orchestrator owns integration files and serializes changes to them.
-   Start strict core/config work and isolated stream/parser/auth tests independently. Once
-   the frame contract is frozen, start isolated Board state and measurement tests. Assign
-   runtime-remedy review separately; a blocked runtime subtask does not stop these workers.
+   Treat the resume-contract Task 2 and Task 4 corrections as completed locally. Re-run their
+   focused suites before dependent work; do not rebuild those slices without a reproduced defect.
+   Assign runtime-remedy and Task 3B compatibility contract design separately. Select no new
+   runtime or storage architecture without review and explicit approval.
 5. For every slice: failing behavior test, minimal implementation, focused green checks,
    independent specification review then code review. Resolve material findings before the
    next dependent slice. Record outcome and evidence in the plan.
@@ -44,8 +47,10 @@ not permission to skip prototype, runtime, completeness or SLO evidence.
    and Task 4's state/measurement tests while the runtime remedy is reviewed. Do not repeat
    the executor limitation probe as a global prerequisite. Transport/focus/memory/auth/runtime
    checks still precede dependent production binding. DB latency rows cannot prove termination;
-   the supervisor proposal remains unapproved. Twenty complete candidate samples per cohort
-   is an acceptance target after the candidate exists, not a gate before development.
+   the supervisor proposal remains unapproved. Task 3B must implement strict Basic/JSON parity
+   before full rollout; preserving the legacy Board cannot close that gate. Twenty complete
+   candidate samples per cohort is an acceptance target after the candidate exists, not a
+   gate before development.
 7. Follow Tasks 2–6 only as their gates allow. Reuse the strict pager/query core; no duplicated
    query implementation. At most two child searches, strict nextPageToken/isLast pagination,
    provisional display separate from authority. Retire the legacy request family only under
@@ -54,13 +59,17 @@ not permission to skip prototype, runtime, completeness or SLO evidence.
    revisions. An ambiguous focus failure retires the generation. Cancel clears queued intent;
    atomic active-state guards prevent late focus writes from reviving cancelled work.
 8. Keep Board scope/filters/session state independent of the mandatory ENG sprint and private
-   Team selection. Preserve reviewed first-visit sprint inheritance. All work applies Components
-   to Epics only, includes all eligible direct children, and never eagerly hydrates subtasks.
+   Team selection. Inherit the first valid mandatory sprint exactly once even if discovery
+   completes late; never overwrite explicit All work or an already initialized Board sprint.
+   All work applies Components to Epics only, includes all eligible direct children, and never
+   eagerly hydrates subtasks.
    Strict Board Work items export uses authoritative filtered canonical child keys, bypassing
    the Story-only collector. Preserve legacy exports; test mixed types and non-Story-only Boards.
 9. Preserve current-user OAuth, workspace/shared-group ownership, CSRF and existing Jira write
-   routes. No Home/Townsquare, service credential fallback, new Jira mutation, issue manifests,
-   raw issue data in diagnostics, automatic replay, or partial-success completeness claims.
+   routes. Basic credential resolution belongs only to the separately reviewed Task 3B Basic
+   adapter; DB/OAuth must never fall back to Basic/JSON. No Home/Townsquare, new Jira mutation,
+   issue manifests, raw issue data in diagnostics, automatic replay, or partial-success
+   completeness claims.
    Validate/refresh DB OAuth tokens before claim, commit, then capture a fresh context and
    revalidate after metadata capture. Later successful rotation retires the immutable generation
    as scope_changed with explicit Retry, not global auth_required. Revocation/disabled-user
@@ -91,9 +100,10 @@ not permission to skip prototype, runtime, completeness or SLO evidence.
 | Worker | Bounded assignment | Owns | Dependencies/output |
 | --- | --- | --- | --- |
 | Transport feasibility | Task 1 prototype and failure tests | `eng_board_stream.py`, stream tests, shared `api/http.js` and its tests | Returns measured deadline/byte/focus proof or explicit stop; no production app route registration |
-| Strict scope/config | Task 2 | strict core relocation, `group_board.py`, group model/normalizer files, service/model tests | May run alongside prototype after wire contract freeze; publishes pure core and saved grammar |
+| Strict scope/config | Task 2 corrections first | `eng_board.py`, service tests; stream tests by coordinated ownership transfer | Fix composed synthetic-column and catalog validation; preserve completed normalization/core reuse |
 | Backend generation | Task 3 | route module, control orchestration, backend route tests | Starts after transport gate and core; requests schema/policy edits from integrator |
-| Board data | Task 4 | `useEngBoardData.js`, Board API and unit tests | Starts after frame contract freeze; shared HTTP file belongs to transport worker until released |
+| Board data | Task 4 delayed-initialization correction first | `useEngBoardData.js`, `test_eng_board_data.js` | Independent of strict-core correction; exactly one deferred first-sprint load and preserved explicit scope |
+| Compatibility | Task 3B | Contract amendment first; approved adapter/test file map before coding | Review cross-worker ownership, security, runtime and measurements; required before full rollout |
 | UI/Settings | Tasks 5–6 | Board components/models and Settings UI | Starts after data-owner contract; do not modify dashboard or shared telemetry independently |
 | Independent reviewer | Review each slice and final integration | Read-only findings with path/line and reproductions | Checks plan contract, auth/ownership, stale authority, gates and workload comparisons |
 

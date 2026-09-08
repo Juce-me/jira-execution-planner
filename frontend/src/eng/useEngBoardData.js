@@ -157,7 +157,10 @@ function applyFrame(state, frame) {
     }
 
     if (frame.type === 'index') {
-        if (state.working.indexReceived) return invalidFrame(state, frame);
+        if (state.working.indexReceived
+            || frame.epics.some(epic => !knowsColumn(state.working, epic.columnId))) {
+            return invalidFrame(state, frame);
+        }
         const authoritative = frame.membership === 'authoritative';
         return {
             ...state,
@@ -189,6 +192,7 @@ function applyFrame(state, frame) {
     if (frame.type === 'column') {
         if (!state.working.indexReceived
             || !knowsColumn(state.working, frame.columnId)
+            || frame.epics.some(epic => epic.columnId !== frame.columnId)
             || Object.prototype.hasOwnProperty.call(state.working.columnAuthority, frame.columnId)) {
             return invalidFrame(state, frame);
         }
@@ -317,9 +321,13 @@ export function engBoardDataReducer(state, action) {
     switch (action.type) {
         case 'select_group': {
             const groupId = String(action.groupId);
-            const scopesByGroup = Object.prototype.hasOwnProperty.call(state.scopesByGroup, groupId)
-                ? state.scopesByGroup
-                : { ...state.scopesByGroup, [groupId]: normalizeEngBoardScope(null, action.inheritedSprintId) };
+            const existingScope = state.scopesByGroup[groupId];
+            const inheritedScope = normalizeEngBoardScope(null, action.inheritedSprintId);
+            const scopesByGroup = !Object.prototype.hasOwnProperty.call(state.scopesByGroup, groupId)
+                ? { ...state.scopesByGroup, [groupId]: inheritedScope }
+                : existingScope.type === 'uninitialized' && inheritedScope.type === 'sprint'
+                    ? { ...state.scopesByGroup, [groupId]: inheritedScope }
+                    : state.scopesByGroup;
             const groupRevisions = { ...state.groupRevisions, [groupId]: action.revision ?? null };
             const scope = scopesByGroup[groupId];
             return {
@@ -604,6 +612,7 @@ export function createEngBoardDataOwner({ streamBoard, controlBoard = () => Prom
         selectGroup(groupId, inheritedSprintId, revision = null) {
             const normalizedGroupId = String(groupId);
             const wasInitialized = Object.prototype.hasOwnProperty.call(state.scopesByGroup, normalizedGroupId);
+            const previousScope = state.scopesByGroup[normalizedGroupId];
             const groupChanged = state.activeGroupId !== normalizedGroupId;
             const previousRevision = state.groupRevisions[String(groupId)];
             const revisionChanged = previousRevision !== undefined && previousRevision !== revision;
@@ -613,7 +622,9 @@ export function createEngBoardDataOwner({ streamBoard, controlBoard = () => Prom
                 emit({ type: 'group_revision_changed', groupId, revision });
             }
             emit({ type: 'select_group', groupId, inheritedSprintId, revision });
-            return !wasInitialized || groupChanged || revisionChanged;
+            const inheritedNow = previousScope?.type === 'uninitialized'
+                && state.scopesByGroup[normalizedGroupId]?.type === 'sprint';
+            return !wasInitialized || inheritedNow || groupChanged || revisionChanged;
         },
         setScope(scope) {
             if (!state.activeGroupId) return Promise.resolve('ignored');

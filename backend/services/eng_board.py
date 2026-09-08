@@ -16,7 +16,7 @@ import re
 import threading
 from urllib.parse import urlencode
 
-from backend.services.group_board import normalize_group_board
+from backend.services.group_board import DEFAULT_COLUMN_COLOUR, normalize_group_board
 
 
 PAGE_SIZE = 100
@@ -96,7 +96,7 @@ def normalize_projects(selected, *, saved_board_project_key=None):
 
 
 def normalize_board(raw_board):
-    """Return strict saved Board grammar or the selected-sprint synthetic shape."""
+    """Return strict runtime Board grammar or the selected-sprint synthetic shape."""
     if raw_board is None:
         return {
             'configured': False,
@@ -106,9 +106,22 @@ def normalize_board(raw_board):
     normalized, errors, _warnings = normalize_group_board(raw_board)
     if errors or normalized is None:
         raise EngBoardError('board_config_invalid')
+    columns = [
+        {**column, 'statuses': tuple(column['statuses'])}
+        for column in normalized['columns']
+    ]
+    columns.insert(len(columns) - 1, {
+        'id': 'board-unmapped',
+        'name': 'Unmapped',
+        'statuses': (),
+        'colour': DEFAULT_COLUMN_COLOUR,
+        'star': False,
+        'min': None,
+        'max': None,
+    })
     return {
         'configured': True,
-        'columns': tuple({**column, 'statuses': tuple(column['statuses'])} for column in normalized['columns']),
+        'columns': tuple(columns),
         'doneEpicRetentionDays': normalized['doneEpicRetentionDays'],
     }
 
@@ -224,10 +237,22 @@ def resolve_issue_type_ids(catalog, configured_names=None, *, key_present=False)
         raise EngBoardError('board_field_config_invalid', phase='catalog')
     eligible = []
     for row in catalog:
-        if not isinstance(row, dict) or isinstance(row.get('subtask'), str):
-            continue
-        if row.get('hierarchyLevel') == 0 and row.get('subtask') is False and str(row.get('id') or '').strip():
-            eligible.append((str(row['id']), str(row.get('name') or '')))
+        if not isinstance(row, dict):
+            raise EngBoardError('board_field_config_invalid', phase='catalog')
+        if not isinstance(row.get('id'), str) or not isinstance(row.get('name'), str):
+            raise EngBoardError('board_field_config_invalid', phase='catalog')
+        identifier = row['id'].strip()
+        name = row['name'].strip()
+        if not identifier or not name:
+            raise EngBoardError('board_field_config_invalid', phase='catalog')
+        hierarchy_level = row.get('hierarchyLevel')
+        if isinstance(hierarchy_level, bool) or not isinstance(hierarchy_level, int):
+            raise EngBoardError('board_field_config_invalid', phase='catalog')
+        subtask = row.get('subtask')
+        if not isinstance(subtask, bool):
+            raise EngBoardError('board_field_config_invalid', phase='catalog')
+        if hierarchy_level == 0 and subtask is False:
+            eligible.append((identifier, name))
     names = list(configured_names if key_present else ['Story'])
     if names:
         wanted = {str(value).strip() for value in names if str(value).strip()}
@@ -531,6 +556,11 @@ def project_board(epics, children, *, project_map, columns, epic_link_field_id=N
     for column in columns:
         for status in column['statuses']:
             status_to_column.setdefault(status, column['id'])
+    unmapped_column_id = (
+        'board-unconfigured'
+        if any(column['id'] == 'board-unconfigured' for column in columns)
+        else 'board-unmapped'
+    )
     child_map = {key: [] for key in epic_by_key}
     seen_children = set()
     for row in children:
@@ -583,7 +613,7 @@ def project_board(epics, children, *, project_map, columns, epic_link_field_id=N
             'projectTrack': _project_track(fields.get(project_track_field_id)),
             'updated': _text(fields.get('updated'), nullable=True),
             'parent': _parent(fields.get('parent')),
-            'columnId': status_to_column.get(status['name'], 'board-unmapped'),
+            'columnId': status_to_column.get(status['name'], unmapped_column_id),
             'children': sorted(child_map[epic_key], key=lambda item: item['key']),
         })
     projection = {'epics': result_epics}

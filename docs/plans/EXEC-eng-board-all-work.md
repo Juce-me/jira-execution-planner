@@ -1,6 +1,6 @@
 # ENG Board All work implementation plan — issue #137
 
-> **Status:** Execution continued on 2026-09-08 after merging current `origin/main`. The strict core, saved Board grammar, stream parser/shared HTTP boundary, isolated Board state owner, and measurement schema are implemented and verified. Hard termination still blocks Task 3 and every dependent production integration/activation task. No production readiness is claimed; the supervisor proposal remains unapproved.
+> **Status:** Execution continued on 2026-09-08 after merging current `origin/main`. The reopened Task 2 strict-core corrections and Task 4 delayed-sprint initialization correction are implemented, independently reviewed, and verified locally. Hard termination still blocks Task 3 and every dependent production integration/activation task. No production readiness is claimed; the supervisor proposal and Task 3B adapter remain unapproved.
 > **For agentic workers:** Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` task by task. Follow repository instruction chains and the companion [handoff](SUPPORT-eng-board-all-work-handoff.md).
 
 **Goal:** Deliver Board-owned Component-scoped Epic discovery, optional sprint filtering, and focused-column-first complete direct-child loading without changing sibling ENG modes.
@@ -8,6 +8,31 @@
 **Recommended architecture:** Reuse the strict diagnostic query/paging core in one Board service. One authenticated streaming request owns issue data, global counters and at most two child searches. A small DB control row carries live focus/cancel signals across workers; it never stores Jira issues. The frontend has one Board-owned generation and explicit provisional versus authoritative state. Validate this transport in Task 1 before production integration; the existing cooperative diagnostic is not deadline evidence.
 
 **Stack:** Existing Flask/Python, PostgreSQL/SQLAlchemy, React 19, esbuild and Node 20. No new package dependency proposed.
+
+## Resume contract — review corrections first
+
+This section and the corrective checkboxes supersede earlier completion claims in the historical execution records. The local corrective implementation is complete; it does not approve a runtime architecture or production integration. Keep work in the existing checkout.
+
+| Next work | Entry condition | Completion evidence |
+| --- | --- | --- |
+| Task 2 corrective slice | Complete locally | Strict projection/catalog regressions, composed stream/state membership checks and focused suites pass |
+| Task 4 initialization correction | Complete locally | Missing sprint → first valid sprint causes exactly one load; explicit All work, initialized sprint and per-Department state are preserved |
+| Task 1 runtime decision | Source/design review may proceed; supervisor implementation is not approved | Amend the supervisor proposal with concrete ingress, ownership, resource limits, deployment file map and test harness; obtain architectural approval, then prove the transport/runtime gate |
+| Task 3 DB/OAuth integration | Corrected core plus approved and passing Task 1 | Route/security/control/migration and two-worker evidence; no implicit approval from isolated test success |
+| Task 3B Basic/JSON compatibility | Contract review may proceed; selected transport requires approval before implementation | Implement and measure strict All work and selected-sprint parity; legacy fallback alone never closes this task |
+| Tasks 5–7 | Follow their dependent integration gates | Preserved UI journeys, candidate measurements and full-scope release evidence |
+
+For the next corrective implementation, modify only `backend/services/eng_board.py`, `tests/test_eng_board_service.py`, `frontend/src/eng/useEngBoardData.js`, `tests/test_eng_board_data.js`, these active plan/status documents, and build-generated `frontend/dist/` outputs (never hand-edit them). Extend `tests/test_eng_board_stream.py` or `tests/test_eng_board_stream.js` only where needed to prove the corrected projection crosses the existing wire adapter. Read each target's instruction chain first. Do not add routes, modify auth/config ownership, migrate the application DB, or select a new runtime as part of these corrections.
+
+Required focused commands after adding the regression tests (use the repository Node 20 toolchain):
+
+```bash
+.venv/bin/python -m unittest tests.test_eng_board_service tests.test_eng_board_measurement tests.test_eng_board_stream -v
+node --test tests/test_eng_board_data.js tests/test_eng_board_stream.js
+npm run build
+```
+
+Record the new regression tests failing before their corresponding fixes and passing afterward. The delayed-initialization test must exercise the owner API, not just a reducer fixture. The absent-Board test must compose normalization and projection with a real eligible synthetic child, then validate declared-column membership through the stream/state boundary. Build generated frontend output from source. Before publication, run the full repository verification and publication contract; this preparation grants no commit/push/PR authorization. The companion handoff is a local draft until its exact revision is published and verified fetchable.
 
 ## 1. Evidence and interpretation
 
@@ -129,7 +154,7 @@ Files: Read existing paths in this plan, `docs/plans/README.md`, support design,
 
 ### Task 1 — transport, hard-bound and focus feasibility gate
 
-Create: `backend/services/eng_board_stream.py`, `frontend/src/api/engBoardApi.js`, `tests/test_eng_board_stream.js`, `tests/ui/eng_board_stream.spec.js`. Modify: `frontend/src/api/http.js`, existing `tests/test_eng_board_stream.py`; the later route/control/migration file map belongs to Task 3. Run a synthetic in-app prototype before binding production Board. Extend the Python stream test with an isolated Flask app owning prototype GET/control routes and a disposable PostgreSQL table created from test-only SQLAlchemy metadata. Preserve its existing limitation probe. Use that fixture for two-worker and blocked-I/O checks; it may not register routes on backend/app.py or migrate the local application DB. Task 3 promotes the verified control contract into production schema/routes. The browser test serves the shared stream consumer against this prototype, not mocked buffering.
+Modify: `backend/services/eng_board_stream.py`, `frontend/src/api/engBoardApi.js`, `tests/test_eng_board_stream.js`, `tests/ui/eng_board_stream.spec.js`, `frontend/src/api/http.js`, `tests/test_eng_board_stream.py`; the later route/control/migration file map belongs to Task 3. Run a synthetic in-app prototype before binding production Board. Extend the Python stream test with an isolated Flask app owning prototype GET/control routes and a disposable PostgreSQL table created from test-only SQLAlchemy metadata. Preserve its existing limitation probe. Use that fixture for two-worker and blocked-I/O checks; it may not register routes on backend/app.py or migrate the local application DB. Task 3 promotes the verified control contract into production schema/routes. The browser test serves the shared stream consumer against this prototype, not mocked buffering.
 
 - [x] RED: held EOF must deliver a first validated frame; ordinary buffered callers retain behavior. Test split UTF-8/NDJSON chunks, duplicate/nonmonotonic frames, malformed/oversized frames, abort and sibling API 401. The shared HTTP layer must own reader cancellation and terminal auth lock, never hook-level native fetch.
 - [x] Implement opt-in header-first streaming at the shared boundary; current `apiFetch` body buffering cannot deliver progress. Check auth lock and AbortSignal before every delivery. Auth-error frame invokes the same global sanitized lock as HTTP 401.
@@ -140,9 +165,11 @@ Create: `backend/services/eng_board_stream.py`, `frontend/src/api/engBoardApi.js
 
 ### Task 2 — shared strict core and saved Board grammar
 
-Create: `backend/services/eng_board.py`, `tests/test_eng_board_service.py`. Modify: `backend/services/eng_board_measurement.py`, `backend/services/group_board.py`, `backend/services/group_config.py`, `frontend/src/settings/groupBoardModel.js`, `frontend/src/settings/groupConfigUtils.js`. Update existing measurement/group-board model tests discovered by symbol in Task 0.
+Modify: `backend/services/eng_board.py`, `tests/test_eng_board_service.py`, `backend/services/eng_board_measurement.py`, `backend/services/group_board.py`, `backend/services/group_config.py`, `frontend/src/settings/groupBoardModel.js`, `frontend/src/settings/groupConfigUtils.js`. Update existing measurement/group-board model tests discovered by symbol in Task 0.
 
-- [x] Write table-driven failures for all production profiles: Components, Team fallback, `other`, same-name Components in multiple projects, saved-board project fallback, absent Board, empty terminal status, retention 1/28/90, zero-child Epic and configured non-Story child types.
+- [x] Reopened after source review: complete composed table-driven coverage for all production profiles: Components, Team fallback, `other`, same-name Components in multiple projects, saved-board project fallback, absent Board, empty terminal status, retention 1/28/90, zero-child Epic and configured non-Story child types.
+- [x] Fix absent-Board projection in `project_board`: `normalize_board(None)` declares only `board-unconfigured`, so every qualifying selected-sprint Epic must reference that column, never `board-unmapped`. Keep All work rejected for absent Board. Test a nonempty eligible child cohort, zero-child sprint exclusion, and a configured Board with an unknown status still using `board-unmapped`. Validate the adapted frames with the existing closed stream schema and assert every Epic/child cohort refers to a declared column; normalizer-only assertions do not close this check.
+- [x] Make `resolve_issue_type_ids` reject missing/malformed hierarchy metadata instead of silently omitting uncertain catalog entries. Validate catalog row shape, nonblank identity/name, integer non-boolean `hierarchyLevel`, and boolean `subtask` before eligibility selection. Valid Epic/Subtask entries remain excluded, not errors. Test mixed valid Story plus malformed Bug/Task with explicit empty configured names; missing hierarchy, boolean/string hierarchy and malformed subtask must fail scope before search. Also retain absent-config Story default, explicit-empty all-eligible, multiple eligible IDs per configured name, and unmatched-name errors.
 - [x] Move/reuse core functions and extend strict paging with validated page callback and incremental global bounds. The diagnostic imports must test the same implementation.
 - [x] Preserve idempotent old Board normalization: infer terminal once as specified in support design, retain column IDs and existing assignments. Round-trip retention in backend/frontend; a dirty draft must not change live Board.
 - [x] Test transitions back into terminal, recent-created fallback, unknown status placement and malicious quoted scope values. Patch partial-result helpers to raise if invoked.
@@ -159,7 +186,7 @@ The names above describe test fixtures to create, not existing production APIs. 
 
 ### Task 3 — generation service, route policies and DB controls
 
-Create: `backend/routes/eng_board_routes.py`, `backend/db/migrations/versions/20260908_0015_board_generation_controls.py`, `tests/test_eng_board_routes.py`. Modify: `backend/services/eng_board.py`, `backend/services/eng_board_stream.py`, `backend/db/models.py`, `backend/app.py`, `backend/security/policy.py`, `backend/security/CONFIGURATION_OWNERSHIP.md`, `tests/test_endpoint_policy_inventory.py`, `tests/test_endpoint_security_matrix.py`. Renumber the proposed migration if updated main has occupied 0015; down_revision must be actual head.
+Create: `backend/routes/eng_board_routes.py`, `backend/db/migrations/versions/20260908_0016_board_generation_controls.py`, `tests/test_eng_board_routes.py`. Modify: `backend/services/eng_board.py`, `backend/services/eng_board_stream.py`, `backend/db/models.py`, `backend/app.py`, `backend/security/policy.py`, `backend/security/CONFIGURATION_OWNERSHIP.md`, `tests/test_endpoint_policy_inventory.py`, `tests/test_endpoint_security_matrix.py`. The current branch already contains measurement revision `20260908_0015`; the provisional control revision is `20260908_0016` with `down_revision=20260908_0015`. Re-read all current source revisions immediately before creation and allocate from the actual branch head, including local work, regardless of what main contains. Do not edit or duplicate the existing 0015 migration. Unexpected multiple heads require reconciliation review, not an invented parent.
 
 - [ ] RED route matrix: foreign group/generation, workspace/site/user/token/config mismatch, disabled user, malformed controls, absent CSRF/header, storage failure, duplicate claim, expiry, and current-user OAuth reaching the real search wrapper outside request context.
 - [ ] Exercise expired-token preflight refresh with fresh post-commit context and a successful claim. Force rotation during catalog capture, between child pages and alongside a control request; require preheader 409 or terminal `scope_changed`, no stale publication/replay and no global auth lock for successful rotation. Separately prove revoked connection/disabled user still locks auth. Verify focus acknowledgement follows DB commit and terminal state prevents a delayed focus update from reviving cancellation.
@@ -168,11 +195,24 @@ Create: `backend/routes/eng_board_routes.py`, `backend/db/migrations/versions/20
 - [ ] No server payload cache in the initial candidate. Keep compatible complete client snapshots only; measure before introducing server caching. Never use process-local tokens or cache partial results. Check auth/config validity before canonical publication and terminal completion.
 - [ ] Test PostgreSQL migration up/down/up and cross-worker controls against disposable DB. Do not migrate production. Verify long-lived streams do not exhaust the selected Gunicorn worker model.
 
+### Task 3B — Basic/JSON strict compatibility (required for full release)
+
+This is the missing implementation obligation for the already retained release scope. It does not authorize a new storage/runtime architecture or changing the user's running auth profile. Task 3 and a gated DB/OAuth candidate may proceed without it; full rollout may not.
+
+Contract work modifies this plan and the companion handoff. Read `backend/security/policy.py`, `backend/security/guards.py`, `backend/security/CONFIGURATION_OWNERSHIP.md`, `jira_server.py`, `scripts/docker-entrypoint.sh` and the Task 3 route/core contracts. After approval, reuse the Task 3 routes/core/stream, existing config capability response and frontend owner; add the approved compatibility adapter and tests to this task's exact Create/Modify map before execution.
+
+- [ ] Specify and review how non-DB deployments own generation identity, cross-worker focus/cancel, atomic global budgets and configuration invalidation. Name the existing Basic auth boundary and its actual deployment isolation; do not invent OAuth users/workspaces, introduce hidden DB requirements, or use a worker-local registry. Recommend reusing the reviewed supervisor as the shared control owner if its prototype supports this safely; compare its lifecycle/IPC costs against the support design's other transport choices before approval.
+- [ ] Freeze the Basic/JSON method/auth/header/CSRF, generation ownership, request/success/error and restart contracts in section 4. Preserve existing mode-specific security requirements, server-owned saved scope and current Basic credential resolution only within Basic mode; prove DB/OAuth never falls back to Basic/JSON. Define JSON config snapshot/change detection and controls after owner death. Record numeric resource/deadline limits and a complete deployment/source/test file map before implementation.
+- [ ] Implement the approved adapter using the same strict pager, projection, frame schema and frontend state owner. Enable the same server-derived capability only when that deployment's adapter and runtime gates pass. Keep unavailable deployments on legacy selected-sprint Board until then; no duplicate query core or browser-selected auth mode.
+- [ ] Verify strict selected-sprint and All work, absent Board, two-worker focus/cancel, reload/config changes, foreign-generation rejection, malformed controls, blocked I/O and shutdown in an isolated deployment. Negative tests must patch the actual forbidden credential/config resolution symbols. Measure the existing Task 7 excluded profiles without modifying the user's shared configuration or auth profile to manufacture evidence.
+- [ ] Close full-release compatibility only with strict feature evidence. If the transport cannot be implemented within reviewed constraints, report this task blocked and seek an explicit release-scope amendment; do not relabel legacy regression coverage as parity.
+
 ### Task 4 — Board data owner and measurement schema
 
-Create: `frontend/src/eng/useEngBoardData.js`, `tests/test_eng_board_data.js`. Modify: `frontend/src/api/engBoardApi.js`, `frontend/src/eng/loadPerformance.js`, `frontend/src/api/performanceApi.js`, `backend/services/load_performance.py`, `backend/db/models.py`, `backend/routes/performance_routes.py`, `frontend/src/settings/PerformanceSettings.jsx`, `tests/test_load_performance.py`, `tests/test_load_performance.js`. Create an additive migration for optional Board measurements only after verifying current head; preserve old rows/readers.
+Modify: `frontend/src/eng/useEngBoardData.js`, `tests/test_eng_board_data.js`, `frontend/src/api/engBoardApi.js`, `frontend/src/eng/loadPerformance.js`, `frontend/src/api/performanceApi.js`, `backend/services/load_performance.py`, `backend/db/models.py`, `backend/routes/performance_routes.py`, `frontend/src/settings/PerformanceSettings.jsx`, `tests/test_load_performance.py`, `tests/test_load_performance.js`. Measurement migration `backend/db/migrations/versions/20260908_0015_board_load_performance.py` already exists; preserve it and old rows/readers. Allocate any newly required additive migration from the actual source head, never recreate the completed migration.
 
-- [x] RED state transitions: first visit, independent per-group sprint, focus while loading, late old generation, column error, global fatal, refresh with stale compatible snapshot, auth lock, retry, group revision change and unmount.
+- [x] Reopened after source review: RED state transitions, including delayed first-visit sprint discovery, independent per-group sprint, focus while loading, late old generation, column error, global fatal, refresh with stale compatible snapshot, auth lock, retry, group revision change and unmount.
+- [x] Fix `select_group`/`selectGroup` so an existing `uninitialized` scope inherits the first later valid mandatory sprint exactly once and reports a change that starts loading. Missing/failed discovery still issues no query. Exercise `selectGroup(group, null, revision)` → load → `selectGroup(group, validSprint, revision)` → load; assert one stream request and the selected sprint. Repeated catalog updates, revisits, and sibling sprint changes must not overwrite an initialized Board scope. Explicit All work while discovery is pending survives later catalog success. Include independent Departments and retained query state; add the corresponding delayed-catalog browser barrier case in Task 5.
 - [x] Implement canonical Epic map plus column key references and separate provisional progress. Keep partial data out of facet/export/write authority. Reconcile membership atomically.
 - [x] Keep existing `eng_sprint` metrics unchanged. Add a versioned closed Board observation variant with `surface=eng_board`, `scopeType=all_work|sprint`, bounded `indexMs`, `firstFocusedContentMs`, `focusedCompleteMs`, `durationMs`, `dependencyDurationMs`, `epicCount`, `issueCount`, `payloadBytes`, `jiraRequests/pages/retries`, `completeness`, `outcome`, `cacheState=hit|miss|mixed|unknown`, `peakChildSearches` (integer 0–2 when measured, otherwise null), and `scopeCohortDigest` from start (null if start was never received). Retain the load/group identity envelope; Board All work uses null sprint rather than a fabricated ID. Failed/cancelled streams lacking terminal diagnostics retain null counters and unknown cache state rather than invented values. No forced product/tech lane pair in Board schema; one stream has one global unique count. Optional diagnostics split Product/Tech/other without duplicating total.
 - [x] Persist and read back the added fields through ingestion, migration and admin filters. Build `revision` remains the existing application revision, distinct from captured configuration cohort. Older rows retain null/unknown new fields and remain contextual; never backfill them from today's config. Test same group/sprint/build with changed Components/Board settings yields different cohorts, token rotation alone preserves the cohort, unknown fields cannot pass eligibility, and out-of-range concurrency is rejected. Add null-safe mixed legacy/Board report and migration tests.
@@ -182,7 +222,7 @@ Create: `frontend/src/eng/useEngBoardData.js`, `tests/test_eng_board_data.js`. M
 
 Modify: `backend/routes/settings_routes.py`, `frontend/src/dashboard.jsx`, `frontend/src/eng/useEngSprintData.js`, `frontend/src/eng/EngBoardView.jsx`, `frontend/src/eng/EngBoardHelp.jsx`, `frontend/src/eng/EngFilterBar.jsx`, `frontend/src/eng/engFilterFacets.js`, `frontend/src/eng/EngBoardEpicCard.jsx`, `frontend/src/eng/EngBoardEpicPanel.jsx`, `frontend/src/eng/engBoardColumns.js`, `frontend/src/eng/engBoardCardModel.js`, `frontend/src/eng/engBoardFilters.js`, `frontend/src/eng/useEngBoardFilters.js`, `frontend/src/components/JiraExportButton.jsx`, `frontend/src/eng/useEngStatusTransitions.js`, `frontend/src/eng/useEngPriorityTransitions.js`, `frontend/src/eng/useEngProjectTrackTransitions.js`. Create: `tests/test_eng_board_source_guards.py`; update existing Board unit/UI/source-guard tests.
 
-- [ ] Add server-derived `boardAllWorkAvailable` capability in the existing config response, true only for DB/OAuth deployments with the new schema and approved transport/runtime gate enabled. Frontend defaults false until explicitly true. Strict routes reject unavailable capability with sanitized 409 `board_unavailable`; no browser override. In unavailable deployments preserve the existing selected-sprint Board and legacy calls, with All work unavailable. Test both capability paths; do not silently switch auth/config storage.
+- [ ] Add server-derived `boardAllWorkAvailable` capability in the existing config response, true only when the current deployment has an implemented strict adapter and passing transport/runtime gates. Initially only DB/OAuth with the new schema qualifies; Task 3B must extend eligibility to verified Basic/JSON before full release. Frontend defaults false until explicitly true. Strict routes reject unavailable capability with sanitized 409 `board_unavailable`; no browser override. In unavailable deployments preserve the existing selected-sprint Board and legacy calls, with All work unavailable. Test both capability paths; do not silently switch auth/config storage.
 - [ ] When strict capability is true, assert zero inherited Product/Tech tasks, alerts, eager dependency and issue-lookup calls on Board entry, focus, refresh, long-absence refresh and mutation success. Cancel inherited in-flight requests and ignore late results. Leaving Board restores mandatory sprint/team behavior and runs exactly the required legacy load.
 - [ ] Wire Board-only scope selector; All work remains visible but disabled with concise reason when configuration disallows it. Sprint-catalog error cannot disable a valid All work Board. Leave sibling mode state untouched.
 - [ ] Use existing focus resolver via `onResolvedFocusChange`, not a second focus algorithm. Send control updates for queued priority, preserving two running searches.
@@ -242,10 +282,11 @@ Head stamping and row existence do not prove schema parity or a current browser 
 | --- | --- | --- |
 | DB access and sprint baseline discovery | Satisfied: four observations, three success/one cancelled, two revisions | Does not block development. Reuse existing rows; no collection-from-zero requirement |
 | Saved local scope | Available: shared configs and a group with Components, Teams and Board columns | No synthetic Department prerequisite. Validate saved scope and current Jira access through the candidate path |
-| Epic-first strict completeness | Existing sprint rows unknown; no candidate rows | Blocks candidate authority/rollout, not writing the pager. Task 2 strict tests followed by candidate app observations |
+| Epic-first strict completeness | Task 2 reopened: absent-Board projection and catalog validation fail the contract; no candidate rows | Implement the corrective tests/fixes now, then verify candidate authority through the app |
+| First-visit Board initialization | Task 4 reopened: delayed sprint discovery remains uninitialized | Fix and verify owner transitions before Task 5 integration; no runtime or live-data prerequisite |
 | Streaming + focus + cross-worker | Unproved by existing rows | Parser/auth/core tests can proceed; prototype and cross-worker checks still precede dependent production binding |
 | Hard termination | Existing probe confirms blocked executor survives cancellation | Blocks Task 3 production binding/activation. Continue independent tasks; review runtime remedy separately. DB durations cannot pass this gate |
-| Basic/JSON parity | Non-DB control transport unresolved; local DB is available | Blocks strict Board activation in non-DB deployments and remains part of full-scope release evidence below. Preserve/test legacy fallback; no Basic detour or blocker for independent DB/OAuth development |
+| Basic/JSON parity | Task 3B design/implementation outstanding; local DB is available | Blocks non-DB strict activation and full rollout. Implement the reviewed compatibility adapter, then measure it; legacy fallback is regression evidence only. Does not block the corrective slices or independent DB/OAuth development |
 | Candidate progress and SLO | Candidate not yet built/measured | Acceptance gate after candidate exists. Separate config/cache/build cohorts; verify 100ms feedback, <=10% first-content median regression and <=4s full-load p95, retaining 2s useful-content target |
 | Excluded-profile release evidence | No production candidate measurements for excluded profiles | Blocks full production rollout, not independent development. Synthetic coverage cannot close this gate; measured scope coverage or explicitly approved release amendment required |
 | Home write gate | Blocked and unrelated | No issue #137 dependency. Preserve its own status; no Board-driven Home mutation probe |
@@ -256,9 +297,13 @@ An unsupported gate blocks its dependent integration/release task, not plan auth
 
 ## Plan review outcome
 
+Latest review amendment — 2026-09-08: reopened Task 2/4 with explicit regression acceptance for absent-Board column membership, strict catalog metadata and delayed sprint discovery. Added Task 3B so full-release compatibility has a named design, implementation and verification path; DB/OAuth-only capability is an initial stage, not the final release contract. Updated the existing-file map and allocated the proposed control migration after local 0015. These are implementation instructions, not claims that the defects are fixed. The hard-deadline requirement remains inherited and the supervisor remains a pending architectural decision. No product scope, deadline or publication gate is waived.
+
+Preparation validation: `git fetch origin` succeeded and fetched main is already an ancestor of the current branch; no merge or rebase was needed. Relative links in this plan and the handoff resolve, task Modify paths exist, Create paths are absent, and source migration parsing reports the single head `20260908_0015`. `git diff --check` passed. Independent follow-up review confirmed Task 3B/capability/release alignment. This documentation-only preparation did not rerun the application suites, fix source code, migrate a DB or publish an execution prompt.
+
 Independent source review completed on 2026-09-08. Corrected prototype/production task circularity, strict-capability versus legacy compatibility, partial-result count authority, explicit wire diagnostics/types, and per-page cancellation checks. All referenced existing paths were verified; absent paths are marked Create. No production implementation or candidate performance gate is claimed passed.
 
-Follow-up source review used three independent reviewers. The user authorized plan improvements: this revision specifies pre-claim token refresh/fresh context and mid-generation rotation, serialized/coalesced focus controls with terminal cancellation, persisted configuration/cache/concurrency evidence, all-eligible-child export, and explicit inherited UI/excluded-profile release gates. These are documentation amendments, not implemented fixes or approval of the supervisor proposal. The existing resume-preflight record below is preserved. Current remote synchronization could not be verified because hostname resolution failed; no new remote-publication claim is made.
+Follow-up source review used three independent reviewers. The user authorized plan improvements: this revision specifies pre-claim token refresh/fresh context and mid-generation rotation, serialized/coalesced focus controls with terminal cancellation, persisted configuration/cache/concurrency evidence, all-eligible-child export, and explicit inherited UI/excluded-profile release gates. These are documentation amendments, not implemented fixes or approval of the supervisor proposal. The existing resume-preflight record below is preserved. At that earlier review, remote synchronization could not be verified because hostname resolution failed; it made no remote-publication claim.
 
 ## Execution record — 2026-09-08
 
@@ -372,8 +417,10 @@ This is a proposed architectural amendment, not authorization to implement it:
    Use a disposable database and verify zero orphan processes. Keep all existing product,
    authentication, completeness and performance gates intact.
 
-Review this boundary change before continuing dependent integration. Keep the PR base on
-`feature/in-app-load-performance`; retarget/rebase after its merge only with explicit authorization.
+Review this boundary change before continuing dependent integration. The original proposal named
+`feature/in-app-load-performance` as its PR base; that is historical, not a current instruction.
+Revalidate the intended publication base under the root Git contract before any publication;
+this preparation authorizes no retarget, rebase or history rewrite.
 No commit, push, PR, merge or deployment was performed in this execution.
 
 ### Implementation continuation — 2026-09-08
@@ -382,7 +429,7 @@ Current `origin/main` (`dac35171004500bf4b961d46be786c6348bb7b73`) was merged lo
 `feature/issue-137-board-all-work` as `32fd685303a85e6253a40f58e0bb085f35378416`. The five textual
 conflicts retained this branch's later reviewed plan/gate amendments. No remote branch was changed.
 
-Completed independent slices:
+Independent slices recorded at this checkpoint (Task 2/4 correctness claims are superseded by the resume contract above):
 
 - Added the strict Board service and kept the diagnostic path on the same paging/projection core.
   Paging uses `nextPageToken`/`isLast`, incremental shared unique-key budgets, schema-only Epic Link
@@ -400,7 +447,7 @@ Completed independent slices:
   `20260908_0015`. Seeded tests cover legacy rows and up/down/up compatibility. The local application
   database was not migrated; the new source migration head is `20260908_0015`.
 
-Final stable verification after review fixes:
+Historical verification before the latest source review (does not cover the newly reproduced defects):
 
 - Isolated full Python suite: 1,612 tests passed in 131.055s; nine skipped.
 - Pinned Node 20 frontend unit suite: 1,232 passed; zero failed or skipped.
@@ -415,3 +462,27 @@ dedicated PID1-managed supervisor with fresh spawned resources, deferred Board s
 bounded IPC/admission and TERM/KILL/reap proof is a strategic amendment requiring review. Tasks 3,
 5, 6 production activation and 7 remain blocked; no production route, capability, dashboard switch,
 candidate measurement, push, PR, deployment or local DB migration was performed.
+
+### Corrective continuation — 2026-09-08
+
+Completed the reopened Task 2 and Task 4 corrections with red/green tests. The strict service now
+rejects malformed issue-type catalog metadata before selection, maps absent-Board sprint Epics to
+the declared `board-unconfigured` column, and declares configured `board-unmapped` immediately before
+the terminal column. The Board owner inherits the first later valid sprint exactly once while
+preserving explicit All work, an initialized sprint, independent Department state and loaded query
+state. Cross-frame state validation now rejects undeclared Epic columns and column-frame membership
+mismatches. An independent corrective review found no remaining issues after that follow-up fix.
+
+Verification at this checkpoint:
+
+- Focused Python service/measurement/stream suites: 39 passed.
+- Focused Node 20 Board owner/stream suites: 59 passed.
+- Isolated full Python suite: 1,621 passed, nine skipped.
+- Pinned Node 20 frontend unit suite: 1,239 passed, zero failed or skipped.
+- Production frontend build and `git diff --check` passed; generated output remained unchanged.
+
+The runtime architecture review did not approve further production work. It found the proposal still
+lacks a consistent Board security ingress, concrete PID1/process topology, bounded authenticated IPC
+protocol, numeric resource limits, deployment-equivalent test harness, OAuth refresh interruption
+contract, and Basic/JSON identity/config invalidation design. Tasks 1, 3, 3B and dependent Tasks 5–7
+remain at their documented stop points pending an amended design and explicit architectural approval.

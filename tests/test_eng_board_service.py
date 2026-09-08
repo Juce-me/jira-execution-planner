@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.services import eng_board
+from backend.services.eng_board_stream import EngBoardStreamWriter
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -164,6 +165,75 @@ class EngBoardScopeTests(unittest.TestCase):
         self.assertEqual(('11',), eng_board.resolve_issue_type_ids(catalog, ['Task'], key_present=True))
         self.assertEqual(('10', '11'), eng_board.resolve_issue_type_ids(catalog, [], key_present=True))
 
+    def test_issue_type_catalog_rejects_non_object_rows_before_selection(self):
+        catalog = [
+            {'id': '10', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False},
+            None,
+        ]
+        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_field_config_invalid') as raised:
+            eng_board.resolve_issue_type_ids(catalog, [], key_present=True)
+        self.assertEqual('catalog', raised.exception.phase)
+
+    def test_issue_type_catalog_requires_nonblank_identity_and_name(self):
+        valid_story = {'id': '10', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False}
+        for malformed in (
+                {'id': ' ', 'name': 'Bug', 'hierarchyLevel': 0, 'subtask': False},
+                {'id': '11', 'name': ' ', 'hierarchyLevel': 0, 'subtask': False}):
+            with self.subTest(malformed=malformed):
+                with self.assertRaisesRegex(eng_board.EngBoardError, 'board_field_config_invalid') as raised:
+                    eng_board.resolve_issue_type_ids([valid_story, malformed], [], key_present=True)
+                self.assertEqual('catalog', raised.exception.phase)
+
+    def test_issue_type_catalog_requires_string_identity_and_name(self):
+        valid_story = {'id': '10', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False}
+        for malformed in (
+                {'id': 11, 'name': 'Bug', 'hierarchyLevel': 0, 'subtask': False},
+                {'id': '11', 'name': {'value': 'Bug'}, 'hierarchyLevel': 0, 'subtask': False}):
+            with self.subTest(malformed=malformed):
+                with self.assertRaisesRegex(eng_board.EngBoardError, 'board_field_config_invalid') as raised:
+                    eng_board.resolve_issue_type_ids([valid_story, malformed], [], key_present=True)
+                self.assertEqual('catalog', raised.exception.phase)
+
+    def test_issue_type_catalog_requires_integer_non_boolean_hierarchy(self):
+        valid_story = {'id': '10', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False}
+        for hierarchy in (None, False, '0'):
+            malformed = {'id': '11', 'name': 'Bug', 'subtask': False}
+            if hierarchy is not None:
+                malformed['hierarchyLevel'] = hierarchy
+            with self.subTest(hierarchy=hierarchy):
+                with self.assertRaisesRegex(eng_board.EngBoardError, 'board_field_config_invalid') as raised:
+                    eng_board.resolve_issue_type_ids([valid_story, malformed], [], key_present=True)
+                self.assertEqual('catalog', raised.exception.phase)
+
+    def test_issue_type_catalog_requires_boolean_subtask_metadata(self):
+        valid_story = {'id': '10', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False}
+        for subtask in (None, 'false', 0):
+            malformed = {'id': '11', 'name': 'Task', 'hierarchyLevel': 0}
+            if subtask is not None:
+                malformed['subtask'] = subtask
+            with self.subTest(subtask=subtask):
+                with self.assertRaisesRegex(eng_board.EngBoardError, 'board_field_config_invalid') as raised:
+                    eng_board.resolve_issue_type_ids([valid_story, malformed], [], key_present=True)
+                self.assertEqual('catalog', raised.exception.phase)
+
+    def test_issue_type_selection_retains_defaults_explicit_empty_duplicates_and_exclusions(self):
+        catalog = [
+            {'id': '9', 'name': 'Epic', 'hierarchyLevel': 1, 'subtask': False},
+            {'id': '10', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False},
+            {'id': '11', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False},
+            {'id': '12', 'name': 'Task', 'hierarchyLevel': 0, 'subtask': False},
+            {'id': '13', 'name': 'Subtask', 'hierarchyLevel': -1, 'subtask': True},
+        ]
+        self.assertEqual(('10', '11'), eng_board.resolve_issue_type_ids(catalog))
+        self.assertEqual(('10', '11', '12'), eng_board.resolve_issue_type_ids(
+            catalog, [], key_present=True,
+        ))
+        self.assertEqual(('12',), eng_board.resolve_issue_type_ids(
+            catalog, ['Task'], key_present=True,
+        ))
+        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_field_config_invalid'):
+            eng_board.resolve_issue_type_ids(catalog, ['Bug'], key_present=True)
+
 
 class EngBoardPagingTests(unittest.TestCase):
     def test_empty_nonfinal_page_continues_and_callback_sees_only_validated_pages(self):
@@ -254,6 +324,42 @@ class EngBoardProjectionTests(unittest.TestCase):
         self.assertEqual(['P-1'], [row['key'] for row in sprint['epics']])
         self.assertEqual('Task', sprint['epics'][0]['children'][0]['issueType']['name'])
 
+    def test_absent_board_sprint_projection_uses_its_declared_stream_column(self):
+        board = eng_board.normalize_board(None)
+        projection = eng_board.project_board(
+            [issue('P-1'), issue('P-2')], [issue('P-10', parent='P-1')],
+            project_map=(('PROD', 'product'),), columns=board['columns'], require_children=True,
+        )
+        epics = projection['epics']
+        declared_column_ids = {column['id'] for column in board['columns']}
+        self.assertEqual(['P-1'], [epic['key'] for epic in epics])
+        self.assertEqual({'board-unconfigured'}, {epic['columnId'] for epic in epics})
+        self.assertTrue({epic['columnId'] for epic in epics} <= declared_column_ids)
+
+        writer = EngBoardStreamWriter()
+        writer.write({
+            'protocolVersion': 1, 'generationId': 'synthetic-sprint', 'sequence': 0,
+            'type': 'start', 'scope': 'sprint', 'scopeVersion': 'scope-v1',
+            'scopeCohortDigest': 'a' * 64,
+            'columns': [{
+                'id': column['id'], 'name': column['name'], 'color': '#6b7280',
+                'statusNames': list(column['statuses']), 'terminal': False,
+            } for column in board['columns']],
+        })
+        writer.write({
+            'protocolVersion': 1, 'generationId': 'synthetic-sprint', 'sequence': 1,
+            'type': 'index',
+            'epics': [{key: value for key, value in epic.items() if key != 'children'} for epic in epics],
+            'membership': 'authoritative',
+        })
+        writer.write({
+            'protocolVersion': 1, 'generationId': 'synthetic-sprint', 'sequence': 2,
+            'type': 'column', 'columnId': 'board-unconfigured',
+            'epics': [{key: value for key, value in epic.items() if key != 'children'} for epic in epics],
+            'children': [child for epic in epics for child in epic['children']],
+            'authoritative': True,
+        })
+
     def test_unknown_status_is_unmapped_and_epic_link_precedes_parent(self):
         children = [issue('P-10', parent='P-2', epic_link='P-1')]
         result = eng_board.project_board(
@@ -264,6 +370,52 @@ class EngBoardProjectionTests(unittest.TestCase):
         self.assertEqual('board-unmapped', by_key['P-2']['columnId'])
         self.assertEqual(['P-10'], [row['key'] for row in by_key['P-1']['children']])
         self.assertEqual([], by_key['P-2']['children'])
+
+    def test_configured_board_declares_unmapped_before_terminal_in_stream_frames(self):
+        board = eng_board.normalize_board({
+            'columns': [
+                {'id': 'col-00000001', 'name': 'To do', 'statuses': ['To Do'], 'colour': '#597ef7'},
+                {'id': 'col-00000002', 'name': 'Done', 'statuses': ['Done'], 'colour': '#52c41a'},
+            ],
+            'doneEpicRetentionDays': 28,
+        })
+        projection = eng_board.project_board(
+            [issue('P-1', status='Unexpected')], [issue('P-10', parent='P-1')],
+            project_map=(('PROD', 'product'),), columns=board['columns'], require_children=True,
+        )
+        epics = projection['epics']
+        declared_column_ids = [column['id'] for column in board['columns']]
+        self.assertEqual(
+            ['col-00000001', 'board-unmapped', 'col-00000002'], declared_column_ids,
+        )
+        self.assertEqual('board-unmapped', epics[0]['columnId'])
+        self.assertIn(epics[0]['columnId'], declared_column_ids)
+
+        writer = EngBoardStreamWriter()
+        writer.write({
+            'protocolVersion': 1, 'generationId': 'configured-sprint', 'sequence': 0,
+            'type': 'start', 'scope': 'sprint', 'scopeVersion': 'scope-v1',
+            'scopeCohortDigest': 'b' * 64,
+            'columns': [{
+                'id': column['id'], 'name': column['name'],
+                'color': column.get('colour', '#6b7280'),
+                'statusNames': list(column['statuses']),
+                'terminal': index == len(board['columns']) - 1,
+            } for index, column in enumerate(board['columns'])],
+        })
+        writer.write({
+            'protocolVersion': 1, 'generationId': 'configured-sprint', 'sequence': 1,
+            'type': 'index',
+            'epics': [{key: value for key, value in epic.items() if key != 'children'} for epic in epics],
+            'membership': 'authoritative',
+        })
+        writer.write({
+            'protocolVersion': 1, 'generationId': 'configured-sprint', 'sequence': 2,
+            'type': 'column', 'columnId': 'board-unmapped',
+            'epics': [{key: value for key, value in epic.items() if key != 'children'} for epic in epics],
+            'children': [child for epic in epics for child in epic['children']],
+            'authoritative': True,
+        })
 
     def test_projection_retains_closed_wire_identity_and_numeric_fields(self):
         epic = issue('P-1')

@@ -1,6 +1,6 @@
 # ENG Board All work implementation plan — issue #137
 
-> **Status:** Planned, not implemented. Authored from the accepted in-app measurement branch on 2026-09-08. Candidate implementation is gated as specified below; this document does not claim production readiness.
+> **Status:** Execution started on 2026-09-08. Gates now use verified existing DB evidence; independent development may continue while hard termination blocks dependent production integration/activation. Branch `feature/issue-137-board-all-work` starts at approved base `ea587d984013d5926f8dee5df06b543286b8560a`. No production readiness is claimed; the supervisor proposal remains unapproved.
 > **For agentic workers:** Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` task by task. Follow repository instruction chains and the companion [handoff](SUPPORT-eng-board-all-work-handoff.md).
 
 **Goal:** Deliver Board-owned Component-scoped Epic discovery, optional sprint filtering, and focused-column-first complete direct-child loading without changing sibling ENG modes.
@@ -118,7 +118,7 @@ Files: Read existing paths in this plan, `docs/plans/README.md`, support design,
 
 - [ ] Fetch the published base; verify every Modify/Test path exists and mark genuinely new files Create. Preserve active checkout and user changes; no worktree unless requested.
 - [ ] Run full Python baseline with explicit isolated test config, frontend unit suite and build using pinned Node 20. Record failures honestly before changes.
-- [ ] Query the in-app history read-only, grouped by scope/cache/revision/completeness; record sample count and lane issue counts. Preserve the three observations above as historical comparison.
+- [x] Query the in-app history read-only, grouped by scope/cache/revision/completeness; record sample count and lane issue counts. Four observations verified in section 6; preserve the three successful observations above as historical comparison and check for newer rows on resume.
 - [ ] Freeze frame schema and product contract; any proposed change to scope initialization or Basic compatibility is a visible decision, not an inferred override.
 
 ### Task 1 — transport, hard-bound and focus feasibility gate
@@ -194,25 +194,132 @@ Modify: `frontend/src/settings/GroupBoardSettings.jsx`, `frontend/src/settings/T
 Modify this plan, the companion handoff and accepted measurement record with sanitized outcomes; do not add a standalone benchmark requirement.
 
 - [ ] Use normal local app paths with the user's existing auth. Compare same group/sprint/revision/cache class; first run selected-sprint candidate versus legacy sprint, then Component All work. Record unique workload counts, index/first-focused/full timings, requested dependencies, pages/bytes/retries, peak concurrency and completeness.
-- [ ] Gather at least 20 complete successful observations per compared cohort, with errors/cancels/caps reported separately. Twenty is a minimum preliminary percentile sample, not statistical confidence. Include additional existing scopes if available; otherwise explicitly limit generalization and use synthetic tests for unavailable edge profiles.
+- [ ] Count existing eligible candidate DB rows first and collect only the shortfall toward 20 complete successful observations per compared cohort, with errors/cancels/caps reported separately. This is an acceptance target after the candidate exists. Twenty is a minimum preliminary percentile sample, not statistical confidence. Include additional existing scopes if available; otherwise explicitly limit generalization and use synthetic tests for unavailable edge profiles.
 - [ ] Keep 2s useful-content target and <=4s full-load p95 SLO visible. Any full-load p95 breach requires stage evidence and a reviewed remedy before rollout; do not pass based solely on a fast first column or cached average. Selected-sprint regression comparison must use comparable cache/dependency/workload states.
 - [ ] Run full Python suite, frontend units, API/auth/security suites, candidate and existing Board browser tests, build, startup `/api/test` through supported auth, migration checks and diff review. Exercise blocked I/O and cross-worker focus gates against deployment-equivalent server configuration.
 - [ ] Independent reviewer verifies contract, credentials, ownership, request retirement, authority and all gate evidence. Commit atomic slices; push only with user authorization. No merge/deploy from this handoff.
 
 ## 6. Gate disposition and stop points
 
-| Gate | Current result | Required before production integration/rollout |
+### Current DB evidence — checked 2026-09-08
+
+Read-only PostgreSQL queries succeeded after the execution record's earlier aggregation failure. The local DB reports migration version `20260908_0014`, one workspace, one shared group-config row and one shared dashboard-config row. The one saved group has Components, Teams and Board columns. Existing inputs are available; current-user Jira access and candidate scope validation still belong to the signed-in app. No token contents were read.
+
+`load_performance` now contains four observations for one group/sprint and two revisions: the three successful observations in section 1 and a cancelled 5,238ms load on the other revision (first content 2,579ms). All lane completeness values are unknown. Exclude cancellation from success summaries and keep revisions separate. A stored cancellation is not proof that server I/O stopped. The DB baseline-discovery gate is satisfied; candidate completeness, runtime and SLO gates are separate.
+
+On resume, reuse existing rows before collecting more. Query through the configured local DB connection; a sandbox denial requires the normal approval retry, not a missing-data verdict. If aggregation fails, read SQL aggregates directly rather than requiring another campaign. SQL JSON values may already be decoded objects; do not unconditionally call `json.loads` on them. Group internally by workspace/environment/group/sprint/revision/cache/completeness and return only aggregates or session-local aliases, never identities.
+
+Reproducible availability read against the existing local DB:
+
+```sql
+BEGIN READ ONLY;
+SELECT version_num FROM alembic_version;
+SELECT count(*) AS observations,
+       count(DISTINCT group_id) AS groups,
+       count(DISTINCT sprint_id) AS sprints,
+       count(DISTINCT revision) AS revisions
+FROM load_performance;
+SELECT outcome, count(*) FROM load_performance GROUP BY outcome;
+SELECT count(*) FROM workspace_group_configs;
+SELECT count(*) FROM workspace_dashboard_configs;
+ROLLBACK;
+```
+
+Head stamping and row existence do not prove schema parity or a current browser session. Migration up/down tests remain in a disposable DB; never reset the user's local DB, retrieve tokens, or change its auth profile to satisfy a gate.
+
+| Gate | Current evidence | What it blocks and next action |
 | --- | --- | --- |
-| Existing in-app sprint baseline | Three contextual loads collected; user confirms instrumentation works | Keep counts and comparable cohort evidence; no invented complete p95 |
-| Epic-first strict completeness | Unmeasured | Full token paging and production scope matrix tests plus actual candidate app observations |
-| Streaming + live focus + cross-worker | Proposed, not proved | Task 1 held-EOF/auth/byte-bound tests and Task 3 cross-worker control checks |
-| Hard termination deadline | Unsupported by cooperative diagnostic | Measured bounded blocked-I/O termination under chosen runtime; no Task 3 production binding if absent |
-| Basic/JSON parity | Not solved by DB control rows | Explicitly review compatibility before enabling new Board where DB is unavailable; retain existing behavior there until supported, never fall back to Basic inside OAuth |
-| Visible progress and SLO | No candidate data | First focused content before full completion; separate complete-load p95 gate and no hidden spikes |
-| Home write gate | Blocked, unrelated | No Home route or write work in this feature |
+| DB access and sprint baseline discovery | Satisfied: four observations, three success/one cancelled, two revisions | Does not block development. Reuse existing rows; no collection-from-zero requirement |
+| Saved local scope | Available: shared configs and a group with Components, Teams and Board columns | No synthetic Department prerequisite. Validate saved scope and current Jira access through the candidate path |
+| Epic-first strict completeness | Existing sprint rows unknown; no candidate rows | Blocks candidate authority/rollout, not writing the pager. Task 2 strict tests followed by candidate app observations |
+| Streaming + focus + cross-worker | Unproved by existing rows | Parser/auth/core tests can proceed; prototype and cross-worker checks still precede dependent production binding |
+| Hard termination | Existing probe confirms blocked executor survives cancellation | Blocks Task 3 production binding/activation. Continue independent tasks; review runtime remedy separately. DB durations cannot pass this gate |
+| Basic/JSON parity | Non-DB control transport unresolved; local DB is available | Blocks strict Board activation in non-DB deployments only. Preserve/test legacy fallback; no Basic detour for DB/OAuth development |
+| Candidate progress and SLO | Candidate not yet built/measured | Acceptance gate after candidate exists. Reuse DB cohorts, collect missing samples and evaluate first-content/full completion separately |
+| Home write gate | Blocked and unrelated | No issue #137 dependency. Preserve its own status; no Board-driven Home mutation probe |
+
+Task 1's executor limitation probe is recorded evidence, not the next task to repeat. Continue Task 2, the shared parser/held-EOF/auth checks and Task 4's isolated state/measurement tests with synthetic frames while the runtime remedy awaits review. Do not bind/activate production routes before their transport/runtime gates pass. Twenty complete samples per candidate cohort is an acceptance target, never a development-start condition; count existing eligible candidate rows first and collect only the shortfall. Legacy unknown-completeness observations cannot satisfy that count.
 
 An unsupported gate blocks its dependent integration/release task, not plan authorship or independent tests. If the recommended transport needs a strategic change, revise and review this contract before implementation; never silently lower completeness, focus, deadline or auth requirements.
 
 ## Plan review outcome
 
 Independent source review completed on 2026-09-08. Corrected prototype/production task circularity, strict-capability versus legacy compatibility, partial-result count authority, explicit wire diagnostics/types, and per-page cancellation checks. All referenced existing paths were verified; absent paths are marked Create. No production implementation or candidate performance gate is claimed passed.
+
+## Execution record — 2026-09-08
+
+Fetched and verified the approved remote base, then created the requested stacked branch in the
+active checkout. Initial worktree was clean. Upstream instruction template remains 2026-08-29.
+Existing task file paths were checked: absent paths are Create entries or outputs of earlier tasks.
+Migration head remains `20260908_0014`; no migration or application route was added.
+
+Task 0 baseline:
+
+- Explicit isolated environment (`JIRA_AUTH_MODE=basic`, `CONFIG_STORAGE_BACKEND=jsonfile`,
+  empty database URL overrides), `.venv/bin/python -m unittest discover -s tests`:
+  1,576 tests in 78.860s, OK, nine skipped. This test configuration is not an application auth change
+  and does not prove disposable PostgreSQL integration.
+- Node 20.20.0, `npm run test:frontend:unit`: 1,172 passed, zero skipped or failed.
+- Node 20.20.0, `npm run build`: passed; `git diff --exit-code -- frontend/dist` clean.
+- At the initial execution attempt, in-app aggregate history was not successfully collected: local DB access was
+  restricted; the authorized read-only attempt reached a local aggregation TypeError. No new
+  observation or percentile was claimed. Section 6 now supersedes this DB-access blocker with successful read-only evidence; the recorded observations remain contextual.
+- Home write gate remains unrelated and blocked: zero of four required inputs and no approved
+  disposable target. No Home mutation probe ran.
+
+Task 1 partial feasibility result:
+
+`tests/test_eng_board_stream.py` contains an isolated subprocess limitation probe using the real
+`CooperativeBudget` and `ThreadPoolExecutor`. Both wait=True and wait=False executor-shutdown cases
+remain alive through a 300ms observation window after cancellation; a running future cannot cancel.
+The external test harness kills and reaps its own processes. Focused verification:
+`.venv/bin/python -m unittest tests.test_eng_board_stream -v`, one test with two subcases, OK in
+1.299s after adding bounded cancellation-marker handshakes ahead of the liveness window. A passing limitation assertion is **not** a passing hard-deadline gate. The window is an
+observation interval, not a proposed production deadline. No production implementation was written,
+so this probe is not a completed RED/GREEN implementation slice.
+
+Full Python verification after adding the probe used the same isolated command: 1,577 tests in
+93.687s, OK, nine skipped; the subsequent test-only handshake adjustment received focused verification.
+Independent specification and code-quality review approved the limited
+probe scope with no blocker or P1; this review does not approve the proposed runtime architecture.
+
+Source confirms why: `CooperativeBudget.cancel` only sets an Event; the diagnostic child executor
+waits for running searches on context exit. Jira reads, token refresh/row locks, and configuration
+reads can block between checks. Deployment uses eight Gunicorn threads by default; worker timeout
+does not establish a deadline for each request. The existing Scenario fork helper is not a reusable
+solution: it wraps only one source loader and has an unbounded final join.
+
+Held-EOF streaming, frame/total byte limits, cross-worker focus, shared global authentication
+recovery, real blocked auth/DB/Jira operations and deployment shutdown remain unproved. Task 1 is
+incomplete; Tasks 2–7 were not executed. Production Board, shared HTTP, analytics, and generated
+bundles remain unchanged. No candidate measurements, migration checks, browser screenshots or
+authenticated startup result are claimed. This test-only operational gate adds no product event.
+
+### Supervised execution proposal requiring review
+
+This is a proposed architectural amendment, not authorization to implement it:
+
+1. Place a supervisor outside Gunicorn request threads. Spawn execution processes with fresh
+   HTTP/DB resources; do not fork a threaded worker or inherit its pools.
+2. Put every potentially blocking operation within the killable boundary, including initial
+   DB-backed authentication, refresh, configuration capture, control operations and Jira I/O.
+   Wrapping only the Board generator leaves pre-route authentication outside the deadline.
+3. One admitted generation owns one process, its counters and at most two child-search threads.
+   Preserve DB-backed cross-worker focus/cancel controls and bounded nonblocking IPC/backpressure.
+   Keep issue payloads and credentials out of control rows, logs and process arguments.
+4. Start a monotonic budget at admission. The supervisor independently enforces cancellation and
+   expiry with bounded TERM, KILL and reap phases. No unbounded join, DB cleanup or blocking IPC
+   may run on its watchdog path. Select numeric deadlines and byte ceilings from prototype evidence.
+5. Bound admission, reserve capacity for controls, and handle owner disconnect, worker death,
+   supervisor shutdown and stalled readers without orphan execution processes. TTL is cleanup only.
+6. Review interrupted OAuth refresh explicitly: provider rotation followed by a killed pre-commit
+   transaction can require reconnect. Preserve token/version/locking semantics, fail closed and
+   never automatically replay refresh or a failed request.
+7. Before integration, prove real blocked connect/read/refresh/config, held PostgreSQL locks,
+   stalled IPC, two-worker focus, owner death and shutdown under the deployment-equivalent runtime.
+   Use a disposable database and verify zero orphan processes. Keep all existing product,
+   authentication, completeness and performance gates intact.
+
+Review this boundary change before continuing dependent integration. Keep the PR base on
+`feature/in-app-load-performance`; retarget/rebase after its merge only with explicit authorization.
+No commit, push, PR, merge or deployment was performed in this execution.

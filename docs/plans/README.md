@@ -16,7 +16,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 ## Current DB Workflow
 
 - [In-app load performance](DONE-in-app-load-performance.md): implemented, verified and user-accepted; three local contextual sprint observations recorded.
-- [ENG Board All work implementation](EXEC-eng-board-all-work.md): planned from in-app evidence; progressive strict Board loading with transport/deadline/completeness gates. No production implementation yet.
+- [ENG Board All work implementation](EXEC-eng-board-all-work.md): execution started; gates use verified existing DB evidence (four observations and saved Component/Team/Board scope). Independent development may continue; hard termination still blocks dependent production activation and the supervisor proposal awaits review.
 - [All work subagent handoff](SUPPORT-eng-board-all-work-handoff.md): published-base and worker ownership instructions; execute only within the plan gates.
 
 1. `SUPPORT-db-migration-claude-review-workflow.md`

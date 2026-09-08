@@ -343,5 +343,6 @@ When the user corrects your approach, append a one-line rule here before ending 
 - When a request combines an implementation-plan deliverable with evidence-gated execution, resolve whether the gate controls plan authorship or only execution before omitting the plan or asking to override the gate.
 
 - Enable in-app load measurement by default when database storage is configured, preserve an explicit opt-out, and keep empty performance views free of unknown metrics and diagnostic walls of text.
+- Evaluate measurement and scope gates from existing app DB rows before requesting new collection; apply unresolved runtime and release gates only to their dependent tasks, preserving independent development work.
 - Never bypass the section 10 publication transaction gate; validate history, scope, remote head, rendered PR body, and CI as one unit before reporting success (MRT025).
 - Commit a postmortem for active work on the related task branch; do not create a separate postmortem/docs branch unless the operator explicitly requests one.

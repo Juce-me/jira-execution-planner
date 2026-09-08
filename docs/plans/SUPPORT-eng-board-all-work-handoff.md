@@ -1,17 +1,18 @@
 # Issue #137 All work — subagent execution handoff
 
-Status: Prepared, not executed. Published with the implementation plan on `feature/in-app-load-performance`.
+Status: Execution started on `feature/issue-137-board-all-work`. Local gate revision uses verified DB evidence and permits independent development while production runtime gates remain unresolved. The supervisor proposal remains unapproved. Publish and verify these local amendments before distributing the revised handoff.
 
 ## Base and intended outcome
 
 The accepted measurement implementation is commit `fc4d6a4`. The full handoff base is the published branch tip containing this file and [EXEC-eng-board-all-work.md](EXEC-eng-board-all-work.md). Verify both files are fetchable before delegating.
 
-Recommended integration: PR the measurement branch into main, resolve its divergence through the normal review flow, then branch `feature/issue-137-board-all-work` from updated main. Do not implement on main. Before merge, a stacked feature branch may start from the published measurement branch if explicitly chosen; keep its PR base on the measurement branch until merge. Never reset or discard the active checkout to switch branches. No push/merge/deploy authorization is inherited from this reusable prompt.
+Resume the existing `feature/issue-137-board-all-work` branch, created from `ea587d984013d5926f8dee5df06b543286b8560a`. Do not recreate it or switch to main. Check PR #172's current state before choosing a future PR base; a merged measurement branch does not require restarting implementation. Preserve local work and avoid history rewrites. No push/merge/deploy authorization is inherited from this reusable prompt.
 
 ## Copyable orchestrator prompt
 
 ```text
-Implement issue #137, ENG Board All work, using docs/plans/EXEC-eng-board-all-work.md.
+Resume issue #137, ENG Board All work, on feature/issue-137-board-all-work using
+docs/plans/EXEC-eng-board-all-work.md and its revised DB evidence/gate table.
 Use superpowers:subagent-driven-development. Treat this as a gated implementation contract,
 not permission to skip prototype, runtime, completeness or SLO evidence.
 
@@ -19,22 +20,31 @@ not permission to skip prototype, runtime, completeness or SLO evidence.
    backend/security/CONFIGURATION_OWNERSHIP.md, the complete implementation plan,
    SUPPORT-eng-board-optional-sprint-design.md and MRT004/MRT010/MRT023/MRT026.
    Inspect every referenced existing symbol. Verify the actual file map and migration head.
-2. Verify that the measurement commit and both All work documents exist in the checked-out
-   published base. If the measurement branch has merged, use updated main only to create
-   feature/issue-137-board-all-work; do not implement on main. Otherwise use an explicitly
-   selected stacked branch. Keep user changes and the active checkout; no new worktree by default.
-3. Run Task 0 baseline. The three recorded sprint observations are contextual and completeness
-   is unknown. Query newer in-app measurements read-only. Never fabricate a p95 or substitute
-   a standalone collector, capped legacy All work request, or different auth profile.
+2. Verify the measurement commit and the latest revised All work documents in the current
+   branch. Before remote delegation, verify those exact revisions are committed, pushed and
+   fetchable; the old measurement ref alone does not contain these gate amendments.
+   Keep the existing branch and user changes; no new worktree or branch recreation.
+3. Read the plan's Current DB evidence and gate table before declaring work blocked.
+   DB discovery is satisfied: four observations (three success, one cancelled), two revisions,
+   and a saved group with Components, Teams and Board columns. Query existing load_performance
+   rows and shared-config metadata read-only; reuse evidence and collect only missing samples.
+   Preserve revision/cache/completeness cohorts; unknown legacy rows cannot pass candidate SLO.
+   Handle already-decoded SQL JSON without double decoding. Never substitute a standalone
+   collector or another auth profile, and never fabricate percentile or completeness claims.
 4. Delegate only bounded independent work using the ownership map below. Share exact typed
    contracts first. The orchestrator owns integration files and serializes changes to them.
+   Start strict core/config work and isolated stream/parser/auth tests independently. Once
+   the frame contract is frozen, start isolated Board state and measurement tests. Assign
+   runtime-remedy review separately; a blocked runtime subtask does not stop these workers.
 5. For every slice: failing behavior test, minimal implementation, focused green checks,
    independent specification review then code review. Resolve material findings before the
    next dependent slice. Record outcome and evidence in the plan.
-6. Task 1 must prove visible streaming, cross-worker queued-focus control, finite frame memory,
-   global auth lock and bounded blocked-I/O termination before production integration.
-   Cooperative cancellation is not a hard deadline. If proof fails, report the actual failure
-   and propose the bounded-runtime remedy; do not wire or enable a production shortcut.
+6. Apply each gate to its dependent task. Continue Task 2, isolated parser/stream/auth checks
+   and Task 4's state/measurement tests while the runtime remedy is reviewed. Do not repeat
+   the executor limitation probe as a global prerequisite. Transport/focus/memory/auth/runtime
+   checks still precede dependent production binding. DB latency rows cannot prove termination;
+   the supervisor proposal remains unapproved. Twenty complete candidate samples per cohort
+   is an acceptance target after the candidate exists, not a gate before development.
 7. Follow Tasks 2–6 only as their gates allow. Reuse the strict pager/query core; no duplicated
    query implementation. At most two child searches, strict nextPageToken/isLast pagination,
    provisional display separate from authority. Retire the legacy request family only under
@@ -45,7 +55,8 @@ not permission to skip prototype, runtime, completeness or SLO evidence.
 9. Preserve current-user OAuth, workspace/shared-group ownership, CSRF and existing Jira write
    routes. No Home/Townsquare, service credential fallback, new Jira mutation, issue manifests,
    raw issue data in diagnostics, automatic replay, or partial-success completeness claims.
-10. Use the app to gather candidate selected-sprint and All work timings separately. Record
+10. Query existing candidate DB rows first, then use the app to gather only missing comparable
+    selected-sprint and All work timings once the candidate is available. Record
     index, first focused content, full completion, dependencies, unique issues/Epics, pages,
     bytes, retries and cache state. Keep 2s useful-content target and 4s full-load p95 SLO
     distinct. A quick first column does not pass a slow full load.

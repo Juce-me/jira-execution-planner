@@ -274,10 +274,6 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
             if stream is not None and not stream.closed:
                 stream.close()
         try:
-            (self.lock_dir / "runner.pid").unlink()
-        except FileNotFoundError:
-            pass
-        try:
             self.lock_dir.rmdir()
         except FileNotFoundError:
             pass
@@ -615,7 +611,7 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         self.assertNotIn(" down --timeout 10", self._log_text())
         self._assert_lock_released()
 
-    def test_second_runner_stops_first_then_starts(self):
+    def test_second_checkout_with_different_tmpdir_cannot_mutate(self):
         first_log = self.log.parent / "first.log"
         first_env = self.env.copy()
         first_env.update({
@@ -639,76 +635,14 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
                 TMPDIR=self.log.parent / "tmp-two",
             )
             second_output = second_log.read_text(encoding="utf8")
-            _, first_stderr = first.communicate(timeout=8)
-            self.assertEqual(first.returncode, 143, first_stderr)
-            self.assertEqual(second.returncode, 0, second.stderr)
-            self.assertIn("replacing runner", second.stderr)
-            self.assertIn(" up --detach --wait", second_output)
-            self._assert_down_once(second_output)
+            self.assertNotEqual(second.returncode, 0)
+            self.assertIn("another runner is active", second.stderr)
+            self.assertNotIn(" up --detach --wait", second_output)
+            self.assertNotIn(" down --timeout 10", second_output)
+
+            first.send_signal(signal.SIGTERM)
+            first.communicate(timeout=8)
             self._assert_down_once(first_log.read_text(encoding="utf8"))
-            self._assert_lock_released()
-        finally:
-            self._cleanup_process(first)
-
-    def test_malformed_pid_lock_is_reclaimed(self):
-        self.lock_dir.mkdir()
-        (self.lock_dir / "runner.pid").write_text("not-a-pid\n", encoding="utf8")
-
-        result = self._run()
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("reclaiming stale runner lock", result.stderr)
-        self.assertIn(" up --detach --wait", self._log_text())
-        self._assert_lock_released()
-
-    def test_live_unrelated_pid_is_not_signalled_when_lock_is_reclaimed(self):
-        unrelated = subprocess.Popen(["sleep", "30"])
-        self.addCleanup(self._cleanup_process, unrelated)
-        self.lock_dir.mkdir()
-        (self.lock_dir / "runner.pid").write_text(
-            f"{unrelated.pid}\n", encoding="utf8",
-        )
-        try:
-            result = self._run()
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("reclaiming stale runner lock", result.stderr)
-            self.assertIsNone(unrelated.poll())
-            self._assert_lock_released()
-        finally:
-            self._cleanup_process(unrelated)
-
-    def test_replacement_escalates_when_first_runner_cannot_handle_term(self):
-        first_log = self.log.parent / "stopped-first.log"
-        first_env = self.env.copy()
-        first_env.update({
-            "RUNNER_LOG": str(first_log),
-            "FAKE_APP_SLEEP": "1",
-        })
-        first = self._start_process(env=first_env)
-        try:
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline:
-                if (
-                    self.lock_dir.exists()
-                    and first_log.exists()
-                    and "jira_server.py" in first_log.read_text(encoding="utf8")
-                ):
-                    break
-                time.sleep(0.05)
-            else:
-                self.fail("first runner did not acquire the lock")
-            (self.lock_dir / "runner.pid").write_text(
-                f"{first.pid}\n", encoding="utf8",
-            )
-            first.send_signal(signal.SIGSTOP)
-
-            result = self._run()
-            _, first_stderr = first.communicate(timeout=8)
-
-            self.assertEqual(first.returncode, -signal.SIGKILL, first_stderr)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("did not stop; sending KILL", result.stderr)
             self._assert_lock_released()
         finally:
             self._cleanup_process(first)

@@ -41,7 +41,7 @@ Postmortems serve to:
 | [MRT022](./MRT022-agent-branded-branch-names.md) | Agent-Branded Branch Names Ignored Git Conventions | 2026-07-08 | Low | Resolved | Sessions repeatedly started on auto-generated `claude/*` branches despite AGENTS.md forbidding tool branding and requiring typed branch prefixes; fixed with a session-start rename rule in AGENTS.md section 11 |
 | [MRT023](./MRT023-alert-enrichment-blocked-first-screen.md) | Alert Enrichment Blocked the First Screen | 2026-08-08 | High | Resolved | Alert-only Epic distribution work consumed 10.367 seconds on the primary ENG task response and alert sources ran outside Catch Up |
 | [MRT024](./MRT024-head-stamped-schema-drift.md) | Head-Stamped Schema Drift | 2026-09-02 | High | Resolved | Alembic reported head while a preserved local PostgreSQL volume had duplicate onboarding columns and missing auth/capacity schema objects |
-| [MRT025](./MRT025-issue-137-delivery-scope-deviation.md) | Issue 137 Delivery Scope Deviation | 2026-09-07 | High | In Progress | The delivery substituted an auth workflow, conflated blocked execution with plan authorship, and failed to produce the expected gated implementation plan |
+| [MRT025](./MRT025-issue-137-delivery-scope-deviation.md) | Issue 137 Delivery Scope Deviation | 2026-09-07 | High | In Progress | Recovery now includes accepted in-app measurements and a reviewed gated implementation plan; planning acceptance remains pending |
 
 ## Postmortem Template
 

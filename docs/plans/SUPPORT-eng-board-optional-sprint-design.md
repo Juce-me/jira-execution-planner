@@ -1,5 +1,8 @@
 # ENG Board Optional Sprint And Component Scope Design
 
+> **Current direction (2026-09-08):** The [All work implementation plan](EXEC-eng-board-all-work.md) now defines the proposed transport and gated tasks from real in-app sprint evidence. Its gates control dependent implementation/rollout, not plan authorship. Historical instructions below requiring the standalone campaign before writing a plan are superseded; settled product semantics remain in force.
+
+
 > **Status:** Reviewed support design updated on 2026-09-07. Diagnostic Tasks 0–5 are implemented
 > and verified; Task 6 authenticated preflight is blocked by the saved workspace scope. A separate
 > Basic-mode existing-endpoint collector run now provides capped contextual aggregates only; no

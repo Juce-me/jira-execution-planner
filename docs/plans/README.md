@@ -15,7 +15,9 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current DB Workflow
 
-- [In-app load performance](DONE-in-app-load-performance.md): implemented and user-accepted issue #137 baseline instrumentation. Real app sprint measurements replace the separate collector as the next evidence path; the Component All work plan follows observed local data.
+- [In-app load performance](DONE-in-app-load-performance.md): implemented, verified and user-accepted; three local contextual sprint observations recorded.
+- [ENG Board All work implementation](EXEC-eng-board-all-work.md): planned from in-app evidence; progressive strict Board loading with transport/deadline/completeness gates. No production implementation yet.
+- [All work subagent handoff](SUPPORT-eng-board-all-work-handoff.md): published-base and worker ownership instructions; execute only within the plan gates.
 
 1. `SUPPORT-db-migration-claude-review-workflow.md`
    - Use first for external review or handoff.

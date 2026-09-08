@@ -143,8 +143,8 @@ The failed delivery is contained but not yet recovered:
 - [x] Remove temporary cookie and identifier material created during the authentication detour.
 - [x] Add a durable rule to use the user-specified authentication profile.
 - [x] Add a durable rule separating plan authorship from evidence-gated execution.
-- [ ] Confirm the exact recovery scope before modifying the issue #137 plans again.
-- [ ] Produce the expected reviewed, gated issue #137 implementation plan when recovery is authorized.
+- [x] Confirm the exact recovery scope before modifying the issue #137 plans again.
+- [x] Produce the expected reviewed, gated issue #137 implementation plan when recovery is authorized.
 - [ ] Keep every unsupported gate as an explicit execution blocker; do not implement production Board
   behavior until its required evidence is valid.
 - [ ] Mark this postmortem Resolved only after the corrected planning deliverable is accepted.
@@ -175,3 +175,7 @@ The failed delivery is contained but not yet recovered:
 - `docs/plans/README.md`
 - `scripts/gather_eng_board_endpoint_data.py`
 - Root `AGENTS.md`, sections 8 and 11
+
+## Recovery update — 2026-09-08
+
+The user accepted in-app collection and explicitly requested the All work plan and subagent handoff. Measurement implementation `fc4d6a4` is published on the feature branch. Three sanitized local DB observations informed `../plans/EXEC-eng-board-all-work.md`; `../plans/SUPPORT-eng-board-all-work-handoff.md` provides the bounded execution prompt. Independent review corrected contract/gate issues before publication. Production implementation remains unexecuted, with deadline/transport/completeness/SLO gates explicitly retained. Status remains In Progress pending acceptance of this corrected planning deliverable.

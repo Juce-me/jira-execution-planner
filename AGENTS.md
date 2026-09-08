@@ -330,5 +330,18 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Catch Up onboarding must never require cross-surface activation; keep Next enabled, let Next open field previews, and advance exactly once from the preview surface, a preview choice, the same field, or Next without mutating Jira.
 - When a persisted shared mapping is complete but unverified, Settings must expose it as an unsaved re-verification state and call the owning verification endpoint even when its visible values are unchanged.
 - When head-stamped migration drift affects multiple objects, stop piecemeal repairs: collect a schema-only inventory, diff it against a clean current head, reconcile the complete gap set in one forward revision, and verify exact schema parity plus affected ORM contracts.
+- For missing-configuration guidance, prefer concise explanatory copy; do not add automatic Settings navigation, focus, or highlight animation unless the user explicitly confirms those interactions.
+- In ENG Board, keep the Teams selector visible and disabled rather than hiding it; Board scope must not use the private Team selection.
+- In ENG Board, Project Track/Delivery track is an Epic property; never derive it from child issues or conflate it with the child-derived Product/Tech Projects facet.
+- In ENG, Product/Tech is a Jira-project classification inherited by issues through their Jira project; never derive it from issue type.
+- In ENG Board data loading, separate Product and Tech Jira requests are acceptable; optimize completeness, pagination, and progressive rendering before combining them.
+- ENG Board data must come from a Board-owned Epic-first pipeline with complete paginated child hydration; when Components are absent, index bounded Epics from configured Jira projects before applying selected sprint plus all saved Department Teams, and never use Catch Up data as the Board source of truth.
+- In ENG Board progressive loading, render columns and Epic cards first, update visibly provisional Story counts and status distribution as pages arrive, and unlock child-derived filters and export only after every child page completes.
+- When reviewing a dirty implementation plan against origin, treat origin's recorded findings as baseline requirements and report whether the local changes close them; do not report those baseline findings as newly introduced regressions.
+- For issue #137 live diagnostics, gather contextual data through the Python existing-endpoint collector; do not require users to create a synthetic Team-fallback-only Department to make the browser campaign runnable.
+- For issue #137 contextual collector exercises, use the user-specified auth-mode environment profile; do not substitute a browser OAuth session unless the user requests it.
+- When a request combines an implementation-plan deliverable with evidence-gated execution, resolve whether the gate controls plan authorship or only execution before omitting the plan or asking to override the gate.
+
+- Enable in-app load measurement by default when database storage is configured, preserve an explicit opt-out, and keep empty performance views free of unknown metrics and diagnostic walls of text.
 - Never bypass the section 10 publication transaction gate; validate history, scope, remote head, rendered PR body, and CI as one unit before reporting success (MRT025).
 - Commit a postmortem for active work on the related task branch; do not create a separate postmortem/docs branch unless the operator explicitly requests one.

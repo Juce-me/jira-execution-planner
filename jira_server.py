@@ -29,6 +29,7 @@ import io
 from requests import Session
 from sqlalchemy.exc import OperationalError
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+from backend.services.request_performance import measure_task_load, mark_task_cache_hit, submit_with_performance
 from backend.epm import config as epm_config
 from backend.epm import home as epm_home
 from backend.epm import aggregate as epm_aggregate
@@ -531,15 +532,17 @@ def oauth_session_data_for_auth_context(context):
     return _LOCAL_OAUTH_STORE.session_data_for_id(session_id)
 
 
-def db_oauth_session_data_for_auth_context(context):
+def db_oauth_session_data_for_auth_context(context, *, diagnostic_transport=None):
     with session_scope() as db_session:
         try:
+            if diagnostic_transport is not None: diagnostic_transport.budget.check('auth')
             return db_oauth_session_data(
                 db_session,
                 context,
                 config=current_auth_config(),
                 key_provider=key_provider_from_env(),
-                http_post=HTTP_SESSION.post,
+                http_post=HTTP_SESSION.post, cooperative_budget=diagnostic_transport.budget if diagnostic_transport else None,
+                diagnostic_observer=diagnostic_transport.observer if diagnostic_transport else None,
             )
         except AuthError as error:
             if error.code == 'auth_connection_revoked':
@@ -559,8 +562,9 @@ def oauth_refresh_lock_for_auth_context(context):
     return _LOCAL_OAUTH_STORE.refresh_lock_for_id(session_id)
 
 
-def current_jira_session_data(context=None):
+def current_jira_session_data(context=None, *, diagnostic_transport=None):
     if context is not None and JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
+        if is_db_auth_context(context): return db_oauth_session_data_for_auth_context(context, diagnostic_transport=diagnostic_transport)
         return oauth_session_data_for_auth_context(context)
     return jira_session_data()
 
@@ -661,14 +665,14 @@ def current_jira_auth_context(context=None):
     return current_request_auth_context()
 
 
-def current_oauth_session_callbacks(context=None):
+def current_oauth_session_callbacks(context=None, *, diagnostic_transport=None):
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return {}
     if context is not None:
         if is_db_auth_context(context):
             return {
                 'save_session': lambda data: None,
-                'reload_session': lambda: current_jira_session_data(context),
+                'reload_session': lambda: current_jira_session_data(context, diagnostic_transport=diagnostic_transport),
                 'refresh_lock': nullcontext(),
             }
         return {
@@ -685,20 +689,19 @@ def current_oauth_session_callbacks(context=None):
     }
 
 
-def current_jira_get(path, *, params=None, timeout=30, context=None):
+def current_jira_get(path, *, params=None, timeout=30, context=None, diagnostic_transport=None):
+    if diagnostic_transport is None: diagnostic_transport = __import__('backend.services.eng_board_measurement_runtime', fromlist=['current_diagnostic_transport']).current_diagnostic_transport()
     explicit_context = context is not None
     auth_context = current_jira_auth_context(context)
     session_context = auth_context if explicit_context or is_db_auth_context(auth_context) else None
-    session_data = current_jira_session_data(session_context)
-    session_callbacks = current_oauth_session_callbacks(session_context)
+    session_data = current_jira_session_data(session_context, diagnostic_transport=diagnostic_transport)
+    session_callbacks = current_oauth_session_callbacks(session_context, diagnostic_transport=diagnostic_transport)
 
     def request_get(url, **kwargs):
-        return resilient_jira_get(
-            url,
-            session=HTTP_SESSION,
-            breaker=JIRA_SEARCH_CIRCUIT_BREAKER,
-            **kwargs,
-        )
+        if diagnostic_transport is not None:
+            kind = 'search' if str(path).endswith('/search/jql') else 'catalog'
+            return _jira_client.resilient_jira_get(url, session=HTTP_SESSION, diagnostic_kind=kind, **diagnostic_transport.resilient_kwargs(), **kwargs)
+        return resilient_jira_get(url, session=HTTP_SESSION, breaker=JIRA_SEARCH_CIRCUIT_BREAKER, **kwargs)
 
     return jira_get(
         current_auth_config(),
@@ -708,17 +711,14 @@ def current_jira_get(path, *, params=None, timeout=30, context=None):
         http_get=request_get,
         params=params,
         timeout=timeout,
+        cooperative_budget=diagnostic_transport.budget if diagnostic_transport else None, diagnostic_observer=diagnostic_transport.observer if diagnostic_transport else None,
         **session_callbacks,
     )
 
 
-def current_jira_search(payload, *, context=None, timeout=30):
-    return current_jira_get(
-        '/rest/api/3/search/jql',
-        params=_jira_client.build_jira_search_params(payload),
-        timeout=timeout,
-        context=context,
-    )
+def current_jira_search(payload, *, context=None, timeout=30, diagnostic_transport=None):
+    return current_jira_get('/rest/api/3/search/jql', params=_jira_client.build_jira_search_params(payload),
+                            timeout=timeout, context=context, diagnostic_transport=diagnostic_transport)
 
 
 def current_jira_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
@@ -3204,6 +3204,7 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
     return distribution
 
 
+@measure_task_load
 def fetch_tasks(include_team_name=False):
     """Fetch tasks from Jira API."""
     try:
@@ -3236,6 +3237,7 @@ def fetch_tasks(include_team_name=False):
         )
         record_timing('parse_params', parse_started)
         auth_context = current_request_auth_context()
+        measurement_campaign = getattr(g, 'measurement_campaign', None)
         if project_filter in ('product', 'tech'):
             denied_response, denied_status = project_access_denied_response(auth_context, project_filter)
             if denied_response is not None:
@@ -3247,11 +3249,15 @@ def fetch_tasks(include_team_name=False):
             with _cache_lock:
                 cached_entry = TASKS_CACHE.get(cache_key)
         if cache_enabled and not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
+            mark_task_cache_hit(cached_entry.get('completeness', 'unknown'))
             cached_response = jsonify(cached_entry.get('data') or {})
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             cached_response.headers['Pragma'] = 'no-cache'
             cached_response.headers['Expires'] = '0'
             cached_response.headers['Server-Timing'] = 'cache;dur=1'
+            if measurement_campaign is not None:
+                from backend.routes.dev_routes import publish_tagged_legacy
+                return publish_tagged_legacy(measurement_campaign, g.measurement_step, g.measurement_lane, auth_context, lambda: cached_response)
             return cached_response
 
         auth_started = time.perf_counter()
@@ -3499,8 +3505,8 @@ def fetch_tasks(include_team_name=False):
                 epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
-                    future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                    future_epics_in_scope = pool.submit(fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
+                    future_epic_details = submit_with_performance(pool, fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
+                    future_epics_in_scope = submit_with_performance(pool, fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
                     epic_details = future_epic_details.result()
                     epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)
@@ -3520,10 +3526,10 @@ def fetch_tasks(include_team_name=False):
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     future_epic_story_counts = (
-                        pool.submit(fetch_story_counts_for_epics, epic_scope_keys, headers, epic_link_field)
+                        submit_with_performance(pool, fetch_story_counts_for_epics, epic_scope_keys, headers, epic_link_field)
                         if epic_link_field else None
                     )
-                    future_epic_story_distribution = pool.submit(
+                    future_epic_story_distribution = submit_with_performance(pool,
                         fetch_story_distribution_for_epics, epic_scope_keys, headers, epic_link_field, sprint, team_field_id=team_field_id
                     )
                     epic_story_counts = future_epic_story_counts.result() if future_epic_story_counts else None
@@ -3610,28 +3616,25 @@ def fetch_tasks(include_team_name=False):
             f'project={project_filter or "all"} issues={len(slim_issues)} epics={len(epics_in_scope)} '
             f'timings_ms={timings_ms}'
         )
-        if cache_enabled:
-            cache_store_started = time.perf_counter()
-            with _cache_lock:
-                TASKS_CACHE[cache_key] = {
-                    'timestamp': time.time(),
-                    'data': data
-                }
-            record_timing('cache_store', cache_store_started)
-
-        success_response = jsonify(data)
-        success_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        success_response.headers['Pragma'] = 'no-cache'
-        success_response.headers['Expires'] = '0'
-        server_timing_parts = []
-        for key in ('jira_search', 'normalize_tasks', 'epic_enrichment', 'epic_counts_distribution', 'build_response'):
-            value = timings_ms.get(key)
-            if value is not None:
-                token = key.replace('_', '-')
-                server_timing_parts.append(f'{token};dur={value}')
-        if server_timing_parts:
-            success_response.headers['Server-Timing'] = ', '.join(server_timing_parts)
-        return success_response
+        def publish_result():
+            if cache_enabled:
+                cache_store_started = time.perf_counter()
+                with _cache_lock:
+                    TASKS_CACHE[cache_key] = {'timestamp': time.time(), 'data': {key: value for key, value in data.items() if key != 'debugTimingsMs'}, 'completeness': 'capped' if len(slim_issues) >= max_results else 'unknown'}
+                record_timing('cache_store', cache_store_started)
+            response = jsonify(data)
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            tokens = [f'{key.replace("_", "-")};dur={timings_ms[key]}' for key in
+                      ('jira_search', 'normalize_tasks', 'epic_enrichment', 'epic_counts_distribution', 'build_response')
+                      if key in timings_ms]
+            if tokens: response.headers['Server-Timing'] = ', '.join(tokens)
+            return response
+        if measurement_campaign is not None:
+            from backend.routes.dev_routes import publish_tagged_legacy
+            return publish_tagged_legacy(measurement_campaign, g.measurement_step, g.measurement_lane, auth_context, publish_result)
+        return publish_result()
 
     except AuthError as error:
         if error.code == "auth_required":

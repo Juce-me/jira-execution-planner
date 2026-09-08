@@ -6,12 +6,9 @@ const path = require('node:path');
 const sourcePath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
 const hookSource = fs.readFileSync(sourcePath, 'utf8');
 
-function loadUseEngSprintData(fetchEngTasks, refreshAuthSession = async () => ({ ok: false, status: 401, json: async () => ({}) })) {
+function loadUseEngSprintData(fetchEngTasks, refreshAuthSession = async () => ({ ok: false, status: 401, json: async () => ({}) }), overrides = {}) {
     const source = fs.readFileSync(sourcePath, 'utf8')
-        .replace(/import\s+\{[\s\S]*?\}\s+from\s+'..\/api\/engApi\.js';\n/, '')
-        .replace(/import\s+\{[\s\S]*?\}\s+from\s+'..\/api\/authApi\.js';\n/, '')
-        .replace(/import\s+\{[\s\S]*?\}\s+from\s+'..\/api\/authRequired\.js';\n/, '')
-        .replace(/import\s+\{[\s\S]*?\}\s+from\s+'.\/engTaskUtils\.js';\n/, '')
+        .replace(/^import\s+[^;]+;\s*$/gm, '')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
 
@@ -25,6 +22,7 @@ function loadUseEngSprintData(fetchEngTasks, refreshAuthSession = async () => ({
         filterEpicsInScopeForTeamSet: (epics) => epics,
         filterTasksForTeamSet: (tasks) => tasks,
         sortTasksByPriority: (tasks) => tasks,
+        ...overrides,
     };
 
     return new Function(
@@ -40,8 +38,10 @@ function createHarness(fetchEngTasks, {
     lastLoadedSprintRef = { current: '' },
     loadedProductTasks = [],
     loadedTechTasks = [],
+    performanceDebugEnabled = false,
+    measurementDependencies = {},
 } = {}) {
-    const { useEngSprintData } = loadUseEngSprintData(fetchEngTasks, refreshAuthSession);
+    const { useEngSprintData } = loadUseEngSprintData(fetchEngTasks, refreshAuthSession, measurementDependencies);
     const errors = [];
     const controller = { signal: { aborted: false } };
     const noop = () => {};
@@ -49,8 +49,9 @@ function createHarness(fetchEngTasks, {
     const api = useEngSprintData({
         backendUrl: 'http://localhost:5050',
         selectedSprint: '2026Q1',
-        activeGroupId: '',
-        activeGroupTeamIds: [],
+        activeGroupId: performanceDebugEnabled ? 'sample-group' : '',
+        activeGroupTeamIds: performanceDebugEnabled ? ['sample-team'] : [],
+        performanceDebugEnabled,
         activeGroupTeamSet: new Set(),
         pageLoadRefreshRef: { current: false },
         sprintLoadRef,
@@ -309,3 +310,53 @@ for (const project of ['product', 'tech']) {
         assert.deepEqual(mutations, []);
     });
 }
+
+test('debug group hook measures both ordinary lanes once and waits for dependencies and paint', async () => {
+    const { createGroupLoadMeasurement, laneMetrics } = await import('../frontend/src/eng/loadPerformance.js');
+    const observations = [];
+    const pending = {};
+    const calls = [];
+    const paints = [];
+    const { api } = createHarness((_url, options) => {
+        calls.push(options);
+        if (options.purpose === 'alerts') return Promise.resolve(new Response(JSON.stringify({ issues: [] })));
+        return new Promise(resolve => { pending[options.project] = resolve; });
+    }, {
+        performanceDebugEnabled: true,
+        measurementDependencies: {
+            laneMetrics,
+            createGroupLoadMeasurement: options => createGroupLoadMeasurement({ ...options,
+                afterPaint: () => new Promise(resolve => { paints.push(resolve); }),
+            }),
+            recordPerformanceLoad: async (_url, sample) => observations.push(sample),
+        },
+    });
+    const load = api.loadGroupTasks({ waitForDependencies: true });
+    assert.equal(load.primaryReady, false, 'the old dashboard render must not begin dependencies');
+    assert.deepEqual(calls.map(call => [call.project, call.debugTimings]), [['product', true], ['tech', true]]);
+    for (const project of ['product', 'tech']) pending[project](new Response(JSON.stringify({
+        issues: [{ key: `${project}-1`, fields: { issuetype: { name: 'Story' } } }],
+        epics: {}, epicsInScope: [], loadMetrics: { completeness: 'unknown', cacheState: 'miss' },
+    })));
+    assert.deepEqual(await Promise.all([load.product, load.tech]), ['applied', 'applied']);
+    assert.equal(load.primaryReady, true);
+    assert.equal(observations.length, 0);
+    assert.equal(paints.length, 1, 'first lane paint is observed independently');
+    paints.shift()();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(observations.length, 0, 'first lane paint cannot finish the group');
+    load.dependenciesFinished('applied', 125);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(observations.length, 0, 'render boundary must also complete');
+    assert.equal(paints.length, 1, 'group paint is scheduled after dependencies');
+    paints.shift()();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(observations.length, 1);
+    assert.equal(observations[0].dependencyDurationMs, 125);
+    assert.deepEqual(observations[0].lanes.map(lane => [lane.project, lane.issueCount, lane.storyCount]), [['product', 1, 1], ['tech', 1, 1]]);
+    await api.loadAlertEpics();
+    assert.deepEqual(calls.slice(2).map(call => [call.purpose, call.debugTimings]), [['alerts', false], ['alerts', false]]);
+    assert.equal(observations.length, 1, 'lazy alert loads must not emit group observations');
+    load.cancel();
+    assert.equal(observations.length, 1, 'completed measurements are terminal');
+});

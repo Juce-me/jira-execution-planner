@@ -221,11 +221,14 @@ def is_oauth_token_expired(session_data):
     return expires_at <= int(time.time()) + TOKEN_EXPIRY_BUFFER_SECONDS
 
 
-def refresh_oauth_token(config, session_data, http_post=requests.post):
+def refresh_oauth_token(config, session_data, http_post=requests.post, *, cooperative_budget=None, diagnostic_observer=None):
     refresh_token = (session_data or {}).get("refresh_token")
     if not refresh_token:
         raise AuthError("auth_required", "Atlassian authentication is required.")
-    token_data = request_oauth_refresh_token(config, refresh_token, http_post=http_post)
+    token_data = request_oauth_refresh_token(
+        config, refresh_token, http_post=http_post,
+        cooperative_budget=cooperative_budget, diagnostic_observer=diagnostic_observer,
+    )
     expires_in = _usable_expires_in(token_data.get("expires_in"))
     if not token_data.get("access_token") or expires_in is None:
         raise AuthError("auth_required", "Atlassian authentication is required.")
@@ -241,23 +244,46 @@ def refresh_oauth_token(config, session_data, http_post=requests.post):
     return merged
 
 
-def request_oauth_refresh_token(config, refresh_token, http_post=requests.post):
+def request_oauth_refresh_token(config, refresh_token, http_post=requests.post, *,
+                                cooperative_budget=None, diagnostic_observer=None):
     payload = {
         "grant_type": "refresh_token",
         "client_id": config.client_id,
         "client_secret": config.client_secret,
         "refresh_token": refresh_token,
     }
+    response = None
     try:
+        timeout = 20
+        if cooperative_budget is not None:
+            remaining = cooperative_budget.remaining('auth')
+            timeout = (min(5.0, remaining), min(20.0, remaining))
+            diagnostic_observer.add('oauthRefreshCount')
+            diagnostic_observer.add('oauthAttemptCount')
         response = http_post(
             ATLASSIAN_TOKEN_URL,
             json=payload,
             headers={"Accept": "application/json", "Content-Type": "application/json"},
-            timeout=20,
+            timeout=timeout,
+            **({'stream': True} if cooperative_budget is not None else {}),
         )
+        if cooperative_budget is not None:
+            chunks = []
+            for chunk in response.iter_content(chunk_size=65536):
+                cooperative_budget.check('auth')
+                if chunk:
+                    chunks.append(chunk)
+            response._content = b''.join(chunks)
+            response._content_consumed = True
+            cooperative_budget.check('auth')
     except requests.RequestException as exc:
         raise AuthError("auth_required", "Atlassian authentication is required.") from exc
+    finally:
+        if cooperative_budget is not None and response is not None:
+            response.close()
     if response.status_code != 200:
+        if diagnostic_observer is not None and response.status_code == 429:
+            diagnostic_observer.add('oauthRateLimitCount')
         try:
             error_payload = response.json()
         except ValueError:
@@ -280,6 +306,8 @@ def ensure_oauth_token(
     http_post=requests.post,
     reload_session=None,
     refresh_lock=None,
+    cooperative_budget=None,
+    diagnostic_observer=None,
 ):
     if config.auth_mode != AUTH_MODE_ATLASSIAN_OAUTH:
         return session_data
@@ -294,7 +322,10 @@ def ensure_oauth_token(
             raise AuthError("auth_required", "Atlassian authentication is required.")
         if not is_oauth_token_expired(active_session):
             return active_session
-        refreshed = refresh_oauth_token(config, active_session, http_post=http_post)
+        refreshed = refresh_oauth_token(
+            config, active_session, http_post=http_post,
+            cooperative_budget=cooperative_budget, diagnostic_observer=diagnostic_observer,
+        )
         if reload_session and not (reload_session() or {}).get("access_token"):
             raise AuthError("auth_required", "Atlassian authentication is required.")
         save_session(refreshed)
@@ -340,6 +371,8 @@ def jira_get(
     reload_session=None,
     refresh_lock=None,
     refresh_http_post=requests.post,
+    cooperative_budget=None,
+    diagnostic_observer=None,
     **kwargs,
 ):
     save_session = save_session or (lambda data: None)
@@ -350,6 +383,8 @@ def jira_get(
         http_post=refresh_http_post,
         reload_session=reload_session,
         refresh_lock=refresh_lock,
+        cooperative_budget=cooperative_budget,
+        diagnostic_observer=diagnostic_observer,
     )
     return http_get(
         build_jira_api_url(config, context, path),

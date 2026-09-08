@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ENG Board measurement</title>
+  <style>
+    body{font:16px system-ui,sans-serif;max-width:760px;margin:3rem auto;padding:0 1rem;color:#172b4d}
+    form{display:grid;gap:1rem}label{display:grid;gap:.35rem}button,select,input{font:inherit;padding:.55rem}
+    progress{width:100%}#download[hidden]{display:none}.status{min-height:1.5rem}
+  </style>
+  <script src="/api/dev/eng-board-measurement/runner.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>ENG Board diagnostic measurement</h1>
+    <p>Runs the fixed local-only 40-step campaign. Results contain aggregate metrics only.</p>
+    <form id="campaign-form">
+      <label>Component Department<select id="component-group" required></select></label>
+      <label>Team fallback Department<select id="team-group" required></select></label>
+      <label>Sprint id<input id="sprint-id" type="number" min="1" step="1" required></label>
+      <button id="run" type="submit">Run diagnostic</button>
+      <button id="abort" type="button" disabled>Abort</button>
+    </form>
+    <p id="status" class="status" aria-live="polite">Loading options…</p>
+    <progress id="progress" value="0" max="40"></progress>
+    <a id="download" hidden>Download sanitized result</a>
+  </main>
+</body>
+</html>

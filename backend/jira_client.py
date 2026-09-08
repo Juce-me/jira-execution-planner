@@ -7,6 +7,8 @@ import time
 
 import requests
 
+from backend.services.request_performance import current_observer
+
 
 RETRYABLE_JIRA_STATUS_CODES = {429, 500, 502, 503, 504}
 
@@ -109,7 +111,8 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, connect_ti
                        max_attempts=None, max_elapsed_seconds=None,
                        base_delay_seconds=None, max_delay_seconds=None,
                        log_debug_fn=None, log_info_fn=None, log_warning_fn=None, log_error_fn=None,
-                       unavailable_response_fn=None, retryable_status_codes=None):
+                       unavailable_response_fn=None, retryable_status_codes=None,
+                       diagnostic_budget=None, diagnostic_observer=None, diagnostic_kind='search'):
     """GET with bounded retries + circuit breaker for Jira upstream calls."""
     if session is None:
         raise ValueError('session is required')
@@ -129,13 +132,18 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, connect_ti
     base_delay_seconds = float(base_delay_seconds if base_delay_seconds is not None else 0.5)
     max_delay_seconds = float(max_delay_seconds if max_delay_seconds is not None else 3)
     connect_timeout = float(connect_timeout if connect_timeout is not None else DEFAULT_CONNECT_TIMEOUT_SECONDS)
-    # Short connect timeout, full read timeout: connection stalls fail fast and retry;
-    # legitimately slow queries keep the caller's read budget.
-    request_timeout = (min(connect_timeout, timeout), timeout)
+    diagnostic = diagnostic_budget is not None or diagnostic_observer is not None
+    if diagnostic_budget is not None and diagnostic_observer is None:
+        raise ValueError('diagnostic observer is required with a diagnostic budget')
+    if diagnostic_observer is not None:
+        diagnostic_observer.add('jiraLogicalRequestCount')
+        diagnostic_observer.add('jiraSearchCallCount' if diagnostic_kind == 'search' else 'jiraCatalogCallCount')
 
     started_at = now_fn()
     allowed, breaker_state = breaker.before_request(started_at)
     if not allowed:
+        if diagnostic_observer is not None:
+            diagnostic_observer.add('jiraFastFailCount')
         log_warning_fn(
             f'Jira circuit open; fast-failing request retry_after_s={breaker_state.get("retryAfterSeconds", 0)}'
         )
@@ -148,26 +156,92 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, connect_ti
 
     last_status = None
     attempts = 0
+    performance_observer = current_observer()
 
     while attempts < max_attempts:
+        if diagnostic_budget is not None:
+            remaining = diagnostic_budget.remaining('catalog' if diagnostic_kind == 'catalog' else 'index')
+            request_timeout = (min(connect_timeout, timeout, remaining), min(timeout, remaining))
+        else:
+            # Short connect timeout, full read timeout: connection stalls fail fast and retry;
+            # legitimately slow queries keep the caller's read budget.
+            request_timeout = (min(connect_timeout, timeout), timeout)
         attempts += 1
+        if performance_observer is not None:
+            performance_observer.attempt(retry=attempts > 1)
+        if diagnostic_observer is not None:
+            diagnostic_observer.add('jiraAttemptCount')
+            if attempts > 1:
+                diagnostic_observer.add('jiraRetryCount')
         attempt_started = now_fn()
+        response = None
+        consumed = 0
+        bytes_recorded = False
         try:
-            response = session.get(url, params=params, headers=headers, timeout=request_timeout)
+            kwargs = {'params': params, 'headers': headers, 'timeout': request_timeout}
+            if diagnostic:
+                kwargs['stream'] = True
+            response = session.get(url, **kwargs)
+            if diagnostic:
+                chunks = []
+                iterator = response.iter_content(chunk_size=65536)
+                for chunk in iterator:
+                    diagnostic_budget.check('body')
+                    if chunk:
+                        consumed += len(chunk)
+                        chunks.append(chunk)
+                response._content = b''.join(chunks)
+                response._content_consumed = True
+                diagnostic_budget.check('body')
+                diagnostic_observer.add('jiraResponseBytes', consumed)
+                bytes_recorded = True
             latency_ms = round((now_fn() - attempt_started) * 1000, 1)
             last_status = getattr(response, 'status_code', None)
+            if performance_observer is not None and last_status == 200 and '/rest/api/3/search/jql' in url:
+                performance_observer.page()
+            if diagnostic and last_status == 429:
+                diagnostic_observer.add('jiraFailureAttemptCount')
+                diagnostic_observer.add('jiraRateLimitCount')
+                diagnostic_observer.add('jiraFailedResponseBytes', consumed)
+                retry_after = response.headers.get('Retry-After') if getattr(response, 'headers', None) else None
+                try:
+                    retry_after = max(0.0, min(30.0, float(retry_after)))
+                except (TypeError, ValueError):
+                    retry_after = 0.0
+                diagnostic_observer.add('jiraRetryAfterMs', round(retry_after * 1000, 1))
+                return response
+            if diagnostic and isinstance(last_status, int) and not 200 <= last_status < 300 and last_status not in retryable_status_codes:
+                diagnostic_observer.add('jiraFailureAttemptCount')
+                diagnostic_observer.add('jiraFailedResponseBytes', consumed)
+                breaker.record_failure(now_fn())
+                return response
             if last_status not in retryable_status_codes:
                 breaker.record_success()
                 log_debug_fn(f'Jira GET ok status={last_status} attempt={attempts} latency_ms={latency_ms}')
                 return response
+            if diagnostic_observer is not None:
+                diagnostic_observer.add('jiraFailureAttemptCount')
+                diagnostic_observer.add('jiraFailedResponseBytes', consumed)
             log_warning_fn(f'Jira GET retryable status={last_status} attempt={attempts} latency_ms={latency_ms}')
         except (requests.Timeout, requests.ConnectionError) as exc:
+            if diagnostic_observer is not None:
+                if consumed and not bytes_recorded:
+                    diagnostic_observer.add('jiraResponseBytes', consumed)
+                diagnostic_observer.add('jiraFailureAttemptCount')
+                diagnostic_observer.add('jiraFailedResponseBytes', consumed)
             latency_ms = round((now_fn() - attempt_started) * 1000, 1)
             log_warning_fn(f'Jira GET transient exception type={type(exc).__name__} attempt={attempts} latency_ms={latency_ms}')
         except Exception:
             # Unknown exceptions are not retried; keep existing behavior predictable.
+            if diagnostic_observer is not None and consumed and not bytes_recorded:
+                diagnostic_observer.add('jiraResponseBytes', consumed)
+                diagnostic_observer.add('jiraFailureAttemptCount')
+                diagnostic_observer.add('jiraFailedResponseBytes', consumed)
             breaker.record_failure(now_fn())
             raise
+        finally:
+            if diagnostic and response is not None:
+                response.close()
 
         elapsed = now_fn() - started_at
         if attempts >= max_attempts or elapsed >= max_elapsed_seconds:
@@ -194,8 +268,17 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, connect_ti
             total_delay = max(0.0, max_elapsed_seconds - elapsed)
         if total_delay <= 0:
             continue
+        if diagnostic_budget is not None:
+            total_delay = min(total_delay, diagnostic_budget.remaining('body'))
         log_info_fn(f'Jira GET retry scheduled attempt={attempts + 1} sleep_s={round(total_delay, 2)}')
-        sleep_fn(total_delay)
+        if diagnostic_budget is not None:
+            if diagnostic_budget.cancelled.wait(total_delay):
+                diagnostic_budget.check('body')
+            diagnostic_observer.add('jiraRetrySleepMs', round(total_delay * 1000, 1))
+        else:
+            sleep_fn(total_delay)
+        if diagnostic_budget is not None:
+            diagnostic_budget.check('body')
 
     # Defensive fallback (loop should return above)
     state = breaker.record_failure(now_fn())

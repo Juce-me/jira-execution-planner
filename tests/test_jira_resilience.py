@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tests.auth_mode_test_utils import force_basic_auth_mode
+from backend.services.eng_board_measurement_runtime import CooperativeBudget, DiagnosticObserver
 
 try:
     import requests
@@ -64,6 +65,25 @@ class TestJiraResilience(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(session.get.call_count, 2)
         self.assertEqual(clock.sleeps, [0.5])
+
+    def test_diagnostic_observer_counts_physical_body_and_closes_stream(self):
+        response = _mock_response(429)
+        response.headers = {'Retry-After': '99'}
+        response.iter_content.return_value = iter((b'abc', b'de'))
+        observer = DiagnosticObserver()
+        session = Mock(get=Mock(return_value=response))
+        result = jira_server._jira_client.resilient_jira_get(
+            'http://jira.example/search', session=session,
+            breaker=jira_server.JiraCircuitBreaker(), diagnostic_budget=CooperativeBudget.start(5),
+            diagnostic_observer=observer,
+        )
+        self.assertIs(result, response)
+        self.assertEqual(observer.snapshot()['jiraAttemptCount'], 1)
+        self.assertEqual(observer.snapshot()['jiraResponseBytes'], 5)
+        self.assertEqual(observer.snapshot()['jiraFailedResponseBytes'], 5)
+        self.assertEqual(observer.snapshot()['jiraRateLimitCount'], 1)
+        self.assertEqual(observer.snapshot()['jiraRetryAfterMs'], 30000)
+        response.close.assert_called_once_with()
 
     def test_retryable_status_then_success(self):
         clock = _FakeClock()

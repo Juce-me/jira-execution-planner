@@ -282,8 +282,14 @@ def refresh_db_oauth_token(
     key_provider,
     http_post,
     locked_connection=None,
+    cooperative_budget=None,
+    diagnostic_observer=None,
 ):
+    if cooperative_budget is not None:
+        cooperative_budget.check('auth')
     connection = locked_connection or _connection_for_update(session, connection_id)
+    if cooperative_budget is not None:
+        cooperative_budget.check('auth')
     if locked_connection is not None:
         session.refresh(connection)
     if connection is None or connection.status != 'active':
@@ -314,7 +320,10 @@ def refresh_db_oauth_token(
         key_provider=key_provider,
     )
     try:
-        token_data = request_oauth_refresh_token(config, refresh_token, http_post=http_post)
+        token_data = request_oauth_refresh_token(
+            config, refresh_token, http_post=http_post,
+            cooperative_budget=cooperative_budget, diagnostic_observer=diagnostic_observer,
+        )
     except AuthError as error:
         if error.code == 'refresh_reuse_detected':
             _revoke_for_refresh_reuse(session, connection=connection, cause='refresh_reuse_detected')
@@ -349,11 +358,18 @@ def refresh_db_oauth_token(
             key_provider=key_provider,
         )
     session.flush()
+    if cooperative_budget is not None:
+        cooperative_budget.check('auth')
     return _session_payload(connection, workspace, token_data.get('access_token') or '')
 
 
-def db_oauth_session_data(session, context, *, config, key_provider, http_post):
+def db_oauth_session_data(session, context, *, config, key_provider, http_post,
+                          cooperative_budget=None, diagnostic_observer=None):
+    if cooperative_budget is not None:
+        cooperative_budget.check('auth')
     connection = session.get(models.AuthConnection, context.auth_connection_id)
+    if cooperative_budget is not None:
+        cooperative_budget.check('auth')
     if connection is None or connection.status != 'active':
         raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
     workspace = session.get(models.Workspace, connection.workspace_id)
@@ -371,7 +387,11 @@ def db_oauth_session_data(session, context, *, config, key_provider, http_post):
         ),
     )
     if is_oauth_token_expired(session_data):
+        if cooperative_budget is not None:
+            cooperative_budget.check('auth')
         connection = _connection_for_update(session, connection.id)
+        if cooperative_budget is not None:
+            cooperative_budget.check('auth')
         session.refresh(connection)
         if connection is None or connection.status != 'active':
             raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
@@ -400,7 +420,11 @@ def db_oauth_session_data(session, context, *, config, key_provider, http_post):
             key_provider=key_provider,
             http_post=http_post,
             locked_connection=connection,
+            cooperative_budget=cooperative_budget,
+            diagnostic_observer=diagnostic_observer,
         )
+    if cooperative_budget is not None:
+        cooperative_budget.check('auth')
     return session_data
 
 

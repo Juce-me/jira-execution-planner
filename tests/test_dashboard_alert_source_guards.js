@@ -14,6 +14,37 @@ const planPath = path.join(__dirname, '..', 'docs', 'plans', 'EXEC-defer-eng-ale
 const stylesDir = path.join(__dirname, '..', 'frontend', 'src', 'styles');
 const cssImportPattern = /@import\s+["'](.+?)["'];/;
 
+test('returning to a cached group can load dependencies after cancelling another group', async () => {
+    const source = fs.readFileSync(dashboardPath, 'utf8');
+    const cleanupBody = source.match(/return \(\) => \{(\s*measuredLoad\.cancel\(\);[\s\S]*?)\n\s*\};/)[1];
+    const dependencyStart = source.indexOf('if (!showDependencies && !showBlockedAlert) {');
+    const dependencyBody = source.slice(dependencyStart, source.indexOf('}, [', dependencyStart));
+    let cancellations = 0;
+    let aborts = 0;
+    const measuredLoad = { primaryReady: false, cancel() { cancellations++; } };
+    const activePerformanceLoadRef = { current: measuredLoad };
+    const groupLoadVersionRef = { current: 1 };
+    new Function('measuredLoad', 'activePerformanceLoadRef', 'groupLoadVersionRef', 'abortSprintFetches', cleanupBody)(
+        measuredLoad, activePerformanceLoadRef, groupLoadVersionRef, () => { aborts++; }
+    );
+    // Restoring cached group data skips creating another measurement. Its dependency
+    // effect must therefore work with the reference left by the previous cleanup.
+    const requests = [];
+    const context = {
+        showDependencies: true, showBlockedAlert: false, selectedView: 'eng', selectedSprint: '7',
+        lastLoadedSprintRef: { current: '7' }, tasksFetched: true, productTasksLoading: false,
+        techTasksLoading: false, epmRollupLoading: false, dependencyKeySignature: 'SYNTHETIC-1',
+        activePerformanceLoadRef, setDependencyData() {},
+        fetchDependencies: async keys => { requests.push(keys); return 'applied'; },
+    };
+    new Function(...Object.keys(context), dependencyBody)(...Object.values(context));
+    await Promise.resolve();
+    assert.ok(cancellations > 0);
+    assert.equal(aborts, 1);
+    assert.equal(groupLoadVersionRef.current, 2);
+    assert.deepEqual(requests, [['SYNTHETIC-1']], 'cancelled telemetry must not suppress cached-group dependencies');
+});
+
 function readCssWithImports(relativePath, seen = new Set()) {
     const normalizedPath = relativePath.split(path.sep).join('/');
     assert.equal(seen.has(normalizedPath), false, `CSS import cycle detected at ${normalizedPath}`);
@@ -146,13 +177,13 @@ test('primary ENG loads reject stale group scope completions', () => {
     assert.match(dashboardSource, /const groupLoadVersionRef = useRef\(0\);/);
     assert.match(
         dashboardSource,
-        /const groupLoadVersion = \+\+groupLoadVersionRef\.current;[\s\S]*const shouldApplyGroupLoadResult = \(\) => groupLoadVersionRef\.current === groupLoadVersion;[\s\S]*loadProductTasks\(\{ shouldApplyResult: shouldApplyGroupLoadResult \}\);[\s\S]*loadTechTasks\(\{ shouldApplyResult: shouldApplyGroupLoadResult \}\);/
+        /const groupLoadVersion = \+\+groupLoadVersionRef\.current;[\s\S]*const shouldApplyGroupLoadResult = \(\) => groupLoadVersionRef\.current === groupLoadVersion;[\s\S]*loadMeasuredGroupTasks\(\{ shouldApplyResult: shouldApplyGroupLoadResult \}\);/
     );
     assert.match(dashboardSource, /groupLoadVersionRef\.current \+= 1;[\s\S]*abortSprintFetches\(\);/);
-    assert.match(sprintDataSource, /const loadProductTasks = async \(\{ forceRefresh = false, shouldApplyResult \} = \{\}\)/);
-    assert.match(sprintDataSource, /const loadTechTasks = async \(\{ forceRefresh = false, shouldApplyResult \} = \{\}\)/);
-    assert.match(sprintDataSource, /fetchTasks\('product', \{ forceRefresh, shouldApplyResult \}\)/);
-    assert.match(sprintDataSource, /fetchTasks\('tech', \{ forceRefresh, shouldApplyResult \}\)/);
+    assert.match(sprintDataSource, /const loadProductTasks = async \(\{ forceRefresh = false, shouldApplyResult, measurement \} = \{\}\)/);
+    assert.match(sprintDataSource, /const loadTechTasks = async \(\{ forceRefresh = false, shouldApplyResult, measurement \} = \{\}\)/);
+    assert.match(sprintDataSource, /fetchTasks\('product', \{ forceRefresh, shouldApplyResult, measurement \}\)/);
+    assert.match(sprintDataSource, /fetchTasks\('tech', \{ forceRefresh, shouldApplyResult, measurement \}\)/);
     assert.match(
         sprintDataSource,
         /catch \(err\) \{[\s\S]*if \(options\.shouldApplyResult\?\.\(\) === false\) return IGNORED_RESULT;[\s\S]*finally \{[\s\S]*if \(useLoading && options\.shouldApplyResult\?\.\(\) !== false\)/
@@ -433,8 +464,8 @@ test('ENG sprint data hook preserves startup request sequencing markers', () => 
     assert.notEqual(readyToCloseIndex, -1, 'Expected deferred ready-to-close loader in ENG data hook');
     assert.ok(loadProductIndex < readyToCloseIndex, 'Expected visible sprint task loaders before ready-to-close alert loaders');
 
-    assert.match(source, /const data = await fetchTasks\('product', \{ forceRefresh, shouldApplyResult \}\);/);
-    assert.match(source, /const data = await fetchTasks\('tech', \{ forceRefresh, shouldApplyResult \}\);/);
+    assert.match(source, /const data = await fetchTasks\('product', \{ forceRefresh, shouldApplyResult, measurement \}\);/);
+    assert.match(source, /const data = await fetchTasks\('tech', \{ forceRefresh, shouldApplyResult, measurement \}\);/);
     assert.match(source, /sprintOverride: '',\s*purpose: 'ready-to-close'/);
     assert.match(source, /fetchBacklogEpics = async \(project, \{ signal \} = \{\}\) =>/);
     assert.match(source, /activeGroupId && activeGroupTeamIds\.length === 0/);

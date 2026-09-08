@@ -15,6 +15,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current DB Workflow
 
+- [In-app load performance](DONE-in-app-load-performance.md): implemented, verified and user-accepted; three local contextual sprint observations recorded.
+- [ENG Board All work implementation](EXEC-eng-board-all-work.md): planned from in-app evidence; progressive strict Board loading with transport/deadline/completeness gates. No production implementation yet.
+- [All work subagent handoff](SUPPORT-eng-board-all-work-handoff.md): published-base and worker ownership instructions; execute only within the plan gates.
+
 1. `SUPPORT-db-migration-claude-review-workflow.md`
    - Use first for external review or handoff.
    - Expected output: findings and a go/no-go recommendation, not code changes.
@@ -414,7 +418,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - No Home/Townsquare or EPM mutation; `GATE-05` unaffected.
 
 4. `EXEC-eng-group-board.md`
-   - Design agreed with the requester; implementation not started. **Open the two approved design
+   - Partially executed on `feature/eng-group-board-design`; not merge-ready. **Open the two approved design
      assets in `docs/plans/assets/eng-group-board/` before executing** — self-contained HTML using
      the app's real classes and geometry. They are authoritative for appearance and interaction;
      the plan is authoritative for data, routes and constraints. This is the "separate future plan"
@@ -425,24 +429,65 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      configured at Settings → Departments → **Boards** (a dedicated third sub-tab beside Team groups
      and Group labels, reached from a one-line *Configure board* pointer in Team groups); one focused
      column always centred with at most one starred column that never folds; folded columns act as the
-     epic-count bar chart; epics sorted by `PRIORITY_AXIS` with assignee and Delivery Owner
-     (`customfield_11147`) both shown; an epic detail panel reusing the existing priority/track/status
+     epic-count bar chart; epics sorted by `PRIORITY_AXIS` with assignee and the configured, shaped
+     Delivery Owner both shown; an epic detail panel reusing the existing priority/track/status
      controls and `.story-subtask-row` unchanged; and a single sticky filter bar with orthogonal facets
      that cannot reach an empty set. Catch Up keeps its existing status filters.
    - Board config is stored in the shared group payload on `/api/groups-config` (`user_write`), not
-     `/api/board-config`. Read §4.3 first: epic `description`, `customfield_11147`, and a board-status
-     source do not exist in the current payload and must be added before UI work. Open decisions are
-     listed in §11 (ten items, one superseded); whether Group Board editing should be admin-guarded is
-     resolved there (O1: no).
+     `/api/board-config`. The Execution status table is authoritative for what has landed; the older
+     pre-execution gap table is historical. Delivery Owner, epic description/updated shaping, and the
+     Board status route now exist. Open decisions are listed in §11 (ten items, one superseded);
+     whether Group Board editing should be admin-guarded is resolved there (O1: no).
 
-5. `DONE-board-epic-description-smart-links.md`
+5. `EXEC-eng-board-optional-sprint-measurement-spike.md`
+   - Diagnostic Tasks 0–5 implemented and verified on 2026-09-07 from `5c385ac`; the original twenty
+     findings, follow-up closures and sanitized execution evidence are recorded in §§11–12.
+     Task 6 startup and authenticated options preflight ran on 2026-09-07, but the campaign stopped
+     before sampling because the saved workspace had two Component-eligible Departments and zero
+     Team-fallback-eligible Departments. No configuration/Jira mutation or result artifact was made.
+   - Corrective follow-up adds a loopback-only Python collector over the existing authenticated
+     groups/tasks GET endpoints. It skips unusable no-Team Departments and stores only sanitized
+     contextual aggregates outside the repo; legacy caps keep it non-authorizing.
+   - A 2026-09-07 operator-approved Basic-auth/jsonfile run sampled the one active numeric sprint:
+     one Department eligible, zero skipped; selected-sprint Product/Tech returned 83/109 issues in
+     1,696.0/1,598.1 ms and 108,559/122,167 bytes without triggering the cap heuristic; All-work
+     Product/Tech each returned 250 issues in 3,237.4/2,598.5 ms and 271,499/247,444 bytes with both
+     legacy-cap flags set. Epic-detail/scope-Epic cardinalities are recorded in §15 of the plan.
+     This is contextual evidence for one Basic-mode Department, not strict completeness,
+     signed-in-user OAuth, transport, hard-deadline, excluded-scope, visible-progress, or production
+     authorization evidence. No production `EXEC-*` plan was created; schema v2 can never PASS.
+   - Local strict DB-OAuth diagnostic only: read-only existing-row options, CSP-compatible runner,
+     isolated campaigns/transport, guarded legacy cache returns, Epic-first Team fallback,
+     explicit cache states, private row-incarnation checks and consistent workload/retry/memory metrics.
+   - Five rounds characterize saved Product/Tech Boards at 28-day retention with selected-sprint,
+     All-work and all-saved-Team fallback candidates. Legacy calls are contextual, not equal work.
+   - Cooperative deadline schema cannot PASS: only STOP/FAIL, never production authorization.
+     Hard-bound evidence and excluded production scope profiles remain prerequisites to production.
+
+6. `SUPPORT-eng-board-optional-sprint-design.md`
+   - Reviewed non-executable design for GitHub issue #137 and production handoff boundary after the
+     diagnostic Tasks 0–5 implementation; authenticated Task 6 preflight is blocked by the absence
+     of a saved Team-fallback-eligible Department. A separate capped Basic-mode collector sample is
+     recorded as contextual evidence only and does not close any production gate.
+   - Settled behavior: Board initially inherits the selected sprint; All work is the explicit empty
+     sprint filter; `missingInfoComponents` is the Epic scope; Teams stays visible but disabled;
+     Project Track is Epic-index data; Product/Tech Projects is inherited from each child's Jira
+     project; directly-created terminal Epics use `created` for retention; Unmapped remains before
+     the structural terminal column.
+   - Production transport, refresh granularity, hard deadlines, excluded-scope coverage, completion
+     budgets and safety ceilings remain measurement-gated. The validated pure core must be reused;
+     Board request retirement, mutation generation ordering and bounded telemetry are specified.
+     Follow-up review closes terminal-identity migration, delayed sprint initialization and provisional
+     page-progress contracts; streaming needs an opt-in shared HTTP boundary before selection.
+
+7. `DONE-board-epic-description-smart-links.md`
    - Accepted by the requester and executed in `3770d2b`; use for audit context only.
    - Jira ADF `inlineCard` and `blockCard` nodes in Board Epic descriptions render as escaped,
      allowlisted links using the URL as fallback text. Unsafe or missing URLs render nothing; the
      existing lazy description fetch, sanitization boundary, clamp, cache, and analytics privacy
      contract remain unchanged.
 
-6. `EXEC-sticky-board-column-chrome.md`
+8. `EXEC-sticky-board-column-chrome.md`
    - Implementation complete and uncommitted; retain as `EXEC-*` pending acceptance or merge.
      The focused Board regression and analytics allowlist are verified. The matrix retains the
      unrelated drag-gate failure, an alert-toolbar setup failure, and an environment-blocked full
@@ -451,7 +496,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      or column trees, remains horizontally aligned and interactive, preserves layout, and releases
      at the board bottom.
 
-7. `EXEC-board-help-title-adf-tables.md`
+9. `EXEC-board-help-title-adf-tables.md`
    - Implementation complete and uncommitted; retain as `EXEC-*` pending acceptance or merge.
      The executed record is
      `docs/agents/features/2026-08-08-executed-board-help-title-and-adf-tables.md`.

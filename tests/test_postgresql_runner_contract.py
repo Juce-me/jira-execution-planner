@@ -51,7 +51,9 @@ class LocalRunnerSourceContractTests(unittest.TestCase):
             "DEBUG_MODE=false",
             "--project-name",
             'readonly project_name="jira-planning-local"',
-            'readonly lock_dir="/tmp/jira-planning-local-runner.lock"',
+            'runtime_tmp_dir="/tmp"',
+            "getconf DARWIN_USER_TEMP_DIR",
+            'readonly lock_dir="${runtime_tmp_dir}/jira-planning-local-runner.lock"',
             "--project-directory",
             "--env-file",
             "/dev/null",
@@ -326,18 +328,13 @@ class RunnerIsolationContractTests(unittest.TestCase):
             source,
         )
 
-    def test_local_guide_documents_narrow_stale_lock_recovery(self):
+    def test_local_guide_documents_runner_replacement_and_stale_recovery(self):
         source = read("runners/local/README.md")
-        self.assertIn("no runner process is active", source)
-        self.assertIn(
-            "no exact `jira-planning-local` Compose project, container, "
-            "network, or volume user is active",
-            source,
-        )
-        self.assertIn(
-            "rmdir /tmp/jira-planning-local-runner.lock",
-            source,
-        )
+        self.assertIn("stops that runner and waits for its cleanup", source)
+        self.assertIn("reclaims stale or corrupt lock metadata", source)
+        self.assertIn("reports the problem once and exits", source)
+        self.assertIn("does not signal unrelated processes", source)
+        self.assertNotIn("rmdir /tmp/jira-planning-local-runner.lock", source)
         self.assertIn("Do not use broad Docker prune commands", source)
         self.assertIn(
             "`backend.db.reset_local` as lifecycle cleanup",

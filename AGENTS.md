@@ -195,6 +195,14 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Keep commits atomic and honest. Do not claim measured improvements you did not verify.
 - For UI changes, include screenshots in the PR notes.
 - Before push, run the full test suite, review `git log --oneline -5`, and wait for explicit user confirmation.
+- Treat commit, push, and PR creation as one blocking publication transaction. Before the first publication mutation:
+  1. Fetch the intended base and record the exact base and head SHAs.
+  2. Run `git status --short`, `git log --oneline origin/<base>..HEAD`, and `git diff --name-status origin/<base>...HEAD`.
+  3. Compare the complete commit list, commit count, and every changed path with the approved plan and publication contract. A clean worktree is insufficient. If history or scope differs, stop before commit/push/PR and ask the operator whether to reconstruct it; do not stack cleanup commits or rewrite history without explicit authorization.
+  4. Run the required verification and committed-revision build at the exact proposed head.
+  5. Send multiline PR Markdown through stdin with `gh pr create --body-file -` or `gh pr edit --body-file -`. Never pass JSON-stringified, backslash-escaped, or command-substituted multiline content through `--body`.
+  6. Before reporting success, prove the remote head equals the approved local head, read back the body as rendered text (not serialized JSON), visually inspect the GitHub PR page, verify the remote changed-file list and commit count, and report the actual CI state.
+  7. If any post-publication check fails, report the publication as malformed and stop for operator direction. A successful CLI exit code is not proof of a correct PR.
 - Do not use the `using-git-worktrees` skill in this repo unless the user explicitly asks for a worktree.
 
 ---
@@ -317,7 +325,10 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In main ENG view filters, keep `.eng-mode-control` intrinsic-width, use the flexible gap after Teams for right alignment, and bottom-align it with the dropdown controls.
 - Global heading rules also affect Jira-rendered description headings inside `.m-desc-body`; do not apply entrance animations to H1 elements.
 - Keep localhost and CI runner assets under `runners/local/` and `runners/github/`; never mix them into application source, production startup, deployment images, or release packaging.
+- Local runner lock acquisition must distinguish an unavailable lock path from contention, fall back to the system user temp directory when `/tmp` is unavailable, and succeed or fail after one report; never loop on the same missing or stale state.
 - When the user explicitly excludes a gate document from an execution plan, do not read or modify that gate during the execution.
 - Catch Up onboarding must never require cross-surface activation; keep Next enabled, let Next open field previews, and advance exactly once from the preview surface, a preview choice, the same field, or Next without mutating Jira.
 - When a persisted shared mapping is complete but unverified, Settings must expose it as an unsaved re-verification state and call the owning verification endpoint even when its visible values are unchanged.
 - When head-stamped migration drift affects multiple objects, stop piecemeal repairs: collect a schema-only inventory, diff it against a clean current head, reconcile the complete gap set in one forward revision, and verify exact schema parity plus affected ORM contracts.
+- Never bypass the section 10 publication transaction gate; validate history, scope, remote head, rendered PR body, and CI as one unit before reporting success (MRT025).
+- Commit a postmortem for active work on the related task branch; do not create a separate postmortem/docs branch unless the operator explicitly requests one.

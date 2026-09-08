@@ -28,7 +28,8 @@ not permission to skip prototype, runtime, completeness or SLO evidence.
    DB discovery is satisfied: four observations (three success, one cancelled), two revisions,
    and a saved group with Components, Teams and Board columns. Query existing load_performance
    rows and shared-config metadata read-only; reuse evidence and collect only missing samples.
-   Preserve revision/cache/completeness cohorts; unknown legacy rows cannot pass candidate SLO.
+   Preserve build/configuration-digest/cache/completeness cohorts; unknown legacy rows cannot
+   pass candidate SLO. Never reconstruct an old row's scope from today's saved configuration.
    Handle already-decoded SQL JSON without double decoding. Never substitute a standalone
    collector or another auth profile, and never fabricate percentile or completeness claims.
 4. Delegate only bounded independent work using the ownership map below. Share exact typed
@@ -49,17 +50,33 @@ not permission to skip prototype, runtime, completeness or SLO evidence.
    query implementation. At most two child searches, strict nextPageToken/isLast pagination,
    provisional display separate from authority. Retire the legacy request family only under
    the server-provided strict-Board capability. Preserve unavailable-deployment compatibility.
+   Serialize focus POSTs per generation, coalesce pending intent and acknowledge only committed
+   revisions. An ambiguous focus failure retires the generation. Cancel clears queued intent;
+   atomic active-state guards prevent late focus writes from reviving cancelled work.
 8. Keep Board scope/filters/session state independent of the mandatory ENG sprint and private
    Team selection. Preserve reviewed first-visit sprint inheritance. All work applies Components
    to Epics only, includes all eligible direct children, and never eagerly hydrates subtasks.
+   Strict Board Work items export uses authoritative filtered canonical child keys, bypassing
+   the Story-only collector. Preserve legacy exports; test mixed types and non-Story-only Boards.
 9. Preserve current-user OAuth, workspace/shared-group ownership, CSRF and existing Jira write
    routes. No Home/Townsquare, service credential fallback, new Jira mutation, issue manifests,
    raw issue data in diagnostics, automatic replay, or partial-success completeness claims.
+   Validate/refresh DB OAuth tokens before claim, commit, then capture a fresh context and
+   revalidate after metadata capture. Later successful rotation retires the immutable generation
+   as scope_changed with explicit Retry, not global auth_required. Revocation/disabled-user
+   failures still lock auth. Prove both behaviors through the real Jira/token wrapper path.
 10. Query existing candidate DB rows first, then use the app to gather only missing comparable
     selected-sprint and All work timings once the candidate is available. Record
     index, first focused content, full completion, dependencies, unique issues/Epics, pages,
-    bytes, retries and cache state. Keep 2s useful-content target and 4s full-load p95 SLO
-    distinct. A quick first column does not pass a slow full load.
+    bytes, retries, cache state, peakChildSearches and scopeCohortDigest. Keep the digest separate
+    from build revision and rotating token versions; older unknown rows remain contextual.
+    Require loading feedback within 100ms and comparable selected-sprint median first-content
+    regression <=10%, alongside the 2s useful-content target and 4s full-load p95 SLO.
+    Use the same painted-content milestone and do not count stale display as fresh content.
+    Missing baseline evidence cannot pass the regression gate. A quick first column does not
+    pass a slow full load. Synthetic excluded-profile tests support development only; missing
+    measured scope coverage remains a release blocker under Task 7, unless a separate explicit
+    release amendment is approved. Do not manufacture shared configuration or change auth mode.
 11. Run full Python, frontend unit and relevant existing/new browser suites, migration tests,
     build, deployment-equivalent runtime gates and authenticated startup check. Capture
     synthetic screenshots for PR evidence. Stop all test/prototype runners on completion;

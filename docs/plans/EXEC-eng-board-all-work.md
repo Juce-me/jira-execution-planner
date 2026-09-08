@@ -33,7 +33,7 @@ The earlier standalone collector remains historical only. No separate campaign, 
 
 ## 2. Product contract retained
 
-The settled semantics in [support design](SUPPORT-eng-board-optional-sprint-design.md), sections “Settled product decisions” through “Analytics impact”, remain authoritative except its superseded prohibition on plan authorship and its unselected transport alternatives. This plan proposes a concrete transport for validation; it does not silently change those product decisions.
+The settled semantics in [support design](SUPPORT-eng-board-optional-sprint-design.md), sections “Settled product decisions” through “Analytics impact”, remain authoritative except its superseded prohibition on plan authorship and its unselected transport alternatives. Its excluded-profile measurement gate applies before production rollout, not before independent development or a gated candidate. Synthetic tests do not replace that evidence. Task 7 explicitly retains the 100ms loading-feedback and 10% first-content regression gates. This plan proposes a concrete transport for validation; it does not silently change those product decisions or authorize a partial release.
 
 - Board-only `uninitialized | all_work | sprint` scope, per Department for the mounted document. Preserve the reviewed first-visit initialization from the mandatory ENG sprint, then maintain independent Board state. The original issue requested an unselected default; the subsequent settled design deliberately chose first-visit inheritance. Changing that choice requires an explicit product amendment. No shared/private-view persistence or auth-resume persistence of Board scope.
 - Components are the existing shared `groups[].missingInfoComponents`. Match exact names across all server-selected projects at the Epic boundary. No browser project/JQL/Epic-key authority and no new Component field.
@@ -46,6 +46,8 @@ The settled semantics in [support design](SUPPORT-eng-board-optional-sprint-desi
 ## 3. Immutable scope, strict paging and limits
 
 Read `backend/security/CONFIGURATION_OWNERSHIP.md`. Capture RequestAuthContext, current workspace/site/user/token version, uncached shared Department and dashboard revisions/digests, field IDs, project access and eligible issue-type catalog before worker work. Worker code receives the snapshot and injected authenticated search only. No Flask globals/config getters inside worker threads. Config failure is sanitized 503; no fallback to JSON/service credentials in DB/OAuth.
+
+Before claiming a generation, validate/refresh the current user's Jira token through the existing DB token resolver and let its transaction commit; then resolve a fresh RequestAuthContext rather than reusing a request-cached pre-refresh context. Capture metadata/catalog and revalidate the captured auth/config versions before claim. A catalog-triggered or concurrent rotation during capture returns sanitized 409 `scope_changed` without claiming a generation. After claim, any token-version change ends that generation with `scope_changed`, preserves only compatible stale snapshots and offers explicit Retry; never advance its immutable partition in place or automatically replay a read. Ordinary successful rotation is not `auth_required`; actual revoked/disabled/expired browser authentication retains standard 401/global-lock behavior. Test the real `jira_server.current_jira_get` → `db_oauth_session_data` → `refresh_db_oauth_token` path, whose successful refresh increments `token_version`. Pre-claim refresh, capture and validation remain inside the proposed killable admission boundary and consume the same deadline; this amendment does not approve that runtime boundary.
 
 Promote `build_epic_index_jql`, `build_child_jql`, `resolve_issue_type_ids`, `resolve_epic_link_field`, `split_epic_batches`, `strict_search`, `classify_project` and projection from `backend/services/eng_board_measurement.py` into the shared production core, retaining diagnostic adapters to the same functions. Extend its missing `other`, saved-board project fallback, absent Board, empty-terminal and variable-retention cases. Do not fork a second JQL/pager implementation.
 
@@ -66,12 +68,14 @@ Use one small `board_generation_controls` row: random generation ID, owner parti
 
 The stream alone owns counters and Jira payloads. Before every Jira page, retry and queued batch it reads the latest control row, checks cancellation/config/auth versions and applies focus changes only to pending work. At most two in-flight searches continue; controls cannot spawn parallel owners. Cross-worker control writes must be visible to the stream. DB/control failure terminally fails scheduling. Full refresh and Retry create new generations; there is no automatic reconnect or failed-request replay.
 
+One generation-local frontend writer serializes focus POSTs: allow one outstanding focus request, coalesce later resolved focus changes to the newest column, and dispatch it only after the previous response confirms the committed control revision. Responses may acknowledge delivery but never overwrite current UI focus. On an ambiguous network failure, retire the generation rather than sending another focus request that could race a still-running write. Cancel clears queued focus immediately and may bypass the writer; all server focus updates atomically require `state=active`, and cancellation is terminal regardless of transaction order. Generation retirement prevents every old acknowledgement from scheduling more work. The response revision is an acknowledgement, not an ordering mechanism for concurrent focus commands; no request-schema extension is needed with this serialized contract.
+
 Frame contract (closed discriminated union, protocolVersion=1 on every frame):
 
 ```typescript
 type Base = { protocolVersion: 1; generationId: string; sequence: number };
 type Frame = Base & (
-  | { type: 'start'; scope: 'all_work'|'sprint'; scopeVersion: string; columns: Column[] }
+  | { type: 'start'; scope: 'all_work'|'sprint'; scopeVersion: string; scopeCohortDigest: string; columns: Column[] }
   | { type: 'index'; epics: EpicShell[]; membership: 'candidate'|'authoritative' }
   | { type: 'progress'; columnId: string; loadedChildren: number; byEpic: Progress[] }
   | { type: 'column'; columnId: string; epics: EpicShell[]; children: Child[]; authoritative: true }
@@ -103,12 +107,14 @@ type Child = {
 };
 type Diagnostics = {
   indexMs: number; focusedCompleteMs: number|null; durationMs: number;
-  jiraRequests: number; jiraPages: number; jiraRetries: number;
+  jiraRequests: number; jiraPages: number; jiraRetries: number; peakChildSearches: number;
   cacheState: 'hit'|'miss'|'mixed'|'unknown'; completeness: 'complete'|'partial';
 };
 ```
 
 `scopeVersion` is a server-keyed digest of canonical sorted captured scope/config/auth partition data, never raw identities or a browser-supplied signature. Diagnostic counters cover catalog/index/child transport calls; include worker context propagation and physical retry counts. Browser owns decoded payload bytes and render timestamps. Terminal fatal errors may carry optional closed Diagnostics with completeness=partial; auth failures carry no diagnostic payload. Numeric fields are finite nonnegative; counts are integers. Apply Task 1's proven string/array/frame limits to every field. All-work authoritative Epic count remains in canonical index state if some columns fail; a partial-error frame cannot invent global child or selected-sprint Epic totals. `Progress={epicKey:string,loadedChildren:integer,statusCounts:Record<string,integer>}` is provisional display only. Task 1 must fix and test per-frame/per-generation byte limits from serialized candidate payloads before integration; no unbounded NDJSON line buffering. Global failure clears current provisional and child authority, not compatible stale committed snapshots. A column transport failure may preserve other columns; malformed global scope or ceiling failure may not publish completion success. EOF without terminal frame is failure.
+
+`scopeCohortDigest` is a separate 64-character lowercase hexadecimal server-keyed digest for operational comparisons. Canonical inputs include stable workspace/site/user partition, Department identity, captured shared config revisions/content, effective projects/access, fields, eligible types, Components/Teams, Board/retention and selected scope/sprint. Exclude token version, generation ID, focus, timestamps and build revision so ordinary rotation does not split an otherwise comparable cohort. It is never authority for a route, config lookup or cache read. Store it only with internal measurements, never in GA4. `peakChildSearches` is the maximum simultaneous child searches over the generation, an integer 0–2 measured by the shared scheduler, not the configured ceiling. `cacheState` describes measured server source-data reuse; a displayed stale client snapshot is not a server cache hit. With no server payload cache the initial candidate reports miss, or mixed if measured metadata reuse occurs; unknown cache state cannot establish a comparable acceptance cohort.
 
 ## 5. Ordered implementation tasks
 
@@ -123,11 +129,12 @@ Files: Read existing paths in this plan, `docs/plans/README.md`, support design,
 
 ### Task 1 — transport, hard-bound and focus feasibility gate
 
-Create: `backend/services/eng_board_stream.py`, `frontend/src/api/engBoardApi.js`, `tests/test_eng_board_stream.py`, `tests/test_eng_board_stream.js`, `tests/ui/eng_board_stream.spec.js`. Modify: `frontend/src/api/http.js`; the later route/control/migration file map belongs to Task 3. Run a synthetic in-app prototype before binding production Board. The new Python stream test owns an isolated Flask app with prototype GET/control routes and a disposable PostgreSQL table created from test-only SQLAlchemy metadata. Use that fixture for two-worker and blocked-I/O checks; it may not register routes on backend/app.py or migrate the local application DB. Task 3 promotes the verified control contract into production schema/routes. The browser test serves the shared stream consumer against this prototype, not mocked buffering.
+Create: `backend/services/eng_board_stream.py`, `frontend/src/api/engBoardApi.js`, `tests/test_eng_board_stream.js`, `tests/ui/eng_board_stream.spec.js`. Modify: `frontend/src/api/http.js`, existing `tests/test_eng_board_stream.py`; the later route/control/migration file map belongs to Task 3. Run a synthetic in-app prototype before binding production Board. Extend the Python stream test with an isolated Flask app owning prototype GET/control routes and a disposable PostgreSQL table created from test-only SQLAlchemy metadata. Preserve its existing limitation probe. Use that fixture for two-worker and blocked-I/O checks; it may not register routes on backend/app.py or migrate the local application DB. Task 3 promotes the verified control contract into production schema/routes. The browser test serves the shared stream consumer against this prototype, not mocked buffering.
 
 - [ ] RED: held EOF must deliver a first validated frame; ordinary buffered callers retain behavior. Test split UTF-8/NDJSON chunks, duplicate/nonmonotonic frames, malformed/oversized frames, abort and sibling API 401. The shared HTTP layer must own reader cancellation and terminal auth lock, never hook-level native fetch.
 - [ ] Implement opt-in header-first streaming at the shared boundary; current `apiFetch` body buffering cannot deliver progress. Check auth lock and AbortSignal before every delivery. Auth-error frame invokes the same global sanitized lock as HTTP 401.
 - [ ] Prototype two-worker focus control and bounded queue dispatch. Hold two in-flight searches, change focus through another worker, release one and prove the new focus is next; no duplicate owner, counter reset or third search.
+- [ ] Test the serialized focus writer with delayed A acknowledgement and newer B/C intent: only A is sent until acknowledgement, then only C. Hold a server focus transaction across cancel and prove either commit order ends cancelled with no later scheduling. Test lost acknowledgement, old-generation completion and no automatic replay.
 - [ ] Prove three independent limits: immediate browser discard, no new scheduling after cancellation/checkpoint, and bounded termination of blocked auth/DB/Jira work. Requests timeouts plus cooperative checks alone do not prove the last. Inject blocked connect/read/refresh/config and worker shutdown. The design's 30s cooperative budget cannot be relabelled a hard deadline. If current runtime cannot meet the required bound, stop production integration and present a supervised killable execution design for review.
 - [ ] Record actual frame sizes, select explicit bounded frame/total byte limits and completion deadline from prototype evidence, and add exact-bound/one-byte-over tests. Pass the transport gate before Task 3 wiring; leave the authored later tasks intact if blocked.
 
@@ -155,6 +162,7 @@ The names above describe test fixtures to create, not existing production APIs. 
 Create: `backend/routes/eng_board_routes.py`, `backend/db/migrations/versions/20260908_0015_board_generation_controls.py`, `tests/test_eng_board_routes.py`. Modify: `backend/services/eng_board.py`, `backend/services/eng_board_stream.py`, `backend/db/models.py`, `backend/app.py`, `backend/security/policy.py`, `backend/security/CONFIGURATION_OWNERSHIP.md`, `tests/test_endpoint_policy_inventory.py`, `tests/test_endpoint_security_matrix.py`. Renumber the proposed migration if updated main has occupied 0015; down_revision must be actual head.
 
 - [ ] RED route matrix: foreign group/generation, workspace/site/user/token/config mismatch, disabled user, malformed controls, absent CSRF/header, storage failure, duplicate claim, expiry, and current-user OAuth reaching the real search wrapper outside request context.
+- [ ] Exercise expired-token preflight refresh with fresh post-commit context and a successful claim. Force rotation during catalog capture, between child pages and alongside a control request; require preheader 409 or terminal `scope_changed`, no stale publication/replay and no global auth lock for successful rotation. Separately prove revoked connection/disabled user still locks auth. Verify focus acknowledgement follows DB commit and terminal state prevents a delayed focus update from reviving cancellation.
 - [ ] Implement one immutable snapshot, claim, generator, bounded queue, focus/cancel control and cleanup. Authenticated reads may not select arbitrary projects or cache partitions. Return sanitized preheader errors; use terminal frames after headers.
 - [ ] Index first; hydrate resolved focus column first then queued columns. Sprint qualification is one pass through direct children, never a separate key-only prefetch. Complete a column only after all its batches finish.
 - [ ] No server payload cache in the initial candidate. Keep compatible complete client snapshots only; measure before introducing server caching. Never use process-local tokens or cache partial results. Check auth/config validity before canonical publication and terminal completion.
@@ -166,8 +174,9 @@ Create: `frontend/src/eng/useEngBoardData.js`, `tests/test_eng_board_data.js`. M
 
 - [ ] RED state transitions: first visit, independent per-group sprint, focus while loading, late old generation, column error, global fatal, refresh with stale compatible snapshot, auth lock, retry, group revision change and unmount.
 - [ ] Implement canonical Epic map plus column key references and separate provisional progress. Keep partial data out of facet/export/write authority. Reconcile membership atomically.
-- [ ] Keep existing `eng_sprint` metrics unchanged. Add a versioned closed Board observation variant with `surface=eng_board`, `scopeType=all_work|sprint`, bounded `indexMs`, `firstFocusedContentMs`, `focusedCompleteMs`, `durationMs`, `dependencyDurationMs`, `epicCount`, `issueCount`, `payloadBytes`, `jiraRequests/pages/retries`, `completeness`, `outcome`. No forced product/tech lane pair in Board schema; one stream has one global unique count. Optional diagnostics split Product/Tech/other without duplicating total.
-- [ ] Record at most once after render/terminal outcome, independently of GA4; no per-frame DB writes. Admin filters must separate surface/scope/cache/revision and never compare mixed Board/sprint distributions. Full completion metric must retain requested dependency cost; first-content metric remains separate.
+- [ ] Keep existing `eng_sprint` metrics unchanged. Add a versioned closed Board observation variant with `surface=eng_board`, `scopeType=all_work|sprint`, bounded `indexMs`, `firstFocusedContentMs`, `focusedCompleteMs`, `durationMs`, `dependencyDurationMs`, `epicCount`, `issueCount`, `payloadBytes`, `jiraRequests/pages/retries`, `completeness`, `outcome`, `cacheState=hit|miss|mixed|unknown`, `peakChildSearches` (integer 0–2 when measured, otherwise null), and `scopeCohortDigest` from start (null if start was never received). Retain the load/group identity envelope; Board All work uses null sprint rather than a fabricated ID. Failed/cancelled streams lacking terminal diagnostics retain null counters and unknown cache state rather than invented values. No forced product/tech lane pair in Board schema; one stream has one global unique count. Optional diagnostics split Product/Tech/other without duplicating total.
+- [ ] Persist and read back the added fields through ingestion, migration and admin filters. Build `revision` remains the existing application revision, distinct from captured configuration cohort. Older rows retain null/unknown new fields and remain contextual; never backfill them from today's config. Test same group/sprint/build with changed Components/Board settings yields different cohorts, token rotation alone preserves the cohort, unknown fields cannot pass eligibility, and out-of-range concurrency is rejected. Add null-safe mixed legacy/Board report and migration tests.
+- [ ] Record at most once after render/terminal outcome, independently of GA4; no per-frame DB writes. Admin filters must separate surface/scope/cache/build revision/configuration cohort and never compare mixed Board/sprint distributions. Candidate eligibility requires success, complete authority and known cohort/cache/concurrency; unknown legacy rows do not count toward candidate samples. Full completion metric must retain requested dependency cost; first-content metric remains separate.
 
 ### Task 5 — capability-gated retirement and preserved Board interactions
 
@@ -178,6 +187,7 @@ Modify: `backend/routes/settings_routes.py`, `frontend/src/dashboard.jsx`, `fron
 - [ ] Wire Board-only scope selector; All work remains visible but disabled with concise reason when configuration disallows it. Sprint-catalog error cannot disable a valid All work Board. Leave sibling mode state untouched.
 - [ ] Use existing focus resolver via `onResolvedFocusChange`, not a second focus algorithm. Send control updates for queued priority, preserving two running searches.
 - [ ] Render provisional Loaded so far counts and pending SP/project/filter/export states with current geometry. Preserve search typing and saved facet choices until authority arrives. Keep compact help and retry messages.
+- [ ] Replace strict Board's `collectJiraExportKeysFromTasks(..., 'stories')` caller in `dashboard.jsx` with `normalizeJiraExportKeys` over authoritative, facet/search-filtered canonical children. Read `frontend/src/jiraExportUtils.mjs`; preserve its Story-only collector and all legacy callers. Extend `JiraExportButton` with optional Board work-item keys/label metadata while keeping legacy props/defaults. Strict Board labels say Work items and export every configured eligible type. Update `tests/test_jira_export_source_guards.js`, `tests/test_eng_board_data.js` and `tests/ui/eng_group_board_view.spec.js` with mixed Story/Bug/Task, non-Story-only, filtered, pending and authoritative-empty cases; assert exact exported keys and no pending export action.
 - [ ] Existing mutations retain existing authenticated write routes and CSRF. Serialize Board mutation adapter with generation restart, patch canonical Epic, invalidate incompatible data and preserve successful writes across refresh errors. Never refresh sprint-owned stores behind Board. Drag eligibility waits for complete required children.
 - [ ] Verify cold load, zero/large columns, errors/retry, scroll/focus, both header layouts, terminal/unmapped position, 401 lock, export authority and Catch Up/Planning/Scenario sticky regressions with normal Playwright clicks and screenshots.
 
@@ -187,15 +197,16 @@ Modify: `frontend/src/settings/GroupBoardSettings.jsx`, `frontend/src/settings/T
 
 - [ ] Retention uses existing shared Save/revision/conflict workflow. Settings draft, failed save and conflict preserve live saved scope; successful group save invalidates once even if another section later fails. No automatic overwrite or new config owner.
 - [ ] Use existing `filter_changed` for explicit Board sprint changes with bounded `sprint_selection_state`, existing `app_search` only after membership authority, and one terminal `api_result` with `api_surface=eng_board`, `scope_type=all_work|sprint`, numeric duration. Keep `userevent`/`pageview` triggers and GA4_ENABLED transport gate. No IDs/names/JQL, per-frame events, disabled Team events or initialization events. Superseded/auth-locked generations emit no Board result.
+- [ ] Strict Board Work items export retains `external_link_opened` with `link_type=jira_issue_list`, bounded count and existing `issue_kind=mixed` for its type-general action; Epic export remains `epic` and legacy Story actions remain `story`. Read `frontend/src/analytics/externalLinks.js` and reuse its existing allowlist. Cover label/event behavior in the export browser test and taxonomy docs; add no new event or high-cardinality dimension.
 - [ ] Document Component scope reuse, optional sprint only on Board, strict pending/complete semantics, retention and operational measurements. Internal timing storage remains analytics-allowlisted operational data, not GA4 traffic.
 
 ### Task 7 — in-app candidate evidence and release decision
 
 Modify this plan, the companion handoff and accepted measurement record with sanitized outcomes; do not add a standalone benchmark requirement.
 
-- [ ] Use normal local app paths with the user's existing auth. Compare same group/sprint/revision/cache class; first run selected-sprint candidate versus legacy sprint, then Component All work. Record unique workload counts, index/first-focused/full timings, requested dependencies, pages/bytes/retries, peak concurrency and completeness.
-- [ ] Count existing eligible candidate DB rows first and collect only the shortfall toward 20 complete successful observations per compared cohort, with errors/cancels/caps reported separately. This is an acceptance target after the candidate exists. Twenty is a minimum preliminary percentile sample, not statistical confidence. Include additional existing scopes if available; otherwise explicitly limit generalization and use synthetic tests for unavailable edge profiles.
-- [ ] Keep 2s useful-content target and <=4s full-load p95 SLO visible. Any full-load p95 breach requires stage evidence and a reviewed remedy before rollout; do not pass based solely on a fast first column or cached average. Selected-sprint regression comparison must use comparable cache/dependency/workload states.
+- [ ] Use normal local app paths with the user's existing auth. First run selected-sprint candidate versus legacy sprint, then Component All work. Keep group/sprint, saved configuration cohort, cache/dependency/workload states and recorded build revisions comparable; never mix builds within a cohort. Legacy rows lacking a configuration digest require contemporaneous, verified unchanged-scope evidence in the accepted measurement record to support a contextual regression comparison; otherwise collect a comparable baseline through the app. Record unique workload counts, index/first-focused/full timings, requested dependencies, pages/bytes/retries, measured peak child-search concurrency and completeness.
+- [ ] Count existing eligible candidate DB rows first and collect only the shortfall toward 20 complete successful observations per compared cohort, with errors/cancels/caps reported separately. This is an acceptance target after the candidate exists. Twenty is a minimum preliminary percentile sample, not statistical confidence. Synthetic tests for unavailable edge profiles permit independent development only. Before production rollout retain measured nontrivial coverage of excluded paths: retention 1/28/90, empty terminal statuses, other children, absent Board, saved-board project fallback, Basic/JSON compatibility and multi-worker transport, including paging/batching/concurrency, projection stability, retries/rate limits and hard deadline. Missing profiles remain an explicit release blocker; do not create shared configuration or change the user's auth profile to manufacture evidence. A release omitting settled scope requires separate explicit approval.
+- [ ] Assert loading feedback is visible within 100ms of Board activation/scope change/refresh in `tests/ui/eng_group_board_view.spec.js`, using browser timing plus a painted loading-state assertion. For comparable selected-sprint cohorts record baseline and candidate median user-visible first-content times and require `(candidateMedian / baselineMedian - 1) * 100 <= 10`; a missing/zero baseline is unverified, never a pass. Use the same visible-content milestone and distinguish stale snapshot display from fresh candidate content. Preserve the 2s useful-content target and <=4s full-load p95 SLO. In `tests/test_load_performance.js`, test the acceptance calculation rejects a synthetic 800ms→1500ms regression even though both are below 2s. Any mandatory threshold breach requires stage evidence and a reviewed remedy before rollout; fast first content or cached averages cannot waive full completion.
 - [ ] Run full Python suite, frontend units, API/auth/security suites, candidate and existing Board browser tests, build, startup `/api/test` through supported auth, migration checks and diff review. Exercise blocked I/O and cross-worker focus gates against deployment-equivalent server configuration.
 - [ ] Independent reviewer verifies contract, credentials, ownership, request retirement, authority and all gate evidence. Commit atomic slices; push only with user authorization. No merge/deploy from this handoff.
 
@@ -234,8 +245,9 @@ Head stamping and row existence do not prove schema parity or a current browser 
 | Epic-first strict completeness | Existing sprint rows unknown; no candidate rows | Blocks candidate authority/rollout, not writing the pager. Task 2 strict tests followed by candidate app observations |
 | Streaming + focus + cross-worker | Unproved by existing rows | Parser/auth/core tests can proceed; prototype and cross-worker checks still precede dependent production binding |
 | Hard termination | Existing probe confirms blocked executor survives cancellation | Blocks Task 3 production binding/activation. Continue independent tasks; review runtime remedy separately. DB durations cannot pass this gate |
-| Basic/JSON parity | Non-DB control transport unresolved; local DB is available | Blocks strict Board activation in non-DB deployments only. Preserve/test legacy fallback; no Basic detour for DB/OAuth development |
-| Candidate progress and SLO | Candidate not yet built/measured | Acceptance gate after candidate exists. Reuse DB cohorts, collect missing samples and evaluate first-content/full completion separately |
+| Basic/JSON parity | Non-DB control transport unresolved; local DB is available | Blocks strict Board activation in non-DB deployments and remains part of full-scope release evidence below. Preserve/test legacy fallback; no Basic detour or blocker for independent DB/OAuth development |
+| Candidate progress and SLO | Candidate not yet built/measured | Acceptance gate after candidate exists. Separate config/cache/build cohorts; verify 100ms feedback, <=10% first-content median regression and <=4s full-load p95, retaining 2s useful-content target |
+| Excluded-profile release evidence | No production candidate measurements for excluded profiles | Blocks full production rollout, not independent development. Synthetic coverage cannot close this gate; measured scope coverage or explicitly approved release amendment required |
 | Home write gate | Blocked and unrelated | No issue #137 dependency. Preserve its own status; no Board-driven Home mutation probe |
 
 Task 1's executor limitation probe is recorded evidence, not the next task to repeat. Continue Task 2, the shared parser/held-EOF/auth checks and Task 4's isolated state/measurement tests with synthetic frames while the runtime remedy awaits review. Do not bind/activate production routes before their transport/runtime gates pass. Twenty complete samples per candidate cohort is an acceptance target, never a development-start condition; count existing eligible candidate rows first and collect only the shortfall. Legacy unknown-completeness observations cannot satisfy that count.
@@ -245,6 +257,8 @@ An unsupported gate blocks its dependent integration/release task, not plan auth
 ## Plan review outcome
 
 Independent source review completed on 2026-09-08. Corrected prototype/production task circularity, strict-capability versus legacy compatibility, partial-result count authority, explicit wire diagnostics/types, and per-page cancellation checks. All referenced existing paths were verified; absent paths are marked Create. No production implementation or candidate performance gate is claimed passed.
+
+Follow-up source review used three independent reviewers. The user authorized plan improvements: this revision specifies pre-claim token refresh/fresh context and mid-generation rotation, serialized/coalesced focus controls with terminal cancellation, persisted configuration/cache/concurrency evidence, all-eligible-child export, and explicit inherited UI/excluded-profile release gates. These are documentation amendments, not implemented fixes or approval of the supervisor proposal. The existing resume-preflight record below is preserved. Current remote synchronization could not be verified because hostname resolution failed; no new remote-publication claim is made.
 
 ## Execution record — 2026-09-08
 
@@ -294,6 +308,45 @@ recovery, real blocked auth/DB/Jira operations and deployment shutdown remain un
 incomplete; Tasks 2–7 were not executed. Production Board, shared HTTP, analytics, and generated
 bundles remain unchanged. No candidate measurements, migration checks, browser screenshots or
 authenticated startup result are claimed. This test-only operational gate adds no product event.
+
+### Resume preflight — 2026-09-08
+
+The existing checkout was clean at `439bb8d`; the measurement commit `fc4d6a4` is
+an ancestor. Read-only remote checks found no published
+`feature/issue-137-board-all-work` branch. Fetched `origin/main` is `dac3517`
+(measurement PR #172); its implementation-plan and handoff blobs differ from the
+local revised gate documents. The revised publication prerequisite is therefore
+not verified. No delegation, push, history rewrite, or production binding occurred
+in this preflight. A decision on publishing the existing revision or allowing local
+shared-checkout delegation is pending; this is separate from the runtime gate.
+
+Fresh read-only DB queries confirmed four observations, one group/sprint and two
+revisions: three successes and one cancellation, all `eng_sprint`, with unknown
+lane completeness. The timings and workload counts match sections 1 and 6; no
+candidate rows or additional samples exist. Shared configuration contains one group
+with two Components, eight Teams and seven Board columns. DB and source migration
+heads both report `20260908_0014`; fetched main has not occupied migration 0015.
+SQL JSON values were consumed as decoded objects when applicable. No local DB
+migration, configuration change or credential read was performed.
+
+The task file-map check found no unexpected missing Modify paths; missing paths
+are Create entries or outputs of earlier tasks. Full existing-symbol tracing and
+frame-contract freeze remain unfinished and are not claimed by this check.
+
+Fresh baseline verification:
+
+- `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile DATABASE_URL= TEST_DATABASE_URL= .venv/bin/python -m unittest discover -s tests`:
+  1,577 tests in 79.927s, OK, nine skipped. These process-local test overrides do
+  not change the app's auth profile or establish PostgreSQL/runtime acceptance.
+- Node 20.20.0, `npm run test:frontend:unit`: 1,172 passed, zero failures/skips.
+- Node 20.20.0, `npm run build`: passed; `git diff --exit-code -- frontend/dist`
+  passed with no generated changes.
+- Home write inputs remain zero of four; no approved disposable target or mutation
+  probe. The unrelated gate remains blocked.
+
+Both test processes and the build exited. No app runner was started or stopped.
+No implementation slice, prototype/browser proof, authenticated startup,
+disposable migration cycle, hard-termination proof or candidate SLO is claimed.
 
 ### Supervised execution proposal requiring review
 

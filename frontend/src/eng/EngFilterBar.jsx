@@ -3,9 +3,13 @@ import {
     buildFacetView,
     countActiveFacets,
     describeFacetChip,
-    neutralFacetSelection,
+    resetFacetSelection,
     toggleFacetOption,
 } from './engFilterFacets.js';
+import { resolveEngFilterOptionVisual } from './engFilterOptionVisuals.js';
+import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
+import StatusPill from '../ui/StatusPill.jsx';
+import { getProjectTrackEmoji } from './engTaskUtils.js';
 
 // The compact ENG filter bar: a Filters trigger with its facet popover, the readout, the chips
 // lane and a slot for the consumer's own view controls. Presentational — it owns no data, no
@@ -30,7 +34,10 @@ export default function EngFilterBar({
     onClearAll,
     onHeightChange,
     viewControls = null,
+    boardColumns = [],
+    renderPriorityIcon,
 }) {
+    const mountId = React.useId().replace(/[^a-zA-Z0-9_-]/g, '') || 'eng-filter';
     const [open, setOpen] = React.useState(false);
     const [hiddenChipCount, setHiddenChipCount] = React.useState(0);
     const popHostRef = React.useRef(null);
@@ -67,7 +74,7 @@ export default function EngFilterBar({
         .filter((chip) => chip.copy);
 
     const resetFacet = (facet) => {
-        onChange?.({ ...selection, [facet.id]: neutralFacetSelection(facet, counts) });
+        onChange?.(resetFacetSelection(selection, facet, counts));
     };
 
     const selectOption = (facet, optionId) => {
@@ -183,6 +190,7 @@ export default function EngFilterBar({
                             {facetViews.map((facetView, index) => {
                                 const facet = facets[index];
                                 const isSingle = facetView.kind === 'single';
+                                const emptyDescriptionId = `${mountId}-${facetView.id}-empty-description`;
                                 return (
                                     <div className="pop-group" data-facet={facetView.id} key={facetView.id}>
                                         <div className="pop-head">
@@ -200,12 +208,15 @@ export default function EngFilterBar({
                                         </div>
                                         <div
                                             className="pop-list"
-                                            role={isSingle ? 'radiogroup' : undefined}
-                                            aria-label={isSingle ? facetView.label : undefined}
+                                            role={isSingle ? 'radiogroup' : 'group'}
+                                            aria-label={facetView.label}
+                                            aria-describedby={facetView.isEmptySelection ? emptyDescriptionId : undefined}
                                         >
                                             {facetView.visibleOptions.map((option) => {
                                                 const isActive = facetView.activeOptionIds.includes(option.id);
                                                 const isLocked = facetView.lockedOptionIds.includes(option.id);
+                                                const visual = resolveEngFilterOptionVisual({ facetId: facetView.id, option, boardColumns });
+                                                const prioritySeed = `${mountId}-${facetView.id}-${option.id}`.replace(/[^a-zA-Z0-9_-]/g, '-');
                                                 return (
                                                     <button
                                                         key={option.id}
@@ -220,12 +231,38 @@ export default function EngFilterBar({
                                                         onClick={() => selectOption(facet, option.id)}
                                                     >
                                                         <span className="box" />
-                                                        <span>{option.label}</span>
+                                                        <span className="pop-opt-content">
+                                                            {visual?.kind === 'status_label' ? (
+                                                                <StatusPill
+                                                                    label={option.label}
+                                                                    className={getIssueStatusClassName(option.label, 'eng-filter-status-pill')}
+                                                                    title={isLocked ? LOCKED_REASON : option.label}
+                                                                    style={visual.configuredColour ? { '--eng-filter-status-colour': visual.configuredColour } : undefined}
+                                                                />
+                                                            ) : (
+                                                                <>
+                                                                    {visual && (
+                                                                        <span className="pop-opt-visual" aria-hidden="true">
+                                                                            {visual.kind === 'priority' && typeof renderPriorityIcon === 'function'
+                                                                                ? renderPriorityIcon(visual.value, prioritySeed)
+                                                                                : null}
+                                                                            {visual.kind === 'project_track' ? getProjectTrackEmoji(visual.value) : null}
+                                                                        </span>
+                                                                    )}
+                                                                    <span className="pop-opt-label" title={option.label}>{option.label}</span>
+                                                                </>
+                                                            )}
+                                                        </span>
                                                         <span className="n">{option.count}</span>
                                                     </button>
                                                 );
                                             })}
                                         </div>
+                                        {facetView.isEmptySelection && facet.emptyDescription && (
+                                            <div id={emptyDescriptionId} className="pop-neutral" role="status" aria-live="polite">
+                                                {facet.emptyDescription}
+                                            </div>
+                                        )}
                                         {!isSingle && facetView.isNeutral && (
                                             <div className="pop-neutral">
                                                 {`Everything ticked — not filtering by ${facetView.label.toLowerCase()}`}

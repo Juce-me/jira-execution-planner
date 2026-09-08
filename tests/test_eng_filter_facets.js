@@ -29,8 +29,13 @@ const ASSIGNEE_FACET = {
 // D33: the two track options do not partition the scope — most epics carry no track at all.
 const TRACK_FACET = {
     id: 'track',
-    label: 'Delivery track',
+    label: 'Project Track',
     kind: 'multi',
+    allowEmpty: true,
+    showZeroCountOptions: true,
+    emptyLabel: 'No Project Track',
+    emptyDescription: 'No Project Track — showing epics without a value',
+    emptyTotal: 3,
     neutralTotal: 87,
     options: [
         { id: 'committed', label: 'Committed' },
@@ -224,14 +229,55 @@ test('buildFacetView treats a multi facet absent from selection as neutral', asy
     assert.equal(module.countActiveFacets([view]), 0);
 });
 
-test('buildFacetView treats an explicitly empty multi selection the same as absent', async () => {
+test('buildFacetView preserves an explicitly empty allow-empty selection', async () => {
     const module = await loadModule();
     const view = viewOf(module, TRACK_FACET, { track: [] }, TRACK_COUNTS, 87);
 
+    assert.equal(view.isNeutral, false);
+    assert.equal(view.isEmptySelection, true);
+    assert.deepEqual(view.activeOptionIds, []);
+    assert.deepEqual(view.lockedOptionIds, []);
+    assert.equal(view.admittedTotal, 3);
+    assert.equal(module.describeFacetChip(view, TRACK_FACET).title, 'Project Track — only No Project Track');
+    assert.equal(module.countActiveFacets([view]), 1);
+});
+
+test('allow-empty facets retain zero-count options and permit all four states', async () => {
+    const module = await loadModule();
+    const counts = { track: { committed: 4, flexible: 0 } };
+    const facet = { ...TRACK_FACET, neutralTotal: 7, emptyTotal: 3 };
+    const neutral = viewOf(module, facet, {}, counts, 7);
+    assert.deepEqual(neutral.visibleOptions.map(({ id, count }) => ({ id, count })), [
+        { id: 'committed', count: 4 }, { id: 'flexible', count: 0 },
+    ]);
+    assert.equal(neutral.admittedTotal, 7);
+    const committed = module.toggleFacetOption({}, facet, 'flexible', counts);
+    assert.deepEqual(committed, { track: ['committed'] });
+    const empty = module.toggleFacetOption(committed, facet, 'committed', counts);
+    assert.deepEqual(empty, { track: [] });
+    const flexible = module.toggleFacetOption(empty, facet, 'flexible', counts);
+    assert.deepEqual(flexible, { track: ['flexible'] });
+    assert.deepEqual(module.toggleFacetOption(flexible, facet, 'committed', counts), { track: ['committed', 'flexible'] });
+});
+
+test('resetFacetSelection deletes allow-empty state but preserves ordinary neutral writes', async () => {
+    const module = await loadModule();
+    assert.deepEqual(module.resetFacetSelection({ track: [] }, TRACK_FACET, TRACK_COUNTS), {});
+    const projects = multiFacet('projects', 'Projects', ['Tech', 'Product']);
+    assert.deepEqual(
+        module.resetFacetSelection({ projects: ['tech'] }, projects, { projects: { tech: 1, product: 1 } }),
+        { projects: ['tech', 'product'] },
+    );
+});
+
+test('ordinary multi facets still treat empty as neutral and hide zero-count options', async () => {
+    const module = await loadModule();
+    const facet = multiFacet('priority', 'Priority', ['Major', 'Minor']);
+    const counts = { priority: { major: 2, minor: 0 } };
+    const view = viewOf(module, facet, { priority: [] }, counts, 2);
     assert.equal(view.isNeutral, true);
-    assert.equal(view.admittedTotal, 87, 'an empty selection admits the neutral total, not zero');
-    assert.equal(module.describeFacetChip(view, TRACK_FACET), null);
-    assert.equal(module.countActiveFacets([view]), 0);
+    assert.deepEqual(view.visibleOptions.map((option) => option.id), ['major']);
+    assert.deepEqual(view.lockedOptionIds, ['major']);
 });
 
 test('buildFacetView treats a single facet absent from selection as its default option', async () => {

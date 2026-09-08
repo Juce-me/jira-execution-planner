@@ -13,13 +13,16 @@ import { getPriorityLabel } from '../stats/statsUtils.js';
 import { epicPriorityName } from './engBoardColumns.js';
 import { classifyEpicProjects } from './engBoardCardModel.js';
 import { buildFacetView, countActiveFacets, reconcileSelection } from './engFilterFacets.js';
+import {
+    classifyEpicProjectTrack,
+    PROJECT_TRACK_COMMITTED,
+    PROJECT_TRACK_FLEXIBLE,
+} from './engProjectTrack.js';
 
 export const ENG_BOARD_SUBJECT = 'Filtering epics';
 
 const ASSIGNEE_ANYONE = 'anyone';
 const ASSIGNEE_UNASSIGNED = 'unassigned';
-const TRACK_COMMITTED = 'committed';
-const TRACK_FLEXIBLE = 'flexible';
 
 export function mergeBoardEpicGroups({ storyGroups = {}, epicsInScope = [], epicDetails = {} } = {}) {
     const grouped = { ...storyGroups };
@@ -54,11 +57,14 @@ function priorityAxisLabel(epic) {
 // Defends against a missing epic the same way epicPriorityName/priorityAxisLabel already do
 // (engBoardColumns.js's own sibling filter drops such groups upstream, but this module should
 // not throw if it is ever handed one anyway).
-function trackId(epic) {
-    if (!epic) return null;
-    if (epic.projectTrack === 'Committed') return TRACK_COMMITTED;
-    if (epic.projectTrack === 'Flexible') return TRACK_FLEXIBLE;
-    return null;
+function normalizeTrackId(epic) {
+    const classification = classifyEpicProjectTrack(epic);
+    return classification.kind === 'recognized' ? classification.id : null;
+}
+
+function hasNoProjectTrack(epic) {
+    const classification = classifyEpicProjectTrack(epic);
+    return classification.kind === 'unset';
 }
 
 export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => false } = {}) {
@@ -66,6 +72,7 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
     const priorityCounts = {};
     const projectCounts = { tech: 0, product: 0 };
     const trackCounts = { committed: 0, flexible: 0 };
+    let untrackedCount = 0;
     let unassigned = 0;
 
     epicGroups.forEach((group) => {
@@ -77,8 +84,9 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
         if (isProduct) projectCounts.product += 1;
 
         if (!(group.epic && group.epic.assignee)) unassigned += 1;
-        const id = trackId(group.epic);
+        const id = normalizeTrackId(group.epic);
         if (id) trackCounts[id] += 1;
+        else if (hasNoProjectTrack(group.epic)) untrackedCount += 1;
     });
 
     return {
@@ -127,12 +135,17 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
                 // D33: both ticked is neutral, and it is the only state that admits the epics
                 // with no track set at all — an option-sum would silently under-report them.
                 id: 'track',
-                label: 'Delivery track',
+                label: 'Project Track',
                 kind: 'multi',
+                allowEmpty: true,
+                showZeroCountOptions: true,
+                emptyLabel: 'No Project Track',
+                emptyDescription: 'No Project Track — showing epics without a value',
+                emptyTotal: untrackedCount,
                 neutralTotal: scopeTotal,
                 options: [
-                    { id: TRACK_COMMITTED, label: 'Committed' },
-                    { id: TRACK_FLEXIBLE, label: 'Flexible' },
+                    { id: PROJECT_TRACK_COMMITTED, label: 'Committed' },
+                    { id: PROJECT_TRACK_FLEXIBLE, label: 'Flexible' },
                 ],
             },
         ],
@@ -170,7 +183,8 @@ export function resolveEngBoardFilters({ model, selection = {} } = {}) {
             if (!admitsProjects) return false;
             const epic = epicGroup.epic;
             if (!admits(assigneeView, (epic && epic.assignee) ? ASSIGNEE_ANYONE : ASSIGNEE_UNASSIGNED)) return false;
-            return admits(trackView, trackId(epic));
+            if (trackView.isEmptySelection) return hasNoProjectTrack(epic);
+            return admits(trackView, normalizeTrackId(epic));
         },
     };
 }

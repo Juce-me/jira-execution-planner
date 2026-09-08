@@ -370,11 +370,75 @@
             font-size: 0.58rem;
         }
 
+        .pop-opt-content {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .pop-opt-visual {
+            flex: 0 0 16px;
+            width: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .pop-opt-label {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .eng-filter-status-pill {
+            --eng-filter-status-colour: #8c8c8c;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .popover .task-status.eng-filter-status-pill {
+            background: color-mix(in srgb, var(--eng-filter-status-colour) 28%, var(--bg-secondary));
+            color: var(--text-primary);
+        }
+
+        .popover .task-status.eng-filter-status-pill.done,
+        .popover .task-status.eng-filter-status-pill.killed,
+        .popover .task-status.eng-filter-status-pill.incomplete {
+            --eng-filter-status-colour: #52c41a;
+        }
+
+        .popover .task-status.eng-filter-status-pill.in-progress,
+        .popover .task-status.eng-filter-status-pill.accepted {
+            --eng-filter-status-colour: #69c0ff;
+        }
+
+        .popover .task-status.eng-filter-status-pill.release,
+        .popover .task-status.eng-filter-status-pill.waiting-for-release {
+            --eng-filter-status-colour: #13c2c2;
+        }
+
+        .popover .task-status.eng-filter-status-pill.blocked {
+            --eng-filter-status-colour: #ff4d4f;
+        }
+
+        .popover .task-status.eng-filter-status-pill.postponed {
+            --eng-filter-status-colour: #fa8c16;
+        }
+
+        .pop-opt-visual .task-priority-icon[data-priority]::after {
+            content: none;
+            display: none;
+        }
+
         .pop-opt.is-locked {
             cursor: not-allowed;
         }
 
-        .pop-opt.is-locked span:nth-child(2) {
+        .pop-opt.is-locked .pop-opt-content {
             color: var(--text-secondary);
         }
 

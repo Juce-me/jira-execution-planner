@@ -110,12 +110,14 @@ export function filterEpicsByTaskEpicKeys(epics, tasks) {
 export function resetEngFacetFilters({
     setEngStatusFilter,
     setEngPriorityFilter,
+    setEngProjectTrackFilter,
     defaultEngStatusFilter,
     setShowTech,
     setShowProduct,
 }) {
     setEngStatusFilter(defaultEngStatusFilter);
     setEngPriorityFilter(null);
+    setEngProjectTrackFilter?.(undefined);
     setShowTech(true);
     setShowProduct(true);
 }
@@ -126,6 +128,7 @@ export function resetEngFilters({
     setSelectedTeams,
     setEngStatusFilter,
     setEngPriorityFilter,
+    setEngProjectTrackFilter,
     defaultEngStatusFilter,
     setShowTech,
     setShowProduct,
@@ -140,6 +143,7 @@ export function resetEngFilters({
     resetEngFacetFilters({
         setEngStatusFilter,
         setEngPriorityFilter,
+        setEngProjectTrackFilter,
         defaultEngStatusFilter,
         setShowTech,
         setShowProduct,

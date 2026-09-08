@@ -17,7 +17,7 @@ not permission to skip prototype, runtime, completeness or SLO evidence.
 
 1. Read AGENTS.md, docs/AGENTS.md, docs/plans/AGENTS.md, docs/plans/README.md,
    backend/security/CONFIGURATION_OWNERSHIP.md, the complete implementation plan,
-   SUPPORT-eng-board-optional-sprint-design.md and MRT004/MRT010/MRT023/MRT025.
+   SUPPORT-eng-board-optional-sprint-design.md and MRT004/MRT010/MRT023/MRT026.
    Inspect every referenced existing symbol. Verify the actual file map and migration head.
 2. Verify that the measurement commit and both All work documents exist in the checked-out
    published base. If the measurement branch has merged, use updated main only to create

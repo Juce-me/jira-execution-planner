@@ -15,6 +15,10 @@ const catchUpFiltersSource = fs.readFileSync(
     path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engCatchUpFilters.js'),
     'utf8'
 );
+const filterBarSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngFilterBar.jsx'), 'utf8');
+const boardViewSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngBoardView.jsx'), 'utf8');
+const visualResolverSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engFilterOptionVisuals.js'), 'utf8');
+const filterBarCssSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'styles', 'eng', 'filter-bar.css'), 'utf8');
 
 const dashboardCss = fs.readFileSync(
     path.join(__dirname, '..', 'frontend', 'dist', 'dashboard.css'),
@@ -82,15 +86,12 @@ test('the single statusFilter select and the four Display toggles are gone from 
     );
 });
 
-test('Catch Up supplies the Status, Priority and Projects facets and nothing else', () => {
+test('Catch Up supplies Story facets plus the Epic-owned Project Track facet', () => {
     assert.ok(catchUpFiltersSource.includes("id: 'status'"), 'Expected a Status facet (D14: Catch Up is a list)');
     assert.ok(catchUpFiltersSource.includes("id: 'priority'"), 'Expected a Priority facet');
     assert.ok(catchUpFiltersSource.includes("id: 'projects'"), 'Expected a Projects facet');
-    assert.equal(
-        catchUpFiltersSource.includes("id: 'track'"),
-        false,
-        'Delivery track is an epic field and is not a Catch Up facet'
-    );
+    assert.ok(catchUpFiltersSource.includes("id: 'track'"), 'Expected the parent-Epic Project Track facet');
+    assert.ok(catchUpFiltersSource.includes('epicDetails'), 'Expected Project Track to resolve through parent Epic metadata');
     assert.equal(
         catchUpFiltersSource.includes("id: 'assignee'"),
         false,
@@ -160,14 +161,16 @@ test('an explicit initiative-grouping choice survives new initiative data', () =
     );
 });
 
-test('the persisted Catch Up filter state round-trips through prefs and per-group state', () => {
-    ['engStatusFilter', 'engPriorityFilter'].forEach((key) => {
+test('the Catch Up filter state round-trips through local state and per-group snapshots', () => {
+    ['engStatusFilter', 'engPriorityFilter', 'engProjectTrackFilter'].forEach((key) => {
         const occurrences = dashboardSource.split(key).length - 1;
         assert.ok(
             occurrences >= 4,
-            `Expected ${key} in the state, the prefs payload, the per-group default and the restore (found ${occurrences})`
+            `Expected ${key} in local state, the per-group default, the snapshot and the restore (found ${occurrences})`
         );
     });
+    assert.ok(dashboardSource.includes('buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails })'));
+    assert.ok(dashboardSource.includes('engCatchUpFilters.admitsProjectTrack(task)'));
 });
 
 test('dashboard CSS carries the filter bar geometry contract', () => {
@@ -192,4 +195,31 @@ test('dashboard CSS carries the filter bar geometry contract', () => {
         false,
         'MRT021: the bar must not set a shared control\'s height from its own stylesheet'
     );
+});
+
+test('shared filter consumers receive loaded board colours and the single priority renderer', () => {
+    assert.ok(engViewSource.includes('boardColumns={boardColumns}'));
+    assert.ok(engViewSource.includes('renderPriorityIcon={renderPriorityIcon}'));
+    assert.ok(boardViewSource.includes('boardColumns={board?.columns || []}'));
+    assert.ok(boardViewSource.includes('renderPriorityIcon={renderPriorityIcon}'));
+    assert.ok(dashboardSource.includes('engFilters={engCatchUpFilters} boardColumns={activeGroup?.board?.columns || []} renderPriorityIcon={renderPriorityIcon}'));
+    assert.equal(visualResolverSource.includes('fetch('), false);
+    assert.equal(visualResolverSource.includes('analytics'), false);
+    assert.equal(visualResolverSource.includes('localStorage'), false);
+});
+
+test('filter option visuals retain three cells and accessible decorative semantics', () => {
+    assert.ok(filterBarSource.includes('className="pop-opt-content"'));
+    assert.ok(filterBarSource.includes('className="pop-opt-visual" aria-hidden="true"'));
+    assert.ok(filterBarSource.includes("getIssueStatusClassName(option.label, 'eng-filter-status-pill')"));
+    assert.ok(filterBarSource.includes("role={isSingle ? 'radiogroup' : 'group'}"));
+    assert.ok(filterBarSource.includes('aria-live="polite"'));
+    assert.equal(/status[^\n]*(dot|circle|swatch)/i.test(filterBarSource), false);
+    assert.ok(/\.pop-opt \{[^}]*grid-template-columns: 13px 1fr auto;/.test(dashboardCss));
+});
+
+test('filter Status colors use a surface tint without dimming their text', () => {
+    assert.ok(filterBarSource.includes("'--eng-filter-status-colour': visual.configuredColour"));
+    assert.ok(filterBarCssSource.includes('color-mix(in srgb, var(--eng-filter-status-colour) 28%, var(--bg-secondary))'));
+    assert.equal(/\.eng-filter-status-pill\s*\{[^}]*opacity:/s.test(filterBarCssSource), false);
 });

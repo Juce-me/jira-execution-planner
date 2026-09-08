@@ -188,6 +188,8 @@ async function installEngCompactFixture(page, options = {}) {
         : null;
     const productEpicForResponse = initiative ? makeEpic('PRODUCT', { initiative }) : productEpic;
     const techEpicForResponse = initiative ? makeEpic('TECH', { initiative }) : techEpic;
+    const productEpicsForResponse = options.productEpics || { [productEpicForResponse.key]: productEpicForResponse };
+    const techEpicsForResponse = options.techEpics || { [techEpicForResponse.key]: techEpicForResponse };
     await installDashboardShell(page);
     await page.route('**/api/**', route => {
         const request = route.request();
@@ -223,6 +225,7 @@ async function installEngCompactFixture(page, options = {}) {
                     name: 'Default',
                     teamIds: groupTeamIds,
                     teamLabels: { 'team-alpha': 'Alpha Team', 'team-beta': 'Beta Team' },
+                    ...(options.boardColumns ? { board: { columns: options.boardColumns } } : {}),
                 }],
                 defaultGroupId: 'grp-default',
                 source: 'test',
@@ -243,11 +246,11 @@ async function installEngCompactFixture(page, options = {}) {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
             const tasks = project === 'tech' ? techIssueSource : productIssueSource;
-            const epic = project === 'tech' ? techEpicForResponse : productEpicForResponse;
+            const epics = project === 'tech' ? techEpicsForResponse : productEpicsForResponse;
             return json({
                 issues: purpose === 'ready-to-close' ? [] : tasks,
-                epics: { [epic.key]: epic },
-                epicsInScope: [epic],
+                epics,
+                epicsInScope: Object.values(epics),
                 names: {},
             });
         }
@@ -706,9 +709,9 @@ test('the popover opens over the list and its options take a plain click', async
 
     // §12.3: the bar states its subject, and the facet set is Catch Up's.
     await expect(popover(page).locator('.pop-subject')).toHaveText('Filtering stories');
-    await expect(popover(page).locator('.pop-group')).toHaveCount(3);
-    await expect(popover(page).locator('.pop-facet')).toHaveText(['Status', 'Priority', 'Projects']);
-    await expect(facetGroup(page, 'track')).toHaveCount(0);
+    await expect(popover(page).locator('.pop-group')).toHaveCount(4);
+    await expect(popover(page).locator('.pop-facet')).toHaveText(['Status', 'Priority', 'Projects', 'Project Track']);
+    await expect(facetGroup(page, 'track')).toHaveCount(1);
     await expect(facetGroup(page, 'assignee')).toHaveCount(0);
 
     const option = facetOption(page, 'status', 'Done');
@@ -720,6 +723,167 @@ test('the popover opens over the list and its options take a plain click', async
     expect(reachable, 'a popover option was covered by the list below it').toBe(true);
     await option.click();
     await expect(page.locator('.filterbar .chip:not(.chip-more)')).toHaveCount(1);
+});
+
+test('Status labels and Priority options reuse configured visuals without decorating Projects', async ({ page }) => {
+    await openEngCatchUp(page, { width: 1440, height: 900 }, {
+        boardColumns: [{ id: 'active', name: 'Active', colour: '#597ef7', statuses: ['In Progress'] }],
+    });
+    await openFilters(page);
+    const mappedStatus = facetOption(page, 'status', 'In Progress');
+    const pill = mappedStatus.locator('.eng-filter-status-pill');
+    await expect(pill).toHaveCount(1);
+    await expect(pill).not.toHaveCSS('background-color', 'rgb(89, 126, 247)');
+    await expect(mappedStatus.locator('.pop-opt-visual')).toHaveCount(0);
+    await expect(facetGroup(page, 'priority').locator('.pop-opt-visual .task-priority-icon')).toHaveCount(5);
+    await expect(facetGroup(page, 'projects').locator('.pop-opt-visual')).toHaveCount(0);
+    const ids = await facetGroup(page, 'priority').locator('svg [id]').evaluateAll((nodes) => nodes.map((node) => node.id));
+    expect(new Set(ids).size).toBe(ids.length);
+    await waitForVisualSettled(page);
+    await popover(page).screenshot({ path: `${screenshotDir}/filter-option-visuals-desktop.png` });
+    await page.setViewportSize({ width: 375, height: 667 });
+    await waitForVisualSettled(page);
+    await popover(page).screenshot({ path: `${screenshotDir}/filter-option-visuals-mobile.png` });
+});
+
+test('every configured Status colour and the neutral fallback have readable filter text', async ({ page }) => {
+    const colours = ['#8c8c8c', '#b37feb', '#597ef7', '#13c2c2', '#52c41a', '#e8a11d', '#ff4d4f'];
+    const statuses = ['To Do', 'Accepted', 'Analysis', 'In Progress', 'Blocked', 'Review', 'Done'];
+    const tasks = statuses.map((status, index) => makeIssue({
+        key: `PRODUCT-COLOR-${index}`,
+        project: 'PRODUCT',
+        index,
+        status,
+        priority: 'Major',
+        points: 1,
+        summary: `${status} colour fixture`,
+    })).concat(makeIssue({
+        key: 'PRODUCT-COLOR-UNKNOWN', project: 'PRODUCT', index: 20, status: 'Mystery', priority: 'Major', points: 1, summary: 'Unknown status fixture',
+    }));
+    await openEngCatchUp(page, { width: 1440, height: 900 }, {
+        productTasks: tasks,
+        techTasks: [],
+        boardColumns: statuses.map((status, index) => ({ id: `colour-${index}`, name: status, colour: colours[index], statuses: [status] })),
+    });
+    await openFilters(page);
+    const results = await facetGroup(page, 'status').locator('.eng-filter-status-pill').evaluateAll((nodes) => {
+        const rgb = (value) => {
+            const channels = (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+            return value.startsWith('color(srgb') ? channels.map((channel) => channel * 255) : channels;
+        };
+        const luminance = (value) => {
+            const channels = rgb(value).map((channel) => {
+                const normalized = channel / 255;
+                return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+            });
+            return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+        };
+        return nodes.map((node) => {
+            const style = getComputedStyle(node);
+            const high = Math.max(luminance(style.color), luminance(style.backgroundColor));
+            const low = Math.min(luminance(style.color), luminance(style.backgroundColor));
+            return {
+                label: node.textContent.trim(),
+                background: style.backgroundColor,
+                opacity: style.opacity,
+                contrast: (high + 0.05) / (low + 0.05),
+            };
+        });
+    });
+    statuses.forEach((status, index) => {
+        const result = results.find((entry) => entry.label === status);
+        expect(result.background).not.toBe(`rgb(${parseInt(colours[index].slice(1, 3), 16)}, ${parseInt(colours[index].slice(3, 5), 16)}, ${parseInt(colours[index].slice(5, 7), 16)})`);
+        expect(result.opacity).toBe('1');
+        expect(result.contrast, `${status} contrast: ${JSON.stringify(result)}`).toBeGreaterThanOrEqual(4.5);
+    });
+    const unknown = results.find((entry) => entry.label === 'Mystery');
+    expect(unknown.background).not.toBe('rgb(140, 140, 140)');
+    expect(unknown.opacity).toBe('1');
+    expect(unknown.contrast).toBeGreaterThanOrEqual(4.5);
+});
+
+test('Catch Up Project Track counts Epics and filters their Stories in all four states', async ({ page }) => {
+    const epics = {
+        'PRODUCT-E1': makeEpic('PRODUCT', { key: 'PRODUCT-E1', projectTrack: 'Committed' }),
+        'PRODUCT-E2': makeEpic('PRODUCT', { key: 'PRODUCT-E2', projectTrack: ' committed ' }),
+        'PRODUCT-E3': makeEpic('PRODUCT', { key: 'PRODUCT-E3', projectTrack: 'Flexible' }),
+        'PRODUCT-E4': makeEpic('PRODUCT', { key: 'PRODUCT-E4', projectTrack: '   ' }),
+        'PRODUCT-E5': makeEpic('PRODUCT', { key: 'PRODUCT-E5', projectTrack: 'Other' }),
+    };
+    const trackStory = (key, epicKey, index) => makeIssue({
+        key,
+        project: 'PRODUCT',
+        index,
+        status: 'To Do',
+        priority: 'Major',
+        points: 1,
+        summary: `${key} track fixture`,
+        fields: { epicKey },
+    });
+    const tasks = [
+        trackStory('PRODUCT-C1', 'PRODUCT-E1', 1),
+        trackStory('PRODUCT-C2', 'PRODUCT-E1', 2),
+        trackStory('PRODUCT-C3', 'PRODUCT-E2', 3),
+        trackStory('PRODUCT-F1', 'PRODUCT-E3', 4),
+        trackStory('PRODUCT-U1', 'PRODUCT-E4', 5),
+        trackStory('PRODUCT-U2', 'PRODUCT-E4', 6),
+        trackStory('PRODUCT-X1', 'PRODUCT-E5', 7),
+        trackStory('PRODUCT-NO-EPIC', null, 8),
+    ];
+    await openEngCatchUp(page, { width: 1440, height: 900 }, {
+        productTasks: tasks,
+        techTasks: [],
+        productEpics: epics,
+    });
+    await expect(page.locator('.fb-readout')).toHaveText('8 of 8 stories');
+    await openFilters(page);
+    const track = facetGroup(page, 'track');
+    const committed = facetOption(page, 'track', 'committed');
+    const flexible = facetOption(page, 'track', 'flexible');
+    await expect(track.locator('.pop-total')).toHaveText('5');
+    await expect(committed.locator('.pop-opt-visual')).toHaveText('🔒');
+    await expect(flexible.locator('.pop-opt-visual')).toHaveText('🤷');
+    await expect(committed.locator('.n')).toHaveText('2');
+    await expect(flexible.locator('.n')).toHaveText('1');
+    await track.scrollIntoViewIfNeeded();
+    await waitForVisualSettled(page);
+    await popover(page).screenshot({ path: `${screenshotDir}/catch-up-project-track-neutral-desktop.png` });
+
+    await flexible.click();
+    await closeFilters(page);
+    expect(await storyKeys(page)).toEqual(['PRODUCT-C1', 'PRODUCT-C2', 'PRODUCT-C3']);
+
+    await openFilters(page);
+    await committed.click();
+    await expect(track.locator('.pop-total')).toHaveText('1');
+    await expect(track.getByRole('status')).toContainText('No Project Track');
+    await closeFilters(page);
+    expect(await storyKeys(page)).toEqual(['PRODUCT-U1', 'PRODUCT-U2']);
+    await expect(page.locator('.filterbar .chip:not(.chip-more)')).toContainText('No Project Track');
+
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    expect(await storyKeys(page)).toEqual(['PRODUCT-U1', 'PRODUCT-U2']);
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+    expect(await storyKeys(page)).toEqual(['PRODUCT-U1', 'PRODUCT-U2']);
+
+    const teamControl = page.locator('.view-selector .team-dropdown').first();
+    await teamControl.locator('.team-dropdown-toggle').click();
+    await teamControl.locator('.team-dropdown-option', { hasText: 'Alpha Team' }).locator('input').check();
+    await teamControl.getByRole('textbox', { name: 'Filter teams' }).press('Escape');
+    await expect(teamControl.locator('.team-dropdown-selection-label')).toHaveText('Alpha Team');
+    expect(await storyKeys(page)).toEqual(['PRODUCT-U2']);
+    await teamControl.locator('.team-dropdown-toggle').click();
+    await teamControl.locator('.team-dropdown-option', { hasText: 'All Teams' }).locator('input').check();
+    await teamControl.getByRole('textbox', { name: 'Filter teams' }).press('Escape');
+    expect(await storyKeys(page)).toEqual(['PRODUCT-U1', 'PRODUCT-U2']);
+
+    await page.locator('.chip-clear').click();
+    expect(await storyKeys(page)).toEqual(tasks.map((task) => task.key).sort());
+    await openFilters(page);
+    await committed.click();
+    await closeFilters(page);
+    expect(await storyKeys(page)).toEqual(['PRODUCT-F1']);
 });
 
 test('the popover fits a short viewport and its last facet stays reachable', async ({ page }) => {

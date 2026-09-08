@@ -136,6 +136,40 @@ fi
 exec /bin/mkdir "$@"
 '''
 
+FAILING_LOCK_MKDIR_STUB = r'''#!/usr/bin/env bash
+set -u
+if [[ "$1" == "$FAKE_LOCK_DIR" ]]; then
+  exit 1
+fi
+exec /bin/mkdir "$@"
+'''
+
+PS_STUB = r'''#!/usr/bin/env bash
+set -u
+if [[ "$*" == *"-o command="* ]]; then
+  target_pid="$2"
+  if [[ -n "${FAKE_UNRELATED_PID:-}" && "$target_pid" == "$FAKE_UNRELATED_PID" ]]; then
+    printf '%s\n' "sleep 30"
+  else
+    printf 'bash %s\n' "$FAKE_RUNNER_PATH"
+  fi
+  exit 0
+fi
+exit 98
+'''
+
+RMDIR_STUB = r'''#!/usr/bin/env bash
+set -u
+if [[ "$1" == "$FAKE_LOCK_DIR" &&
+      -n "${FAKE_LOCK_DISAPPEAR_FILE:-}" &&
+      ! -e "$FAKE_LOCK_DISAPPEAR_FILE" ]]; then
+  /bin/rmdir "$1"
+  : > "$FAKE_LOCK_DISAPPEAR_FILE"
+  exit 1
+fi
+exec /bin/rmdir "$@"
+'''
+
 
 class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
     def setUp(self):
@@ -150,7 +184,7 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         shutil.copy2(ROOT / "runners/local/compose.yaml", self.runner_dir / "compose.yaml")
         runner_path = self.runner_dir / "run.sh"
         runner_source = runner_path.read_text(encoding="utf8")
-        production_lock = 'readonly lock_dir="/tmp/jira-planning-local-runner.lock"'
+        production_lock = 'readonly lock_dir="${runtime_tmp_dir}/jira-planning-local-runner.lock"'
         if runner_source.count(production_lock) != 1:
             raise AssertionError("production lock declaration changed")
         runner_path.write_text(
@@ -171,6 +205,7 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         self.fake_bin = base / "fake-bin"
         self.fake_bin.mkdir()
         self._write_executable(self.fake_bin / "docker", DOCKER_STUB)
+        self._write_executable(self.fake_bin / "ps", PS_STUB)
 
         self.log = base / "runner.log"
         self.child_pid_file = base / "child.pid"
@@ -181,6 +216,8 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         self.env.update({
             "PATH": f"{self.fake_bin}{os.pathsep}{self.env.get('PATH', '')}",
             "RUNNER_LOG": str(self.log),
+            "FAKE_RUNNER_PATH": str(runner_path),
+            "FAKE_LOCK_DIR": str(self.lock_dir),
             "FAKE_CHILD_PID_FILE": str(self.child_pid_file),
             "FAKE_GRANDCHILD_PID_FILE": str(self.grandchild_pid_file),
             "TMPDIR": str(base),
@@ -273,6 +310,14 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         for stream in (process.stdout, process.stderr):
             if stream is not None and not stream.closed:
                 stream.close()
+        try:
+            (self.lock_dir / "runner.pid").unlink()
+        except FileNotFoundError:
+            pass
+        try:
+            (self.lock_dir / "child.pid").unlink()
+        except FileNotFoundError:
+            pass
         try:
             self.lock_dir.rmdir()
         except FileNotFoundError:
@@ -611,13 +656,12 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         self.assertNotIn(" down --timeout 10", self._log_text())
         self._assert_lock_released()
 
-    def test_second_checkout_with_different_tmpdir_cannot_mutate(self):
+    def test_second_runner_stops_first_then_starts(self):
         first_log = self.log.parent / "first.log"
         first_env = self.env.copy()
         first_env.update({
             "RUNNER_LOG": str(first_log),
             "FAKE_APP_SLEEP": "1",
-            "TMPDIR": str(self.log.parent / "tmp-one"),
         })
         first = self._start_process(env=first_env)
         try:
@@ -632,17 +676,145 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
             second_log = self.log.parent / "second.log"
             second = self._run(
                 RUNNER_LOG=second_log,
-                TMPDIR=self.log.parent / "tmp-two",
             )
             second_output = second_log.read_text(encoding="utf8")
-            self.assertNotEqual(second.returncode, 0)
-            self.assertIn("another runner is active", second.stderr)
-            self.assertNotIn(" up --detach --wait", second_output)
-            self.assertNotIn(" down --timeout 10", second_output)
-
-            first.send_signal(signal.SIGTERM)
-            first.communicate(timeout=8)
+            self.assertIsNotNone(first.poll(), second.stderr)
+            _, first_stderr = first.communicate(timeout=8)
+            self.assertEqual(first.returncode, 143, first_stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("replacing runner", second.stderr)
+            self.assertIn(" up --detach --wait", second_output)
+            self._assert_down_once(second_output)
             self._assert_down_once(first_log.read_text(encoding="utf8"))
+            self._assert_lock_released()
+        finally:
+            self._cleanup_process(first)
+
+    def test_malformed_pid_lock_is_reclaimed(self):
+        self.lock_dir.mkdir()
+        (self.lock_dir / "runner.pid").write_text("not-a-pid\n", encoding="utf8")
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("reclaiming stale runner lock", result.stderr)
+        self.assertIn(" up --detach --wait", self._log_text())
+        self._assert_lock_released()
+
+    def test_empty_lock_from_previous_runner_is_reclaimed(self):
+        self.lock_dir.mkdir()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("reclaiming stale runner lock", result.stderr)
+        self._assert_lock_released()
+
+    def test_lock_creation_failure_exits_once_without_stale_reclaim_loop(self):
+        self._write_executable(self.fake_bin / "mkdir", FAILING_LOCK_MKDIR_STUB)
+
+        result = self._run()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stderr.count("reclaiming stale runner lock"), 0)
+        self.assertIn("unable to create runner lock", result.stderr)
+        self._assert_lock_released()
+
+    def test_unreclaimable_stale_lock_fails_once_without_retry_loop(self):
+        runner_path = self.runner_dir / "run.sh"
+        source = runner_path.read_text(encoding="utf8")
+        acquisition_limit = 'while [[ "$acquisition_attempt" -lt 20 ]]'
+        self.assertEqual(source.count(acquisition_limit), 1)
+        runner_path.write_text(
+            source.replace(
+                acquisition_limit,
+                'while [[ "$acquisition_attempt" -lt 2 ]]',
+                1,
+            ),
+            encoding="utf8",
+        )
+        self.lock_dir.mkdir()
+        (self.lock_dir / "runner.pid").write_text("not-a-pid\n", encoding="utf8")
+        unexpected_file = self.lock_dir / "unexpected"
+        unexpected_file.write_text("occupied\n", encoding="utf8")
+        try:
+            started_at = time.monotonic()
+            result = self._run()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertLess(time.monotonic() - started_at, 3)
+            self.assertEqual(result.stderr.count("reclaiming stale runner lock"), 1)
+            self.assertIn("unable to reclaim stale runner lock", result.stderr)
+        finally:
+            unexpected_file.unlink(missing_ok=True)
+            (self.lock_dir / "runner.pid").unlink(missing_ok=True)
+            self.lock_dir.rmdir()
+
+    def test_lock_disappearing_during_reclaim_is_treated_as_success(self):
+        disappeared_file = self.log.parent / "lock-disappeared"
+        self._write_executable(self.fake_bin / "rmdir", RMDIR_STUB)
+        self.lock_dir.mkdir()
+        (self.lock_dir / "runner.pid").write_text("not-a-pid\n", encoding="utf8")
+
+        result = self._run(FAKE_LOCK_DISAPPEAR_FILE=disappeared_file)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr.count("reclaiming stale runner lock"), 1)
+        self.assertNotIn("unable to reclaim stale runner lock", result.stderr)
+        self._assert_lock_released()
+
+    def test_live_unrelated_pid_is_not_signalled_when_lock_is_reclaimed(self):
+        unrelated = subprocess.Popen(["sleep", "30"])
+        self.addCleanup(self._cleanup_process, unrelated)
+        self.lock_dir.mkdir()
+        (self.lock_dir / "runner.pid").write_text(
+            f"{unrelated.pid}\n", encoding="utf8",
+        )
+        try:
+            result = self._run(FAKE_UNRELATED_PID=unrelated.pid)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("reclaiming stale runner lock", result.stderr)
+            self.assertIsNone(unrelated.poll())
+            self._assert_lock_released()
+        finally:
+            self._cleanup_process(unrelated)
+
+    def test_replacement_escalates_when_first_runner_cannot_handle_term(self):
+        first_log = self.log.parent / "stopped-first.log"
+        first_env = self.env.copy()
+        first_env.update({
+            "RUNNER_LOG": str(first_log),
+            "FAKE_APP_SLEEP": "1",
+            "FAKE_APP_GRANDCHILD": "1",
+        })
+        first = self._start_process(env=first_env)
+        try:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if (
+                    self.lock_dir.exists()
+                    and first_log.exists()
+                    and "jira_server.py" in first_log.read_text(encoding="utf8")
+                ):
+                    break
+                time.sleep(0.05)
+            else:
+                self.fail("first runner did not acquire the lock")
+            (self.lock_dir / "runner.pid").write_text(
+                f"{first.pid}\n", encoding="utf8",
+            )
+            first.send_signal(signal.SIGSTOP)
+
+            result = self._run()
+            self.assertIsNotNone(first.poll(), result.stderr)
+            _, first_stderr = first.communicate(timeout=8)
+
+            self.assertEqual(first.returncode, -signal.SIGKILL, first_stderr)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("did not stop; sending KILL", result.stderr)
+            self._assert_pid_exits(self.child_pid_file)
+            self._assert_pid_exits(self.grandchild_pid_file)
             self._assert_lock_released()
         finally:
             self._cleanup_process(first)

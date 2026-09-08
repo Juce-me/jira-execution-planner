@@ -32,6 +32,8 @@ export default function EngView({
     engEpicSort,
     setEngEpicSort,
     onFilterBarHeightChange,
+    boardColumns = [],
+    renderPriorityIcon,
 }) {
     if (selectedView !== 'eng') {
         return null;
@@ -121,6 +123,8 @@ export default function EngView({
                         onChange={onFacetChange}
                         onClearAll={onClearFacets}
                         onHeightChange={onFilterBarHeightChange}
+                        boardColumns={boardColumns}
+                        renderPriorityIcon={renderPriorityIcon}
                         viewControls={(
                             <>
                                 <div className="sprint-dropdown sprint-dropdown-compact eng-epic-sort-dropdown" ref={sortDropdownRef}>

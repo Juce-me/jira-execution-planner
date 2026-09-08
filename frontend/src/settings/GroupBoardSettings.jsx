@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
+import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { loadBoardStatusCatalog } from './boardStatusCatalog.js';
@@ -44,6 +45,32 @@ const COLOUR_NAMES = {
     '#e8a11d': 'Amber',
     '#ff4d4f': 'Red',
 };
+
+const BOARD_SCROLL_EPSILON = 1;
+const BOARD_DRAG_EDGE_PX = 44;
+const BOARD_DRAG_SCROLL_PX = 12;
+const BOARD_WHEEL_LINE_PX = 16;
+
+function boardScrollState(element) {
+    const max = Math.max(0, element.scrollWidth - element.clientWidth);
+    return {
+        overflowing: max > BOARD_SCROLL_EPSILON,
+        canScrollLeft: element.scrollLeft > BOARD_SCROLL_EPSILON,
+        canScrollRight: element.scrollLeft < max - BOARD_SCROLL_EPSILON,
+    };
+}
+
+function boardColumnScrollStep(element) {
+    const column = element.querySelector('.board-column, .board-add-column');
+    const gap = parseFloat(getComputedStyle(element).columnGap) || 0;
+    return column ? column.getBoundingClientRect().width + gap : element.clientWidth * 0.8;
+}
+
+function boardWheelPixelDelta(event, element) {
+    if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return event.deltaY * BOARD_WHEEL_LINE_PX;
+    if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) return event.deltaY * element.clientWidth;
+    return event.deltaY;
+}
 
 // Each entry takes the server's own message so the banner can name the board and the Jira status
 // it got back. The composer must never reduce these to one undifferentiated "unavailable": an
@@ -104,6 +131,11 @@ export default function GroupBoardSettings(props) {
     const [dragKind, setDragKind] = React.useState(null);
     const [dropColumnId, setDropColumnId] = React.useState(null);
     const [poolIsDropTarget, setPoolIsDropTarget] = React.useState(false);
+    const [columnScroll, setColumnScroll] = React.useState({
+        overflowing: false,
+        canScrollLeft: false,
+        canScrollRight: false,
+    });
 
     // Read during event handlers, which see a stale closure otherwise.
     const columnsRef = React.useRef(columns);
@@ -127,10 +159,61 @@ export default function GroupBoardSettings(props) {
     const swatchElementsRef = React.useRef(new Map());
     // One place that restores focus after a re-render replaces the control that had it.
     const pendingFocusRef = React.useRef(null);
+    const columnsElementRef = React.useRef(null);
+    const resetColumnsButtonRef = React.useRef(null);
+    const columnScrollControlsRef = React.useRef(null);
+    const columnScrollStateRef = React.useRef({
+        overflowing: false,
+        canScrollLeft: false,
+        canScrollRight: false,
+    });
+    const columnScrollerId = React.useId();
+    const dragScrollDirectionRef = React.useRef(0);
+    const dragScrollFrameRef = React.useRef(null);
     // Every id this session has ever issued, deleted ones included: reusing one would rebind a
     // per-user focus/star state to a different column (§6.1.2).
     const usedIdsRef = React.useRef(new Set(columns.map((column) => column.id)));
     const lastEmittedRef = React.useRef(board);
+
+    const syncColumnScroll = React.useCallback(() => {
+        const element = columnsElementRef.current;
+        if (!element) return;
+        const next = boardScrollState(element);
+        const previous = columnScrollStateRef.current;
+        if (
+            previous.overflowing
+            && !next.overflowing
+            && columnScrollControlsRef.current?.contains(document.activeElement)
+        ) {
+            pendingFocusRef.current = () => {
+                if (resetColumnsButtonRef.current && !resetColumnsButtonRef.current.disabled) {
+                    resetColumnsButtonRef.current.focus();
+                } else {
+                    columnsElementRef.current?.focus();
+                }
+            };
+        }
+        columnScrollStateRef.current = next;
+        setColumnScroll((current) => (
+            current.overflowing === next.overflowing
+            && current.canScrollLeft === next.canScrollLeft
+            && current.canScrollRight === next.canScrollRight
+                ? current
+                : next
+        ));
+    }, []);
+
+    React.useLayoutEffect(() => {
+        syncColumnScroll();
+    }, [columns.length, syncColumnScroll]);
+
+    React.useEffect(() => {
+        const element = columnsElementRef.current;
+        if (!element || typeof ResizeObserver === 'undefined') return undefined;
+        const observer = new ResizeObserver(syncColumnScroll);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [syncColumnScroll]);
 
     // Re-seed only when the board arrives from outside (group switch, conflict discard). A board
     // this component itself emitted must not reset the editor mid-edit.
@@ -224,7 +307,93 @@ export default function GroupBoardSettings(props) {
         announcementTimerRef.current = setTimeout(() => setAnnouncement(''), 1000);
     };
 
+    const onColumnsWheel = React.useCallback((event) => {
+        const element = columnsElementRef.current;
+        if (!element) return;
+        if (event.ctrlKey) return;
+        if (event.target instanceof Element && event.target.closest('.board-pick')) return;
+        if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) || event.deltaY === 0) return;
+
+        const pixelDelta = boardWheelPixelDelta(event, element);
+        const max = Math.max(0, element.scrollWidth - element.clientWidth);
+        const next = Math.min(max, Math.max(0, element.scrollLeft + pixelDelta));
+        if (Math.abs(next - element.scrollLeft) <= BOARD_SCROLL_EPSILON) return;
+
+        event.preventDefault();
+        element.scrollLeft = next;
+    }, []);
+
+    React.useEffect(() => {
+        const element = columnsElementRef.current;
+        if (!element) return undefined;
+        element.addEventListener('wheel', onColumnsWheel, { passive: false });
+        return () => element.removeEventListener('wheel', onColumnsWheel);
+    }, [onColumnsWheel]);
+
+    const scrollColumns = (direction) => {
+        const element = columnsElementRef.current;
+        if (!element) return;
+        const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        element.scrollBy({
+            left: direction * boardColumnScrollStep(element),
+            behavior: reduceMotion ? 'auto' : 'smooth',
+        });
+    };
+
+    const stopColumnDragScroll = React.useCallback(() => {
+        dragScrollDirectionRef.current = 0;
+        if (dragScrollFrameRef.current !== null) {
+            window.cancelAnimationFrame(dragScrollFrameRef.current);
+            dragScrollFrameRef.current = null;
+        }
+    }, []);
+
+    const runColumnDragScroll = React.useCallback(function tick() {
+        const element = columnsElementRef.current;
+        const direction = dragScrollDirectionRef.current;
+        if (!element || !direction) {
+            dragScrollFrameRef.current = null;
+            return;
+        }
+        const before = element.scrollLeft;
+        element.scrollLeft += direction * BOARD_DRAG_SCROLL_PX;
+        syncColumnScroll();
+        if (Math.abs(element.scrollLeft - before) <= BOARD_SCROLL_EPSILON) {
+            dragScrollDirectionRef.current = 0;
+            dragScrollFrameRef.current = null;
+            return;
+        }
+        dragScrollFrameRef.current = window.requestAnimationFrame(tick);
+    }, [syncColumnScroll]);
+
+    const onColumnsDragOverCapture = (event) => {
+        const element = columnsElementRef.current;
+        if (!element || !dragKindRef.current) return;
+        const rect = element.getBoundingClientRect();
+        const direction = event.clientX <= rect.left + BOARD_DRAG_EDGE_PX
+            ? -1
+            : (event.clientX >= rect.right - BOARD_DRAG_EDGE_PX ? 1 : 0);
+        const availability = boardScrollState(element);
+        const canMove = direction < 0 ? availability.canScrollLeft : availability.canScrollRight;
+
+        if (!direction || !canMove) {
+            stopColumnDragScroll();
+            return;
+        }
+        if (dragScrollDirectionRef.current === direction && dragScrollFrameRef.current !== null) return;
+        stopColumnDragScroll();
+        dragScrollDirectionRef.current = direction;
+        dragScrollFrameRef.current = window.requestAnimationFrame(runColumnDragScroll);
+    };
+
+    React.useEffect(() => stopColumnDragScroll, [stopColumnDragScroll]);
+
+    const onColumnsDragLeave = (event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) stopColumnDragScroll();
+    };
+
     const resetDragState = () => {
+        stopColumnDragScroll();
         dragKindRef.current = null;
         pressedColumnHandleRef.current = null;
         pressedChipGripRef.current = null;
@@ -797,8 +966,9 @@ export default function GroupBoardSettings(props) {
                 {/* The asset puts this in a `.group-pane-tools` strip that production has no
                     equivalent of, so it sits here instead — beside the columns it replaces, in the
                     app's own `.group-modal-button-row` with the app's own button classes (D25). */}
-                <div className="group-modal-button-row">
+                <div className="group-modal-button-row board-columns-toolbar">
                     <button
+                        ref={resetColumnsButtonRef}
                         type="button"
                         className="secondary compact"
                         disabled={catalog.state !== 'ready' || !catalog.entries.length}
@@ -809,11 +979,51 @@ export default function GroupBoardSettings(props) {
                     >
                         Reset to default columns
                     </button>
+                    {columnScroll.overflowing && (
+                        <div
+                            ref={columnScrollControlsRef}
+                            className="board-columns-scroll-controls"
+                            role="group"
+                            aria-label="Board column scrolling"
+                        >
+                            <IconButton
+                                variant="secondary"
+                                size="md"
+                                aria-label="Scroll board columns left"
+                                aria-controls={columnScrollerId}
+                                disabled={!columnScroll.canScrollLeft}
+                                onClick={() => scrollColumns(-1)}
+                            >
+                                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                                    <path d="m15 18-6-6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                            </IconButton>
+                            <IconButton
+                                variant="secondary"
+                                size="md"
+                                aria-label="Scroll board columns right"
+                                aria-controls={columnScrollerId}
+                                disabled={!columnScroll.canScrollRight}
+                                onClick={() => scrollColumns(1)}
+                            >
+                                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                                    <path d="m9 18 6-6-6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                            </IconButton>
+                        </div>
+                    )}
                 </div>
                 <div
+                    id={columnScrollerId}
                     className="board-columns"
+                    aria-label="Board columns"
+                    tabIndex={-1}
+                    ref={columnsElementRef}
+                    onScroll={syncColumnScroll}
                     onDragEnter={onColumnsDragOver}
+                    onDragOverCapture={onColumnsDragOverCapture}
                     onDragOver={onColumnsDragOver}
+                    onDragLeave={onColumnsDragLeave}
                     onDrop={onColumnsDrop}
                 >
                     {columns.map(renderColumn)}

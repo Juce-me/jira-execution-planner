@@ -59,7 +59,7 @@ The top bar compares the selected task count and SP with **Planning** capacity a
 
 ## Board (Kanban)
 
-Board groups Epics into the Department's configured columns. Opening an Epic shows its Stories and status progress. Board's own Priority, Projects, Assignee, and Delivery track facet filters refine the Epic set without changing the Catch Up/Planning filters.
+Board groups Epics into the Department's configured columns. Opening an Epic shows its Stories and status progress. Board's own Priority, Projects, Assignee, and Project Track facet filters refine the Epic set without changing the shared task-list filters. Project Track always shows Committed and Flexible, including a zero-count option. With both checked, its heading counts every scoped Epic, including unset values; either checked alone selects that value, while both unchecked means only genuinely unset (`null`, missing, or trim-empty) values. Populated unknown values are not treated as unset. Select all, chip clear, and Clear all restore neutral; ordinary rerenders, mode and Teams changes, and same-scope Department restoration preserve an explicit empty selection, while a new Department or sprint snapshot starts neutral.
 
 Dragging an Epic to another column requests the Jira transitions available for that Epic and changes Jira status only when the user has permission and a usable target status is loaded for the destination. A refused, unavailable, or failed transition leaves the Epic in its existing status. A Board column star is session-only and changes the focused column for the current app session.
 
@@ -69,7 +69,9 @@ If a Department has no usable Board configuration, Board renders one **All epics
 
 ## Filters and search
 
-Catch Up and Planning use the hierarchy search: key and summary across Initiative, Epic, and Story; assignee on Epic and Story only. Initiative assignee is not searched. Priority, Status, and Product/Tech filters recalculate that same visible hierarchy scope.
+Catch Up and the applicable Planning, Scenario, and Statistics task-list modes use the hierarchy search: key and summary across Initiative, Epic, and Story; assignee on Epic and Story only. Initiative assignee is not searched. Priority, Status, Product/Tech, and Project Track filters recalculate that same visible hierarchy scope.
+
+Project Track remains an Epic-owned field even in these Story-oriented modes. Its heading and option counts are unique Epics, while the top filter readout remains Stories. The fixed options are `🔒 Committed` and `🤷 Flexible`, including at zero. Neutral admits every Story, including unknown values and Stories without an Epic. Both options unchecked admits only Stories under an existing Epic whose Project Track is `null`, missing, or trim-empty; a populated unknown value such as `Other` and a Story without an Epic do not match. The explicit-empty state survives task-list mode and Teams changes plus same-scope Department restoration. A new Department or sprint starts neutral.
 
 Board search is separate and Epic-only. It matches Epic key, summary, assignee, and Delivery Owner, then combines that result with Board's own facet filters. There is no single global search predicate shared by Board and Catch Up/Planning.
 

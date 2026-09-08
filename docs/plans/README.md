@@ -183,6 +183,18 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Implemented and locally verified on 2026-09-01; retain as `EXEC-*` pending acceptance or merge.
    - Delivers workspace-shared Capacity configuration, OAuth-only Jira field editing through the signed-in user, provider-verified scope enforcement, revision-aware saves, safe analytics, and responsive/sticky UI verification.
 
+19. `SUPPORT-eng-filter-option-visuals-design.md`
+   - Approved design reference for GitHub issue #150's ENG filter-popover visual improvements.
+   - Colors each Status label directly from the active Department board with a contrast-safe classic/neutral fallback, reuses the existing priority SVGs, labels the facet `Project Track`, keeps Committed/Flexible visible at zero, shows the full admitted heading total independently of their counts, and treats both unchecked as only genuinely unset `No Project Track` Epics. Preserves the existing per-scope reset lifecycle and adds no request, persistence, analytics event, or backend route.
+
+20. `EXEC-eng-filter-option-visuals.md`
+   - Implemented and verified locally on 2026-09-04; retain as `EXEC-*` pending acceptance or merge. The user-approved Catch Up extension is recorded separately below.
+   - Adds test-first Project Track four-state semantics and `7 / 4 / 0` count coverage, shared Status/Priority option visuals across every task-list mode plus Priority/Track visuals on Board, scoped accessibility/layout safeguards, analytics non-event verification, and full generated-build/browser/Python gates without increasing the `dashboard.jsx` structure budget.
+
+21. `EXEC-catch-up-project-track-filter.md`
+   - Implemented and verified locally on 2026-09-04; retain as `EXEC-*` pending acceptance or merge. Defines Project Track as Epic-owned in the canonical ontology.
+   - Adds the same four-state Track facet to Catch Up by filtering Stories through parent Epics, keeps Track counts Epic-based, softens Status backgrounds, and adds no request, persistence key, backend route, Jira mutation, or analytics event.
+
 ## Capacity Reporting Workflow
 
 1. `SUPPORT-excluded-capacity-control-row-design.md`
@@ -496,6 +508,20 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      frontend unit suite, and the final 113-test Board/EPM matrix pass; the full Python suite ran
      1,219 tests with 1,218 passed and 1 skipped. Finalization corrected a stale drag-fixture route
      without changing product drag or transition behavior.
+
+8. `EXEC-board-configuration-horizontal-scroll.md`
+   - Implemented and verified on `bugfix/board-configuration-horizontal-scroll`, then published for
+     review in [PR #170](https://github.com/Juce-me/jira-execution-planner/pull/170); pending
+     acceptance. The complete affected UI matrix passed 64/64 tests, frontend units passed
+     1,163/1,163, analytics guards passed 59/59, and the final full Python rerun passed all 1,538
+     tests with 9 skips. The final Node 20 committed-revision build left `frontend/dist` clean.
+   - Expected output: overflowing Board Configuration columns are reachable with an ordinary
+     vertical mouse wheel normalized across wheel units, shared keyboard-accessible left/right
+     controls, and drag-only edge auto-scroll with explicit cleanup, while the status picker and
+     settings pane retain their vertical-scroll ownership at the correct boundaries.
+   - Frontend-only local interaction; no API, persistence, schema, credential, or new analytics-event
+     contract. Generated frontend output, desktop/narrow real-modal proof, and an isolated clean-build
+     gate are required.
 
 ## Stats Project Track By Sprint
 

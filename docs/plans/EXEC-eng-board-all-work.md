@@ -114,7 +114,7 @@ type Diagnostics = {
 
 ### Task 0 — baseline and contract preflight
 
-Files: Read existing paths in this plan, `docs/plans/README.md`, support design, MRT004/MRT010/MRT023/MRT025, ownership contract and all GATE docs. Modify this plan's evidence/gate table only; create no standalone collector.
+Files: Read existing paths in this plan, `docs/plans/README.md`, support design, MRT004/MRT010/MRT023/MRT026, ownership contract and all GATE docs. Modify this plan's evidence/gate table only; create no standalone collector.
 
 - [ ] Fetch the published base; verify every Modify/Test path exists and mark genuinely new files Create. Preserve active checkout and user changes; no worktree unless requested.
 - [ ] Run full Python baseline with explicit isolated test config, frontend unit suite and build using pinned Node 20. Record failures honestly before changes.

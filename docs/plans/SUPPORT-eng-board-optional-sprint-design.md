@@ -1,6 +1,9 @@
 # ENG Board Optional Sprint And Component Scope Design
 
-> **Status:** Reviewed support design updated on 2026-09-07. This is not a production
+> **Status:** Reviewed support design updated on 2026-09-07. Diagnostic Tasks 0–5 are implemented
+> and verified; Task 6 authenticated preflight is blocked by the saved workspace scope. A separate
+> Basic-mode existing-endpoint collector run now provides capped contextual aggregates only; no
+> schema-v2 campaign sample has run. This is not a production
 > implementation plan. Execute
 > [`EXEC-eng-board-optional-sprint-measurement-spike.md`](EXEC-eng-board-optional-sprint-measurement-spike.md)
 > first for non-authorizing characterization. Its cooperative deadline mode cannot PASS. Close the
@@ -848,9 +851,60 @@ budgets only when a legitimate guarded entrypoint grows.
 The settled product scope remains unchanged; these evidence gates cannot silently narrow the shipped
 feature or authorize unmeasured compatibility paths.
 
+## Diagnostic implementation boundary — 2026-09-07
+
+The measurement plan's Tasks 0–5 now provide the guarded diagnostic core/runtime, exact local
+endpoints, isolated candidate and tagged-legacy Jira transport, external runner, schema-v2 checker,
+and automated verification. The baseline database failures were resolved by supplying a migrated,
+disposable loopback PostgreSQL test target; tests and production storage behavior were not weakened.
+Task 6 later passed startup and strict DB-OAuth options preflight but stopped before any campaign
+sample or Jira campaign query: the saved workspace exposed two Component-profile-eligible
+Departments and zero Team-fallback-profile-eligible Departments. Configuration and Jira data were
+not changed to manufacture eligibility. No raw or summary result artifact was produced, and no
+product Board implementation was started.
+
+The Tasks 0–6 evidence establishes readiness to rerun the separate schema-v2 live characterization
+when an eligible saved fallback Department exists. It does not
+choose a production transport, prove a hard deadline, cover excluded production scopes, or authorize
+deployment. Schema v2 has no PASS path; the validated pure core must be reused or moved with its gates
+intact in any later production plan.
+
+## Existing-endpoint contextual evidence — 2026-09-07
+
+An operator-approved Basic-auth/jsonfile loopback exercise selected the one active numeric sprint
+from a 14-sprint catalog and wrote only a mode-0600 sanitized summary outside the repository. One
+saved Department with eight Teams and two Components was eligible; zero Departments were skipped.
+No Jira identifier, name, label, Component value, URL, JQL, cookie, credential or raw response was
+retained in this design.
+
+| Scope | Lane | Issues | Epic details | Scope Epics | Elapsed ms | Response bytes | Legacy capped |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Selected sprint | Product | 83 | 43 | 41 | 1,696.0 | 108,559 | No |
+| Selected sprint | Tech | 109 | 47 | 32 | 1,598.1 | 122,167 | No |
+| All work | Product | 250 | 101 | 63 | 3,237.4 | 271,499 | Yes |
+| All work | Tech | 250 | 74 | 45 | 2,598.5 | 247,444 | Yes |
+
+These are legacy response cardinalities, not strict Board membership totals. The two All-work lanes
+hit the 250-issue cap. Equal reported and returned counts do not establish completeness, and equal
+legacy/candidate counts would not establish equivalence. The selected-sprint calls were uncapped by
+the collector heuristic, but that does not make their Epic or child discovery strict.
+
+The observed scope is useful only as contextual evidence for one already-running Basic-mode
+Department. It cannot prove the production signed-in-user OAuth path, component-scoped Epic-first
+discovery, selected-sprint all-saved-Team fallback, hard-bound cancellation, excluded scopes,
+cross-worker transport, atomic completeness, or visible progressive rendering. Therefore the
+strict-completeness, hard-bound deadline, production transport, excluded-scope, and visible-progress
+gates all remain unsupported. Do not create a production `EXEC-*` plan or begin implementation until
+all five have valid evidence; schema v2 can never PASS.
+
 ## Residual risks
 
 - Jira history JQL cost for configurable terminal sets must be measured against the real tenant.
+- Live characterization needs an existing saved Department eligible for the Team-fallback profile;
+  the authenticated preflight currently exposes none.
+- The corrective Python existing-endpoint collector gathered sanitized contextual selected-sprint
+  and All-work counts from one saved Department with Teams, but legacy endpoint caps mean that
+  evidence cannot close strict-completeness or production-authorization gates.
 - Component scopes can cross many projects and workflows and vary sharply by Department.
 - The supported deployment can run multiple Gunicorn workers; any cross-request state must be shared
   or eliminated by transport design.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -33,6 +35,22 @@ class InvalidSharedGroupConfig(ValueError):
         self.errors = tuple(errors or ())
         self.warnings = tuple(warnings or ())
         super().__init__('invalid_groups_config')
+
+
+class SharedGroupsSnapshotRequired(RuntimeError):
+    """Raised when diagnostics require a persisted shared-group row."""
+
+
+@dataclass(frozen=True)
+class ExistingSharedGroupsSnapshot:
+    """Read-only diagnostic snapshot; private row identity stays server-side."""
+
+    groups_config: dict
+    raw_payload: dict
+    row_id: str
+    payload_version: int
+    config_revision: int
+    source: str = GROUPS_SOURCE_DB
 
 
 class InvalidGroupPreferences(ValueError):
@@ -191,6 +209,26 @@ def load_shared_groups(context, fallback_loader, validate_groups_config_fn, data
         except IntegrityError as exc:
             raise GroupConfigConflict(current_shared_groups_config(session, context, validate_groups_config_fn)) from exc
         return _row_to_groups_config(row, validate_groups_config_fn)
+
+
+def require_existing_shared_groups_snapshot(context, *, database_url=None, validate_groups_config_fn=None):
+    """Read one workspace row without creating, migrating, auditing, or falling back."""
+    with db_engine.session_scope(database_url) as session:
+        row = session.execute(
+            select(models.WorkspaceGroupConfig).where(
+                models.WorkspaceGroupConfig.workspace_id == context.workspace_id,
+            )
+        ).scalars().first()
+        if row is None:
+            raise SharedGroupsSnapshotRequired('measurement_shared_groups_required')
+        raw_payload = dict(row.payload or {})
+        return ExistingSharedGroupsSnapshot(
+            groups_config=_row_to_groups_config(row, validate_groups_config_fn),
+            raw_payload=raw_payload,
+            row_id=str(row.id),
+            payload_version=int(row.payload_version or GROUPS_PAYLOAD_VERSION),
+            config_revision=int(row.config_revision or 1),
+        )
 
 
 def save_shared_groups(context, payload, base_revision, validate_groups_config_fn, database_url=None):

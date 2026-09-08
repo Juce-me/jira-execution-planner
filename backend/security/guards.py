@@ -1,6 +1,8 @@
 import os
 import logging
 
+from contextlib import ExitStack
+
 from flask import g, jsonify, request, session
 
 from backend.auth.csrf import validate_csrf_token
@@ -19,8 +21,10 @@ PROTECTED_POLICY_CLASSES = {
     "workspace_write",
     "shared_admin_write",
     "tool_admin",
+    "dev_local_oauth_read",
+    "dev_local_preview",
 }
-CSRF_POLICY_CLASSES = {"authenticated_preview", "user_write", "workspace_write", "shared_admin_write", "tool_admin"}
+CSRF_POLICY_CLASSES = {"authenticated_preview", "user_write", "workspace_write", "shared_admin_write", "tool_admin", "dev_local_preview"}
 ADMIN_POLICY_CLASSES = {"shared_admin_write", "tool_admin"}
 LOOPBACK_ADDRESSES = {"127.0.0.1", "::1", "localhost"}
 logger = logging.getLogger(__name__)
@@ -185,15 +189,69 @@ def _require_dev_local(server):
     return _not_found()
 
 
+def _require_strict_db_oauth_session(server):
+    try:
+        if not database_storage_enabled() or not _is_oauth_mode(server):
+            return _not_found()
+        if not _strict_db_browser_session_data(server):
+            return _auth_required(server)
+        context = server.current_request_auth_context()
+    except AuthError as error:
+        return _auth_error_response(server, error)
+    except (ConfigStorageError, DatabaseConfigurationError) as error:
+        return _config_storage_unavailable(error)
+    if not getattr(context, 'browser_session_id', ''):
+        return _auth_required(server)
+    if missing_context_oauth_scopes(context, server.ATLASSIAN_SCOPES):
+        return _missing_scope_required()
+    return None
+
+
+def _diagnostic_path(path):
+    return path in {
+        '/api/dev/eng-board-measurement',
+        '/api/dev/eng-board-measurement/runner.js',
+        '/api/dev/eng-board-measurement/options',
+        '/api/dev/eng-board-measurement/control',
+        '/api/dev/eng-board-measurement/sample',
+    }
+
+
 def register_security_guards(flask_app):
     @flask_app.before_request
     def enforce_endpoint_security_policy():
+        server = get_jira_server()
+        if _diagnostic_path(request.path):
+            local_response = _require_dev_local(server)
+            if local_response is not None:
+                return local_response
+            if request.args:
+                return _not_found()
+        try:
+            from backend.services.eng_board_measurement_runtime import CAMPAIGNS
+            active_campaign = CAMPAIGNS.active()
+        except Exception:
+            active_campaign = None
+        if active_campaign is not None and active_campaign.reserved_step is not None:
+            allowed_during_sample = (
+                request.path in {'/api/dev/eng-board-measurement/control',
+                                 '/api/dev/eng-board-measurement/sample',
+                                 '/api/auth/csrf', '/health'}
+                or request.path.startswith('/api/auth/')
+                or (request.path == '/api/tasks-with-team-name'
+                    and request.headers.get('X-Measurement-Campaign') is not None
+                    and request.headers.get('X-Measurement-Step') is not None)
+            )
+            if not allowed_during_sample:
+                return _json_response({'error': 'measurement_campaign_busy',
+                                       'message': 'The diagnostic process is busy.'}, 409)
         if request.method in {"HEAD", "OPTIONS"}:
+            if request.path == '/api/dev/eng-board-measurement/options':
+                return _require_strict_db_oauth_session(server)
             return None
         if request.endpoint == "static":
             return None
 
-        server = get_jira_server()
         url_rule = request.url_rule.rule if request.url_rule is not None else ""
         policy = classify_request_rule(url_rule, request.method, request.endpoint or "")
         if policy is None:
@@ -211,6 +269,10 @@ def register_security_guards(flask_app):
             return None
         if policy_class == "dev_local":
             return _require_dev_local(server)
+        if policy_class in {"dev_local_oauth_read", "dev_local_preview"}:
+            strict_response = _require_strict_db_oauth_session(server)
+            if strict_response is not None:
+                return strict_response
         if policy_class == "legacy_basic_local":
             if _is_oauth_mode(server):
                 return _route_not_oauth_ready()
@@ -239,6 +301,45 @@ def register_security_guards(flask_app):
             admin_response = _require_admin(server)
             if admin_response is not None:
                 return admin_response
+        measurement_id = request.headers.get('X-Measurement-Campaign')
+        measurement_step = request.headers.get('X-Measurement-Step')
+        if measurement_id is not None or measurement_step is not None:
+            if request.path != '/api/tasks-with-team-name' or request.method != 'GET':
+                return _not_found()
+            if request.headers.get('X-Requested-With') != 'jira-execution-planner':
+                return _csrf_required('Unsafe OAuth requests require X-Requested-With: jira-execution-planner')
+            try:
+                step = int(measurement_step)
+                context = server.current_request_auth_context()
+                from backend.services.eng_board_measurement_runtime import CAMPAIGNS, bind_diagnostic_transport
+                campaign, lane = CAMPAIGNS.validate_legacy_request(
+                    context, measurement_id, step, request.args,
+                )
+                from backend.services.workspace_dashboard_config import WorkspaceConfigSnapshot
+                g._workspace_dashboard_config_snapshot = WorkspaceConfigSnapshot(
+                    campaign.snapshot.dashboard.payload,
+                    campaign.snapshot.dashboard.config_revision,
+                    'workspace_db',
+                )
+                stack = ExitStack()
+                stack.enter_context(CAMPAIGNS.inflight(campaign))
+                stack.enter_context(bind_diagnostic_transport(campaign.transport))
+                g.measurement_transport_binding = stack
+                g.measurement_campaign = campaign
+                g.measurement_step = step
+                g.measurement_lane = lane
+            except (TypeError, ValueError):
+                return _not_found()
+            except Exception as error:
+                code = getattr(error, 'code', 'invalid_measurement_scope')
+                status = getattr(error, 'status', 400)
+                return _json_response({'error': code, 'message': 'The diagnostic could not continue safely.'}, status)
         return None
+
+    @flask_app.teardown_request
+    def clear_measurement_transport(_error=None):
+        stack = getattr(g, 'measurement_transport_binding', None)
+        if stack is not None:
+            stack.close()
 
     return flask_app

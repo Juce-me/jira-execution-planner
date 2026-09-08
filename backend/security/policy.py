@@ -70,6 +70,11 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("login", "/login", PUBLIC_METHODS, "auth_flow"),
     EndpointPolicy("auth-dev-home-probe", "/api/auth/dev/home-graphql-oauth-probe", PUBLIC_METHODS, "dev_local"),
     EndpointPolicy("auth-api", "/api/auth/", frozenset({"GET", "POST"}), "auth_flow", "prefix", ("/api/auth/dev/",)),
+    EndpointPolicy("eng-board-measurement-runner", "/api/dev/eng-board-measurement", PUBLIC_METHODS, "dev_local"),
+    EndpointPolicy("eng-board-measurement-runner-js", "/api/dev/eng-board-measurement/runner.js", PUBLIC_METHODS, "dev_local"),
+    EndpointPolicy("eng-board-measurement-options", "/api/dev/eng-board-measurement/options", PUBLIC_METHODS, "dev_local_oauth_read"),
+    EndpointPolicy("eng-board-measurement-control", "/api/dev/eng-board-measurement/control", frozenset({"POST"}), "dev_local_preview"),
+    EndpointPolicy("eng-board-measurement-sample", "/api/dev/eng-board-measurement/sample", frozenset({"POST"}), "dev_local_preview"),
     EndpointPolicy("analytics-context", "/api/analytics/context", PUBLIC_METHODS, "public_context"),
     EndpointPolicy("admin-api", "/api/admin/", frozenset({"GET", "POST", "PATCH", "DELETE"}), "tool_admin", "prefix"),
     EndpointPolicy("user-views-api", "/api/me/views", frozenset({"GET", "POST", "PATCH"}), "user_write", "prefix"),
@@ -204,7 +209,7 @@ def oauth_ready_api_paths():
         policy.path
         for policy in ENDPOINT_POLICIES
         if policy.path.startswith("/api/")
-        and policy.policy_class not in {"dev_local"}
+        and policy.policy_class not in {"dev_local", "dev_local_oauth_read", "dev_local_preview"}
         and policy.match == "exact"
     }
 
@@ -224,7 +229,7 @@ def is_oauth_ready_api_path(path):
         return True
     for method in ("GET", "POST", "PATCH", "DELETE"):
         if any(
-            policy.policy_class not in {"dev_local", "legacy_basic_local"}
+            policy.policy_class not in {"dev_local", "dev_local_oauth_read", "dev_local_preview", "legacy_basic_local"}
             for policy in matching_path_policies(path, method)
         ):
             return True

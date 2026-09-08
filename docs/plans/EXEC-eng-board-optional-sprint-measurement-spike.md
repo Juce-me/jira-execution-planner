@@ -1,7 +1,9 @@
 # EXEC — ENG Board optional-sprint measurement spike
 
-> **Status:** Ready to execute — diagnostic implementation only. Revalidated on 2026-09-07; see §11 for the follow-up review.
-> Measurement has not been implemented or run; live characterization remains gated by Tasks 0–5.
+> **Status:** Diagnostic Tasks 0–5 implemented and verified on 2026-09-07. Task 6 startup and
+> authenticated preflight ran, but the fixed campaign is blocked by the saved workspace scope.
+> No schema-v2 live campaign sample has run. A separate Basic-mode existing-endpoint collector run
+> recorded capped contextual evidence in §15; schema v2 remains non-authorizing and can never PASS.
 > This is a local diagnostic implementation contract, never production authorization. The current
 > cooperative deadline mode cannot produce PASS; see §8. No live spike is part of this repair.
 
@@ -94,7 +96,9 @@ allowed. No new dependency, schema, persistent diagnostic table, configuration f
 | `runners/local/eng_board_measurement_runner.html` | Create | Static document with external same-origin script only, Task 4 |
 | `runners/local/eng_board_measurement_runner.js` | Create | Fixed campaign, bounded browser requests, transient legacy merge and sanitized download, Task 4 |
 | `scripts/check_eng_board_measurement.py` | Create | Closed schema, equations, redaction and non-authorizing verdict, Task 4 |
+| `scripts/gather_eng_board_endpoint_data.py` | Create | Corrective loopback client for sanitized contextual data from existing authenticated GET endpoints; post-Task-6 follow-up |
 | `tests/test_eng_board_measurement.py` | Create | Read-only routes, core, sequence, checker, source isolation, Tasks 1–4 |
+| `tests/test_eng_board_endpoint_collector.py` | Create | Corrective collector URL/path/redaction/output tests; post-Task-6 follow-up |
 | `tests/ui/eng_board_measurement_runner.spec.js` | Create | Real CSP, abort/stall/two-tab/security/download tests, Task 4 |
 | `tests/test_shared_group_config_db.py` | Modify | Absent/saved-empty existing-row reads and row-count proof, Task 1 |
 | `tests/test_endpoint_security_matrix.py` | Modify | Every exact diagnostic method/security class, Task 1 |
@@ -1038,3 +1042,129 @@ checked in Task 0. This is not a verified implementation. Task 6 remains a separ
 all required checks pass. Production remains blocked by hard-bound cancellation, excluded-scope,
 transport and visible-progress evidence; schema v2 still has no reachable PASS. The support document
 remains non-executable, and no remote execution handoff is published from these local edits.
+
+## 12. Diagnostic Tasks 0–5 implementation evidence — 2026-09-07
+
+Tasks 0–5 were implemented from baseline `5c385ac` on the requested
+`docs/issue-137-board-design` checkout. The implementation is limited to the §2 diagnostic file map:
+guarded local routes and assets, an exclusive process-local campaign/runtime and isolated Jira
+transport, read-only existing-row configuration snapshots, cooperative auth/body budgets, the pure
+query/pager/projection/cache core, tagged legacy publication containment, the fixed runner, the
+closed checker, and tests. No frontend source/dist, production Board route, schema, dependency,
+analytics event, Jira mutation, Home mutation, or release packaging changed.
+
+Task 0 established Node 20.20.2 and Python 3.14.7 with OpenSSL 3.6.4. A disposable PostgreSQL 16
+container was bound to loopback with an in-memory data directory and migrated to head. The initial
+suite without an explicit test database reproduced the documented three failures and one error;
+with both database test variables pointed at the disposable target, the unchanged baseline passed
+1,538 tests with six skips. No assertion or database test was weakened.
+
+Task 5 results on the implemented tree:
+
+- measurement/shared-group suites: 9 passed;
+- resilience/auth/OAuth/refresh-race suites: 74 passed;
+- endpoint policy/security/DB OAuth suites: 61 passed;
+- route/search/OAuth source-guard suites: 27 passed;
+- explicit frontend source guards: 62 passed under Node 20;
+- frontend unit suite: 1,144 passed under Node 20;
+- diagnostic runner Playwright suite: 2 passed, including a real Flask/Chromium production-CSP check;
+- existing Board/alert Playwright regressions: 46 passed after the required macOS browser-launch
+  permission was granted; the initial sandboxed launch failed before tests with an OS IPC denial;
+- full Python suite with the disposable PostgreSQL target: 1,544 passed with six skips;
+- design-asset sanitizer, Python/JavaScript syntax checks, source isolation, structural budget and
+  `git diff --check`: passed.
+
+The Home write gate was rechecked without exposing values: zero of four required inputs are set and
+there is no approved disposable target, so no mutation probe ran and GATE-05 remains Blocked. Task 6
+startup and live tenant characterization were deliberately not executed. A representative schema-v2
+result can end only in STOP/FAIL; the checker contains no PASS verdict. Production remains blocked by
+the hard-bound deadline, excluded-scope, transport, and visible-progress evidence in the support design.
+
+## 13. Task 6 authenticated preflight outcome — 2026-09-07
+
+The separate Task 6 execution passed startup preflight against the retained loopback PostgreSQL
+workspace database: the configured Python/OpenSSL runtime, DB OAuth mode, token encryption,
+migration head and loopback bind all passed. A dedicated single-process local Flask instance started
+without a warning before the Flask banner, the checker accepted its loopback health response and
+runner URL, and a normal browser OAuth session received `200` from the guarded options endpoint.
+
+The fixed campaign could not begin. The read-only saved-workspace options contained two
+Component-profile-eligible Departments and zero Team-fallback-profile-eligible Departments. The
+required Team fallback selector therefore had no valid value. No configuration or Jira data was
+created, edited or seeded to manufacture eligibility; no sample endpoint, tagged legacy pair or Jira
+campaign query ran; and no raw or summary result file was produced. The diagnostic instance and its
+process-local caches were disposed after preflight.
+
+**Task 6 result:** `STOP invalid_scope` at authenticated configuration preflight. A later retry needs
+an existing saved Department that is eligible for the Team-fallback profile. Tasks 0–5 remain green,
+but live characterization and every production authorization gate remain incomplete. Schema v2 still
+has no reachable PASS path.
+
+## 14. Existing-endpoint Python collector correction — 2026-09-07
+
+The fixed browser campaign made a separate Team-fallback-only Department a prerequisite and was not
+usable with the saved workspace. The corrective operator path is
+`scripts/gather_eng_board_endpoint_data.py`. It calls only the existing authenticated read endpoints
+`GET /api/groups-config` and `GET /api/tasks-with-team-name`, selects every saved Department with at
+least one saved Team, and gathers Product/Tech selected-sprint plus optional All-work observations.
+Departments without saved Teams are counted and skipped instead of invalidating all usable scopes.
+
+The collector accepts an explicitly supplied external Netscape cookie jar that is a regular
+mode-0600 file. In OAuth mode that jar carries the normal browser session; the approved Basic-mode
+exercise in §15 used a harmless placeholder cookie because the server-owned Basic Jira credential
+was supplied by the operator's environment profile. It accepts only an explicit loopback HTTP
+origin, refuses redirects and repository input/output paths, bounds response bodies, keeps raw
+configuration and issue data in memory, and writes an atomic mode-0600 summary containing only
+counts, byte sizes, elapsed times, fixed enums and booleans. It never emits names, keys, ids, labels,
+components, URLs, JQL, cookies or response bodies.
+
+This contextual collector does not repair or replace the strict-completeness measurement core and
+cannot feed the schema-v2 checker or authorize production. Existing `/api/tasks-with-team-name`
+All-work responses retain their legacy cap; the summary records that cap and makes no completeness
+claim. Focused RED failed because the script did not exist; GREEN passed four collector tests.
+
+## 15. Sanitized Basic-mode contextual evidence — 2026-09-07
+
+The collector ran once against a dedicated loopback Basic-auth/jsonfile instance using the one
+active numeric sprint from a 14-sprint catalog. Its mode-0600 sanitized output remains outside the
+repository. Raw endpoint bodies, credentials, cookies, Jira identifiers, names, labels, Components,
+JQL and URLs were neither copied into this plan nor committed. One saved Department was eligible
+because it had saved Teams; zero Departments were skipped. The observed Department had eight saved
+Teams and two configured Components.
+
+`Epic details` is the legacy response dictionary cardinality and `scope Epics` is the legacy
+`epicsInScope` cardinality. Neither is a strict complete Board Epic count, and lane counts must not be
+summed as a de-duplicated cross-lane total.
+
+| Scope | Lane | Issues | Epic details | Scope Epics | Elapsed ms | Response bytes | Legacy capped |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Selected sprint | Product | 83 | 43 | 41 | 1,696.0 | 108,559 | No |
+| Selected sprint | Tech | 109 | 47 | 32 | 1,598.1 | 122,167 | No |
+| All work | Product | 250 | 101 | 63 | 3,237.4 | 271,499 | Yes |
+| All work | Tech | 250 | 74 | 45 | 2,598.5 | 247,444 | Yes |
+
+Every request used `refresh=true`. The selected-sprint legacy responses did not advertise or reach
+the collector's cap heuristic. Both All-work responses returned exactly 250 issues and therefore set
+`capped=true`; their reported totals also equalled 250, which does not prove that Jira had no further
+matching work. Equal reported and returned counts are not completeness evidence.
+
+This is representative only of one currently saved Department's contextual legacy load shape on an
+already-running Basic-auth instance. It is not representative evidence for production because it
+samples one Department, uses Basic/jsonfile rather than signed-in-user OAuth/workspace DB, exercises
+buffered capped endpoints rather than the Epic-first candidate core, and does not cover the excluded
+scope profiles in §4.1. In particular, equal legacy/candidate counts were not observed or used and
+would not establish equivalence.
+
+Production gate disposition after this run:
+
+| Required gate | Result | Evidence gap |
+| --- | --- | --- |
+| Strict completeness | Unsupported | Both All-work lanes are capped; the collector cannot page the strict Epic-first scope or prove full child membership. |
+| Hard-bound deadline | Unsupported | Elapsed HTTP timings characterize completed calls only; no DB/auth/network hard cancellation or blocked-I/O bound was exercised. |
+| Production transport | Unsupported | Existing endpoints return buffered responses and provide no chosen aggregate-stream/cursor contract, cross-worker proof, or atomic global counters. |
+| Excluded production scope | Unsupported | No retention 1/90, empty-terminal, `other`, absent-Board, saved-board-only project fallback, DB/OAuth, or selected multi-worker profile was measured. |
+| Visible progress | Unsupported | No Board UI, page-progress frame, first-content, focused-column, 100 ms feedback, or selected-sprint regression measurement ran. |
+
+**Decision:** do not create a production `EXEC-*` plan and do not implement Board behavior from
+this evidence. The reviewed production plan remains blocked until all five gates above have valid
+evidence. Schema v2 still has no PASS path.

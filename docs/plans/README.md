@@ -424,9 +424,22 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      whether Group Board editing should be admin-guarded is resolved there (O1: no).
 
 5. `EXEC-eng-board-optional-sprint-measurement-spike.md`
-   - Ready for diagnostic implementation only after the 2026-09-07 three-reviewer revalidation;
-     the original twenty findings plus the follow-up closures are recorded in the plan (§11).
-     No measurement run; live work requires the implementation verification gates, including a working test DB.
+   - Diagnostic Tasks 0–5 implemented and verified on 2026-09-07 from `5c385ac`; the original twenty
+     findings, follow-up closures and sanitized execution evidence are recorded in §§11–12.
+     Task 6 startup and authenticated options preflight ran on 2026-09-07, but the campaign stopped
+     before sampling because the saved workspace had two Component-eligible Departments and zero
+     Team-fallback-eligible Departments. No configuration/Jira mutation or result artifact was made.
+   - Corrective follow-up adds a loopback-only Python collector over the existing authenticated
+     groups/tasks GET endpoints. It skips unusable no-Team Departments and stores only sanitized
+     contextual aggregates outside the repo; legacy caps keep it non-authorizing.
+   - A 2026-09-07 operator-approved Basic-auth/jsonfile run sampled the one active numeric sprint:
+     one Department eligible, zero skipped; selected-sprint Product/Tech returned 83/109 issues in
+     1,696.0/1,598.1 ms and 108,559/122,167 bytes without triggering the cap heuristic; All-work
+     Product/Tech each returned 250 issues in 3,237.4/2,598.5 ms and 271,499/247,444 bytes with both
+     legacy-cap flags set. Epic-detail/scope-Epic cardinalities are recorded in §15 of the plan.
+     This is contextual evidence for one Basic-mode Department, not strict completeness,
+     signed-in-user OAuth, transport, hard-deadline, excluded-scope, visible-progress, or production
+     authorization evidence. No production `EXEC-*` plan was created; schema v2 can never PASS.
    - Local strict DB-OAuth diagnostic only: read-only existing-row options, CSP-compatible runner,
      isolated campaigns/transport, guarded legacy cache returns, Epic-first Team fallback,
      explicit cache states, private row-incarnation checks and consistent workload/retry/memory metrics.
@@ -436,7 +449,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      Hard-bound evidence and excluded production scope profiles remain prerequisites to production.
 
 6. `SUPPORT-eng-board-optional-sprint-design.md`
-   - Reviewed non-executable design for GitHub issue #137 and input to the measurement spike.
+   - Reviewed non-executable design for GitHub issue #137 and production handoff boundary after the
+     diagnostic Tasks 0–5 implementation; authenticated Task 6 preflight is blocked by the absence
+     of a saved Team-fallback-eligible Department. A separate capped Basic-mode collector sample is
+     recorded as contextual evidence only and does not close any production gate.
    - Settled behavior: Board initially inherits the selected sprint; All work is the explicit empty
      sprint filter; `missingInfoComponents` is the Epic scope; Teams stays visible but disabled;
      Project Track is Epic-index data; Product/Tech Projects is inherited from each child's Jira

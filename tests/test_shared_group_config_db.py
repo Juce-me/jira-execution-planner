@@ -10,6 +10,8 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.auth.context import RequestAuthContext
+from backend.services import shared_group_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -166,6 +168,28 @@ class SharedGroupConfigModelTests(unittest.TestCase):
             ])
             with self.assertRaises(IntegrityError):
                 session.commit()
+
+    def test_diagnostic_snapshot_requires_existing_row_without_creating_it(self):
+        context = RequestAuthContext(
+            auth_mode='atlassian_oauth', user_id=self.user_id, stable_subject='subject',
+            atlassian_account_id='account-1', workspace_id=self.workspace_id,
+            auth_connection_id='connection-1', cloud_id='cloud-1',
+            site_url='https://example.atlassian.net', token_version='1', account_status='active', is_admin=False,
+        )
+        with self.assertRaises(shared_group_config.SharedGroupsSnapshotRequired):
+            shared_group_config.require_existing_shared_groups_snapshot(context, database_url=self.database_url)
+        with self.factory() as session:
+            self.assertEqual(session.query(models.WorkspaceGroupConfig).count(), 0)
+            session.add(models.WorkspaceGroupConfig(
+                workspace_id=self.workspace_id, payload_version=1,
+                payload={'version': 1, 'groups': [], 'defaultGroupId': ''}, config_revision=3,
+                created_by=self.user_id, updated_by=self.user_id,
+            ))
+            session.commit()
+        snapshot = shared_group_config.require_existing_shared_groups_snapshot(context, database_url=self.database_url)
+        self.assertEqual(snapshot.groups_config['groups'], [])
+        self.assertEqual(snapshot.config_revision, 3)
+        self.assertEqual(snapshot.source, 'workspace_db')
 
     def test_user_group_preferences_are_unique_per_workspace_user(self):
         with self.factory() as session:

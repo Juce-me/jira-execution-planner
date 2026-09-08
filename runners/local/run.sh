@@ -7,7 +7,15 @@ readonly compose_file="${script_dir}/compose.yaml"
 readonly project_name="jira-planning-local"
 readonly volume_name="jira-planning-local-postgres"
 readonly python_bin="${repo_root}/.venv/bin/python"
-readonly lock_dir="/tmp/jira-planning-local-runner.lock"
+runtime_tmp_dir="/tmp"
+if [[ ! -d "$runtime_tmp_dir" || ! -w "$runtime_tmp_dir" ]]; then
+  runtime_tmp_dir="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
+  runtime_tmp_dir="${runtime_tmp_dir%/}"
+fi
+readonly runtime_tmp_dir
+readonly lock_dir="${runtime_tmp_dir}/jira-planning-local-runner.lock"
+readonly lock_pid_file="${lock_dir}/runner.pid"
+readonly lock_child_pid_file="${lock_dir}/child.pid"
 
 cleanup_armed=0
 cleanup_done=0
@@ -21,12 +29,134 @@ fail() {
   exit 1
 }
 
+process_is_running() {
+  local target_pid="$1"
+
+  kill -0 "$target_pid" 2>/dev/null
+}
+
+pid_belongs_to_runner() {
+  local target_pid="$1"
+  local process_command=""
+
+  process_command="$(ps -p "$target_pid" -o command= 2>/dev/null)" || return 1
+  [[ "$process_command" == *"runners/local/run.sh"* ]]
+}
+
+remove_observed_lock() {
+  local observed_pid="$1"
+  local current_pid=""
+
+  if [[ -f "$lock_pid_file" ]]; then
+    current_pid="$(< "$lock_pid_file")"
+  fi
+  [[ "$current_pid" == "$observed_pid" ]] || return 2
+  rm -f -- "$lock_child_pid_file" || return 1
+  rm -f -- "$lock_pid_file" || return 1
+  if ! rmdir "$lock_dir" 2>/dev/null; then
+    [[ ! -d "$lock_dir" ]] || return 1
+  fi
+}
+
+stop_existing_runner() {
+  local target_pid="$1"
+  local target_child_pid=""
+  local attempt=0
+
+  printf 'Local PostgreSQL runner: replacing runner process %s.\n' \
+    "$target_pid" >&2
+  kill -TERM "$target_pid" 2>/dev/null || return 0
+  while process_is_running "$target_pid" &&
+        [[ -d "$lock_dir" && "$attempt" -lt 140 ]]; do
+    sleep 0.05
+    attempt=$((attempt + 1))
+  done
+  if process_is_running "$target_pid" && [[ -d "$lock_dir" ]]; then
+    printf 'Local PostgreSQL runner: runner process %s did not stop; sending KILL.\n' \
+      "$target_pid" >&2
+    if [[ -f "$lock_child_pid_file" ]]; then
+      target_child_pid="$(< "$lock_child_pid_file")"
+    fi
+    kill -KILL "$target_pid" 2>/dev/null || true
+    if [[ "$target_child_pid" =~ ^[0-9]+$ ]]; then
+      kill -TERM -- "-${target_child_pid}" 2>/dev/null || true
+      kill -KILL -- "-${target_child_pid}" 2>/dev/null || true
+    fi
+    remove_observed_lock "$target_pid" || true
+  fi
+  if process_is_running "$target_pid" && [[ -d "$lock_dir" ]]; then
+    fail "unable to stop existing runner process ${target_pid}."
+  fi
+}
+
+acquire_lock() {
+  local acquisition_attempt=0
+  local owner_pid=""
+  local publication_attempt=0
+  local removal_status=0
+
+  while [[ "$acquisition_attempt" -lt 20 ]]; do
+    acquisition_attempt=$((acquisition_attempt + 1))
+    critical_section=1
+    if mkdir "$lock_dir" 2>/dev/null; then
+      lock_owned=1
+      chmod 700 "$lock_dir"
+      printf '%s\n' "$$" > "$lock_pid_file"
+      critical_section=0
+      service_pending_signal
+      return 0
+    fi
+    critical_section=0
+    service_pending_signal
+
+    [[ -d "$lock_dir" ]] ||
+      fail "unable to create runner lock: ${lock_dir}"
+
+    publication_attempt=0
+    while [[ ! -f "$lock_pid_file" && "$publication_attempt" -lt 20 ]]; do
+      [[ -d "$lock_dir" ]] || break
+      sleep 0.05
+      publication_attempt=$((publication_attempt + 1))
+    done
+    if [[ -f "$lock_pid_file" ]]; then
+      owner_pid="$(< "$lock_pid_file")"
+    else
+      owner_pid=""
+    fi
+
+    if [[ "$owner_pid" =~ ^[0-9]+$ ]] &&
+       process_is_running "$owner_pid" &&
+       pid_belongs_to_runner "$owner_pid"; then
+      stop_existing_runner "$owner_pid"
+      continue
+    fi
+
+    printf 'Local PostgreSQL runner: reclaiming stale runner lock: %s\n' \
+      "$lock_dir" >&2
+    if remove_observed_lock "$owner_pid"; then
+      continue
+    else
+      removal_status=$?
+    fi
+    if [[ "$removal_status" -eq 2 ]]; then
+      continue
+    fi
+    fail "unable to reclaim stale runner lock: ${lock_dir}"
+  done
+  fail "unable to acquire or reclaim runner lock: ${lock_dir}"
+}
+
 run_child() {
   local child_status
+  local completed_child_pid=""
   critical_section=1
   set -m
   "$@" &
   child_pid=$!
+  completed_child_pid="$child_pid"
+  if [[ "$lock_owned" -eq 1 ]]; then
+    printf '%s\n' "$child_pid" > "$lock_child_pid_file"
+  fi
   set +m
   critical_section=0
   service_pending_signal
@@ -34,6 +164,10 @@ run_child() {
     child_status=0
   else
     child_status=$?
+  fi
+  if [[ -f "$lock_child_pid_file" ]] &&
+     [[ "$(< "$lock_child_pid_file")" == "$completed_child_pid" ]]; then
+    rm -f -- "$lock_child_pid_file"
   fi
   child_pid=""
   return "$child_status"
@@ -59,12 +193,14 @@ terminate_child_group() {
     kill "$killer_pid" 2>/dev/null || true
     wait "$killer_pid" 2>/dev/null || true
   fi
+  rm -f -- "$lock_child_pid_file"
   child_pid=""
 }
 
 cleanup() {
   local original_status=$?
   local cleanup_status=0
+  local owner_pid=""
   trap - EXIT
   trap '' INT TERM
 
@@ -80,7 +216,15 @@ cleanup() {
   fi
 
   if [[ "$lock_owned" -eq 1 ]]; then
-    rmdir "$lock_dir" 2>/dev/null || true
+    owner_pid=""
+    if [[ -f "$lock_pid_file" ]]; then
+      owner_pid="$(< "$lock_pid_file")"
+    fi
+    if [[ "$owner_pid" == "$$" ]]; then
+      rm -f -- "$lock_child_pid_file"
+      rm -f -- "$lock_pid_file"
+      rmdir "$lock_dir" 2>/dev/null || true
+    fi
     lock_owned=0
   fi
   if [[ "$original_status" -ne 0 ]]; then
@@ -111,6 +255,8 @@ service_pending_signal() {
 }
 
 [[ "$#" -eq 0 ]] || fail "arguments are not supported."
+[[ -n "$runtime_tmp_dir" && -d "$runtime_tmp_dir" && -w "$runtime_tmp_dir" ]] ||
+  fail "no writable temporary directory is available for the runner lock."
 [[ -x "$python_bin" ]] || fail "missing .venv; run make install first."
 [[ -f "${repo_root}/jira_server.py" && -f "${repo_root}/backend/db/alembic.ini" ]] ||
   fail "runner path does not resolve to a source checkout."
@@ -166,16 +312,7 @@ export COMPOSE_DISABLE_ENV_FILE=1
 trap cleanup EXIT
 trap 'handle_signal 130' INT
 trap 'handle_signal 143' TERM
-critical_section=1
-if mkdir "$lock_dir" 2>/dev/null; then
-  lock_owned=1
-else
-  critical_section=0
-  service_pending_signal
-  fail "another runner is active or a stale runner lock requires inspection: ${lock_dir}"
-fi
-critical_section=0
-service_pending_signal
+acquire_lock
 
 volume_names="$(
   "${docker_cli[@]}" volume ls --format '{{.Name}}'

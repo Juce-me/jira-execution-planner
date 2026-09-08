@@ -7,6 +7,8 @@ This is the durable source of truth for Jira Delivery Planner analytics. While `
 
 ## Scope
 
+- Operational load-performance history is allowlisted outside GA4: debug observations are stored in `load_performance` and read only by workspace tool admins. Group/sprint identifiers stay in the application database, never the dataLayer. Collection, history filtering, expansion and telemetry HTTP calls emit no product analytics events: their purpose is internal latency diagnosis, and self-instrumentation would distort measurements. Existing ENG `api_result` events remain unchanged; no new triggers, canonical event names, dimensions, or GA4 runbook changes are required.
+
 - Analytics vendor: Google Analytics 4.
 - Active architecture: Google Tag Manager web container with `GA4_ENABLED`-gated loading, periodic context refresh for open tabs, and a stable two-event `dataLayer` contract.
 - Not in scope: server-side GTM, Measurement Protocol, Google Ads, remarketing, audiences, Google Signals, or ad personalization.

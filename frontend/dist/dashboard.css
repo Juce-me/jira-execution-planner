@@ -1981,6 +1981,112 @@ h1 {
   }
 }
 
+/* frontend/src/styles/settings/performance.css */
+.performance-settings {
+  min-width: 0;
+  color: var(--text-primary);
+  padding: .9rem 1rem 1rem;
+  overflow-y: auto;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+}
+.performance-settings h3 {
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+.performance-settings h4 {
+  font-size: 13px;
+  margin: 18px 0 8px;
+}
+.performance-intro,
+.performance-methodology {
+  color: var(--text-secondary);
+}
+.performance-settings p {
+  line-height: 1.5;
+}
+.performance-settings select {
+  max-width: 100%;
+}
+.performance-trend svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+.performance-trend svg text {
+  fill: var(--text-secondary, #555);
+  font-size: 12px;
+}
+.performance-reference line {
+  stroke: var(--text-secondary, #666);
+  stroke-dasharray: 5 4;
+  opacity: .6;
+}
+.performance-series-avgMs {
+  stroke: #2563eb;
+  fill: #2563eb;
+}
+.performance-series-p95Ms {
+  stroke: #a344b4;
+  fill: #a344b4;
+}
+.performance-trend polyline {
+  fill: none;
+  stroke-width: 2;
+}
+.performance-legend {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+}
+.performance-legend span::before {
+  content: "";
+  display: inline-block;
+  width: 20px;
+  border-top: 3px solid;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.performance-average::before {
+  color: #2563eb;
+}
+.performance-p95::before {
+  color: #a344b4;
+}
+.performance-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.performance-settings table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+.performance-settings th,
+.performance-settings td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color, #ddd);
+  white-space: nowrap;
+}
+.performance-settings summary {
+  cursor: pointer;
+  padding: 10px 0;
+  overflow-wrap: anywhere;
+}
+.performance-sample {
+  border-bottom: 1px solid var(--border-color, #ddd);
+}
+.performance-sample p {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.performance-breach {
+  border-left: 3px solid #b45309;
+  padding-left: 10px;
+}
+
 /* frontend/src/styles/settings/epm-settings.css */
 .group-editor {
   display: flex;

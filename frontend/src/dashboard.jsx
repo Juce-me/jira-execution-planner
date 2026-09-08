@@ -243,6 +243,8 @@ import GroupBoardsTab from './settings/GroupBoardsTab.jsx';
 import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
 import AdminAccessSettings, { useAdminAccessSettings } from './settings/AdminAccessSettings.jsx';
 import AdminSettingsTabs from './settings/AdminSettingsTabs.jsx';
+import PerformanceSettings from './settings/PerformanceSettings.jsx';
+import { createPerformanceGate } from './eng/loadPerformance.js';
 import { makeFieldSearchResults, useJiraFieldPickers } from './settings/useJiraFieldPickers.js';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { fetchCsrfToken, fetchHomeTokenConnection } from './api/authApi.js';
@@ -293,7 +295,7 @@ import {
         const EMPTY_OBJECT = Object.freeze({});
         const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
         const EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY = 3;
-        const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access']);
+        const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access', 'performance']);
         const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels', 'boards']);
         const SHARED_CONFIGURATION_TAB_IDS = new Set(ADMIN_SETTINGS_TAB_IDS);
         function isActiveHomeTokenConnection(connection) {
@@ -631,6 +633,10 @@ import {
             const [mappingHoverKey, setMappingHoverKey] = useState(null);
             const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
             const [userCanEditSettings, setUserCanEditSettings] = useState(false);
+            const [performanceAdminAvailable, setPerformanceAdminAvailable] = useState(false);
+            const performanceGate = React.useMemo(createPerformanceGate, []);
+            const activePerformanceLoadRef = useRef(null);
+            const [performanceLoadRevision, setPerformanceLoadRevision] = useState(0);
             const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);
             const [adminUserManagementAvailable, setAdminUserManagementAvailable] = useState(false);
             const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);
@@ -2936,7 +2942,7 @@ import {
                 }, 0);
             }, [priorityWeightsDraft]);
             const shouldValidateAdminSettings = canEditSharedConfiguration
-                && ((ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && groupManageTab !== 'access') || isCoreSharedConfigurationDraftDirty);
+                && ((ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && !['access', 'performance'].includes(groupManageTab)) || isCoreSharedConfigurationDraftDirty);
             const groupConfigValidationErrors = React.useMemo(() => {
                 const errors = [];
                 if (shouldValidateAdminSettings) {
@@ -3178,7 +3184,7 @@ import {
             const handleAdminSettingsTabKeyDown = (event) => {
                 handleSettingsSubTabKeyDown(
                     event,
-                    ['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access'],
+                    ['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access', ...(performanceAdminAvailable ? ['performance'] : [])],
                     adminSettingsTab,
                     selectAdminSettingsTab,
                     'admin-settings'
@@ -6448,6 +6454,8 @@ import {
                 setSharedConfigReady(false);
                 try {
                     const config = await fetchAppConfig(BACKEND_URL);
+                    performanceGate.resolve(config.performanceDebugEnabled === true);
+                    setPerformanceAdminAvailable(config.performanceAdminAvailable === true);
                     const resumePrincipal = {
                         workspaceId: String(config.viewConfig?.workspaceId || ''),
                         viewConfigId: String(config.viewConfig?.viewConfigId || ''),
@@ -6542,6 +6550,7 @@ import {
                         await Promise.all(fallbackConfigLoads);
                     }
                 } catch (err) {
+                    performanceGate.resolve(false);
                     if (isAuthenticationRequiredError(err)) return;
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load config:', err);
@@ -6610,8 +6619,9 @@ import {
                 setTechEpicsInScope([]);
                 setMissingPlanningInfoTasks([]);
                 setMissingInfoEpics([]);
-                const productLoadResult = loadProductTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
-                const techLoadResult = loadTechTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                const measuredLoad = loadMeasuredGroupTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
+                const productLoadResult = measuredLoad.product;
+                const techLoadResult = measuredLoad.tech;
                 if (recoveryScopeKey) {
                     void Promise.all([productLoadResult, techLoadResult]).then((outcomes) => {
                         const pendingLoad = planningAuthResumeLoadRef.current;
@@ -6631,6 +6641,9 @@ import {
                     });
                 }
                 return () => {
+                    measuredLoad.cancel();
+                    activePerformanceLoadRef.current?.cancel();
+                    activePerformanceLoadRef.current = null;
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
@@ -6770,13 +6783,13 @@ import {
             const {
                 fetchTasks,
                 fetchBacklogEpics,
-                loadProductTasks,
-                loadTechTasks,
+                loadGroupTasks,
                 loadAlertEpics,
                 loadReadyToCloseProductTasks,
                 loadReadyToCloseTechTasks,
             } = useEngSprintData({
                 backendUrl: BACKEND_URL,
+                performanceGate,
                 selectedSprint,
                 selectedSprintName: selectedSprintInfo?.name || '',
                 activeGroupId,
@@ -6812,6 +6825,14 @@ import {
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
             });
 
+            const loadMeasuredGroupTasks = (options = {}) => {
+                activePerformanceLoadRef.current?.cancel();
+                const load = loadGroupTasks({ ...options, waitForDependencies: showDependencies || showBlockedAlert,
+                    onPrimaryReady: () => setPerformanceLoadRevision(value => value + 1) });
+                activePerformanceLoadRef.current = load;
+                return load;
+            };
+
             const {
                 storySubtasksByKey,
                 clearStorySubtasks,
@@ -6834,14 +6855,16 @@ import {
                     const response = await requestDependencies(BACKEND_URL, keys, { signal: controller.signal });
                     if (!response.ok) {
                         console.error('Dependencies fetch failed:', response.status);
-                        return;
+                        return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
                     }
                     const data = await response.json();
                     setDependencyData(data.dependencies || {});
+                    return ENG_TASK_LOAD_OUTCOME.APPLIED;
                 } catch (err) {
-                    if (err.name === 'AbortError') return;
-                    if (isAuthenticationRequiredError(err)) return;
+                    if (err.name === 'AbortError') return ENG_TASK_LOAD_OUTCOME.IGNORED;
+                    if (isAuthenticationRequiredError(err)) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
                     console.error('Dependencies fetch error:', err);
+                    return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
                 } finally {
                     cleanupSprintFetch(controller);
                 }
@@ -11822,9 +11845,11 @@ import {
             useEffect(() => {
                 if (!showDependencies && !showBlockedAlert) {
                     setDependencyData({});
+                    if (selectedView === 'eng') activePerformanceLoadRef.current?.dependenciesFinished();
                     return;
                 }
                 if (selectedView === 'eng') {
+                    if (activePerformanceLoadRef.current && !activePerformanceLoadRef.current.primaryReady) return;
                     if (selectedSprint !== null && lastLoadedSprintRef.current !== selectedSprint) return;
                     if (!tasksFetched || productTasksLoading || techTasksLoading) return;
                 }
@@ -11833,11 +11858,14 @@ import {
                 }
                 if (!dependencyKeySignature) {
                     setDependencyData({});
+                    if (selectedView === 'eng') activePerformanceLoadRef.current?.dependenciesFinished();
                     return;
                 }
                 const keys = dependencyKeySignature.split('|').filter(Boolean);
-                fetchDependencies(keys);
-            }, [selectedView, showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading, epmRollupLoading]);
+                const measuredLoad = selectedView === 'eng' ? activePerformanceLoadRef.current : null;
+                const started = performance.now();
+                void fetchDependencies(keys).then(outcome => measuredLoad?.dependenciesFinished(outcome, performance.now() - started));
+            }, [selectedView, showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading, epmRollupLoading, performanceLoadRevision]);
 
             useEffect(() => {
                 if (!showDependencies) {
@@ -12203,8 +12231,7 @@ import {
                 },
                 onAlertDataInvalidated: rearmCatchUpAlerts,
                 onTransitionSuccessRefresh: ({ affectedSubtaskStoryKeys = [] } = {}) => {
-                    loadProductTasks({ forceRefresh: true });
-                    loadTechTasks({ forceRefresh: true });
+                    loadMeasuredGroupTasks({ forceRefresh: true });
                     // Re-fetch subtasks for stories whose subtask status changed so the
                     // expanded subtask rows reflect the new status (backend subtask cache
                     // already invalidated); avoids a stale pill without a full reload.
@@ -12244,8 +12271,7 @@ import {
                 },
                 onAlertDataInvalidated: rearmCatchUpAlerts,
                 onPrioritySuccessRefresh: () => {
-                    loadProductTasks({ forceRefresh: true });
-                    loadTechTasks({ forceRefresh: true });
+                    loadMeasuredGroupTasks({ forceRefresh: true });
                 },
             });
             const {
@@ -14360,8 +14386,7 @@ import {
                     return;
                 }
                 rearmCatchUpAlerts();
-                loadProductTasks({ forceRefresh: true });
-                loadTechTasks({ forceRefresh: true });
+                loadMeasuredGroupTasks({ forceRefresh: true });
             };
             const manualRefreshDisabled = selectedView === 'eng'
                 ? (loading || selectedSprint === null)
@@ -16806,7 +16831,7 @@ import {
                                     <button className="compact" onClick={keepMineOnGroupsConfigConflict} type="button">Keep mine</button>
                                 </div>
                             ) : null}
-                            showTestConfiguration={groupManageTab !== 'epm' && groupManageTab !== 'connections' && groupManageTab !== 'access'}
+                            showTestConfiguration={!['epm', 'connections', 'access', 'performance'].includes(groupManageTab)}
                             onTestConfiguration={testGroupsConfigConnection}
                             testConfigurationDisabled={groupTesting}
                             testConfigurationLabel={groupTesting ? 'Testing...' : 'Test configuration'}
@@ -16832,6 +16857,7 @@ import {
                                 <>
                                 <AdminSettingsTabs
                                     activeTab={groupManageTab}
+                                    performanceAvailable={performanceAdminAvailable}
                                     onSelect={selectAdminSettingsTab}
                                     onKeyDown={handleAdminSettingsTabKeyDown}
                                 />
@@ -16840,7 +16866,9 @@ import {
                                     role="tabpanel"
                                     aria-labelledby={`admin-settings-${groupManageTab}-tab`}
                                 >
-                                {groupManageTab === 'access' ? (
+                                {groupManageTab === 'performance' ? (
+                                performanceAdminAvailable ? <PerformanceSettings backendUrl={BACKEND_URL} /> : null
+                                ) : groupManageTab === 'access' ? (
                                 <AdminAccessSettings
                                     {...{
                                         authMode,

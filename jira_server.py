@@ -29,6 +29,7 @@ import io
 from requests import Session
 from sqlalchemy.exc import OperationalError
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+from backend.services.request_performance import measure_task_load, mark_task_cache_hit, submit_with_performance
 from backend.epm import config as epm_config
 from backend.epm import home as epm_home
 from backend.epm import aggregate as epm_aggregate
@@ -3203,6 +3204,7 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
     return distribution
 
 
+@measure_task_load
 def fetch_tasks(include_team_name=False):
     """Fetch tasks from Jira API."""
     try:
@@ -3247,6 +3249,7 @@ def fetch_tasks(include_team_name=False):
             with _cache_lock:
                 cached_entry = TASKS_CACHE.get(cache_key)
         if cache_enabled and not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
+            mark_task_cache_hit(cached_entry.get('completeness', 'unknown'))
             cached_response = jsonify(cached_entry.get('data') or {})
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             cached_response.headers['Pragma'] = 'no-cache'
@@ -3502,8 +3505,8 @@ def fetch_tasks(include_team_name=False):
                 epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
-                    future_epic_details = pool.submit(fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                    future_epics_in_scope = pool.submit(fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
+                    future_epic_details = submit_with_performance(pool, fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
+                    future_epics_in_scope = submit_with_performance(pool, fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
                     epic_details = future_epic_details.result()
                     epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)
@@ -3523,10 +3526,10 @@ def fetch_tasks(include_team_name=False):
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     future_epic_story_counts = (
-                        pool.submit(fetch_story_counts_for_epics, epic_scope_keys, headers, epic_link_field)
+                        submit_with_performance(pool, fetch_story_counts_for_epics, epic_scope_keys, headers, epic_link_field)
                         if epic_link_field else None
                     )
-                    future_epic_story_distribution = pool.submit(
+                    future_epic_story_distribution = submit_with_performance(pool,
                         fetch_story_distribution_for_epics, epic_scope_keys, headers, epic_link_field, sprint, team_field_id=team_field_id
                     )
                     epic_story_counts = future_epic_story_counts.result() if future_epic_story_counts else None
@@ -3617,7 +3620,7 @@ def fetch_tasks(include_team_name=False):
             if cache_enabled:
                 cache_store_started = time.perf_counter()
                 with _cache_lock:
-                    TASKS_CACHE[cache_key] = {'timestamp': time.time(), 'data': data}
+                    TASKS_CACHE[cache_key] = {'timestamp': time.time(), 'data': {key: value for key, value in data.items() if key != 'debugTimingsMs'}, 'completeness': 'capped' if len(slim_issues) >= max_results else 'unknown'}
                 record_timing('cache_store', cache_store_started)
             response = jsonify(data)
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'

@@ -15,6 +15,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current DB Workflow
 
+- [In-app load performance](DONE-in-app-load-performance.md): implemented and user-accepted issue #137 baseline instrumentation. Real app sprint measurements replace the separate collector as the next evidence path; the Component All work plan follows observed local data.
+
 1. `SUPPORT-db-migration-claude-review-workflow.md`
    - Use first for external review or handoff.
    - Expected output: findings and a go/no-go recommendation, not code changes.

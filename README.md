@@ -97,6 +97,10 @@ The UI shows a “New Version Available” badge when a newer release is detecte
 
 If you want to develop UI changes without hitting Jira, keep JSON snapshots locally (untracked) and use them as data fixtures in your tooling/tests.
 
+In-app load measurement is enabled by default when a database is configured and migrated to head. Set `APP_PERFORMANCE_DEBUG=false` to opt out. Normal selected-group sprint requests record Product/Tech request timings, issue/Epic/Story counts, payload bytes, Jira request/page/retry counts, backend stages, and requested dependency time. Overall duration starts at the paired load and ends after two animation frames following completion (a browser-paint approximation). Lazy alert and subtask requests and in-memory group restoration are outside this baseline. Persistence occurs afterwards and never blocks the dashboard load.
+
+Tool admins can open **Settings → Admin → Performance** to inspect 30 days of observations, averages, p50/p95, and expandable slow-load details. The target is 2 seconds and the p95 SLO is 4 seconds; spikes remain visible. Compare matching group, sprint, cache state and revision. Local revision labels include the served frontend bundle hash and update after a rebuild. For backend-only comparisons, set `APP_REVISION` to a distinct build label and restart. Reports are isolated by workspace and server environment. Unknown completeness is contextual evidence only; failed, cancelled and capped loads are shown separately. Debug samples are not a production-wide SLO measurement.
+
 ### Step 1: Clone the repository
 
 ```bash

@@ -7,6 +7,8 @@ import time
 
 import requests
 
+from backend.services.request_performance import current_observer
+
 
 RETRYABLE_JIRA_STATUS_CODES = {429, 500, 502, 503, 504}
 
@@ -154,6 +156,7 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, connect_ti
 
     last_status = None
     attempts = 0
+    performance_observer = current_observer()
 
     while attempts < max_attempts:
         if diagnostic_budget is not None:
@@ -164,6 +167,8 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, connect_ti
             # legitimately slow queries keep the caller's read budget.
             request_timeout = (min(connect_timeout, timeout), timeout)
         attempts += 1
+        if performance_observer is not None:
+            performance_observer.attempt(retry=attempts > 1)
         if diagnostic_observer is not None:
             diagnostic_observer.add('jiraAttemptCount')
             if attempts > 1:
@@ -192,6 +197,8 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, connect_ti
                 bytes_recorded = True
             latency_ms = round((now_fn() - attempt_started) * 1000, 1)
             last_status = getattr(response, 'status_code', None)
+            if performance_observer is not None and last_status == 200 and '/rest/api/3/search/jql' in url:
+                performance_observer.page()
             if diagnostic and last_status == 429:
                 diagnostic_observer.add('jiraFailureAttemptCount')
                 diagnostic_observer.add('jiraRateLimitCount')

@@ -398,6 +398,7 @@ def get_sprints():
 @bp.route('/api/config', methods=['GET'])
 def get_config():
     """Get public configuration"""
+    from backend.services.load_performance import collection_enabled
     auth_context = current_request_auth_context()
     include_view_config = str(request.args.get('includeViewConfig') or '').strip().lower() in {'1', 'true', 'yes'}
     try:
@@ -430,6 +431,8 @@ def get_config():
         'boardName': board_cfg.get('boardName', ''),
         'boardConfigSource': board_cfg.get('source', 'default'),
         'settingsAdminOnly': bool(SETTINGS_ADMIN_ONLY),
+        'performanceDebugEnabled': collection_enabled(),
+        'performanceAdminAvailable': bool(auth_context.is_admin),
         'userCanEditSettings': can_edit_shared_configuration,
         'userCanEditViewConfig': True,
         'userCanEditEpmConfig': True,

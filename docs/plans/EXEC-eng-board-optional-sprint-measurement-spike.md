@@ -1,5 +1,7 @@
 # EXEC — ENG Board optional-sprint measurement spike
 
+> **Current direction (2026-09-08):** The user approved [in-app load performance](DONE-in-app-load-performance.md) as the baseline path. The separate campaign is historical diagnostic work, not a prerequisite for app instrumentation or plan authorship. Gather ordinary local sprint observations first, then separately measure the Component All work candidate and prepare its gated implementation plan. Historical production-evidence limitations below remain valid; they do not prohibit writing a plan.
+
 > **Status:** Diagnostic Tasks 0–5 implemented and verified on 2026-09-07. Task 6 startup and
 > authenticated preflight ran, but the fixed campaign is blocked by the saved workspace scope.
 > No schema-v2 live campaign sample has run. A separate Basic-mode existing-endpoint collector run

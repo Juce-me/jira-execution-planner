@@ -3,6 +3,8 @@ import {
     fetchEngTasks,
 } from '../api/engApi.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
+import { recordPerformanceLoad } from '../api/performanceApi.js';
+import { createGroupLoadMeasurement, laneMetrics } from './loadPerformance.js';
 
 export const ENG_TASK_LOAD_OUTCOME = Object.freeze({
     APPLIED: 'applied',
@@ -94,6 +96,8 @@ export function useEngSprintData({
     setReadyToCloseTechEpicsInScope,
     onServerConnectionFailure,
     onAuthRecoveryRequired,
+    performanceDebugEnabled = false,
+    performanceGate,
 }) {
     const fetchTasks = async (project, options = {}) => {
         const useLoading = options.useLoading !== false;
@@ -107,6 +111,8 @@ export function useEngSprintData({
 
         const controller = registerSprintFetch();
         const requestSignal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
+        const measured = options.measurement?.enabled === true;
+        const startedAt = measured ? performance.now() : 0;
         try {
             const sprintParam = options.sprintOverride !== undefined ? options.sprintOverride : (selectedSprint || '');
             const groupTeamIds = activeGroupTeamIds;
@@ -127,7 +133,8 @@ export function useEngSprintData({
                 refresh,
                 purpose: options.purpose,
                 epicKeys: options.epicKeys,
-                signal: requestSignal
+                signal: requestSignal,
+                debugTimings: measured,
             });
             const response = await requestTasks();
 
@@ -138,7 +145,10 @@ export function useEngSprintData({
                 throw await buildTaskResponseError(response);
             }
 
-            const data = await response.json();
+            const text = measured ? await response.text() : null;
+            const data = measured ? JSON.parse(text) : await response.json();
+            if (measured) options.measurement.lane(laneMetrics(project, data, response.headers,
+                performance.now() - startedAt, new TextEncoder().encode(text).byteLength));
             console.log('Success! Received data:', data);
 
             // Sort by priority
@@ -167,6 +177,7 @@ export function useEngSprintData({
             }
             return filteredTasks;
         } catch (err) {
+            if (measured) options.measurement.lane(laneMetrics(project, {}, null, performance.now() - startedAt, 0));
             if (err.name === 'AbortError') {
                 return IGNORED_RESULT;
             }
@@ -195,7 +206,7 @@ export function useEngSprintData({
         return Array.isArray(payload.epics) ? payload.epics : [];
     };
 
-    const loadProductTasks = async ({ forceRefresh = false, shouldApplyResult } = {}) => {
+    const loadProductTasks = async ({ forceRefresh = false, shouldApplyResult, measurement } = {}) => {
         const sprintId = selectedSprint;
         setProductTasksLoading(true);
         try {
@@ -215,7 +226,7 @@ export function useEngSprintData({
                 }
                 return ENG_TASK_LOAD_OUTCOME.APPLIED;
             }
-            const data = await fetchTasks('product', { forceRefresh, shouldApplyResult });
+            const data = await fetchTasks('product', { forceRefresh, shouldApplyResult, measurement });
             if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
             if (data === NON_AUTH_FAILURE_RESULT) return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
             if (data === IGNORED_RESULT || shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
@@ -239,7 +250,7 @@ export function useEngSprintData({
         }
     };
 
-    const loadTechTasks = async ({ forceRefresh = false, shouldApplyResult } = {}) => {
+    const loadTechTasks = async ({ forceRefresh = false, shouldApplyResult, measurement } = {}) => {
         const sprintId = selectedSprint;
         setTechTasksLoading(true);
         try {
@@ -260,7 +271,7 @@ export function useEngSprintData({
                 }
                 return ENG_TASK_LOAD_OUTCOME.APPLIED;
             }
-            const data = await fetchTasks('tech', { forceRefresh, shouldApplyResult });
+            const data = await fetchTasks('tech', { forceRefresh, shouldApplyResult, measurement });
             if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
             if (data === NON_AUTH_FAILURE_RESULT) return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
             if (data === IGNORED_RESULT || shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
@@ -375,7 +386,45 @@ export function useEngSprintData({
         setReadyToCloseTechTasks(data);
     };
 
+    const loadGroupTasks = (options = {}) => {
+        const measurement = createGroupLoadMeasurement({ enabled: (performanceGate?.enabled ?? performanceDebugEnabled) && Boolean(activeGroupId) && activeGroupTeamIds.length > 0,
+            groupId: activeGroupId, sprintId: selectedSprint,
+            emit: async sample => {
+                if (performanceGate) {
+                    await performanceGate.ready;
+                    if (!performanceGate.enabled) return;
+                }
+                return recordPerformanceLoad(backendUrl, sample);
+            } });
+        const product = loadProductTasks({ ...options, measurement });
+        const tech = loadTechTasks({ ...options, measurement });
+        for (const lane of [product, tech]) {
+            void lane.then(outcome => {
+                if (outcome === ENG_TASK_LOAD_OUTCOME.APPLIED) return measurement.contentReady();
+            }).catch(() => {});
+        }
+        let resolveDependencies;
+        let primaryReady = false;
+        const dependencies = options.waitForDependencies && measurement.enabled
+            ? new Promise(resolve => { resolveDependencies = resolve; }) : Promise.resolve('applied');
+        void Promise.all([product, tech]).then(async outcomes => {
+            primaryReady = outcomes.every(value => value === ENG_TASK_LOAD_OUTCOME.APPLIED);
+            if (primaryReady) options.onPrimaryReady?.();
+            if (outcomes.every(value => value === ENG_TASK_LOAD_OUTCOME.APPLIED)) outcomes.push(await dependencies);
+            return measurement.finish(outcomes);
+        },
+            () => measurement.finish([ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE]));
+        return { product, tech,
+            get primaryReady() { return primaryReady; },
+            dependenciesFinished: (outcome = 'applied', durationMs = 0) => {
+                measurement.dependencies(durationMs);
+                resolveDependencies?.(outcome);
+            },
+            cancel: () => { measurement.cancel(); resolveDependencies?.('ignored'); } };
+    };
+
     return {
+        loadGroupTasks,
         fetchTasks,
         fetchBacklogEpics,
         loadProductTasks,

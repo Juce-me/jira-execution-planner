@@ -32,7 +32,7 @@ export const fetchSprints = (backendUrl, { forceRefresh = false } = {}) => {
     });
 };
 
-export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal } = {}) => {
+export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal, debugTimings = false } = {}) => {
     const params = new URLSearchParams({
         t: Date.now().toString(),
         sprint,
@@ -41,6 +41,7 @@ export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', gr
         project: project || 'all',
         groupId: groupId || ''
     });
+    if (debugTimings) params.set('debugTimings', 'true');
     if (refresh) {
         params.set('refresh', 'true');
     }

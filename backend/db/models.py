@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Float,
     JSON,
     String,
     Text,
@@ -78,6 +79,25 @@ def _canonical_scenario_value(key: str, value: Any) -> Any:
 
 class Base(DeclarativeBase):
     pass
+
+
+class LoadPerformance(Base):
+    __tablename__ = 'load_performance'
+    __table_args__ = (Index('ix_load_performance_workspace_recorded', 'workspace_id', 'recorded_at'),)
+
+    workspace_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    load_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    group_id: Mapped[str] = mapped_column(String(128))
+    sprint_id: Mapped[str] = mapped_column(String(128))
+    surface: Mapped[str] = mapped_column(String(32))
+    outcome: Mapped[str] = mapped_column(String(16))
+    duration_ms: Mapped[float] = mapped_column(Float)
+    dependency_duration_ms: Mapped[Optional[float]] = mapped_column(Float)
+    first_content_ms: Mapped[Optional[float]] = mapped_column(Float)
+    lanes: Mapped[list] = mapped_column(JSON)
+    environment: Mapped[str] = mapped_column(String(128))
+    revision: Mapped[str] = mapped_column(String(128))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class User(Base):

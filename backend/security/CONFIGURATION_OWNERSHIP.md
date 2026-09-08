@@ -15,6 +15,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | EPM tab and selected sprint UI state | Private browser preferences; preserve existing private-view values | Current user | Current user only | Never stored in workspace administrator or shared group configuration |
 | Personal connections and tokens | User-owned auth connection/token tables | Current user | `user_write` | Private credentials; never configuration payload fields |
 | Derived team catalog | `workspace_team_catalogs` | `authenticated_read` | `user_write` | Shared workspace cache refreshed by authenticated users; cannot mutate administrator settings |
+| Debug load observations | `load_performance` | Explicit tool admin in the current workspace/environment | Authenticated `user_write`, debug-enabled only | Derived operational history, retained 30 days; workspace identity comes from auth context, never the browser payload; no configuration or issue content |
 
 ## Exact Boundaries
 

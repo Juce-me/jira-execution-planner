@@ -331,3 +331,5 @@ When the user corrects your approach, append a one-line rule here before ending 
 - For issue #137 live diagnostics, gather contextual data through the Python existing-endpoint collector; do not require users to create a synthetic Team-fallback-only Department to make the browser campaign runnable.
 - For issue #137 contextual collector exercises, use the user-specified auth-mode environment profile; do not substitute a browser OAuth session unless the user requests it.
 - When a request combines an implementation-plan deliverable with evidence-gated execution, resolve whether the gate controls plan authorship or only execution before omitting the plan or asking to override the gate.
+
+- Enable in-app load measurement by default when database storage is configured, preserve an explicit opt-out, and keep empty performance views free of unknown metrics and diagnostic walls of text.

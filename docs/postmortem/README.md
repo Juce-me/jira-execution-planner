@@ -41,6 +41,7 @@ Postmortems serve to:
 | [MRT022](./MRT022-agent-branded-branch-names.md) | Agent-Branded Branch Names Ignored Git Conventions | 2026-07-08 | Low | Resolved | Sessions repeatedly started on auto-generated `claude/*` branches despite AGENTS.md forbidding tool branding and requiring typed branch prefixes; fixed with a session-start rename rule in AGENTS.md section 11 |
 | [MRT023](./MRT023-alert-enrichment-blocked-first-screen.md) | Alert Enrichment Blocked the First Screen | 2026-08-08 | High | Resolved | Alert-only Epic distribution work consumed 10.367 seconds on the primary ENG task response and alert sources ran outside Catch Up |
 | [MRT024](./MRT024-head-stamped-schema-drift.md) | Head-Stamped Schema Drift | 2026-09-02 | High | Resolved | Alembic reported head while a preserved local PostgreSQL volume had duplicate onboarding columns and missing auth/capacity schema objects |
+| [MRT025](./MRT025-issue-137-delivery-scope-deviation.md) | Issue 137 Delivery Scope Deviation | 2026-09-07 | High | In Progress | The delivery substituted an auth workflow, conflated blocked execution with plan authorship, and failed to produce the expected gated implementation plan |
 
 ## Postmortem Template
 
@@ -94,8 +95,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 24
-- **Metadata complete (Date/Severity/Status)**: 24 (MRT001-MRT024)
+- **Total postmortems**: 25
+- **Metadata complete (Date/Severity/Status)**: 25 (MRT001-MRT025)
 
 ## Common Themes
 
@@ -104,6 +105,7 @@ Commits, files, documentation
 2. **Algorithm Validation**: Need peer review for complex algorithms
 3. **Backend/Frontend Alignment**: Frontend didn't match backend logic
 4. **Performance**: Missing optimization guards in React hooks
+5. **Plan/Execution Boundary**: Blocked execution was incorrectly treated as permission to omit a requested plan artifact
 
 ### Action Items Summary
 Across all postmortems, key actions needed:
@@ -153,5 +155,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-09-02*
-*Total Postmortems: 24*
+*Last Updated: 2026-09-07*
+*Total Postmortems: 25*

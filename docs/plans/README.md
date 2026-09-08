@@ -15,6 +15,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current DB Workflow
 
+- [OAuth inline issue editing implementation](EXEC-oauth-inline-issue-editing.md): reviewed plan for ENG Assignee, Epic Delivery Owner, and Story Points editors; reuse-first UI, OAuth-only writes, state/calculation and API validation. Live Jira evidence gates final acceptance.
+- [OAuth inline issue editing design](SUPPORT-oauth-inline-issue-edit-design.md): supporting UX and reuse contract aligned with the implementation plan.
 - [In-app load performance](DONE-in-app-load-performance.md): implemented, verified and user-accepted; three local contextual sprint observations recorded.
 - [ENG Board All work implementation](EXEC-eng-board-all-work.md): planned from in-app evidence; progressive strict Board loading with transport/deadline/completeness gates. No production implementation yet.
 - [All work subagent handoff](SUPPORT-eng-board-all-work-handoff.md): published-base and worker ownership instructions; execute only within the plan gates.

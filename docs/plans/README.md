@@ -13,6 +13,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 - `FUTURE-*`: deferred scope. Do not pull these into the current implementation unless the scope is explicitly reopened.
 - Do not create new date-only docs in `docs/plans/`. Use one of the prefixes above so execution state is visible from the filename.
 
+## Current Stats Work
+
+- [Project Track Left capacity](EXEC-project-track-left-capacity.md): planned; approved existing By team bars with aligned Board-style status strips and exact selected-sprint SP left. [Fixed UI decision](SUPPORT-project-track-left-capacity-design.md) and [approved preview](../../assets/mockups/project-track-left-capacity.html). No production implementation yet.
+
 ## Current DB Workflow
 
 - [In-app load performance](DONE-in-app-load-performance.md): implemented, verified and user-accepted; three local contextual sprint observations recorded.

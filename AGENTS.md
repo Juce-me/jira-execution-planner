@@ -345,3 +345,5 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Enable in-app load measurement by default when database storage is configured, preserve an explicit opt-out, and keep empty performance views free of unknown metrics and diagnostic walls of text.
 - Never bypass the section 10 publication transaction gate; validate history, scope, remote head, rendered PR body, and CI as one unit before reporting success (MRT025).
 - Commit a postmortem for active work on the related task branch; do not create a separate postmortem/docs branch unless the operator explicitly requests one.
+- For Project Track Left capacity, extend existing By team track bars with a thin aligned status strip under each track segment, reusing Board progress colors; use selected-sprint Story SP, exclude Killed, count Done and Incomplete as spent, and show exact SP left per track.
+- Ground Stats UI proposals in the existing header Sprint/Teams controls, chart interactions, source, and repository screenshots; do not introduce a duplicate team picker or access Firefox for this work.

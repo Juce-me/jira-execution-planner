@@ -32,8 +32,8 @@ def _column(**overrides):
     return column
 
 
-def _board(columns):
-    return {'columns': columns}
+def _board(columns, **overrides):
+    return {'columns': columns, **overrides}
 
 
 # group_board.py's stated contract (its own module docstring) is "no import
@@ -293,7 +293,10 @@ class GroupBoardStatusTests(unittest.TestCase):
 
     def test_empty_status_list_is_an_error(self):
         _normalized, errors, _warnings = group_board.normalize_group_board(
-            _board([_column(statuses=[])])
+            _board([
+                _column(id='col-00000001', name='To do', statuses=[]),
+                _column(id='col-00000002', name='Terminal', statuses=[]),
+            ], doneEpicRetentionDays=28)
         )
         self.assertIn('board column "To do" has no statuses.', errors)
 
@@ -334,6 +337,54 @@ class GroupBoardStatusTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(warnings, [])
         self.assertEqual(normalized['columns'][0]['statuses'], ['No Longer A Real Status'])
+
+
+class GroupBoardTerminalRetentionTests(unittest.TestCase):
+    def test_retention_accepts_only_non_boolean_integers_from_1_through_90(self):
+        for days in (1, 28, 90):
+            with self.subTest(days=days):
+                normalized, errors, _warnings = group_board.normalize_group_board(
+                    _board([_column(statuses=['Done'])], doneEpicRetentionDays=days)
+                )
+                self.assertEqual([], errors)
+                self.assertEqual(days, normalized['doneEpicRetentionDays'])
+        for invalid in (0, 91, True, 28.0, '28'):
+            with self.subTest(invalid=invalid):
+                _normalized, errors, _warnings = group_board.normalize_group_board(
+                    _board([_column(statuses=['Done'])], doneEpicRetentionDays=invalid)
+                )
+                self.assertIn('board.doneEpicRetentionDays must be a whole number from 1 through 90.', errors)
+
+    def test_legacy_exact_done_column_moves_right_once_without_changing_identity_or_assignments(self):
+        raw = _board([
+            _column(id='col-00000001', name='Done work', statuses=['Done', 'Killed']),
+            _column(id='col-00000002', name='Later', statuses=['Release']),
+        ])
+        normalized, errors, _warnings = group_board.normalize_group_board(raw)
+        self.assertEqual([], errors)
+        self.assertEqual(['col-00000002', 'col-00000001'], [row['id'] for row in normalized['columns']])
+        self.assertEqual(['Done', 'Killed'], normalized['columns'][-1]['statuses'])
+        self.assertEqual(28, normalized['doneEpicRetentionDays'])
+        again, second_errors, _warnings = group_board.normalize_group_board(normalized)
+        self.assertEqual([], second_errors)
+        self.assertEqual(normalized, again)
+
+    def test_explicit_retention_keeps_final_column_terminal_even_when_done_moves(self):
+        raw = _board([
+            _column(id='col-00000001', name='Done work', statuses=['Done']),
+            _column(id='col-00000002', name='Terminal', statuses=[]),
+        ], doneEpicRetentionDays=28)
+        normalized, errors, _warnings = group_board.normalize_group_board(raw)
+        self.assertEqual([], errors)
+        self.assertEqual(['col-00000001', 'col-00000002'], [row['id'] for row in normalized['columns']])
+        self.assertEqual([], normalized['columns'][-1]['statuses'])
+
+    def test_only_structural_terminal_column_may_have_no_statuses(self):
+        _normalized, errors, _warnings = group_board.normalize_group_board(_board([
+            _column(id='col-00000001', name='Empty', statuses=[]),
+            _column(id='col-00000002', name='Terminal', statuses=[]),
+        ], doneEpicRetentionDays=28))
+        self.assertEqual(['board column "Empty" has no statuses.'], errors)
 
 
 # ── The §5.5 reference fixture, and proving its two halves are one fixture ────
@@ -495,7 +546,10 @@ class GroupBoardReferenceConfigurationTests(unittest.TestCase):
         # Byte-identical, not merely valid: a colour outside the enum, an id
         # outside the grammar or an out-of-range bound would all show up here
         # as a coerced value rather than as an error.
-        self.assertEqual(normalized, reference.reference_board())
+        self.assertEqual(normalized, {
+            **reference.reference_board(),
+            'doneEpicRetentionDays': 28,
+        })
 
     def test_every_board_status_is_mapped_exactly_once(self):
         mapped = [status for column in reference.REFERENCE_COLUMNS for status in column['statuses']]
@@ -580,6 +634,7 @@ def _round_trip_board():
                 'max': 20,
             },
         ],
+        'doneEpicRetentionDays': 28,
     }
 
 
@@ -638,7 +693,7 @@ class GroupBoardJsonRoundTripTests(unittest.TestCase):
         app = jira_server.app
         app.testing = True
         client = app.test_client()
-        board = reference.reference_board()
+        board = {**reference.reference_board(), 'doneEpicRetentionDays': 28}
         with tempfile.TemporaryDirectory() as tmpdir:
             dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
             with open(dashboard_path, 'w', encoding='utf-8') as handle:
@@ -650,7 +705,7 @@ class GroupBoardJsonRoundTripTests(unittest.TestCase):
 
                 reloaded = client.get('/api/groups-config').get_json()
 
-        self.assertEqual(reloaded['groups'][0]['board'], reference.reference_board())
+        self.assertEqual(reloaded['groups'][0]['board'], board)
 
 
 class GroupBoardDbRoundTripTests(unittest.TestCase):
@@ -719,7 +774,7 @@ class GroupBoardDbRoundTripTests(unittest.TestCase):
 
     def test_the_reference_configuration_survives_save_and_reload(self):
         """§12.1's round-trip row, in DB mode, with the 7-column §5.5 fixture."""
-        board = reference.reference_board()
+        board = {**reference.reference_board(), 'doneEpicRetentionDays': 28}
         loaded = shared_group_config.load_shared_groups(
             self.context,
             fallback_loader=lambda: None,
@@ -742,7 +797,7 @@ class GroupBoardDbRoundTripTests(unittest.TestCase):
             validate_groups_config_fn=jira_server.validate_groups_config,
             database_url=self.database_url,
         )
-        self.assertEqual(reloaded['groups'][0]['board'], reference.reference_board())
+        self.assertEqual(reloaded['groups'][0]['board'], board)
 
 
 class GroupBoardValidationRouteTests(unittest.TestCase):

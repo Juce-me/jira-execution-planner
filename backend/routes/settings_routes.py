@@ -8,7 +8,7 @@ from backend.config.db_repository import ViewConfigNotFound
 from backend.config.repository import ConfigStorageError, config_storage_db_enabled, db_repository
 from backend.config.shared_config import normalize_shared_admin_section
 from backend.db.engine import DatabaseConfigurationError
-from backend.services import shared_group_config
+from backend.services import eng_board, shared_group_config
 from backend.services import shared_capacity_config
 from backend.services.capacity import CapacityUpstreamUnauthorized
 from backend.services.user_view_config import UserViewConfigStorageError
@@ -433,6 +433,12 @@ def get_config():
         'settingsAdminOnly': bool(SETTINGS_ADMIN_ONLY),
         'performanceDebugEnabled': collection_enabled(),
         'performanceAdminAvailable': bool(auth_context.is_admin),
+        # The DB/OAuth adapter has passed the strict transport and completeness gates. Basic/JSON
+        # keeps failing closed until its deployment-specific performance evidence is collected.
+        'boardAllWorkAvailable': eng_board.strict_adapter_available(
+            auth_context.auth_mode,
+            database_backed=is_db_auth_context(auth_context) and config_storage_db_enabled(),
+        ),
         'userCanEditSettings': can_edit_shared_configuration,
         'userCanEditViewConfig': True,
         'userCanEditEpmConfig': True,

@@ -29,7 +29,6 @@ import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from 
 import { useStorySubtasks } from './issues/useStorySubtasks.js';
 import EngView from './eng/EngView.jsx';
 import EngBoardView from './eng/EngBoardView.jsx';
-import { matchesEngBoardSearch } from './eng/engBoardSearch.js';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
 import EngModeControl from './eng/EngModeControl.jsx';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
@@ -37,6 +36,7 @@ import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
 import { ENG_TASK_LOAD_OUTCOME, useEngSprintData } from './eng/useEngSprintData.js';
+import { strictEngBoardMutationProps, strictEngBoardViewProps, useStrictEngBoardOwner, useStrictEngBoardPresentation } from './eng/useStrictEngBoardIntegration.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
 import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
 import { useEngProjectTrackTransitions } from './eng/useEngProjectTrackTransitions.js';
@@ -47,7 +47,6 @@ import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
 import ProjectTrackTransitionMenu from './issues/ProjectTrackTransitionMenu.jsx';
 import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkStatus, migrateEngCatchUpFilters, readEngCatchUpFilterState, resolveEngCatchUpFilters } from './eng/engCatchUpFilters.js';
-import { useEngBoardFilters } from './eng/useEngBoardFilters.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningAuthResume, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import {
@@ -762,6 +761,8 @@ import {
             const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
             const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
             const [showBoard, setShowBoard] = useState(savedPrefsRef.current.showBoard ?? false);
+            const [boardAllWorkAvailable, setBoardAllWorkAvailable] = useState(null);
+            const [boardStrictScope, setBoardStrictScope] = useState('');
             const [showDependencies, setShowDependencies] = useState(true);
             const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
             const [searchInput, setSearchInput] = useState(savedPrefsRef.current.searchQuery ?? ''); const [searchFocused, setSearchFocused] = useState(false);
@@ -872,6 +873,8 @@ import {
             const excludedCapacityEpicDropdownRef = useRef(null);
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
             const isCatchUpMode = selectedView === 'eng' && !showPlanning && !showStats && !showScenario && !showBoard;
+            const strictBoardActive = selectedView === 'eng' && showBoard && boardAllWorkAvailable === true && ['all_work', 'component'].includes(boardStrictScope);
+            useEffect(() => { if (selectedView !== 'eng' || !showBoard || boardAllWorkAvailable === false) setBoardStrictScope(''); }, [selectedView, showBoard, boardAllWorkAvailable]);
             const [projectTrackCapacitySide, setProjectTrackCapacitySide] = useState(
                 ['product', 'tech', 'both'].includes(savedPrefsRef.current.projectTrackCapacitySide) ? savedPrefsRef.current.projectTrackCapacitySide : 'product'
             );
@@ -3743,10 +3746,10 @@ import {
                             setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
                             setUserCanEditSettings(cfg.userCanEditSettings === true);
                             setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
-                            setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
+                            setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true); setBoardAllWorkAvailable(cfg.boardAllWorkAvailable === true);
                             setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
                         } catch (err) {
-                            if (isAuthenticationRequiredError(err)) throw err;
+                            if (isAuthenticationRequiredError(err)) throw err; setBoardAllWorkAvailable(false);
                             /* best-effort */
                         }
                         invalidateSprintDataForConfigSave(refreshTarget);
@@ -6021,7 +6024,7 @@ import {
             useEffect(() => {
                 if (!activeGroupId) return;
                 if (activeGroupRef.current === activeGroupId) return;
-                activeGroupRef.current = activeGroupId;
+                setBoardStrictScope(''); activeGroupRef.current = activeGroupId;
                 const cached = groupStateRef.current.get(activeGroupId);
                 const matchesScope = cached &&
                     cached.planningScopeKey === planningScopeKey &&
@@ -6454,7 +6457,7 @@ import {
                 try {
                     const config = await fetchAppConfig(BACKEND_URL);
                     performanceGate.resolve(config.performanceDebugEnabled === true);
-                    setPerformanceAdminAvailable(config.performanceAdminAvailable === true);
+                    setPerformanceAdminAvailable(config.performanceAdminAvailable === true); setBoardAllWorkAvailable(config.boardAllWorkAvailable === true);
                     const resumePrincipal = {
                         workspaceId: String(config.viewConfig?.workspaceId || ''),
                         viewConfigId: String(config.viewConfig?.viewConfigId || ''),
@@ -6549,7 +6552,7 @@ import {
                         await Promise.all(fallbackConfigLoads);
                     }
                 } catch (err) {
-                    performanceGate.resolve(false);
+                    performanceGate.resolve(false); setBoardAllWorkAvailable(false);
                     if (isAuthenticationRequiredError(err)) return;
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load config:', err);
@@ -6563,6 +6566,7 @@ import {
             useEffect(() => {
                 if (selectedView !== 'eng') return;
                 if (isStatsSourceOnlyStatsView) return;
+                if (strictBoardActive || (showBoard && boardAllWorkAvailable === null)) return;
                 // Load tasks when sprint changes (team is filtered client-side)
                 if (selectedSprint === null) {
                     return;
@@ -6601,8 +6605,7 @@ import {
                         cached.sprintId === selectedSprint &&
                         cached.teamIdsSignature === activeGroupTeamIds.join('|') &&
                         cached.tasksFetched &&
-                        lastLoadedSprintRef.current === selectedSprint &&
-                        (cached.productTasks?.length > 0 || cached.techTasks?.length > 0);
+                        lastLoadedSprintRef.current === selectedSprint;
                 })();
 
                 if (shouldSkipLoad) {
@@ -6646,7 +6649,7 @@ import {
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
-            }, [selectedView, isStatsSourceOnlyStatsView, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
+            }, [selectedView, isStatsSourceOnlyStatsView, strictBoardActive, showBoard, boardAllWorkAvailable, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
@@ -6822,8 +6825,10 @@ import {
                 setReadyToCloseTechEpicsInScope,
                 onServerConnectionFailure: reportServerConnectionError,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
+                strictBoardActive,
             });
-
+            const strictBoard = useStrictEngBoardOwner({ active: strictBoardActive, backendUrl: BACKEND_URL, departmentId: activeGroupId, sprintId: selectedSprint, groupRevision: sharedConfigRevision, resolvedFocusColumnId: boardView?.focusedId || null, performanceGate, strictScope: boardStrictScope, trackApiResult, onAuthRequired: () => trackAppError('auth', 'session_recovery', 'reauth') });
+            const strictBoardData = strictBoard.data; const refreshAfterStrictBoardMutation = strictBoard.refresh;
             const loadMeasuredGroupTasks = (options = {}) => {
                 activePerformanceLoadRef.current?.cancel();
                 const load = loadGroupTasks({ ...options, waitForDependencies: showDependencies || showBlockedAlert,
@@ -11721,15 +11726,8 @@ import {
             );
             // Board's own epic-level filter pipeline (§7.1, D19, O6) — sprint/group/team scope
             // only, gated by neither surface's facets (the leak Task 11 flagged).
-            const { boardEpicGroups, boardFilters, boardEpicGroupsFiltered } = useEngBoardFilters({
-                scopeTasks: engFilterScopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection: engBoardFilterSelection,
-            });
-            // Search-only, never facet-narrowed (§10.3 — a facet-filtered count would fire a new
-            // app_search on every tick, since trackSearch dedupes on a signature that includes it).
-            useEffect(() => {
-                const searchOnlyCount = boardEpicGroups.filter(group => matchesEngBoardSearch({ key: group.key, ...group.epic }, searchQuery)).length;
-                trackSearch(searchQuery, showBoard ? searchOnlyCount : visibleTasks.length);
-            }, [searchQuery, showBoard, boardEpicGroups, visibleTasks.length, trackSearch]);
+            const strictBoardPresentation = useStrictEngBoardPresentation({ active: strictBoardActive, owner: strictBoard, savedBoard: activeGroup?.board || null, searchQuery, showBoard, visibleTaskCount: visibleTasks.length, trackSearch, legacyFilterInput: { scopeTasks: engFilterScopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection: engBoardFilterSelection } });
+            const { boardEpicGroups, boardFilters, boardEpicGroupsFiltered, model: strictBoardModel, workItemKeys: activeJiraExportWorkItemKeys } = strictBoardPresentation;
             const boardJiraEpicKeys = React.useMemo(
                 () => normalizeJiraExportKeys(boardEpicGroupsFiltered.filter(group => group.key !== 'NO_EPIC').map(group => group.key)),
                 [boardEpicGroupsFiltered]
@@ -11738,7 +11736,6 @@ import {
                 () => collectJiraExportKeysFromTasks(boardEpicGroupsFiltered.flatMap(group => group.tasks || []), 'stories'),
                 [boardEpicGroupsFiltered]
             );
-
             const hasInitiativeData = React.useMemo(() => {
                 return capacityTasks.some(task => {
                     const epicKey = task?.fields?.epicKey;
@@ -11843,6 +11840,7 @@ import {
             );
 
             useEffect(() => {
+                if (strictBoardActive) { setDependencyData({}); return; }
                 if (!showDependencies && !showBlockedAlert) {
                     setDependencyData({});
                     if (selectedView === 'eng') activePerformanceLoadRef.current?.dependenciesFinished();
@@ -11865,7 +11863,7 @@ import {
                 const measuredLoad = selectedView === 'eng' ? activePerformanceLoadRef.current : null;
                 const started = performance.now();
                 void fetchDependencies(keys).then(outcome => measuredLoad?.dependenciesFinished(outcome, performance.now() - started));
-            }, [selectedView, showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading, epmRollupLoading, performanceLoadRevision]);
+            }, [selectedView, strictBoardActive, showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading, epmRollupLoading, performanceLoadRevision]);
 
             useEffect(() => {
                 if (!showDependencies) {
@@ -12198,6 +12196,7 @@ import {
             }, [onboardingPreviewDescriptorMatches]);
 
             const applyLocalEngIssueField = React.useCallback((issueKey, fieldName, fieldValue) => {
+                if (strictBoard.applyIssueField(issueKey, fieldName, fieldValue)) return;
                 const patchList = prev => applyLocalIssueFieldUpdate(prev, issueKey, fieldName, fieldValue);
                 setProductTasks(patchList);
                 setTechTasks(patchList);
@@ -12211,34 +12210,26 @@ import {
                 setReadyToCloseTechEpicsInScope(patchList);
                 setEpicDetails(prev => applyLocalEpicDetailsFieldUpdate(prev, issueKey, fieldName, fieldValue));
                 applyLocalSubtaskField(issueKey, fieldName, fieldValue);
-            }, [applyLocalSubtaskField]);
-
+            }, [applyLocalSubtaskField, strictBoard]);
+            const strictBoardMutationProps = strictEngBoardMutationProps({ active: strictBoardActive, coordinator: strictBoard.mutationCoordinator, refresh: refreshAfterStrictBoardMutation, sourceSurface: statusTransitionSourceSurface, loadLegacy: () => loadMeasuredGroupTasks({ forceRefresh: true }), retrySubtasks: retryStorySubtasks });
             // Kept as one object as well as destructured names: the Board's epic panel takes the
             // whole hook result as a single prop rather than thirty, because dashboard.jsx is at
             // its line budget (§6.5.7) and this file must stay wiring only.
             const statusTransitions = useEngStatusTransitions({
                 backendUrl: BACKEND_URL,
                 selectedStories: selectedTasksList,
-                epicGroups,
+                epicGroups: strictBoardActive ? boardEpicGroups : epicGroups,
                 storySubtasksByKey,
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
-                mutationScopeKey: `${selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
+                ...strictBoardMutationProps.status,
+                mutationScopeKey: `${strictBoardData.scope?.type || ''}|${strictBoardData.scope?.sprintId || selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
                 trackIssueStatusAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalStatus: (issueKey, statusName) => {
                     applyLocalEngIssueField(issueKey, 'status', { name: statusName });
                 },
                 onAlertDataInvalidated: rearmCatchUpAlerts,
-                onTransitionSuccessRefresh: ({ affectedSubtaskStoryKeys = [] } = {}) => {
-                    loadMeasuredGroupTasks({ forceRefresh: true });
-                    // Re-fetch subtasks for stories whose subtask status changed so the
-                    // expanded subtask rows reflect the new status (backend subtask cache
-                    // already invalidated); avoids a stale pill without a full reload.
-                    affectedSubtaskStoryKeys.forEach((storyKey) => {
-                        retryStorySubtasks({ key: storyKey });
-                    });
-                },
             });
             const {
                 activeSingleIssueTarget: statusTransitionActiveTarget,
@@ -12263,16 +12254,14 @@ import {
                 backendUrl: BACKEND_URL,
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
-                mutationScopeKey: `${selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
+                ...strictBoardMutationProps.priority,
+                mutationScopeKey: `${strictBoardData.scope?.type || ''}|${strictBoardData.scope?.sprintId || selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
                 trackIssuePriorityAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalPriority: (issueKey, priorityPatch) => {
                     applyLocalEngIssueField(issueKey, 'priority', priorityPatch);
                 },
                 onAlertDataInvalidated: rearmCatchUpAlerts,
-                onPrioritySuccessRefresh: () => {
-                    loadMeasuredGroupTasks({ forceRefresh: true });
-                },
             });
             const {
                 activePriorityTarget, openPriorityControl, closePriorityControl,
@@ -12291,7 +12280,8 @@ import {
                 backendUrl: BACKEND_URL,
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
-                mutationScopeKey: `${selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
+                ...strictBoardMutationProps.projectTrack,
+                mutationScopeKey: `${strictBoardData.scope?.type || ''}|${strictBoardData.scope?.sprintId || selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
                 trackIssueProjectTrackAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalProjectTrack: (issueKey, value) => applyLocalEngIssueField(issueKey, 'projectTrack', value),
@@ -13742,28 +13732,31 @@ import {
                 <EpmProjectCollapseAllButton label={epmProjectCollapseAllLabel} onClick={toggleAllVisibleEpmProjectsCollapsed} pressed={allVisibleEpmProjectsCollapsed} />
             ) : null;
 
-            const renderSprintControl = (surface) => (
-                <ControlField label="Sprint">
+            const boardConfigAvailable = boardAllWorkAvailable === true && Boolean(activeGroup?.board?.columns?.length);
+            const boardComponentEnabled = boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length); const boardAllWorkEnabled = boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length || activeGroup?.teamIds?.length);
+            const renderSprintControl = (surface) => {
+                const boardScopeControl = selectedView === 'eng' && showBoard; const canOpen = boardScopeControl || (!sprintsLoading && availableSprints.length > 0);
+                const displayedSprint = boardScopeControl && boardStrictScope ? (boardStrictScope === 'component' ? 'Component' : 'All work') : (sprintName || 'Sprint');
+                const normalizedSprintSearch = sprintSearch.trim().toLowerCase();
+                const componentMatchesSearch = !normalizedSprintSearch || 'component'.includes(normalizedSprintSearch);
+                const allWorkMatchesSearch = !normalizedSprintSearch || 'all work'.includes(normalizedSprintSearch);
+                const pseudoScopeMatchesSearch = boardScopeControl && (componentMatchesSearch || allWorkMatchesSearch);
+                return (<ControlField label="Sprint">
                     <div className={`sprint-dropdown${selectedView === 'eng' ? ' header-filter-dropdown header-filter-dropdown--sprint' : ''}`} ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
                         <div
                             className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
                             role={showSprintDropdown ? undefined : 'button'}
                             aria-label={showSprintDropdown ? undefined : 'Select sprint'}
-                            tabIndex={showSprintDropdown ? undefined : (sprintsLoading || availableSprints.length === 0 ? -1 : 0)}
-                            onClick={() => {
-                                if (showSprintDropdown) return;
-                                if (sprintsLoading || availableSprints.length === 0) return;
-                                applyExclusiveDropdownState('sprint', showSprintDropdown);
-                            }}
+                            tabIndex={showSprintDropdown ? undefined : (canOpen ? 0 : -1)}
+                            onClick={() => { if (showSprintDropdown || !canOpen) return; applyExclusiveDropdownState('sprint', showSprintDropdown); }}
                             onKeyDown={(event) => {
-                                if (showSprintDropdown) return;
-                                if (sprintsLoading || availableSprints.length === 0) return;
+                                if (showSprintDropdown || !canOpen) return;
                                 if (event.key === 'Enter' || event.key === ' ') {
                                     event.preventDefault();
                                     applyExclusiveDropdownState('sprint', showSprintDropdown);
                                 }
                             }}
-                            aria-disabled={sprintsLoading || availableSprints.length === 0}
+                            aria-disabled={!canOpen}
                             data-onboarding-target="sprint"
                             data-onboarding-surface={surface}
                         >
@@ -13781,12 +13774,12 @@ import {
                                             setShowSprintDropdown(false);
                                         }
                                     }}
-                                    placeholder={sprintName || 'Sprint'}
+                                    placeholder={displayedSprint}
                                     aria-label="Filter sprints"
                                     autoFocus={surface === activeControlSurface}
                                 />
                             ) : (
-                                <span>{sprintName || 'Sprint'}</span>
+                                <span>{displayedSprint}</span>
                             )}
                             <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
                                 <path d="M6 9L1 4h10z"/>
@@ -13795,11 +13788,17 @@ import {
                         {showSprintDropdown && surface === activeControlSurface && (
                             <div className="sprint-dropdown-panel">
                                 <div className="sprint-dropdown-list">
+                                    {boardScopeControl && allWorkMatchesSearch && <div className="sprint-dropdown-option" aria-disabled={!boardAllWorkEnabled}
+                                        title={boardAllWorkEnabled ? 'Show retained work across the Department' : 'All work requires a saved Board and Department Components or Teams'}
+                                        onClick={() => { if (!boardAllWorkEnabled) return; trackFilterChanged('sprint', { sprint_selection_state: 'all_work', source_surface: 'board', scope_type: 'all_work' }); setBoardStrictScope('all_work'); setShowSprintDropdown(false); }}>All work</div>}
+                                    {boardScopeControl && componentMatchesSearch && <div className="sprint-dropdown-option" aria-disabled={!boardComponentEnabled}
+                                        title={boardComponentEnabled ? 'Show retained work owned by Department Components' : 'Component scope requires a saved Board and Department Components'}
+                                        onClick={() => { if (!boardComponentEnabled) return; trackFilterChanged('sprint', { sprint_selection_state: 'component', source_surface: 'board', scope_type: 'component' }); setBoardStrictScope('component'); setShowSprintDropdown(false); }}>Component</div>}
                                     {sprintsLoading ? (
                                         <div className="sprint-dropdown-option">Loading sprints...</div>
                                     ) : availableSprints.length === 0 ? (
                                         <div className="sprint-dropdown-option">No sprints available</div>
-                                    ) : filteredSprints.length === 0 ? (
+                                    ) : filteredSprints.length === 0 && !pseudoScopeMatchesSearch ? (
                                         <div className="dropdown-filter-empty" role="status">No matching sprints</div>
                                     ) : (
                                         filteredSprints.map(sprint => {
@@ -13811,7 +13810,8 @@ import {
                                                     className="sprint-dropdown-option"
                                                     data-sprint-id={sprint.id}
                                                     onClick={() => {
-                                                        trackFilterChanged('sprint', { sprint_selection_state: analyticsToken(state || 'unknown'), source_surface: currentDashboardView(), scope_type: currentDashboardView() });
+                                                        trackFilterChanged('sprint', { sprint_selection_state: analyticsToken(state || 'unknown'), source_surface: currentDashboardView(), scope_type: boardScopeControl ? 'sprint' : currentDashboardView() });
+                                                        if (boardScopeControl) setBoardStrictScope('');
                                                         teamSelectionCarryForwardRef.current = activeGroupId ? { scopeKey: buildTeamSelectionScopeKey({ sprintId: sprint.id, groupId: activeGroupId }), selectedTeams: normalizeSelectedTeams(selectedTeams) } : null;
                                                         setSelectedSprint(sprint.id);
                                                         setSprintName(sprint.name);
@@ -13827,8 +13827,7 @@ import {
                             </div>
                         )}
                     </div>
-                </ControlField>
-            );
+                </ControlField>); };
 
             const renderGroupControl = (surface) => {
                 if (!showGroupControl) return null;
@@ -14368,6 +14367,7 @@ import {
                     void refreshEpmView();
                     return;
                 }
+                if (strictBoardActive) { void strictBoardData.refresh(); return; }
                 if (activeGroupId) {
                     groupStateRef.current.delete(activeGroupId);
                 }
@@ -14388,8 +14388,7 @@ import {
                 rearmCatchUpAlerts();
                 loadMeasuredGroupTasks({ forceRefresh: true });
             };
-            const manualRefreshDisabled = selectedView === 'eng'
-                ? (loading || selectedSprint === null)
+            const manualRefreshDisabled = selectedView === 'eng' ? (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized' : loading || selectedSprint === null)
                 : (epmProjectsLoading || epmRollupLoading);
             longAbsenceRefreshRef.current = manualRefreshDisabled ? null : refreshActiveViewFromJira;
             useEffect(() => {
@@ -14418,6 +14417,7 @@ import {
                 if (activeGroupDraft) updateGroupDraftBoard(activeGroupDraft.id, nextBoard);
             };
             const random = Math.random;
+            const engBoardDataProps = strictEngBoardViewProps({ active: strictBoardActive, owner: strictBoard, model: strictBoardModel, legacyLoading: loading, legacyError: displayedEngError, legacyRetry: retryEngLoad });
 
             return (
                 <div className="container" style={containerStyle}>
@@ -14448,6 +14448,7 @@ import {
                                         jiraUrl={jiraUrl}
                                         epicKeys={activeJiraExportEpicKeys}
                                         storyKeys={activeJiraExportStoryKeys}
+                                        workItemKeys={strictBoardActive ? activeJiraExportWorkItemKeys : undefined}
                                         className="jira-export-header"
                                         sourceSurface={selectedView === 'epm' ? 'epm' : (showScenario ? 'scenario' : showStats ? 'stats' : showPlanning ? 'planning' : showBoard ? 'board' : 'catch_up')}
                                     />
@@ -16656,9 +16657,7 @@ import {
                         <EngBoardView
                             board={activeGroup?.board || null}
                             epicGroups={boardEpicGroupsFiltered}
-                            loading={loading}
-                            error={displayedEngError}
-                            onRetry={retryEngLoad}
+                            {...engBoardDataProps}
                             view={boardView}
                             onViewChange={setBoardView}
                             renderPriorityIcon={renderPriorityIcon}
@@ -16667,7 +16666,8 @@ import {
                             onFilterBarHeightChange={handleFilterBarHeightChange}
                             jiraUrl={jiraUrl}
                             backendUrl={BACKEND_URL}
-                            transitionsEnabled={statusTransitionEnabled}
+                            transitionsEnabled={statusTransitionEnabled
+                                && (!strictBoardActive || strictBoardModel.childrenAuthoritative)}
                             statusTransitions={statusTransitions}
                             priorityTransitions={priorityTransitions}
                             projectTrackTransitions={projectTrackTransitions}

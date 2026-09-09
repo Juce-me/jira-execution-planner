@@ -1,4 +1,5 @@
 import {
+    AUTH_REQUIRED_EVENT,
     AuthenticationRequiredError,
     publishAuthenticationRequired,
     readPendingAuthenticationRequired,
@@ -16,6 +17,22 @@ async function authenticationPayload(response) {
 async function waitForResponseBody(response) {
     if (!response?.body) return;
     await response.clone().arrayBuffer();
+}
+
+function abortError(signal) {
+    if (signal?.reason instanceof Error) return signal.reason;
+    return new DOMException('The operation was aborted.', 'AbortError');
+}
+
+function throwIfRequestStopped(signal, status = 0) {
+    if (signal?.aborted) throw abortError(signal);
+    const pending = readPendingAuthenticationRequired();
+    if (pending) throw new AuthenticationRequiredError(pending, status);
+}
+
+export function requireAuthentication(payload = {}, status = 401) {
+    const state = publishAuthenticationRequired(payload);
+    throw new AuthenticationRequiredError(state, status);
 }
 
 export async function apiFetch(url, options = {}) {
@@ -47,6 +64,61 @@ export async function apiFetch(url, options = {}) {
     const lockedAfterResponse = readPendingAuthenticationRequired();
     if (lockedAfterResponse) throw new AuthenticationRequiredError(lockedAfterResponse, response.status);
     return response;
+}
+
+// Streaming callers opt into header-first delivery. The ordinary apiFetch path
+// continues buffering a cloned response body so existing callers keep their
+// global-auth race behavior.
+export async function apiFetchHeaders(url, options = {}) {
+    throwIfRequestStopped(options.signal);
+    const requestStartedAt = Date.now();
+    let response;
+    try {
+        response = await fetch(url, options);
+    } catch (error) {
+        const lockedAfterFailure = readPendingAuthenticationRequired();
+        if (lockedAfterFailure) throw new AuthenticationRequiredError(lockedAfterFailure, 0);
+        throw error;
+    }
+    throwIfRequestStopped(options.signal, response.status);
+    if (!response.ok) {
+        const payload = await authenticationPayload(response);
+        if (response.status === 401 || payload?.error === 'auth_required') {
+            requireAuthentication({ ...(payload || {}), requestStartedAt }, response.status);
+        }
+    }
+    return response;
+}
+
+export async function readResponseStream(response, { signal, onChunk } = {}) {
+    if (!response?.body?.getReader) throw new Error('Streaming response body is unavailable.');
+    const reader = response.body.getReader();
+    let completed = false;
+    const cancelReader = () => { reader.cancel(abortError(signal)).catch(() => {}); };
+    const cancelForAuthentication = () => { reader.cancel().catch(() => {}); };
+    signal?.addEventListener?.('abort', cancelReader, { once: true });
+    globalThis?.window?.addEventListener?.(AUTH_REQUIRED_EVENT, cancelForAuthentication, { once: true });
+    try {
+        while (true) {
+            throwIfRequestStopped(signal, response.status);
+            const { done, value } = await reader.read();
+            throwIfRequestStopped(signal, response.status);
+            if (done) {
+                completed = true;
+                return;
+            }
+            await onChunk(value, () => {
+                completed = true;
+            }, () => throwIfRequestStopped(signal, response.status));
+            if (completed) return;
+        }
+    } finally {
+        signal?.removeEventListener?.('abort', cancelReader);
+        globalThis?.window?.removeEventListener?.(AUTH_REQUIRED_EVENT, cancelForAuthentication);
+        if (!completed) await reader.cancel().catch(() => {});
+        else if (response.body.locked) await reader.cancel().catch(() => {});
+        reader.releaseLock();
+    }
 }
 
 async function rejectAuthenticationResponse(response) {

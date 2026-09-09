@@ -306,7 +306,9 @@ test('a min above its max is a schema error that blocks Save, distinct from a Mi
 });
 
 test('editing columns round-trips through POST /api/groups-config and survives a reload', async ({ page }) => {
-    const calls = await mockConfigSettings(page);
+    const groupsConfig = baseGroupsConfig();
+    groupsConfig.groups[0].board.doneEpicRetentionDays = 90;
+    const calls = await mockConfigSettings(page, { groupsConfig });
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     let dialog = page.getByRole('dialog').first();
@@ -321,6 +323,7 @@ test('editing columns round-trips through POST /api/groups-config and survives a
     const savedGroup = save.body.groups.find(g => g.id === 'northwind');
     expect(savedGroup.board).toBeTruthy();
     expect(savedGroup.board.columns.find(c => c.name === 'Backlog')).toBeTruthy();
+    expect(savedGroup.board.doneEpicRetentionDays).toBe(90);
 
     // Survives a reload: the next GET returns the same saved shape, and the composer reflects it.
     await page.reload({ waitUntil: 'domcontentloaded' });

@@ -35,6 +35,7 @@ SECURITY_SAMPLES = {
         ("GET", "/api/delivery-owner-field/config"),
         ("GET", "/api/issues/description"),
         ("GET", "/api/board-config/statuses"),
+        ("GET", "/api/eng/board?departmentId=department-a&scope=all_work&refresh=0"),
     ],
     "user_write": [
         ("PATCH", "/api/capacity/CAP-101"),

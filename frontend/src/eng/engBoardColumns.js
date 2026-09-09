@@ -126,6 +126,7 @@ function renderColumn(source, epicGroups) {
         min: source.min ?? null,
         max: source.max ?? null,
         statuses: (source.statuses || []).slice(),
+        terminal: Boolean(source.terminal),
         isUnmapped: Boolean(source.isUnmapped),
         isUnconfigured: Boolean(source.isUnconfigured),
         epicGroups: sorted,
@@ -153,7 +154,25 @@ function syntheticColumn(id, name, flag) {
 // `columns` is the stored `board.columns[]`; `epicGroups` is dashboard.jsx's groupTasksByEpic
 // output. Columns with no statuses do not render (§6.1) — the validator makes that a save-time
 // error, but a config that predates the validator can still contain one.
-export function buildBoardColumns({ columns = [], epicGroups = [] } = {}) {
+export function buildBoardColumns({ columns = [], epicGroups = [], columnEpicKeys = null } = {}) {
+    // Strict Board frames already contain the server's resolved column identity for every Epic.
+    // When that explicit membership is supplied it is authoritative: preserve declared column
+    // order (including empty terminal/unmapped columns) and never re-derive ownership from status.
+    // The null default deliberately keeps every legacy caller on the status-derived path below.
+    if (columnEpicKeys !== null) {
+        const groupsByKey = new Map(
+            (epicGroups || []).filter((group) => group && group.epic).map((group) => [group.key, group]),
+        );
+        return (columns || []).map((column) => {
+            const keys = Array.isArray(columnEpicKeys?.[column.id]) ? columnEpicKeys[column.id] : [];
+            const members = keys.map((key) => groupsByKey.get(key)).filter(Boolean);
+            return renderColumn({
+                ...column,
+                isUnmapped: column.isUnmapped || column.id === UNMAPPED_COLUMN_ID,
+                isUnconfigured: column.isUnconfigured || column.id === UNCONFIGURED_COLUMN_ID,
+            }, members);
+        });
+    }
     const live = (columns || []).filter((column) => (column?.statuses || []).length > 0);
     // Dropping the NO_EPIC bucket: those are stories with no epic, not an epic with no status.
     const epics = (epicGroups || []).filter((group) => group && group.epic);

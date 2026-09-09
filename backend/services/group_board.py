@@ -20,6 +20,9 @@ MAX_COLUMNS = 12
 MAX_COLUMN_NAME_LENGTH = 40
 MIN_COLUMN_BOUND = 0
 MAX_COLUMN_BOUND = 9999
+MIN_DONE_EPIC_RETENTION_DAYS = 1
+MAX_DONE_EPIC_RETENTION_DAYS = 90
+DEFAULT_DONE_EPIC_RETENTION_DAYS = 28
 
 # The closed colour enum (D46). The default (grey) must stay first: it is
 # the value new/invalid colours coerce to.
@@ -125,6 +128,18 @@ def normalize_group_board(raw):
         errors.append('board must be an object.')
         return None, errors, warnings
 
+    retention_present = 'doneEpicRetentionDays' in raw
+    raw_retention = raw.get('doneEpicRetentionDays', DEFAULT_DONE_EPIC_RETENTION_DAYS)
+    if (
+        isinstance(raw_retention, bool)
+        or not isinstance(raw_retention, int)
+        or not MIN_DONE_EPIC_RETENTION_DAYS <= raw_retention <= MAX_DONE_EPIC_RETENTION_DAYS
+    ):
+        errors.append('board.doneEpicRetentionDays must be a whole number from 1 through 90.')
+        retention_days = DEFAULT_DONE_EPIC_RETENTION_DAYS
+    else:
+        retention_days = raw_retention
+
     raw_columns = raw.get('columns')
     if raw_columns is None:
         raw_columns = []
@@ -203,15 +218,6 @@ def normalize_group_board(raw):
                 column_statuses.add(status)
                 seen_statuses.add(status)
                 statuses.append(status)
-        # "has no statuses" only fires when the raw list contributed nothing
-        # at all (had_any_status stays False) - not when every entry it did
-        # contribute was rejected as a duplicate. Otherwise a column whose
-        # only status duplicates another column's would get both the
-        # duplicate error and this one, telling the user to add statuses
-        # they already added.
-        if not had_any_status:
-            errors.append(f'board column {label} has no statuses.')
-
         normalized_columns.append({
             'id': column_id,
             'name': name,
@@ -220,9 +226,33 @@ def normalize_group_board(raw):
             'star': star,
             'min': min_value,
             'max': max_value,
+            '_hadAnyStatus': had_any_status,
         })
 
     if star_count > 1:
         errors.append('board has more than one starred column.')
 
-    return {'columns': normalized_columns}, errors, warnings
+    # The final stored column is structurally terminal. Legacy boards did not
+    # persist the retention marker, so infer identity once by moving the exact
+    # Done-owning column right; after the marker exists, status edits can never
+    # transfer terminal identity.
+    if not retention_present:
+        done_index = next(
+            (index for index, column in enumerate(normalized_columns) if 'Done' in column['statuses']),
+            None,
+        )
+        if done_index is not None and done_index != len(normalized_columns) - 1:
+            normalized_columns.append(normalized_columns.pop(done_index))
+
+    # Only the structural terminal may be empty. `had_any_status` distinguishes
+    # truly empty input from a column whose contributed status was rejected as
+    # a duplicate, avoiding a second misleading error in that case.
+    for index, column in enumerate(normalized_columns):
+        had_any_status = column.pop('_hadAnyStatus')
+        if not had_any_status and index != len(normalized_columns) - 1:
+            errors.append(f'board column {_column_label(column["name"], column["id"], index)} has no statuses.')
+
+    return {
+        'columns': normalized_columns,
+        'doneEpicRetentionDays': retention_days,
+    }, errors, warnings

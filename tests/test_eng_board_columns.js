@@ -235,6 +235,37 @@ test('buildBoardColumns places each epic in the column holding its status', asyn
     assert.equal(built[1].storyPoints, 13);
 });
 
+test('buildBoardColumns preserves strict server column order and explicit membership', async () => {
+    const { buildBoardColumns } = await loadModule();
+    const serverColumns = [
+        { id: 'todo', name: 'To do', colour: '#8c8c8c', statuses: ['To Do'], terminal: false },
+        { id: 'board-unmapped', name: 'Unmapped', colour: '#8c8c8c', statuses: [], terminal: false },
+        { id: 'terminal', name: 'Terminal', colour: '#8c8c8c', statuses: [], terminal: true },
+    ];
+    const groups = [
+        epicGroup('E-DONE-IN-TODO', { status: 'Done' }),
+        epicGroup('E-TODO-IN-TERMINAL', { status: 'To Do' }),
+        epicGroup('E-UNMAPPED', { status: 'Escalated' }),
+    ];
+
+    const built = buildBoardColumns({
+        columns: serverColumns,
+        epicGroups: groups,
+        columnEpicKeys: {
+            todo: ['E-DONE-IN-TODO'],
+            'board-unmapped': ['E-UNMAPPED'],
+            terminal: ['E-TODO-IN-TERMINAL'],
+        },
+    });
+
+    assert.deepEqual(built.map((entry) => entry.id), ['todo', 'board-unmapped', 'terminal']);
+    assert.deepEqual(built.map((entry) => entry.epicGroups.map((group) => group.key)), [
+        ['E-DONE-IN-TODO'], ['E-UNMAPPED'], ['E-TODO-IN-TERMINAL'],
+    ]);
+    assert.equal(built[1].isUnmapped, true);
+    assert.equal(built[2].terminal, true);
+});
+
 test('buildBoardColumns reads both epic status shapes through epicStatusName', async () => {
     const { buildBoardColumns } = await loadModule();
     const board = columns({ id: 'col-00000001', name: 'To do', statuses: ['To Do'] });

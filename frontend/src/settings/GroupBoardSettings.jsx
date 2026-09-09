@@ -17,6 +17,7 @@ import {
     fromStoredBoard,
     moveColumn,
     parseBoundInput,
+    retentionDaysFromStoredBoard,
     removeStatusFromColumns,
     resolveInsertIndex,
     setStarredColumn,
@@ -117,6 +118,7 @@ export default function GroupBoardSettings(props) {
         random = Math.random,
     } = props;
     const [columns, setColumns] = React.useState(() => fromStoredBoard(board));
+    const retentionDaysRef = React.useRef(retentionDaysFromStoredBoard(board));
     // `statuses` is the name list every rule here works in; `entries` keeps the catalog rows whole
     // for the shared default-column derivation.
     const [catalog, setCatalog] = React.useState({ state: 'loading', statuses: [], entries: [], code: '', message: '' });
@@ -220,6 +222,7 @@ export default function GroupBoardSettings(props) {
     React.useEffect(() => {
         if (board === lastEmittedRef.current) return;
         lastEmittedRef.current = board;
+        retentionDaysRef.current = retentionDaysFromStoredBoard(board);
         const seeded = fromStoredBoard(board);
         seeded.forEach((column) => usedIdsRef.current.add(column.id));
         setColumns(seeded);
@@ -268,7 +271,7 @@ export default function GroupBoardSettings(props) {
 
     const commit = (next) => {
         setColumns(next);
-        const stored = toStoredBoard(next);
+        const stored = toStoredBoard(next, retentionDaysRef.current);
         lastEmittedRef.current = stored;
         onChange?.(stored);
     };
@@ -277,7 +280,7 @@ export default function GroupBoardSettings(props) {
     const leftover = unmappedStatuses(catalogStatuses, columns);
     const stale = staleColumnStatuses(columns, catalogStatuses);
     const staleSet = new Set(stale);
-    const { errors } = validateComposerBoard(columns);
+    const { errors } = validateComposerBoard(columns, retentionDaysRef.current);
     const boundErrorMessages = Object.values(boundErrors).filter(Boolean);
 
     // Keyboard reorder must leave focus on the handle it was invoked from, and closing a picker

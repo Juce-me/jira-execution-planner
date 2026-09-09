@@ -40,6 +40,7 @@ function createHarness(fetchEngTasks, {
     loadedTechTasks = [],
     performanceDebugEnabled = false,
     measurementDependencies = {},
+    strictBoardActive = false,
 } = {}) {
     const { useEngSprintData } = loadUseEngSprintData(fetchEngTasks, refreshAuthSession, measurementDependencies);
     const errors = [];
@@ -52,6 +53,7 @@ function createHarness(fetchEngTasks, {
         activeGroupId: performanceDebugEnabled ? 'sample-group' : '',
         activeGroupTeamIds: performanceDebugEnabled ? ['sample-team'] : [],
         performanceDebugEnabled,
+        strictBoardActive,
         activeGroupTeamSet: new Set(),
         pageLoadRefreshRef: { current: false },
         sprintLoadRef,
@@ -82,6 +84,37 @@ function createHarness(fetchEngTasks, {
 
     return { api, errors };
 }
+
+test('strict Board retires every legacy sprint loader without issuing transport', async () => {
+    const calls = [];
+    const { api } = createHarness(async () => {
+        calls.push('tasks');
+        throw new Error('legacy task transport must stay retired');
+    }, {
+        strictBoardActive: true,
+        measurementDependencies: {
+            requestBacklogEpics: async () => {
+                calls.push('backlog');
+                return { epics: [] };
+            },
+            createGroupLoadMeasurement: () => ({
+                enabled: false, contentReady() {}, dependencies() {}, finish() {}, cancel() {},
+            }),
+            laneMetrics: () => ({}),
+            recordPerformanceLoad: async () => {},
+        },
+    });
+
+    const group = api.loadGroupTasks();
+    await Promise.all([group.product, group.tech]);
+    await api.fetchTasks('product');
+    await api.fetchBacklogEpics('product');
+    await api.loadAlertEpics();
+    await api.loadReadyToCloseProductTasks();
+    await api.loadReadyToCloseTechTasks();
+
+    assert.deepEqual(calls, []);
+});
 
 test('ENG typed auth errors preserve feature state without redirect or local error', async () => {
     const redirects = [];

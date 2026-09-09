@@ -6496,6 +6496,9 @@ a.dependency-missing-item:hover {
   pointer-events: none;
   animation: story-subtasks-panel-exit 0.14s ease-in forwards;
 }
+.story-subtasks-panel:has(.status-transition-menu) {
+  overflow: visible;
+}
 @keyframes story-subtasks-panel-enter {
   from {
     opacity: 0;
@@ -6569,7 +6572,7 @@ a.dependency-missing-item:hover {
 .story-subtask-row.has-priority > .task-priority-icon {
   grid-area: pri;
 }
-.story-subtask-row.has-priority > .status-transition {
+.story-subtask-row > .status-transition {
   grid-area: status;
 }
 .story-subtask-row:last-child {
@@ -6588,7 +6591,8 @@ a.dependency-missing-item:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.story-subtask-row .task-status {
+.story-subtask-row > .task-status,
+.story-subtask-row > .status-transition > .task-status {
   grid-area: status;
   display: inline-flex;
   align-items: center;

@@ -36,6 +36,7 @@ export default function EngFilterBar({
     viewControls = null,
     boardColumns = [],
     renderPriorityIcon,
+    disabled = false,
 }) {
     const mountId = React.useId().replace(/[^a-zA-Z0-9_-]/g, '') || 'eng-filter';
     const [open, setOpen] = React.useState(false);
@@ -179,6 +180,7 @@ export default function EngFilterBar({
                         ref={triggerRef}
                         aria-expanded={open}
                         aria-haspopup="dialog"
+                        disabled={disabled}
                         onClick={() => setOpen((wasOpen) => !wasOpen)}
                     >
                         Filters
@@ -292,6 +294,7 @@ export default function EngFilterBar({
                                 type="button"
                                 className="x"
                                 aria-label={`Clear ${copy.facetLabel} filter`}
+                                disabled={disabled}
                                 onClick={() => resetFacet(facet)}
                             >
                                 ×
@@ -309,7 +312,7 @@ export default function EngFilterBar({
                         {`+${hiddenChipCount} more`}
                     </button>
                     {chips.length > 0 && (
-                        <button type="button" className="chip-clear" onClick={() => onClearAll?.()}>
+                        <button type="button" className="chip-clear" disabled={disabled} onClick={() => onClearAll?.()}>
                             Clear all
                         </button>
                     )}

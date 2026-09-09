@@ -5,18 +5,30 @@
 import { buildStorySubtaskProgress } from '../issues/subtaskProgressUtils.js';
 import { getStatusPhaseRank } from './engTaskUtils.js';
 
-// D41: an epic carries no `projectKey` of its own — the fetch provenance that knew is discarded
-// at the merge (§4.4) — so the board reuses the app's existing story-derived some() rule, the
-// same shape as dashboard.jsx's own pre-existing inline copy (`scrollToFirstExcludedEpic`, not a
-// fourth copy — left alone, not this module). `isTechTask` is injected rather than re-derived, so
-// this module never imports techProjectKeys and never touches capacityClassification.mjs. Stories
-// on both sides means the epic genuinely is both (D41, not a defect); no stories in scope means
-// neither.
+// D41: an epic carries no project classification of its own, so classification remains derived
+// from its children. Legacy callers inject their existing boolean `isTechTask` predicate. The
+// strict adapter instead injects the server's closed product/tech/other child classification.
+// Keeping both forms at this seam preserves the legacy Product/Tech rule without collapsing the
+// strict `other` cohort into Product. A mixed Epic may genuinely set multiple flags; no children
+// in scope means none.
 export function classifyEpicProjects(epicGroup, isTechTask) {
     const tasks = (epicGroup && epicGroup.tasks) || [];
+    let isTech = false;
+    let isProduct = false;
+    let isOther = false;
+    tasks.forEach((task) => {
+        const classification = isTechTask(task);
+        if (classification === 'other') isOther = true;
+        else if (classification === 'product') isProduct = true;
+        else if (classification === 'tech') isTech = true;
+        // Preserve the legacy predicate contract, including its ordinary truthy/falsy behavior.
+        else if (classification) isTech = true;
+        else isProduct = true;
+    });
     return {
-        isTech: tasks.some((task) => isTechTask(task)),
-        isProduct: tasks.some((task) => !isTechTask(task)),
+        isTech,
+        isProduct,
+        isOther,
     };
 }
 

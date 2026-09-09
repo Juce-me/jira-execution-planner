@@ -7,17 +7,22 @@ const read = (path) => fs.readFileSync(path, 'utf8');
 const dashboard = read('frontend/src/dashboard.jsx');
 const boardView = read('frontend/src/eng/EngBoardView.jsx');
 const engView = read('frontend/src/eng/EngView.jsx');
+const strictIntegration = read('frontend/src/eng/useStrictEngBoardIntegration.js');
 
 test('dashboard wires Board loading, error, and retry state to EngBoardView', () => {
     const mount = dashboard.slice(dashboard.indexOf('<EngBoardView'), dashboard.indexOf('/>', dashboard.indexOf('<EngBoardView')));
-    assert.match(mount, /loading=\{loading\}/);
+    assert.match(mount, /\{\.\.\.engBoardDataProps\}/);
     assert.match(dashboard, /const displayedEngError = sprintError \|\| error;/);
     assert.match(dashboard, /const retryEngLoad = sprintError \? \(\) => loadSprints\(true\) : fetchTasks;/);
-    assert.match(mount, /error=\{displayedEngError\}/);
-    assert.match(mount, /onRetry=\{retryEngLoad\}/);
-    assert.match(boardView, /<LoadingState[\s\S]*title="Loading tasks"[\s\S]*message="Refreshing Jira sprint work\."/);
+    assert.match(strictIntegration, /loading: active \? owner\.data\.status === 'loading' : legacyLoading/);
+    assert.match(strictIntegration, /onRetry: active \? owner\.data\.retry : legacyRetry/);
+    assert.match(boardView, /<LoadingState[\s\S]*title="Loading tasks"/);
+    assert.match(boardView, /Array\.isArray\(strictColumns\)[\s\S]*'Refreshing retained Jira work\.' : 'Refreshing Jira sprint work\.'/);
     assert.match(boardView, /className="error"[\s\S]*<button onClick=\{onRetry\}>Retry<\/button>/);
-    assert.ok(boardView.lastIndexOf('React.use') < boardView.indexOf('if (loading)'), 'All Board hooks must precede loading/error early returns');
+    assert.ok(
+        boardView.lastIndexOf('React.use') < boardView.indexOf('if (loading && (!hasStrictContent'),
+        'All Board hooks must precede loading/error early returns',
+    );
 });
 
 test('required sprint refreshes queue behind active discovery while Retry clicks deduplicate', () => {

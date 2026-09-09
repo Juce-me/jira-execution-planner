@@ -1,5 +1,6 @@
 import { effectiveVisibleGroupIds, normalizeGroupPreferences, resolveVisibleActiveGroupId } from './groupVisibilityUtils.js';
 import { ONBOARDING_MODULE_IDS } from '../onboarding/onboardingModules.js';
+import { normalizeStoredBoard } from './groupBoardModel.js';
 
 const normalizeEpicKeys = (values) => {
     const source = Array.isArray(values) ? values : (typeof values === 'string' && values.trim() ? [values] : []);
@@ -37,7 +38,7 @@ export function normalizeGroupsConfig(config) {
             // with hasOwnProperty, while an explicit empty columns array must remain present and
             // invalid so the unified Save gate blocks it.
             ...(Array.isArray(group?.board?.columns)
-                ? { board: { columns: [...group.board.columns] } }
+                ? { board: normalizeStoredBoard(group.board) }
                 : {}),
         }))
         .filter(group => group.id && group.name);

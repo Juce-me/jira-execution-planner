@@ -396,7 +396,7 @@ def _candidate_metrics(campaign, row, context, *, started=None):
     terminal = scope['board']['columns'][-1]['statuses']
     index_jql = measurement.build_epic_index_jql(
         scope['projects'], scope['components'] if row['profile'] != 'candidate_team_fallback_selected_sprint' else (),
-        terminal, 28)
+        terminal, scope['board']['doneEpicRetentionDays'])
     counters = measurement.PagerCounters()
 
     def search(search_payload):
@@ -410,11 +410,10 @@ def _candidate_metrics(campaign, row, context, *, started=None):
     index_started = time.monotonic()
     epic_fields = tuple(dict.fromkeys(measurement.EPIC_FIELDS + tuple(value for value in (project_track, delivery_owner) if value)))
     epics = measurement.strict_search(search, index_jql, epic_fields, counters=counters,
-                                      cancel_check=lambda: campaign.transport.budget.check('index'))
+                                      cancel_check=lambda: campaign.transport.budget.check('index'),
+                                      max_unique_keys=measurement.MAX_EPICS)
     stages['epicIndex'] = round((time.monotonic() - index_started) * 1000, 1)
     index_ready = round((time.monotonic() - started) * 1000, 1)
-    if len(epics) > measurement.MAX_EPICS:
-        raise measurement.MeasurementCoreError('measurement_scope_too_large', phase='index', limit='epics', observed=len(epics))
     child_fields = tuple(dict.fromkeys(measurement.CHILD_BASE_FIELDS + tuple(
         value for value in (epic_link, sprint_field, story_points, team_field, project_track, delivery_owner) if value)))
     sprint_id = None if row['profile'] == 'candidate_all_work' else campaign.sprint_id
@@ -427,16 +426,15 @@ def _candidate_metrics(campaign, row, context, *, started=None):
 
     batches = measurement.split_epic_batches([epic['key'] for epic in epics], child_jql, child_fields)
     children = []
+    child_budget = measurement.UniqueKeyBudget(measurement.MAX_CHILDREN)
     child_started = time.monotonic()
     bootstrap_count = 0
     bootstrap_ready = index_ready
     if batches:
         rows = measurement.strict_search(search, child_jql(batches[0]), child_fields, counters=counters,
-                                         cancel_check=lambda: campaign.transport.budget.check('bootstrap'))
+                                         cancel_check=lambda: campaign.transport.budget.check('bootstrap'),
+                                         key_budget=child_budget)
         children.extend(rows)
-        if len(children) > measurement.MAX_CHILDREN:
-            raise measurement.MeasurementCoreError('measurement_scope_too_large', phase='bootstrap',
-                                                   limit='children', observed=len(children))
         bootstrap_count = len(rows)
         stages['bootstrapChildren'] = round((time.monotonic() - child_started) * 1000, 1)
         bootstrap_ready = round((time.monotonic() - started) * 1000, 1)
@@ -445,13 +443,11 @@ def _candidate_metrics(campaign, row, context, *, started=None):
             with ThreadPoolExecutor(max_workers=2, thread_name_prefix='eng-board-measurement') as pool:
                 futures = [pool.submit(measurement.strict_search, search, child_jql(batch), child_fields,
                                        counters=counters,
-                                       cancel_check=lambda: campaign.transport.budget.check('remaining'))
+                                       cancel_check=lambda: campaign.transport.budget.check('remaining'),
+                                       key_budget=child_budget)
                            for batch in batches[1:]]
                 for future in as_completed(futures):
                     children.extend(future.result())
-                    if len(children) > measurement.MAX_CHILDREN:
-                        raise measurement.MeasurementCoreError('measurement_scope_too_large', phase='remaining',
-                                                               limit='children', observed=len(children))
         except Exception:
             campaign.transport.budget.cancel()
             raise
@@ -488,7 +484,7 @@ def _candidate_metrics(campaign, row, context, *, started=None):
         'projectCount': len(scope['projects']), 'componentCount': len(scope['components']),
         'teamCount': len(scope['teams']), 'columnCount': len(scope['board']['columns']),
         'terminalEpicCount': sum(epic['columnId'] == scope['board']['columns'][-1]['id'] for epic in projection['epics']),
-        'unmappedEpicCount': sum(epic['columnId'] == 'unmapped' for epic in projection['epics']),
+        'unmappedEpicCount': sum(epic['columnId'] == 'board-unmapped' for epic in projection['epics']),
         'emptyEpicCount': sum(not epic['children'] for epic in projection['epics']),
         'maxPagesPerSearch': counters.max_pages_per_search, 'maxBatchesPerColumn': len(batches),
         'jiraPageCount': counters.pages, 'jiraBatchCount': len(batches),

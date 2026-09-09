@@ -433,11 +433,10 @@ test('ENG status transition hook refreshes only after at least one issue succeed
     // guard block.
     const guardBody = hookSource.slice(guardIndex, guardIndex + 3000);
     assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
-    // The flag widened from `sourceSurface === 'catch_up'` to `sourceSurface !== 'planning'` and was
-    // renamed with it (EXEC-eng-group-board §13's one permitted hook generalization): PLANNING is
-    // the batch surface, and every single-issue surface — Catch Up and Board — reconciles locally
-    // instead of starting a scope refresh. Catch Up evaluates identically either way.
-    assert.match(guardBody, /if \(!isSingleIssueSurface\) \{\s*onTransitionSuccessRefresh/, 'Single-issue surfaces must reconcile locally instead of starting scope refreshes');
+    // Planning and Board invoke the supplied refresh callback after a successful write. The Board
+    // integration callback selects the strict owner or legacy loader according to capability.
+    assert.match(guardBody, /if \(!isSingleIssueSurface \|\| sourceSurface === 'board'\) \{\s*await onTransitionSuccessRefresh/,
+        'Planning and Board must await their supplied post-write refresh');
 });
 
 test('ENG status and priority hooks invalidate alert data after successful mutations on every surface', () => {

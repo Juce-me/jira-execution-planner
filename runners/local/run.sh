@@ -254,6 +254,53 @@ service_pending_signal() {
   fi
 }
 
+resource_ids_are_subset() {
+  local subset="$1"
+  local superset="$2"
+  local candidate=""
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    grep -Fqx -- "$candidate" <<< "$superset" || return 1
+  done <<< "$subset"
+}
+
+inspect_runner_resources() {
+  project_containers="$(
+    "${docker_cli[@]}" ps --all --quiet \
+      --filter "label=com.docker.compose.project=${project_name}"
+  )" || fail "unable to inspect project containers."
+  legacy_containers="$(
+    "${docker_cli[@]}" ps --all --quiet \
+      --filter "name=^/${project_name}[-_]"
+  )" || fail "unable to inspect legacy project containers."
+  project_networks="$(
+    "${docker_cli[@]}" network ls --quiet \
+      --filter "label=com.docker.compose.project=${project_name}"
+  )" || fail "unable to inspect project networks."
+  exact_default_network="$(
+    "${docker_cli[@]}" network ls --quiet \
+      --filter "name=^${project_name}_default$"
+  )" || fail "unable to inspect the default project network."
+  volume_users="$(
+    "${docker_cli[@]}" ps --all --quiet --filter "volume=${volume_name}"
+  )" || fail "unable to inspect persistent-volume users."
+}
+
+runner_resources_exist() {
+  [[ -n "$project_containers" || -n "$legacy_containers" ||
+     -n "$project_networks" || -n "$exact_default_network" ||
+     -n "$volume_users" ]]
+}
+
+runner_resources_form_exact_stack() {
+  [[ "$volume_exists" -eq 1 && -n "$project_containers" &&
+     -n "$project_networks" && -n "$volume_users" ]] || return 1
+  resource_ids_are_subset "$legacy_containers" "$project_containers" || return 1
+  resource_ids_are_subset "$exact_default_network" "$project_networks" || return 1
+  resource_ids_are_subset "$volume_users" "$project_containers"
+}
+
 [[ "$#" -eq 0 ]] || fail "arguments are not supported."
 [[ -n "$runtime_tmp_dir" && -d "$runtime_tmp_dir" && -w "$runtime_tmp_dir" ]] ||
   fail "no writable temporary directory is available for the runner lock."
@@ -338,30 +385,18 @@ if [[ "$volume_exists" -eq 1 ]]; then
     fail "runner resources include a persistent volume not owned by this runner."
 fi
 
-project_containers="$(
-  "${docker_cli[@]}" ps --all --quiet \
-    --filter "label=com.docker.compose.project=${project_name}"
-)" || fail "unable to inspect project containers."
-legacy_containers="$(
-  "${docker_cli[@]}" ps --all --quiet \
-    --filter "name=^/${project_name}[-_]"
-)" || fail "unable to inspect legacy project containers."
-project_networks="$(
-  "${docker_cli[@]}" network ls --quiet \
-    --filter "label=com.docker.compose.project=${project_name}"
-)" || fail "unable to inspect project networks."
-exact_default_network="$(
-  "${docker_cli[@]}" network ls --quiet \
-    --filter "name=^${project_name}_default$"
-)" || fail "unable to inspect the default project network."
-volume_users="$(
-  "${docker_cli[@]}" ps --all --quiet --filter "volume=${volume_name}"
-)" || fail "unable to inspect persistent-volume users."
-
-[[ -z "$project_containers" && -z "$legacy_containers" &&
-   -z "$project_networks" && -z "$exact_default_network" &&
-   -z "$volume_users" ]] ||
-  fail "runner resources already exist or the retained volume is in use; inspect them before retrying."
+inspect_runner_resources
+if runner_resources_exist; then
+  runner_resources_form_exact_stack ||
+    fail "runner resources already exist or the retained volume is in use; inspect them before retrying."
+  printf '%s\n' \
+    "Local PostgreSQL runner: removing stale runner container and network." >&2
+  run_child "${compose[@]}" down --timeout 10 ||
+    fail "unable to remove stale runner container and network."
+  inspect_runner_resources
+  runner_resources_exist &&
+    fail "stale runner resources remain after targeted cleanup; inspect them before retrying."
+fi
 
 export DATABASE_URL="postgresql+psycopg://jep:jep@127.0.0.1:5432/jep_local"
 export DATABASE_CONNECTION_MODE=url

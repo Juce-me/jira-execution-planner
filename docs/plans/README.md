@@ -18,8 +18,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 - [OAuth inline issue editing implementation](EXEC-oauth-inline-issue-editing.md): reviewed plan for ENG Assignee, Epic Delivery Owner, and Story Points editors; reuse-first UI, OAuth-only writes, state/calculation and API validation. Live Jira evidence gates final acceptance.
 - [OAuth inline issue editing design](SUPPORT-oauth-inline-issue-edit-design.md): supporting UX and reuse contract aligned with the implementation plan.
 - [In-app load performance](DONE-in-app-load-performance.md): implemented, verified and user-accepted; three local contextual sprint observations recorded.
-- [ENG Board All work implementation](EXEC-eng-board-all-work.md): planned from in-app evidence; progressive strict Board loading with transport/deadline/completeness gates. No production implementation yet.
-- [All work subagent handoff](SUPPORT-eng-board-all-work-handoff.md): published-base and worker ownership instructions; execute only within the plan gates.
+- [ENG Board All work implementation](EXEC-eng-board-all-work.md): the DB/OAuth strict Board candidate, frontend integration, preserved interactions, measurement and analytics are implemented and locally verified. The Basic/JSON adapter exists but its public strict capability remains disabled pending profile evidence. Task 7 authenticated candidate cohorts, excluded-profile coverage, PostgreSQL integration and supported-auth startup evidence still block rollout; no production readiness or publication is claimed.
+- [All work subagent handoff](SUPPORT-eng-board-all-work-handoff.md): local draft updated after the corrective slices; not cleared for distribution until its exact revision is published and verified fetchable. Execute only within the remaining plan gates.
 
 1. `SUPPORT-db-migration-claude-review-workflow.md`
    - Use first for external review or handoff.
@@ -463,21 +463,27 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      explicit cache states, private row-incarnation checks and consistent workload/retry/memory metrics.
    - Five rounds characterize saved Product/Tech Boards at 28-day retention with selected-sprint,
      All-work and all-saved-Team fallback candidates. Legacy calls are contextual, not equal work.
-   - Cooperative deadline schema cannot PASS: only STOP/FAIL, never production authorization.
-     Hard-bound evidence and excluded production scope profiles remain prerequisites to production.
+   - Historical diagnostic conclusion: cooperative cancellation cannot prove hard termination.
+     The active `EXEC-eng-board-all-work.md` contract now explicitly accepts that residual risk
+     and gates production on bounded known I/O, strict ceilings, completeness and measured speed.
 
 6. `SUPPORT-eng-board-optional-sprint-design.md`
    - Reviewed non-executable design for GitHub issue #137 and production handoff boundary after the
      diagnostic Tasks 0–5 implementation; authenticated Task 6 preflight is blocked by the absence
      of a saved Team-fallback-eligible Department. A separate capped Basic-mode collector sample is
      recorded as contextual evidence only and does not close any production gate.
-   - Settled behavior: Board initially inherits the selected sprint; All work is the explicit empty
-     sprint filter; `missingInfoComponents` is the Epic scope; Teams stays visible but disabled;
-     Project Track is Epic-index data; Product/Tech Projects is inherited from each child's Jira
-     project; directly-created terminal Epics use `created` for retention; Unmapped remains before
-     the structural terminal column.
-   - Production transport, refresh granularity, hard deadlines, excluded-scope coverage, completion
-     budgets and safety ceilings remain measurement-gated. The validated pure core must be reused;
+   - Settled behavior: Board renders the existing Catch Up snapshot for the ordinary sprint selected
+     in the shared top Sprint control. While Board is active, that same control presents **All work**,
+     **Component**, and ordinary sprints. Either cross-sprint choice starts one strict Board request
+     without changing the saved sprint. Component contains only exact `missingInfoComponents` matches
+     on Epics; All work unions those Epics with parents discovered from eligible Department-Team work,
+     even when Components exist. Teams stays visible but disabled; Project Track is Epic-index
+     data; Product/Tech Projects is inherited from each child's Jira project; directly-created
+     terminal Epics use `created` for retention; Unmapped remains before the structural terminal column.
+   - This support design's original hard-deadline alternatives are superseded by the active
+     execution plan's approved bounded best-effort single-request transport. Refresh granularity,
+     excluded-scope coverage, completion budgets and safety ceilings remain measurement-gated.
+     The validated pure core must be reused.
      Board request retirement, mutation generation ordering and bounded telemetry are specified.
      Follow-up review closes terminal-identity migration, delayed sprint initialization and provisional
      page-progress contracts; streaming needs an opt-in shared HTTP boundary before selection.

@@ -24,6 +24,7 @@ import { computeEpicStoryProgress } from './engBoardCardModel.js';
 //     .eprog-track/--st-done/--st-progress, which are undefined custom properties in the real app.
 export default function EngBoardEpicCard({
     epicGroup, renderPriorityIcon, onOpen, onDragStart, onDragEnd, isDragging = false, isRejected = false,
+    workItemLabel = 'stories',
 }) {
     const epic = (epicGroup && epicGroup.epic) || {};
     const key = (epicGroup && epicGroup.key) || epic.key || '';
@@ -89,7 +90,7 @@ export default function EngBoardEpicCard({
                         />
                     </span>
                 </span>
-                <span>{progress.done} of {progress.total} stories</span>
+                <span>{progress.done} of {progress.total} {workItemLabel}</span>
                 <span className="push">{storyPoints} sp</span>
                 {epic.updated ? (
                     <time dateTime={epic.updated}>{formatSubtaskUpdatedDate(epic.updated)}</time>

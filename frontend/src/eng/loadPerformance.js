@@ -74,3 +74,84 @@ export function createGroupLoadMeasurement({ enabled, groupId = '', sprintId = '
         },
     };
 }
+
+const median = values => {
+    const sorted = values.filter(Number.isFinite).slice().sort((left, right) => left - right);
+    if (!sorted.length) return null;
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+};
+
+export function evaluateSelectedSprintRegression(baselineValues, candidateValues, maximumPercent = 10) {
+    const baselineMedian = median(baselineValues || []);
+    const candidateMedian = median(candidateValues || []);
+    if (!Number.isFinite(baselineMedian) || baselineMedian <= 0 || !Number.isFinite(candidateMedian)) {
+        return { verified: false, passed: false, baselineMedian, candidateMedian, regressionPercent: null };
+    }
+    const regressionPercent = (candidateMedian / baselineMedian - 1) * 100;
+    return { verified: true, passed: regressionPercent <= maximumPercent,
+        baselineMedian, candidateMedian, regressionPercent };
+}
+
+export function isAcceptedBoardTerminalSample(sample) {
+    return sample?.outcome === 'success'
+        || (sample?.outcome === 'error' && Number.isInteger(sample.jiraRequests));
+}
+
+export function createBoardLoadMeasurement({ enabled, groupId = '', scopeType = 'all_work',
+    sprintId = null, emit = () => {}, now = clock, afterPaint = afterLoadPaint } = {}) {
+    const started = now();
+    let startFrame = null;
+    let payloadBytes = 0;
+    let firstFocusedContentMs = null;
+    let focusedContentPending = false;
+    let finished = false;
+    let finishing = false;
+    const publish = sample => {
+        if (!enabled || finished) return;
+        finished = true;
+        try { Promise.resolve(emit(sample)).catch(() => {}); } catch (_) { /* best-effort diagnostics */ }
+    };
+    const buildSample = ({ outcome, diagnostics = null, epicCount = null, issueCount = null,
+        dependencyDurationMs = null }) => {
+        const durationMs = Math.max(0, now() - started);
+        const success = outcome === 'success';
+        return { schemaVersion: 1, loadId: globalThis.crypto.randomUUID(), groupId: String(groupId),
+            sprintId: scopeType === 'sprint' ? String(sprintId) : null, surface: 'eng_board', scopeType,
+            outcome: success ? 'success' : outcome === 'cancelled' ? 'cancelled' : 'error', durationMs,
+            indexMs: diagnostics?.indexMs ?? null, firstFocusedContentMs,
+            focusedCompleteMs: diagnostics?.focusedCompleteMs ?? null, dependencyDurationMs,
+            epicCount: success ? epicCount : diagnostics?.epicCount ?? null,
+            issueCount: success ? issueCount : diagnostics?.issueCount ?? null, payloadBytes,
+            jiraRequests: diagnostics?.jiraRequests ?? null, jiraPages: diagnostics?.jiraPages ?? null,
+            jiraRetries: diagnostics?.jiraRetries ?? null,
+            completeness: success ? 'complete' : 'partial', cacheState: diagnostics?.cacheState ?? 'unknown',
+            peakChildSearches: diagnostics?.peakChildSearches ?? null,
+            scopeCohortDigest: startFrame?.scopeCohortDigest ?? null };
+    };
+    const finish = async (terminal = {}) => {
+        const { outcome } = terminal;
+        if (!enabled || finished) return;
+        if (finishing) {
+            if (outcome === 'cancelled') publish(buildSample(terminal));
+            return;
+        }
+        finishing = true;
+        if (outcome === 'cancelled') return publish(buildSample(terminal));
+        await afterPaint();
+        if (finished) return;
+        publish(buildSample(terminal));
+    };
+    return {
+        start(frame) { if (!finished && frame?.type === 'start') startFrame = frame; },
+        addPayloadBytes(value) { if (!finished && Number.isFinite(value) && value >= 0) payloadBytes += value; },
+        async focusedContentReady() {
+            if (!enabled || finished || firstFocusedContentMs !== null || focusedContentPending) return;
+            focusedContentPending = true;
+            await afterPaint();
+            if (!finished) firstFocusedContentMs = Math.max(0, now() - started);
+        },
+        finish,
+        cancel() { return finish({ outcome: 'cancelled' }); },
+    };
+}

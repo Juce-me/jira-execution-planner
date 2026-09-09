@@ -42,8 +42,12 @@ function loadGroupConfigUtils() {
     const configSource = fs.readFileSync(configPath, 'utf8')
         .replace(/import .*groupVisibilityUtils\.js';\n/, '')
         .replace(/import .*onboardingModules\.js';\n/, '')
+        .replace(/import .*groupBoardModel\.js';\n/, '')
         .replaceAll('export function ', 'function ');
-    return new Function(`${onboardingSource}\n${visibilitySource}\n${configSource}; return { normalizeGroupsConfig, applyLocalGroupPreferences };`)();
+    const boardSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'groupBoardModel.js'), 'utf8')
+        .replaceAll('export const ', 'const ')
+        .replaceAll('export function ', 'function ');
+    return new Function(`${onboardingSource}\n${visibilitySource}\n${boardSource}\n${configSource}; return { normalizeGroupsConfig, applyLocalGroupPreferences };`)();
 }
 
 test('effectiveVisibleGroupIds shows all groups before customization', () => {

@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
@@ -14,9 +15,18 @@ const screenshotDir = path.join(__dirname, '..', '..', 'tmp', 'eng-group-board-v
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
+let sourceDashboardJs = '';
 
 test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
+    sourceDashboardJs = esbuild.buildSync({
+        entryPoints: [path.join(__dirname, '..', '..', 'frontend', 'src', 'dashboard.jsx')],
+        bundle: true,
+        write: false,
+        format: 'iife',
+        loader: { '.css': 'empty' },
+        define: { 'process.env.NODE_ENV': '"production"' },
+    }).outputFiles[0].text;
 });
 
 // A trimmed §5.5 reference configuration: the same seven columns, the same colours, the same star,
@@ -88,11 +98,21 @@ function storyPayload(specs = EPIC_SPECS) {
 
 async function installBoardFixture(page, {
     board = { columns: BOARD_COLUMNS }, groups = null, epicSpecs = EPIC_SPECS,
+    strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0,
 } = {}) {
     await installDashboardShell(page);
-    await page.route('**/api/**', (route) => {
+    if (sourceBundle) {
+        await page.unroute('**/frontend/dist/dashboard.js');
+        await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
+            status: 200,
+            contentType: 'application/javascript',
+            body: sourceDashboardJs,
+        }));
+    }
+    await page.route('**/api/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
+        requests?.push(url.pathname === '/api/eng/board' ? `${url.pathname}${url.search}` : url.pathname);
         const json = (body, status = 200) => route.fulfill({
             status,
             contentType: 'application/json',
@@ -105,12 +125,14 @@ async function installBoardFixture(page, {
         }
         if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
+            if (configDelayMs) await new Promise(resolve => setTimeout(resolve, configDelayMs));
             return json({
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
                 groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
+                boardAllWorkAvailable: strictBoard,
                 projectsConfigured: true,
                 epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
             });
@@ -124,6 +146,7 @@ async function installBoardFixture(page, {
                     name: 'Default',
                     teamIds: ['team-alpha'],
                     teamLabels: { 'team-alpha': 'Alpha Team' },
+                    ...(strictBoard ? { missingInfoComponents: ['Platform'] } : {}),
                     ...(board ? { board } : {}),
                 }],
                 defaultGroupId: 'grp-default',
@@ -132,7 +155,52 @@ async function installBoardFixture(page, {
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/sprints') {
-            return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+            return json({ sprints: strictBoard ? [
+                { id: 34624, name: '2026Q2 Sprint 41', state: 'closed' },
+                { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+                { id: 34626, name: '2026Q3 Sprint 43', state: 'future' },
+            ] : [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+        }
+        if (url.pathname === '/api/eng/board') {
+            const scope = url.searchParams.get('scope') || 'sprint';
+            const generationId = `generation-${scope}`;
+            const base = (sequence, frame) => ({
+                protocolVersion: 1, generationId, sequence, ...frame,
+            });
+            const epic = {
+                key: 'STRICT-1', summary: 'Strict Board epic', status: { id: '2', name: 'In Progress' },
+                priority: { id: '1', name: 'Blocker' }, assignee: null, deliveryOwner: null,
+                projectTrack: null, updated: null, parent: null, columnId: 'active',
+            };
+            const child = {
+                key: 'STRICT-BUG-1', epicKey: 'STRICT-1', summary: 'Eligible Bug',
+                status: { id: '1', name: 'To Do' }, priority: null,
+                issueType: { id: '10004', name: 'Bug' }, assignee: null, updated: null,
+                storyPoints: 3, team: null, project: { id: '10000', name: 'Platform' },
+                projectClassification: 'other', sprintIds: [selectedSprintId],
+            };
+            const frames = [
+                base(0, {
+                    type: 'start', scope, scopeVersion: `scope-${scope}`,
+                    scopeCohortDigest: 'a'.repeat(64),
+                    columns: [{ id: 'active', name: 'Active', color: '#597ef7', statusNames: ['In Progress'], terminal: false }],
+                }),
+                base(1, { type: 'index', epics: [epic], membership: scope === 'sprint' ? 'candidate' : 'authoritative' }),
+                base(2, { type: 'column', columnId: 'active', epics: [epic], children: [child], authoritative: true }),
+                base(3, {
+                    type: 'complete', outcome: 'success', authoritative: true, epicCount: 1, childCount: 1,
+                    diagnostics: {
+                        indexMs: 1, focusedCompleteMs: 2, durationMs: 3, jiraRequests: 2,
+                        jiraPages: 2, jiraRetries: 0, peakChildSearches: 1,
+                        cacheState: 'miss', completeness: 'complete',
+                    },
+                }),
+            ];
+            return route.fulfill({
+                status: 200,
+                contentType: 'application/x-ndjson',
+                body: `${frames.map((frame) => JSON.stringify(frame)).join('\n')}\n`,
+            });
         }
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
         if (url.pathname === '/api/tasks-with-team-name') {
@@ -153,7 +221,7 @@ async function installBoardFixture(page, {
 }
 
 async function openBoard(page, {
-    width = 1280, height = 900, board, groups, epicSpecs, reducedMotion,
+    width = 1280, height = 900, board, groups, epicSpecs, reducedMotion, strictBoard, requests, sourceBundle, configDelayMs,
 } = {}) {
     if (reducedMotion) await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width, height });
@@ -161,6 +229,10 @@ async function openBoard(page, {
         ...(board === undefined ? {} : { board }),
         ...(groups === undefined ? {} : { groups }),
         ...(epicSpecs === undefined ? {} : { epicSpecs }),
+        ...(strictBoard === undefined ? {} : { strictBoard }),
+        ...(requests === undefined ? {} : { requests }),
+        ...(sourceBundle === undefined ? {} : { sourceBundle }),
+        ...(configDelayMs === undefined ? {} : { configDelayMs }),
     });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -178,6 +250,127 @@ async function openBoard(page, {
     await page.waitForSelector('.eng-board .col', { timeout: 10000 });
     await settle(page);
 }
+
+test('Board adds Component and All work to the existing Sprint selector without another scope control', async ({ page }) => {
+    const requests = [];
+    await openBoard(page, { strictBoard: true, requests, sourceBundle: true, configDelayMs: 250 });
+
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    await expect(page.locator('.eng-filter-bar').getByRole('button', { name: 'All work' })).toHaveCount(0);
+    const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+    await expect(sprintControl).toContainText(selectedSprintName);
+    await page.screenshot({ path: path.join(screenshotDir, 'sprint-reuses-catch-up.png'), animations: 'disabled' });
+    expect(requests.filter((path) => path === '/api/tasks-with-team-name').length).toBeGreaterThan(0);
+    expect(requests.filter((path) => path.startsWith('/api/eng/board?')).length).toBe(0);
+
+    await sprintControl.click();
+    const scopeOptions = page.locator('.sprint-dropdown-panel .sprint-dropdown-option');
+    await expect(scopeOptions.nth(0)).toHaveText('All work');
+    await expect(scopeOptions.nth(1)).toHaveText('Component');
+    await expect(scopeOptions.nth(2)).toContainText('2026Q2 Sprint 41');
+    await page.screenshot({ path: path.join(screenshotDir, 'three-scope-sprint-selector.png'), animations: 'disabled' });
+    await scopeOptions.nth(1).click();
+    await expect.poll(() => requests.some((path) => path.includes('scope=component'))).toBe(true);
+    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText('Component');
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
+    await page.screenshot({ path: path.join(screenshotDir, 'component-in-sprint-selector.png'), animations: 'disabled' });
+
+    await page.getByRole('button', { name: 'Select sprint' }).first().click();
+    await page.getByText('All work', { exact: true }).first().click();
+    await expect.poll(() => requests.some((path) => path.includes('scope=all_work'))).toBe(true);
+    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText('All work');
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
+    await page.screenshot({ path: path.join(screenshotDir, 'all-work-in-sprint-selector.png'), animations: 'disabled' });
+    const allWorkRequestCount = requests.filter((requestPath) => requestPath.includes('scope=all_work')).length;
+
+    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Catch Up' }).click();
+    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await expect(page.locator('.task-item[data-task-key="PLAT-1-1"]')).toBeVisible();
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await settle(page);
+    expect(requests.filter((requestPath) => requestPath.includes('scope=all_work'))).toHaveLength(allWorkRequestCount);
+});
+
+test('Catch Up to Board reuses the loaded sprint snapshot without another Jira data request', async ({ page }) => {
+    const requests = [];
+    await installBoardFixture(page, { strictBoard: true, requests, sourceBundle: true });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: false, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator('.task-item[data-task-key="PLAT-1-1"]')).toBeVisible();
+    const loadedRequests = requests.filter(path => path === '/api/tasks-with-team-name').length;
+
+    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    await settle(page);
+
+    expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(loadedRequests);
+    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+});
+
+test('Catch Up authoritative empty snapshot stays authoritative when Board opens', async ({ page }) => {
+    const requests = [];
+    await installBoardFixture(page, { strictBoard: true, requests, sourceBundle: true, epicSpecs: [] });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: false, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.getByText('No tasks found', { exact: false })).toBeVisible();
+    const loadedRequests = requests.filter(path => path === '/api/tasks-with-team-name').length;
+
+    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
+    await expect(page.getByText('No epics found', { exact: true })).toBeVisible();
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+    expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(loadedRequests);
+    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+});
+
+test('failed All work load keeps the shared Sprint selector available and restores sprint data', async ({ page }) => {
+    const requests = [];
+    await installBoardFixture(page, { strictBoard: true, requests, sourceBundle: true });
+    await page.route('**/api/eng/board?**', async route => {
+        const url = new URL(route.request().url());
+        requests.push(`${url.pathname}${url.search}`);
+        await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'board_config_invalid' }) });
+    });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: true, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    const sprintRequestCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
+    await sprintControl.click();
+    await page.getByText('All work', { exact: true }).first().click();
+    await expect(page.locator('.error')).toContainText('board config invalid');
+    await expect(page.getByText('Loaded so far')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText('All work');
+    await page.screenshot({ path: path.join(screenshotDir, 'strict-error-scope.png'), animations: 'disabled' });
+    await expect.poll(() => requests.some(path => path.includes('scope=all_work'))).toBe(true);
+    await page.getByRole('button', { name: 'Select sprint' }).first().click();
+    await page.getByText(selectedSprintName, { exact: false }).first().click();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await expect(page.locator('.error')).toHaveCount(0);
+    await settle(page);
+    expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(sprintRequestCount);
+    await page.screenshot({ path: path.join(screenshotDir, 'strict-recovered-scope.png'), animations: 'disabled' });
+});
 
 // The board scrolls with `scroll-behavior: smooth`, so every focus change needs the scroll offset
 // to stop moving before geometry means anything.

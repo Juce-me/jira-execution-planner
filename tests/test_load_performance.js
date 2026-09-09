@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGroupLoadMeasurement, laneMetrics } from '../frontend/src/eng/loadPerformance.js';
+import { createBoardLoadMeasurement, createGroupLoadMeasurement,
+    evaluateSelectedSprintRegression, isAcceptedBoardTerminalSample,
+    laneMetrics } from '../frontend/src/eng/loadPerformance.js';
 
 test('parallel lanes use group wall time and emit only after render', async () => {
     let now = 0;
@@ -73,4 +75,85 @@ test('first lane render is separate from complete group render', async () => {
     await measurement.finish(['applied', 'applied']);
     assert.equal(samples[0].firstContentMs, 100);
     assert.equal(samples[0].durationMs, 500);
+});
+
+test('Board measurement emits one closed global observation after paint', async () => {
+    let now = 0;
+    const samples = [];
+    const measurement = createBoardLoadMeasurement({ enabled: true, groupId: 'synthetic',
+        scopeType: 'all_work', now: () => now, afterPaint: async () => {}, emit: sample => samples.push(sample) });
+    measurement.start({ type: 'start', scopeCohortDigest: 'a'.repeat(64) });
+    measurement.addPayloadBytes(120);
+    now = 80;
+    await measurement.focusedContentReady();
+    now = 700;
+    await measurement.finish({ outcome: 'success', epicCount: 3, issueCount: 7,
+        dependencyDurationMs: 50, diagnostics: { indexMs: 40, focusedCompleteMs: 400,
+            jiraRequests: 5, jiraPages: 5, jiraRetries: 0, cacheState: 'miss', peakChildSearches: 2 } });
+    await measurement.finish({ outcome: 'error' });
+    assert.equal(samples.length, 1);
+    assert.deepEqual(samples[0], { schemaVersion: 1, loadId: samples[0].loadId,
+        groupId: 'synthetic', sprintId: null, surface: 'eng_board', scopeType: 'all_work',
+        outcome: 'success', durationMs: 700, indexMs: 40, firstFocusedContentMs: 80,
+        focusedCompleteMs: 400, dependencyDurationMs: 50, epicCount: 3, issueCount: 7,
+        payloadBytes: 120, jiraRequests: 5, jiraPages: 5, jiraRetries: 0,
+        completeness: 'complete', cacheState: 'miss', peakChildSearches: 2,
+        scopeCohortDigest: 'a'.repeat(64) });
+});
+
+test('cancelled Board measurement keeps unavailable diagnostics null and unknown', async () => {
+    const samples = [];
+    const measurement = createBoardLoadMeasurement({ enabled: true, groupId: 'synthetic',
+        scopeType: 'sprint', sprintId: 42, afterPaint: async () => {}, emit: sample => samples.push(sample) });
+    await measurement.cancel();
+    assert.equal(samples[0].sprintId, '42');
+    assert.equal(samples[0].outcome, 'cancelled');
+    assert.equal(samples[0].scopeCohortDigest, null);
+    assert.equal(samples[0].jiraRequests, null);
+    assert.equal(samples[0].cacheState, 'unknown');
+    assert.equal(samples[0].completeness, 'partial');
+});
+
+test('Board render and terminal races emit one final observation', async () => {
+    let now = 0;
+    const paints = [];
+    const samples = [];
+    const measurement = createBoardLoadMeasurement({ enabled: true, groupId: 'synthetic',
+        scopeType: 'all_work', now: () => now,
+        afterPaint: () => new Promise(resolve => paints.push(resolve)),
+        emit: sample => samples.push(sample) });
+    const firstContent = measurement.focusedContentReady();
+    const duplicateContent = measurement.focusedContentReady();
+    assert.equal(paints.length, 1);
+    now = 80;
+    paints.shift()();
+    await Promise.all([firstContent, duplicateContent]);
+    const completion = measurement.finish({ outcome: 'success', epicCount: 3, issueCount: 7,
+        diagnostics: { indexMs: 40, focusedCompleteMs: 400, jiraRequests: 5, jiraPages: 5,
+            jiraRetries: 0, cacheState: 'miss', peakChildSearches: 2 } });
+    assert.equal(paints.length, 1);
+    now = 100;
+    await measurement.cancel();
+    paints.shift()();
+    await completion;
+    assert.equal(samples.length, 1);
+    assert.equal(samples[0].outcome, 'cancelled');
+    assert.equal(samples[0].firstFocusedContentMs, 80);
+});
+
+test('only accepted Board terminal samples qualify for api_result', () => {
+    assert.equal(isAcceptedBoardTerminalSample({ outcome: 'success', jiraRequests: 0 }), true);
+    assert.equal(isAcceptedBoardTerminalSample({ outcome: 'error', jiraRequests: 2 }), true);
+    assert.equal(isAcceptedBoardTerminalSample({ outcome: 'error', jiraRequests: null }), false);
+    assert.equal(isAcceptedBoardTerminalSample({ outcome: 'cancelled', jiraRequests: 2 }), false);
+    assert.equal(isAcceptedBoardTerminalSample(null), false);
+});
+
+test('selected-sprint acceptance rejects regression even when both medians are under two seconds', () => {
+    const result = evaluateSelectedSprintRegression([800, 800, 800], [1500, 1500, 1500]);
+    assert.equal(result.verified, true);
+    assert.equal(result.passed, false);
+    assert.equal(result.regressionPercent, 87.5);
+    assert.equal(evaluateSelectedSprintRegression([], [900]).passed, false);
+    assert.equal(evaluateSelectedSprintRegression([0], [900]).verified, false);
 });

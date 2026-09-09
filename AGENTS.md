@@ -177,7 +177,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Service-account API tokens for `home_townsquare_basic` and `jira_basic` belong only in `service_integration_tokens`; never store them in normal-user `auth_tokens`.
 - Treat `team-groups.json`, `team-catalog.json`, and `sprints_cache.json` as generated local caches.
 - Never commit real Jira fixture data. Use synthetic or sanitized examples only, and never copy identifiable config-derived values into committed tests.
-- Jira API pagination uses `nextPageToken` / `isLast`, not `startAt` / `total`. Verify response shapes before coding against them.
+- Jira enhanced issue search uses `nextPageToken` / `isLast`; project search uses `startAt` / `isLast`. Verify the specific endpoint's response shape before implementing pagination.
 - Any new API plan in `docs/plans/` must use the same Jira pagination contract.
 - EPM Project rollups are label-driven; each Project has one exact Jira label. No wildcard/fallback. Metadata-only Home projects still render the Home card plus `Settings -> EPM` CTA.
 - `epm.labelPrefix` in `dashboard-config.json` is a Home tag mask such as `"rnd_project_*"` and also filters manual Jira-label autocomplete. Resolve each Home Project's exact matching tag as the Jira label; rollup JQL uses that full label, never the mask.
@@ -335,13 +335,18 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In ENG Board, Project Track/Delivery track is an Epic property; never derive it from child issues or conflate it with the child-derived Product/Tech Projects facet.
 - In ENG, Product/Tech is a Jira-project classification inherited by issues through their Jira project; never derive it from issue type.
 - In ENG Board data loading, separate Product and Tech Jira requests are acceptable; optimize completeness, pagination, and progressive rendering before combining them.
-- ENG Board data must come from a Board-owned Epic-first pipeline with complete paginated child hydration; when Components are absent, index bounded Epics from configured Jira projects before applying selected sprint plus all saved Department Teams, and never use Catch Up data as the Board source of truth.
+- ENG Board selected-sprint mode reuses the already-loaded Catch Up snapshot and existing top Sprint selector; only its Board-active All work option uses the Board-owned Epic-first pipeline with complete paginated child hydration. Never add a Board-local sprint selector, button, or toggle.
 - In ENG Board progressive loading, render columns and Epic cards first, update visibly provisional Story counts and status distribution as pages arrive, and unlock child-derived filters and export only after every child page completes.
 - When reviewing a dirty implementation plan against origin, treat origin's recorded findings as baseline requirements and report whether the local changes close them; do not report those baseline findings as newly introduced regressions.
 - For issue #137 live diagnostics, gather contextual data through the Python existing-endpoint collector; do not require users to create a synthetic Team-fallback-only Department to make the browser campaign runnable.
 - For issue #137 contextual collector exercises, use the user-specified auth-mode environment profile; do not substitute a browser OAuth session unless the user requests it.
 - When a request combines an implementation-plan deliverable with evidence-gated execution, resolve whether the gate controls plan authorship or only execution before omitting the plan or asking to override the gate.
+- For issue #137 ENG Board All work, use one request-local load with no Board control DB or live server reprioritization; treat cancellation as bounded best-effort and gate rollout on completeness, resource ceilings, and measured speed rather than hard process termination.
+- For strict ENG Board startup, keep capability unresolved until config bootstrap, pass scalar read budgets into the shared Jira retry helper, and expose Component and All work only as Board-active options in the existing top Sprint selector; verify Catch Up → Board performs no additional selected-sprint data request.
+- ENG Board All work must union component-matched Epics with parents of department-team work across sprints, deduplicate them, and use each parent Epic's own status; team-only departments must remain selectable.
+- When a requirement can mean either extending an existing control/data owner or introducing independent UI, state, or fetching, stop before implementation and ask the user to confirm the boundary; never choose the new architecture implicitly.
 
 - Enable in-app load measurement by default when database storage is configured, preserve an explicit opt-out, and keep empty performance views free of unknown metrics and diagnostic walls of text.
+- Evaluate measurement and scope gates from existing app DB rows before requesting new collection; apply unresolved runtime and release gates only to their dependent tasks, preserving independent development work.
 - Never bypass the section 10 publication transaction gate; validate history, scope, remote head, rendered PR body, and CI as one unit before reporting success (MRT025).
 - Commit a postmortem for active work on the related task branch; do not create a separate postmortem/docs branch unless the operator explicitly requests one.

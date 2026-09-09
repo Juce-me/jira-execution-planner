@@ -62,6 +62,21 @@ test('analytics source does not hard-code production measurement or GTM ids', ()
     }
 });
 
+test('ENG Board analytics and Work items export keep bounded low-cardinality contracts', () => {
+    const analyticsSource = read('frontend/src/analytics/analytics.js');
+    const eventsSource = read('frontend/src/analytics/events.js');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const workflowDoc = read('docs/features/eng-workflows.md');
+
+    assert.ok(jsSetValues(analyticsSource, 'API_SURFACES').has('eng_board'));
+    assert.match(eventsSource, /scope_type:\s*new Set\(\['eng', 'epm', 'board', 'all_work', 'component', 'sprint'\]\)/);
+    assert.ok(analyticsDoc.includes('`api_surface=eng_board`'));
+    assert.ok(analyticsDoc.includes('`scope_type=all_work|component|sprint`'));
+    assert.ok(analyticsDoc.includes('Strict Board Work items use `issue_kind=mixed`'));
+    assert.ok(workflowDoc.includes('**Open work items**'));
+    assert.ok(workflowDoc.includes('complete and authoritative'));
+});
+
 test('analytics event allowlist excludes forbidden parameter names and unsafe snippets', () => {
     const source = read('frontend/src/analytics/events.js');
     for (const snippet of [

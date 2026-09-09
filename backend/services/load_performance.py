@@ -201,7 +201,7 @@ def _percentile(values, percentile):
 
 def _complete(row):
     if row.surface == 'eng_board':
-        return (row.outcome == 'success' and row.completeness == 'complete'
+        return (row.schema_version == 1 and row.outcome == 'success' and row.completeness == 'complete'
                 and row.scope_cohort_digest is not None
                 and row.cache_state in ('hit', 'miss', 'mixed')
                 and row.peak_child_searches is not None)
@@ -223,12 +223,21 @@ def _cohort_key(row):
 
 def _summary(rows):
     completed = [row for row in rows if row.outcome == 'success' and not _capped(row)]
-    mixed_cohorts = len({_cohort_key(row) for row in completed}) > 1
-    values = [] if mixed_cohorts else [row.duration_ms for row in completed]
+    surfaces = {row.surface for row in completed}
+    metric_rows = ([row for row in completed if _complete(row)]
+                   if surfaces == {'eng_board'} else completed)
+    mixed_cohorts = (len(surfaces) > 1
+                     or len({_cohort_key(row) for row in metric_rows}) > 1)
+    values = [] if mixed_cohorts else [row.duration_ms for row in metric_rows]
+    first_content_values = ([] if mixed_cohorts else
+                            [row.first_content_ms for row in metric_rows
+                             if row.first_content_ms is not None])
     unknown_count = sum(not _complete(row) for row in completed)
     return dict(sampleCount=len(rows), eligibleCount=sum(_complete(row) for row in completed),
                 avgMs=round(sum(values) / len(values), 2) if values else None,
                 p50Ms=_percentile(values, .5), p95Ms=_percentile(values, .95),
+                p50FirstContentMs=_percentile(first_content_values, .5),
+                p95FirstContentMs=_percentile(first_content_values, .95),
                 breachCount=sum(value > 4000 for value in values),
                 errorCount=sum(row.outcome == 'error' for row in rows),
                 cancelledCount=sum(row.outcome == 'cancelled' for row in rows),
@@ -262,6 +271,7 @@ def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, envir
     options_truncated = False
     for key, column in [('groups', LoadPerformance.group_id), ('sprints', LoadPerformance.sprint_id),
                         ('surfaces', LoadPerformance.surface), ('scopeTypes', LoadPerformance.scope_type),
+                        ('cacheStates', LoadPerformance.cache_state),
                         ('revisions', LoadPerformance.revision),
                         ('scopeCohortDigests', LoadPerformance.scope_cohort_digest)]:
         choices = query.with_entities(column).distinct().order_by(column).limit(201).all()
@@ -298,7 +308,13 @@ def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, envir
     days = defaultdict(list)
     for row in rows:
         days[row.recorded_at.date().isoformat()].append(row)
-    return dict(summary=_summary(rows), trend=[{'date': day, **_summary(days[day])} for day in sorted(days)],
+    summary = _summary(rows)
+    trend = [{'date': day, **_summary(days[day])} for day in sorted(days)]
+    if summary['mixedCohorts']:
+        for day in trend:
+            day.update(avgMs=None, p50Ms=None, p95Ms=None, p50FirstContentMs=None,
+                       p95FirstContentMs=None, breachCount=0, contextual=True, mixedCohorts=True)
+    return dict(summary=summary, trend=trend,
                 samples=[dict(loadId=row.load_id, groupId=row.group_id, sprintId=row.sprint_id,
                               surface=row.surface, outcome=row.outcome, durationMs=row.duration_ms,
                               dependencyDurationMs=row.dependency_duration_ms,

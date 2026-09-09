@@ -59,3 +59,72 @@ test('EngBoardView keeps the normal empty result when loading and error are clea
     assert.match(markup, /No epics found/);
     assert.doesNotMatch(markup, /Loading tasks|class="error"/);
 });
+
+test('strict Board never renders provisional zero as a final empty result', () => {
+    const strictColumns = [{
+        id: 'active', name: 'Active', colour: '#8c8c8c', star: true, statuses: ['In Progress'],
+        terminal: false, isUnmapped: false, isUnconfigured: false, epicGroups: [], epicCount: 0,
+        storyPoints: 0, breach: null,
+    }];
+    const markup = renderBoard({
+        strictColumns,
+        loading: true,
+        authorityPending: true,
+        scope: { type: 'sprint', sprintId: 21 },
+        allWorkAvailable: true,
+        onScopeChange: () => {},
+    });
+
+    assert.match(markup, /Loading tasks/);
+    assert.doesNotMatch(markup, /All work|Loaded so far|No epics found|<select/);
+});
+
+test('Board view does not render its own sprint scope control', () => {
+    const markup = renderBoard({
+        scope: { type: 'sprint', sprintId: 21 },
+        sprintName: 'Sprint 21',
+        allWorkAvailable: false,
+    });
+    assert.doesNotMatch(markup, /All work|Toggle between the selected sprint/);
+    assert.doesNotMatch(markup, /<select/);
+});
+
+test('strict stale snapshot is labelled while retryable refresh failure remains visible', () => {
+    const strictColumns = [{
+        id: 'active', name: 'Active', colour: '#8c8c8c', star: true, statuses: ['In Progress'],
+        terminal: false, isUnmapped: false, isUnconfigured: false, epicGroups: [], epicCount: 0,
+        storyPoints: 0, breach: null,
+    }];
+    const markup = renderBoard({
+        strictColumns,
+        stale: true,
+        error: 'Jira is temporarily unavailable.',
+        onRetry: () => {},
+        scope: { type: 'all_work' },
+        allWorkAvailable: true,
+    });
+    assert.match(markup, /Showing last complete Board data/);
+    assert.match(markup, /Jira is temporarily unavailable/);
+    assert.match(markup, />Retry</);
+    assert.match(markup, /class="eng-board"/);
+});
+
+test('strict structural columns without epics do not masquerade as loaded partial data', () => {
+    const strictColumns = [{
+        id: 'active', name: 'Active', colour: '#8c8c8c', star: true, statuses: ['In Progress'],
+        terminal: false, isUnmapped: false, isUnconfigured: false, epicGroups: [], epicCount: 0,
+        storyPoints: 0, breach: null,
+    }];
+    const markup = renderBoard({
+        strictColumns,
+        authorityPending: true,
+        error: 'Board load failed: partial error.',
+        onRetry: () => {},
+        scope: { type: 'sprint', sprintId: 21 },
+        allWorkAvailable: true,
+    });
+    assert.doesNotMatch(markup, /Loaded so far/);
+    assert.match(markup, /Board load failed: partial error/);
+    assert.match(markup, />Retry</);
+    assert.doesNotMatch(markup, /class="eng-board"/);
+});

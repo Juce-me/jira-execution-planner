@@ -30,6 +30,95 @@ def issue(key, *, status='To Do', project_key='PROD', project_name='Product', pa
 
 
 class EngBoardScopeTests(unittest.TestCase):
+    def test_all_work_accepts_team_scope_without_components(self):
+        board = {'columns': [{'id': 'col-00000001', 'name': 'To do', 'statuses': ['To Do']}],
+                 'doneEpicRetentionDays': 28}
+        result = eng_board.validate_scope_configuration('all_work', board, (), team_ids=('team-a',))
+        self.assertEqual((), result['components'])
+
+    def test_team_discovery_merges_cross_team_parents_and_keeps_parent_status(self):
+        calls = []
+        direct = issue('PROD-1', issue_type='Epic')
+        external = issue('PROD-2', issue_type='Epic', status='In Progress')
+        def search(params):
+            calls.append(params)
+            if 'issuetype in' in params['jql']:
+                return {'isLast': True, 'issues': [
+                    issue('PROD-10', parent='PROD-1'),
+                    issue('PROD-11', parent='PROD-2'),
+                    issue('PROD-12', parent='PROD-2'),
+                    issue('PROD-13'),
+                ]}
+            return {'isLast': True, 'issues': [external]}
+        rows = eng_board.discover_team_epics(
+            search, projects=(('PROD', 'product'),), issue_type_ids=('10001',),
+            team_ids=('team-a',), existing_epics=[direct], epic_fields=eng_board.EPIC_FIELDS,
+            terminal_statuses=('Done',), retention_days=28,
+        )
+        self.assertEqual(['PROD-1', 'PROD-2'], [row['key'] for row in rows])
+        self.assertEqual('In Progress', rows[1]['fields']['status']['name'])
+        self.assertEqual(2, len(calls))
+        self.assertIn('cf[30101] in ("team-a")', calls[0]['jql'])
+        self.assertNotIn('component', calls[0]['jql'])
+        self.assertNotIn('sprint', calls[0]['jql'].lower())
+        self.assertIn('key in ("PROD-2")', calls[1]['jql'])
+        self.assertIn('status CHANGED TO "Done" AFTER -28d', calls[1]['jql'])
+        self.assertNotIn('component', calls[1]['jql'])
+
+    def test_team_discovery_is_batched_and_uses_epic_link_before_parent(self):
+        calls = []
+        def search(params):
+            calls.append(params)
+            if 'issuetype in' in params['jql']:
+                return {'isLast': True, 'issues': [
+                    issue(f'PROD-{100 + index}', parent='PROD-999', epic_link=f'PROD-{index}')
+                    for index in range(1, 42)
+                ]}
+            return {'isLast': True, 'issues': []}
+        eng_board.discover_team_epics(
+            search, projects=(('PROD', 'product'),), issue_type_ids=('10001',),
+            team_ids=('team-a',), existing_epics=[], epic_fields=eng_board.EPIC_FIELDS,
+            terminal_statuses=(), epic_link_field_id='customfield_10014',
+        )
+        self.assertEqual(3, len(calls))
+        self.assertIn('customfield_10014', calls[0]['fields'])
+        self.assertNotIn('PROD-999', calls[1]['jql'] + calls[2]['jql'])
+
+    def test_team_discovery_without_teams_does_not_fetch(self):
+        rows = [issue('PROD-1', issue_type='Epic')]
+        self.assertEqual(rows, eng_board.discover_team_epics(
+            lambda _: self.fail('Unexpected Jira request'), projects=(('PROD', 'product'),),
+            issue_type_ids=('10001',), team_ids=(), existing_epics=rows,
+            epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+        ))
+
+    def test_team_discovery_rejects_truncation_and_parent_overflow(self):
+        kwargs = dict(projects=(('PROD', 'product'),), issue_type_ids=('10001',),
+                      team_ids=('team-a',), existing_epics=[], epic_fields=eng_board.EPIC_FIELDS,
+                      terminal_statuses=())
+        with patch.object(eng_board, 'MAX_CHILDREN', 1):
+            with self.assertRaisesRegex(eng_board.EngBoardError, 'board_scope_too_large'):
+                eng_board.discover_team_epics(
+                    lambda _: {'isLast': False, 'nextPageToken': 'next',
+                               'issues': [issue('PROD-10', parent='PROD-1')]}, **kwargs)
+        with patch.object(eng_board, 'MAX_EPICS', 1):
+            with self.assertRaisesRegex(eng_board.EngBoardError, 'board_scope_too_large'):
+                eng_board.discover_team_epics(
+                    lambda _: {'isLast': True, 'issues': [issue('PROD-10', parent='PROD-1'),
+                                                        issue('PROD-11', parent='PROD-2')]}, **kwargs)
+
+    def test_team_discovery_rejects_unrequested_parent_response(self):
+        responses = iter((
+            {'isLast': True, 'issues': [issue('PROD-10', parent='PROD-1')]},
+            {'isLast': True, 'issues': [issue('PROD-2', issue_type='Epic')]},
+        ))
+        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_projection_invalid'):
+            eng_board.discover_team_epics(
+                lambda _: next(responses), projects=(('PROD', 'product'),), issue_type_ids=('10001',),
+                team_ids=('team-a',), existing_epics=[], epic_fields=eng_board.EPIC_FIELDS,
+                terminal_statuses=(),
+            )
+
     def test_project_profiles_include_other_and_saved_board_fallback(self):
         cases = (
             ([{'key': 'prod', 'type': 'product'}, {'key': 'ops', 'type': 'other'}], None,
@@ -103,7 +192,7 @@ class EngBoardScopeTests(unittest.TestCase):
         self.assertIsNone(normalized['doneEpicRetentionDays'])
         self.assertEqual('board-unconfigured', normalized['columns'][0]['id'])
 
-    def test_scope_configuration_requires_saved_board_and_components_only_for_all_work(self):
+    def test_scope_configuration_requires_saved_board_for_cross_sprint_scopes(self):
         board = {
             'columns': [{'id': 'col-00000001', 'name': 'To do', 'statuses': ['To Do']}],
             'doneEpicRetentionDays': 28,
@@ -112,6 +201,9 @@ class EngBoardScopeTests(unittest.TestCase):
             ('all_work', None, ('Shared',), 'board_config_invalid'),
             ('all_work', board, (), 'board_components_required'),
             ('all_work', board, (' Shared ', 'Shared'), None),
+            ('component', None, ('Shared',), 'board_config_invalid'),
+            ('component', board, (), 'board_components_required'),
+            ('component', board, (' Shared ', 'Shared'), None),
             ('sprint', None, (), None),
         )
         for scope, raw_board, components, error_code in cases:
@@ -439,13 +531,69 @@ class EngBoardProjectionTests(unittest.TestCase):
         self.assertEqual(3.5, result['children'][0]['storyPoints'])
         self.assertEqual({'id': 'team-1', 'name': 'Team One'}, result['children'][0]['team'])
 
+    def test_projection_tolerates_permission_reduced_epic_parent_metadata(self):
+        epic = issue('P-1')
+        epic['fields']['parent'] = {'key': 'P-0'}
+
+        result = eng_board.project_board(
+            [epic], [], project_map=(('PROD', 'product'),), columns=self.columns,
+        )['epics'][0]
+
+        self.assertIsNone(result['parent'])
+
+    def test_projection_normalizes_optional_custom_field_lists_without_failing_board(self):
+        epic = issue('P-1')
+        epic['fields']['customfield_77777'] = [{
+            'accountId': 'owner-1', 'displayName': 'Owner One', 'avatarUrls': {},
+        }]
+        epic['fields']['customfield_88888'] = [{'value': 'Committed'}]
+
+        result = eng_board.project_board(
+            [epic], [], project_map=(('PROD', 'product'),), columns=self.columns,
+            delivery_owner_field_id='customfield_77777',
+            project_track_field_id='customfield_88888',
+        )['epics'][0]
+
+        self.assertEqual('owner-1', result['deliveryOwner']['accountId'])
+        self.assertEqual('Committed', result['projectTrack'])
+
+    def test_projection_accepts_existing_team_and_legacy_sprint_field_shapes(self):
+        child = issue('P-10', parent='P-1', issue_type='Task')
+        child['fields']['customfield_30101'] = 'team-1'
+        child['fields']['customfield_10101'] = [
+            'com.atlassian.greenhopper.service.sprint.Sprint@abc[id=42,state=ACTIVE,name=Sprint 42]',
+        ]
+
+        result = eng_board.project_board(
+            [issue('P-1')], [child], project_map=(('PROD', 'product'),), columns=self.columns,
+        )['epics'][0]['children'][0]
+
+        self.assertIsNone(result['team'])
+        self.assertEqual([42], result['sprintIds'])
+
+    def test_projection_emits_only_one_stable_team_identity(self):
+        cases = (
+            ([{'teamId': 'team-1', 'title': 'Team One'}], {'id': 'team-1', 'name': 'Team One'}),
+            ([{'id': 'team-1', 'name': 'Team One'}, {'id': 'team-2', 'name': 'Team Two'}], None),
+            ({'name': 'Team without identity'}, None),
+        )
+        for raw_team, expected in cases:
+            with self.subTest(raw_team=raw_team):
+                child = issue('P-10', parent='P-1', issue_type='Task')
+                child['fields']['customfield_30101'] = raw_team
+                result = eng_board.project_board(
+                    [issue('P-1')], [child], project_map=(('PROD', 'product'),), columns=self.columns,
+                )['epics'][0]['children'][0]
+                self.assertEqual(expected, result['team'])
+
     def test_projection_rejects_malformed_required_identity_without_type_errors(self):
         malformed = issue('P-1')
         malformed['fields']['status'] = []
-        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_projection_invalid'):
+        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_projection_invalid') as raised:
             eng_board.project_board(
                 [malformed], [], project_map=(('PROD', 'product'),), columns=self.columns,
             )
+        self.assertEqual('epic.status', raised.exception.reason)
 
 
 if __name__ == '__main__':

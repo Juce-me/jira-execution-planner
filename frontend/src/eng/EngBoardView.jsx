@@ -65,10 +65,28 @@ export default function EngBoardView({
     statusTransitions = null, priorityTransitions = null, projectTrackTransitions = null,
     statusTransitionSubmitting = false, onSubmitStatusTransition, onFilterBarHeightChange,
     loading = false, error = null, onRetry,
+    strictColumns = null, authorityPending = false, stale = false,
+    onResolvedFocusChange,
 }) {
     const columns = React.useMemo(
-        () => buildBoardColumns({ columns: board?.columns || [], epicGroups }),
-        [board, epicGroups],
+        () => {
+            if (!Array.isArray(strictColumns)) {
+                return buildBoardColumns({ columns: board?.columns || [], epicGroups });
+            }
+            const admitted = new Set(epicGroups.map((group) => group.key));
+            return strictColumns.map((column) => {
+                const visibleGroups = column.epicGroups.filter((group) => admitted.has(group.key));
+                return {
+                    ...column,
+                    epicGroups: visibleGroups,
+                    epicCount: visibleGroups.length,
+                    storyPoints: visibleGroups.reduce(
+                        (total, group) => total + (Number(group.storyPoints) || 0), 0,
+                    ),
+                };
+            });
+        },
+        [board, epicGroups, strictColumns],
     );
     const scaleMax = boardScaleMax(columns);
     const configStarredId = React.useMemo(
@@ -92,6 +110,9 @@ export default function EngBoardView({
         : { configStarredId, starredId: configStarredId, focusedId: null };
     const starredId = seed.starredId;
     const focusedId = resolveFocus(columns, { preferred: seed.focusedId, starredId });
+    React.useEffect(() => {
+        onResolvedFocusChange?.(focusedId);
+    }, [focusedId, onResolvedFocusChange]);
 
     // §6.3/§10.1: the epic detail panel. Only the key is held — the epic itself is re-read from
     // the live columns on every render, so a filter change, a refresh or a status transition that
@@ -691,28 +712,14 @@ export default function EngBoardView({
     // nothing (D20's hide-at-zero and §7.3's last-option lock are both per-facet), but two facets
     // that each admit work can still intersect to zero epics. That is a legitimate result, not a
     // silent blank — it says so, the same way Catch Up's empty result does (§7.4).
-    const hasNoEpics = !firstRun && epicGroups.length === 0;
+    const hasNoEpics = !firstRun && epicGroups.length === 0 && !authorityPending && !loading;
 
     // State-specific returns live after every hook so loading/error changes never alter hook order.
     // Match EngView's fetch-state precedence and presentation: loading wins over an older error.
-    if (loading) {
-        return <LoadingState title="Loading tasks" message="Refreshing Jira sprint work." />;
-    }
-    if (error) {
-        return (
-            <div className="error">
-                {error}
-                <div style={{ marginTop: '1rem' }}>
-                    <button onClick={onRetry}>Retry</button>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <>
-            {/* §7.1/D19: the Board's own facet set, over epics — a separate mount from Catch
-                Up's (EngView.jsx), sharing only the component and the chip grammar. */}
+    const hasStrictContent = Array.isArray(strictColumns) && strictColumns.length > 0;
+    const strictWorkItemLabel = Array.isArray(strictColumns) ? 'work items' : 'stories';
+    // §7.1/D19: Board owns its facet set, sharing Catch Up's chip grammar only.
+    const filterBar = (
             <EngFilterBar
                 facets={engFilters.facets}
                 selection={engFilters.selection}
@@ -726,8 +733,43 @@ export default function EngBoardView({
                 onHeightChange={onFilterBarHeightChange}
                 boardColumns={board?.columns || []}
                 renderPriorityIcon={renderPriorityIcon}
-                viewControls={<EngBoardHelp scaleMax={scaleMax} />}
+                disabled={authorityPending || (!hasStrictContent && (loading || Boolean(error)))}
+                viewControls={<EngBoardHelp scaleMax={scaleMax} workItemLabel={Array.isArray(strictColumns) ? 'work items' : 'Stories'} />}
             />
+    );
+    if (loading && (!hasStrictContent || (authorityPending && epicGroups.length === 0))) {
+        return <>{filterBar}<LoadingState title="Loading tasks" message={Array.isArray(strictColumns)
+            ? 'Refreshing retained Jira work.' : 'Refreshing Jira sprint work.'} /></>;
+    }
+    if (error && (!hasStrictContent || (epicGroups.length === 0 && !stale))) {
+        return (
+            <>
+                {filterBar}
+                <div className="error">
+                    {error}
+                    <div style={{ marginTop: '1rem' }}>
+                        <button onClick={onRetry}>Retry</button>
+                    </div>
+                </div>
+            </>
+        );
+    }
+
+    return (
+        <>
+            {stale && (
+                <div className="board-data-state" role="status">
+                    Showing last complete Board data. {error || ''}
+                    {error && <button type="button" className="secondary compact" onClick={onRetry}>Retry</button>}
+                </div>
+            )}
+            {!stale && error && hasStrictContent && epicGroups.length > 0 && (
+                <div className="board-data-state is-error" role="alert">
+                    <span>Loaded so far — {error}</span>
+                    {onRetry && <button type="button" onClick={onRetry}>Retry</button>}
+                </div>
+            )}
+            {filterBar}
             <div className="eng-board" role="region" aria-label="Group board">
                 {firstRun && (
                     <div className="board-head">
@@ -893,6 +935,7 @@ export default function EngBoardView({
                                             onDragEnd={transitionsEnabled ? handleCardDragEnd : null}
                                             isDragging={draggingKey === epicGroup.key}
                                             isRejected={rejectedKey === epicGroup.key}
+                                            workItemLabel={strictWorkItemLabel}
                                         />
                                     ))}
                                 </div>
@@ -967,6 +1010,8 @@ export default function EngBoardView({
                     priorityTransitions={priorityTransitions}
                     projectTrackTransitions={projectTrackTransitions}
                     statusTransitionSubmitting={statusTransitionSubmitting}
+                    workItemLabel={strictWorkItemLabel}
+                    workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : 'story'}
                     onSubmitStatusTransition={onSubmitStatusTransition}
                     onClose={closePanel}
                 />

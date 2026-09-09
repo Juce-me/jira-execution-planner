@@ -3,7 +3,7 @@ import * as React from 'react';
 const HELP_MAX_WIDTH = 512;
 const HELP_GUTTER = 12;
 
-export default function EngBoardHelp({ scaleMax = 1 }) {
+export default function EngBoardHelp({ scaleMax = 1, workItemLabel = 'work items' }) {
     const [open, setOpen] = React.useState(false);
     const hostRef = React.useRef(null);
     const triggerRef = React.useRef(null);
@@ -103,6 +103,7 @@ export default function EngBoardHelp({ scaleMax = 1 }) {
                         <li>Choose a folded column to centre it.</li>
                         <li>Star a column to keep it open for this session.</li>
                         <li>Cards are ordered highest priority first.</li>
+                        <li>Epic details include every eligible {workItemLabel}, not only Stories.</li>
                         <li>The tallest bar represents {scaleMax} epics.</li>
                         <li>Drag a card to another column to change its epic status.</li>
                     </ul>

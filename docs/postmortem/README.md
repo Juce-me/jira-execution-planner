@@ -43,6 +43,7 @@ Postmortems serve to:
 | [MRT024](./MRT024-head-stamped-schema-drift.md) | Head-Stamped Schema Drift | 2026-09-02 | High | Resolved | Alembic reported head while a preserved local PostgreSQL volume had duplicate onboarding columns and missing auth/capacity schema objects |
 | [MRT025](./MRT025-pr-publication-transaction-failures.md) | PR Publication Transaction Failures | 2026-09-08 | High | In Progress | A repeated publication failure mixed unrelated commit history into a feature PR and rendered JSON-escaped newlines literally because remote range and rendered-body gates ran too late |
 | [MRT026](./MRT026-issue-137-delivery-scope-deviation.md) | Issue 137 Delivery Scope Deviation | 2026-09-07 | High | In Progress | Recovery now includes accepted in-app measurements and a reviewed gated implementation plan; planning acceptance remains pending |
+| [MRT027](./MRT027-board-catalog-pagination.md) | Board Scope Interpretation and Loading Regressions | 2026-09-09 | High | Monitoring | Unconfirmed UX/data-source assumptions and over-strict Jira projection caused duplicate controls, redundant loading, incomplete ownership discovery, and live Board failures |
 
 ## Postmortem Template
 
@@ -96,8 +97,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 25
-- **Metadata complete (Date/Severity/Status)**: 25 (MRT001-MRT025)
+- **Total postmortems**: 27
+- **Metadata complete (Date/Severity/Status)**: 27 (MRT001-MRT027)
 
 ## Common Themes
 
@@ -108,6 +109,7 @@ Commits, files, documentation
 4. **Performance**: Missing optimization guards in React hooks
 5. **Plan/Execution Boundary**: Blocked execution was incorrectly treated as permission to omit a requested plan artifact
 6. **Publication Hygiene**: Local cleanliness and successful CLI exits were mistaken for a correct remote commit range and rendered PR
+7. **Strategic Ambiguity**: A detailed plan was treated as permission to choose a new UI/state/data boundary instead of pausing for user confirmation
 
 ### Action Items Summary
 Across all postmortems, key actions needed:
@@ -157,5 +159,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-09-08*
-*Total Postmortems: 26*
+*Last Updated: 2026-09-09*
+*Total Postmortems: 27*

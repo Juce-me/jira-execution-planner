@@ -141,6 +141,31 @@ test('explicit All work survives a later successful sprint catalog', async () =>
     assert.equal(calls.length, 1);
 });
 
+test('Component scope is retained and requests an authoritative no-sprint stream', async () => {
+    const mod = loadModule();
+    const calls = [];
+    const owner = mod.createEngBoardDataOwner({
+        streamBoard: async options => {
+            calls.push(options);
+            options.onFrame({ ...start('g1'), scope: 'component' });
+            options.onFrame(frame('g1', 1, 'index', { epics: [], membership: 'authoritative' }));
+            options.onFrame(frame('g1', 2, 'column', {
+                columnId: 'todo', epics: [], children: [], authoritative: true,
+            }));
+            options.onFrame(frame('g1', 3, 'complete', {
+                outcome: 'success', authoritative: true, epicCount: 0, childCount: 0, diagnostics: {},
+            }));
+        },
+    });
+
+    owner.selectGroup('a', 42, 'r1');
+    assert.equal(await owner.setScope({ type: 'component' }), 'success');
+    assert.deepEqual(owner.getState().scopesByGroup.a, { type: 'component' });
+    assert.equal(calls[0].scope, 'component');
+    assert.equal(calls[0].sprintId, undefined);
+    assert.equal(owner.getState().working.membershipAuthoritative, true);
+});
+
 test('late frames from an old request or generation cannot publish into the active load', () => {
     const mod = loadModule();
     let state = mod.createEngBoardDataState();
@@ -467,120 +492,11 @@ test('auth lock preserves mounted state and makes subsequent frames inert', () =
     assert.equal(state, locked);
 });
 
-test('focus writer serializes A and coalesces B/C to C after acknowledgement', async () => {
-    const mod = loadModule();
-    const calls = [];
-    const resolvers = [];
-    const writer = mod.createEngBoardFocusWriter({
-        sendFocus: (generationId, columnId) => {
-            calls.push([generationId, columnId]);
-            return new Promise(resolve => resolvers.push(resolve));
-        },
-    });
-    writer.activate('g1');
-    writer.request('a');
-    writer.request('b');
-    writer.request('c');
-    assert.deepEqual(calls, [['g1', 'a']]);
-    resolvers.shift()({ accepted: true, revision: 1 });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(calls, [['g1', 'a'], ['g1', 'c']]);
-    resolvers.shift()({ accepted: true, revision: 2 });
-    await writer.whenIdle();
-});
-
-test('ambiguous focus failure retires its generation and never replays queued intent', async () => {
-    const mod = loadModule();
-    const calls = [];
-    let rejectFirst;
-    const retired = [];
-    const writer = mod.createEngBoardFocusWriter({
-        sendFocus: (generationId, columnId) => {
-            calls.push([generationId, columnId]);
-            return new Promise((resolve, reject) => { rejectFirst = reject; });
-        },
-        onAmbiguousFailure: generationId => retired.push(generationId),
-    });
-    writer.activate('g1');
-    writer.request('a');
-    writer.request('b');
-    rejectFirst(new Error('lost acknowledgement'));
-    await writer.whenIdle();
-    assert.deepEqual(calls, [['g1', 'a']]);
-    assert.deepEqual(retired, ['g1']);
-    assert.equal(writer.isActive(), false);
-});
-
-test('invalid focus acknowledgement is ambiguous and the owner cancels the retired generation', async () => {
-    const mod = loadModule();
-    const controls = [];
-    const owner = mod.createEngBoardDataOwner({
-        streamBoard: options => new Promise(() => { options.onFrame(start('g1')); }),
-        controlBoard: command => {
-            controls.push(command);
-            return Promise.resolve(command.action === 'focus' ? { accepted: false, revision: 1 } : { accepted: true, revision: 2 });
-        },
-    });
-    owner.selectGroup('a', 42, 'r1');
-    owner.load();
-    owner.setResolvedFocus('todo');
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(controls.map(({ action, generationId }) => [action, generationId]), [
-        ['focus', 'g1'], ['cancel', 'g1'],
-    ]);
-    assert.equal(owner.getState().error.code, 'focus_control_failed');
-    owner.setResolvedFocus('done');
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(controls.length, 2, 'retired generation must not accept later focus intent');
-    owner.dispose();
-});
-
-test('focus acknowledgement validation matches the closed control-helper response', () => {
-    const { isEngBoardControlAcknowledgement } = loadModule();
-    assert.equal(isEngBoardControlAcknowledgement({ accepted: true, revision: 0 }), true);
-    assert.equal(isEngBoardControlAcknowledgement({ accepted: true, revision: 1, extra: true }), false);
-    assert.equal(isEngBoardControlAcknowledgement({ accepted: false, revision: 1 }), false);
-    assert.equal(isEngBoardControlAcknowledgement({ accepted: true, revision: 1.5 }), false);
-});
-
-test('focus-control authentication failure cancels and enters the terminal auth lock', async () => {
-    const mod = loadModule();
-    const controls = [];
-    const authFailures = [];
-    const owner = mod.createEngBoardDataOwner({
-        streamBoard: options => new Promise(() => { options.onFrame(start('g1')); }),
-        controlBoard: command => {
-            controls.push(command);
-            if (command.action === 'focus') {
-                const error = new Error('Sign in required');
-                error.name = 'AuthenticationRequiredError';
-                return Promise.reject(error);
-            }
-            return Promise.resolve({ accepted: true, revision: 2 });
-        },
-        onAuthRequired: error => authFailures.push(error),
-    });
-    owner.selectGroup('a', 42, 'r1');
-    owner.load();
-    owner.setResolvedFocus('todo');
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(controls.map(({ action, generationId }) => [action, generationId]), [
-        ['focus', 'g1'], ['cancel', 'g1'],
-    ]);
-    assert.equal(owner.getState().authLocked, true);
-    assert.equal(owner.getState().status, 'auth_locked');
-    assert.equal(owner.getState().error.code, 'auth_required');
-    assert.equal(authFailures.length, 1);
-    owner.dispose();
-});
-
 test('retirement and Strict Effects remount cancel work without destroying the mounted session', async () => {
     const mod = loadModule();
     const streams = [];
-    const controls = [];
     const owner = mod.createEngBoardDataOwner({
         streamBoard: options => new Promise((resolve, reject) => streams.push({ options, resolve, reject })),
-        controlBoard: command => { controls.push(command); return Promise.resolve({ accepted: true, revision: 1 }); },
     });
     owner.selectGroup('a', 42, 'r1');
     const first = owner.load();
@@ -588,7 +504,6 @@ test('retirement and Strict Effects remount cancel work without destroying the m
     owner.retire();
     assert.equal(streams[0].options.signal.aborted, true);
     assert.equal(owner.getState().status, 'idle');
-    assert.ok(controls.some(command => command.action === 'cancel' && command.generationId === 'g1'));
     owner.dispose();
     assert.equal(owner.getState().mounted, false);
     owner.mount();
@@ -602,42 +517,22 @@ test('retirement and Strict Effects remount cancel work without destroying the m
     await Promise.all([first, second]);
 });
 
-test('cancel clears queued focus and a late acknowledgement cannot schedule it', async () => {
-    const mod = loadModule();
-    const calls = [];
-    let acknowledge;
-    const writer = mod.createEngBoardFocusWriter({
-        sendFocus: (generationId, columnId) => {
-            calls.push(['focus', generationId, columnId]);
-            return new Promise(resolve => { acknowledge = resolve; });
-        },
-    });
-    writer.activate('g1');
-    writer.request('a');
-    writer.request('b');
-    writer.cancel(generationId => { calls.push(['cancel', generationId]); });
-    acknowledge({ accepted: true, revision: 1 });
-    await writer.whenIdle();
-    assert.deepEqual(calls, [['focus', 'g1', 'a'], ['cancel', 'g1']]);
-});
-
-test('retry creates a new request; unmount aborts it, cancels server work, and suppresses late frames', async () => {
+test('focus changes stay local until retry creates one replacement request with current focus', async () => {
     const mod = loadModule();
     const streams = [];
-    const controls = [];
     const owner = mod.createEngBoardDataOwner({
         streamBoard: options => new Promise((resolve, reject) => streams.push({ options, resolve, reject })),
-        controlBoard: command => { controls.push(command); return Promise.resolve({ accepted: true, revision: 1 }); },
     });
     owner.selectGroup('a', 42, 'r1');
     const first = owner.load();
     streams[0].options.onFrame(start('g1'));
     owner.setResolvedFocus('todo');
     await new Promise(resolve => setImmediate(resolve));
+    assert.equal(streams.length, 1, 'focus must not start or control another request');
     const retry = owner.retry();
     assert.equal(streams.length, 2);
     assert.equal(streams[0].options.signal.aborted, true);
-    assert.ok(controls.some(command => command.action === 'cancel' && command.generationId === 'g1'));
+    assert.equal(streams[1].options.focusedColumnId, 'todo');
     owner.dispose();
     assert.equal(streams[1].options.signal.aborted, true);
     streams[1].options.onFrame(start('late'));
@@ -645,4 +540,79 @@ test('retry creates a new request; unmount aborts it, cancels server work, and s
     streams[0].reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
     streams[1].reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
     await Promise.all([first, retry]);
+});
+
+test('Board owner records one terminal measurement after focused content and counts wire bytes', async () => {
+    const mod = loadModule();
+    const calls = [];
+    const recorder = {
+        start: value => calls.push(['start', value.type]),
+        addPayloadBytes: value => calls.push(['bytes', value]),
+        focusedContentReady: () => calls.push(['focused']),
+        finish: value => calls.push(['finish', value]),
+        cancel: () => calls.push(['cancel']),
+    };
+    const owner = mod.createEngBoardDataOwner({
+        createMeasurement: options => {
+            calls.push(['create', options]);
+            return recorder;
+        },
+        streamBoard: async options => {
+            options.onFrame(start('g1', 'scope-v1', ['todo']), { payloadBytes: 101 });
+            options.onFrame(frame('g1', 1, 'index', {
+                epics: [epic('E-1')], membership: 'authoritative',
+            }), { payloadBytes: 102 });
+            options.onFrame(frame('g1', 2, 'column', {
+                columnId: 'todo', epics: [epic('E-1')], children: [child('C-1', 'E-1')], authoritative: true,
+            }), { payloadBytes: 103 });
+            options.onFrame(frame('g1', 3, 'complete', {
+                outcome: 'success', authoritative: true, epicCount: 1, childCount: 1,
+                diagnostics: { indexMs: 10, focusedCompleteMs: 20, durationMs: 30 },
+            }), { payloadBytes: 104 });
+        },
+    });
+    owner.selectGroup('a', 42, 'r1');
+    owner.setResolvedFocus('todo');
+    assert.equal(await owner.load(), 'success');
+
+    assert.deepEqual(calls[0], ['create', { groupId: 'a', scopeType: 'sprint', sprintId: 42 }]);
+    assert.deepEqual(calls.filter(call => call[0] === 'bytes').map(call => call[1]), [101, 102, 103, 104]);
+    assert.equal(calls.filter(call => call[0] === 'start').length, 1);
+    assert.equal(calls.filter(call => call[0] === 'focused').length, 1);
+    const finishes = calls.filter(call => call[0] === 'finish');
+    assert.equal(finishes.length, 1);
+    assert.deepEqual(finishes[0][1], {
+        outcome: 'success',
+        diagnostics: { indexMs: 10, focusedCompleteMs: 20, durationMs: 30 },
+        epicCount: 1,
+        issueCount: 1,
+        dependencyDurationMs: null,
+    });
+    assert.equal(calls.filter(call => call[0] === 'cancel').length, 0);
+});
+
+test('replacing a Board stream cancels only the retired measurement', async () => {
+    const mod = loadModule();
+    const measurements = [];
+    const streams = [];
+    const owner = mod.createEngBoardDataOwner({
+        createMeasurement: () => {
+            const calls = [];
+            measurements.push(calls);
+            return {
+                start: () => calls.push('start'), addPayloadBytes: () => {},
+                focusedContentReady: () => {}, finish: () => calls.push('finish'),
+                cancel: () => calls.push('cancel'),
+            };
+        },
+        streamBoard: options => new Promise(resolve => streams.push({ options, resolve })),
+    });
+    owner.selectGroup('a', 42, 'r1');
+    const first = owner.load();
+    const second = owner.refresh();
+    assert.deepEqual(measurements[0], ['cancel']);
+    streams[0].resolve();
+    streams[1].resolve();
+    await Promise.all([first, second]);
+    assert.equal(measurements[0].filter(value => value === 'finish').length, 0);
 });

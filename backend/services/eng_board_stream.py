@@ -1,16 +1,35 @@
 """Strict, bounded ENG Board protocol-v1 NDJSON encoding.
 
-This module is transport-only. It does not register routes, access Flask state,
-schedule Jira work, or claim a hard execution deadline.
+This module owns bounded request transport and request-local scheduling. It does
+not register routes, access Flask state, or claim a hard execution deadline.
 """
 
 import json
 import math
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from dataclasses import dataclass, field
+import threading
+import time
+
+from backend.jira_client import JiraCircuitBreaker
 
 
 ENG_BOARD_PROTOCOL_VERSION = 1
 ENG_BOARD_MAX_FRAME_BYTES = 8 * 1024 * 1024
 ENG_BOARD_MAX_GENERATION_BYTES = 32 * 1024 * 1024
+ENG_BOARD_MAX_CHILD_SEARCHES = 2
+ENG_BOARD_REQUEST_BUDGET_SECONDS = 30.0
+ENG_BOARD_JIRA_CONNECT_TIMEOUT_SECONDS = 5.0
+ENG_BOARD_JIRA_READ_TIMEOUT_SECONDS = 30.0
+
+_REQUEST_COUNTER_KEYS = (
+    'jiraLogicalRequestCount', 'jiraCatalogCallCount', 'jiraSearchCallCount',
+    'jiraPageCount', 'jiraAttemptCount', 'jiraRetryCount',
+    'jiraFailureAttemptCount', 'jiraRateLimitCount', 'jiraFastFailCount',
+    'jiraRetrySleepMs', 'jiraRetryAfterMs', 'jiraResponseBytes',
+    'jiraFailedResponseBytes', 'oauthRefreshCount', 'oauthAttemptCount',
+    'oauthRetryCount', 'oauthRateLimitCount',
+)
 
 _MAX = {
     'identity': 256,
@@ -30,6 +49,185 @@ _MAX = {
 
 class EngBoardFrameError(ValueError):
     """A frame cannot be safely represented by the frozen wire contract."""
+
+
+class EngBoardRequestDeadline(RuntimeError):
+    """The cooperative request budget expired before more work was admitted."""
+
+
+class EngBoardRequestObserver:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._counters = {key: 0 for key in _REQUEST_COUNTER_KEYS}
+
+    def add(self, key, value=1):
+        if key not in self._counters or isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError('invalid request counter')
+        if not math.isfinite(value) or value < 0:
+            raise ValueError('invalid request counter')
+        with self._lock:
+            self._counters[key] += value
+
+    def snapshot(self):
+        with self._lock:
+            return dict(self._counters)
+
+
+@dataclass
+class EngBoardRequestBudget:
+    expires_at: float
+    now_fn: object = time.monotonic
+    cancelled: threading.Event = field(default_factory=threading.Event)
+
+    @classmethod
+    def start(cls, seconds=ENG_BOARD_REQUEST_BUDGET_SECONDS, *, now_fn=time.monotonic):
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or seconds <= 0:
+            raise ValueError('seconds must be positive')
+        return cls(float(now_fn()) + float(seconds), now_fn=now_fn)
+
+    def remaining(self, _phase='body'):
+        remaining = self.expires_at - float(self.now_fn())
+        if self.cancelled.is_set() or remaining <= 0:
+            raise EngBoardRequestDeadline('deadline_exceeded')
+        return remaining
+
+    def jira_timeout(self):
+        remaining = self.remaining()
+        return (
+            min(ENG_BOARD_JIRA_CONNECT_TIMEOUT_SECONDS, remaining),
+            min(ENG_BOARD_JIRA_READ_TIMEOUT_SECONDS, remaining),
+        )
+
+    def jira_retry_timeout(self):
+        """Return the scalar read budget expected by the shared Jira retry helper."""
+        return self.jira_timeout()[1]
+
+    def check(self, phase='body'):
+        self.remaining(phase)
+
+    def cancel(self):
+        self.cancelled.set()
+
+
+@dataclass
+class EngBoardRequestTransport:
+    """Budget and counters accepted by existing Jira and OAuth boundaries."""
+
+    budget: EngBoardRequestBudget = field(default_factory=EngBoardRequestBudget.start)
+    observer: EngBoardRequestObserver = field(default_factory=EngBoardRequestObserver)
+    breaker: JiraCircuitBreaker = field(
+        default_factory=lambda: JiraCircuitBreaker(failure_threshold=5, open_seconds=30.0),
+    )
+
+    def resilient_kwargs(self):
+        return {
+            'breaker': self.breaker,
+            'diagnostic_budget': self.budget,
+            'diagnostic_observer': self.observer,
+        }
+
+    def diagnostics(self):
+        counters = self.observer.snapshot()
+        return {
+            'jiraRequests': counters['jiraLogicalRequestCount'],
+            'jiraPages': counters['jiraPageCount'],
+            'jiraRetries': counters['jiraRetryCount'],
+            'oauthRefreshes': counters['oauthRefreshCount'],
+        }
+
+
+class EngBoardChildScheduler:
+    """Run a fixed request-local search queue with bounded cooperative admission."""
+
+    def __init__(self, searches, *, budget=None,
+                 max_concurrency=ENG_BOARD_MAX_CHILD_SEARCHES):
+        if max_concurrency != ENG_BOARD_MAX_CHILD_SEARCHES:
+            raise ValueError('ENG Board child concurrency must be exactly two')
+        self.budget = budget or EngBoardRequestBudget.start()
+        self._pending = iter(searches)
+        self._pool = ThreadPoolExecutor(
+            max_workers=ENG_BOARD_MAX_CHILD_SEARCHES,
+            thread_name_prefix='eng-board-child',
+        )
+        self._futures = []
+        self._retired = False
+        self._lock = threading.Lock()
+        self._active_searches = 0
+        self.scheduled_searches = 0
+        self.peak_child_searches = 0
+        try:
+            for _ in range(ENG_BOARD_MAX_CHILD_SEARCHES):
+                if not self._admit_one():
+                    break
+        except Exception:
+            self.retire()
+            raise
+
+    def _admit_one(self):
+        self.budget.check()
+        with self._lock:
+            if self._retired:
+                return False
+            try:
+                search = next(self._pending)
+            except StopIteration:
+                return False
+            timeout = self.budget.jira_timeout()
+
+            def run():
+                with self._lock:
+                    self._active_searches += 1
+                    self.peak_child_searches = max(
+                        self.peak_child_searches, self._active_searches,
+                    )
+                try:
+                    return search(timeout)
+                finally:
+                    with self._lock:
+                        self._active_searches -= 1
+
+            self._futures.append(self._pool.submit(run))
+            self.scheduled_searches += 1
+            return True
+
+    def results(self):
+        completed = False
+        try:
+            while self._futures:
+                self.budget.check()
+                future = self._futures.pop(0)
+                try:
+                    result = future.result(timeout=self.budget.remaining())
+                except TimeoutError as error:
+                    self.budget.cancel()
+                    raise EngBoardRequestDeadline('deadline_exceeded') from error
+                yield result
+                self.budget.check()
+                self._admit_one()
+            completed = True
+        finally:
+            if completed:
+                self._finish()
+            else:
+                self.retire()
+
+    def _finish(self):
+        with self._lock:
+            if self._retired:
+                return
+            self._retired = True
+        self._pool.shutdown(wait=False, cancel_futures=False)
+
+    def retire(self):
+        self.budget.cancel()
+        with self._lock:
+            if self._retired:
+                return
+            self._retired = True
+            futures = tuple(self._futures)
+        for future in futures:
+            future.cancel()
+        self._pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _fail(code='invalid_frame'):
@@ -202,7 +400,7 @@ def _validate_body(frame):
     frame_type = frame['type']
     if frame_type == 'start':
         _exact(frame, base + ('scope', 'scopeVersion', 'scopeCohortDigest', 'columns'))
-        _one_of(frame['scope'], ('all_work', 'sprint'))
+        _one_of(frame['scope'], ('all_work', 'component', 'sprint'))
         _string(frame['scopeVersion'], _MAX['identity'])
         _string(frame['scopeCohortDigest'], 64,
                 pattern=lambda value: len(value) == 64 and all(char in '0123456789abcdef' for char in value))
@@ -255,7 +453,8 @@ def _validate_body(frame):
         _exact(frame, base + ('code',), ('diagnostics',))
         _one_of(frame['code'], (
             'auth_required', 'scope_changed', 'scope_too_large', 'deadline_exceeded',
-            'invalid_page', 'storage_unavailable', 'jira_unavailable',
+            'invalid_page', 'board_data_invalid', 'board_config_invalid',
+            'storage_unavailable', 'jira_unavailable',
         ))
         if frame['code'] == 'auth_required' and 'diagnostics' in frame:
             _fail()

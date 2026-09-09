@@ -16,7 +16,7 @@ test('stats ranges use one stats-owned component and existing control classes', 
 });
 
 test('dashboard keeps the global Sprint control isolated from stats ranges', () => {
-    const globalSprint = dashboard.match(/const renderSprintControl = \(surface\) => \([\s\S]*?const renderGroupControl/)?.[0] || '';
+    const globalSprint = dashboard.match(/const renderSprintControl = \(surface\) => \{[\s\S]*?const renderGroupControl/)?.[0] || '';
     assert.ok(globalSprint.includes('<ControlField label="Sprint">'));
     assert.equal(globalSprint.includes('StatsRangeControl'), false);
 });

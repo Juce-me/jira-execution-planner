@@ -83,6 +83,16 @@ class EndpointPolicyInventoryTests(unittest.TestCase):
         self.assertEqual([policy.name for policy in matches], ["eng-api-story-subtasks"])
         self.assertEqual(matches[0].policy_class, "authenticated_read")
 
+    def test_eng_board_route_has_authenticated_read_policy(self):
+        from backend.security.policy import matching_policies
+
+        matches = matching_policies(
+            "/api/eng/board", ["GET"], "eng_board_routes.get_eng_board",
+        )
+
+        self.assertEqual([policy.name for policy in matches], ["eng-board-read"])
+        self.assertEqual(matches[0].policy_class, "authenticated_read")
+
     def test_issue_transition_options_route_has_authenticated_read_policy(self):
         from backend.security.policy import matching_policies
 

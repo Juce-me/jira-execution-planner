@@ -20,7 +20,7 @@ The guide uses Settings → Departments → Team Groups rather than a second, si
 
 1. Edit the Department name in the left Department list. There is no second name field in the right editor. On compact or mobile layouts, open the **Groups** drawer to reach the list.
 2. Add at least one Team. Teams determine the Department's main Jira scope, and a Department without a configured Team cannot complete first run.
-3. Add Jira Components if they are useful, or choose **Continue without components**. Component is a Jira issue field, commonly set at Epic level. Components broaden only the **Missing Information** and **Lead Times** queries through configured-Team **or** Component matching; they do not make Stories appear in the main Product/Tech hierarchy.
+3. Add Jira Components if they are useful, or choose **Continue without components**. Component is a Jira issue field, commonly set at Epic level. Components broaden the **Missing Information** and **Lead Times** queries through configured-Team **or** Component matching. In Board, the cross-sprint **Component** choice shows only Epics with an exact Component match, while **All work** unions those Epics with Team-derived parents. Component matching is never applied to Stories and does not make Stories appear in the main Product/Tech hierarchy.
 4. Review the filled favorite star. It is your one private startup Department, not a shared workspace default.
 5. Keep **Show in Department selector** enabled for Departments you want in your controls. Your favorite is always visible.
 
@@ -36,7 +36,7 @@ At least one configured Team is required for first-run eligibility. After that, 
 2. **Epic-only and empty-Epic discovery:** the Epic must match either its Jira Team or the Department's exact mapped team label, and it must match either its Jira Sprint value or the exact selected-sprint-name label.
 3. **Future sprint ready path:** the Epic requires both the configured mapped team label and the exact selected-sprint-name label. One does not replace the other.
 
-Configured Jira Components broaden only Missing Information and Lead Times through configured-Team or Component matching. They never make Stories appear in the main Product/Tech list.
+Configured Jira Components broaden Missing Information and Lead Times through configured-Team or Component matching. They also define Board's cross-sprint **Component** choice and the Component-owned half of **All work**, at the Epic boundary only. They never make Stories appear in the main Product/Tech list.
 
 If expected work is missing, check in this order:
 
@@ -61,6 +61,10 @@ The top bar compares the selected task count and SP with **Planning** capacity a
 
 Board groups Epics into the Department's configured columns. Opening an Epic shows its Stories and status progress. Board's own Priority, Projects, Assignee, and Project Track facet filters refine the Epic set without changing the shared task-list filters. Project Track always shows Committed and Flexible, including a zero-count option. With both checked, its heading counts every scoped Epic, including unset values; either checked alone selects that value, while both unchecked means only genuinely unset (`null`, missing, or trim-empty) values. Populated unknown values are not treated as unset. Select all, chip clear, and Clear all restore neutral; ordinary rerenders, mode and Teams changes, and same-scope Department restoration preserve an explicit empty selection, while a new Department or sprint snapshot starts neutral.
 
+Board uses the Department and sprint already selected for Catch Up. Entering Board renders that already-loaded sprint snapshot immediately and issues no parallel selected-sprint Board fetch. The existing top Sprint selector is the only sprint/scope control. While Board is active it offers three kinds of choice: **All work**, **Component**, and the ordinary sprint list. All work and Component are transient Board modes and leave the saved sprint intact for sibling views; choosing an ordinary sprint or leaving Board returns to the selected-sprint Catch Up snapshot. No Board-local selector, button, or toggle exists.
+
+**Component** is cross-sprint and includes only Epics whose own Component exactly matches the Department configuration. **All work** is cross-sprint and unions those Component-matched Epics with parent Epics discovered from eligible work assigned to any saved Department Team, within saved Jira projects. Component matching is Epic-only; it is not applied to Stories. The Team-parent source remains active in All work even when Components are configured, so cross-team-owned Epics are not lost. Team-only Departments can use All work, while Component is unavailable without configured Components. Parents are deduplicated and placed using their own status. Completed Epics use the saved 1–90 day retention window (28 days by default), based on status transition history with the conservative recent-created fallback. A cross-sprint load cannot show a final empty state until its complete membership is authoritative; child-derived filters, actions, and Work items export unlock only when the result is complete and authoritative. Provisional transport diagnostics are not rendered as normal product content.
+
 Dragging an Epic to another column requests the Jira transitions available for that Epic and changes Jira status only when the user has permission and a usable target status is loaded for the destination. A refused, unavailable, or failed transition leaves the Epic in its existing status. A Board column star is session-only and changes the focused column for the current app session.
 
 Settings → Departments → Boards maps Jira statuses to columns. There you can reorder columns; change a column's name and color; set advisory Min and Max values; and choose the shared default-star column. Loading the Jira status catalog requires a configured Jira board/project scope and permission to read its statuses. Saved columns remain intact when the catalog cannot load.
@@ -77,4 +81,4 @@ Board search is separate and Epic-only. It matches Epic key, summary, assignee, 
 
 ## Continue in Jira
 
-The blue Jira control opens a menu with separate **Open epics** and **Open stories** choices. Choosing one opens only that currently scoped subset in Jira, where Jira provides its bulk-operation tools. The app does not perform an in-app bulk mutation from this control.
+The blue Jira control normally opens a menu with separate **Open epics** and **Open stories** choices. On strict Board, the second choice is **Open work items** and includes every authoritative visible configured child type, such as Stories, Bugs, or Tasks. Choosing one opens only that currently scoped subset in Jira, where Jira provides its bulk-operation tools. Pending Board data exposes no Work items export action. The app does not perform an in-app bulk mutation from this control.

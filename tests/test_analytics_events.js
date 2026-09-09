@@ -595,6 +595,40 @@ test('api_result accepts jira_team_capacity with the existing bucketed API contr
     }]);
 });
 
+test('eng_board terminal api_result accepts only bounded scope and omits high-cardinality input', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+
+    trackApiResult('eng_board', {
+        featureName: 'eng_board', method: 'GET', status: 200, durationMs: 725,
+        cacheState: 'miss', scopeType: 'all_work',
+        departmentId: 'department-secret', generationId: 'generation-secret',
+        issueKeys: ['SECRET-1'], jql: 'project = SECRET',
+    });
+    assert.deepEqual(pushed, [{
+        event: 'userevent', trigger: 'userevent', event_type: 'event',
+        event_name: 'api_result', feature_name: 'eng_board', api_surface: 'eng_board',
+        method: 'GET', status_bucket: '2xx', result: 'success',
+        duration_bucket: 'under_1s', duration_ms: 725, cache_state: 'miss',
+        scope_type: 'all_work',
+    }]);
+    trackApiResult('eng_board', {
+        featureName: 'eng_board', method: 'GET', status: 200, scopeType: 'component',
+    });
+    assert.equal(pushed[1].scope_type, 'component');
+    assert.throws(
+        () => trackApiResult('eng_board', {
+            featureName: 'eng_board', status: 200, scopeType: 'department-secret',
+        }),
+        /unsupported ENG Board scope type/,
+    );
+});
+
 test('issue_priority_action pushes the eng priority transition contract through the dataLayer', async () => {
     const { initAnalytics, trackEvent } = await loadAnalytics();
     resetDom();

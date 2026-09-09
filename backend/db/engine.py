@@ -27,6 +27,7 @@ DATABASE_CONNECTION_MODES = {
     DATABASE_CONNECTION_MODE_URL,
     DATABASE_CONNECTION_MODE_CLOUD_SQL_IAM,
 }
+DATABASE_CONNECT_TIMEOUT_SECONDS = 10
 
 _ENGINES: dict[tuple[str, str], Engine] = {}
 _SESSION_FACTORIES: dict[tuple[str, str], sessionmaker[Session]] = {}
@@ -106,6 +107,10 @@ def create_database_engine(
     if poolclass is not None:
         engine_kwargs["poolclass"] = poolclass
     if mode == DATABASE_CONNECTION_MODE_URL:
+        if make_url(database_url).get_backend_name() == "postgresql":
+            engine_kwargs["connect_args"] = {
+                "connect_timeout": DATABASE_CONNECT_TIMEOUT_SECONDS,
+            }
         return create_engine(database_url, **engine_kwargs)
 
     config = _validated_cloud_sql_config(database_url)

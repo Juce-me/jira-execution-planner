@@ -93,12 +93,18 @@ export function evaluateSelectedSprintRegression(baselineValues, candidateValues
         baselineMedian, candidateMedian, regressionPercent };
 }
 
+export function isAcceptedBoardTerminalSample(sample) {
+    return sample?.outcome === 'success'
+        || (sample?.outcome === 'error' && Number.isInteger(sample.jiraRequests));
+}
+
 export function createBoardLoadMeasurement({ enabled, groupId = '', scopeType = 'all_work',
     sprintId = null, emit = () => {}, now = clock, afterPaint = afterLoadPaint } = {}) {
     const started = now();
     let startFrame = null;
     let payloadBytes = 0;
     let firstFocusedContentMs = null;
+    let focusedContentPending = false;
     let finished = false;
     let finishing = false;
     const publish = sample => {
@@ -106,14 +112,11 @@ export function createBoardLoadMeasurement({ enabled, groupId = '', scopeType = 
         finished = true;
         try { Promise.resolve(emit(sample)).catch(() => {}); } catch (_) { /* best-effort diagnostics */ }
     };
-    const finish = async ({ outcome, diagnostics = null, epicCount = null, issueCount = null,
-        dependencyDurationMs = null } = {}) => {
-        if (!enabled || finished || finishing) return;
-        finishing = true;
-        await afterPaint();
+    const buildSample = ({ outcome, diagnostics = null, epicCount = null, issueCount = null,
+        dependencyDurationMs = null }) => {
         const durationMs = Math.max(0, now() - started);
         const success = outcome === 'success';
-        publish({ schemaVersion: 1, loadId: globalThis.crypto.randomUUID(), groupId: String(groupId),
+        return { schemaVersion: 1, loadId: globalThis.crypto.randomUUID(), groupId: String(groupId),
             sprintId: scopeType === 'sprint' ? String(sprintId) : null, surface: 'eng_board', scopeType,
             outcome: success ? 'success' : outcome === 'cancelled' ? 'cancelled' : 'error', durationMs,
             indexMs: diagnostics?.indexMs ?? null, firstFocusedContentMs,
@@ -124,13 +127,27 @@ export function createBoardLoadMeasurement({ enabled, groupId = '', scopeType = 
             jiraRetries: diagnostics?.jiraRetries ?? null,
             completeness: success ? 'complete' : 'partial', cacheState: diagnostics?.cacheState ?? 'unknown',
             peakChildSearches: diagnostics?.peakChildSearches ?? null,
-            scopeCohortDigest: startFrame?.scopeCohortDigest ?? null });
+            scopeCohortDigest: startFrame?.scopeCohortDigest ?? null };
+    };
+    const finish = async (terminal = {}) => {
+        const { outcome } = terminal;
+        if (!enabled || finished) return;
+        if (finishing) {
+            if (outcome === 'cancelled') publish(buildSample(terminal));
+            return;
+        }
+        finishing = true;
+        if (outcome === 'cancelled') return publish(buildSample(terminal));
+        await afterPaint();
+        if (finished) return;
+        publish(buildSample(terminal));
     };
     return {
         start(frame) { if (!finished && frame?.type === 'start') startFrame = frame; },
         addPayloadBytes(value) { if (!finished && Number.isFinite(value) && value >= 0) payloadBytes += value; },
         async focusedContentReady() {
-            if (!enabled || finished || firstFocusedContentMs !== null) return;
+            if (!enabled || finished || firstFocusedContentMs !== null || focusedContentPending) return;
+            focusedContentPending = true;
             await afterPaint();
             if (!finished) firstFocusedContentMs = Math.max(0, now() - started);
         },

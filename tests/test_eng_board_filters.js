@@ -201,6 +201,21 @@ test('a Tech-only epic is excluded once Projects narrows to Product', async () =
     assert.equal(admittedKeys(filters).includes('E-1'), false);
 });
 
+test('strict Other project classification remains separately filterable', async () => {
+    const module = await loadModule();
+    const strictGroups = [
+        { key: 'E-OTHER', epic: { key: 'E-OTHER' }, tasks: [{ key: 'OPS-1', projectClassification: 'other' }] },
+        { key: 'E-TECH', epic: { key: 'E-TECH' }, tasks: [{ key: 'TECH-1', projectClassification: 'tech' }] },
+    ];
+    const classify = (task) => task.projectClassification;
+    const model = module.buildEngBoardFacetModel({ epicGroups: strictGroups, isTechTask: classify });
+    const projects = model.facets.find((facet) => facet.id === 'projects');
+    assert.deepEqual(projects.options.map((option) => option.id), ['tech', 'product', 'other']);
+    assert.deepEqual(model.counts.projects, { tech: 1, product: 0, other: 1 });
+    const filters = module.resolveEngBoardFilters({ model, selection: { projects: ['other'] } });
+    assert.deepEqual(admittedKeys(filters, strictGroups), ['E-OTHER']);
+});
+
 test('a zero-story epic remains admitted while Projects is neutral', async () => {
     const module = await loadModule();
     const zeroStory = epicGroup('E-EMPTY', { projectKeys: [] });

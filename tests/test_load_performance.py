@@ -230,14 +230,18 @@ class LoadPerformanceTests(unittest.TestCase):
         performance.validate_load(payload)
 
     def test_mixed_measurement_cohorts_do_not_produce_combined_percentiles(self):
-        self.save(board_observation(800))
+        self.save(board_observation(800), now=datetime(2026, 9, 7, 10, 0, tzinfo=timezone.utc))
         changed = board_observation(1500)
         changed['scopeCohortDigest'] = 'b' * 64
-        self.save(changed)
-        summary = performance.load_report(self.session, 'workspace-a', {'surface': 'eng_board'})['summary']
+        self.save(changed, now=datetime(2026, 9, 8, 10, 0, tzinfo=timezone.utc))
+        report = performance.load_report(self.session, 'workspace-a', {'surface': 'eng_board'})
+        summary = report['summary']
         self.assertTrue(summary['mixedCohorts'])
         self.assertIsNone(summary['p50Ms'])
         self.assertIsNone(summary['p95Ms'])
+        self.assertEqual(len(report['trend']), 2)
+        self.assertTrue(all(day['p50Ms'] is None for day in report['trend']))
+        self.assertTrue(all(day['p50FirstContentMs'] is None for day in report['trend']))
 
     def test_candidate_eligibility_requires_known_complete_board_cohort(self):
         self.save(board_observation())
@@ -251,6 +255,41 @@ class LoadPerformanceTests(unittest.TestCase):
             self.session, 'workspace-a', {'surface': 'eng_board', 'scopeCohortDigest': 'a' * 64},
         )['summary']
         self.assertEqual(summary['eligibleCount'], 1)
+
+    def test_board_candidate_summaries_exclude_unknown_rows_and_keep_first_content_separate(self):
+        eligible = board_observation(1000)
+        eligible['firstFocusedContentMs'] = 100
+        eligible['dependencyDurationMs'] = 900
+        self.save(eligible)
+        contextual = board_observation(9000)
+        contextual['firstFocusedContentMs'] = 8000
+        self.save(contextual)
+        stored = self.session.get(
+            performance.LoadPerformance,
+            ('workspace-a', contextual['loadId']),
+        )
+        stored.schema_version = None
+        self.session.flush()
+
+        report = performance.load_report(
+            self.session, 'workspace-a',
+            {'surface': 'eng_board', 'scopeType': 'all_work', 'cacheState': 'miss',
+             'revision': 'abc123', 'scopeCohortDigest': 'a' * 64},
+        )
+        summary = report['summary']
+        self.assertEqual(summary['sampleCount'], 2)
+        self.assertEqual(summary['eligibleCount'], 1)
+        self.assertEqual(summary['p50Ms'], 1000)
+        self.assertEqual(summary['p50FirstContentMs'], 100)
+        self.assertEqual(summary['p95FirstContentMs'], 100)
+        eligible_sample = next(
+            sample for sample in report['samples'] if sample['loadId'] == eligible['loadId']
+        )
+        self.assertEqual(eligible_sample['dependencyDurationMs'], 900)
+        self.assertEqual(
+            report['filters']['cacheStates'],
+            ['miss'],
+        )
 
     def test_migration_matches_model_and_downgrades(self):
         migration = importlib.import_module('backend.db.migrations.versions.20260908_0014_load_performance')

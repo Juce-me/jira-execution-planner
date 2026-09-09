@@ -12,28 +12,35 @@ import { matchesEngBoardSearch } from './engBoardSearch.js';
 // `scopeTasks` must already be search-blind (engFilterScopeTasks forces its own query to '' while
 // showBoard is true, §8): Board's search runs after the facets, here, over the epic-keyed groups
 // the facets counted, not over the story-level population.
-export function useEngBoardFilters({ scopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection }) {
+export function useEngBoardFilters({
+    scopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection,
+    strictEpicGroups = null, filtersEnabled = true,
+}) {
     const epicGroups = React.useMemo(
-        () => mergeBoardEpicGroups({
-            storyGroups: groupTasksByEpic(scopeTasks),
-            epicsInScope,
-            epicDetails,
-        }),
-        [scopeTasks, epicsInScope, epicDetails]
+        () => Array.isArray(strictEpicGroups)
+            ? strictEpicGroups
+            : mergeBoardEpicGroups({
+                storyGroups: groupTasksByEpic(scopeTasks),
+                epicsInScope,
+                epicDetails,
+            }),
+        [scopeTasks, epicsInScope, epicDetails, strictEpicGroups]
     );
     const facetModel = React.useMemo(
         () => buildEngBoardFacetModel({ epicGroups, isTechTask }),
         [epicGroups, isTechTask]
     );
     const boardFilters = React.useMemo(
-        () => resolveEngBoardFilters({ model: facetModel, selection }),
-        [facetModel, selection]
+        () => resolveEngBoardFilters({ model: facetModel, selection: filtersEnabled ? selection : {} }),
+        [facetModel, selection, filtersEnabled]
     );
     const boardEpicGroupsFiltered = React.useMemo(() => (
         epicGroups
             .filter((group) => boardFilters.admitsEpic(group))
-            .filter((group) => matchesEngBoardSearch({ key: group.key, ...group.epic }, searchQuery))
-    ), [epicGroups, boardFilters, searchQuery]);
+            .filter((group) => matchesEngBoardSearch(
+                { key: group.key, ...group.epic }, filtersEnabled ? searchQuery : '',
+            ))
+    ), [epicGroups, boardFilters, searchQuery, filtersEnabled]);
 
     return { boardEpicGroups: epicGroups, boardFilters, boardEpicGroupsFiltered };
 }

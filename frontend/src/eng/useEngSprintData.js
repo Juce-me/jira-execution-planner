@@ -98,8 +98,10 @@ export function useEngSprintData({
     onAuthRecoveryRequired,
     performanceDebugEnabled = false,
     performanceGate,
+    strictBoardActive = false,
 }) {
     const fetchTasks = async (project, options = {}) => {
+        if (strictBoardActive) return IGNORED_RESULT;
         const useLoading = options.useLoading !== false;
         const setErrors = options.setErrorOnFailure !== false;
         if (useLoading) {
@@ -200,6 +202,7 @@ export function useEngSprintData({
     };
 
     const fetchBacklogEpics = async (project, { signal } = {}) => {
+        if (strictBoardActive) return [];
         if (!isFutureSprintSelected) return [];
         if (activeGroupId && activeGroupTeamIds.length === 0) return [];
         const payload = await requestBacklogEpics(backendUrl, { project, teamIds: activeGroupTeamIds, signal });
@@ -207,6 +210,7 @@ export function useEngSprintData({
     };
 
     const loadProductTasks = async ({ forceRefresh = false, shouldApplyResult, measurement } = {}) => {
+        if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         const sprintId = selectedSprint;
         setProductTasksLoading(true);
         try {
@@ -251,6 +255,7 @@ export function useEngSprintData({
     };
 
     const loadTechTasks = async ({ forceRefresh = false, shouldApplyResult, measurement } = {}) => {
+        if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         const sprintId = selectedSprint;
         setTechTasksLoading(true);
         try {
@@ -297,6 +302,7 @@ export function useEngSprintData({
     };
 
     const loadAlertEpics = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
+        if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         if (activeGroupId && activeGroupTeamIds.length === 0) {
             return;
         }
@@ -321,6 +327,7 @@ export function useEngSprintData({
     };
 
     const loadReadyToCloseProductTasks = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
+        if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         if (activeGroupId && activeGroupTeamIds.length === 0) {
             setReadyToCloseProductTasks([]);
             setReadyToCloseProductEpicsInScope([]);
@@ -354,6 +361,7 @@ export function useEngSprintData({
     };
 
     const loadReadyToCloseTechTasks = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
+        if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         if (activeGroupId && activeGroupTeamIds.length === 0) {
             setReadyToCloseTechTasks([]);
             setReadyToCloseTechEpicsInScope([]);
@@ -387,6 +395,16 @@ export function useEngSprintData({
     };
 
     const loadGroupTasks = (options = {}) => {
+        if (strictBoardActive) {
+            const ignored = Promise.resolve(ENG_TASK_LOAD_OUTCOME.IGNORED);
+            return {
+                product: ignored,
+                tech: ignored,
+                primaryReady: false,
+                dependenciesFinished: () => {},
+                cancel: () => {},
+            };
+        }
         const measurement = createGroupLoadMeasurement({ enabled: (performanceGate?.enabled ?? performanceDebugEnabled) && Boolean(activeGroupId) && activeGroupTeamIds.length > 0,
             groupId: activeGroupId, sprintId: selectedSprint,
             emit: async sample => {

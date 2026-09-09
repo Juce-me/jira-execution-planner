@@ -16,6 +16,7 @@ import re
 import threading
 from urllib.parse import urlencode
 
+from backend.epm.scope import normalize_epm_sprint_field
 from backend.services.group_board import DEFAULT_COLUMN_COLOUR, normalize_group_board
 
 
@@ -38,13 +39,19 @@ CHILD_BASE_FIELDS = (
 )
 
 
+def strict_adapter_available(auth_mode, *, database_backed=False):
+    """Return the release-gated capability for the current deployment profile."""
+    return auth_mode == 'atlassian_oauth' and database_backed is True
+
+
 class EngBoardError(ValueError):
-    def __init__(self, code, *, phase='config', limit='none', observed=None):
+    def __init__(self, code, *, phase='config', limit='none', observed=None, reason='none'):
         super().__init__(code)
         self.code = code
         self.phase = phase
         self.limit = limit
         self.observed = observed
+        self.reason = reason
 
 
 def canonical_json(value):
@@ -126,18 +133,21 @@ def normalize_board(raw_board):
     }
 
 
-def validate_scope_configuration(scope, raw_board, components):
+def validate_scope_configuration(scope, raw_board, components, *, team_ids=()):
     """Validate the saved Board/Component contract for one Board scope."""
-    if scope not in {'all_work', 'sprint'}:
+    if scope not in {'all_work', 'component', 'sprint'}:
         raise EngBoardError('invalid_board_scope')
     board = normalize_board(raw_board)
     normalized_components = tuple(dict.fromkeys(
         str(value).strip() for value in components or () if str(value).strip()
     ))
-    if scope == 'all_work':
+    if scope in {'all_work', 'component'}:
         if not board['configured']:
             raise EngBoardError('board_config_invalid')
-        if not normalized_components:
+        has_teams = any(str(value).strip() for value in team_ids or ())
+        if scope == 'component' and not normalized_components:
+            raise EngBoardError('board_components_required')
+        if scope == 'all_work' and not normalized_components and not has_teams:
             raise EngBoardError('board_components_required')
     return {
         'scope': scope,
@@ -161,9 +171,9 @@ def build_scope_cohort_digest(
     for value in (workspace_id, site_id, user_id, department_id):
         if not str(value or '').strip():
             raise EngBoardError('board_config_invalid')
-    if scope not in {'all_work', 'sprint'}:
+    if scope not in {'all_work', 'component', 'sprint'}:
         raise EngBoardError('invalid_board_scope')
-    if scope == 'all_work' and sprint_id is not None:
+    if scope != 'sprint' and sprint_id is not None:
         raise EngBoardError('board_config_invalid')
     if scope == 'sprint' and (isinstance(sprint_id, bool) or not isinstance(sprint_id, int) or sprint_id <= 0):
         raise EngBoardError('board_sprint_required')
@@ -188,6 +198,20 @@ def build_scope_cohort_digest(
     }
     try:
         payload = canonical_bytes(captured)
+    except (TypeError, ValueError, UnicodeEncodeError) as error:
+        raise EngBoardError('board_config_invalid') from error
+    return hmac.new(key, payload, hashlib.sha256).hexdigest()
+
+
+def build_scope_version(key, captured_scope, *, token_version):
+    """Return opaque authority identity for one immutable Board request."""
+    if not isinstance(key, bytes) or not key or not str(token_version or '').strip():
+        raise EngBoardError('board_config_invalid')
+    try:
+        payload = canonical_bytes({
+            'scope': captured_scope,
+            'tokenVersion': str(token_version).strip(),
+        })
     except (TypeError, ValueError, UnicodeEncodeError) as error:
         raise EngBoardError('board_config_invalid') from error
     return hmac.new(key, payload, hashlib.sha256).hexdigest()
@@ -316,6 +340,72 @@ def encoded_search_bytes(jql, fields, next_page_token=None):
     return len(urlencode(params).encode('utf-8'))
 
 
+def build_team_discovery_jql(projects, issue_type_ids, *, team_ids,
+                             team_field_id='customfield_30101'):
+    """Discover department work across sprints without requiring Epic ownership."""
+    project_clause = ','.join(_quote(key) for key, _kind in projects)
+    type_clause = ','.join(_quote(value) for value in issue_type_ids)
+    teams = tuple(dict.fromkeys(str(value).strip() for value in team_ids or () if str(value).strip()))
+    if not project_clause or not type_clause or not teams:
+        raise EngBoardError('board_config_invalid')
+    team_number = _field_number(team_field_id)
+    return (f'project in ({project_clause}) AND issuetype in ({type_clause}) AND '
+            f'cf[{team_number}] in (' + ','.join(_quote(value) for value in teams) + ')')
+
+
+def discover_team_epics(search, *, projects, issue_type_ids, team_ids, existing_epics,
+                        epic_fields, terminal_statuses, retention_days=28,
+                        team_field_id='customfield_30101', epic_link_field_id=None,
+                        counters=None, cancel_check=lambda: None):
+    """Union component Epics with department-story parents under strict budgets.
+
+    The story scan is capped at MAX_CHILDREN, parent searches are key batches,
+    and every request shares the generation pager and cancellation/deadline.
+    Parent lookup applies the Epic's own status/retention, never story status.
+    """
+    if not team_ids:
+        return list(existing_epics)
+    counters = counters or PagerCounters()
+    fields = ('parent',) + ((epic_link_field_id,) if epic_link_field_id else ())
+    stories = strict_search(
+        search, build_team_discovery_jql(projects, issue_type_ids, team_ids=team_ids,
+                                         team_field_id=team_field_id),
+        fields, counters=counters, cancel_check=cancel_check, max_unique_keys=MAX_CHILDREN,
+    )
+    epics = {_normalized_key(row.get('key')): row for row in existing_epics}
+    if '' in epics or len(epics) != len(existing_epics):
+        raise EngBoardError('board_projection_invalid', phase='index')
+    parent_keys = set()
+    for story in stories:
+        fields = story.get('fields')
+        if not isinstance(fields, dict):
+            raise EngBoardError('board_projection_invalid', phase='page')
+        link = fields.get(epic_link_field_id) if epic_link_field_id else None
+        key = _normalized_key(link.get('key') if isinstance(link, dict) else link)
+        if not key:
+            parent = fields.get('parent')
+            if parent is not None and not isinstance(parent, dict):
+                raise EngBoardError('board_projection_invalid', phase='page')
+            key = _normalized_key((parent or {}).get('key'))
+        if key and key not in epics:
+            parent_keys.add(key)
+    if len(epics) + len(parent_keys) > MAX_EPICS:
+        raise EngBoardError('board_scope_too_large', phase='index', limit='unique_keys',
+                            observed=len(epics) + len(parent_keys))
+    base_jql = build_epic_index_jql(projects, (), terminal_statuses, retention_days)
+    def parent_jql(keys):
+        return base_jql + ' AND key in (' + ','.join(_quote(key) for key in keys) + ')'
+    for batch in split_epic_batches(sorted(parent_keys), parent_jql, epic_fields):
+        rows = strict_search(search, parent_jql(batch), epic_fields, counters=counters,
+                             cancel_check=cancel_check, max_unique_keys=MAX_EPICS)
+        for row in rows:
+            key = _normalized_key(row.get('key'))
+            if key not in batch:
+                raise EngBoardError('board_projection_invalid', phase='page')
+            epics[key] = row
+    return [epics[key] for key in sorted(epics)]
+
+
 def split_epic_batches(epic_keys, build_jql, fields):
     batches = []
     current = []
@@ -370,7 +460,7 @@ class UniqueKeyBudget:
     def accept(self, keys, *, complete):
         with self.lock:
             if any(key in self.keys for key in keys):
-                raise EngBoardError('board_projection_invalid', phase='index')
+                raise EngBoardError('board_projection_invalid', phase='page')
             observed = len(self.keys) + len(keys)
             if observed > self.limit or (observed == self.limit and not complete):
                 raise EngBoardError('board_scope_too_large', phase='index', limit='unique_keys', observed=observed)
@@ -397,24 +487,24 @@ def strict_search(search, jql, fields, *, counters=None, cancel_check=lambda: No
         body = search({'jql': jql, 'fields': list(fields), 'maxResults': PAGE_SIZE, **({'nextPageToken': token} if token else {})})
         pages += 1
         if not isinstance(body, dict) or not isinstance(body.get('issues'), list) or len(body['issues']) > PAGE_SIZE or not isinstance(body.get('isLast'), bool):
-            raise EngBoardError('board_projection_invalid', phase='index')
+            raise EngBoardError('board_projection_invalid', phase='page')
         page_rows = []
         page_keys = []
         for row in body['issues']:
             if not isinstance(row, dict):
-                raise EngBoardError('board_projection_invalid', phase='index')
+                raise EngBoardError('board_projection_invalid', phase='page')
             key = _normalized_key(row.get('key'))
             if not key or key in seen_keys or key in page_keys:
-                raise EngBoardError('board_projection_invalid', phase='index')
+                raise EngBoardError('board_projection_invalid', phase='page')
             page_keys.append(key)
             page_rows.append(row)
         is_last = body['isLast']
         next_token = body.get('nextPageToken')
         if is_last:
             if next_token:
-                raise EngBoardError('board_projection_invalid', phase='index')
+                raise EngBoardError('board_projection_invalid', phase='page')
         elif not isinstance(next_token, str) or not next_token or next_token in seen_tokens:
-            raise EngBoardError('board_projection_invalid', phase='index')
+            raise EngBoardError('board_projection_invalid', phase='page')
         if not is_last and pages >= MAX_PAGES_PER_SEARCH:
             raise EngBoardError('board_scope_too_large', phase='index', limit='pages', observed=pages + 1)
         for budget in (local_budget, key_budget):
@@ -475,18 +565,28 @@ def _named(value, *, nullable=False):
 def _person(value, *, nullable=False):
     if value is None and nullable:
         return None
+    if isinstance(value, list) and nullable:
+        people = []
+        for item in value:
+            person = _person(item, nullable=True)
+            if person is not None and person['accountId'] not in {row['accountId'] for row in people}:
+                people.append(person)
+        return people[0] if len(people) == 1 else None
     if not isinstance(value, dict):
+        if nullable:
+            return None
         raise EngBoardError('board_projection_invalid', phase='shape')
     avatar_urls = value.get('avatarUrls')
     avatar_url = None
     if isinstance(avatar_urls, dict):
         avatar_url = next((avatar_urls.get(size) for size in ('48x48', '32x32', '24x24', '16x16')
                            if isinstance(avatar_urls.get(size), str) and avatar_urls.get(size)), None)
-    return {
-        'accountId': _text(value.get('accountId')),
-        'displayName': _text(value.get('displayName')),
-        'avatarUrl': avatar_url,
-    }
+    account_id = value.get('accountId')
+    display_name = value.get('displayName')
+    if nullable and (not isinstance(account_id, str) or not account_id
+                     or not isinstance(display_name, str) or not display_name):
+        return None
+    return {'accountId': _text(account_id), 'displayName': _text(display_name), 'avatarUrl': avatar_url}
 
 
 def _parent(value):
@@ -497,10 +597,23 @@ def _parent(value):
     fields = value.get('fields') or {}
     if not isinstance(fields, dict):
         raise EngBoardError('board_projection_invalid', phase='shape')
+    key = _normalized_key(value.get('key'))
+    summary = fields.get('summary')
+    issue_type = fields.get('issuetype')
+    # Jira can permission-reduce an embedded parent to its key. Parent metadata is
+    # optional display context, so omit an incomplete parent instead of rejecting
+    # an otherwise valid Epic and terminating the whole Board stream.
+    if not key or not isinstance(summary, str) or not summary or not isinstance(issue_type, dict):
+        return None
+    issue_type_id = issue_type.get('id')
+    issue_type_name = issue_type.get('name') or issue_type.get('title') or issue_type.get('value')
+    if (isinstance(issue_type_id, bool) or not isinstance(issue_type_id, (str, int))
+            or not isinstance(issue_type_name, str) or not issue_type_name):
+        return None
     return {
-        'key': _text(value.get('key')),
-        'summary': _text(fields.get('summary')),
-        'issueType': _named(fields.get('issuetype')),
+        'key': key,
+        'summary': summary,
+        'issueType': {'id': str(issue_type_id), 'name': issue_type_name},
     }
 
 
@@ -513,32 +626,61 @@ def _finite_number(value):
 
 
 def _sprint_ids(value):
-    if value is None:
-        return []
-    values = value if isinstance(value, list) else [value]
-    result = []
-    for item in values:
-        raw_id = item.get('id') if isinstance(item, dict) else item
-        if isinstance(raw_id, bool):
-            raise EngBoardError('board_projection_invalid', phase='shape')
+    if isinstance(value, (str, int)) and not isinstance(value, bool):
         try:
-            sprint_id = int(raw_id)
+            sprint_id = int(value)
         except (TypeError, ValueError):
-            raise EngBoardError('board_projection_invalid', phase='shape') from None
-        if sprint_id <= 0 or sprint_id in result:
-            if sprint_id in result:
-                continue
-            raise EngBoardError('board_projection_invalid', phase='shape')
-        result.append(sprint_id)
-    return result
+            return []
+        return [sprint_id] if sprint_id > 0 else []
+    return [row['id'] for row in normalize_epm_sprint_field(value) if row['id'] > 0]
+
+
+def _team(value):
+    if value is None:
+        return None
+    if isinstance(value, list):
+        teams = []
+        for item in value:
+            normalized = _team(item)
+            if normalized is not None and normalized['id'] not in {row['id'] for row in teams}:
+                teams.append(normalized)
+        return teams[0] if len(teams) == 1 else None
+    if isinstance(value, dict):
+        identity = value.get('id') or value.get('teamId')
+        name = (value.get('name') or value.get('title') or value.get('value')
+                or value.get('displayName') or value.get('teamName') or identity)
+    else:
+        return None
+    identity = str(identity or '').strip()
+    name = str(name or '').strip()
+    if not identity or not name:
+        return None
+    return {'id': identity, 'name': name}
 
 
 def _project_track(value):
     if value is None:
         return None
+    if isinstance(value, list):
+        tracks = []
+        for item in value:
+            normalized = _project_track(item)
+            if normalized and normalized not in tracks:
+                tracks.append(normalized)
+        return tracks[0] if len(tracks) == 1 else None
     if isinstance(value, dict):
         value = value.get('value', value.get('name'))
-    return _text(value)
+    return value if isinstance(value, str) and value else None
+
+
+def _shape_value(reason, projector, *args, **kwargs):
+    """Attach a fixed field label to sanitized projection errors."""
+    try:
+        return projector(*args, **kwargs)
+    except EngBoardError as error:
+        if error.code == 'board_projection_invalid' and error.phase == 'shape' and error.reason == 'none':
+            error.reason = reason
+        raise
 
 
 def project_board(epics, children, *, project_map, columns, epic_link_field_id=None,
@@ -550,7 +692,7 @@ def project_board(epics, children, *, project_map, columns, epic_link_field_id=N
     for row in epics:
         key = _normalized_key(row.get('key') if isinstance(row, dict) else None)
         if not key or key in epic_by_key:
-            raise EngBoardError('board_projection_invalid', phase='shape')
+            raise EngBoardError('board_projection_invalid', phase='shape', reason='epic.key')
         epic_by_key[key] = row
     status_to_column = {}
     for column in columns:
@@ -566,29 +708,29 @@ def project_board(epics, children, *, project_map, columns, epic_link_field_id=N
     for row in children:
         key = _normalized_key(row.get('key') if isinstance(row, dict) else None)
         if not key or key in seen_children:
-            raise EngBoardError('board_projection_invalid', phase='shape')
+            raise EngBoardError('board_projection_invalid', phase='shape', reason='child.key')
         seen_children.add(key)
         fields = row.get('fields') or {}
         if not isinstance(fields, dict):
-            raise EngBoardError('board_projection_invalid', phase='shape')
+            raise EngBoardError('board_projection_invalid', phase='shape', reason='child.fields')
         epic_link = fields.get(epic_link_field_id) if epic_link_field_id else None
         epic_key = _normalized_key(epic_link if not isinstance(epic_link, dict) else epic_link.get('key'))
         if not epic_key:
             epic_key = _normalized_key((fields.get('parent') or {}).get('key'))
         if epic_key not in epic_by_key:
-            raise EngBoardError('board_projection_invalid', phase='shape')
+            raise EngBoardError('board_projection_invalid', phase='shape', reason='child.parent')
         child_map[epic_key].append({
             'key': key,
-            'summary': _text(fields.get('summary')),
-            'status': _named(fields.get('status')),
-            'priority': _named(fields.get('priority'), nullable=True),
-            'issueType': _named(fields.get('issuetype')),
-            'assignee': _person(fields.get('assignee'), nullable=True),
-            'updated': _text(fields.get('updated'), nullable=True),
-            'storyPoints': _finite_number(fields.get(story_points_field_id)),
-            'team': _named(fields.get(team_field_id), nullable=True),
-            'sprintIds': _sprint_ids(fields.get(sprint_field_id)),
-            'project': _named(fields.get('project')),
+            'summary': _shape_value('child.summary', _text, fields.get('summary')),
+            'status': _shape_value('child.status', _named, fields.get('status')),
+            'priority': _shape_value('child.priority', _named, fields.get('priority'), nullable=True),
+            'issueType': _shape_value('child.issue_type', _named, fields.get('issuetype')),
+            'assignee': _shape_value('child.assignee', _person, fields.get('assignee'), nullable=True),
+            'updated': _shape_value('child.updated', _text, fields.get('updated'), nullable=True),
+            'storyPoints': _shape_value('child.story_points', _finite_number, fields.get(story_points_field_id)),
+            'team': _shape_value('child.team', _team, fields.get(team_field_id)),
+            'sprintIds': _shape_value('child.sprints', _sprint_ids, fields.get(sprint_field_id)),
+            'project': _shape_value('child.project', _named, fields.get('project')),
             'epicKey': epic_key,
             'projectClassification': classify_project(
                 fields, project_map, fallback_product_projects=fallback_product_projects,
@@ -601,18 +743,20 @@ def project_board(epics, children, *, project_map, columns, epic_link_field_id=N
             continue
         fields = epic_by_key[epic_key].get('fields') or {}
         if not isinstance(fields, dict):
-            raise EngBoardError('board_projection_invalid', phase='shape')
-        status = _named(fields.get('status'))
+            raise EngBoardError('board_projection_invalid', phase='shape', reason='epic.fields')
+        status = _shape_value('epic.status', _named, fields.get('status'))
         result_epics.append({
             'key': epic_key,
-            'summary': _text(fields.get('summary')),
+            'summary': _shape_value('epic.summary', _text, fields.get('summary')),
             'status': status,
-            'priority': _named(fields.get('priority'), nullable=True),
-            'assignee': _person(fields.get('assignee'), nullable=True),
-            'deliveryOwner': _person(fields.get(delivery_owner_field_id), nullable=True) if delivery_owner_field_id else None,
-            'projectTrack': _project_track(fields.get(project_track_field_id)),
-            'updated': _text(fields.get('updated'), nullable=True),
-            'parent': _parent(fields.get('parent')),
+            'priority': _shape_value('epic.priority', _named, fields.get('priority'), nullable=True),
+            'assignee': _shape_value('epic.assignee', _person, fields.get('assignee'), nullable=True),
+            'deliveryOwner': _shape_value(
+                'epic.delivery_owner', _person, fields.get(delivery_owner_field_id), nullable=True,
+            ) if delivery_owner_field_id else None,
+            'projectTrack': _shape_value('epic.project_track', _project_track, fields.get(project_track_field_id)),
+            'updated': _shape_value('epic.updated', _text, fields.get('updated'), nullable=True),
+            'parent': _shape_value('epic.parent', _parent, fields.get('parent')),
             'columnId': status_to_column.get(status['name'], unmapped_column_id),
             'children': sorted(child_map[epic_key], key=lambda item: item['key']),
         })

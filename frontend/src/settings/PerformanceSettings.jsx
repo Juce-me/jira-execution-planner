@@ -58,7 +58,7 @@ export default function PerformanceSettings({ backendUrl }) {
         cacheState: '', revision: '', scopeCohortDigest: '' });
     const [data, setData] = React.useState(null);
     const [options, setOptions] = React.useState({ groups: [], sprints: [], surfaces: [], scopeTypes: [],
-        revisions: [], scopeCohortDigests: [] });
+        cacheStates: [], revisions: [], scopeCohortDigests: [] });
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState('');
     const [refresh, setRefresh] = React.useState(0);
@@ -85,7 +85,7 @@ export default function PerformanceSettings({ backendUrl }) {
             {[
                 ['groupId', 'Group', options.groups], ['sprintId', 'Sprint', options.sprints],
                 ['surface', 'Surface', options.surfaces], ['scopeType', 'Scope', options.scopeTypes],
-                ['cacheState', 'Cache', ['hit', 'miss', 'mixed', 'unknown']],
+                ['cacheState', 'Cache', options.cacheStates],
                 ['revision', 'Revision', options.revisions],
                 ['scopeCohortDigest', 'Configuration cohort', options.scopeCohortDigests],
             ].map(([key, label, values]) => <div className="stats-control-group" key={key}>
@@ -102,9 +102,10 @@ export default function PerformanceSettings({ backendUrl }) {
         {data?.truncated && <p role="status">History reached the {data.queryLimit} observation limit. Narrow the filters before comparing trends.</p>}
         {summary?.sampleCount > 0 && <>
             <p className="performance-summary">Average <strong>{seconds(summary.avgMs)}</strong> · p50 {seconds(summary.p50Ms)} · p95 <strong>{seconds(summary.p95Ms)}</strong> · {summary.eligibleCount} complete successful samples / {summary.sampleCount} observations</p>
+            {filters.surface === 'eng_board' && <p>First focused content p50 {seconds(summary.p50FirstContentMs)} · p95 {seconds(summary.p95FirstContentMs)}. Full-load duration includes requested dependency loading.</p>}
             <p>{summary.breachCount} loads above 4s · {summary.errorCount} errors · {summary.cancelledCount} cancelled · {summary.cappedCount} capped · {summary.unknownCount || 0} completeness unverified</p>
             {(data.contextual || summary.contextual) && <p role="status">Contextual timings — completeness unverified.</p>}
-            {summary.mixedCohorts && <p role="status">Choose one surface, cache, revision and configuration cohort before comparing latency percentiles.</p>}
+            {summary.mixedCohorts && <p role="status">Choose one surface, scope, cache, revision and configuration cohort before comparing latency percentiles.</p>}
             <details className="performance-methodology"><summary>About these measurements</summary>
                 {summary.eligibleCount < 20 && <p>Fewer than 20 complete successful loads: percentiles are preliminary.</p>}
                 <p>Timing includes data collection through rendering. Failed, cancelled and capped loads are excluded from latency summaries. Unverified loads do not establish that the full-load SLO passes.</p>

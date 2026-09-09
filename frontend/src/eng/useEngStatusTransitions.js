@@ -76,6 +76,7 @@ export function useEngStatusTransitions({
     onApplyLocalStatus,
     onAlertDataInvalidated,
     onTransitionSuccessRefresh,
+    mutationCoordinator = null,
 }) {
     const [selectedEpicStatusTargets, setSelectedEpicStatusTargets] = React.useState(() => new Set());
     const [selectedSubtaskStatusTargets, setSelectedSubtaskStatusTargets] = React.useState(() => new Set());
@@ -313,7 +314,7 @@ export function useEngStatusTransitions({
                 targetStatus: status,
             });
             const response = await (isSingleIssueSurface
-                ? enqueueEngIssueMutation(singleIssueKey, runMutation)
+                ? (mutationCoordinator?.enqueue || enqueueEngIssueMutation)(singleIssueKey, runMutation)
                 : runMutation());
             const summary = summarizeTransitionResults(response?.results);
             const isCurrentMutation = !isSingleIssueSurface || mutationScopeRef.current === mutationScope;
@@ -371,8 +372,8 @@ export function useEngStatusTransitions({
                 }
                 const affectedSubtaskStoryKeys = resolveSubtaskParentStoryKeys(succeededKeys, storySubtasksByKey);
                 if (isCurrentMutation) onAlertDataInvalidated?.();
-                if (!isSingleIssueSurface) {
-                    onTransitionSuccessRefresh?.({ affectedSubtaskStoryKeys });
+                if (!isSingleIssueSurface || sourceSurface === 'board') {
+                    await onTransitionSuccessRefresh?.({ affectedSubtaskStoryKeys });
                 }
             }
             return response;
@@ -388,6 +389,7 @@ export function useEngStatusTransitions({
             trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: 'failure' });
             return null;
         } finally {
+            mutationCoordinator?.complete();
             if (isSingleIssueSurface) {
                 if (mutationScopeRef.current === mutationScope) {
                     pendingMutationKeysRef.current.delete(singleIssueKey);
@@ -414,6 +416,7 @@ export function useEngStatusTransitions({
         onAlertDataInvalidated,
         onTransitionSuccessRefresh,
         onAuthRecoveryRequired,
+        mutationCoordinator,
     ]);
 
     return {

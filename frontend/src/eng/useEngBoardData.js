@@ -48,9 +48,13 @@ function normalizeSprintId(value) {
 }
 
 export function normalizeEngBoardScope(scope, inheritedSprintId = null) {
-    if (scope?.type === 'all_work') return { type: 'all_work' };
+    if (scope?.type === 'all_work' || scope?.type === 'component') return { type: scope.type };
     const sprintId = normalizeSprintId(scope?.sprintId ?? inheritedSprintId);
     return sprintId === null ? { type: 'uninitialized' } : { type: 'sprint', sprintId };
+}
+
+function hasAuthoritativeIndexScope(scope) {
+    return scope?.type === 'all_work' || scope?.type === 'component';
 }
 
 function scopeKey(groupId, revision, scope) {
@@ -199,7 +203,7 @@ function applyFrame(state, frame) {
         const scope = state.scopesByGroup[state.activeGroupId];
         const incomingEpics = mapByKey(frame.epics);
         const epicsByKey = { ...state.working.epicsByKey };
-        if (scope?.type === 'all_work' && state.working.membershipAuthoritative) {
+        if (hasAuthoritativeIndexScope(scope) && state.working.membershipAuthoritative) {
             for (const [key, value] of Object.entries(incomingEpics)) {
                 if (epicsByKey[key]) epicsByKey[key] = value;
             }
@@ -221,7 +225,7 @@ function applyFrame(state, frame) {
             working: {
                 ...state.working,
                 epicsByKey,
-                columnEpicKeys: scope?.type === 'all_work' && state.working.membershipAuthoritative
+                columnEpicKeys: hasAuthoritativeIndexScope(scope) && state.working.membershipAuthoritative
                     ? state.working.columnEpicKeys
                     : { ...state.working.columnEpicKeys, [frame.columnId]: frame.epics.map(item => item.key) },
                 childrenByKey: storedChildren.items,
@@ -269,7 +273,7 @@ function applyFrame(state, frame) {
     if (frame.type === 'complete') {
         const scope = state.scopesByGroup[state.activeGroupId];
         if (!state.working.indexReceived
-            || (scope?.type === 'all_work' && !state.working.membershipAuthoritative)
+            || (hasAuthoritativeIndexScope(scope) && !state.working.membershipAuthoritative)
             || !state.working.declaredColumnIds.every(columnId => state.working.columnAuthority[columnId] === true)) {
             return invalidFrame(state, frame);
         }
@@ -433,94 +437,19 @@ export function engBoardDataReducer(state, action) {
     }
 }
 
-export function isEngBoardControlAcknowledgement(value) {
-    return value !== null
-        && typeof value === 'object'
-        && !Array.isArray(value)
-        && Object.keys(value).length === 2
-        && Object.prototype.hasOwnProperty.call(value, 'accepted')
-        && Object.prototype.hasOwnProperty.call(value, 'revision')
-        && value.accepted === true
-        && Number.isInteger(value.revision)
-        && value.revision >= 0;
-}
-
-export function createEngBoardFocusWriter({ sendFocus, onAmbiguousFailure = () => {} }) {
-    let generationId = null;
-    let queuedColumnId = null;
-    let inFlight = null;
-
-    const dispatch = columnId => {
-        const ownerGeneration = generationId;
-        let request;
-        try {
-            request = sendFocus(ownerGeneration, columnId);
-        } catch (error) {
-            request = Promise.reject(error);
-        }
-        let task;
-        task = Promise.resolve(request).then(acknowledgement => {
-            if (!isEngBoardControlAcknowledgement(acknowledgement)) {
-                throw new Error('invalid_control_acknowledgement');
-            }
-            return acknowledgement;
-        }).then(
-            () => {
-                if (inFlight === task) inFlight = null;
-                if (generationId !== ownerGeneration) return;
-                const next = queuedColumnId;
-                queuedColumnId = null;
-                if (next !== null) dispatch(next);
-            },
-            error => {
-                if (inFlight === task) inFlight = null;
-                if (generationId !== ownerGeneration) return;
-                generationId = null;
-                queuedColumnId = null;
-                onAmbiguousFailure(ownerGeneration, error);
-            }
-        );
-        inFlight = task;
-    };
-
-    return {
-        activate(nextGenerationId) {
-            generationId = nextGenerationId;
-            queuedColumnId = null;
-            inFlight = null;
-        },
-        request(columnId) {
-            if (!generationId || !columnId) return false;
-            if (inFlight) queuedColumnId = columnId;
-            else dispatch(columnId);
-            return true;
-        },
-        retire(expectedGenerationId = generationId) {
-            if (expectedGenerationId !== generationId) return;
-            generationId = null;
-            queuedColumnId = null;
-        },
-        cancel(sendCancel = () => Promise.resolve()) {
-            const cancelledGeneration = generationId;
-            generationId = null;
-            queuedColumnId = null;
-            if (cancelledGeneration) Promise.resolve(sendCancel(cancelledGeneration)).catch(() => {});
-        },
-        isActive: () => generationId !== null,
-        async whenIdle() {
-            while (inFlight) await inFlight;
-        },
-    };
-}
-
 function isAuthError(error) {
     return error?.code === 'auth_required' || error?.name === 'AuthenticationRequiredError' || error?.status === 401;
 }
 
-export function createEngBoardDataOwner({ streamBoard, controlBoard = () => Promise.resolve(), onAuthRequired = () => {} }) {
+export function createEngBoardDataOwner({
+    streamBoard,
+    onAuthRequired = () => {},
+    createMeasurement = null,
+}) {
     let state = createEngBoardDataState();
     let requestSequence = 0;
     let activeController = null;
+    let activeMeasurement = null;
     let resolvedFocusColumnId = null;
     let listeners = new Set();
 
@@ -531,24 +460,11 @@ export function createEngBoardDataOwner({ streamBoard, controlBoard = () => Prom
         for (const listener of listeners) listener();
     };
 
-    const focusWriter = createEngBoardFocusWriter({
-        sendFocus: (generationId, columnId) => controlBoard({ generationId, action: 'focus', columnId }),
-        onAmbiguousFailure: (generationId, error) => {
-            activeController?.abort();
-            Promise.resolve(controlBoard({ generationId, action: 'cancel' })).catch(() => {});
-            if (isAuthError(error)) {
-                emit({ type: 'auth_lock' });
-                onAuthRequired(error);
-                return;
-            }
-            emit({ type: 'load_failed', requestId: state.requestId, code: 'focus_control_failed' });
-        },
-    });
-
     const cancelActive = () => {
         activeController?.abort();
         activeController = null;
-        focusWriter.cancel(generationId => controlBoard({ generationId, action: 'cancel' }));
+        activeMeasurement?.cancel?.();
+        activeMeasurement = null;
     };
 
     const load = async ({ refresh = false } = {}) => {
@@ -562,6 +478,18 @@ export function createEngBoardDataOwner({ streamBoard, controlBoard = () => Prom
         const groupId = state.activeGroupId;
         const scope = state.scopesByGroup[groupId];
         const initialFocus = resolvedFocusColumnId;
+        const measurement = createMeasurement?.({
+            groupId,
+            scopeType: scope.type,
+            sprintId: scope.type === 'sprint' ? scope.sprintId : null,
+        }) || null;
+        activeMeasurement = measurement;
+        let measuredFocusColumnId = initialFocus || null;
+        const finishMeasurement = async terminal => {
+            if (!measurement || activeMeasurement !== measurement) return;
+            await measurement.finish?.(terminal);
+            if (activeMeasurement === measurement) activeMeasurement = null;
+        };
         try {
             await streamBoard({
                 departmentId: groupId,
@@ -570,22 +498,36 @@ export function createEngBoardDataOwner({ streamBoard, controlBoard = () => Prom
                 focusedColumnId: initialFocus || undefined,
                 refresh,
                 signal: controller.signal,
-                onFrame: nextFrame => {
+                onFrame: async (nextFrame, frameMeta = {}) => {
                     if (!state.mounted || state.requestId !== requestId || controller.signal.aborted) return;
+                    measurement?.addPayloadBytes?.(frameMeta.payloadBytes);
+                    if (nextFrame.type === 'start') {
+                        measurement?.start?.(nextFrame);
+                        if (!nextFrame.columns.some(column => column.id === measuredFocusColumnId)) {
+                            measuredFocusColumnId = nextFrame.columns[0]?.id || null;
+                        }
+                    }
                     emit({ type: 'frame', requestId, frame: nextFrame });
                     if (state.status === 'error' && state.error?.code === 'invalid_frame') {
                         controller.abort();
-                        focusWriter.retire(nextFrame.generationId);
-                        Promise.resolve(controlBoard({ generationId: nextFrame.generationId, action: 'cancel' })).catch(() => {});
+                        await finishMeasurement({ outcome: 'error' });
                         return;
                     }
-                    if (nextFrame.type === 'start') {
-                        focusWriter.activate(nextFrame.generationId);
-                        if (resolvedFocusColumnId && resolvedFocusColumnId !== initialFocus) focusWriter.request(resolvedFocusColumnId);
+                    if (nextFrame.type === 'column' && nextFrame.columnId === measuredFocusColumnId
+                        && state.working.columnAuthority[nextFrame.columnId] === true) {
+                        await measurement?.focusedContentReady?.();
                     }
                     if (nextFrame.type === 'complete' || nextFrame.type === 'error') {
-                        focusWriter.retire(nextFrame.generationId);
                         if (nextFrame.type === 'error' && nextFrame.code === 'auth_required') onAuthRequired();
+                        const success = nextFrame.type === 'complete'
+                            && nextFrame.outcome === 'success' && state.status === 'success';
+                        await finishMeasurement({
+                            outcome: success ? 'success' : 'error',
+                            diagnostics: nextFrame.diagnostics || null,
+                            epicCount: success ? Object.keys(state.working.epicsByKey).length : null,
+                            issueCount: success ? Object.keys(state.working.childrenByKey).length : null,
+                            dependencyDurationMs: null,
+                        });
                     }
                 },
             });
@@ -595,11 +537,11 @@ export function createEngBoardDataOwner({ streamBoard, controlBoard = () => Prom
             if (isAuthError(error)) {
                 emit({ type: 'auth_lock' });
                 onAuthRequired(error);
-                focusWriter.retire();
+                await finishMeasurement({ outcome: 'error' });
                 return 'auth_locked';
             }
             emit({ type: 'load_failed', requestId, code: error?.code || 'jira_unavailable' });
-            focusWriter.retire();
+            await finishMeasurement({ outcome: 'error' });
             return 'error';
         } finally {
             if (activeController === controller) activeController = null;
@@ -634,7 +576,6 @@ export function createEngBoardDataOwner({ streamBoard, controlBoard = () => Prom
         },
         setResolvedFocus(columnId) {
             resolvedFocusColumnId = columnId || null;
-            focusWriter.request(resolvedFocusColumnId);
         },
         load,
         refresh: () => load({ refresh: true }),
@@ -665,12 +606,13 @@ export function useEngBoardData({
     groupRevision = null,
     resolvedFocusColumnId = null,
     streamBoard,
-    controlBoard,
     onAuthRequired,
+    createMeasurement,
+    strictScope = null,
 }) {
     const ownerRef = React.useRef(null);
     if (!ownerRef.current) {
-        ownerRef.current = createEngBoardDataOwner({ streamBoard, controlBoard, onAuthRequired });
+        ownerRef.current = createEngBoardDataOwner({ streamBoard, onAuthRequired, createMeasurement });
     }
     const owner = ownerRef.current;
     const state = React.useSyncExternalStore(owner.subscribe, owner.getState, owner.getState);
@@ -685,8 +627,13 @@ export function useEngBoardData({
             return;
         }
         const changed = owner.selectGroup(departmentId, inheritedSprintId, groupRevision);
+        if (['all_work', 'component'].includes(strictScope)
+            && owner.getState().scopesByGroup[String(departmentId)]?.type !== strictScope) {
+            void owner.setScope({ type: strictScope });
+            return;
+        }
         if (changed || owner.getState().status === 'idle') owner.load();
-    }, [active, departmentId, inheritedSprintId, groupRevision, owner]);
+    }, [active, departmentId, inheritedSprintId, groupRevision, owner, strictScope]);
     React.useEffect(() => {
         if (active) owner.setResolvedFocus(resolvedFocusColumnId);
     }, [active, resolvedFocusColumnId, owner]);

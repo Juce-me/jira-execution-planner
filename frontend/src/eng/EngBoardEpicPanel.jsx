@@ -49,6 +49,8 @@ export default function EngBoardEpicPanel({
     priorityTransitions = null,
     projectTrackTransitions = null,
     statusTransitionSubmitting = false,
+    workItemLabel = 'stories',
+    workItemLabelSingular = 'story',
     onSubmitStatusTransition,
     onClose,
 }) {
@@ -322,7 +324,7 @@ export default function EngBoardEpicPanel({
                             <StatusPill className={getIssueStatusClassName(statusLabel)} label={statusLabel} />
                         )}
                         <span className="m-sp">
-                            {storyPoints} sp · {progress.done} of {progress.total} stories done
+                            {storyPoints} sp · {progress.done} of {progress.total} {workItemLabel} done
                         </span>
                     </div>
                     <h2 className="m-title" id={titleId}>{summary}</h2>
@@ -370,9 +372,9 @@ export default function EngBoardEpicPanel({
 
                     <div className="m-sec">
                         <div className="m-sec-head">
-                            <span className="m-sec-label">Stories in scope</span>
+                            <span className="m-sec-label">{workItemLabel[0].toUpperCase() + workItemLabel.slice(1)} in scope</span>
                             <span className="m-sec-label">
-                                {rows.length} {rows.length === 1 ? 'story' : 'stories'} · {storyPoints} sp
+                                {rows.length} {rows.length === 1 ? workItemLabelSingular : workItemLabel} · {storyPoints} sp
                             </span>
                             <span className="spacer" />
                             <div
@@ -383,7 +385,7 @@ export default function EngBoardEpicPanel({
                                     className={`sprint-dropdown-toggle ${sortOpen ? 'open' : ''}`}
                                     role="button"
                                     tabIndex={0}
-                                    aria-label="Sort stories"
+                                    aria-label={`Sort ${workItemLabel}`}
                                     aria-expanded={sortOpen}
                                     onClick={() => setSortOpen((wasOpen) => !wasOpen)}
                                     onKeyDown={(event) => {

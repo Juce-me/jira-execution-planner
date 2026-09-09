@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBoardLoadMeasurement, createGroupLoadMeasurement,
-    evaluateSelectedSprintRegression, laneMetrics } from '../frontend/src/eng/loadPerformance.js';
+    evaluateSelectedSprintRegression, isAcceptedBoardTerminalSample,
+    laneMetrics } from '../frontend/src/eng/loadPerformance.js';
 
 test('parallel lanes use group wall time and emit only after render', async () => {
     let now = 0;
@@ -111,6 +112,41 @@ test('cancelled Board measurement keeps unavailable diagnostics null and unknown
     assert.equal(samples[0].jiraRequests, null);
     assert.equal(samples[0].cacheState, 'unknown');
     assert.equal(samples[0].completeness, 'partial');
+});
+
+test('Board render and terminal races emit one final observation', async () => {
+    let now = 0;
+    const paints = [];
+    const samples = [];
+    const measurement = createBoardLoadMeasurement({ enabled: true, groupId: 'synthetic',
+        scopeType: 'all_work', now: () => now,
+        afterPaint: () => new Promise(resolve => paints.push(resolve)),
+        emit: sample => samples.push(sample) });
+    const firstContent = measurement.focusedContentReady();
+    const duplicateContent = measurement.focusedContentReady();
+    assert.equal(paints.length, 1);
+    now = 80;
+    paints.shift()();
+    await Promise.all([firstContent, duplicateContent]);
+    const completion = measurement.finish({ outcome: 'success', epicCount: 3, issueCount: 7,
+        diagnostics: { indexMs: 40, focusedCompleteMs: 400, jiraRequests: 5, jiraPages: 5,
+            jiraRetries: 0, cacheState: 'miss', peakChildSearches: 2 } });
+    assert.equal(paints.length, 1);
+    now = 100;
+    await measurement.cancel();
+    paints.shift()();
+    await completion;
+    assert.equal(samples.length, 1);
+    assert.equal(samples[0].outcome, 'cancelled');
+    assert.equal(samples[0].firstFocusedContentMs, 80);
+});
+
+test('only accepted Board terminal samples qualify for api_result', () => {
+    assert.equal(isAcceptedBoardTerminalSample({ outcome: 'success', jiraRequests: 0 }), true);
+    assert.equal(isAcceptedBoardTerminalSample({ outcome: 'error', jiraRequests: 2 }), true);
+    assert.equal(isAcceptedBoardTerminalSample({ outcome: 'error', jiraRequests: null }), false);
+    assert.equal(isAcceptedBoardTerminalSample({ outcome: 'cancelled', jiraRequests: 2 }), false);
+    assert.equal(isAcceptedBoardTerminalSample(null), false);
 });
 
 test('selected-sprint acceptance rejects regression even when both medians are under two seconds', () => {

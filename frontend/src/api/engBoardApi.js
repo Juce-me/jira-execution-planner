@@ -1,7 +1,6 @@
 import {
     apiFetchHeaders,
     jsonOrStructuredError,
-    postJson,
     readResponseStream,
     requireAuthentication,
 } from './http.js';
@@ -189,7 +188,7 @@ function validateBody(frame) {
     switch (frame.type) {
         case 'start':
             exact(frame, [...base, 'scope', 'scopeVersion', 'scopeCohortDigest', 'columns']);
-            oneOf(frame.scope, ['all_work', 'sprint']);
+            oneOf(frame.scope, ['all_work', 'component', 'sprint']);
             string(frame.scopeVersion, MAX.identity);
             string(frame.scopeCohortDigest, 64, { pattern: /^[0-9a-f]{64}$/ });
             array(frame.columns, MAX.columns, column);
@@ -235,7 +234,8 @@ function validateBody(frame) {
             exact(frame, [...base, 'code'], ['diagnostics']);
             oneOf(frame.code, [
                 'auth_required', 'scope_changed', 'scope_too_large', 'deadline_exceeded',
-                'invalid_page', 'storage_unavailable', 'jira_unavailable',
+                'invalid_page', 'board_data_invalid', 'board_config_invalid',
+                'storage_unavailable', 'jira_unavailable',
             ]);
             if (frame.code === 'auth_required' && Object.prototype.hasOwnProperty.call(frame, 'diagnostics')) fail();
             if (frame.diagnostics !== undefined) diagnostics(frame.diagnostics, 'partial');
@@ -325,7 +325,7 @@ export async function consumeEngBoardResponse(response, {
                     stop();
                     requireAuthentication({}, response.status);
                 }
-                await onFrame(frame);
+                await onFrame(frame, { payloadBytes: line.byteLength + 1 });
                 if (terminal) {
                     if (pending.byteLength !== 0) fail('invalid_frame');
                     terminalFrame = frame;
@@ -352,39 +352,4 @@ export async function streamEngBoard({
         method: 'GET', signal, headers: { Accept: 'application/x-ndjson' },
     });
     return consumeEngBoardResponse(response, { signal, onFrame, maxFrameBytes, maxTotalBytes });
-}
-
-export async function controlEngBoard({
-    backendUrl = '', generationId, action, columnId, csrfToken = '', signal,
-}) {
-    try {
-        string(generationId, MAX.identity);
-        oneOf(action, ['focus', 'cancel']);
-        if (action === 'focus') string(columnId, MAX.identity);
-        else if (columnId !== undefined && columnId !== null) fail();
-    } catch (error) {
-        fail('invalid_control_request');
-    }
-    const body = action === 'focus'
-        ? { generationId, action, columnId }
-        : { generationId, action };
-    let result;
-    try {
-        result = await postJson(`${backendUrl}/api/eng/board/control`, body, 'ENG Board control', {
-            signal,
-            headers: { 'X-CSRF-Token': csrfToken || '' },
-        });
-    } catch (error) {
-        if (error?.name === 'SyntaxError') fail('invalid_control_response');
-        throw error;
-    }
-    try {
-        exact(result, ['accepted', 'revision']);
-        if (result.accepted !== true) fail('invalid_control_response');
-        number(result.revision, { integer: true });
-    } catch (error) {
-        if (error instanceof EngBoardStreamError && error.code === 'invalid_control_response') throw error;
-        fail('invalid_control_response');
-    }
-    return result;
 }

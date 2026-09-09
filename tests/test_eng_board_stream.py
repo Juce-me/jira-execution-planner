@@ -10,19 +10,111 @@ import pathlib
 import selectors
 import subprocess
 import sys
+import threading
 import textwrap
 import time
 import unittest
 
+from flask import Flask, Response, request
+
+from backend.services import eng_board
 from backend.services.eng_board_stream import (
+    ENG_BOARD_MAX_CHILD_SEARCHES,
     ENG_BOARD_MAX_FRAME_BYTES,
     ENG_BOARD_MAX_GENERATION_BYTES,
+    EngBoardChildScheduler,
     EngBoardFrameError,
+    EngBoardRequestBudget,
+    EngBoardRequestDeadline,
+    EngBoardRequestTransport,
     EngBoardStreamWriter,
 )
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+class PrototypeSearches:
+    def __init__(self):
+        self.condition = threading.Condition()
+        self.started = []
+        self.running = 0
+        self.peak = 0
+        self.released = set()
+        self.timeouts = []
+
+    def search(self, column_id):
+        def run(timeout):
+            with self.condition:
+                self.started.append(column_id)
+                self.timeouts.append(timeout)
+                self.running += 1
+                self.peak = max(self.peak, self.running)
+                self.condition.notify_all()
+                while column_id not in self.released:
+                    self.condition.wait(timeout=0.1)
+                self.running -= 1
+                self.condition.notify_all()
+            return column_id
+        return run
+
+    def wait_started(self, count, timeout=2):
+        deadline = time.monotonic() + timeout
+        with self.condition:
+            while len(self.started) < count:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self.condition.wait(timeout=remaining)
+            return True
+
+    def release(self, *column_ids):
+        with self.condition:
+            self.released.update(column_ids)
+            self.condition.notify_all()
+
+
+def create_prototype_app(searches, *, now_fn=time.monotonic, budget_seconds=30):
+    app = Flask(__name__)
+
+    @app.get('/api/eng/board')
+    def stream():
+        focused = request.args.get('focusedColumnId') or 'todo'
+        columns = [focused] + [value for value in ('todo', 'doing', 'done') if value != focused]
+
+        def frames():
+            writer = EngBoardStreamWriter()
+            scheduler = EngBoardChildScheduler(
+                [searches.search(column_id) for column_id in columns],
+                budget=EngBoardRequestBudget.start(budget_seconds, now_fn=now_fn),
+            )
+            try:
+                yield writer.write(start_frame(columns=[]))
+                for sequence, column_id in enumerate(scheduler.results(), 1):
+                    yield writer.write({
+                        'protocolVersion': 1, 'generationId': 'generation-1',
+                        'sequence': sequence, 'type': 'progress', 'columnId': column_id,
+                        'loadedChildren': 1, 'byEpic': [],
+                    })
+            except EngBoardRequestDeadline:
+                timeout_diagnostics = {
+                    **diagnostics('partial'),
+                    'jiraRequests': scheduler.scheduled_searches,
+                    'jiraPages': scheduler.scheduled_searches,
+                    'peakChildSearches': scheduler.peak_child_searches,
+                }
+                yield writer.write({
+                    'protocolVersion': 1, 'generationId': 'generation-1',
+                    'sequence': writer.sequence + 1, 'type': 'error',
+                    'code': 'deadline_exceeded',
+                    'diagnostics': timeout_diagnostics,
+                })
+            finally:
+                scheduler.retire()
+
+        return Response(frames(), content_type='application/x-ndjson')
+
+    return app
 
 
 def start_frame(**overrides):
@@ -71,6 +163,10 @@ def complete_frame(**overrides):
 
 
 class EngBoardStreamWriterTests(unittest.TestCase):
+    def test_start_frame_accepts_component_scope(self):
+        encoded = EngBoardStreamWriter().write(start_frame(scope='component'))
+        self.assertEqual('component', __import__('json').loads(encoded)['scope'])
+
     def test_candidate_ceiling_fixture_fits_selected_limits_with_measured_headroom(self):
         def epic(index):
             return {
@@ -182,6 +278,214 @@ class EngBoardStreamWriterTests(unittest.TestCase):
         writer.write(complete_frame())
         with self.assertRaisesRegex(EngBoardFrameError, 'stream_complete'):
             writer.write(complete_frame(sequence=2))
+
+
+class EngBoardPrototypeTests(unittest.TestCase):
+    def test_core_workload_ceilings_accept_exact_bound_and_reject_or_split_next(self):
+        for limit in (eng_board.MAX_EPICS, eng_board.MAX_CHILDREN):
+            with self.subTest(limit=limit):
+                exact = eng_board.UniqueKeyBudget(limit)
+                exact.accept([f'KEY-{index}' for index in range(limit)], complete=True)
+                self.assertEqual(limit, len(exact.keys))
+                over = eng_board.UniqueKeyBudget(limit)
+                with self.assertRaisesRegex(eng_board.EngBoardError, 'board_scope_too_large'):
+                    over.accept([f'KEY-{index}' for index in range(limit + 1)], complete=True)
+
+        counters = eng_board.PagerCounters(pages=eng_board.MAX_PAGES_PER_GENERATION - 1)
+        counters.claim_request(eng_board.MAX_ENCODED_REQUEST_BYTES, eng_board.MAX_PAGES_PER_SEARCH)
+        self.assertEqual(eng_board.MAX_PAGES_PER_GENERATION, counters.pages)
+        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_scope_too_large'):
+            counters.claim_request(1, 1)
+
+        batches = eng_board.split_epic_batches(
+            [f'EPIC-{index}' for index in range(eng_board.MAX_BATCH_SIZE + 1)],
+            lambda keys: f'key in ({",".join(keys)})',
+            ('summary',),
+        )
+        self.assertEqual([eng_board.MAX_BATCH_SIZE, 1], [len(batch) for batch in batches])
+
+        base_bytes = eng_board.encoded_search_bytes('', ('summary',))
+        exact_jql = 'x' * (eng_board.MAX_ENCODED_REQUEST_BYTES - base_bytes)
+        self.assertEqual(
+            eng_board.MAX_ENCODED_REQUEST_BYTES,
+            eng_board.encoded_search_bytes(exact_jql, ('summary',)),
+        )
+        calls = []
+        eng_board.strict_search(
+            lambda payload: calls.append(payload) or {'issues': [], 'isLast': True},
+            exact_jql, ('summary',),
+        )
+        self.assertEqual(1, len(calls))
+        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_scope_too_large'):
+            eng_board.strict_search(
+                lambda _payload: self.fail('over-limit query reached transport'),
+                exact_jql + 'x', ('summary',),
+            )
+
+        page = 0
+        def search(_payload):
+            nonlocal page
+            page += 1
+            return {
+                'issues': [], 'isLast': page == eng_board.MAX_PAGES_PER_SEARCH,
+                **({} if page == eng_board.MAX_PAGES_PER_SEARCH else {'nextPageToken': f'p-{page}'}),
+            }
+        self.assertEqual([], eng_board.strict_search(search, 'project = "P"', ('summary',)))
+        self.assertEqual(eng_board.MAX_PAGES_PER_SEARCH, page)
+
+    def test_request_transport_is_compatible_with_existing_jira_and_oauth_budgets(self):
+        from types import SimpleNamespace
+        from backend.auth.jira_auth import request_oauth_refresh_token
+        from backend.db.cloud_sql import CloudSqlIamConfig
+        from backend.jira_client import resilient_jira_get
+
+        class BoundaryResponse:
+            status_code = 200
+            headers = {}
+
+            def __init__(self, payload=None):
+                self.payload = payload or {}
+                self.closed = False
+
+            def iter_content(self, chunk_size):
+                self.chunk_size = chunk_size
+                return iter((b'{}',))
+
+            def json(self):
+                return self.payload
+
+            def close(self):
+                self.closed = True
+
+        class JiraSession:
+            def get(self, _url, **kwargs):
+                self.kwargs = kwargs
+                self.response = BoundaryResponse()
+                return self.response
+
+        transport = EngBoardRequestTransport(
+            budget=EngBoardRequestBudget.start(30),
+        )
+        kwargs = transport.resilient_kwargs()
+        self.assertIs(kwargs['diagnostic_budget'], transport.budget)
+        self.assertIs(kwargs['diagnostic_observer'], transport.observer)
+        self.assertIs(kwargs['breaker'], transport.breaker)
+        transport.observer.add('jiraLogicalRequestCount')
+        transport.observer.add('jiraPageCount', 2)
+        transport.observer.add('jiraRetryCount')
+        transport.observer.add('oauthRefreshCount')
+        self.assertEqual({
+            'jiraRequests': 1,
+            'jiraPages': 2,
+            'jiraRetries': 1,
+            'oauthRefreshes': 1,
+        }, transport.diagnostics())
+
+        jira_transport = EngBoardRequestTransport(
+            budget=EngBoardRequestBudget.start(30),
+        )
+        jira_session = JiraSession()
+        resilient_jira_get(
+            'https://jira.example.test/rest/api/3/search/jql', session=jira_session,
+            timeout=30, **jira_transport.resilient_kwargs(),
+        )
+        jira_connect, jira_read = jira_session.kwargs['timeout']
+        self.assertEqual(5.0, jira_connect)
+        self.assertGreater(jira_read, 29.0)
+        self.assertLessEqual(jira_read, 30.0)
+        self.assertTrue(jira_session.response.closed)
+
+        oauth_calls = []
+        oauth_transport = EngBoardRequestTransport(
+            budget=EngBoardRequestBudget.start(30),
+        )
+        def oauth_post(_url, **kwargs):
+            oauth_calls.append(kwargs)
+            return BoundaryResponse({
+                'access_token': 'synthetic-access', 'refresh_token': 'synthetic-refresh',
+                'expires_in': 3600,
+            })
+        request_oauth_refresh_token(
+            SimpleNamespace(client_id='client', client_secret='secret'),
+            'refresh', http_post=oauth_post,
+            cooperative_budget=oauth_transport.budget,
+            diagnostic_observer=oauth_transport.observer,
+        )
+        oauth_connect, oauth_read = oauth_calls[0]['timeout']
+        self.assertEqual(5.0, oauth_connect)
+        self.assertGreater(oauth_read, 19.0)
+        self.assertLessEqual(oauth_read, 20.0)
+
+        cloud_sql = CloudSqlIamConfig.from_database_url(
+            'postgresql+psycopg://synthetic@db.example.test:5432/app?sslmode=require',
+        )
+        self.assertEqual(10, cloud_sql.connect_kwargs()['connect_timeout'])
+
+    def test_normal_scheduler_completion_keeps_final_checkpoint_available(self):
+        budget = EngBoardRequestBudget.start(30)
+        scheduler = EngBoardChildScheduler([
+            lambda _timeout: 'focused',
+            lambda _timeout: 'next',
+        ], budget=budget)
+        self.assertEqual(['focused', 'next'], list(scheduler.results()))
+        budget.check()
+
+    def test_one_get_runs_two_searches_and_retirement_admits_no_third(self):
+        searches = PrototypeSearches()
+        app = create_prototype_app(searches)
+
+        response = app.test_client().get(
+            '/api/eng/board?focusedColumnId=doing', buffered=False,
+        )
+        iterator = iter(response.response)
+        self.assertEqual('start', __import__('json').loads(next(iterator))['type'])
+        self.assertTrue(searches.wait_started(2))
+        self.assertCountEqual(['doing', 'todo'], searches.started)
+        self.assertEqual(ENG_BOARD_MAX_CHILD_SEARCHES, searches.peak)
+
+        searches.release('doing')
+        self.assertEqual('doing', __import__('json').loads(next(iterator))['columnId'])
+        response.close()
+        searches.release('todo', 'done')
+
+        deadline = time.monotonic() + 1
+        while searches.running and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertCountEqual(['doing', 'todo'], searches.started)
+        self.assertEqual(0, searches.running)
+
+    def test_budget_uses_bounded_jira_timeout_and_deadline_is_sanitized(self):
+        now = [0.0]
+        searches = PrototypeSearches()
+        app = create_prototype_app(searches, now_fn=lambda: now[0])
+        response = app.test_client().get('/api/eng/board', buffered=False)
+        try:
+            iterator = iter(response.response)
+            next(iterator)
+            self.assertTrue(searches.wait_started(2))
+            self.assertEqual([(5.0, 30.0), (5.0, 30.0)], searches.timeouts)
+
+            now[0] = 30.0
+            error = __import__('json').loads(next(iterator))
+            self.assertEqual('error', error['type'])
+            self.assertEqual('deadline_exceeded', error['code'])
+            self.assertEqual('partial', error['diagnostics']['completeness'])
+            self.assertEqual(2, error['diagnostics']['peakChildSearches'])
+            self.assertEqual(2, error['diagnostics']['jiraRequests'])
+            self.assertEqual(2, error['diagnostics']['jiraPages'])
+        finally:
+            response.close()
+            searches.release('todo', 'doing', 'done')
+
+        budget = EngBoardRequestBudget.start(30, now_fn=lambda: now[0])
+        now[0] = 59.999
+        connect_timeout, read_timeout = budget.jira_timeout()
+        self.assertAlmostEqual(0.001, connect_timeout)
+        self.assertAlmostEqual(0.001, read_timeout)
+        self.assertAlmostEqual(0.001, budget.jira_retry_timeout())
+        now[0] = 60.0
+        with self.assertRaisesRegex(EngBoardRequestDeadline, 'deadline_exceeded'):
+            budget.check()
 
 
 class EngBoardHardTerminationFeasibilityTests(unittest.TestCase):

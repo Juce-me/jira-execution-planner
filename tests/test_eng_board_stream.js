@@ -115,6 +115,18 @@ test('split UTF-8 and NDJSON chunks are decoded without corruption', async () =>
     assert.equal(delivered[0].columns[0].name, 'Plan 🚀');
 });
 
+test('Component scope start frames pass strict stream validation', async () => {
+    const componentStart = { ...start(), scope: 'component' };
+    const api = harness(async () => streamedResponse([encoded(componentStart), encoded(complete())]).response);
+    const delivered = [];
+    await api.exports.streamEngBoard({
+        departmentId: 'department-1', scope: 'component', onFrame: value => delivered.push(value),
+    });
+    assert.equal(delivered[0].scope, 'component');
+    assert.match(api.fetchCalls[0][0], /scope=component/);
+    assert.doesNotMatch(api.fetchCalls[0][0], /sprintId=/);
+});
+
 test('valid UTF-8 containing an escaped lone surrogate is rejected', async () => {
     const bytes = new TextEncoder().encode(`${JSON.stringify(start()).replace('scope-v1', 'scope-\\ud800')}\n`);
     const api = harness(async () => streamedResponse([bytes]).response);
@@ -279,51 +291,17 @@ test('stream auth frame and sibling HTTP 401 use the same terminal global lock',
     });
 });
 
-test('control helper sends the closed request and validates the committed revision acknowledgement', async () => {
-    const api = harness(async () => new Response(JSON.stringify({ accepted: true, revision: 7 }), {
-        status: 200, headers: { 'Content-Type': 'application/json' },
-    }));
-    const result = await api.exports.controlEngBoard({
-        backendUrl: '', generationId: 'generation-1', action: 'focus', columnId: 'todo', csrfToken: 'csrf-1',
+test('one GET carries fixed initial focus and exposes no control helper', async () => {
+    const api = harness(async () => streamedResponse([encoded(start()), encoded(complete())]).response);
+    await api.exports.streamEngBoard({
+        backendUrl: '', departmentId: 'department-1', scope: 'all_work',
+        focusedColumnId: 'todo', refresh: true,
     });
-    assert.deepEqual(JSON.parse(JSON.stringify(result)), { accepted: true, revision: 7 });
     const [url, options] = api.fetchCalls[0];
-    assert.equal(url, '/api/eng/board/control');
-    assert.deepEqual(JSON.parse(options.body), {
-        generationId: 'generation-1', action: 'focus', columnId: 'todo',
-    });
-    assert.equal(options.headers.get('X-CSRF-Token'), 'csrf-1');
-    assert.equal(options.headers.get('X-Requested-With'), 'jira-execution-planner');
-});
-
-test('control helper rejects malformed acknowledgements and non-closed requests', async t => {
-    for (const payload of [
-        undefined,
-        { accepted: false, revision: 1 },
-        { accepted: true, revision: 1.5 },
-        { accepted: true, revision: 1, extra: true },
-    ]) {
-        await t.test(JSON.stringify(payload), async () => {
-            const api = harness(async () => new Response(JSON.stringify(payload), {
-                status: 200, headers: { 'Content-Type': 'application/json' },
-            }));
-            await assert.rejects(
-                () => api.exports.controlEngBoard({ generationId: 'generation-1', action: 'cancel' }),
-                error => error.code === 'invalid_control_response',
-            );
-        });
-    }
-    for (const request of [
-        { generationId: 'generation-1', action: 'cancel', columnId: 'todo' },
-        { generationId: 'generation-1', action: 'focus' },
-        { generationId: '', action: 'cancel' },
-        { generationId: 'generation-1', action: 'pause' },
-    ]) {
-        const api = harness(async () => { throw new Error('fetch should not run'); });
-        await assert.rejects(
-            () => api.exports.controlEngBoard(request),
-            error => error.code === 'invalid_control_request',
-        );
-        assert.equal(api.fetchCalls.length, 0);
-    }
+    const requestUrl = new URL(url, 'https://planner.example.test');
+    assert.equal(requestUrl.pathname, '/api/eng/board');
+    assert.equal(requestUrl.searchParams.get('focusedColumnId'), 'todo');
+    assert.equal(requestUrl.searchParams.get('refresh'), '1');
+    assert.equal(options.method, 'GET');
+    assert.equal(api.exports.controlEngBoard, undefined);
 });

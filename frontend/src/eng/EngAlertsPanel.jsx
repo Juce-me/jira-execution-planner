@@ -216,43 +216,40 @@ export default function EngAlertsPanel({
                                                                     )}
                                                                 </div>
                                                                 <div className="alert-stories">
-                                                                    {group.items.map(({ task, missingFields }) => (
-                                                                        <div key={task.key} className="alert-story">
+                                                                    {group.items.map(({ task, missingFields }) => {
+                                                                        const editStoryPoints = missingFields.includes('Story Points');
+                                                                        const navigateToStory = () => handleAlertStoryClick(task.key, editStoryPoints);
+                                                                        return <div key={task.key} className="alert-story">
                                                                             <div
                                                                                 className="alert-story-main"
                                                                                 role="button"
                                                                                 tabIndex={0}
-                                                                                onClick={() => handleAlertStoryClick(task.key)}
+                                                                                onClick={navigateToStory}
                                                                                 onKeyDown={(event) => {
                                                                                     if (event.key === 'Enter' || event.key === ' ') {
                                                                                         event.preventDefault();
-                                                                                        handleAlertStoryClick(task.key);
+                                                                                        navigateToStory();
                                                                                     }
                                                                                 }}
                                                                             >
                                                                                 <a
                                                                                     className="alert-story-link"
-                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
+                                                                                    href={`#story-${encodeURIComponent(task.key)}`}
                                                                                     onClick={(event) => {
                                                                                         event.preventDefault();
                                                                                         event.stopPropagation();
-                                                                                        handleAlertStoryClick(task.key);
+                                                                                        navigateToStory();
                                                                                     }}
                                                                                 >
                                                                                     {task.key} · {task.fields.summary}
                                                                                 </a>
                                                                             </div>
                                                                             <span className="alert-pill status">Missing: {missingFields.join(', ')}</span>
-                                                                            <a
-                                                                                className="alert-action"
-                                                                                href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                            >
-                                                                                Fix fields →
-                                                                            </a>
+                                                                            {editStoryPoints ? (
+                                                                                <a className="alert-action" href={`#story-${encodeURIComponent(task.key)}`} onClick={(event) => { event.preventDefault(); navigateToStory(); }}>Fix fields →</a>
+                                                                            ) : (
+                                                                                <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'} target="_blank" rel="noopener noreferrer">Fix fields →</a>
+                                                                            )}
                                                                             <button
                                                                                 className="task-remove alert-remove"
                                                                                 onClick={(event) => {
@@ -264,8 +261,8 @@ export default function EngAlertsPanel({
                                                                             >
                                                                                 ×
                                                                             </button>
-                                                                        </div>
-                                                                    ))}
+                                                                        </div>;
+                                                                    })}
                                                                 </div>
                                                             </div>
                                                         );

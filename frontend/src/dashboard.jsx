@@ -40,12 +40,16 @@ import { strictEngBoardMutationProps, strictEngBoardViewProps, useStrictEngBoard
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
 import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
 import { useEngProjectTrackTransitions } from './eng/useEngProjectTrackTransitions.js';
-import { applyLocalEpicDetailsFieldUpdate, applyLocalIssueFieldUpdate } from './eng/engIssueLocalUpdates.js';
+import { useEngIssueFieldEdits } from './eng/useEngIssueFieldEdits.js';
+import { applyLocalEpicDetailsFieldUpdate } from './eng/engIssueLocalUpdates.js';
+import { createEngIssueEditState, patchEngIssueList, patchEngLoadedState } from './eng/engIssueEditState.js';
+import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
 import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
 import ProjectTrackTransitionMenu from './issues/ProjectTrackTransitionMenu.jsx';
+import IssuePersonEditor from './issues/IssuePersonEditor.jsx';
 import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkStatus, migrateEngCatchUpFilters, readEngCatchUpFilterState, resolveEngCatchUpFilters } from './eng/engCatchUpFilters.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningAuthResume, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
@@ -869,7 +873,7 @@ import {
             });
             const [excludedCapacityIsolatedTeam, setExcludedCapacityIsolatedTeam] = useState(null);
             const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
-            const [excludedCapacityRefreshNonce, setExcludedCapacityRefreshNonce] = useState(0);
+            const [excludedCapacityRefreshNonce, setExcludedCapacityRefreshNonce] = useState(0), [issuePeopleStatsRevision, setIssuePeopleStatsRevision] = useState(0);
             const excludedCapacityEpicDropdownRef = useRef(null);
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
             const isCatchUpMode = selectedView === 'eng' && !showPlanning && !showStats && !showScenario && !showBoard;
@@ -1017,7 +1021,7 @@ import {
             const scenarioTooltipAnchorRef = useRef(null);
             const scenarioIssueRefMap = useRef(new Map());
             const [scenarioEdgeRender, setScenarioEdgeRender] = useState({ width: 0, height: 0, paths: [] });
-            const [dependencyData, setDependencyData] = useState({});
+            const [dependencyData, setDependencyData] = useState({}), [dependencyRefreshNonce, setDependencyRefreshNonce] = useState(0);
             const [dependencyFocus, setDependencyFocus] = useState(null);
             const [dependencyHover, setDependencyHover] = useState(null);
             const [dependencyLookupCache, setDependencyLookupCache] = useState({});
@@ -1049,7 +1053,7 @@ import {
             const [stickyEpicFocusKey, setStickyEpicFocusKey] = useState(null);
             const epicRefMap = useRef(new Map());
             const stickyEpicFrameRef = useRef(null);
-            const groupStateRef = useRef(new Map());
+            const groupStateRef = useRef(new Map()), issueEditStateRef = useRef(createEngIssueEditState());
             const restoringGroupRef = useRef(false);
             const activeGroupRef = useRef(null);
             const sprintFetchControllersRef = useRef(new Set());
@@ -1122,7 +1126,7 @@ import {
             }, [refreshHomeTokenConnectionStatus]);
             const {
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
-                trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
+                trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackIssueFieldEditAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
             const applyPreferenceGroupsSnapshot = React.useCallback((snapshot) => {
@@ -5615,7 +5619,7 @@ import {
                     readyToCloseProductTasks: [],
                     readyToCloseTechTasks: [],
                     missingPlanningInfoTasks: [],
-                    missingInfoEpics: [],
+                    missingInfoEpics: [], backlogProductEpics: [], backlogTechEpics: [],
                     productEpicsInScope: [],
                     techEpicsInScope: [],
                     readyToCloseProductEpicsInScope: [],
@@ -5721,7 +5725,7 @@ import {
                 readyToCloseProductTasks,
                 readyToCloseTechTasks,
                 missingPlanningInfoTasks,
-                missingInfoEpics,
+                missingInfoEpics, backlogProductEpics, backlogTechEpics,
                 productEpicsInScope,
                 techEpicsInScope,
                 readyToCloseProductEpicsInScope,
@@ -5828,7 +5832,7 @@ import {
                 setReadyToCloseProductTasks(nextState.readyToCloseProductTasks || []);
                 setReadyToCloseTechTasks(nextState.readyToCloseTechTasks || []);
                 setMissingPlanningInfoTasks(nextState.missingPlanningInfoTasks || []);
-                setMissingInfoEpics(nextState.missingInfoEpics || []);
+                setMissingInfoEpics(nextState.missingInfoEpics || []); setBacklogProductEpics(nextState.backlogProductEpics || []); setBacklogTechEpics(nextState.backlogTechEpics || []);
                 setProductEpicsInScope(nextState.productEpicsInScope || []);
                 setTechEpicsInScope(nextState.techEpicsInScope || []);
                 setReadyToCloseProductEpicsInScope(nextState.readyToCloseProductEpicsInScope || []);
@@ -5929,7 +5933,7 @@ import {
             };
 
             const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), [
-                selectedSprint, missingInfoEpics,
+                selectedSprint, missingInfoEpics, backlogProductEpics, backlogTechEpics,
                 planningScopeKey,
                 activeGroupTeamIds.join('|'),
                 productTasks,
@@ -6018,7 +6022,7 @@ import {
                 if (!activeGroupId) return;
                 if (activeGroupRef.current !== activeGroupId) return;
                 if (planningScopeKey && planningHydratedScopeRef.current !== planningScopeKey) return;
-                groupStateRef.current.set(activeGroupId, groupStateSnapshot);
+                groupStateRef.current.set(activeGroupId, issueEditStateRef.current.reconcileSnapshot(groupStateSnapshot));
             }, [activeGroupId, groupStateSnapshot, planningScopeKey]);
 
             useEffect(() => {
@@ -6031,7 +6035,7 @@ import {
                     cached.sprintId === selectedSprint &&
                     cached.teamIdsSignature === activeGroupTeamIds.join('|');
                 if (matchesScope) {
-                    applyGroupState(cached);
+                    applyGroupState(issueEditStateRef.current.reconcileSnapshot(cached));
                 } else {
                     const fallback = buildDefaultGroupState(activeGroupId);
                     groupStateRef.current.set(activeGroupId, fallback);
@@ -6682,7 +6686,7 @@ import {
             }, [isStatsSourceOnlyStatsView, abortSprintFetches]);
 
             const fetchMissingPlanningInfo = async (sprintId, { shouldApplyResult, signal } = {}) => {
-                const controller = registerSprintFetch(), requestSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
+                const controller = registerSprintFetch(), requestSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal, readToken = issueEditStateRef.current.beginRead();
                 try {
                     if (!sprintId) return;
                     if (activeGroupId && activeGroupTeamIds.length === 0) {
@@ -6699,13 +6703,13 @@ import {
 	                    if (!response.ok) return;
 	                    const data = await response.json();
 	                    if (shouldApplyResult?.() === false) return;
-	                    setMissingPlanningInfoTasks(data.issues || []);
-	                    setMissingInfoEpics(data.epics || []);
+	                    setMissingPlanningInfoTasks(issueEditStateRef.current.reconcileIssues(data.issues || [], readToken));
+	                    setMissingInfoEpics(issueEditStateRef.current.reconcileIssues(data.epics || [], readToken));
 	                } catch (e) {
                         if (e.name === 'AbortError') return;
 	                    // ignore (alerts are best-effort)
-	                } finally {
-                        cleanupSprintFetch(controller);
+                } finally {
+                        issueEditStateRef.current.finishRead(readToken); cleanupSprintFetch(controller);
                     }
 	            };
             useEffect(() => {
@@ -6791,7 +6795,7 @@ import {
                 loadReadyToCloseTechTasks,
             } = useEngSprintData({
                 backendUrl: BACKEND_URL,
-                performanceGate,
+                performanceGate, issueEditState: issueEditStateRef.current,
                 selectedSprint,
                 selectedSprintName: selectedSprintInfo?.name || '',
                 activeGroupId,
@@ -6828,7 +6832,7 @@ import {
                 strictBoardActive,
             });
             const strictBoard = useStrictEngBoardOwner({ active: strictBoardActive, backendUrl: BACKEND_URL, departmentId: activeGroupId, sprintId: selectedSprint, groupRevision: sharedConfigRevision, resolvedFocusColumnId: boardView?.focusedId || null, performanceGate, strictScope: boardStrictScope, trackApiResult, onAuthRequired: () => trackAppError('auth', 'session_recovery', 'reauth') });
-            const strictBoardData = strictBoard.data; const refreshAfterStrictBoardMutation = strictBoard.refresh;
+            const strictBoardData = strictBoard.data; const refreshAfterStrictBoardMutation = strictBoard.refresh; const refreshLegacyBoardTasks = () => loadMeasuredGroupTasks({ forceRefresh: true });
             const loadMeasuredGroupTasks = (options = {}) => {
                 activePerformanceLoadRef.current?.cancel();
                 const load = loadGroupTasks({ ...options, waitForDependencies: showDependencies || showBlockedAlert,
@@ -6854,7 +6858,7 @@ import {
                     setDependencyData({});
                     return;
                 }
-                const controller = registerSprintFetch();
+                const controller = registerSprintFetch(), readToken = issueEditStateRef.current.beginRead({ aggregate: true });
                 try {
                     const response = await requestDependencies(BACKEND_URL, keys, { signal: controller.signal });
                     if (!response.ok) {
@@ -6862,6 +6866,7 @@ import {
                         return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
                     }
                     const data = await response.json();
+                    if (!issueEditStateRef.current.isCurrentAggregateRead(readToken)) { setDependencyRefreshNonce(value => value + 1); return ENG_TASK_LOAD_OUTCOME.IGNORED; }
                     setDependencyData(data.dependencies || {});
                     return ENG_TASK_LOAD_OUTCOME.APPLIED;
                 } catch (err) {
@@ -6870,7 +6875,7 @@ import {
                     console.error('Dependencies fetch error:', err);
                     return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
                 } finally {
-                    cleanupSprintFetch(controller);
+                    issueEditStateRef.current.finishRead(readToken); cleanupSprintFetch(controller);
                 }
             };
 
@@ -7450,20 +7455,21 @@ import {
                     setBacklogTechEpics([]);
                 } else {
                     const loadBacklog = async () => {
+                        const readToken = issueEditStateRef.current.beginRead();
                         try {
                             const [product, tech] = await Promise.all([
                                 fetchBacklogEpics('product', { signal: alertController.signal }),
                                 fetchBacklogEpics('tech', { signal: alertController.signal })
                             ]);
                             if (cancelled || !shouldApplyAlertResult()) return;
-                            setBacklogProductEpics(product);
-                            setBacklogTechEpics(tech);
+                            setBacklogProductEpics(issueEditStateRef.current.reconcileIssues(product, readToken));
+                            setBacklogTechEpics(issueEditStateRef.current.reconcileIssues(tech, readToken));
                         } catch (err) {
                             if (cancelled || !shouldApplyAlertResult()) return;
                             if (isAuthenticationRequiredError(err)) return;
                             setBacklogProductEpics([]);
                             setBacklogTechEpics([]);
-                        }
+                        } finally { issueEditStateRef.current.finishRead(readToken); }
                     };
                     loadBacklog();
                 }
@@ -7931,7 +7937,7 @@ import {
                 }, 30000);
                 let cancelled = false;
                 const fetchBurnout = async () => {
-                    setBurnoutLoading(true);
+                    const readToken = issueEditStateRef.current.beginRead({ aggregate: true }); setBurnoutLoading(true);
                     setBurnoutError('');
                     try {
                         const response = await requestBurnoutStats(
@@ -7949,7 +7955,7 @@ import {
                             throw new Error(err.error || err.message || `Burndown fetch failed (${response.status})`);
                         }
                         const payload = await response.json();
-                        if (cancelled) return;
+                        if (cancelled || !issueEditStateRef.current.isCurrentAggregateRead(readToken)) return;
                         const data = payload?.data || null;
                         burnoutCacheRef.current[burnoutQueryKey] = data;
                         setBurnoutData(data);
@@ -7964,7 +7970,7 @@ import {
                         setBurnoutError(String(err.message || err));
                         setBurnoutData(null);
                     } finally {
-                        window.clearTimeout(timeoutId);
+                        issueEditStateRef.current.finishRead(readToken); window.clearTimeout(timeoutId);
                         if (!cancelled) {
                             setBurnoutLoading(false);
                         }
@@ -7992,7 +7998,7 @@ import {
                 burnoutScopedTeamSignature,
                 burnoutIssueKeysSignature,
                 isCompletedSprintSelected,
-                groupPreferences.onboardingRequired
+                groupPreferences.onboardingRequired, issuePeopleStatsRevision
             ]);
 
             useEffect(() => {
@@ -8056,7 +8062,7 @@ import {
                 }, 30000);
                 let cancelled = false;
                 const fetchCohort = async () => {
-                    setCohortLoading(true);
+                    const readToken = issueEditStateRef.current.beginRead({ aggregate: true }); setCohortLoading(true);
                     setCohortError('');
                     try {
                         const response = await requestEpicCohortStats(
@@ -8076,7 +8082,7 @@ import {
                             throw new Error(err.error || err.message || `Lead times fetch failed (${response.status})`);
                         }
                         const payload = await response.json();
-                        if (cancelled) return;
+                        if (cancelled || !issueEditStateRef.current.isCurrentAggregateRead(readToken)) return;
                         const data = payload?.data || null;
                         cohortCacheRef.current[cohortQueryKey] = data;
                         setCohortData(data);
@@ -8091,7 +8097,7 @@ import {
                         }
                         setCohortData(null);
                     } finally {
-                        window.clearTimeout(timeoutId);
+                        issueEditStateRef.current.finishRead(readToken); window.clearTimeout(timeoutId);
                         if (!cancelled) setCohortLoading(false);
                     }
                 };
@@ -8107,7 +8113,7 @@ import {
                         // ignore abort errors
                     }
                 };
-            }, [showStats, statsView, cohortStartQuarter, cohortEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired]);
+            }, [showStats, statsView, cohortStartQuarter, cohortEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, issuePeopleStatsRevision]);
 
             const cohortQuarterOptions = React.useMemo(() => {
                 return buildQuarterOptions(getCurrentQuarterLabel(), 16);
@@ -8323,7 +8329,7 @@ import {
                     return;
                 }
 
-                let cancelled = false;
+                let cancelled = false, readToken;
                 const controllers = new Set();
                 const sprintCacheKeyFor = (sprintId) => `sprint::${String(sprintId || '').trim()}::${excludedCapacityScopedTeamSignature || 'all'}`;
                 const fetchSprintChunk = async (sprintId) => {
@@ -8354,7 +8360,7 @@ import {
                         }
                         const payload = await response.json();
                         const data = payload?.data || null;
-                        if (data) {
+                        if (data && issueEditStateRef.current.isCurrentAggregateRead(readToken)) {
                             excludedCapacityCacheRef.current[sprintCacheKey] = data;
                         }
                         return data;
@@ -8372,7 +8378,7 @@ import {
                     }
                 };
                 const loadExcludedCapacity = async () => {
-                    setExcludedCapacityLoading(true);
+                    readToken = issueEditStateRef.current.beginRead({ aggregate: true }); setExcludedCapacityLoading(true);
                     setExcludedCapacityError('');
                     const analyticsStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
                     try {
@@ -8380,14 +8386,14 @@ import {
                             maxConcurrent: EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
                             isCancelled: () => cancelled,
                             onProgress: (chunks, progressMeta) => {
-                                if (cancelled) return;
+                                if (cancelled || !issueEditStateRef.current.isCurrentAggregateRead(readToken)) return;
                                 setExcludedCapacityData(mergeExcludedCapacityStatsSourceChunks(chunks, {
                                     loadedSprintCount: progressMeta.loadedSprintCount,
                                     totalSprintCount: progressMeta.totalSprintCount
                                 }));
                             }
                         });
-                        if (cancelled) return;
+                        if (cancelled || !issueEditStateRef.current.isCurrentAggregateRead(readToken)) return;
                         if (result.errors.length === excludedCapacitySprintIds.length) {
                             throw new Error('Excluded capacity source failed for all selected sprints.');
                         }
@@ -8409,7 +8415,7 @@ import {
                         setExcludedCapacityData(null);
                         trackApiResult('stats_source', { featureName: 'stats', method: 'POST', status: 500, durationMs: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - analyticsStartedAt, cacheState: forceRefresh ? 'refresh' : 'unknown' });
                     } finally {
-                        if (!cancelled) setExcludedCapacityLoading(false);
+                        issueEditStateRef.current.finishRead(readToken); if (!cancelled) setExcludedCapacityLoading(false);
                     }
                 };
                 const debounceId = window.setTimeout(loadExcludedCapacity, 120);
@@ -11863,7 +11869,7 @@ import {
                 const measuredLoad = selectedView === 'eng' ? activePerformanceLoadRef.current : null;
                 const started = performance.now();
                 void fetchDependencies(keys).then(outcome => measuredLoad?.dependenciesFinished(outcome, performance.now() - started));
-            }, [selectedView, strictBoardActive, showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading, epmRollupLoading, performanceLoadRevision]);
+            }, [selectedView, strictBoardActive, showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading, epmRollupLoading, performanceLoadRevision, dependencyRefreshNonce]);
 
             useEffect(() => {
                 if (!showDependencies) {
@@ -11923,11 +11929,10 @@ import {
                 return true;
             };
 
-            const handleAlertStoryClick = (taskKey) => {
-                if (!scrollToTaskItem(taskKey) && jiraUrl) {
-                    window.open(`${jiraUrl}/browse/${taskKey}`, '_blank', 'noopener,noreferrer');
-                }
-            };
+            const handleAlertStoryClick = (taskKey, editStoryPoints = false) => navigateToAlertStory({
+                taskKey, editStoryPoints, revealStory: scrollToTaskItem, clearFilters: clearEngFilters,
+                onMissing: key => jiraUrl && window.open(`${jiraUrl}/browse/${key}`, '_blank', 'noopener,noreferrer')
+            });
 
             const dismissAlertItem = (taskKey) => {
                 if (!taskKey) return;
@@ -12014,7 +12019,7 @@ import {
                 const missingKeys = (dependencyFocus.missingKeys || []).filter(key => !dependencyLookupCache[key]);
                 if (!missingKeys.length) return;
                 let isCancelled = false;
-                const controller = registerSprintFetch();
+                const controller = registerSprintFetch(), readToken = issueEditStateRef.current.beginRead();
                 const fetchLookup = async () => {
                     setDependencyLookupLoading(true);
                     try {
@@ -12025,7 +12030,7 @@ import {
                         }
                         const data = await response.json();
                         if (isCancelled) return;
-                        const issues = data.issues || [];
+                        const issues = issueEditStateRef.current.reconcileIssues(data.issues || [], readToken);
                         setDependencyLookupCache(prev => {
                             const next = { ...prev };
                             issues.forEach(issue => {
@@ -12039,7 +12044,7 @@ import {
                         if (err.name === 'AbortError') return;
                         console.error('Dependency lookup error:', err);
                     } finally {
-                        if (!isCancelled) {
+                        issueEditStateRef.current.finishRead(readToken); if (!isCancelled) {
                             setDependencyLookupLoading(false);
                         }
                         cleanupSprintFetch(controller);
@@ -12161,16 +12166,8 @@ import {
                 if (!showPlanning) return [];
                 return buildSelectedPlanningTasksList(selectedTasksList, excludedEpicSet, normalizeEpicKey);
             }, [showPlanning, selectedTasksList, excludedEpicSet]);
-            const selectedSP = React.useMemo(() => {
-                if (!showPlanning) return 0;
-                return sumPlanningStoryPoints(selectedTasksList);
-            }, [showPlanning, selectedTasksList]);
+            const selectedSP = React.useMemo(() => showPlanning ? sumPlanningStoryPoints(selectedTasksList) : 0, [showPlanning, selectedTasksList]);
             const selectedCount = showPlanning ? selectedTasksList.length : 0;
-
-            // ── ENG status transitions (Catch Up single issue + Planning batch + Board) ──
-            // Clickable status pills are enabled only on the ENG Catch Up / Planning / Board
-            // task surface. Stats, Scenario, EPM, and an open Settings modal keep inert
-            // pills. EPM never receives these props (see issueCardContext isolation).
             const statusTransitionSourceSurface = showPlanning ? 'planning' : showBoard ? 'board' : 'catch_up';
             const statusTransitionEnabled = isStatusTransitionSurfaceEnabled({
                 selectedView, showPlanning, showStats, showScenario,
@@ -12194,27 +12191,29 @@ import {
                         : { ...current, state: lifecycle?.state || current.state, reason: lifecycle?.reason || '' }
                 ));
             }, [onboardingPreviewDescriptorMatches]);
-
+            const invalidateEngIssueFieldSources = ({ field }) => {
+                if (field === 'assignee') {
+                    burnoutCacheRef.current = {}; cohortCacheRef.current = {}; excludedCapacityCacheRef.current = {}; setBurnoutData(null); setCohortData(null); setExcludedCapacityData(null); setIssuePeopleStatsRevision(value => value + 1); setExcludedCapacityRefreshNonce(value => value + 1); rearmCatchUpAlerts();
+                } else if (field === 'customfield_10004' || field === 'storyPoints') {
+                    excludedCapacityCacheRef.current = {}; setExcludedCapacityData(null); setDependencyData({}); setDependencyLookupCache({}); setDependencyRefreshNonce(value => value + 1); setExcludedCapacityRefreshNonce(value => value + 1); rearmCatchUpAlerts();
+                }
+            };
+            issueEditStateRef.current.setInvalidationHandler(invalidateEngIssueFieldSources);
             const applyLocalEngIssueField = React.useCallback((issueKey, fieldName, fieldValue) => {
-                if (strictBoard.applyIssueField(issueKey, fieldName, fieldValue)) return;
-                const patchList = prev => applyLocalIssueFieldUpdate(prev, issueKey, fieldName, fieldValue);
-                setProductTasks(patchList);
-                setTechTasks(patchList);
-                setLoadedProductTasks(patchList);
-                setLoadedTechTasks(patchList);
-                setReadyToCloseProductTasks(patchList);
-                setReadyToCloseTechTasks(patchList);
-                setProductEpicsInScope(patchList);
-                setTechEpicsInScope(patchList);
-                setReadyToCloseProductEpicsInScope(patchList);
-                setReadyToCloseTechEpicsInScope(patchList);
+                strictBoard.applyIssueField(issueKey, fieldName, fieldValue);
+                const patchList = prev => patchEngIssueList(prev, issueKey, fieldName, fieldValue);
+                [setProductTasks, setTechTasks, setLoadedProductTasks, setLoadedTechTasks, setReadyToCloseProductTasks, setReadyToCloseTechTasks,
+                    setProductEpicsInScope, setTechEpicsInScope, setReadyToCloseProductEpicsInScope, setReadyToCloseTechEpicsInScope,
+                    setMissingPlanningInfoTasks, setMissingInfoEpics, setBacklogProductEpics, setBacklogTechEpics].forEach(setter => setter(patchList));
                 setEpicDetails(prev => applyLocalEpicDetailsFieldUpdate(prev, issueKey, fieldName, fieldValue));
+                groupStateRef.current = patchEngLoadedState({}, groupStateRef.current, issueKey, fieldName, fieldValue).groups;
+                invalidateEngIssueFieldSources({ field: fieldName });
                 applyLocalSubtaskField(issueKey, fieldName, fieldValue);
             }, [applyLocalSubtaskField, strictBoard]);
-            const strictBoardMutationProps = strictEngBoardMutationProps({ active: strictBoardActive, coordinator: strictBoard.mutationCoordinator, refresh: refreshAfterStrictBoardMutation, sourceSurface: statusTransitionSourceSurface, loadLegacy: () => loadMeasuredGroupTasks({ forceRefresh: true }), retrySubtasks: retryStorySubtasks });
-            // Kept as one object as well as destructured names: the Board's epic panel takes the
-            // whole hook result as a single prop rather than thirty, because dashboard.jsx is at
-            // its line budget (§6.5.7) and this file must stay wiring only.
+            const strictBoardMutationProps = strictEngBoardMutationProps({ active: strictBoardActive, coordinator: strictBoard.mutationCoordinator, refresh: refreshAfterStrictBoardMutation, sourceSurface: statusTransitionSourceSurface, loadLegacy: refreshLegacyBoardTasks, retrySubtasks: retryStorySubtasks });
+            const issueFieldEdits = useEngIssueFieldEdits({ backendUrl: BACKEND_URL, issueEditState: issueEditStateRef.current, getContextKey: () => `${authMode}|${jiraUrl}|${authResumeStagedRevision}`,
+                onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'), onAction: (workflowAction, editor, result) => trackIssueFieldEditAction(workflowAction, { fieldName: editor.field === 'deliveryOwner' ? 'delivery_owner' : editor.field === 'storyPoints' ? 'story_points' : editor.field, issueKind: editor.issueKind, sourceSurface: editor.sourceSurface, result }), onConfirm: ({ issueKey, field, value }) => applyLocalEngIssueField(issueKey, field === 'storyPoints' ? 'customfield_10004' : field, value) });
+            const issueFieldEditsEnabled = authMode === 'atlassian_oauth' && statusTransitionEnabled; React.useEffect(() => { issueFieldEdits.contextChanged(); }, [selectedSprint, activeGroupId, statusTransitionSourceSurface, issueFieldEditsEnabled]);
             const statusTransitions = useEngStatusTransitions({
                 backendUrl: BACKEND_URL,
                 selectedStories: selectedTasksList,
@@ -12243,12 +12242,6 @@ import {
 
             const statusTransitionActiveKey = statusTransitionActiveTarget?.key || null;
 
-            // ── ENG priority transitions (Catch Up single issue + Planning) ──
-            // Same ENG-only surface gate as status (EPM/Stats/Scenario/Settings stay inert).
-            // Menu/catalog/submit logic lives in useEngPriorityTransitions +
-            // PriorityTransitionMenu; dashboard only wires props. Catch Up changes patch the
-            // selected issue immediately and reconcile through the shared background queue;
-            // Planning keeps the existing post-success scope refresh.
             const priorityTransitionEnabled = statusTransitionEnabled;
             const priorityTransitions = useEngPriorityTransitions({
                 backendUrl: BACKEND_URL,
@@ -12271,10 +12264,6 @@ import {
             } = priorityTransitions;
             const priorityTransitionActiveKey = activePriorityTarget?.key || null;
 
-            // ── ENG Project Track transitions (Catch Up single issue + Planning) ──
-            // Same ENG-only surface gate as priority. No success-refresh callback: a
-            // single-Epic Project Track change patches local state only and must not
-            // force a task-list refetch.
             const projectTrackTransitionEnabled = priorityTransitionEnabled;
             const projectTrackTransitions = useEngProjectTrackTransitions({
                 backendUrl: BACKEND_URL,
@@ -14061,6 +14050,14 @@ import {
                             : epicInfo?.priority?.name || '';
                         const projectTrackValue = epicInfo?.projectTrack || '';
                         const projectTrackEmoji = getProjectTrackEmoji(projectTrackValue);
+                        const renderEpicPersonEditor = (field, label, value) => {
+                            const editableEpic = issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && Boolean(epicInfo), active = editableEpic && issueFieldEdits.activeEditor?.issueKey === epicGroup.key && issueFieldEdits.activeEditor.field === field;
+                            if (!editableEpic) return value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
+                            return <IssuePersonEditor issueKey={epicGroup.key} field={field} fieldLabel={label} currentValue={value} isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
+                                suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
+                                submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)} pending={issueFieldEdits.pendingIssueKeys.has(epicGroup.key)} error={active ? issueFieldEdits.errorMessage : ''} statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''} recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''} configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
+                                onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: 'epic', sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />;
+                        };
                         return (
                             <div
                                 key={epicGroup.key}
@@ -14208,7 +14205,7 @@ import {
                                                 )
                                             )}
 	                                        <span>SP: {epicTotalSp.toFixed(1)}</span>
-	                                        {epicInfo?.assignee?.displayName && (
+	                                        {(epicInfo?.assignee?.displayName || (issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && epicInfo)) && (
 	                                            <span className="task-assignee epic-assignee">
 	                                                <span className="task-assignee-icon" aria-hidden="true">
 	                                                    <svg viewBox="0 0 24 24" fill="none">
@@ -14216,7 +14213,7 @@ import {
 	                                                        <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
 	                                                    </svg>
 	                                                </span>
-	                                                <span>{epicInfo.assignee.displayName}</span>
+	                                                <span>{renderEpicPersonEditor('assignee', 'Assignee', epicInfo?.assignee)}</span>
 	                                            </span>
 	                                        )}
 	                                    </div>
@@ -14272,6 +14269,7 @@ import {
                                             onSubmitPriorityTransition={submitPriorityChange}
                                             onboardingPreviewSession={onboardingPreviewSession}
                                             onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
+                                            issueFieldEdits={issueFieldEditsEnabled ? issueFieldEdits : null}
                                         />
                                     );
                                 })}
@@ -16673,6 +16671,7 @@ import {
                             projectTrackTransitions={projectTrackTransitions}
                             statusTransitionSubmitting={statusTransitionSubmitting}
                             onSubmitStatusTransition={handleSubmitStatusTransition}
+                            issueFieldEdits={issueFieldEditsEnabled ? issueFieldEdits : null}
                             onConfigure={() => {
                                 trackSettingsAction('boards', 'open', { source_surface: 'board' });
                                 setShowGroupManage(true);

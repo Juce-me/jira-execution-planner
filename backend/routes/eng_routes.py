@@ -6,6 +6,7 @@ import time
 from flask import Blueprint
 
 from backend.auth.cache_policy import build_jira_home_process_cache_key, jira_home_partitioned_process_cache_enabled
+from backend.auth.scope_policy import missing_context_oauth_scopes
 from backend.epm.home import adf_to_html
 from backend.services.eng_subtasks import (
     SUBTASK_FIELDS,
@@ -21,6 +22,13 @@ from backend.services.jira_issue_priorities import (
     load_priority_options,
     load_priority_options_for_issue,
     update_issue_priorities,
+)
+from backend.services.jira_issue_field_edits import (
+    FieldEditInputError,
+    FieldEditServiceError,
+    load_editable_field,
+    search_field_users,
+    update_issue_field,
 )
 from backend.services.jira_issue_project_track import (
     ProjectTrackInputError,
@@ -95,6 +103,158 @@ def _missing_write_jira_work_scope(auth_context):
     return bool(missing_oauth_scopes(oauth_session_data(), {'write:jira-work'}))
 
 
+_ISSUE_FIELD_NAMES = frozenset({'assignee', 'deliveryOwner', 'storyPoints'})
+_ISSUE_PEOPLE_FIELDS = frozenset({'assignee', 'deliveryOwner'})
+_ISSUE_FIELD_ERROR_DETAIL_KEYS = {
+    'stale_issue': frozenset({
+        'issueKey', 'field', 'currentValue', 'baseUpdated', 'mappingRevision',
+    }),
+    'write_outcome_unknown': frozenset({'issueKey', 'field'}),
+    'jira_rate_limited': frozenset({'retryAfterSeconds'}),
+}
+
+
+def _issue_field_ids():
+    return {
+        'assignee': 'assignee',
+        'deliveryOwner': get_delivery_owner_field_id(),
+        'storyPoints': get_story_points_field_id(),
+    }
+
+
+def _issue_field_scopes(field, *, write=False):
+    if field not in _ISSUE_FIELD_NAMES:
+        raise FieldEditInputError('invalid_field')
+    scopes = {'read:jira-work'}
+    if field in _ISSUE_PEOPLE_FIELDS:
+        scopes.add('read:jira-user')
+    if write:
+        scopes.add('write:jira-work')
+    return scopes
+
+
+def _require_issue_field_scopes(auth_context, field, *, write=False):
+    if missing_context_oauth_scopes(
+            auth_context, _issue_field_scopes(field, write=write)):
+        raise AuthError(
+            'missing_oauth_scope',
+            'Your Jira sign-in needs updated permissions.',
+        )
+
+
+def _issue_field_service_error_response(error):
+    payload = {'error': error.code}
+    allowed = _ISSUE_FIELD_ERROR_DETAIL_KEYS.get(error.code, ())
+    for key in allowed:
+        if key in error.details:
+            payload[key] = error.details[key]
+    return jsonify(payload), error.status or 502
+
+
+def _issue_field_basic_denial():
+    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
+        return jsonify({'error': 'jira_oauth_required'}), 403
+    return None
+
+
+@bp.route('/api/issues/<issue_key>/editable-fields', methods=['GET'])
+def get_editable_issue_field(issue_key):
+    basic_denial = _issue_field_basic_denial()
+    if basic_denial is not None:
+        return basic_denial
+    if request.headers.get('X-Requested-With') != 'jira-execution-planner':
+        return jsonify({
+            'error': 'csrf_required',
+            'message': 'OAuth metadata requests require X-Requested-With: jira-execution-planner',
+        }), 403
+    if set(request.args) != {'field'}:
+        return jsonify({'error': 'invalid_field'}), 400
+    field = request.args.get('field')
+    try:
+        auth_context = current_request_auth_context()
+        _require_issue_field_scopes(auth_context, field)
+        result = load_editable_field(
+            issue_key,
+            field,
+            jira_request=current_jira_request,
+            context=auth_context,
+            field_ids=_issue_field_ids(),
+        )
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except FieldEditInputError as error:
+        return jsonify({'error': error.code}), 400
+    except FieldEditServiceError as error:
+        return _issue_field_service_error_response(error)
+    except Exception:
+        logger.exception('Editable Jira issue field metadata failed')
+        return jsonify({'error': 'jira_read_failed'}), 502
+    return jsonify(result)
+
+
+@bp.route('/api/issues/<issue_key>/user-options', methods=['POST'])
+def post_issue_field_user_options(issue_key):
+    basic_denial = _issue_field_basic_denial()
+    if basic_denial is not None:
+        return basic_denial
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_json'}), 400
+    try:
+        auth_context = current_request_auth_context()
+        field = payload.get('field')
+        _require_issue_field_scopes(auth_context, field)
+        result = search_field_users(
+            issue_key,
+            payload,
+            jira_request=current_jira_request,
+            context=auth_context,
+            field_ids=_issue_field_ids(),
+        )
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except FieldEditInputError as error:
+        return jsonify({'error': error.code}), 400
+    except FieldEditServiceError as error:
+        return _issue_field_service_error_response(error)
+    except Exception:
+        logger.exception('Jira issue field user search failed')
+        return jsonify({'error': 'jira_read_failed'}), 502
+    return jsonify(result)
+
+
+@bp.route('/api/issues/<issue_key>/field', methods=['POST'])
+def post_issue_field(issue_key):
+    basic_denial = _issue_field_basic_denial()
+    if basic_denial is not None:
+        return basic_denial
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_json'}), 400
+    try:
+        auth_context = current_request_auth_context()
+        field = payload.get('field')
+        _require_issue_field_scopes(auth_context, field, write=True)
+        result = update_issue_field(
+            issue_key,
+            payload,
+            jira_request=current_jira_request,
+            context=auth_context,
+            field_ids=_issue_field_ids(),
+            invalidate=clear_jira_issue_status_caches,
+        )
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except FieldEditInputError as error:
+        return jsonify({'error': error.code}), 400
+    except FieldEditServiceError as error:
+        return _issue_field_service_error_response(error)
+    except Exception:
+        logger.exception('Jira issue field update failed')
+        return jsonify({'error': 'jira_read_failed'}), 502
+    return jsonify(result)
+
+
 @bp.route('/api/dependencies', methods=['POST'])
 def get_dependencies():
     """Fetch dependency links for a set of issues."""
@@ -106,6 +266,7 @@ def get_dependencies():
 
         started_at = time.perf_counter()
         auth_context = current_request_auth_context()
+        cache_generation = get_jira_issue_cache_generation()
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
         cache_key = build_jira_home_process_cache_key(auth_context, 'dependencies', ','.join(keys))
         cached_entry = None
@@ -122,10 +283,8 @@ def get_dependencies():
         collect_ms = round((time.perf_counter() - collect_started_at) * 1000, 1)
         if cache_enabled:
             with _cache_lock:
-                DEPENDENCIES_CACHE[cache_key] = {
-                    'timestamp': time.time(),
-                    'data': dependencies,
-                }
+                if get_jira_issue_cache_generation() == cache_generation:
+                    DEPENDENCIES_CACHE[cache_key] = {'timestamp': time.time(), 'data': dependencies}
         total_ms = round((time.perf_counter() - started_at) * 1000, 1)
         response = jsonify({'dependencies': dependencies})
         response.headers['Server-Timing'] = f'collect;dur={collect_ms}, total;dur={total_ms}'
@@ -217,6 +376,7 @@ def get_story_subtasks():
 
         started_at = time.perf_counter()
         auth_context = current_request_auth_context()
+        cache_generation = get_jira_issue_cache_generation()
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
         cache_key = build_jira_home_process_cache_key(
             auth_context,
@@ -251,10 +411,8 @@ def get_story_subtasks():
         )
         if cache_enabled:
             with _cache_lock:
-                SUBTASKS_CACHE[cache_key] = {
-                    'timestamp': time.time(),
-                    'issues': issues,
-                }
+                if get_jira_issue_cache_generation() == cache_generation:
+                    SUBTASKS_CACHE[cache_key] = {'timestamp': time.time(), 'issues': issues}
 
         response = jsonify(shape_subtasks_payload(parent_key, sprint_id, issues, cached=False))
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -563,6 +721,7 @@ def get_missing_info():
             return jsonify({'error': 'Missing required query param: sprint'}), 400
 
         auth_context = current_request_auth_context()
+        cache_generation = get_jira_issue_cache_generation()
         effective_components = components_param or ([MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [])
         effective_team_ids = normalize_team_ids(team_ids or MISSING_INFO_TEAM_IDS)
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
@@ -617,10 +776,8 @@ def get_missing_info():
             payload = {'issues': [], 'epics': [], 'count': 0}
             if cache_enabled:
                 with _cache_lock:
-                    MISSING_INFO_CACHE[cache_key] = {
-                        'timestamp': time.time(),
-                        'data': payload,
-                    }
+                    if get_jira_issue_cache_generation() == cache_generation:
+                        MISSING_INFO_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
             response = jsonify(payload)
             response.headers['Server-Timing'] = f'total;dur={round((time.perf_counter() - started_at) * 1000, 1)}'
             return response
@@ -753,7 +910,7 @@ def get_missing_info():
                             'status': {'name': status} if status else None,
                             'priority': {'name': priority.get('name')} if priority else None,
                             'issuetype': {'name': issuetype.get('name')} if issuetype else None,
-                            'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+                            'assignee': shape_jira_person(assignee),
                             'updated': fields.get('updated'),
                             'customfield_10004': fields.get(get_story_points_field_id()),
                             'customfield_10101': fields.get(get_sprint_field_id()),
@@ -772,10 +929,8 @@ def get_missing_info():
         payload = {'issues': missing, 'epics': epics_summary, 'count': len(missing), 'epicCount': len(epic_keys)}
         if cache_enabled:
             with _cache_lock:
-                MISSING_INFO_CACHE[cache_key] = {
-                    'timestamp': time.time(),
-                    'data': payload,
-                }
+                if get_jira_issue_cache_generation() == cache_generation:
+                    MISSING_INFO_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
         response = jsonify(payload)
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'

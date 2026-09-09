@@ -78,6 +78,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
              patch.object(jira_server, "resolve_epic_link_field_id", return_value=epic_field), \
              patch.object(jira_server, "get_sprint_field_id", return_value=sprint_field), \
              patch.object(jira_server, "get_story_points_field_id", return_value=story_points_field), \
+             patch.object(jira_server, "get_project_track_field_id", return_value="customfield_track"), \
              patch.object(jira_server, "jira_search_request", side_effect=responses) as mock_search:
             response = client.post(
                 "/api/stats/excluded-capacity-source",
@@ -148,6 +149,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
              patch.object(jira_server, "resolve_epic_link_field_id", return_value=epic_field), \
              patch.object(jira_server, "get_sprint_field_id", return_value=sprint_field), \
              patch.object(jira_server, "get_story_points_field_id", return_value=story_points_field), \
+             patch.object(jira_server, "get_project_track_field_id", return_value="customfield_track"), \
              patch.object(jira_server, "jira_search_request", side_effect=responses) as mock_search:
             first = client.post(
                 "/api/stats/excluded-capacity-source",
@@ -216,6 +218,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
              patch.object(jira_server, "resolve_epic_link_field_id", return_value=epic_field), \
              patch.object(jira_server, "get_sprint_field_id", return_value=sprint_field), \
              patch.object(jira_server, "get_story_points_field_id", return_value=story_points_field), \
+             patch.object(jira_server, "get_project_track_field_id", return_value="customfield_track"), \
              patch.object(jira_server, "jira_search_request", side_effect=responses) as mock_search:
             first = client.post(
                 "/api/stats/excluded-capacity-source",
@@ -285,13 +288,14 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
             'parent': {'key': 'PROD-12', 'fields': {'issuetype': {'name': 'Epic'}, 'summary': 'Epic A'}},
             'customfield_10004': 5}}
         epic_meta = {'PROD-12': {'summary': 'Epic A', 'projectTrack': 'Committed',
-                                 'assignee': {'displayName': 'Synthetic Owner'}}}
+                                 'assignee': {'accountId': 'acct-owner', 'displayName': 'Synthetic Owner'}}}
         with patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_10004'):
             payload = jira_server.build_excluded_capacity_issue_payload(
                 issue, team_field_id=None, epic_link_field_id=None, sprint_field_id=None,
                 epic_summary_by_key=epic_meta)
         self.assertEqual(payload['fields']['epicProjectTrack'], 'Committed')
-        self.assertEqual(payload['fields']['epicAssignee'], {'displayName': 'Synthetic Owner'})
+        self.assertEqual(payload['fields']['epicAssignee'], {
+            'accountId': 'acct-owner', 'displayName': 'Synthetic Owner'})
 
     def test_issue_payload_handles_missing_track_and_assignee(self):
         issue = {'id': '2', 'key': 'PROD-101', 'fields': {

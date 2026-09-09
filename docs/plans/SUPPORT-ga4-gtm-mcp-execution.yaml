@@ -132,6 +132,7 @@ gtm_web:
     - { name: "DLV - error_area", data_layer_variable_name: "error_area", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - error_code", data_layer_variable_name: "error_code", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - feature_name", data_layer_variable_name: "feature_name", version: 2, purpose: "approved event parameter" }
+    - { name: "DLV - field_name", data_layer_variable_name: "field_name", version: 2, purpose: "approved issue-field enum; intentionally unregistered without a named report" }
     - { name: "DLV - filter_type", data_layer_variable_name: "filter_type", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - from_mode", data_layer_variable_name: "from_mode", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - from_view", data_layer_variable_name: "from_view", version: 2, purpose: "approved event parameter" }
@@ -219,6 +220,7 @@ gtm_web:
       trigger: "CE - userevent"
       params:
         feature_name: "{{DLV - feature_name}}"
+        field_name: "{{DLV - field_name}}"
         source_surface: "{{DLV - source_surface}}"
         result: "{{DLV - result}}"
         workflow_action: "{{DLV - workflow_action}}"

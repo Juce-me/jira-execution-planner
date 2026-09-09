@@ -1,8 +1,8 @@
 # OAuth inline issue editing — design
 
-**Status:** Planned; refined through API, UI reuse, and state reviews. Implementation contract: [EXEC-oauth-inline-issue-editing.md](EXEC-oauth-inline-issue-editing.md).
+**Status:** Implemented and verified locally on 2026-09-09; awaiting live tenant capability and operator-approved disposable Jira write evidence. Implementation contract: [EXEC-oauth-inline-issue-editing.md](EXEC-oauth-inline-issue-editing.md).
 **Created / reviewed:** 2026-09-08
-**Scope:** ENG Catch Up, Planning, and Board. No application implementation or live Jira write has been performed.
+**Scope:** ENG Catch Up, Planning, and Board. Local application implementation and synthetic verification are complete; no live Jira write has been performed.
 
 ## Outcome
 
@@ -11,28 +11,28 @@ Signed-in OAuth users can edit Assignee on Epics and Stories, Delivery Owner on 
 | Field | Catch Up | Planning | ENG Board |
 | --- | --- | --- | --- |
 | Assignee | Epic and Story | Epic and Story | Epic card/detail panel and Story detail rows |
-| Delivery Owner | Epic only | Epic only | Epic card/detail metadata |
+| Delivery Owner | — | — | Epic card/detail metadata |
 | Story Points | Story only | Story only | Display updated values; no editor |
 
 The design baseline is ENG only, five users including Me, non-negative Story Points including zero, and no clearing action. No bulk-field, subtask, EPM/Home, Scenario publishing, or new configuration ownership. Server eligibility is literal Epic/Story excluding subtasks; the current flat configured issue-type list is not a role mapping. Basic mode remains read-only.
 
 ## Reuse and consistency are acceptance requirements
 
-Click the displayed value to open a compact anchored editor. Always-visible inputs would add clutter and height; a generic edit modal would add unnecessary navigation. The inline popover extends the existing status/priority/Project Track interaction.
+Person values open a compact anchored editor. Story Points is edited directly in its existing compact SP slot. A generic edit modal would add unnecessary navigation.
 
 | Need | Existing element | Required reuse |
 | --- | --- | --- |
 | Popover positioning/dismissal | `frontend/src/issues/IssueFieldOptionMenu.jsx` | Extract only shared placement/outside-dismiss mechanics; preserve existing menu focus, semantics, preview and onboarding behavior |
 | Panels/options/loading/error/result | `frontend/src/styles/eng/status-transitions.css` | Extend existing selector aliases, including portal styling; do not copy rules into a parallel design |
-| Search and decimal inputs | `.component-search-input` in `styles/settings/group-editor.css` | Native input with the same class; no new Input component |
-| Save/Cancel/Reload/Check Jira | `button.compact`, `button.secondary.compact` in `styles/eng/controls.css` | Same typography, sizing, borders and states; no new Button component |
+| Person search input | `.component-search-input` in `styles/settings/group-editor.css` | Native input with the same class; no new Input component |
+| Person Save/Cancel/Reload/Check Jira | `button.compact`, `button.secondary.compact` in `styles/eng/controls.css` | Same typography, sizing, borders and states; no new Button component |
 | People in Catch Up/Planning | `.task-assignee`, `.task-assignee-icon`, `.epic-assignee` | Preserve icon and metadata typography; make value a native trigger |
 | Board people | `.eperson`, `.lbl`, `.eperson b` | Preserve existing line height, casing and ellipsis |
 | Story Points | `.task-inline-sp` | Replace value in its existing position; show 0 explicitly |
 | API/auth and writes | `jiraIssueApi.js`, `trackedFetch`, current OAuth wrapper, context-only grant helper | Extend existing paths; no alternate transport/auth flow |
 | Calculations/state | `engIssueLocalUpdates.js`, `planningSelectionStats.js`, current task sources | Patch canonical normalized values and rerun existing selectors; no second calculator |
 
-Thin person and SP presentations are necessary for their semantics; a new design system is not. Do not insert a search input into a role=menu container. Person search uses combobox/listbox behavior; SP uses a small editor dialog. Reuse the shared mechanics and appearance without changing old menus.
+Thin person and SP presentations are necessary for their semantics; a new design system is not. Do not insert a search input into a role=menu container. Person search uses combobox/listbox behavior; SP is the native inline input itself. Reuse the existing slot's mechanics and appearance without changing old menus.
 
 No new permanent buttons, search fields, toolbar, heading row, arbitrary minimum widths, fonts, spacing tokens, or wider/taller cards. Long names ellipsize inside available metadata space. Tests must compare actual text bounds and screenshots, not only container boxes.
 
@@ -49,14 +49,15 @@ Person editor:
 
 Story Points editor:
 
-- Open from the Story SP value in Catch Up/Planning. Show `0 SP` for zero and `Set SP` for missing values.
-- Text input with inputMode=decimal, existing compact Save/Cancel. Enter saves once; Escape/outside dismiss cancels unsaved changes.
+- Open from the Story SP value in Catch Up/Planning. Show `0 SP` for both zero and a missing Jira value, while preserving a missing value as `null` until the user saves a number.
+- The displayed number is the text input itself with inputMode=decimal. There is no trigger button, popup, Save, or Cancel control. Enter saves once; Escape/outside dismiss cancels unsaved changes.
+- A Missing: Story Points alert link stays inside the dashboard: reveal the Story even when ENG filters hide it, scroll to and highlight the Story, then focus/select this inline input so metadata loading enters edit mode. The alert must not open Jira for this case.
 - Accept 0, 1.5, 2, 3, 2.0; render integers without an unnecessary decimal. Reject blank target, negatives, NaN/infinity, >1 decimal, commas and exponent shorthand in UI. Do not round invalid input to make it acceptable. API independently validates finite non-negative numbers and decimal precision, rejecting boolean/string/null targets.
 - Existing more-precise values remain readable and valid as concurrency baselines; a replacement must satisfy the new precision rule. No estimate-clearing action.
 
 ## Placement and accessibility
 
-Catch Up/Planning Stories already have person/SP positions; reuse them. Their Epic metadata has Assignee but lacks Delivery Owner, so add DO within the existing constrained detail lane. Board cards already show both people. Board detail panels need Epic Assignee/DO in existing .m-controls; their Story assignee cell is reused. Do not create another title/header row.
+Catch Up/Planning Stories already have person/SP positions; reuse them. Do not add Delivery Owner to Catch Up or Planning. Board cards already show both Epic people. Board detail panels need Epic Assignee/DO in existing .m-controls; their Story assignee cell is reused. Do not create another title/header row.
 
 Board cards are currently one native button. Inline triggers must not be nested inside it: preserve .ecard geometry as a noninteractive draggable wrapper, put existing summary/status rows in a native .ecard-open button, and leave people triggers as siblings. Update focus restoration to the open button. Summary activation/drag still works; people clicks do not open, drag or select the card.
 

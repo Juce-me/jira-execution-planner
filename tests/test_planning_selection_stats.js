@@ -128,3 +128,45 @@ test('empty Ad Hoc set leaves selected stats classification unchanged', async ()
         { TECH: 8 }
     );
 });
+
+test('all reducer totals normalize binary drift only for integer tenths', async () => {
+    const {
+        sumPlanningStoryPoints,
+        buildSelectedTeamStats,
+        buildSelectedProjectStats,
+        buildSelectedTeamProjectStats,
+        buildExcludedProjectStats,
+    } = await loadUtils();
+    const tenths = [
+        task('PROD-1', { projectKey: 'PROD', epicKey: 'EP-1', teamId: 'team-a', teamName: 'Team A', customfield_10004: 0.1 }),
+        task('PROD-2', { projectKey: 'PROD', epicKey: 'EP-1', teamId: 'team-a', teamName: 'Team A', customfield_10004: 0.2 }),
+    ];
+
+    assert.equal(sumPlanningStoryPoints(tenths), 0.3);
+    assert.equal(buildSelectedTeamStats(tenths, getTeamInfo)['team-a'].storyPoints, 0.3);
+    assert.equal(buildSelectedProjectStats(tenths, techProjectKeys).PRODUCT, 0.3);
+    assert.equal(buildSelectedTeamProjectStats(tenths, getTeamInfo, techProjectKeys)['team-a'].product, 0.3);
+    assert.equal(buildExcludedProjectStats(tenths, new Set(['EP-1']), techProjectKeys, normalizeEpicKey).PRODUCT, 0.3);
+
+    const precise = [task('PROD-3', { customfield_10004: 1.234 }), task('PROD-4', { customfield_10004: 0.2 })];
+    assert.equal(sumPlanningStoryPoints(precise), 1.434);
+});
+
+test('edited fractional story points recalculate selected fixtures without changing selection inputs', async () => {
+    const { sumPlanningStoryPoints, buildSelectedPlanningTasksList } = await loadUtils();
+    const { applyLocalIssueFieldUpdate } = await import('../frontend/src/eng/engIssueLocalUpdates.js');
+    const stories = [
+        task('DEMO-1', { epicKey: 'EP-1', customfield_10004: 1.5 }),
+        task('DEMO-2', { epicKey: 'EP-2', customfield_10004: 3 }),
+        task('DEMO-3', { epicKey: 'EXCLUDED-1', customfield_10004: 0 }),
+        task('DEMO-4', { epicKey: 'EP-4', customfield_10004: null }),
+    ];
+    const selectedKeys = { 'DEMO-1': true, 'DEMO-2': true };
+    const updated = applyLocalIssueFieldUpdate(stories, 'DEMO-1', 'customfield_10004', 2);
+
+    assert.equal(sumPlanningStoryPoints(updated.filter(item => selectedKeys[item.key])), 5);
+    assert.equal(sumPlanningStoryPoints(updated.filter(item => item.key === 'DEMO-2')), 3);
+    assert.equal(sumPlanningStoryPoints(buildSelectedPlanningTasksList(updated, new Set(['EXCLUDED-1']), normalizeEpicKey)), 5);
+    assert.deepEqual(selectedKeys, { 'DEMO-1': true, 'DEMO-2': true });
+    assert.equal(stories[0].fields.customfield_10004, 1.5);
+});

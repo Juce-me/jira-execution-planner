@@ -19,7 +19,9 @@ def build_alert_epic_payloads(issues, team_field_id, sprint_field_id=None, *, bu
             "key": issue.get("key"),
             "summary": fields.get("summary"),
             "status": {"name": status.get("name")} if status else None,
-            "assignee": {"displayName": assignee.get("displayName")} if assignee else None,
+            "assignee": {
+                "accountId": assignee.get("accountId"), "displayName": assignee.get("displayName")
+            } if assignee else None,
             "labels": fields.get("labels") or [],
             "team": team_value,
             "teamName": team_name,

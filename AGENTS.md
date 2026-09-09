@@ -350,3 +350,6 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Evaluate measurement and scope gates from existing app DB rows before requesting new collection; apply unresolved runtime and release gates only to their dependent tasks, preserving independent development work.
 - Never bypass the section 10 publication transaction gate; validate history, scope, remote head, rendered PR body, and CI as one unit before reporting success (MRT025).
 - Commit a postmortem for active work on the related task branch; do not create a separate postmortem/docs branch unless the operator explicitly requests one.
+- In ENG Story displays, render a null Jira Story Points value as `0 SP` while preserving null internally until the user saves a number.
+- In ENG Catch Up and Planning, do not add Delivery Owner to Epic metadata; Story Points editing must reuse the inline SP slot as an input with no button or popup, preserve inherited typography, and keep a 23px minimum input width.
+- Missing-Story-Points alert links must reveal and highlight the Story on the ENG dashboard and focus its inline Story Points input in edit mode instead of navigating directly to Jira.

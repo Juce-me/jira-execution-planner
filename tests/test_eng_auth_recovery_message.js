@@ -252,8 +252,10 @@ test('ENG task stale auth errors show reconnect text after refresh cannot recove
 
 test('ENG loaders use an auth sentinel before replacing task and sprint state', () => {
     assert.ok(hookSource.includes("AUTH_REQUIRED: 'auth_required'"));
-    assert.ok(hookSource.includes('if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;'));
-    assert.ok(hookSource.indexOf('if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;') < hookSource.indexOf('setProductTasks(data);'));
+    const authGuard = 'if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;';
+    assert.ok(hookSource.includes(authGuard));
+    assert.ok(hookSource.indexOf(authGuard) < hookSource.indexOf('setProductTasks(reconciled);'));
+    assert.ok(hookSource.lastIndexOf(authGuard) < hookSource.indexOf('setTechTasks(reconciled);'));
 });
 
 test('ENG product loader preserves task and sprint markers on typed auth', async () => {

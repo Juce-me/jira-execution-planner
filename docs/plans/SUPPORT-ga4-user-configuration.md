@@ -3,6 +3,7 @@
 **Status:** Drafted on 2026-05-26 for GA4 web stream Measurement ID `G-6QERX19WB0`. Use this runbook alongside `docs/plans/DONE-ga4-instrumentation.md`.
 
 **Revision notes:**
+- 2026-09-09: Added the bounded ENG inline issue-field edit event and API reliability verification. `field_name` is mapped through the existing `userevent` tag and remains intentionally unregistered without a named report.
 - 2026-05-28: Re-verified the GA4/GTM configuration instructions against current Google docs and the latest `google-analytics-implementation-planner` MCP guidance. Added the custom MCP boundary, API-backed automation rules, and the dry-run desired-state spec at `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml`.
 - 2026-05-29: Re-verified the MCP handoff against the current `ga4-gtm-config-mcp` validator. The YAML spec now uses the strict validator schema, a concrete `target.environment` enum, supported GTM built-ins only, and current MCP-supported tag/config resources. Google tag setup, Enhanced Measurement toggles, retention, ads/signals settings, and full sparse event-parameter mapping remain manual runbook steps unless a later MCP release adds those resource types.
 
@@ -242,6 +243,7 @@ epm_tab
 error_area
 error_code
 feature_name
+field_name
 filter_type
 from_mode
 from_view
@@ -343,7 +345,7 @@ Create only the following event-scoped custom dimensions initially. Do not regis
 | Subgoal Scope | Event | `subgoal_scope` |
 | Workflow Action | Event | `workflow_action` |
 
-Allowed but initially unregistered parameters include `conflict_count_bucket`, `conflict_state`, `dependency_state`, `dirty_state`, `from_mode`, `from_view`, `group_count_bucket`, `issue_count_bucket`, `method`, `module_id`, `override_count_bucket`, `pending_unsaved_state`, `point_bucket`, `previous_status`, `project_count_bucket`, `recoverable_state`, `scope_type`, `selected_count_bucket`, `selected_sp_bucket`, `series_type`, `sort_direction`, `sprint_selection_state`, `team_count_bucket`, `validation_count_bucket`, `value_state`, and `visible_count_bucket`. Register one later only when a named report needs it. Do not register `module_id` as a custom dimension without a named report reason.
+Allowed but initially unregistered parameters include `conflict_count_bucket`, `conflict_state`, `dependency_state`, `dirty_state`, `field_name`, `from_mode`, `from_view`, `group_count_bucket`, `issue_count_bucket`, `method`, `module_id`, `override_count_bucket`, `pending_unsaved_state`, `point_bucket`, `previous_status`, `project_count_bucket`, `recoverable_state`, `scope_type`, `selected_count_bucket`, `selected_sp_bucket`, `series_type`, `sort_direction`, `sprint_selection_state`, `team_count_bucket`, `validation_count_bucket`, `value_state`, and `visible_count_bucket`. Register one later only when a named report needs it. Do not register `module_id` as a custom dimension without a named report reason. Do not register `field_name` as a custom dimension without a named report reason.
 
 Registration rationale: every event-scoped custom dimension above must appear in at least one named report below. If a report stops using one, remove that custom definition instead of keeping it for possible future use. Unregistered parameters remain available for DebugView/source-guard validation and can be promoted only with a named report reason.
 
@@ -412,6 +414,7 @@ Representative events to verify:
 | Connect Home token | `connection_action` | `connection_type`, `workflow_action`, `result` | email, token, credential subject |
 | Edit Scenario timeline | `scenario_action` | `workflow_action`, `override_count_bucket`, `result` | issue key, draft ID, assignee |
 | Load EPM rollup | `epm_action` | `epm_tab`, `project_scope`, `project_count_bucket` | project name, label, Home ID |
+| Edit an ENG issue field | `issue_field_edit_action` | `feature_name=eng_issue_field_edits`, `workflow_action=open|submit|result`, `field_name=assignee|delivery_owner|story_points`, `issue_kind=epic|story`, `source_surface=catch_up|planning|board`, result enum only for `result` | query text, names, emails, account IDs, issue keys, field IDs, Story Point values, raw errors |
 | API completes | `api_result` | `feature_name`, `api_surface`, `status_bucket`, `duration_bucket`; for EPM APIs use `feature_name=epm` and also include `epm_tab`, `project_scope`, `subgoal_scope` when known | URL query, response body, Jira error text |
 | Reach 90% scroll depth | `scroll` | GA4-managed Enhanced Measurement event | app-owned custom params |
 | Download file link | `file_download` | GA4-managed Enhanced Measurement event | app-owned custom params |
@@ -430,6 +433,8 @@ npx playwright test tests/ui/ga4_tag_and_events.spec.js
 ```
 
 For validation, use GTM Preview/Tag Assistant plus GA4 DebugView with `GA4_DEBUG_MODE=true` in a non-production or controlled environment. `debug_mode` is a transport flag only; do not create a custom dimension for it. Turn debug mode off by omitting the flag after validation, not by sending `debug_mode:false`.
+
+For ENG inline issue editing, verify one `issue_field_edit_action` per `open`, explicit `submit`, and terminal `result`, plus `api_result` with `api_surface=jira_issue_field_edits`. Confirm open/submit omit `result`, result uses only the documented result enum, and all three surfaces map through the single `CE - userevent` trigger. Do not register `field_name` as a custom dimension without a named report; use Preview/DebugView for this validation.
 
 ---
 

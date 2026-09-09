@@ -36,6 +36,7 @@ SECURITY_SAMPLES = {
         ("GET", "/api/issues/description"),
         ("GET", "/api/board-config/statuses"),
         ("GET", "/api/eng/board?departmentId=department-a&scope=all_work&refresh=0"),
+        ("GET", "/api/issues/DEMO-1/editable-fields?field=storyPoints"),
     ],
     "user_write": [
         ("PATCH", "/api/capacity/CAP-101"),
@@ -46,6 +47,8 @@ SECURITY_SAMPLES = {
         ("POST", "/api/export-excel"),
         ("POST", "/api/issues/priorities"),
         ("POST", "/api/issues/project-track"),
+        ("POST", "/api/issues/DEMO-1/user-options"),
+        ("POST", "/api/issues/DEMO-1/field"),
     ],
     "workspace_write": [
         ("POST", "/api/scenario/drafts"),
@@ -136,6 +139,9 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
 
         samples = [
             ("PATCH", "/api/capacity/CAP-101", "user_write"),
+            ("GET", "/api/issues/DEMO-1/editable-fields", "authenticated_read"),
+            ("POST", "/api/issues/DEMO-1/user-options", "user_write"),
+            ("POST", "/api/issues/DEMO-1/field", "user_write"),
             ("GET", "/api/epm/projects/home-project-1/issues", "authenticated_read"),
             ("POST", "/api/scenario/drafts/draft-1/rollback", "workspace_write"),
         ]

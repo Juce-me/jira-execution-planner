@@ -15,8 +15,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current DB Workflow
 
-- [OAuth inline issue editing implementation](EXEC-oauth-inline-issue-editing.md): reviewed plan for ENG Assignee, Epic Delivery Owner, and Story Points editors; reuse-first UI, OAuth-only writes, state/calculation and API validation. Live Jira evidence gates final acceptance.
-- [OAuth inline issue editing design](SUPPORT-oauth-inline-issue-edit-design.md): supporting UX and reuse contract aligned with the implementation plan.
+- [OAuth inline issue editing implementation](EXEC-oauth-inline-issue-editing.md): implemented and verified locally for ENG Assignee, Epic Delivery Owner, and Story Points editors; live Jira evidence still gates final acceptance.
+- [OAuth inline issue editing design](SUPPORT-oauth-inline-issue-edit-design.md): implemented reuse-first UX contract; awaiting live tenant and disposable-write evidence.
 - [In-app load performance](DONE-in-app-load-performance.md): implemented, verified and user-accepted; three local contextual sprint observations recorded.
 - [ENG Board All work implementation](EXEC-eng-board-all-work.md): the DB/OAuth strict Board candidate, frontend integration, preserved interactions, measurement and analytics are implemented and locally verified. The Basic/JSON adapter exists but its public strict capability remains disabled pending profile evidence. Task 7 authenticated candidate cohorts, excluded-profile coverage, PostgreSQL integration and supported-auth startup evidence still block rollout; no production readiness or publication is claimed.
 - [All work subagent handoff](SUPPORT-eng-board-all-work-handoff.md): local draft updated after the corrective slices; not cleared for distribution until its exact revision is published and verified fetchable. Execute only within the remaining plan gates.

@@ -4,6 +4,7 @@ import StatusPill from '../ui/StatusPill.jsx';
 import StatusTransitionMenu from '../issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from '../issues/PriorityTransitionMenu.jsx';
 import ProjectTrackTransitionMenu from '../issues/ProjectTrackTransitionMenu.jsx';
+import IssuePersonEditor from '../issues/IssuePersonEditor.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { formatSubtaskUpdatedDate } from '../issues/subtaskProgressUtils.js';
 import { epicStatusName, getProjectTrackEmoji, getProjectTrackLabel } from './engTaskUtils.js';
@@ -52,6 +53,7 @@ export default function EngBoardEpicPanel({
     workItemLabel = 'stories',
     workItemLabelSingular = 'story',
     onSubmitStatusTransition,
+    issueFieldEdits = null,
     onClose,
 }) {
     const epic = (epicGroup && epicGroup.epic) || {};
@@ -150,6 +152,7 @@ export default function EngBoardEpicPanel({
         ['.status-transition-menu', () => statusTransitions?.closeSingleIssueStatusControl?.()],
         ['.priority-transition-menu', () => priorityTransitions?.closePriorityControl?.()],
         ['.project-track-transition-menu', () => projectTrackTransitions?.closeProjectTrackControl?.()],
+        ['.issue-person-editor-menu', () => issueFieldEdits?.closeEditor?.()],
     ];
 
     // Escape and the Tab cycle are handled on the panel, NOT on the document, so an inner
@@ -242,6 +245,29 @@ export default function EngBoardEpicPanel({
         );
     };
 
+    const renderPersonEditor = (issue, kind, field, label, value, triggerClassName = '') => {
+        const literalKind = kind === 'Epic' || String(issue?.fields?.issuetype?.name || '').trim().toLowerCase() === 'story';
+        if (!issueFieldEdits || !literalKind) return value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
+        const active = issueFieldEdits.activeEditor?.issueKey === issue.key && issueFieldEdits.activeEditor.field === field;
+        return (
+            <IssuePersonEditor
+                issueKey={issue.key} field={field} fieldLabel={label} currentValue={value}
+                isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
+                suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''}
+                loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
+                submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)}
+                pending={issueFieldEdits.pendingIssueKeys?.has(issue.key)} error={active ? issueFieldEdits.errorMessage : ''}
+                statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''}
+                recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''}
+                configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
+                onOpen={() => issueFieldEdits.openEditor({ issueKey: issue.key, field, issueKind: kind.toLowerCase(), sourceSurface: 'board' })}
+                onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit}
+                onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira}
+                portalTarget={panelRef.current} triggerClassName={triggerClassName}
+            />
+        );
+    };
+
     return (
         <div
             className="epic-panel-backdrop"
@@ -326,6 +352,8 @@ export default function EngBoardEpicPanel({
                         <span className="m-sp">
                             {storyPoints} sp · {progress.done} of {progress.total} {workItemLabel} done
                         </span>
+                        <span className="eperson"><span className="lbl">Assignee</span><b>{renderPersonEditor({ key: epicKey }, 'Epic', 'assignee', 'Assignee', epic.assignee)}</b></span>
+                        <span className="eperson"><span className="lbl">Delivery owner</span><b>{renderPersonEditor({ key: epicKey }, 'Epic', 'deliveryOwner', 'Delivery owner', epic.deliveryOwner)}</b></span>
                     </div>
                     <h2 className="m-title" id={titleId}>{summary}</h2>
                 </div>
@@ -450,9 +478,7 @@ export default function EngBoardEpicPanel({
                                         {task?.fields?.summary || task.key}
                                     </a>
                                     {renderStoryStatus(task)}
-                                    <span className="story-subtask-assignee">
-                                        {task?.fields?.assignee?.displayName || 'Unassigned'}
-                                    </span>
+                                    <span className="story-subtask-assignee">{renderPersonEditor(task, 'Story', 'assignee', 'Assignee', task?.fields?.assignee)}</span>
                                     {task?.fields?.updated ? (
                                         <time className="story-subtask-updated" dateTime={task.fields.updated}>
                                             {formatSubtaskUpdatedDate(task.fields.updated)}

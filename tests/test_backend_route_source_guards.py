@@ -376,7 +376,7 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
                 "status": {"name": "To Do"},
                 "priority": {"name": "Major"},
                 "issuetype": {"name": "Story"},
-                "assignee": {"displayName": "Synthetic Owner"},
+                "assignee": {"accountId": "account-owner", "displayName": "Synthetic Owner"},
                 "updated": "2026-05-01T00:00:00.000+0000",
                 "customfield_sp": 3,
                 "customfield_sprint": [{"id": 42, "name": "Sprint 42"}],
@@ -415,6 +415,9 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
             response = client.get("/api/tasks-with-team-name?sprint=42&project=product&refresh=true")
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["issues"][0]["fields"]["assignee"], {
+            "accountId": "account-owner", "displayName": "Synthetic Owner",
+        })
         server_timing = response.headers.get("Server-Timing", "")
         self.assertIn("jira-search;dur=", server_timing)
         self.assertIn("normalize-tasks;dur=", server_timing)

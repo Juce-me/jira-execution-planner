@@ -540,9 +540,7 @@
            asset's --st-done/--st-progress, which — like --serif and --text-muted, also read here
            in the asset but defined in no real stylesheet — are additional mockup stand-ins beyond
            the four test_eng_board_styles.js already checks for; none of the five appear below. ── */
-        /* A real <button> (§10.1): Enter opens the detail panel, which is the keyboard equivalent
-           of the pointer-only drag. That means undoing the app's global button styling
-           (eng/controls.css) rather than inheriting a dark uppercase pill. */
+        /* The draggable card wrapper preserves fixed geometry; .ecard-open is its native panel trigger. */
         .eng-board .ecard {
             display: grid;
             gap: 0.35rem;
@@ -562,6 +560,23 @@
             transition: border-color 0.15s, box-shadow 0.15s;
         }
 
+        .eng-board .ecard-open {
+            appearance: none;
+            display: grid;
+            gap: 0.35rem;
+            width: 100%;
+            min-width: 0;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            text-transform: inherit;
+            letter-spacing: inherit;
+        }
+
         .eng-board .ecard:hover {
             background: var(--bg-secondary);
             border-color: var(--board-column-accent);
@@ -569,13 +584,12 @@
             transform: none;
         }
 
-        .eng-board .ecard:focus-visible {
+        .eng-board .ecard-open:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 2px;
         }
 
-        /* ── The drag gesture (§6.4). The card stays a button — click opens the epic, drag moves
-           it — so the affordance is the cursor, not a second control. ── */
+        /* ── The drag gesture (§6.4). The wrapper owns drag; .ecard-open owns activation. ── */
         .eng-board .ecard:hover {
             cursor: grab;
         }
@@ -654,7 +668,7 @@
 
         .eng-board .erow3 {
             gap: 0.9rem;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
         }
 
         .eng-board .erow2 .push {
@@ -670,6 +684,8 @@
             align-items: baseline;
             gap: 0.3rem;
             min-width: 0;
+            max-width: calc(50% - 0.45rem);
+            flex: 1 1 0;
         }
 
         .eng-board .eperson b {
@@ -804,6 +820,11 @@
             letter-spacing: 0.06em;
             text-transform: uppercase;
             color: var(--text-secondary);
+        }
+
+        .eng-board .m-controls > .eperson {
+            flex: 0 1 9rem;
+            max-width: 9rem;
         }
 
         .eng-board .m-title {

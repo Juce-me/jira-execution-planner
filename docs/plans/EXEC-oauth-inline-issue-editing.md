@@ -2,8 +2,9 @@
 
 > **For agentic workers:** Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement the checked tasks in order. Do not implement from the supporting design alone.
 
-**Status:** Ready for local implementation. API/security, UI reuse, and state/concurrency reviews completed; findings resolved. No application code implemented.
+**Status:** Implemented and verified locally on 2026-09-09. Live tenant capability and operator-approved disposable Jira write evidence remain outstanding, so this plan is not accepted/merged and must not be renamed `DONE-*`.
 **Date:** 2026-09-08
+**Local verification:** After merging `origin/main` at `e9a1c48`, 1,733 Python tests passed (9 skipped) with `CONFIG_STORAGE_BACKEND=jsonfile` and 1,305 frontend unit tests passed. The 262-test Playwright campaign produced 260 immediate passes; its two merge-integration failures were corrected and both affected spec files then passed 47/47. After the inline-SP correction, its two focused UI specs passed 24/24 and the final changed-path checks passed 5/5. Production frontend build, structure budgets, and `git diff --check` passed. Settled Board and corrected Catch Up/Planning screenshots were inspected.
 **Goal:** Edit Epic/Story Assignee, Epic Delivery Owner, and Story Points through the signed-in user's Jira OAuth context, preserving current dashboard design and recalculating all affected loaded views.
 **Architecture:** Extend existing issue-edit services, HTTP/auth helpers, field-popover placement, mutation queue, and normalized ENG state. Add thin people/SP editors and one pure Jira field service; Jira remains authoritative. No new dependency, database table, configuration ownership, or alternate Board data source.
 **Tech Stack:** Python/Flask, Jira Cloud REST v3, React 19, existing CSS, Node 20/esbuild, unittest, Node test runner, Playwright.
@@ -15,7 +16,7 @@
 | Field | Catch Up | Planning | ENG Board |
 | --- | --- | --- | --- |
 | Assignee | Epic and Story | Epic and Story | Epic card, Epic detail metadata, Story detail rows |
-| Delivery Owner | Epic only | Epic only | Epic card and Epic detail metadata |
+| Delivery Owner | — | — | Epic card and Epic detail metadata |
 | Story Points | Story only | Story only | Reflected after editing elsewhere; no editor |
 
 The user's follow-up authorizes preparing this implementation plan and specifies maximum existing-element reuse. ENG scope and proposed defaults remain the design baseline: five users including Me, no clearing, non-negative SP including zero. The plan does not introduce EPM, Home, subtask, bulk-field, or Scenario write controls. Supported server types are literal case-insensitive `Epic` and `Story`, with `issuetype.subtask != true`; do not reinterpret the flat `get_configured_issue_types()` list as an Epic/Story role mapping. Other types fail closed. A later localized/custom-type expansion requires an explicit design change.
@@ -30,22 +31,22 @@ All work stays in the current checkout and a permitted typed branch. No commit/p
 | --- | --- | --- |
 | Popover placement/dismissal | `frontend/src/issues/IssueFieldOptionMenu.jsx` | Extract placement and outside-dismiss into `useIssueFieldPopover.js`; old menus consume it with unchanged defaults/preview behavior |
 | Panel, option, note/error/result visuals | `frontend/src/styles/eng/status-transitions.css` | Alias new editor selectors into existing declarations, including portalled state; no copied parallel stylesheet |
-| Person search and decimal input | Native input with `.component-search-input` from `styles/settings/group-editor.css` | Accessible attributes/inputMode only; no new Input component |
-| Save/Cancel/Reload/Check Jira | Existing `button.compact`, `button.secondary.compact` from `styles/eng/controls.css` | Reuse markup/classes; no bespoke action styles |
+| Person search input | Native input with `.component-search-input` from `styles/settings/group-editor.css` | Accessible attributes only; no new Input component |
+| Person Save/Cancel/Reload/Check Jira | Existing `button.compact`, `button.secondary.compact` from `styles/eng/controls.css` | Reuse markup/classes; no bespoke action styles |
 | Story/Epic person value | `.task-assignee`, `.task-assignee-icon`, `.epic-assignee` | Native field button reset preserving current icon/typography |
 | Board people | `.eperson`, `.lbl`, `.eperson b` | Preserve casing, sizes, truncation and row height |
-| Story Points | `.task-inline-sp` | Replace displayed value in place, distinguish 0 from null |
+| Story Points | `.task-inline-sp` | Replace displayed value in place; render a null Jira value as `0 SP` without changing its stored value |
 | Network/auth | `jiraIssueApi.js`, `trackedFetch`, `apiFetch`, CSRF single-flight helper | Field-specific sanitized response decoder; do not replace global auth handling |
 | Grant enforcement | `backend/auth/scope_policy.py::missing_context_oauth_scopes` | Call directly; do not copy the older local-store scope helper |
 | Jira edits | Dependency-injected `jira_issue_project_track.py` pattern | New strict field service; retain existing services |
 | State and calculations | `applyLocalEngIssueField`, `engIssueLocalUpdates.js`, `planningSelectionStats.js` | Extend normalized patches and invalidate derived caches; do not add a second calculator |
 | Mutation ordering | `engIssueMutationQueue.js` | Multi-key reservation for existing batch status plus single-key edits, shared across surfaces |
 
-A new person combobox and numeric editor are justified because current `IssueFieldOptionMenu` has `role=menu` and first-option focus. Do not stuff a search input into its `leadingContent`. Share mechanics and visuals while keeping correct combobox/listbox and dialog semantics.
+A new person combobox is justified because current `IssueFieldOptionMenu` has `role=menu` and first-option focus. Do not stuff a search input into its `leadingContent`. Story Points remains a direct native input in the existing SP slot; it does not share popover or dialog mechanics.
 
 Board card correction: `.ecard` currently is one draggable button. Keep its geometry/data attributes on a noninteractive draggable wrapper. Put existing `.erow1` and `.erow2` inside native `.ecard-open`; `.erow3` person triggers are siblings. Update `EngBoardView` focus-return selectors to `.ecard-open`. Exclude field triggers/popovers from drag initiation. Summary click/Enter/Space and actual summary drag retain their behavior; no nested buttons/anchors.
 
-Catch Up/Planning Epic Delivery Owner and Board detail-panel Epic people are new values in existing metadata lanes, not existing fields to replace. Constrain/ellipsis people text inside those lanes; do not let additional values increase header/card height. Board detail portals attach within `panelRef.current` to stay inside its focus trap. Other editors portal to document.body. Register new closers with `MENU_CLOSERS`; Escape closes editor first, then Board panel on a subsequent Escape. Existing auth overlay remains above all editors.
+Board detail-panel Epic people are new values in existing metadata lanes, not existing fields to replace. Do not add Delivery Owner to Catch Up or Planning. Constrain/ellipsis people text inside Board lanes; do not let additional values increase header/card height. Board detail person-editor portals attach within `panelRef.current` to stay inside its focus trap. Other person editors portal to document.body. Story Points uses the existing inline SP position as a plain input, with Enter to save and Escape or blur to discard; it has no trigger button or popup. Register person-editor closers with `MENU_CLOSERS`; Escape closes an editor first, then Board panel on a subsequent Escape. Existing auth overlay remains above all editors.
 
 ## 3. Exact backend and Jira contract
 
@@ -164,7 +165,7 @@ Create: `backend/services/jira_issue_field_edits.py`, `tests/test_jira_issue_fie
 Modify: `backend/routes/eng_routes.py`, `backend/security/policy.py`, `tests/endpoint_security_samples.py`, `tests/test_endpoint_security_matrix.py`.
 Read/reuse: `backend/auth/scope_policy.py`, `backend/services/jira_issue_project_track.py`, `backend/routes/capacity_routes.py`, `backend/security/CONFIGURATION_OWNERSHIP.md`, `backend/security/guards.py`.
 
-- [ ] Add scripted Jira responses and tests for the section 3 contract. Service public signatures:
+- [x] Add scripted Jira responses and tests for the section 3 contract. Service public signatures:
 
 ```python
 load_editable_field(issue_key, field, *, jira_request, context, field_ids)
@@ -174,9 +175,9 @@ update_issue_field(issue_key, payload, *, jira_request, context, field_ids, inva
 
 `field_ids` is a route-created map for the three logical fields using existing getters in the captured request context; reload it at submit request entry. The service cannot accept client field maps. Inject invalidation so accepted PUT and unknown dispatch are tested independently of read-back. Snapshot normalization compares people by accountId and SP by Decimal.
 
-- [ ] Implement strict schema/type/value/unknown-key validation, exact Jira reads, one-field PUT, read-back, mapped errors, and bounded calls from section 3. Keep service Flask-free and no forbidden auth imports. Treat `response.json()` failures after accepted PUT as unknown.
-- [ ] Register routes and dynamic policies, explicit OAuth/context-grant/metadata Requested-With checks, no-store response wrapper, JSON error shaping. Extend endpoint sample paths/payloads so route inventory covers each method.
-- [ ] Test OAuth regular-user success and Basic denial; missing/provenance-unknown scopes; revoked auth; correct/missing/invalid CSRF and Requested-With; two users and two sites; field absence/schema mismatch/no set; type/subtask mismatch; nondefault field ID; changed mapping; no-op; inactive/unassignable Me; restricted DO and unverified candidates; array shape errors; Jira status mapping; timeout/unknown; exactly one PUT and invalidation after unreadable success; accepted PUT followed by read-back 401 preserves global auth recovery; missing requested field/malformed read-back is unknown rather than null success.
+- [x] Implement strict schema/type/value/unknown-key validation, exact Jira reads, one-field PUT, read-back, mapped errors, and bounded calls from section 3. Keep service Flask-free and no forbidden auth imports. Treat `response.json()` failures after accepted PUT as unknown.
+- [x] Register routes and dynamic policies, explicit OAuth/context-grant/metadata Requested-With checks, no-store response wrapper, JSON error shaping. Extend endpoint sample paths/payloads so route inventory covers each method.
+- [x] Test OAuth regular-user success and Basic denial; missing/provenance-unknown scopes; revoked auth; correct/missing/invalid CSRF and Requested-With; two users and two sites; field absence/schema mismatch/no set; type/subtask mismatch; nondefault field ID; changed mapping; no-op; inactive/unassignable Me; restricted DO and unverified candidates; array shape errors; Jira status mapping; timeout/unknown; exactly one PUT and invalidation after unreadable success; accepted PUT followed by read-back 401 preserves global auth recovery; missing requested field/malformed read-back is unknown rather than null success.
 
 Concrete regression assertions to include in scripted-service tests:
 
@@ -193,8 +194,8 @@ for bad in (True, -1, 1.25, None, '1.5', float('inf')):
 
 Define `FieldEditInputError`, `FieldEditServiceError` (code/status/sanitized details), and `validate_story_points` in the new service. Base values accept null and existing precision; target validation is separate.
 
-- [ ] Exercise real `jira_server.current_jira_request` without Flask request context using captured DB OAuth context and mocked outbound HTTP only. Patch `jira_server.oauth_session_data` and `backend.auth.home_credentials.resolve_home_credential` to raise. Assert wrapper uses OAuth gateway/current user's synthetic Bearer and never Basic/service-token values; source guards reject forbidden service imports. Preserve local OAuth support by a separate actual local-context test, not by calling local helpers from the new service.
-- [ ] Run `python3 -m unittest tests.test_jira_issue_field_edits tests.test_jira_issue_field_routes tests.test_endpoint_security_matrix`; expected all pass after implementation.
+- [x] Exercise real `jira_server.current_jira_request` without Flask request context using captured DB OAuth context and mocked outbound HTTP only. Patch `jira_server.oauth_session_data` and `backend.auth.home_credentials.resolve_home_credential` to raise. Assert wrapper uses OAuth gateway/current user's synthetic Bearer and never Basic/service-token values; source guards reject forbidden service imports. Preserve local OAuth support by a separate actual local-context test, not by calling local helpers from the new service.
+- [x] Run `python3 -m unittest tests.test_jira_issue_field_edits tests.test_jira_issue_field_routes tests.test_endpoint_security_matrix`; expected all pass after implementation.
 
 ### Task 2 — retain identities and reconcile loaded state
 
@@ -202,12 +203,12 @@ Create: `frontend/src/eng/engIssueEditState.js`, `tests/test_eng_issue_edit_stat
 Modify: `jira_server.py`, `backend/routes/eng_routes.py`, `frontend/src/eng/engIssueLocalUpdates.js`, `frontend/src/eng/useEngSprintData.js`, `frontend/src/dashboard.jsx`, `tests/test_eng_issue_local_updates.js`, `tests/test_planning_selection_stats.js`.
 Modify only if decimal regression demonstrates need: `frontend/src/eng/planningSelectionStats.js`.
 
-- [ ] Test synthetic same-name/different-account people, no cascading Epic owner changes, zero vs null, same issue in multiple group snapshots, task load resolving before/after mutation, stale stats response, R0/write/R1-newer/R0-late ordering, final caller commit after fetch return, unknown write plus mapping change, and scope switch.
-- [ ] Preserve accountId in `fetch_epic_details_bulk` Assignee/Delivery Owner, task shaping in `jira_server.py`, its backlog Epic fallback shaping, and `eng_routes.py` Story shaping, while retaining displayName. Do not rename current JSON fields or assume all consumers supply accountId before metadata loads.
-- [ ] Add backend cache generation checks from section 4 at all listed cache writers, using the existing server cache lock and preserving partition keys. Add tests/test_issue_edit_cache_generation.py with blocked pre-write producers and post-write cache lookup assertions.
-- [ ] Implement the read-token/confirmed-patch lifecycle from section 4. Expose a focused hook/adapter to dashboard wiring with `beginRead`, `finishRead`, `beginMutation`, `confirmMutation`, `markUnknown`, `reconcileIssues`, and `isCurrentAggregateRead`; define each in the new module and unit-test its lifetime. Do not keep response overlays after tracked older readers have drained.
-- [ ] Patch active arrays and cached snapshots immutably; preserve group selection/filter fields. Add generation checks before `useEngSprintData` epic merge, task arrays, ready-to-close and alert commits; before dashboard final task commits, group restoration and lazy stats cache/state commits. Invalidate dependency summaries and affected lazy derived caches as specified.
-- [ ] Verify existing grouping/calculator selectors consume replacement objects and all downstream memo dependencies rerun. Add the 1.5+3→2+3=5 fixture for both-selected, only-second-selected (3), excluded Story, zero and null. Assert selected keys unchanged and no Epic Jira write.
+- [x] Test synthetic same-name/different-account people, no cascading Epic owner changes, zero vs null, same issue in multiple group snapshots, task load resolving before/after mutation, stale stats response, R0/write/R1-newer/R0-late ordering, final caller commit after fetch return, unknown write plus mapping change, and scope switch.
+- [x] Preserve accountId in `fetch_epic_details_bulk` Assignee/Delivery Owner, task shaping in `jira_server.py`, its backlog Epic fallback shaping, and `eng_routes.py` Story shaping, while retaining displayName. Do not rename current JSON fields or assume all consumers supply accountId before metadata loads.
+- [x] Add backend cache generation checks from section 4 at all listed cache writers, using the existing server cache lock and preserving partition keys. Add tests/test_issue_edit_cache_generation.py with blocked pre-write producers and post-write cache lookup assertions.
+- [x] Implement the read-token/confirmed-patch lifecycle from section 4. Expose a focused hook/adapter to dashboard wiring with `beginRead`, `finishRead`, `beginMutation`, `confirmMutation`, `markUnknown`, `reconcileIssues`, and `isCurrentAggregateRead`; define each in the new module and unit-test its lifetime. Do not keep response overlays after tracked older readers have drained.
+- [x] Patch active arrays and cached snapshots immutably; preserve group selection/filter fields. Add generation checks before `useEngSprintData` epic merge, task arrays, ready-to-close and alert commits; before dashboard final task commits, group restoration and lazy stats cache/state commits. Invalidate dependency summaries and affected lazy derived caches as specified.
+- [x] Verify existing grouping/calculator selectors consume replacement objects and all downstream memo dependencies rerun. Add the 1.5+3→2+3=5 fixture for both-selected, only-second-selected (3), excluded Story, zero and null. Assert selected keys unchanged and no Epic Jira write.
 
 ```javascript
 const updated = applyLocalIssueFieldUpdate(stories, 'DEMO-1', 'customfield_10004', 2);
@@ -215,7 +216,7 @@ assert.equal(sumPlanningStoryPoints(updated), 5);
 assert.equal(stories[0].fields.customfield_10004, 1.5);
 ```
 
-- [ ] Run `node --test tests/test_eng_issue_edit_state.js tests/test_eng_issue_local_updates.js tests/test_planning_selection_stats.js`; expected pass, plus existing shaping tests identified through callers.
+- [x] Run `node --test tests/test_eng_issue_edit_state.js tests/test_eng_issue_local_updates.js tests/test_planning_selection_stats.js`; expected pass, plus existing shaping tests identified through callers.
 
 ### Task 3 — queue, network adapter and editor controller
 
@@ -223,12 +224,12 @@ Modify: `frontend/src/eng/engIssueMutationQueue.js`, `frontend/src/eng/useEngSta
 Create: `frontend/src/eng/useEngIssueFieldEdits.js`, `frontend/src/eng/engIssueFieldEditUtils.js`, `tests/test_eng_issue_field_edits.js`, `tests/test_jira_issue_field_api.js`.
 Read/reuse: `frontend/src/api/capacityApi.js`, `frontend/src/api/http.js`, `frontend/src/api/authRequired.js`.
 
-- [ ] Add queue tests: jobs reserving [A,B] and [B,C] never overlap; disjoint jobs can run; rejection releases keys; max four active; canceled queued job never dispatches. Do not change existing status/priority success/rollback presentation or batch payloads while replacing queue bypasses.
-- [ ] Extend enqueue with multi-key reservations as section 4 specifies. Wire all existing ENG mutation runners into it, preserving current UI behavior. Use pre-dispatch auth/context and cancellation checks.
-- [ ] Add `fetchEditableIssueField`, `searchIssueFieldUsers`, `updateIssueField` exports to existing API module; search/mutation both acquire existing single-flight CSRF. Retain only validated conflict fields/Retry-After details in a field-specific decoder. Use fixed frontend message map, never raw upstream messages.
-- [ ] Implement the controller state machine, one active editor, frozen submit context, same-issue pending state, read/search cancellation, dispatch tracking, unknown outcome, Reload/Check Jira, auth lock and propagation callbacks. Do not abort dispatched writes on popover close. A rejected old request must not clear the current editor's pending state.
-- [ ] Put lexical parsing and suggestion dedupe in `engIssueFieldEditUtils.js` for pure tests. `parseStoryPointsDraft` returns `{valid,value}` and rejects invalid lexemes; normalize/display 2.0 as 2. Below 3 Unicode characters never search; 300ms debounce; stale query responses cannot select; pin Me first even if query doesn't match; max five total.
-- [ ] Run `node --test tests/test_eng_issue_mutation_queue.js tests/test_eng_issue_field_edits.js tests/test_jira_issue_field_api.js`; expected pass. Re-run existing priority/track/status unit tests for queue changes.
+- [x] Add queue tests: jobs reserving [A,B] and [B,C] never overlap; disjoint jobs can run; rejection releases keys; max four active; canceled queued job never dispatches. Do not change existing status/priority success/rollback presentation or batch payloads while replacing queue bypasses.
+- [x] Extend enqueue with multi-key reservations as section 4 specifies. Wire all existing ENG mutation runners into it, preserving current UI behavior. Use pre-dispatch auth/context and cancellation checks.
+- [x] Add `fetchEditableIssueField`, `searchIssueFieldUsers`, `updateIssueField` exports to existing API module; search/mutation both acquire existing single-flight CSRF. Retain only validated conflict fields/Retry-After details in a field-specific decoder. Use fixed frontend message map, never raw upstream messages.
+- [x] Implement the controller state machine, one active editor, frozen submit context, same-issue pending state, read/search cancellation, dispatch tracking, unknown outcome, Reload/Check Jira, auth lock and propagation callbacks. Do not abort dispatched writes on popover close. A rejected old request must not clear the current editor's pending state.
+- [x] Put lexical parsing and suggestion dedupe in `engIssueFieldEditUtils.js` for pure tests. `parseStoryPointsDraft` returns `{valid,value}` and rejects invalid lexemes; normalize/display 2.0 as 2. Below 3 Unicode characters never search; 300ms debounce; stale query responses cannot select; pin Me first even if query doesn't match; max five total.
+- [x] Run `node --test tests/test_eng_issue_mutation_queue.js tests/test_eng_issue_field_edits.js tests/test_jira_issue_field_api.js`; expected pass. Re-run existing priority/track/status unit tests for queue changes.
 
 ### Task 4 — shared popover mechanics and thin controls
 
@@ -236,32 +237,33 @@ Create: `frontend/src/issues/useIssueFieldPopover.js`, `frontend/src/issues/Issu
 Modify: `frontend/src/issues/IssueFieldOptionMenu.jsx`, `frontend/src/styles/eng/status-transitions.css`.
 Create: `tests/ui/eng_issue_field_edits.spec.js` using existing dashboard-shell fixtures.
 
-- [ ] Characterize old menu open/focus/Escape/outside/preview behavior before extracting only positioning/dismissal. Keep menu-specific first-option and onboarding behavior in `IssueFieldOptionMenu`. The shared hook owns trigger/panel refs, portal geometry, edge bounds, outside dismissal and cleanup; no field fetching or selection.
-- [ ] Build person editor native trigger and combobox/listbox: input focus, aria-controls/expanded/activedescendant, arrows skipping disabled rows, Enter select once, Escape dismiss/restore. Me appears while query is below threshold after metadata; disabled/unverified states follow section 3. Reuse styles from section 2.
-- [ ] Build SP trigger plus small dialog with `.component-search-input`, inputMode=decimal, existing compact Save/Cancel. Enter saves once; Escape/outside cancels dirty local input; validation sends no request. Pending shows last confirmed value without moving geometry.
-- [ ] Alias panel/options/notes/results/portalled selectors into existing CSS declarations. Reuse tokens and action classes; no duplicated panels. Add accessible fixed error labels and status announcement. Only a freshly loaded canonical metadata value equal to target suppresses a network write; stale card display is not a no-op baseline. Server independently rechecks no-op against Jira.
-- [ ] Run new Playwright editor tests plus `tests/ui/eng_status_transitions.spec.js`, `tests/ui/eng_project_track_transitions.spec.js`, `tests/ui/eng_priority_transitions.spec.js`, and `tests/ui/onboarding_tour.spec.js`; expected existing interactions unchanged. Verify actual unforced clicks, not forced coordinate workarounds.
+- [x] Characterize old menu open/focus/Escape/outside/preview behavior before extracting only positioning/dismissal. Keep menu-specific first-option and onboarding behavior in `IssueFieldOptionMenu`. The shared hook owns trigger/panel refs, portal geometry, edge bounds, outside dismissal and cleanup; no field fetching or selection.
+- [x] Build person editor native trigger and combobox/listbox: input focus, aria-controls/expanded/activedescendant, arrows skipping disabled rows, Enter select once, Escape dismiss/restore. Me appears while query is below threshold after metadata; disabled/unverified states follow section 3. Reuse styles from section 2.
+- [x] Build SP as the existing inline value itself: a native input with inputMode=decimal, no trigger button, dialog, popup, Save, or Cancel controls. Enter saves once; Escape/outside cancels dirty local input; validation sends no request. Pending shows the last confirmed value without moving geometry.
+- [x] Preserve the SP slot's inherited typography and use only an inline focus/error indicator plus screen-reader feedback. Only a freshly loaded canonical metadata value equal to target suppresses a network write; stale card display is not a no-op baseline. Server independently rechecks no-op against Jira.
+- [x] Run new Playwright editor tests plus `tests/ui/eng_status_transitions.spec.js`, `tests/ui/eng_project_track_transitions.spec.js`, `tests/ui/eng_priority_transitions.spec.js`, and `tests/ui/onboarding_tour.spec.js`; expected existing interactions unchanged. Verify actual unforced clicks, not forced coordinate workarounds.
 
 ### Task 5 — Catch Up, Planning and Board wiring
 
 Modify: `frontend/src/issues/IssueCard.jsx`, `frontend/src/dashboard.jsx`, `frontend/src/eng/EngBoardEpicCard.jsx`, `frontend/src/eng/EngBoardEpicPanel.jsx`, `frontend/src/eng/EngBoardView.jsx`, `frontend/src/styles/eng/issues.css`, `frontend/src/styles/eng/epics.css`, `frontend/src/styles/eng/board.css`.
 Modify: `tests/ui/eng_issue_field_edits.spec.js`, `tests/ui/eng_group_board_card.spec.js`, `tests/ui/eng_group_board_panel.spec.js`, `tests/ui/eng_group_board_drag.spec.js`.
 
-- [ ] Replace Story Assignee/SP at existing positions. Change truthiness to explicit null/undefined handling; show zero. Add Epic DO to existing metadata, not title row. Pass one controller object where practical; dashboard holds only wiring and normalized state callbacks.
-- [ ] Gate on ENG surface + OAuth + correct actual issue type. Initial trigger may load capability on demand; editing is disabled until metadata explicitly says editable. Basic/EPM/Stats/Scenario/subtasks remain inert. Avoid new per-card capabilities on mount.
-- [ ] Implement Board wrapper/open-button/sibling controls structure from section 2; retain .ecard data hooks and visual geometry. Update all focus-return fallbacks and keyboard handlers; person interaction cannot trigger parent open, drag, or selection. Keep actual summary drag/drop functional.
-- [ ] Add Epic people to panel .m-controls and Story assignee in existing row cell, portal within panel root, add editor closers. Confirm Escape hierarchy and Tab containment even during metadata loading.
-- [ ] Verify success updates every surface and inactive group snapshot; SP changes recalculate Planning and Board display after switching. Pending save during scope change never reopens an editor or restores old filters. Add two simultaneous different-issue edits and one same-issue cross-control test.
-- [ ] Verify fixed/ellipsized long-name slots on desktop/mobile; retain metadata rows and current typography. Capture before/after settled screenshots with animations disabled or settled. Assert actual label bounds and horizontal clipping; inspect images.
+- [x] Replace Story Assignee/SP at existing positions. Change truthiness to explicit null/undefined handling; show zero. Keep Epic DO limited to existing Board metadata; do not add it to Catch Up or Planning. Pass one controller object where practical; dashboard holds only wiring and normalized state callbacks.
+- [x] Route Missing: Story Points alert title and Fix fields actions to the dashboard Story. Clear active ENG filters when they hide it, retain the existing Story highlight, focus/select the inline SP input, and let its normal on-demand metadata load enter edit mode. Do not open Jira or add another editor surface for this alert.
+- [x] Gate on ENG surface + OAuth + correct actual issue type. Initial trigger may load capability on demand; editing is disabled until metadata explicitly says editable. Basic/EPM/Stats/Scenario/subtasks remain inert. Avoid new per-card capabilities on mount.
+- [x] Implement Board wrapper/open-button/sibling controls structure from section 2; retain .ecard data hooks and visual geometry. Update all focus-return fallbacks and keyboard handlers; person interaction cannot trigger parent open, drag, or selection. Keep actual summary drag/drop functional.
+- [x] Add Epic people to panel .m-controls and Story assignee in existing row cell, portal within panel root, add editor closers. Confirm Escape hierarchy and Tab containment even during metadata loading.
+- [x] Verify success updates every surface and inactive group snapshot; SP changes recalculate Planning and Board display after switching. Pending save during scope change never reopens an editor or restores old filters. Add two simultaneous different-issue edits and one same-issue cross-control test.
+- [x] Verify fixed/ellipsized long-name slots on desktop/mobile; retain metadata rows and current typography. Capture before/after settled screenshots with animations disabled or settled. Assert actual label bounds and horizontal clipping; inspect images.
 
 ### Task 6 — analytics and complete regression/acceptance
 
 Modify: `frontend/src/analytics/dashboardAnalytics.js`, `frontend/src/analytics/events.js`, `tests/test_analytics_events.js`, `tests/test_analytics_source_guards.js`, `docs/README_ANALYTICS.md`, `docs/plans/SUPPORT-ga4-user-configuration.md`, this plan and its design/index.
 Rebuild: `frontend/dist/` only through npm build.
 
-- [ ] Add canonical `issue_field_edit_action`, trigger `userevent`, event_type `event`, feature_name `eng_issue_field_edits`; params `workflow_action=open|submit|result`, `field_name=assignee|delivery_owner|story_points`, existing `issue_kind=epic|story`, `source_surface=catch_up|planning|board`, result-only `result=success|unchanged|conflict|failure|unknown`. Add `field_name` to the param allowlist and validate enums in the builder. Reuse existing `issue_kind` rather than invent `issue_type`.
-- [ ] Add API reliability surface `jira_issue_field_edits`. Preserve GA4_ENABLED, two GTM triggers, privacy filtering and <=25 params. Test no query/name/email/accountId/issue key/field ID/raw SP/raw error leakage. No per-keystroke/cancel/recalculation event; document incidental-state allowlist reason. Runbook documents event verification, not bulk dimension registration.
-- [ ] Run full Python + Node + relevant Playwright suite and build with pinned runtime. Include structure budgets and real-wrapper auth test and tests.test_issue_edit_cache_generation. Do not weaken tests/raise budgets to fit new logic in dashboard.
+- [x] Add canonical `issue_field_edit_action`, trigger `userevent`, event_type `event`, feature_name `eng_issue_field_edits`; params `workflow_action=open|submit|result`, `field_name=assignee|delivery_owner|story_points`, existing `issue_kind=epic|story`, `source_surface=catch_up|planning|board`, result-only `result=success|unchanged|conflict|failure|unknown`. Add `field_name` to the param allowlist and validate enums in the builder. Reuse existing `issue_kind` rather than invent `issue_type`.
+- [x] Add API reliability surface `jira_issue_field_edits`. Preserve GA4_ENABLED, two GTM triggers, privacy filtering and <=25 params. Test no query/name/email/accountId/issue key/field ID/raw SP/raw error leakage. No per-keystroke/cancel/recalculation event; document incidental-state allowlist reason. Runbook documents event verification, not bulk dimension registration.
+- [x] Run full Python + Node + relevant Playwright suite and build with pinned runtime. Include structure budgets and real-wrapper auth test and tests.test_issue_edit_cache_generation. Do not weaken tests/raise budgets to fit new logic in dashboard.
 - [ ] Perform read-only tenant capability campaign and approved disposable Jira writes as section 6 specifies. Record pass/fail accurately without sensitive data. Update docs to actual outcome; do not mark DONE until implementation verified and accepted/merged.
 
 ## 6. Concrete verification matrix and gates

@@ -387,7 +387,7 @@ test('ENG status transition hook imports the transition API and typed global aut
     const hookSource = fs.readFileSync(hookPath, 'utf8');
 
     assert.match(hookSource, /import \{ fetchIssueTransitionOptions, transitionIssues \} from '\.\.\/api\/jiraIssueApi\.js';/);
-    assert.match(hookSource, /import \{ isAuthenticationRequiredError \} from '\.\.\/api\/authRequired\.js';/);
+    assert.match(hookSource, /import \{ isAuthenticationRequiredError, readPendingAuthenticationRequired \} from '\.\.\/api\/authRequired\.js';/);
     assert.doesNotMatch(hookSource, /redirectToAuthRecovery|location\.assign/);
 });
 
@@ -677,12 +677,14 @@ test('dashboard wires the priority hook and menu without owning their catalog/me
 test('every IssueFieldOptionMenu consumer emits the trigger attribute its focus restore resolves', () => {
     const issuesDir = path.resolve(__dirname, '../frontend/src/issues');
     const menuSource = fs.readFileSync(path.join(issuesDir, 'IssueFieldOptionMenu.jsx'), 'utf8');
+    const popoverSource = fs.readFileSync(path.join(issuesDir, 'useIssueFieldPopover.js'), 'utf8');
 
     // On Escape the shared menu hands focus back to its trigger, resolved inside dismissRef by
     // this attribute. A consumer that names its trigger differently would turn the restore into
     // a silent no-op and strand keyboard users on <body> — which breaks any surrounding focus
     // trap (the board's epic panel binds Escape/Tab to the panel element).
-    assert.match(menuSource, /\[data-\$\{blockClass\}-trigger\]/, 'IssueFieldOptionMenu must resolve its trigger from data-<blockClass>-trigger');
+    assert.match(menuSource, /useIssueFieldPopover/, 'IssueFieldOptionMenu must delegate focus restoration to the shared popover hook');
+    assert.match(popoverSource, /\[data-\$\{blockClass\}-trigger\]/, 'The shared popover hook must resolve its trigger from data-<blockClass>-trigger');
 
     [
         ['StatusTransitionMenu.jsx', 'status-transition'],

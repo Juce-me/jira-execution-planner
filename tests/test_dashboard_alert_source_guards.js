@@ -139,7 +139,7 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
         dashboardSource,
         /const rearmCatchUpAlerts = \(\) => \{\s*catchUpAlertLoadRef\.current = '';\s*catchUpAlertForceRefreshRef\.current = true;\s*catchUpAlertVersionRef\.current \+= 1;\s*setCatchUpAlertRefreshNonce\(value => value \+ 1\);\s*\};/
     );
-    assert.equal((dashboardSource.match(/rearmCatchUpAlerts\(\);/g) || []).length, 1);
+    assert.equal((dashboardSource.match(/rearmCatchUpAlerts\(\);/g) || []).length, 3);
     assert.equal((dashboardSource.match(/onAlertDataInvalidated: rearmCatchUpAlerts/g) || []).length, 2);
     assert.doesNotMatch(
         dashboardSource,
@@ -168,6 +168,11 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
         2,
         'Both ready-to-close loaders must reject stale task results before committing them'
     );
+    assert.equal(
+        (readyToCloseLoaders.match(/finally \{\s*issueEditState\?\.finishRead\(readToken\);\s*\}/g) || []).length,
+        2,
+        'Ready-to-close readers must release tokens after their final commit or stale-scope return'
+    );
 });
 
 test('primary ENG loads reject stale group scope completions', () => {
@@ -187,6 +192,11 @@ test('primary ENG loads reject stale group scope completions', () => {
     assert.match(
         sprintDataSource,
         /catch \(err\) \{[\s\S]*if \(options\.shouldApplyResult\?\.\(\) === false\) return IGNORED_RESULT;[\s\S]*finally \{[\s\S]*if \(useLoading && options\.shouldApplyResult\?\.\(\) !== false\)/
+    );
+    assert.equal(
+        (sprintDataSource.match(/issueEditState\?\.finishRead\(retainedReadToken\);/g) || []).length,
+        2,
+        'Primary readers must stay active until each caller finishes its final task commit'
     );
 });
 
@@ -556,4 +566,38 @@ test('issue status CSS keeps waiting statuses gray, progress statuses blue, and 
     assert.ok(waitingRule.includes('background: #8c8c8c;'));
     assert.equal(taskStatusRules.includes('background: #597ef7;'), false);
     assert.match(epmCss, /\.epm-project-board-status-pill\.task-status\.waiting,[\s\S]*\.epm-project-board-status-pill\.task-status\.pending[\s\S]*background: #8c8c8c;/);
+});
+
+test('dashboard late writers use issue edit generations in addition to scope guards', () => {
+    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+    assert.match(dashboardSource, /issueEditStateRef = useRef\(createEngIssueEditState\(\)\)/);
+    assert.match(dashboardSource, /issueEditState: issueEditStateRef\.current/);
+    assert.match(dashboardSource, /fetchMissingPlanningInfo[\s\S]*beginRead\(\)[\s\S]*reconcileIssues[\s\S]*finishRead/);
+    assert.match(dashboardSource, /fetchDependencies[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(dashboardSource, /loadBacklog[\s\S]*beginRead\(\)[\s\S]*reconcileIssues[\s\S]*finishRead/);
+    assert.match(dashboardSource, /fetchBurnout[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(dashboardSource, /fetchCohort[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(dashboardSource, /loadExcludedCapacity[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(dashboardSource, /groupStateRef\.current\.set\(activeGroupId, issueEditStateRef\.current\.reconcileSnapshot\(groupStateSnapshot\)\)/);
+    assert.match(dashboardSource, /applyGroupState\(issueEditStateRef\.current\.reconcileSnapshot\(cached\)\)/);
+    assert.doesNotMatch(dashboardSource, /projectTrackPhaseCacheRef\.current = \{\};/);
+});
+
+test('story point reconciliation rearms visible dependency and alert reads without task reload', () => {
+    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+    const dependencyEffect = dashboardSource.slice(
+        dashboardSource.indexOf('const dependencyTasks = React.useMemo'),
+        dashboardSource.indexOf('const issueByKey = React.useMemo')
+    );
+    const localPatch = dashboardSource.slice(
+        dashboardSource.indexOf('const invalidateEngIssueFieldSources'),
+        dashboardSource.indexOf('const statusTransitions = useEngStatusTransitions')
+    );
+
+    assert.match(dashboardSource, /isCurrentAggregateRead\(readToken\)\) \{ setDependencyRefreshNonce\(value => value \+ 1\); return ENG_TASK_LOAD_OUTCOME\.IGNORED; \}/);
+    assert.match(dependencyEffect, /dependencyRefreshNonce/);
+    assert.match(localPatch, /setDependencyData\(\{\}\); setDependencyLookupCache\(\{\}\); setDependencyRefreshNonce\(value => value \+ 1\)/);
+    assert.match(localPatch, /rearmCatchUpAlerts\(\)/);
+    assert.match(localPatch, /setInvalidationHandler\(invalidateEngIssueFieldSources\)/);
+    assert.doesNotMatch(localPatch, /loadMeasuredGroupTasks/);
 });

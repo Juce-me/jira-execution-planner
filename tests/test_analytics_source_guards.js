@@ -106,6 +106,43 @@ test('analytics event allowlist excludes forbidden parameter names and unsafe sn
     }
 });
 
+test('issue field edit analytics stays typed, private, and mapped through the two-trigger GTM contract', () => {
+    const eventsSource = read('frontend/src/analytics/events.js');
+    const analyticsSource = read('frontend/src/analytics/analytics.js');
+    const dashboardAnalytics = read('frontend/src/analytics/dashboardAnalytics.js');
+    const jiraApi = read('frontend/src/api/jiraIssueApi.js');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const runbook = read('docs/plans/SUPPORT-ga4-user-configuration.md');
+    const yaml = read('docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml');
+
+    assert.ok(jsSetValues(eventsSource, 'EVENT_NAMES').has('issue_field_edit_action'));
+    assert.ok(jsSetValues(eventsSource, 'EVENT_PARAMS').has('field_name'));
+    assert.ok(jsSetValues(analyticsSource, 'API_SURFACES').has('jira_issue_field_edits'));
+    assert.equal((jiraApi.match(/trackedFetch\('jira_issue_field_edits'/g) || []).length, 3);
+    for (const token of [
+        "new Set(['open', 'submit', 'result'])",
+        "new Set(['assignee', 'delivery_owner', 'story_points'])",
+        "new Set(['epic', 'story'])",
+        "new Set(['catch_up', 'planning', 'board'])",
+        "new Set(['success', 'unchanged', 'conflict', 'failure', 'unknown'])",
+    ]) assert.ok(dashboardAnalytics.includes(token), `Expected fixed issue-field enum ${token}`);
+    for (const forbidden of ['query:', 'accountId:', 'issueKey:', 'fieldId:', 'storyPoints:', 'error:']) {
+        const start = dashboardAnalytics.indexOf('export function buildIssueFieldEditAnalyticsParams');
+        const end = dashboardAnalytics.indexOf('\n}', start) + 2;
+        assert.equal(dashboardAnalytics.slice(start, end).includes(forbidden), false, `Builder must omit ${forbidden}`);
+    }
+
+    assert.match(yaml, /data_layer_variable_name: "field_name"/);
+    assert.match(yaml, /^\s{8}field_name: "\{\{DLV - field_name\}\}"$/m);
+    assert.equal((yaml.match(/event_name: "pageview"/g) || []).length, 1);
+    assert.equal((yaml.match(/event_name: "userevent"/g) || []).length, 1);
+    assert.doesNotMatch(yaml, /custom_dimensions:[\s\S]*?parameter_name: "field_name"/);
+    assert.ok(analyticsDoc.includes('`issue_field_edit_action`'));
+    assert.ok(analyticsDoc.includes('`api_surface=jira_issue_field_edits`'));
+    assert.ok(runbook.includes('issue_field_edit_action'));
+    assert.match(runbook, /Do not register `field_name` as a custom dimension[^.]*named report/i);
+});
+
 test('GA4 MCP YAML dataLayer variables match the app analytics allowlist', () => {
     const analyticsSource = read('frontend/src/analytics/events.js');
     const yamlSource = read('docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml');

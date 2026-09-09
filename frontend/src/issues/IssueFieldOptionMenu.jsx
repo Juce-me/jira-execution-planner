@@ -1,8 +1,6 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
-
-const MENU_EDGE_GAP = 8;
-const MENU_TRIGGER_GAP = 6;
+import useIssueFieldPopover from './useIssueFieldPopover.js';
 
 // Shared compact option-menu renderer for ENG field-change popovers (status + priority).
 // It renders the anchored role="menu" panel; the trigger (status pill / priority icon button)
@@ -36,7 +34,6 @@ export default function IssueFieldOptionMenu({
     onPreviewLifecycleChange,
 }) {
     const firstOptionRef = React.useRef(null);
-    const menuRef = React.useRef(null);
     const key = String(issueKey || '').trim();
     const list = Array.isArray(options) ? options : [];
     const preview = Boolean(previewOnly);
@@ -64,6 +61,20 @@ export default function IssueFieldOptionMenu({
             : `${list.length} ${list.length === 1 ? 'choice' : 'choices'} available.`;
     const lifecycleRef = React.useRef(onPreviewLifecycleChange);
     lifecycleRef.current = onPreviewLifecycleChange;
+    const {
+        panelRef: menuRef,
+        focusTrigger,
+    } = useIssueFieldPopover({
+        blockClass,
+        wrapperRef: dismissRef,
+        portalTarget: effectivePortalTarget,
+        preview,
+        onDismiss: onEscape,
+        // Preserve the old menu default: visualViewport events were preview-only. New field
+        // editors opt into mobile visualViewport tracking explicitly.
+        useVisualViewport: preview,
+        dependencies: [loading, list.length, error, result],
+    });
 
     React.useEffect(() => {
         if (preview) setActivePreviewIndex(0);
@@ -82,69 +93,6 @@ export default function IssueFieldOptionMenu({
         };
     }, [portalTarget, preview, previewDescriptor?.targetIdentity]);
 
-    // A menu inside the Board epic panel cannot remain under its trigger in the DOM: story
-    // triggers live in the panel's overflow-y:auto body, which clips a full workflow list, and
-    // the header/body paint order can cover a header menu. When a panel host is supplied, render
-    // the same menu at that host and position it against the trigger in viewport coordinates.
-    // The menu flips above when that side has more room and scrolls internally when neither side
-    // can fit it; resize and scroll keep it attached to the live trigger.
-    React.useLayoutEffect(() => {
-        if (!effectivePortalTarget) return undefined;
-        const menu = menuRef.current;
-        const wrapper = dismissRef && dismissRef.current;
-        const trigger = wrapper?.querySelector(`[data-${blockClass}-trigger]`);
-        if (!menu || !trigger) return undefined;
-        if (preview) menu.style.position = 'fixed';
-
-        const positionMenu = () => {
-            const triggerRect = trigger.getBoundingClientRect();
-            const visualViewport = preview ? window.visualViewport : null;
-            const viewportLeft = Math.max(0, Number(visualViewport?.offsetLeft) || 0);
-            const viewportTop = Math.max(0, Number(visualViewport?.offsetTop) || 0);
-            const viewportWidth = Math.max(0, Number(visualViewport?.width) || document.documentElement.clientWidth);
-            const viewportHeight = Math.max(0, Number(visualViewport?.height) || window.innerHeight);
-            const viewportRight = viewportLeft + viewportWidth;
-            const viewportBottom = viewportTop + viewportHeight;
-
-            menu.style.left = `${triggerRect.left}px`;
-            menu.style.top = `${triggerRect.bottom + MENU_TRIGGER_GAP}px`;
-            menu.style.maxHeight = `${Math.max(0, viewportHeight - MENU_EDGE_GAP * 2)}px`;
-
-            const naturalHeight = Math.min(menu.scrollHeight, viewportHeight - MENU_EDGE_GAP * 2);
-            const belowSpace = viewportBottom - MENU_EDGE_GAP - triggerRect.bottom - MENU_TRIGGER_GAP;
-            const aboveSpace = triggerRect.top - MENU_TRIGGER_GAP - viewportTop - MENU_EDGE_GAP;
-            const placeBelow = belowSpace >= naturalHeight || belowSpace >= aboveSpace;
-            const availableHeight = Math.max(0, placeBelow ? belowSpace : aboveSpace);
-            menu.style.maxHeight = `${availableHeight}px`;
-
-            const height = Math.min(naturalHeight, availableHeight);
-            menu.style.top = placeBelow
-                ? `${triggerRect.bottom + MENU_TRIGGER_GAP}px`
-                : `${Math.max(viewportTop + MENU_EDGE_GAP, triggerRect.top - MENU_TRIGGER_GAP - height)}px`;
-
-            const menuRect = menu.getBoundingClientRect();
-            const minLeft = viewportLeft + MENU_EDGE_GAP;
-            const maxLeft = Math.max(minLeft, viewportRight - MENU_EDGE_GAP - menuRect.width);
-            menu.style.left = `${Math.min(Math.max(minLeft, triggerRect.left), maxLeft)}px`;
-        };
-
-        positionMenu();
-        window.addEventListener('resize', positionMenu);
-        window.addEventListener('scroll', positionMenu, true);
-        if (preview) {
-            window.visualViewport?.addEventListener('resize', positionMenu);
-            window.visualViewport?.addEventListener('scroll', positionMenu);
-        }
-        return () => {
-            window.removeEventListener('resize', positionMenu);
-            window.removeEventListener('scroll', positionMenu, true);
-            if (preview) {
-                window.visualViewport?.removeEventListener('resize', positionMenu);
-                window.visualViewport?.removeEventListener('scroll', positionMenu);
-            }
-        };
-    }, [blockClass, dismissRef, effectivePortalTarget, loading, list.length, error, preview, result]);
-
     // Move focus into the menu once options are available (mirrors status behavior). The menu
     // mounts only while open, so this runs on open and whenever loading flips to false.
     React.useEffect(() => {
@@ -162,50 +110,12 @@ export default function IssueFieldOptionMenu({
         return undefined;
     }, [effectivePortalTarget, error, list.length, loading, preview, previewDescriptor]);
 
-    // Keep the latest onEscape in a ref so the outside-click listener attaches ONCE for the
-    // menu's open lifetime (below) rather than re-attaching on every re-render — otherwise the
-    // brief detach/re-attach window (e.g. when async options finish loading) could drop an
-    // outside click.
-    const onEscapeRef = React.useRef(onEscape);
-    onEscapeRef.current = onEscape;
-
-    // Dismiss on any outside pointerdown while open. A fixed click-away backdrop cannot be
-    // relied on here: .task-item / .epic-header carry a persisted transform (the task-appear
-    // animation's `both`-fill `to` state), which makes the card the containing block for
-    // position:fixed and clamps a fixed backdrop to the card box instead of the viewport, so
-    // outside-card clicks missed it. A document-level pointerdown scoped to the field wrapper
-    // (trigger + menu) closes the menu wherever the click lands; in-wrapper clicks (trigger
-    // toggle, option select) are left to their own handlers. Escape is handled below.
-    React.useEffect(() => {
-        const wrapper = dismissRef && dismissRef.current;
-        if (!wrapper || preview) return undefined;
-        const handlePointerDown = (event) => {
-            if (!wrapper.contains(event.target) && !menuRef.current?.contains(event.target)) {
-                onEscapeRef.current?.();
-            }
-        };
-        // Attach on the next tick so the click that opened this menu is not itself treated as
-        // an outside click and does not immediately close it.
-        const timer = window.setTimeout(() => {
-            document.addEventListener('pointerdown', handlePointerDown, true);
-        }, 0);
-        return () => {
-            window.clearTimeout(timer);
-            document.removeEventListener('pointerdown', handlePointerDown, true);
-        };
-    }, [dismissRef, preview]);
-
     // Escape closes the menu, so focus must go back to the trigger that opened it. Without this
     // the focused option simply unmounts and focus falls to <body>: the keyboard user loses their
     // place on every surface, and inside a focus trap (the board's epic panel binds Escape/Tab to
     // the panel element) the next Escape reaches nothing and the dialog becomes undismissable.
     // The trigger is resolved from the dismissRef wrapper; every consumer marks it with
     // data-<blockClass>-trigger. A portalled menu still returns focus to that same anchor.
-    const focusTrigger = () => {
-        const wrapper = dismissRef && dismissRef.current;
-        wrapper?.querySelector(`[data-${blockClass}-trigger]`)?.focus();
-    };
-
     const activatePreviewOption = () => {
         focusTrigger();
         onEscape?.('preview_option');

@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
+import { isAuthenticationRequiredError, readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { fetchIssuePriorityOptions, updateIssuePriorities } from '../api/jiraIssueApi.js';
-import { enqueueEngIssueMutation } from './engIssueMutationQueue.js';
+import { enqueueEngIssueMutations } from './engIssueMutationQueue.js';
 import {
     buildCatchUpPriorityTargets,
     buildPriorityActionAnalyticsParams,
@@ -80,6 +80,7 @@ export function useEngPriorityTransitions({
     const mutationScopeRef = React.useRef(mutationScopeKey);
     mutationScopeRef.current = mutationScopeKey;
     const pendingMutationKeysRef = React.useRef(new Set());
+    const queuedMutationControllersRef = React.useRef(new Set());
 
     // Active target, in-flight fetch tracking, and result/error state are scoped to one
     // sprint and Catch Up/Planning surface; the priority catalog cache itself is app-session
@@ -94,6 +95,8 @@ export function useEngPriorityTransitions({
         setPriorityError('');
         setPriorityErrorCode('');
         setPriorityResult(null);
+        queuedMutationControllersRef.current.forEach(controller => controller.abort());
+        queuedMutationControllersRef.current.clear();
         setPendingIssueKeys(new Set());
         pendingMutationKeysRef.current.clear();
     }, [selectedSprint, sourceSurface, mutationScopeKey]);
@@ -189,14 +192,21 @@ export function useEngPriorityTransitions({
             setPrioritySubmitting(true);
         }
 
+        let queueController = null;
         try {
+            queueController = new AbortController();
+            queuedMutationControllersRef.current.add(queueController);
             const runMutation = () => updateIssuePriorities(backendUrl, {
                 issueKeys: [key],
                 targetPriorityId,
             });
-            const response = await (isSingleIssueSurface
-                ? (mutationCoordinator?.enqueue || enqueueEngIssueMutation)(key, runMutation)
-                : runMutation());
+            const runQueuedMutation = async () => await enqueueEngIssueMutations([key], runMutation, {
+                signal: queueController.signal,
+                shouldStart: () => mutationScopeRef.current === mutationScope && !readPendingAuthenticationRequired(),
+            });
+            const response = await (sourceSurface !== 'planning' && mutationCoordinator
+                ? mutationCoordinator.enqueue(key, runQueuedMutation)
+                : runQueuedMutation());
             const summary = summarizePriorityTransitionResults(response?.results);
             const isCurrentMutation = !isSingleIssueSurface || mutationScopeRef.current === mutationScope;
             if (isCurrentMutation && (!isSingleIssueSurface || activePriorityTargetRef.current?.key === key)) {
@@ -229,6 +239,7 @@ export function useEngPriorityTransitions({
             }
             return response;
         } catch (err) {
+            if (err?.name === 'AbortError') return null;
             if (isAuthenticationRequiredError(err)) return null;
             if (err?.code === 'priority_catalog_stale') {
                 clearPriorityOptionsCache();
@@ -244,6 +255,7 @@ export function useEngPriorityTransitions({
             return null;
         } finally {
             mutationCoordinator?.complete();
+            if (queueController) queuedMutationControllersRef.current.delete(queueController);
             if (isSingleIssueSurface) {
                 if (mutationScopeRef.current === mutationScope) {
                     pendingMutationKeysRef.current.delete(key);

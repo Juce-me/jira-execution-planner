@@ -5,6 +5,8 @@ import PriorityTransitionMenu from './PriorityTransitionMenu.jsx';
 import { getIssueStatusClassName, getIssueTeamLabel, normalizeIssueStatus } from './issueViewUtils.js';
 import IssueDependencies, { buildIssueDependencyViewModel } from './IssueDependencies.jsx';
 import { buildStorySubtaskProgress, formatSubtaskUpdatedDate } from './subtaskProgressUtils.js';
+import IssuePersonEditor from './IssuePersonEditor.jsx';
+import StoryPointsEditor from './StoryPointsEditor.jsx';
 
 export const IssueCardContext = React.createContext({});
 const REMOVE_FADE_MS = 240;
@@ -56,6 +58,7 @@ export default function IssueCard({
     onSubmitPriorityTransition,
     onboardingPreviewSession = null,
     onPreviewLifecycleChange,
+    issueFieldEdits = null,
 }) {
     const statusName = task.fields.status?.name;
     const isKilled = statusName === 'Killed';
@@ -141,6 +144,31 @@ export default function IssueCard({
         getTeamInfo: dependencyContext.getTeamInfo,
     });
     const storyPoints = task.fields.customfield_10004;
+    const fieldEditingEnabled = issueFieldEdits
+        && String(task.fields.issuetype?.name || '').trim().toLowerCase() === 'story'
+        && task.fields.issuetype?.subtask !== true;
+    const fieldIsActive = field => fieldEditingEnabled
+        && issueFieldEdits.activeEditor?.issueKey === task.key
+        && issueFieldEdits.activeEditor.field === field;
+    const fieldEditorProps = field => {
+        const active = fieldIsActive(field);
+        return {
+            isOpen: active,
+            metadata: active ? issueFieldEdits.metadata : null,
+            loading: active && issueFieldEdits.status === 'loading',
+            submitting: active && ['queued', 'saving'].includes(issueFieldEdits.status),
+            pending: issueFieldEdits.pendingIssueKeys?.has(task.key),
+            error: active ? issueFieldEdits.errorMessage : '',
+            statusMessage: active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : '',
+            recoveryMode: active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : '',
+            configurationChanged: active && issueFieldEdits.outcome?.configurationChanged === true,
+            jiraUrl,
+            onOpen: () => issueFieldEdits.openEditor({ issueKey: task.key, field, issueKind: 'story', sourceSurface: statusTransitionSourceSurface }),
+            onClose: issueFieldEdits.closeEditor,
+            onReload: issueFieldEdits.reload,
+            onCheckJira: issueFieldEdits.checkJira,
+        };
+    };
     const taskKeyHref = jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#';
     const taskKeyLink = (
         <a
@@ -152,11 +180,12 @@ export default function IssueCard({
             {task.key}
         </a>
     );
-    const storyPointsNode = storyPoints ? (
-        <span className="task-inline-sp">
-            {storyPoints} SP
-        </span>
-    ) : null;
+    const storyPointsNode = fieldEditingEnabled ? (
+        <StoryPointsEditor
+            issueKey={task.key} currentValue={storyPoints} {...fieldEditorProps('storyPoints')}
+            onSubmit={issueFieldEdits.submit} triggerClassName="task-inline-sp"
+        />
+    ) : <span className="task-inline-sp">{storyPoints ?? 0} SP</span>;
     const planningSelectionLabel = `Select ${task.key} for sprint planning`;
     const selectionCheckbox = canSelect ? (
         <input
@@ -272,7 +301,7 @@ export default function IssueCard({
                         />
                     )}
                     <span className="task-team">{teamLabel || getIssueTeamLabel(teamInfo)}</span>
-                    {task.fields.assignee && (
+                    {(task.fields.assignee || fieldEditingEnabled) && (
                         <span className="task-assignee">
                             <span className="task-assignee-icon" aria-hidden="true">
                                 <svg viewBox="0 0 24 24" fill="none">
@@ -280,7 +309,16 @@ export default function IssueCard({
                                     <path d="M4 20c1.8-4 6-5.5 8-5.5S18.2 16 20 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
                                 </svg>
                             </span>
-                            {task.fields.assignee.displayName}
+                            {fieldEditingEnabled ? (
+                                <IssuePersonEditor
+                                    issueKey={task.key} field="assignee" fieldLabel="Assignee" currentValue={task.fields.assignee}
+                                    {...fieldEditorProps('assignee')}
+                                    suggestions={fieldIsActive('assignee') ? issueFieldEdits.suggestions : []}
+                                    query={fieldIsActive('assignee') ? issueFieldEdits.searchQuery : ''}
+                                    searching={fieldIsActive('assignee') && issueFieldEdits.searching}
+                                    onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit}
+                                />
+                            ) : task.fields.assignee.displayName}
                         </span>
                     )}
                     {task.fields.updated && (

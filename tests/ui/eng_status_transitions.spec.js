@@ -23,6 +23,10 @@ const statusTransitionsCss = fs.readFileSync(
     path.join(__dirname, '..', '..', 'frontend', 'src', 'styles', 'eng', 'status-transitions.css'),
     'utf8',
 );
+const subtasksCss = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'frontend', 'src', 'styles', 'eng', 'subtasks.css'),
+    'utf8',
+);
 let dashboardJs;
 
 test.beforeAll(() => {
@@ -438,6 +442,50 @@ test('status transition menu uses compact app dropdown rows with status color ma
     expect(hoverStyles.backgroundColor).not.toBe(beforeHover);
     expect(hoverStyles.transitionProperty).toContain('background-color');
     expect(Number.parseFloat(hoverStyles.borderTopLeftRadius)).toBeGreaterThanOrEqual(6);
+});
+
+test('subtask status transition menu shows every status label without clipping', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    await installEngStatusFixture(page, { optionsBody: mixedStatusOptionsBody });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.addStyleTag({ content: `${statusTransitionsCss}\n${subtasksCss}` });
+
+    await page.locator('.task-item[data-task-key="PROD-1"] .story-subtasks-toggle').click();
+    await trigger(page, 'subtask', 'PROD-1-A').click();
+
+    const subtaskMenu = menu(page, 'PROD-1-A');
+    await expect(subtaskMenu).toBeVisible();
+    await expect(subtaskMenu.locator('.status-transition-option-label')).toHaveText([
+        'Pending',
+        'Postponed',
+        'Blocked',
+        'In Progress',
+        'Accepted',
+        'Release',
+        'Done',
+    ]);
+
+    const geometry = await subtaskMenu.evaluate((menuNode) => {
+        const panel = menuNode.closest('.story-subtasks-panel');
+        const menuRect = menuNode.getBoundingClientRect();
+        return {
+            panelOverflow: panel ? getComputedStyle(panel).overflow : '',
+            menuBottom: menuRect.bottom,
+            panelBottom: panel ? panel.getBoundingClientRect().bottom : 0,
+            labelMetrics: Array.from(menuNode.querySelectorAll('.status-transition-option-label')).map((label) => ({
+                text: label.textContent,
+                clientWidth: label.clientWidth,
+                scrollWidth: label.scrollWidth,
+            })),
+        };
+    });
+
+    expect(geometry.panelOverflow).toBe('visible');
+    expect(geometry.menuBottom).toBeGreaterThan(geometry.panelBottom);
+    for (const label of geometry.labelMetrics) {
+        expect(label.scrollWidth, `${label.text} should not be ellipsized`).toBeLessThanOrEqual(label.clientWidth);
+    }
 });
 
 test('story status transition and team pills use rounded app pill geometry', async ({ page }) => {

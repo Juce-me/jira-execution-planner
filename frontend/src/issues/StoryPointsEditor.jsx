@@ -142,7 +142,7 @@ export default function StoryPointsEditor({
                 onClick={event => event.stopPropagation()}
                 onDragStart={event => { event.preventDefault(); event.stopPropagation(); }}
             />
-            <span aria-hidden="true"> SP</span>
+            <span className="story-points-editor-unit" aria-hidden="true">SP</span>
             {feedback && (
                 <span id={`story-points-feedback-${issueKey}`} className="story-points-editor-feedback" role={validationError || error ? 'alert' : 'status'}>
                     {feedback}

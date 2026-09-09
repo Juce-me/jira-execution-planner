@@ -242,8 +242,13 @@ test('missing Jira Story Points render as 0 in the inline input', async ({ page 
     await mountHarness(page, { width: 390, height: 844 });
     await page.evaluate(() => window.__issueEditorHarness.setPoints(null));
     const input = page.getByRole('textbox', { name: 'Story Points' });
+    const unit = page.locator('.story-points-editor-unit');
     await expect(input).toHaveValue('0');
-    await expect(input.locator('xpath=..')).toContainText('SP');
+    await expect(unit).toHaveText('SP');
+    await expect(unit).toHaveCSS('margin-left', '2px');
+    expect(await unit.evaluate(element => getComputedStyle(element).color))
+        .not.toBe(await input.evaluate(element => getComputedStyle(element).color));
+    await page.screenshot({ path: path.join(screenshotDir, 'story-points-unit-390x844.png') });
 });
 
 test('editors fail closed before editable metadata and allow retry after a rejected save', async ({ page }) => {

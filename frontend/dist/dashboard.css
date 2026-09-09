@@ -7472,6 +7472,10 @@ input.story-points-editor[aria-invalid=true] {
   border-bottom-color: #b42318;
   box-shadow: 0 1px 0 #b42318;
 }
+.story-points-editor-unit {
+  margin-left: 2px;
+  color: var(--text-muted, #777);
+}
 input.story-points-editor.story-points-alert-highlight {
   animation: storyPointsAlertHighlight 1.8s ease-in-out;
 }

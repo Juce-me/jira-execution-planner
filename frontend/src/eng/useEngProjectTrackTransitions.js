@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
+import { isAuthenticationRequiredError, readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { fetchIssueProjectTrackOptions, updateIssueProjectTrack } from '../api/jiraIssueApi.js';
-import { enqueueEngIssueMutation } from './engIssueMutationQueue.js';
+import { enqueueEngIssueMutations } from './engIssueMutationQueue.js';
 import { buildProjectTrackActionAnalyticsParams } from './engProjectTrackTransitionUtils.js';
 
 // React state for the ENG Catch Up/Planning Epic-header Project Track change control: active
@@ -35,6 +35,7 @@ export function useEngProjectTrackTransitions({
     const mutationScopeRef = React.useRef(mutationScopeKey);
     mutationScopeRef.current = mutationScopeKey;
     const pendingMutationKeysRef = React.useRef(new Set());
+    const queuedMutationControllersRef = React.useRef(new Set());
 
     // Active target, in-flight fetch tracking, and result/error state are scoped to one
     // sprint and Catch Up/Planning surface. In-flight writes keep their own scope token so a
@@ -48,6 +49,8 @@ export function useEngProjectTrackTransitions({
         setProjectTrackError('');
         setProjectTrackErrorCode('');
         setProjectTrackResult(null);
+        queuedMutationControllersRef.current.forEach(controller => controller.abort());
+        queuedMutationControllersRef.current.clear();
         setPendingIssueKeys(new Set());
         pendingMutationKeysRef.current.clear();
     }, [selectedSprint, sourceSurface, mutationScopeKey]);
@@ -127,10 +130,18 @@ export function useEngProjectTrackTransitions({
             setProjectTrackSubmitting(true);
         }
 
+        let queueController = null;
         try {
+            queueController = new AbortController();
+            queuedMutationControllersRef.current.add(queueController);
             const runMutation = () => updateIssueProjectTrack(backendUrl, { issueKey: key, targetTrack: target });
-            const response = await (isSingleIssueSurface
-                ? (mutationCoordinator?.enqueue || enqueueEngIssueMutation)(key, runMutation) : runMutation());
+            const runQueuedMutation = async () => await enqueueEngIssueMutations([key], runMutation, {
+                signal: queueController.signal,
+                shouldStart: () => mutationScopeRef.current === mutationScope && !readPendingAuthenticationRequired(),
+            });
+            const response = await (sourceSurface !== 'planning' && mutationCoordinator
+                ? mutationCoordinator.enqueue(key, runQueuedMutation)
+                : runQueuedMutation());
             const isCurrentMutation = !isSingleIssueSurface || mutationScopeRef.current === mutationScope;
             if (isCurrentMutation && (!isSingleIssueSurface || activeProjectTrackTargetRef.current?.key === key)) {
                 setProjectTrackResult(response?.result || 'success');
@@ -149,6 +160,7 @@ export function useEngProjectTrackTransitions({
             }
             return response;
         } catch (err) {
+            if (err?.name === 'AbortError') return null;
             if (isAuthenticationRequiredError(err)) return null;
             if (isSingleIssueSurface && mutationScopeRef.current === mutationScope) {
                 onApplyLocalProjectTrack?.(key, priorTrack);
@@ -161,6 +173,7 @@ export function useEngProjectTrackTransitions({
             return null;
         } finally {
             mutationCoordinator?.complete();
+            if (queueController) queuedMutationControllersRef.current.delete(queueController);
             if (isSingleIssueSurface) {
                 if (mutationScopeRef.current === mutationScope) {
                     pendingMutationKeysRef.current.delete(key);

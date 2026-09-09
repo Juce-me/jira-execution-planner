@@ -33,11 +33,12 @@ test('the hook ships the one permitted generalization: the rename with the widen
     assert.ok(!/isCatchUp/.test(source), 'the rename ships with the widening — no isCatchUp may remain');
 });
 
-test('the hook gates every branch the old flag gated, and no more', () => {
+test('the hook keeps single-issue presentation branches while the shared queue owns all writes', () => {
     const source = read('frontend/src/eng/useEngStatusTransitions.js');
-    // isCatchUp appeared 13 times before the rename (one definition, twelve reads). The new flag
-    // must appear exactly as often: a branch gained or lost is a behaviour change, not a rename.
-    assert.equal((source.match(/isSingleIssueSurface/g) || []).length, 13);
+    // Task 3 removes the queue-bypass branch, so the flag now owns presentation/reconciliation
+    // only; both single and batch writes use enqueueEngIssueMutations.
+    assert.equal((source.match(/isSingleIssueSurface/g) || []).length, 12);
+    assert.match(source, /await enqueueEngIssueMutations\(/);
 });
 
 test('the Board special case refreshes after the shared serialized write', () => {

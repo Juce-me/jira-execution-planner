@@ -16,6 +16,7 @@ const EVENT_NAMES = new Set([
     'issue_status_action',
     'issue_priority_action',
     'issue_project_track_action',
+    'issue_field_edit_action',
     'external_link_opened',
     'api_result',
     'app_error_shown'
@@ -44,6 +45,7 @@ const EVENT_PARAMS = new Set([
     'error_area',
     'error_code',
     'feature_name',
+    'field_name',
     'filter_type',
     'from_mode',
     'from_view',

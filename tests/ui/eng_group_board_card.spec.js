@@ -117,11 +117,13 @@ function storyPayload() {
     return rows;
 }
 
-async function installBoardFixture(page) {
+async function installBoardFixture(page, fieldCalls = []) {
     await installDashboardShell(page);
     await page.route('**/api/**', (route) => {
         const request = route.request();
         const url = new URL(request.url());
+        let requestBody = null;
+        try { requestBody = request.postData() ? JSON.parse(request.postData()) : null; } catch (_error) { requestBody = null; }
         const json = (body, status = 200) => route.fulfill({
             status,
             contentType: 'application/json',
@@ -129,12 +131,25 @@ async function installBoardFixture(page) {
         });
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
+        if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'synthetic-csrf' });
+        const editableMatch = url.pathname.match(/^\/api\/issues\/([^/]+)\/editable-fields$/);
+        if (editableMatch) {
+            fieldCalls.push({ method: request.method(), pathname: url.pathname, body: requestBody });
+            const field = url.searchParams.get('field');
+            return json({ issueKey: editableMatch[1], field, editable: true, currentValue: field === 'storyPoints' ? 1 : { accountId: 'old-owner', displayName: 'Alice Adams' }, baseUpdated: 'base-1', mappingRevision: 'map-1', me: field === 'storyPoints' ? null : { accountId: 'me', displayName: 'Current Person', eligibility: 'eligible' } });
+        }
+        if (/^\/api\/issues\/[^/]+\/user-options$/.test(url.pathname)) return json({ options: [] });
+        if (/^\/api\/issues\/[^/]+\/field$/.test(url.pathname)) {
+            fieldCalls.push({ method: request.method(), pathname: url.pathname, body: requestBody });
+            return json({ result: 'success', value: requestBody?.field === 'storyPoints' ? requestBody.value : { accountId: requestBody?.value?.accountId, displayName: 'Current Person' }, mappingRevision: 'map-1' });
+        }
         if (url.pathname === '/api/auth/status') {
             return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
         }
         if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
             return json({
+                authMode: 'atlassian_oauth',
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
                 groupQueryTemplateEnabled: false,
@@ -181,10 +196,10 @@ async function installBoardFixture(page) {
     });
 }
 
-async function openBoard(page, { width = 1280, height = 900 } = {}) {
+async function openBoard(page, { width = 1280, height = 900, fieldCalls = [] } = {}) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width, height });
-    await installBoardFixture(page);
+    await installBoardFixture(page, fieldCalls);
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -268,6 +283,84 @@ test('Delivery owner shows "Not set" when the epic has none', async ({ page }) =
     await expect(card.locator('.eperson').nth(1).locator('b')).toHaveText('Not set');
     await expect(card.locator('.eperson').nth(1).locator('b')).toHaveClass(/is-empty/);
 });
+
+test('Board person controls neither open nor drag the card wrapper', async ({ page }) => {
+    await openBoard(page);
+    const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');
+    const trigger = card.getByRole('button', { name: 'Assignee: Alice Adams' });
+    await trigger.click();
+    await expect(page.locator('.epic-panel')).toHaveCount(0);
+    await expect(page.locator('.issue-person-editor-menu')).toBeVisible();
+    expect(await trigger.evaluate(node => node.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })))).toBe(false);
+    await expect(page.locator('.epic-panel')).toHaveCount(0);
+});
+
+test('Board field success propagates from card to the open panel without a task-list refetch', async ({ page }) => {
+    const fieldCalls = [];
+    await openBoard(page, { fieldCalls });
+    const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');
+    await card.getByRole('button', { name: 'Assignee: Alice Adams' }).click();
+    await page.getByRole('option', { name: /Current Person/ }).click();
+    await expect(card.getByRole('button', { name: 'Assignee: Current Person' })).toBeVisible();
+    expect(fieldCalls.filter(call => call.method === 'POST' && call.pathname.endsWith('/field'))).toHaveLength(1);
+    await page.getByRole('button', { name: 'Filters' }).click();
+    await card.locator('.ecard-open').click();
+    await expect(page.locator('.epic-panel').getByRole('button', { name: 'Assignee: Current Person' })).toBeVisible();
+});
+
+test('Catch Up confirmation reaches Planning and Story Points recalculate its selected total', async ({ page }) => {
+    const fieldCalls = [];
+    await openBoard(page, { fieldCalls });
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+    const story = page.locator('.task-item[data-issue-key="PLAT-1-1"]');
+    await expect(story).toBeVisible();
+    await expect(page.locator('.epic-delivery-owner')).toHaveCount(0);
+    await page.screenshot({ path: path.join(screenshotDir, 'catch-up-inline-fields.png') });
+    await story.getByRole('button', { name: 'Assignee: Planner' }).click();
+    await page.getByRole('option', { name: /Current Person/ }).click();
+    await expect(story.getByRole('button', { name: 'Assignee: Current Person' })).toBeVisible();
+
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(page.locator('.epic-delivery-owner')).toHaveCount(0);
+    const planningStory = page.locator('.task-item[data-issue-key="PLAT-1-1"]');
+    await expect(planningStory.getByRole('button', { name: 'Assignee: Current Person' })).toBeVisible();
+    await page.getByRole('button', { name: 'Select All' }).click();
+    const selected = page.locator('.planning-panel.open .planning-stat-value').first();
+    const before = Number((await selected.innerText()).match(/·\s*([\d.]+)\s*SP/)?.[1]);
+    const points = planningStory.getByRole('textbox', { name: 'Story Points' });
+    await points.click();
+    await expect(points).toBeEditable();
+    await points.fill('2');
+    await points.press('Enter');
+    await expect(points).toHaveValue('2');
+    await expect.poll(async () => Number((await selected.innerText()).match(/·\s*([\d.]+)\s*SP/)?.[1])).toBe(before + 1);
+    await page.screenshot({ path: path.join(screenshotDir, 'planning-inline-story-points.png') });
+    expect(fieldCalls.filter(call => call.method === 'POST' && call.pathname.endsWith('/field'))).toHaveLength(2);
+});
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    test(`settled Board field edit preserves card geometry at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+        await openBoard(page, viewport);
+        const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');
+        const beforeHeight = await card.evaluate(node => node.getBoundingClientRect().height);
+        await page.screenshot({ path: path.join(screenshotDir, `board-before-${viewport.width}x${viewport.height}.png`) });
+        await card.getByRole('button', { name: 'Assignee: Alice Adams' }).click();
+        const menu = page.locator('.issue-person-editor-menu');
+        await expect(menu).toBeVisible();
+        const menuBox = await menu.boundingBox();
+        expect(menuBox).not.toBeNull();
+        expect(menuBox.x).toBeGreaterThanOrEqual(7);
+        expect(menuBox.y).toBeGreaterThanOrEqual(7);
+        expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(viewport.width - 7);
+        expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(viewport.height - 7);
+        await page.getByRole('option', { name: /Current Person/ }).click();
+        await expect(card.getByRole('button', { name: 'Assignee: Current Person' })).toBeVisible();
+        await settle(page);
+        expect(Math.abs(await card.evaluate(node => node.getBoundingClientRect().height) - beforeHeight)).toBeLessThanOrEqual(1);
+        await page.screenshot({ path: path.join(screenshotDir, `board-after-${viewport.width}x${viewport.height}.png`) });
+    });
+}
 
 /* ── Every control resolves to an existing app class, asserted by class ─────────────────────── */
 
@@ -438,7 +531,7 @@ test('a very long epic summary ellipsizes in one fixed-height card row', async (
     expect(geometry.cardOverflow).toBeLessThanOrEqual(1);
     expect(geometry.rowOverflow).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.cardHeight - shortHeight)).toBeLessThanOrEqual(1);
-    await expect(longCard).toHaveAttribute('aria-label', `PLAT-1: ${LONG_EPIC_SUMMARY}`);
+    await expect(longCard.locator('.ecard-open')).toHaveAttribute('aria-label', `PLAT-1: ${LONG_EPIC_SUMMARY}`);
 });
 
 test('screenshot: a populated open column', async ({ page }) => {

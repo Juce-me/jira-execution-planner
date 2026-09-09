@@ -15,6 +15,7 @@ export const ENG_TASK_LOAD_OUTCOME = Object.freeze({
 const AUTHENTICATION_REQUIRED_RESULT = ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
 const NON_AUTH_FAILURE_RESULT = ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
 const IGNORED_RESULT = ENG_TASK_LOAD_OUTCOME.IGNORED;
+const ISSUE_EDIT_READ_TOKEN = Symbol('issueEditReadToken');
 import {
     PRIORITY_ORDER,
     filterEpicsByTaskEpicKeys,
@@ -99,9 +100,12 @@ export function useEngSprintData({
     performanceDebugEnabled = false,
     performanceGate,
     strictBoardActive = false,
+    issueEditState,
 }) {
     const fetchTasks = async (project, options = {}) => {
         if (strictBoardActive) return IGNORED_RESULT;
+        const readToken = issueEditState?.beginRead();
+        let tokenRetained = false;
         const useLoading = options.useLoading !== false;
         const setErrors = options.setErrorOnFailure !== false;
         if (useLoading) {
@@ -154,16 +158,18 @@ export function useEngSprintData({
             console.log('Success! Received data:', data);
 
             // Sort by priority
-            const sortedTasks = sortTasksByPriority(data.issues || [], priorityOrder);
+            const reconcile = issues => issueEditState?.reconcileIssues(issues, readToken) || issues;
+            const sortedTasks = sortTasksByPriority(reconcile(data.issues || []), priorityOrder);
 
             const filteredTasks = filterTasksForTeamSet(sortedTasks, activeGroupTeamIds, activeGroupTeamSet);
             const filteredEpicsInScope = filterEpicsInScopeForTeamSet(
-                data.epicsInScope || [],
+                reconcile(data.epicsInScope || []),
                 activeGroupTeamIds,
                 activeGroupTeamSet,
                 activeGroupTeamLabels
             );
-            const filteredEpics = filterEpicsByTaskEpicKeys(data.epics || {}, filteredTasks);
+            const reconciledEpicEntries = reconcile(Object.entries(data.epics || {}).map(([key, epic]) => ({ ...epic, key: epic?.key || key })));
+            const filteredEpics = filterEpicsByTaskEpicKeys(Object.fromEntries(reconciledEpicEntries.map(epic => [epic.key, epic])), filteredTasks);
             if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
 
             if (options.updateEpics !== false) {
@@ -177,6 +183,8 @@ export function useEngSprintData({
             if (options.epicsInScopeSetter) {
                 options.epicsInScopeSetter(filteredEpicsInScope);
             }
+            if (readToken) Object.defineProperty(filteredTasks, ISSUE_EDIT_READ_TOKEN, { value: readToken });
+            tokenRetained = true;
             return filteredTasks;
         } catch (err) {
             if (measured) options.measurement.lane(laneMetrics(project, {}, null, performance.now() - startedAt, 0));
@@ -195,6 +203,7 @@ export function useEngSprintData({
             return NON_AUTH_FAILURE_RESULT;
         } finally {
             cleanupSprintFetch(controller);
+            if (!tokenRetained) issueEditState?.finishRead(readToken);
             if (useLoading && options.shouldApplyResult?.() !== false) {
                 setLoading(false);
             }
@@ -213,6 +222,7 @@ export function useEngSprintData({
         if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         const sprintId = selectedSprint;
         setProductTasksLoading(true);
+        let retainedReadToken;
         try {
             if (activeGroupId && activeGroupTeamIds.length === 0) {
                 if (shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
@@ -231,11 +241,15 @@ export function useEngSprintData({
                 return ENG_TASK_LOAD_OUTCOME.APPLIED;
             }
             const data = await fetchTasks('product', { forceRefresh, shouldApplyResult, measurement });
+            const readToken = data?.[ISSUE_EDIT_READ_TOKEN]; retainedReadToken = readToken;
             if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
             if (data === NON_AUTH_FAILURE_RESULT) return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
-            if (data === IGNORED_RESULT || shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
-            setProductTasks(data);
-            setLoadedProductTasks(data);
+            if (data === IGNORED_RESULT || shouldApplyResult?.() === false) {
+                return ENG_TASK_LOAD_OUTCOME.IGNORED;
+            }
+            const reconciled = issueEditState?.reconcileIssues(data, readToken) || data;
+            setProductTasks(reconciled);
+            setLoadedProductTasks(reconciled);
             setTasksFetched(true);
             const current = sprintLoadRef.current;
             sprintLoadRef.current = {
@@ -248,6 +262,7 @@ export function useEngSprintData({
             }
             return ENG_TASK_LOAD_OUTCOME.APPLIED;
         } finally {
+            issueEditState?.finishRead(retainedReadToken);
             if (shouldApplyResult?.() !== false) {
                 setProductTasksLoading(false);
             }
@@ -258,6 +273,7 @@ export function useEngSprintData({
         if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         const sprintId = selectedSprint;
         setTechTasksLoading(true);
+        let retainedReadToken;
         try {
             if (activeGroupId && activeGroupTeamIds.length === 0) {
                 if (shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
@@ -277,11 +293,15 @@ export function useEngSprintData({
                 return ENG_TASK_LOAD_OUTCOME.APPLIED;
             }
             const data = await fetchTasks('tech', { forceRefresh, shouldApplyResult, measurement });
+            const readToken = data?.[ISSUE_EDIT_READ_TOKEN]; retainedReadToken = readToken;
             if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
             if (data === NON_AUTH_FAILURE_RESULT) return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
-            if (data === IGNORED_RESULT || shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
-            setTechTasks(data);
-            setLoadedTechTasks(data);
+            if (data === IGNORED_RESULT || shouldApplyResult?.() === false) {
+                return ENG_TASK_LOAD_OUTCOME.IGNORED;
+            }
+            const reconciled = issueEditState?.reconcileIssues(data, readToken) || data;
+            setTechTasks(reconciled);
+            setLoadedTechTasks(reconciled);
             setTechLoaded(true);
             setTasksFetched(true);
             const current = sprintLoadRef.current;
@@ -295,6 +315,7 @@ export function useEngSprintData({
             }
             return ENG_TASK_LOAD_OUTCOME.APPLIED;
         } finally {
+            issueEditState?.finishRead(retainedReadToken);
             if (shouldApplyResult?.() !== false) {
                 setTechTasksLoading(false);
             }
@@ -306,7 +327,7 @@ export function useEngSprintData({
         if (activeGroupId && activeGroupTeamIds.length === 0) {
             return;
         }
-        await Promise.all([
+        const results = await Promise.all([
             fetchTasks('product', {
                 purpose: 'alerts',
                 useLoading: false,
@@ -324,6 +345,7 @@ export function useEngSprintData({
                 signal
             })
         ]);
+        results.forEach(result => issueEditState?.finishRead(result?.[ISSUE_EDIT_READ_TOKEN]));
     };
 
     const loadReadyToCloseProductTasks = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
@@ -355,9 +377,14 @@ export function useEngSprintData({
             shouldApplyResult,
             signal
         });
-        if (!Array.isArray(data)) return;
-        if (shouldApplyResult?.() === false) return;
-        setReadyToCloseProductTasks(data);
+        const readToken = data?.[ISSUE_EDIT_READ_TOKEN];
+        try {
+            if (!Array.isArray(data)) return;
+            if (shouldApplyResult?.() === false) return;
+            setReadyToCloseProductTasks(issueEditState?.reconcileIssues(data, readToken) || data);
+        } finally {
+            issueEditState?.finishRead(readToken);
+        }
     };
 
     const loadReadyToCloseTechTasks = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
@@ -389,9 +416,14 @@ export function useEngSprintData({
             shouldApplyResult,
             signal
         });
-        if (!Array.isArray(data)) return;
-        if (shouldApplyResult?.() === false) return;
-        setReadyToCloseTechTasks(data);
+        const readToken = data?.[ISSUE_EDIT_READ_TOKEN];
+        try {
+            if (!Array.isArray(data)) return;
+            if (shouldApplyResult?.() === false) return;
+            setReadyToCloseTechTasks(issueEditState?.reconcileIssues(data, readToken) || data);
+        } finally {
+            issueEditState?.finishRead(readToken);
+        }
     };
 
     const loadGroupTasks = (options = {}) => {

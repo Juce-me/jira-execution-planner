@@ -66,3 +66,18 @@ test('local subtask field update patches the matching expanded row without refet
     assert.equal(updated['PROD-2'], state['PROD-2']);
     assert.equal(applyLocalSubtaskFieldUpdate(state, 'UNKNOWN-1', 'status', { name: 'Done' }), state);
 });
+
+test('local issue identity update preserves accountId and does not cascade an Epic owner', async () => {
+    const { applyLocalIssueFieldUpdate } = await loadUtils();
+    const person = { accountId: 'account-2', displayName: 'Same Name' };
+    const epic = {
+        key: 'PROD-EPIC',
+        deliveryOwner: { accountId: 'account-1', displayName: 'Same Name' },
+        stories: [{ key: 'PROD-1', fields: { assignee: { accountId: 'story-owner', displayName: 'Story Owner' } } }],
+    };
+
+    const updated = applyLocalIssueFieldUpdate([epic], 'PROD-EPIC', 'deliveryOwner', person);
+
+    assert.deepEqual(updated[0].deliveryOwner, person);
+    assert.deepEqual(updated[0].stories[0].fields.assignee, epic.stories[0].fields.assignee);
+});

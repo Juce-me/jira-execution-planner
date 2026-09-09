@@ -206,6 +206,7 @@ UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 EPIC_COHORT_CACHE = {}
 EXCLUDED_CAPACITY_STATS_SOURCE_CACHE = {}
 EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE = {}
+JIRA_ISSUE_CACHE_GENERATION = 0
 EPM_PROJECTS_CACHE = {}
 EPM_ISSUES_CACHE = {}
 EPM_ROLLUP_CACHE = {}
@@ -217,10 +218,8 @@ EPM_ISSUES_CACHE_TTL_SECONDS = 300
 EPM_ROLLUP_CACHE_TTL_SECONDS = 300
 EPM_ROLLUP_QUERY_MAX_RESULTS = 2000
 _epm_cache_lock = threading.Lock()
-
 # Single lock for all global caches — kept simple since these are not hot paths.
 _cache_lock = threading.RLock()
-
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
 STATS_CACHE_FILE = 'stats_cache.json'
@@ -1363,8 +1362,8 @@ def extract_team_name(value):
                 return value.get(key)
         return value.get('id')
     return str(value)
-
-
+def shape_jira_person(value):
+    return {'accountId': value.get('accountId'), 'displayName': value.get('displayName')} if isinstance(value, dict) else None
 def extract_team_ids(value):
     """Extract Team[Team] ids from Jira Team field values."""
     if value is None:
@@ -2006,11 +2005,10 @@ def clear_epm_caches(context=None):
 
 def invalidate_stats_cache():
     return _stats_cache_service.invalidate_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning) if local_file_state_enabled() else False
-
-
 def clear_auth_sensitive_caches(reason='auth_context_change'):
-    global TEAM_FIELD_CACHE, PARENT_NAME_FIELD_CACHE, EPIC_LINK_FIELD_CACHE, CAPACITY_FIELD_CACHE
+    global TEAM_FIELD_CACHE, PARENT_NAME_FIELD_CACHE, EPIC_LINK_FIELD_CACHE, CAPACITY_FIELD_CACHE, JIRA_ISSUE_CACHE_GENERATION
     with _cache_lock:
+        JIRA_ISSUE_CACHE_GENERATION += 1
         TASKS_CACHE.clear()
         MISSING_INFO_CACHE.clear()
         DEPENDENCIES_CACHE.clear()
@@ -2042,8 +2040,9 @@ def clear_auth_sensitive_caches(reason='auth_context_change'):
         invalidate_sprints_cache()
         invalidate_stats_cache()
     log_info(f'Cleared auth-sensitive caches reason={reason}')
-
-
+def get_jira_issue_cache_generation():
+    with _cache_lock:
+        return JIRA_ISSUE_CACHE_GENERATION
 register_service_integration_cache_invalidator(clear_auth_sensitive_caches)
 
 
@@ -2796,13 +2795,13 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
                     'status': (fields.get('status') or {}).get('name') or '',
                     'priority': (fields.get('priority') or {}).get('name') or None,
                     'reporter': (fields.get('reporter') or {}).get('displayName'),
-                    'assignee': {'displayName': (fields.get('assignee') or {}).get('displayName')} if fields.get('assignee') else None,
+                    'assignee': shape_jira_person(fields.get('assignee')),
                     'projectTrack': (fields.get(project_track_field) or {}).get('value') if fields.get(project_track_field) else None,
                     'updated': fields.get('updated'),
                 }
                 # Omitted while unconfigured: "no field is set up" must not read as "no owner".
                 if delivery_owner_field:
-                    epic_details[key]['deliveryOwner'] = {'displayName': (fields.get(delivery_owner_field) or {}).get('displayName')} if fields.get(delivery_owner_field) else None
+                    epic_details[key]['deliveryOwner'] = shape_jira_person(fields.get(delivery_owner_field))
                 # Extract initiative from parent if present
                 parent = fields.get('parent')
                 if parent and parent.get('key'):
@@ -2946,7 +2945,7 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
             'key': issue.get('key'),
             'summary': fields.get('summary'),
             'status': {'name': status.get('name')} if status else None,
-            'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+            'assignee': shape_jira_person(assignee),
             'components': [c.get('name') for c in (fields.get('components') or []) if c.get('name')],
             'team': team_value,
             'teamName': team_name,
@@ -3237,6 +3236,7 @@ def fetch_tasks(include_team_name=False):
         )
         record_timing('parse_params', parse_started)
         auth_context = current_request_auth_context()
+        cache_generation = get_jira_issue_cache_generation()
         measurement_campaign = getattr(g, 'measurement_campaign', None)
         if project_filter in ('product', 'tech'):
             denied_response, denied_status = project_access_denied_response(auth_context, project_filter)
@@ -3580,7 +3580,7 @@ def fetch_tasks(include_team_name=False):
                         'status': {'name': status.get('name')} if status else None,
                         'priority': {'name': priority.get('name')} if priority else None,
                         'issuetype': {'name': issuetype.get('name')} if issuetype else None,
-                        'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+                        'assignee': shape_jira_person(assignee),
                         'updated': fields.get('updated'),
                         'customfield_10004': fields.get(get_story_points_field_id()),
                         'team': fields.get('team'),
@@ -3620,7 +3620,8 @@ def fetch_tasks(include_team_name=False):
             if cache_enabled:
                 cache_store_started = time.perf_counter()
                 with _cache_lock:
-                    TASKS_CACHE[cache_key] = {'timestamp': time.time(), 'data': {key: value for key, value in data.items() if key != 'debugTimingsMs'}, 'completeness': 'capped' if len(slim_issues) >= max_results else 'unknown'}
+                    if get_jira_issue_cache_generation() == cache_generation:
+                        TASKS_CACHE[cache_key] = {'timestamp': time.time(), 'data': {key: value for key, value in data.items() if key != 'debugTimingsMs'}, 'completeness': 'capped' if len(slim_issues) >= max_results else 'unknown'}
                 record_timing('cache_store', cache_store_started)
             response = jsonify(data)
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -5424,7 +5425,7 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
             'status': {'name': status.get('name')} if status else None,
             'priority': {'name': priority.get('name')} if priority else None,
             'issuetype': {'name': issuetype.get('name')} if issuetype else None,
-            'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+            'assignee': shape_jira_person(assignee),
             'updated': fields.get('updated'),
             'customfield_10004': fields.get(story_points_field),
             'team': team_payload,
@@ -5433,7 +5434,7 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
             'epicKey': epic_key,
             'epicSummary': epic_summary,
             'epicProjectTrack': epic_project_track,
-            'epicAssignee': {'displayName': epic_assignee_meta.get('displayName')} if epic_assignee_meta else None,
+            'epicAssignee': shape_jira_person(epic_assignee_meta),
             'customfield_10101': normalized_sprints,
             'parentSummary': parent_summary,
             'projectKey': project_field.get('key', ''),
@@ -5447,9 +5448,8 @@ def excluded_capacity_epic_summary_cache_key(epic_key, context=None):
     if context is not None:
         return build_auth_cache_key(context, 'excluded-capacity-epic-summary', normalized_key)
     return ('excluded-capacity-epic-summary', 'basic', normalized_key)
-
-
 def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
+    cache_generation = get_jira_issue_cache_generation()
     normalized_keys = []
     original_by_normalized = {}
     for key in epic_keys or []:
@@ -5494,12 +5494,15 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
             track = (tv or {}).get('value') if isinstance(tv, dict) else None
             assignee = ef.get('assignee') or None
             fetched[key] = {'summary': str(ef.get('summary') or '').strip(), 'projectTrack': track,
-                            'assignee': {'displayName': assignee.get('displayName')} if assignee else None}
+                            'assignee': shape_jira_person(assignee)}
         with _cache_lock:
-            for normalized in batch:
-                meta = fetched.get(normalized, {'summary': '', 'projectTrack': None, 'assignee': None})
-                EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context)] = {**meta, 'timestamp': time.time()}
-                summaries_by_normalized[normalized] = meta
+            if get_jira_issue_cache_generation() == cache_generation:
+                for normalized in batch:
+                    meta = fetched.get(normalized, {'summary': '', 'projectTrack': None, 'assignee': None})
+                    EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context)] = {**meta, 'timestamp': time.time()}
+                    summaries_by_normalized[normalized] = meta
+            else:
+                summaries_by_normalized.update(fetched)
 
     return {original_by_normalized[normalized]: summaries_by_normalized.get(
         normalized, {'summary': '', 'projectTrack': None, 'assignee': None})
@@ -5561,6 +5564,7 @@ def _excluded_capacity_stats_source_cache_key(context, sprint_ids, team_ids, jql
 
 
 def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None, refresh=False, timings_ms=None):
+    cache_generation = get_jira_issue_cache_generation()
     field_started = time.perf_counter()
     team_field_id = resolve_team_field_id(None, context=context)
     epic_link_field_id = resolve_epic_link_field_id(None, context=context)
@@ -5671,10 +5675,10 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
     if cache_enabled:
         cache_store_started = time.perf_counter()
         with _cache_lock:
-            EXCLUDED_CAPACITY_STATS_SOURCE_CACHE[cache_key] = {
-                'timestamp': time.time(),
-                'data': copy.deepcopy(result)
-            }
+            if get_jira_issue_cache_generation() == cache_generation:
+                EXCLUDED_CAPACITY_STATS_SOURCE_CACHE[cache_key] = {
+                    'timestamp': time.time(), 'data': copy.deepcopy(result)
+                }
         _record_excluded_capacity_timing(timings_ms, 'cache_store', cache_store_started)
 
     return result, None
@@ -5874,8 +5878,8 @@ def get_epic_cohort_stats():
     scoped_projects = _cohort_project_scope()
     cache_key = _build_epic_cohort_cache_key(start_quarter, end_quarter, team_ids, scoped_projects, component_names, ad_hoc_epics=ad_hoc_epics)
     auth_context = current_request_auth_context()
+    cache_generation = get_jira_issue_cache_generation()
     cache_enabled = jira_home_process_cache_enabled(auth_context)
-
     now_ts = time.time()
     cached = None
     if cache_enabled:
@@ -5912,11 +5916,10 @@ def get_epic_cohort_stats():
     generated_at = datetime.now().isoformat()
     if cache_enabled:
         with _cache_lock:
-            EPIC_COHORT_CACHE[cache_key] = {
-                'ts': now_ts,
-                'generatedAt': generated_at,
-                'data': cohort_payload
-            }
+            if get_jira_issue_cache_generation() == cache_generation:
+                EPIC_COHORT_CACHE[cache_key] = {
+                    'ts': now_ts, 'generatedAt': generated_at, 'data': cohort_payload
+                }
 
     return jsonify({
         'cached': False,
@@ -6166,10 +6169,7 @@ def _save_field_config(config_key, cache_name=None):
             dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
             dashboard_config[config_key] = value
             save_dashboard_config(dashboard_config)
-        # Invalidate tasks cache so next fetch uses the new field
-        global TASKS_CACHE
-        TASKS_CACHE = {}
-        # Invalidate the specific resolve cache if applicable
+        clear_auth_sensitive_caches(reason='jira_field_config_change')
         if cache_name:
             g = globals()
             with _cache_lock:

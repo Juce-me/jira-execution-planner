@@ -340,11 +340,12 @@ function deferred() {
 
 /* ── The card is a drag source, and the source column is inert ──────────────────────────────── */
 
-test('the epic card is a draggable button and the source column is never a drop target', async ({ page }) => {
+test('the epic card is a draggable noninteractive wrapper and the source column is never a drop target', async ({ page }) => {
     const calls = [];
     await openBoard(page, calls);
 
-    await expect(card(page, 'PLAT-1')).toHaveJSProperty('tagName', 'BUTTON');
+    await expect(card(page, 'PLAT-1')).toHaveJSProperty('tagName', 'DIV');
+    await expect(card(page, 'PLAT-1').locator('.ecard-open')).toHaveJSProperty('tagName', 'BUTTON');
     await expect(card(page, 'PLAT-1')).toHaveAttribute('draggable', 'true');
 
     // Dropping an epic where it already is would be a no-op, so the source column neither accepts
@@ -641,7 +642,7 @@ test('the confirmation defaults to Keep it where it is, never the destructive an
     await page.keyboard.press('Enter');
     await expect(dropMenu(page)).toHaveCount(0);
     expect(transitionCalls(calls)).toHaveLength(0);
-    await expect(card(page, 'PLAT-1')).toBeFocused();
+    await expect(card(page, 'PLAT-1').locator('.ecard-open')).toBeFocused();
 });
 
 test('choosing a status returns focus to the card, like every other exit from the menu', async ({ page }) => {
@@ -656,7 +657,7 @@ test('choosing a status returns focus to the card, like every other exit from th
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
     await expect(liveRegion(page)).toContainText('did not go through');
-    await expect(card(page, 'PLAT-1')).toBeFocused();
+    await expect(card(page, 'PLAT-1').locator('.ecard-open')).toBeFocused();
 });
 
 test('Keep it where it is leaves the epic exactly where it was and returns focus to the card', async ({ page }) => {
@@ -671,7 +672,7 @@ test('Keep it where it is leaves the epic exactly where it was and returns focus
     expect(transitionCalls(calls)).toHaveLength(0);
     await expect(column(page, 'col-doing').locator('.ecard')).toHaveCount(3);
     await expect(columnCount(page, 'col-done')).toHaveText('1');
-    await expect(card(page, 'PLAT-1')).toBeFocused();
+    await expect(card(page, 'PLAT-1').locator('.ecard-open')).toBeFocused();
 });
 
 test('Escape dismisses the confirmation, leaves the epic in place and returns focus to the card', async ({ page }) => {
@@ -686,7 +687,7 @@ test('Escape dismisses the confirmation, leaves the epic in place and returns fo
     await expect(dropMenu(page)).toHaveCount(0);
     expect(transitionCalls(calls)).toHaveLength(0);
     await expect(column(page, 'col-doing').locator('.ecard')).toHaveCount(3);
-    await expect(card(page, 'PLAT-1')).toBeFocused();
+    await expect(card(page, 'PLAT-1').locator('.ecard-open')).toBeFocused();
 });
 
 test('the gate fires for a done-category status that is not one of the three literal names', async ({ page }) => {
@@ -803,7 +804,7 @@ test('the epic panel status pill still performs a transition — drag is not the
     const calls = [];
     await openBoard(page, calls);
 
-    await card(page, 'CORE-2').click();
+    await card(page, 'CORE-2').locator('.ecard-open').click();
     await expect(page.locator('.epic-panel')).toBeVisible();
     await page.locator('.epic-panel [data-status-transition-trigger="true"][data-issue-key="CORE-2"]').click();
     const panelMenu = page.locator('.epic-panel .status-transition-menu');

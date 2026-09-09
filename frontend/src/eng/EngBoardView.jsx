@@ -63,6 +63,7 @@ export default function EngBoardView({
     board = null, epicGroups = [], view = null, onViewChange, onConfigure, renderPriorityIcon,
     engFilters, onFacetChange, jiraUrl = '', backendUrl = '', transitionsEnabled = false,
     statusTransitions = null, priorityTransitions = null, projectTrackTransitions = null,
+    issueFieldEdits = null,
     statusTransitionSubmitting = false, onSubmitStatusTransition, onFilterBarHeightChange,
     loading = false, error = null, onRetry,
     strictColumns = null, authorityPending = false, stale = false,
@@ -139,7 +140,7 @@ export default function EngBoardView({
         // still in the document, and the live card is looked up by key as the fallback.
         const target = (opener && document.contains(opener))
             ? opener
-            : document.querySelector(`.eng-board .ecard[data-epic-key="${key}"]`);
+            : document.querySelector(`.eng-board .ecard[data-epic-key="${key}"] .ecard-open`);
         target?.focus();
     };
 
@@ -210,7 +211,7 @@ export default function EngBoardView({
     // and all three owe the drag its focus back (§10.1) — the confirmation is reachable only from
     // a pointer gesture, so there is nowhere else for focus to go.
     const focusCard = React.useCallback((epicKey) => {
-        document.querySelector(`.eng-board .ecard[data-epic-key="${epicKey}"]`)?.focus();
+        document.querySelector(`.eng-board .ecard[data-epic-key="${epicKey}"] .ecard-open`)?.focus();
     }, []);
 
     const closeDropMenu = React.useCallback(() => {
@@ -936,6 +937,8 @@ export default function EngBoardView({
                                             isDragging={draggingKey === epicGroup.key}
                                             isRejected={rejectedKey === epicGroup.key}
                                             workItemLabel={strictWorkItemLabel}
+                                            issueFieldEdits={epicGroup.epic ? issueFieldEdits : null}
+                                            jiraUrl={jiraUrl}
                                         />
                                     ))}
                                 </div>
@@ -1009,6 +1012,7 @@ export default function EngBoardView({
                     statusTransitions={statusTransitions}
                     priorityTransitions={priorityTransitions}
                     projectTrackTransitions={projectTrackTransitions}
+                    issueFieldEdits={issueFieldEdits}
                     statusTransitionSubmitting={statusTransitionSubmitting}
                     workItemLabel={strictWorkItemLabel}
                     workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : 'story'}

@@ -97,7 +97,10 @@ export function strictEngBoardMutationProps({ active, coordinator, refresh, sour
                 if (!active) affectedSubtaskStoryKeys.forEach(key => retrySubtasks({ key }));
             } },
         priority: { mutationCoordinator: coordinator,
-            onPrioritySuccessRefresh: async () => { if (active) await refresh(); } },
+            onPrioritySuccessRefresh: async () => {
+                if (active) await refresh();
+                else if (sourceSurface !== 'board') loadLegacy();
+            } },
         projectTrack: { mutationCoordinator: coordinator,
             onProjectTrackSuccessRefresh: () => active ? refresh() : Promise.resolve() },
     };

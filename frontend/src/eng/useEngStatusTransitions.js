@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
+import { isAuthenticationRequiredError, readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { fetchIssueTransitionOptions, transitionIssues } from '../api/jiraIssueApi.js';
-import { enqueueEngIssueMutation } from './engIssueMutationQueue.js';
+import { enqueueEngIssueMutation, enqueueEngIssueMutations } from './engIssueMutationQueue.js';
 import {
     MAX_STATUS_TRANSITION_ISSUES,
     buildCatchUpStatusTargets,
@@ -92,6 +92,7 @@ export function useEngStatusTransitions({
     const mutationScopeRef = React.useRef(mutationScopeKey);
     mutationScopeRef.current = mutationScopeKey;
     const pendingMutationKeysRef = React.useRef(new Set());
+    const queuedMutationControllersRef = React.useRef(new Set());
 
     const abortInFlightOptionsRequest = React.useCallback(() => {
         optionsRequestRef.current.controller?.abort();
@@ -119,6 +120,8 @@ export function useEngStatusTransitions({
         setTransitionError('');
         setTransitionErrorCode('');
         setTransitionResult(null);
+        queuedMutationControllersRef.current.forEach(controller => controller.abort());
+        queuedMutationControllersRef.current.clear();
         setPendingIssueKeys(new Set());
         pendingMutationKeysRef.current.clear();
     }, [selectedSprint, sourceSurface, mutationScopeKey, clearNonStoryStatusTargets, abortInFlightOptionsRequest]);
@@ -308,14 +311,30 @@ export function useEngStatusTransitions({
             setPendingIssueKeys((prev) => new Set(prev).add(singleIssueKey));
         }
 
+        let queueController = null;
         try {
+            queueController = new AbortController();
+            queuedMutationControllersRef.current.add(queueController);
             const runMutation = () => transitionIssues(backendUrl, {
                 issueKeys: targets.map((target) => target.key),
                 targetStatus: status,
             });
-            const response = await (isSingleIssueSurface
-                ? (mutationCoordinator?.enqueue || enqueueEngIssueMutation)(singleIssueKey, runMutation)
-                : runMutation());
+            const runQueuedMutation = async () => await enqueueEngIssueMutations(
+                targets.map(target => target.key),
+                runMutation,
+                {
+                    signal: queueController.signal,
+                    shouldStart: () => mutationScopeRef.current === mutationScope && !readPendingAuthenticationRequired(),
+                },
+            );
+            // Keep strict Board's coordinator as the outer transaction owner so its refresh
+            // completes before the next Board mutation. The fallback remains named here for
+            // the established coordinator contract, but non-Board writes call the multi-key
+            // queue directly and therefore never double-reserve a key.
+            const enqueueCoordinatedMutation = mutationCoordinator?.enqueue || enqueueEngIssueMutation;
+            const response = await (sourceSurface !== 'planning' && mutationCoordinator
+                ? enqueueCoordinatedMutation(singleIssueKey, runQueuedMutation)
+                : runQueuedMutation());
             const summary = summarizeTransitionResults(response?.results);
             const isCurrentMutation = !isSingleIssueSurface || mutationScopeRef.current === mutationScope;
             if (isCurrentMutation && (!isSingleIssueSurface || activeSingleIssueTargetRef.current?.key === singleIssueKey)) {
@@ -378,6 +397,7 @@ export function useEngStatusTransitions({
             }
             return response;
         } catch (err) {
+            if (err?.name === 'AbortError') return null;
             if (isAuthenticationRequiredError(err)) return null;
             if (isSingleIssueSurface && mutationScopeRef.current === mutationScope) {
                 onApplyLocalStatus?.(singleIssueKey, singleIssueTarget?.currentStatus || '');
@@ -390,6 +410,7 @@ export function useEngStatusTransitions({
             return null;
         } finally {
             mutationCoordinator?.complete();
+            if (queueController) queuedMutationControllersRef.current.delete(queueController);
             if (isSingleIssueSurface) {
                 if (mutationScopeRef.current === mutationScope) {
                     pendingMutationKeysRef.current.delete(singleIssueKey);

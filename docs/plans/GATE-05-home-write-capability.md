@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-09-08. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-09-09. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,8 +15,8 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-09-08 |
-| Last result | Not run — 2026-09-08 Board implementation preparation rechecked this gate; no approved disposable Home-write target was supplied and no mutation probe is authorized. Earlier execution preflight found 0 of 4 required inputs; that input count was not remeasured during this documentation task. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. |
+| Checked on | 2026-09-09 |
+| Last result | Not run — the OAuth inline Jira issue-edit implementation sweep found 0 of 4 Home-write probe inputs in the process environment, no approved disposable Home-write target was supplied, and no mutation probe was authorized or executed. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -129,6 +129,10 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-09-09: The OAuth inline Jira issue-edit implementation sweep found none of the four
+  required Home-write probe inputs and no approved disposable Home project. No mutation probe
+  ran; this feature adds Jira REST writes only. Keep blocked with
+  `FAIL insufficient_home_write_probe_input`.
 - 2026-09-07: The issue #137 existing-endpoint collector used an operator-approved Basic-auth
   profile for read-only Jira data only. None of the four Home-write probe inputs or an approved
   disposable Home project was supplied, so no mutation probe ran. Keep blocked with

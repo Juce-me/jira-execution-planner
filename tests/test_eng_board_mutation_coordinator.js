@@ -96,3 +96,19 @@ test('strict Board status and priority successes refresh only the strict owner',
 
     assert.deepEqual(calls, ['strict-refresh', 'strict-refresh']);
 });
+
+test('Planning priority success keeps the legacy task refresh outside strict Board', async () => {
+    const calls = [];
+    const props = strictEngBoardMutationProps({
+        active: false,
+        coordinator: null,
+        refresh: async () => calls.push('strict-refresh'),
+        sourceSurface: 'planning',
+        loadLegacy: () => calls.push('legacy-load'),
+        retrySubtasks: () => {},
+    });
+
+    await props.priority.onPrioritySuccessRefresh();
+
+    assert.deepEqual(calls, ['legacy-load']);
+});

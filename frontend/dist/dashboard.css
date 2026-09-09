@@ -4852,13 +4852,29 @@ button.toggle.applied-filter.active {
   border-radius: 10px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
+.eng-board .ecard-open {
+  appearance: none;
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
 .eng-board .ecard:hover {
   background: var(--bg-secondary);
   border-color: var(--board-column-accent);
   box-shadow: 0 4px 12px var(--shadow);
   transform: none;
 }
-.eng-board .ecard:focus-visible {
+.eng-board .ecard-open:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -4925,7 +4941,7 @@ button.toggle.applied-filter.active {
 }
 .eng-board .erow3 {
   gap: 0.9rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .eng-board .erow2 .push {
   margin-left: auto;
@@ -4938,6 +4954,8 @@ button.toggle.applied-filter.active {
   align-items: baseline;
   gap: 0.3rem;
   min-width: 0;
+  max-width: calc(50% - 0.45rem);
+  flex: 1 1 0;
 }
 .eng-board .eperson b {
   font-weight: 400;
@@ -5048,6 +5066,10 @@ button.toggle.applied-filter.active {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
+}
+.eng-board .m-controls > .eperson {
+  flex: 0 1 9rem;
+  max-width: 9rem;
 }
 .eng-board .m-title {
   font-size: 1.36rem;
@@ -7162,7 +7184,8 @@ button.status-pill:focus-visible {
 }
 .status-transition,
 .priority-transition,
-.project-track-transition {
+.project-track-transition,
+.issue-person-editor {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -7178,7 +7201,8 @@ button.status-pill:focus-visible {
 }
 .status-transition-menu,
 .priority-transition-menu,
-.project-track-transition-menu {
+.project-track-transition-menu,
+.issue-person-editor-menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
@@ -7198,7 +7222,10 @@ button.status-pill:focus-visible {
   letter-spacing: 0;
   box-sizing: border-box;
 }
-.status-transition-menu.is-portalled {
+.status-transition-menu.is-portalled,
+.priority-transition-menu.is-portalled,
+.project-track-transition-menu.is-portalled,
+.issue-person-editor-menu.is-portalled {
   position: fixed;
   top: 0;
   left: 0;
@@ -7208,14 +7235,16 @@ button.status-pill:focus-visible {
 }
 .status-transition-menu-options,
 .priority-transition-menu-options,
-.project-track-transition-menu-options {
+.project-track-transition-menu-options,
+.issue-person-editor-menu-options {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 .status-transition-option,
 .priority-transition-option,
-.project-track-transition-option {
+.project-track-transition-option,
+.issue-person-editor-option {
   width: 100%;
   display: grid;
   grid-template-columns: 0.7rem minmax(0, 1fr);
@@ -7244,7 +7273,8 @@ button.status-pill:focus-visible {
 }
 .status-transition-option + .status-transition-option,
 .priority-transition-option + .priority-transition-option,
-.project-track-transition-option + .project-track-transition-option {
+.project-track-transition-option + .project-track-transition-option,
+.issue-person-editor-option + .issue-person-editor-option {
   border-top: 1px dashed var(--border);
 }
 .priority-transition-option {
@@ -7258,20 +7288,25 @@ button.status-pill:focus-visible {
 .priority-transition-option:hover:not(:disabled),
 .priority-transition-option:focus-visible,
 .project-track-transition-option:hover:not(:disabled),
-.project-track-transition-option:focus-visible {
+.project-track-transition-option:focus-visible,
+.issue-person-editor-option:hover:not(:disabled),
+.issue-person-editor-option:focus-visible,
+.issue-person-editor-option.is-active:not(:disabled) {
   transform: none;
   background: var(--bg-primary);
   box-shadow: inset 0 0 0 1px rgba(47, 128, 237, 0.18);
 }
 .status-transition-option:focus-visible,
 .priority-transition-option:focus-visible,
-.project-track-transition-option:focus-visible {
+.project-track-transition-option:focus-visible,
+.issue-person-editor-option:focus-visible {
   outline: 2px solid rgba(47, 128, 237, 0.65);
   outline-offset: 1px;
 }
 .status-transition-option:disabled,
 .priority-transition-option:disabled,
-.project-track-transition-option:disabled {
+.project-track-transition-option:disabled,
+.issue-person-editor-option:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -7290,7 +7325,8 @@ button.status-pill:focus-visible {
 }
 .status-transition-option-label,
 .priority-transition-option-label,
-.project-track-transition-option-label {
+.project-track-transition-option-label,
+.issue-person-editor-option-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7310,7 +7346,9 @@ button.status-pill:focus-visible {
 }
 .status-transition-menu-note,
 .priority-transition-menu-note,
-.project-track-transition-menu-note {
+.project-track-transition-menu-note,
+.issue-person-editor-menu-note,
+.issue-person-editor-option-note {
   font-size: 0.72rem;
   line-height: 1.35;
   text-transform: none;
@@ -7318,12 +7356,14 @@ button.status-pill:focus-visible {
 }
 .status-transition-menu-loading,
 .priority-transition-menu-loading,
-.project-track-transition-menu-loading {
+.project-track-transition-menu-loading,
+.issue-person-editor-menu-loading {
   color: var(--text-secondary);
 }
 .status-transition-menu-error,
 .priority-transition-menu-error,
-.project-track-transition-menu-error {
+.project-track-transition-menu-error,
+.issue-person-editor-menu-error {
   color: #b42318;
 }
 .status-transition-menu-error.is-too-many,
@@ -7332,12 +7372,140 @@ button.status-pill:focus-visible {
 }
 .status-transition-menu-result,
 .priority-transition-menu-result,
-.project-track-transition-menu-result {
+.project-track-transition-menu-result,
+.issue-person-editor-menu-result {
   font-size: 0.72rem;
   line-height: 1.35;
   color: var(--text-secondary);
   text-transform: none;
   letter-spacing: 0;
+}
+.issue-person-editor-menu {
+  width: min(16rem, calc(100vw - 16px));
+  max-width: min(16rem, calc(100vw - 16px));
+}
+.issue-person-editor-option {
+  grid-template-columns: minmax(0, 1fr);
+}
+.issue-person-editor-option-label {
+  display: flex;
+  flex-direction: column;
+}
+.issue-person-editor-option-label small,
+.issue-person-editor-option-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  font-weight: 400;
+}
+.issue-field-editor-recovery-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+button.issue-person-editor-trigger {
+  appearance: none;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+button.issue-person-editor-trigger:hover {
+  transform: none;
+  box-shadow: none;
+}
+button.issue-person-editor-trigger.is-pending {
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+}
+button.issue-person-editor-trigger:focus-visible {
+  outline: 2px solid rgba(47, 128, 237, 0.65);
+  outline-offset: 1px;
+}
+.story-points-editor-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+}
+input.story-points-editor {
+  appearance: none;
+  min-width: 23px;
+  max-width: 6ch;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  text-align: right;
+  box-shadow: none;
+}
+input.story-points-editor:not(:read-only) {
+  border-bottom-color: currentColor;
+}
+input.story-points-editor:focus-visible {
+  border-bottom-color: currentColor;
+  box-shadow: 0 1px 0 currentColor;
+}
+input.story-points-editor[aria-invalid=true] {
+  border-bottom-color: #b42318;
+  box-shadow: 0 1px 0 #b42318;
+}
+.story-points-editor-unit {
+  margin-left: 2px;
+  color: var(--text-muted, #777);
+}
+input.story-points-editor.story-points-alert-highlight {
+  animation: storyPointsAlertHighlight 1.8s ease-in-out;
+}
+@keyframes storyPointsAlertHighlight {
+  0%, 100% {
+    box-shadow: 0 1px 0 currentColor;
+  }
+  25%, 75% {
+    box-shadow: 0 0 0 4px rgba(47, 128, 237, 0.32);
+  }
+  50% {
+    box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.16);
+  }
+}
+.story-points-editor-wrap.is-pending {
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+}
+.story-points-editor-feedback {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* frontend/src/styles/eng.css */

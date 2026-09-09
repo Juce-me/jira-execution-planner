@@ -35,7 +35,8 @@
            system. The priority icon trigger's own button reset lives in eng/issues.css. */
         .status-transition,
         .priority-transition,
-        .project-track-transition {
+        .project-track-transition,
+        .issue-person-editor {
             position: relative;
             display: inline-flex;
             align-items: center;
@@ -60,7 +61,8 @@
 
         .status-transition-menu,
         .priority-transition-menu,
-        .project-track-transition-menu {
+        .project-track-transition-menu,
+        .issue-person-editor-menu {
             position: absolute;
             top: calc(100% + 6px);
             left: 0;
@@ -84,7 +86,10 @@
         /* Board panel status menus are portalled out of the scrollable story list so a full Jira
            workflow cannot be clipped by `.m-body`. Inline coordinates keep the panel attached to
            its trigger and inside the viewport; this class supplies only the overlay/scroll layer. */
-        .status-transition-menu.is-portalled {
+        .status-transition-menu.is-portalled,
+        .priority-transition-menu.is-portalled,
+        .project-track-transition-menu.is-portalled,
+        .issue-person-editor-menu.is-portalled {
             position: fixed;
             top: 0;
             left: 0;
@@ -95,7 +100,8 @@
 
         .status-transition-menu-options,
         .priority-transition-menu-options,
-        .project-track-transition-menu-options {
+        .project-track-transition-menu-options,
+        .issue-person-editor-menu-options {
             display: flex;
             flex-direction: column;
             gap: 0;
@@ -103,7 +109,8 @@
 
         .status-transition-option,
         .priority-transition-option,
-        .project-track-transition-option {
+        .project-track-transition-option,
+        .issue-person-editor-option {
             width: 100%;
             display: grid;
             grid-template-columns: 0.7rem minmax(0, 1fr);
@@ -129,7 +136,8 @@
 
         .status-transition-option + .status-transition-option,
         .priority-transition-option + .priority-transition-option,
-        .project-track-transition-option + .project-track-transition-option {
+        .project-track-transition-option + .project-track-transition-option,
+        .issue-person-editor-option + .issue-person-editor-option {
             border-top: 1px dashed var(--border);
         }
 
@@ -149,7 +157,10 @@
         .priority-transition-option:hover:not(:disabled),
         .priority-transition-option:focus-visible,
         .project-track-transition-option:hover:not(:disabled),
-        .project-track-transition-option:focus-visible {
+        .project-track-transition-option:focus-visible,
+        .issue-person-editor-option:hover:not(:disabled),
+        .issue-person-editor-option:focus-visible,
+        .issue-person-editor-option.is-active:not(:disabled) {
             transform: none;
             background: var(--bg-primary);
             box-shadow: inset 0 0 0 1px rgba(47, 128, 237, 0.18);
@@ -157,14 +168,16 @@
 
         .status-transition-option:focus-visible,
         .priority-transition-option:focus-visible,
-        .project-track-transition-option:focus-visible {
+        .project-track-transition-option:focus-visible,
+        .issue-person-editor-option:focus-visible {
             outline: 2px solid rgba(47, 128, 237, 0.65);
             outline-offset: 1px;
         }
 
         .status-transition-option:disabled,
         .priority-transition-option:disabled,
-        .project-track-transition-option:disabled {
+        .project-track-transition-option:disabled,
+        .issue-person-editor-option:disabled {
             cursor: not-allowed;
             opacity: 0.55;
         }
@@ -185,7 +198,8 @@
 
         .status-transition-option-label,
         .priority-transition-option-label,
-        .project-track-transition-option-label {
+        .project-track-transition-option-label,
+        .issue-person-editor-option-label {
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -208,7 +222,9 @@
 
         .status-transition-menu-note,
         .priority-transition-menu-note,
-        .project-track-transition-menu-note {
+        .project-track-transition-menu-note,
+        .issue-person-editor-menu-note,
+        .issue-person-editor-option-note {
             font-size: 0.72rem;
             line-height: 1.35;
             text-transform: none;
@@ -217,13 +233,15 @@
 
         .status-transition-menu-loading,
         .priority-transition-menu-loading,
-        .project-track-transition-menu-loading {
+        .project-track-transition-menu-loading,
+        .issue-person-editor-menu-loading {
             color: var(--text-secondary);
         }
 
         .status-transition-menu-error,
         .priority-transition-menu-error,
-        .project-track-transition-menu-error {
+        .project-track-transition-menu-error,
+        .issue-person-editor-menu-error {
             color: #b42318;
         }
 
@@ -234,10 +252,151 @@
 
         .status-transition-menu-result,
         .priority-transition-menu-result,
-        .project-track-transition-menu-result {
+        .project-track-transition-menu-result,
+        .issue-person-editor-menu-result {
             font-size: 0.72rem;
             line-height: 1.35;
             color: var(--text-secondary);
             text-transform: none;
             letter-spacing: 0;
+        }
+
+        .issue-person-editor-menu {
+            width: min(16rem, calc(100vw - 16px));
+            max-width: min(16rem, calc(100vw - 16px));
+        }
+
+        .issue-person-editor-option {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .issue-person-editor-option-label {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .issue-person-editor-option-label small,
+        .issue-person-editor-option-note {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text-secondary);
+            font-size: 0.62rem;
+            font-weight: 400;
+        }
+
+        .issue-field-editor-recovery-actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        button.issue-person-editor-trigger {
+            appearance: none;
+            min-width: 0;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            text-align: inherit;
+            text-transform: inherit;
+            letter-spacing: inherit;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
+        button.issue-person-editor-trigger:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
+        button.issue-person-editor-trigger.is-pending {
+            background-image: linear-gradient(var(--accent), var(--accent));
+            background-position: 0 100%;
+            background-repeat: no-repeat;
+            background-size: 100% 1px;
+        }
+
+        button.issue-person-editor-trigger:focus-visible {
+            outline: 2px solid rgba(47, 128, 237, 0.65);
+            outline-offset: 1px;
+        }
+
+        .story-points-editor-wrap {
+            display: inline-flex;
+            align-items: baseline;
+            min-width: 0;
+            white-space: nowrap;
+        }
+
+        input.story-points-editor {
+            appearance: none;
+            min-width: 23px;
+            max-width: 6ch;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            border-bottom: 1px solid transparent;
+            border-radius: 0;
+            outline: 0;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            font-weight: inherit;
+            line-height: inherit;
+            letter-spacing: inherit;
+            text-align: right;
+            box-shadow: none;
+        }
+
+        input.story-points-editor:not(:read-only) {
+            border-bottom-color: currentColor;
+        }
+
+        input.story-points-editor:focus-visible {
+            border-bottom-color: currentColor;
+            box-shadow: 0 1px 0 currentColor;
+        }
+
+        input.story-points-editor[aria-invalid="true"] {
+            border-bottom-color: #b42318;
+            box-shadow: 0 1px 0 #b42318;
+        }
+
+        .story-points-editor-unit {
+            margin-left: 2px;
+            color: var(--text-muted, #777);
+        }
+
+        input.story-points-editor.story-points-alert-highlight {
+            animation: storyPointsAlertHighlight 1.8s ease-in-out;
+        }
+
+        @keyframes storyPointsAlertHighlight {
+            0%, 100% { box-shadow: 0 1px 0 currentColor; }
+            25%, 75% { box-shadow: 0 0 0 4px rgba(47, 128, 237, 0.32); }
+            50% { box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.16); }
+        }
+
+        .story-points-editor-wrap.is-pending {
+            background-image: linear-gradient(var(--accent), var(--accent));
+            background-position: 0 100%;
+            background-repeat: no-repeat;
+            background-size: 100% 1px;
+        }
+
+        .story-points-editor-feedback {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }

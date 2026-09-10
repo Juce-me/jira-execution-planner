@@ -44,6 +44,7 @@ Postmortems serve to:
 | [MRT025](./MRT025-pr-publication-transaction-failures.md) | PR Publication Transaction Failures | 2026-09-08 | High | In Progress | A repeated publication failure mixed unrelated commit history into a feature PR and rendered JSON-escaped newlines literally because remote range and rendered-body gates ran too late |
 | [MRT026](./MRT026-issue-137-delivery-scope-deviation.md) | Issue 137 Delivery Scope Deviation | 2026-09-07 | High | In Progress | Recovery now includes accepted in-app measurements and a reviewed gated implementation plan; planning acceptance remains pending |
 | [MRT027](./MRT027-board-catalog-pagination.md) | Board Scope Interpretation and Loading Regressions | 2026-09-09 | High | Monitoring | Unconfirmed UX/data-source assumptions and over-strict Jira projection caused duplicate controls, redundant loading, incomplete ownership discovery, and live Board failures |
+| [MRT028](./MRT028-epic-header-instruction-drift.md) | Epic Header Regression and Instruction Drift | 2026-09-10 | High | Monitoring | Explicit single-row visible-alignment requirements were replaced by wrapper geometry and an unapproved stacked design; tests and reviewers validated the substituted goal |
 
 ## Postmortem Template
 
@@ -97,8 +98,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 27
-- **Metadata complete (Date/Severity/Status)**: 27 (MRT001-MRT027)
+- **Total postmortems**: 28
+- **Metadata complete (Date/Severity/Status)**: 28 (MRT001-MRT028)
 
 ## Common Themes
 
@@ -159,5 +160,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-09-09*
-*Total Postmortems: 27*
+*Last Updated: 2026-09-10*
+*Total Postmortems: 28*

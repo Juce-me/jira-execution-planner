@@ -475,6 +475,7 @@ See the full guide:
 
 **Sprints loading slowly:**
 - First load fetches from Jira (may take a few seconds)
+- The Sprint dropdown remains available during discovery and shows the current loading state
 - Subsequent loads use 24-hour cache (instant)
 - To find board ID for faster loading: visit `http://localhost:5050/api/boards`
 

@@ -13724,8 +13724,14 @@ import {
             const boardConfigAvailable = boardAllWorkAvailable === true && Boolean(activeGroup?.board?.columns?.length);
             const boardComponentEnabled = boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length); const boardAllWorkEnabled = boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length || activeGroup?.teamIds?.length);
             const renderSprintControl = (surface) => {
-                const boardScopeControl = selectedView === 'eng' && showBoard; const canOpen = boardScopeControl || (!sprintsLoading && availableSprints.length > 0);
-                const displayedSprint = boardScopeControl && boardStrictScope ? (boardStrictScope === 'component' ? 'Component' : 'All work') : (sprintName || 'Sprint');
+                const boardScopeControl = selectedView === 'eng' && showBoard;
+                // The menu owns the loading/empty feedback. Keep it operable while
+                // discovery is pending so a slow Jira response cannot make the
+                // visible Sprint control appear broken.
+                const canOpen = true;
+                const displayedSprint = boardScopeControl && boardStrictScope
+                    ? (boardStrictScope === 'component' ? 'Component' : 'All work')
+                    : (!selectedSprint && sprintsLoading ? 'Loading…' : (sprintName || 'Sprint'));
                 const normalizedSprintSearch = sprintSearch.trim().toLowerCase();
                 const componentMatchesSearch = !normalizedSprintSearch || 'component'.includes(normalizedSprintSearch);
                 const allWorkMatchesSearch = !normalizedSprintSearch || 'all work'.includes(normalizedSprintSearch);

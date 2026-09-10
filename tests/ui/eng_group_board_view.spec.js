@@ -98,7 +98,7 @@ function storyPayload(specs = EPIC_SPECS) {
 
 async function installBoardFixture(page, {
     board = { columns: BOARD_COLUMNS }, groups = null, epicSpecs = EPIC_SPECS,
-    strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0,
+    strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0, sprintDelayMs = 0,
 } = {}) {
     await installDashboardShell(page);
     if (sourceBundle) {
@@ -155,6 +155,7 @@ async function installBoardFixture(page, {
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/sprints') {
+            if (sprintDelayMs) await new Promise(resolve => setTimeout(resolve, sprintDelayMs));
             return json({ sprints: strictBoard ? [
                 { id: 34624, name: '2026Q2 Sprint 41', state: 'closed' },
                 { id: selectedSprintId, name: selectedSprintName, state: 'active' },
@@ -250,6 +251,27 @@ async function openBoard(page, {
     await page.waitForSelector('.eng-board .col', { timeout: 10000 });
     await settle(page);
 }
+
+test('Sprint selector opens and reports progress while sprint discovery is pending', async ({ page }) => {
+    const requests = [];
+    await installBoardFixture(page, { sourceBundle: true, sprintDelayMs: 30000, requests });
+    await page.addInitScript(() => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: null, sprintName: '', activeGroupId: 'grp-default',
+            showBoard: false, showPlanning: false, showScenario: false,
+        }));
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => requests.filter(pathname => pathname === '/api/sprints').length).toBe(1);
+
+    const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+    await expect(sprintControl).toBeEnabled();
+    await expect(sprintControl).toContainText('Loading…');
+    await sprintControl.click();
+    await expect(page.getByRole('textbox', { name: 'Filter sprints' }).first()).toBeVisible();
+    await expect(page.getByText('Loading sprints...', { exact: true }).first()).toBeVisible();
+    await page.screenshot({ path: path.join(screenshotDir, 'sprint-loading-dropdown.png'), animations: 'disabled' });
+});
 
 test('Board adds Component and All work to the existing Sprint selector without another scope control', async ({ page }) => {
     const requests = [];

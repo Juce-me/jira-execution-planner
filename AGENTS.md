@@ -354,4 +354,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In ENG Story displays, render a null Jira Story Points value as `0 SP` while preserving null internally until the user saves a number.
 - In ENG Catch Up and Planning, do not add Delivery Owner to Epic metadata; Story Points editing must reuse the inline SP slot as an input with no button or popup, preserve inherited typography, and keep a 23px minimum input width.
 - Missing-Story-Points alert links must reveal and highlight the Story on the ENG dashboard and focus its inline Story Points input in edit mode instead of navigating directly to Jira.
-- Keep the shared Sprint selector clickable while sprint discovery is loading or empty; expose that state inside the dropdown instead of disabling the visible control.
+- When sprint discovery fails, verify `/api/sprints` returns a usable list and a sprint can be selected; keep the shared selector clickable during loading or empty states, but never treat clickability alone as restored loading.

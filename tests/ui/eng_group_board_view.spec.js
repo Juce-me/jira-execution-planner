@@ -1830,3 +1830,54 @@ test('All work renders component epics before discovery and preserves cards afte
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
     await page.screenshot({ path: path.join(screenshotDir, 'progressive-epic-timeout.png'), animations: 'disabled' });
 });
+
+for (const stalledPhase of ['headers', 'body']) {
+    test(`Sprint discovery recovers from stalled ${stalledPhase} with bounded timeout and explicit retry`, async ({ page }) => {
+        await installBoardFixture(page, { strictBoard: true, sourceBundle: true });
+        await page.clock.install();
+        await page.addInitScript(({ stalledPhase }) => {
+            localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+                selectedView: 'eng', activeGroupId: 'grp-default', showBoard: false,
+                showPlanning: false, showScenario: false,
+            }));
+            const originalFetch = window.fetch.bind(window);
+            window.sprintAttemptCount = 0;
+            window.stallSprintAttempt = 1;
+            window.fetch = (input, options) => {
+                if (!String(input).includes('/api/sprints?')) return originalFetch(input, options);
+                if (++window.sprintAttemptCount !== window.stallSprintAttempt) return originalFetch(input, options);
+                if (stalledPhase === 'headers') return new Promise((resolve, reject) => {
+                    options?.signal?.addEventListener('abort', () => reject(options.signal.reason || new DOMException('Aborted', 'AbortError')), { once: true });
+                });
+                return Promise.resolve(new Response(new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(new TextEncoder().encode('{"sprints":['));
+                        options?.signal?.addEventListener('abort', () => controller.error(options.signal.reason || new DOMException('Aborted', 'AbortError')), { once: true });
+                    },
+                }), { headers: { 'Content-Type': 'application/json' } }));
+            };
+        }, { stalledPhase });
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => page.evaluate(() => window.sprintAttemptCount)).toBe(1);
+        await page.getByRole('button', { name: 'Select sprint' }).first().click();
+        await expect(page.getByText('Loading sprints...', { exact: true })).toBeVisible();
+        await page.clock.fastForward(61000);
+        await expect(page.getByText('Loading sprints...', { exact: true })).toHaveCount(0);
+        if (stalledPhase === 'headers') await page.screenshot({ path: path.join(screenshotDir, 'sprint-timeout-retry.png'), animations: 'disabled' });
+        await page.getByRole('button', { name: 'Retry sprints', exact: true }).click();
+        await expect.poll(() => page.evaluate(() => window.sprintAttemptCount)).toBe(2);
+        await expect(page.locator(`[data-sprint-id="${selectedSprintId}"]`)).toBeVisible();
+        await expect(page.getByText('Loading sprints...', { exact: true })).toHaveCount(0);
+        if (stalledPhase === 'headers') await page.screenshot({ path: path.join(screenshotDir, 'sprint-retry-loaded.png'), animations: 'disabled' });
+        if (stalledPhase === 'headers') {
+            await page.evaluate(() => { window.stallSprintAttempt = 3; });
+            await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
+            await expect.poll(() => page.evaluate(() => window.sprintAttemptCount)).toBe(3);
+            await page.getByRole('button', { name: 'Select sprint' }).first().click();
+            await expect(page.locator(`[data-sprint-id="${selectedSprintId}"]`)).toBeVisible();
+            await page.clock.fastForward(61000);
+            await expect(page.getByRole('button', { name: 'Retry sprints', exact: true })).toBeVisible();
+            await expect(page.locator(`[data-sprint-id="${selectedSprintId}"]`)).toBeVisible();
+        }
+    });
+}

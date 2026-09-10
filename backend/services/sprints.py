@@ -6,6 +6,10 @@ import re
 from datetime import datetime, timedelta
 
 
+SPRINT_SEARCH_PAGE_SIZE = 200
+SPRINT_SEARCH_MAX_PAGES = 101
+
+
 def _noop(*_args, **_kwargs):
     return None
 
@@ -175,11 +179,15 @@ def _format_quarter_sprint(sprint):
 def _collect_sprints_by_jql(jql_query, sprints_dict, *, jira_search_request, get_sprint_field_id):
     total_issues = 0
     next_page_token = None
+    seen_page_tokens = set()
+    page_count = 0
+    sprint_field_id = get_sprint_field_id()
     while True:
-        sprint_field_id = get_sprint_field_id()
+        if page_count >= SPRINT_SEARCH_MAX_PAGES:
+            raise ValueError('Sprint discovery exceeded the Jira page limit')
         payload = {
             'jql': jql_query,
-            'maxResults': 200,
+            'maxResults': SPRINT_SEARCH_PAGE_SIZE,
             'fields': [sprint_field_id]
         }
         if next_page_token:
@@ -187,10 +195,15 @@ def _collect_sprints_by_jql(jql_query, sprints_dict, *, jira_search_request, get
 
         response = jira_search_request(payload)
         if response.status_code != 200:
-            break
+            raise ValueError(f'Sprint discovery search failed ({response.status_code})')
 
         data = response.json()
-        issues = data.get('issues', [])
+        if not isinstance(data, dict) or not isinstance(data.get('issues'), list) or not isinstance(data.get('isLast'), bool):
+            raise ValueError('Sprint discovery received an invalid Jira page')
+        issues = data['issues']
+        if len(issues) > SPRINT_SEARCH_PAGE_SIZE:
+            raise ValueError('Sprint discovery received an oversized Jira page')
+        page_count += 1
 
         for issue in issues:
             sprint_field = issue.get('fields', {}).get(sprint_field_id, [])
@@ -203,9 +216,15 @@ def _collect_sprints_by_jql(jql_query, sprints_dict, *, jira_search_request, get
                         sprints_dict[formatted['id']] = formatted
 
         total_issues += len(issues)
-        next_page_token = data.get('nextPageToken')
-        if data.get('isLast', not next_page_token) or not next_page_token:
+        candidate_token = data.get('nextPageToken')
+        if data['isLast']:
+            if candidate_token:
+                raise ValueError('Sprint discovery received a token on the final Jira page')
             break
+        if not isinstance(candidate_token, str) or not candidate_token or candidate_token in seen_page_tokens:
+            raise ValueError('Sprint discovery received a repeated Jira page token')
+        seen_page_tokens.add(candidate_token)
+        next_page_token = candidate_token
 
     return total_issues
 
@@ -289,29 +308,9 @@ def fetch_sprints_from_jira(
         base_jql = strip_sprint_clause(base_jql)
 
         sprints_dict = {}
+        sprint_jql = add_clause_to_jql(base_jql, 'Sprint is not EMPTY')
         issues_count = _collect_sprints_by_jql(
-            base_jql,
-            sprints_dict,
-            jira_search_request=jira_search_request,
-            get_sprint_field_id=get_sprint_field_id,
-        )
-        closed_jql = add_clause_to_jql(base_jql, 'Sprint in closedSprints()')
-        issues_count += _collect_sprints_by_jql(
-            closed_jql,
-            sprints_dict,
-            jira_search_request=jira_search_request,
-            get_sprint_field_id=get_sprint_field_id,
-        )
-        future_jql = add_clause_to_jql(base_jql, 'Sprint in futureSprints()')
-        issues_count += _collect_sprints_by_jql(
-            future_jql,
-            sprints_dict,
-            jira_search_request=jira_search_request,
-            get_sprint_field_id=get_sprint_field_id,
-        )
-        open_jql = add_clause_to_jql(base_jql, 'Sprint in openSprints()')
-        issues_count += _collect_sprints_by_jql(
-            open_jql,
+            sprint_jql,
             sprints_dict,
             jira_search_request=jira_search_request,
             get_sprint_field_id=get_sprint_field_id,

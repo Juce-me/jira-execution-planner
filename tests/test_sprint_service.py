@@ -214,7 +214,7 @@ class TestSprintService(unittest.TestCase):
         )
 
         self.assertEqual([item['id'] for item in result], [301])
-        self.assertEqual(search_payloads[0]['jql'], 'project = "TEST"')
+        self.assertEqual(search_payloads[0]['jql'], 'project = "TEST" AND Sprint is not EMPTY')
         self.assertEqual(search_payloads[1]['nextPageToken'], 'page-2')
         self.assertEqual(board_calls[0][1]['params']['startAt'], 0)
         self.assertEqual(result[0]['startDate'], '2026-07-01T00:00:00.000Z')

@@ -1,5 +1,7 @@
 import { apiFetch, getJson, trackedFetch } from './http.js';
 
+const SPRINT_DISCOVERY_TIMEOUT_MS = 30000;
+
 export const fetchMissingPlanningInfo = (backendUrl, { sprintId, teamIds = [], components = [], signal } = {}) => {
     const params = new URLSearchParams({ sprint: String(sprintId), t: Date.now().toString() });
     if (teamIds.length) {
@@ -16,20 +18,28 @@ export const fetchMissingPlanningInfo = (backendUrl, { sprintId, teamIds = [], c
     });
 };
 
-export const fetchSprints = (backendUrl, { forceRefresh = false } = {}) => {
+export const fetchSprints = async (backendUrl, { forceRefresh = false } = {}) => {
     const params = new URLSearchParams({
         t: Date.now().toString()
     });
     if (forceRefresh) {
         params.append('refresh', 'true');
     }
-    return apiFetch(`${backendUrl}/api/sprints?${params}`, {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        cache: 'no-cache'
-    });
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => { timedOut = true; controller.abort(); }, SPRINT_DISCOVERY_TIMEOUT_MS);
+    try {
+        return await apiFetch(`${backendUrl}/api/sprints?${params}`, {
+            method: 'GET', headers: { 'Content-Type': 'application/json' }, cache: 'no-cache', signal: controller.signal
+        });
+    } catch (error) {
+        if (!timedOut) throw error;
+        const timeoutError = new Error('Sprint discovery timed out after 30s');
+        timeoutError.name = 'SprintDiscoveryTimeout';
+        throw timeoutError;
+    } finally {
+        window.clearTimeout(timeoutId);
+    }
 };
 
 export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal, debugTimings = false } = {}) => {

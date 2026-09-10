@@ -6726,7 +6726,7 @@ import {
                     return;
                 }
                 sprintLoadInFlightRef.current = true;
-                setSprintsLoading(true);
+                setSprintsLoading(true); setSprintError('');
                 try {
                     const response = await requestSprints(BACKEND_URL, { forceRefresh });
 
@@ -6764,6 +6764,7 @@ import {
                     clearServerConnectionError();
                 } catch (err) {
                     if (isAuthenticationRequiredError(err)) return;
+                    if (err?.name === 'SprintDiscoveryTimeout') { setSprintError('Sprint discovery timed out after 30s. Retry, or confirm you can access the configured board.'); return; }
                     if (reportServerConnectionError(err)) {
                         setSprintError('');
                     } else {
@@ -13724,16 +13725,8 @@ import {
             const boardConfigAvailable = boardAllWorkAvailable === true && Boolean(activeGroup?.board?.columns?.length);
             const boardComponentEnabled = boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length); const boardAllWorkEnabled = boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length || activeGroup?.teamIds?.length);
             const renderSprintControl = (surface) => {
-                const boardScopeControl = selectedView === 'eng' && showBoard;
-                // The menu owns the loading/empty feedback. Keep it operable while
-                // discovery is pending so a slow Jira response cannot make the
-                // visible Sprint control appear broken.
-                const canOpen = true;
-                const displayedSprint = boardScopeControl && boardStrictScope
-                    ? (boardStrictScope === 'component' ? 'Component' : 'All work')
-                    : (!selectedSprint && sprintsLoading ? 'Loading…' : (sprintName || 'Sprint'));
-                const normalizedSprintSearch = sprintSearch.trim().toLowerCase();
-                const componentMatchesSearch = !normalizedSprintSearch || 'component'.includes(normalizedSprintSearch);
+                const boardScopeControl = selectedView === 'eng' && showBoard; const canOpen = true; const displayedSprint = boardScopeControl && boardStrictScope ? (boardStrictScope === 'component' ? 'Component' : 'All work') : (!selectedSprint && sprintsLoading ? 'Loading…' : (sprintName || 'Sprint'));
+                const normalizedSprintSearch = sprintSearch.trim().toLowerCase(); const componentMatchesSearch = !normalizedSprintSearch || 'component'.includes(normalizedSprintSearch);
                 const allWorkMatchesSearch = !normalizedSprintSearch || 'all work'.includes(normalizedSprintSearch);
                 const pseudoScopeMatchesSearch = boardScopeControl && (componentMatchesSearch || allWorkMatchesSearch);
                 return (<ControlField label="Sprint">
@@ -13789,10 +13782,9 @@ import {
                                     {boardScopeControl && componentMatchesSearch && <div className="sprint-dropdown-option" aria-disabled={!boardComponentEnabled}
                                         title={boardComponentEnabled ? 'Show retained work owned by Department Components' : 'Component scope requires a saved Board and Department Components'}
                                         onClick={() => { if (!boardComponentEnabled) return; trackFilterChanged('sprint', { sprint_selection_state: 'component', source_surface: 'board', scope_type: 'component' }); setBoardStrictScope('component'); setShowSprintDropdown(false); }}>Component</div>}
-                                    {sprintsLoading ? (
-                                        <div className="sprint-dropdown-option">Loading sprints...</div>
-                                    ) : availableSprints.length === 0 ? (
-                                        <div className="sprint-dropdown-option">No sprints available</div>
+                                    {(sprintsLoading || sprintError) && (sprintsLoading ? <div className="sprint-dropdown-option">Loading sprints...</div> : <button type="button" className="sprint-dropdown-option sprint-dropdown-retry" aria-label="Retry sprints" onClick={() => { void loadSprints(true); }}>Retry sprints</button>)}
+                                    {availableSprints.length === 0 ? (
+                                        !sprintsLoading && !sprintError && <div className="sprint-dropdown-option">No sprints available</div>
                                     ) : filteredSprints.length === 0 && !pseudoScopeMatchesSearch ? (
                                         <div className="dropdown-filter-empty" role="status">No matching sprints</div>
                                     ) : (

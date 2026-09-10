@@ -11,6 +11,8 @@ const KNOWN_REJECTION_CODES = new Set([
     'jira_field_rejected', 'jira_configuration_invalid', 'jira_rate_limited', 'jira_read_failed',
 ]);
 const SUBMITTABLE_STATUSES = new Set(['ready', 'draft']);
+const MAX_CACHED_PEOPLE = 25;
+const MAX_CACHED_SEARCHES = 50;
 
 const ERROR_MESSAGES = Object.freeze({
     stale_issue: 'This field changed in Jira. Reload it before saving again.',
@@ -62,6 +64,8 @@ export function createEngIssueFieldEditController(options = {}) {
     const listeners = new Set();
     const pendingTokens = new Map();
     const submissions = new Set();
+    const peopleCache = new Map();
+    const peopleSearchCache = new Set();
     let sequence = 0;
     let metadataRequest = null;
     let searchRequest = null;
@@ -77,6 +81,25 @@ export function createEngIssueFieldEditController(options = {}) {
         listeners.forEach(listener => listener());
     };
     const isCurrentEditor = id => state.activeEditor?.id === id;
+    const peopleScopeKey = editor => `${getContextKey()}::${String(editor?.field || '')}`;
+    const cachedPeople = editor => Array.from(peopleCache.get(peopleScopeKey(editor))?.values() || []);
+    const rememberPeople = (editor, people) => {
+        const scopeKey = peopleScopeKey(editor);
+        const cached = peopleCache.get(scopeKey) || new Map();
+        for (const person of Array.isArray(people) ? people : []) {
+            const accountId = String(person?.accountId || '').trim();
+            const displayName = String(person?.displayName || '').trim();
+            if (accountId && displayName) cached.set(accountId, {
+                accountId,
+                displayName,
+                ...(typeof person.emailAddress === 'string' && person.emailAddress ? { emailAddress: person.emailAddress } : {}),
+                eligibility: 'unverified',
+            });
+            if (cached.size > MAX_CACHED_PEOPLE) cached.delete(cached.keys().next().value);
+        }
+        peopleCache.set(scopeKey, cached);
+    };
+    const peopleSearchKey = (editor, query) => `${peopleScopeKey(editor)}::${normalizedIssueKey(editor?.issueKey)}::${String(query || '').trim().toLocaleLowerCase()}`;
     const enterAuthRequired = () => {
         publish({ status: 'auth-required', activeEditor: null, errorCode: 'auth_required', errorMessage: issueFieldErrorMessage('auth_required') });
         runtimeOptions.onAuthRecoveryRequired?.();
@@ -116,9 +139,10 @@ export function createEngIssueFieldEditController(options = {}) {
             const result = await fetchEditableField(runtimeOptions.backendUrl || '', editor.issueKey, editor.field, { signal: controller.signal });
             if (metadataRequest?.token !== token || (!reconciliation && !isCurrentEditor(editor.id))) return null;
             if (!reconciliation) {
+                rememberPeople(editor, [result?.me]);
                 publish({
                     metadata: result,
-                    suggestions: normalizeIssueUserSuggestions(result?.me, []),
+                    suggestions: normalizeIssueUserSuggestions(result?.me, cachedPeople(editor)),
                     status: result?.editable ? 'ready' : 'rejected',
                     errorCode: result?.editable ? '' : result?.reason || 'field_not_editable',
                     errorMessage: result?.editable ? '' : issueFieldErrorMessage(result?.reason || 'field_not_editable'),
@@ -161,7 +185,7 @@ export function createEngIssueFieldEditController(options = {}) {
         };
         runtimeOptions.onAction?.('open', editor);
         publish({
-            activeEditor: editor, status: 'loading', metadata: null, suggestions: [], searchQuery: '', searching: false,
+            activeEditor: editor, status: 'loading', metadata: null, suggestions: cachedPeople(editor), searchQuery: '', searching: false,
             outcome: null, errorCode: '', errorMessage: '',
         });
         return loadMetadata(editor);
@@ -189,9 +213,14 @@ export function createEngIssueFieldEditController(options = {}) {
         publish({
             searchQuery: query,
             searching: hasIssueUserSearchThreshold(query),
-            suggestions: normalizeIssueUserSuggestions(metadata?.me, []),
+            suggestions: normalizeIssueUserSuggestions(metadata?.me, cachedPeople(editor)),
         });
         if (!editor || !metadata || !hasIssueUserSearchThreshold(query)) return Promise.resolve(null);
+        const cacheKey = peopleSearchKey(editor, query);
+        if (peopleSearchCache.has(cacheKey)) {
+            publish({ suggestions: normalizeIssueUserSuggestions(metadata.me, cachedPeople(editor)), searching: false });
+            return Promise.resolve({ options: cachedPeople(editor), cached: true });
+        }
         const editorId = editor.id;
         const searchToken = ++sequence;
         return new Promise(resolve => {
@@ -204,7 +233,10 @@ export function createEngIssueFieldEditController(options = {}) {
                         field: editor.field, query,
                     }, { signal: controller.signal });
                     if (searchRequest?.token !== searchToken || !isCurrentEditor(editorId) || state.searchQuery !== query) return resolve(null);
-                    publish({ suggestions: normalizeIssueUserSuggestions(metadata.me, result?.options), searching: false });
+                    rememberPeople(editor, result?.options);
+                    peopleSearchCache.add(cacheKey);
+                    if (peopleSearchCache.size > MAX_CACHED_SEARCHES) peopleSearchCache.delete(peopleSearchCache.values().next().value);
+                    publish({ suggestions: normalizeIssueUserSuggestions(metadata.me, cachedPeople(editor)), searching: false });
                     resolve(result);
                 } catch (error) {
                     if (isAuthenticationRequiredError(error)) {
@@ -341,7 +373,11 @@ export function createEngIssueFieldEditController(options = {}) {
         submissions.forEach(submission => {
             if (!submission.dispatched) submission.controller.abort();
         });
-        if (authChanged) unknownSubmissions.clear();
+        if (authChanged) {
+            unknownSubmissions.clear();
+            peopleCache.clear();
+            peopleSearchCache.clear();
+        }
         publish({ activeEditor: null, status: 'closed', metadata: null, suggestions: [], searching: false });
     };
 

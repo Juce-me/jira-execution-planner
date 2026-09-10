@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-09-09. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-09-10. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,8 +15,8 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-09-09 |
-| Last result | Not run — the OAuth inline Jira issue-edit implementation sweep found 0 of 4 Home-write probe inputs in the process environment, no approved disposable Home-write target was supplied, and no mutation probe was authorized or executed. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. |
+| Checked on | 2026-09-10 |
+| Last result | Not run — the Assignee editor latency fix found 0 of 4 Home-write probe inputs in the process environment, no approved disposable Home-write target was supplied, and no mutation probe was authorized or executed. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -129,6 +129,10 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-09-10: The Assignee editor latency fix found none of the four required Home-write probe
+  inputs and no approved disposable Home project. No mutation probe ran; this change only
+  parallelizes authenticated Jira REST reads. Keep blocked with
+  `FAIL insufficient_home_write_probe_input`.
 - 2026-09-09: The OAuth inline Jira issue-edit implementation sweep found none of the four
   required Home-write probe inputs and no approved disposable Home project. No mutation probe
   ran; this feature adds Jira REST writes only. Keep blocked with

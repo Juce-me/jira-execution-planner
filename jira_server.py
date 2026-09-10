@@ -609,7 +609,7 @@ def current_request_auth_context():
             site_url=site_url,
             token_version=str(session_data.get('stored_at', '1')),
             account_status=session_data.get('account_status', ''),
-            is_admin=is_pre_db_tool_admin_account(account_id),
+            is_admin=is_pre_db_tool_admin_account(account_id), display_name=session_data.get('display_name', ''),
             granted_scopes=tuple(session_data.get('scope', '').split()) if session_data.get('scope_provenance') == 'provider' else (),
             granted_scopes_verified=session_data.get('scope_provenance') == 'provider',
         )

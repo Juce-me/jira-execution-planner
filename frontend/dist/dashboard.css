@@ -7405,12 +7405,14 @@ button.status-pill:focus-visible {
   display: flex;
   justify-content: flex-end;
 }
-button.issue-person-editor-trigger {
+input.issue-person-editor-trigger {
   appearance: none;
   min-width: 0;
+  max-width: 100%;
   margin: 0;
   padding: 0;
   border: 0;
+  border-bottom: 1px solid transparent;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -7422,17 +7424,20 @@ button.issue-person-editor-trigger {
   white-space: nowrap;
   cursor: pointer;
 }
-button.issue-person-editor-trigger:hover {
+input.issue-person-editor-trigger:hover {
   transform: none;
   box-shadow: none;
 }
-button.issue-person-editor-trigger.is-pending {
+input.issue-person-editor-trigger:not(:read-only):not(:disabled) {
+  border-bottom-color: currentColor;
+}
+input.issue-person-editor-trigger.is-pending {
   background-image: linear-gradient(var(--accent), var(--accent));
   background-position: 0 100%;
   background-repeat: no-repeat;
   background-size: 100% 1px;
 }
-button.issue-person-editor-trigger:focus-visible {
+input.issue-person-editor-trigger:focus-visible {
   outline: 2px solid rgba(47, 128, 237, 0.65);
   outline-offset: 1px;
 }

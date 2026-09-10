@@ -5,7 +5,11 @@ from unittest.mock import patch
 from backend.auth.context import RequestAuthContext
 from backend.auth.jira_auth import AuthError
 from backend.routes import eng_routes
-from backend.services.jira_issue_field_edits import FieldEditInputError, FieldEditServiceError
+from backend.services.jira_issue_field_edits import (
+    FieldEditInputError,
+    FieldEditServiceError,
+    load_editable_field,
+)
 import jira_server
 from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
 
@@ -21,7 +25,7 @@ class FakeResponse:
 
 def verified_context(*, account_id="account-1", workspace_id="workspace-1",
                      cloud_id="cloud-1", scopes=FULL_OAUTH_SCOPE,
-                     verified=True, connection_id=None):
+                     verified=True, connection_id=None, display_name=""):
     return RequestAuthContext(
         auth_mode="atlassian_oauth",
         user_id=f"user:{account_id}",
@@ -34,6 +38,7 @@ def verified_context(*, account_id="account-1", workspace_id="workspace-1",
         token_version="1",
         account_status="active",
         is_admin=False,
+        display_name=display_name,
         granted_scopes=tuple(scopes.split()),
         granted_scopes_verified=verified,
     )
@@ -366,6 +371,52 @@ class CurrentJiraRequestCapturedContextTests(unittest.TestCase):
         self.assertEqual(url, "https://api.atlassian.com/ex/jira/cloud-db/rest/api/3/issue/DEMO-1")
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer synthetic-db-bearer")
         self.assertNotIn("Basic", kwargs["headers"]["Authorization"])
+
+    def test_parallel_metadata_reads_reach_real_db_oauth_wrapper_without_request_context(self):
+        context = verified_context(
+            account_id="db-user", workspace_id="workspace-db", cloud_id="cloud-db",
+            connection_id="db-connection-1", display_name="DB User",
+        )
+        outbound = []
+
+        def fake_request(method, url, **kwargs):
+            outbound.append((method, url, kwargs))
+            if url.endswith("/editmeta"):
+                return FakeResponse(200, {"fields": {"assignee": {
+                    "operations": ["set"],
+                    "schema": {"type": "user", "system": "assignee"},
+                }}})
+            if url.endswith("/user/assignable/search"):
+                return FakeResponse(200, [{
+                    "accountId": "db-user", "displayName": "DB User", "active": True,
+                }])
+            return FakeResponse(200, {"fields": {
+                "issuetype": {"name": "Story", "subtask": False},
+                "updated": "2026-09-08T10:00:00.000+0000",
+                "assignee": None,
+            }})
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "db_oauth_session_data_for_auth_context", return_value={
+                 "access_token": "synthetic-db-bearer", "refresh_token": "synthetic-refresh",
+                 "expires_at": 9999999999,
+             }), \
+             patch.object(jira_server.HTTP_SESSION, "request", side_effect=fake_request), \
+             patch.object(jira_server, "oauth_session_data", side_effect=AssertionError("local OAuth fallback reached")):
+            result = load_editable_field(
+                "DEMO-1", "assignee", jira_request=jira_server.current_jira_request,
+                context=context, field_ids={"assignee": "assignee"},
+            )
+
+        self.assertTrue(result["editable"])
+        self.assertEqual(result["me"], {
+            "accountId": "db-user", "displayName": "DB User", "eligibility": "eligible",
+        })
+        self.assertEqual(len(outbound), 3)
+        self.assertTrue(all(
+            call[2]["headers"]["Authorization"] == "Bearer synthetic-db-bearer"
+            for call in outbound
+        ))
 
     def test_local_context_still_uses_actual_local_oauth_store(self):
         jira_server.OAUTH_TOKEN_STORE["session-local"] = {

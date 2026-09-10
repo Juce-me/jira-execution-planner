@@ -72,9 +72,7 @@ export default function IssuePersonEditor({
             values.push(person);
         };
         if (metadata) append(metadata.me);
-        if (textLength(effectiveQuery) >= SEARCH_THRESHOLD) {
-            (Array.isArray(suggestions) ? suggestions : []).forEach(append);
-        }
+        (Array.isArray(suggestions) ? suggestions : []).forEach(append);
         return values;
     }, [effectiveQuery, metadata, suggestions]);
     const hasNonMeResult = options.some(person => person.accountId !== metadata?.me?.accountId);
@@ -182,26 +180,6 @@ export default function IssuePersonEditor({
                 closeAndRestore('escape');
             }}
         >
-            <input
-                ref={inputRef}
-                className="component-search-input"
-                type="search"
-                role="combobox"
-                aria-label={`Search ${fieldLabel}`}
-                aria-controls={`${listId}-options`}
-                aria-expanded="true"
-                aria-autocomplete="list"
-                aria-activedescendant={activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined}
-                value={effectiveQuery}
-                disabled={loading || submitting || recoveryLocked || metadata?.editable !== true}
-                onChange={event => {
-                    const value = event.target.value;
-                    if (query === undefined) setLocalQuery(value);
-                    setActiveIndex(-1);
-                    onSearch?.(value);
-                }}
-                onKeyDown={handleInputKeyDown}
-            />
             {loading && <div className="issue-person-editor-menu-note issue-person-editor-menu-loading">Loading people...</div>}
             {!loading && error && <div className="issue-person-editor-menu-note issue-person-editor-menu-error" role="alert" aria-label={`${fieldLabel} error`}>{error}</div>}
             {!loading && configurationChanged && (
@@ -259,29 +237,54 @@ export default function IssuePersonEditor({
             )}
         </div>
     ) : null;
+    const inputValue = isOpen ? effectiveQuery : displayName;
+    const inputWidth = Math.min(24, Math.max(4, Array.from(displayName).length, Array.from(inputValue).length)) + 0.35;
 
     return (
         <span className="issue-person-editor" ref={wrapperRef}>
-            <button
-                ref={triggerRef}
-                type="button"
+            <input
+                ref={node => {
+                    triggerRef.current = node;
+                    inputRef.current = node;
+                }}
+                type="text"
+                role="combobox"
                 className={`issue-person-editor-trigger${pending ? ' is-pending' : ''} ${triggerClassName}`.trim()}
                 data-issue-person-editor-trigger="true"
-                aria-label={`${fieldLabel}: ${displayName}`}
+                aria-label={isOpen ? `Search ${fieldLabel}` : `${fieldLabel}: ${displayName}`}
+                aria-controls={`${listId}-options`}
                 aria-haspopup="listbox"
                 aria-expanded={isOpen}
+                aria-autocomplete="list"
+                aria-activedescendant={isOpen && activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined}
                 aria-busy={pending}
-                disabled={pending && !isOpen}
+                disabled={isOpen ? (loading || submitting || recoveryLocked || metadata?.editable !== true) : pending}
+                readOnly={!isOpen}
+                value={inputValue}
+                style={{ width: `${inputWidth}ch` }}
                 onPointerDown={(event) => event.stopPropagation()}
                 onDragStart={(event) => { event.preventDefault(); event.stopPropagation(); }}
                 onClick={(event) => {
                     event.stopPropagation();
-                    if (isOpen) onClose?.('same_trigger');
-                    else onOpen?.();
+                    if (!isOpen) onOpen?.();
                 }}
-            >
-                {displayName}
-            </button>
+                onChange={event => {
+                    if (!isOpen) return;
+                    const value = event.target.value;
+                    if (query === undefined) setLocalQuery(value);
+                    setActiveIndex(-1);
+                    onSearch?.(value);
+                }}
+                onKeyDown={event => {
+                    event.stopPropagation();
+                    if (!isOpen && (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault();
+                        onOpen?.();
+                        return;
+                    }
+                    if (isOpen) handleInputKeyDown(event);
+                }}
+            />
             {editor && (effectivePortalTarget ? createPortal(editor, effectivePortalTarget) : editor)}
         </span>
     );

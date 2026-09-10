@@ -5,6 +5,7 @@ resolution. This module accepts only an OAuth-bound Jira request callable, the
 captured request context, and a server-created logical-field map.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -264,6 +265,14 @@ def _load_context_person(context, *, jira_request):
     return value
 
 
+def _context_display_name(context):
+    return str(
+        getattr(context, "atlassian_display_name", "")
+        or getattr(context, "display_name", "")
+        or ""
+    ).strip()
+
+
 def _person_records(response):
     records = _response_json(response, list)
     return records
@@ -327,33 +336,74 @@ def load_editable_field(issue_key, field, *, jira_request, context, field_ids):
             editable=False, reason="field_mapping_missing",
         )
     revision = _mapping_revision(context, logical_field, resolved_field_id)
-    snapshot = _load_snapshot(
-        key, logical_field, resolved_field_id,
-        jira_request=jira_request, context=context,
-    )
-    if not _issue_supports_field(snapshot, logical_field):
-        return _metadata_payload(
-            key, logical_field, current_value=snapshot["value"],
-            updated=snapshot["updated"], revision=revision,
-            editable=False, reason="issue_type_not_supported",
-        )
-    metadata = _load_editmeta(
-        key, logical_field, resolved_field_id,
-        jira_request=jira_request, context=context,
-    )
-    if metadata is None:
-        return _metadata_payload(
-            key, logical_field, current_value=snapshot["value"],
-            updated=snapshot["updated"], revision=revision,
-            editable=False, reason="field_not_editable",
-        )
-    me = None
-    if logical_field in PEOPLE_FIELDS:
-        me = _load_context_person(context, jira_request=jira_request)
-        exact = _exact_person(
-            key, logical_field, me["accountId"],
+    context_display_name = _context_display_name(context)
+    if logical_field in PEOPLE_FIELDS and context_display_name:
+        account_id = str(getattr(context, "atlassian_account_id", "") or "").strip()
+        if not account_id:
+            raise AuthError("auth_required", "Jira authentication is required.")
+        with ThreadPoolExecutor(
+                max_workers=3, thread_name_prefix="jira-editable-field") as pool:
+            snapshot_future = pool.submit(
+                _load_snapshot,
+                key, logical_field, resolved_field_id,
+                jira_request=jira_request, context=context,
+            )
+            metadata_future = pool.submit(
+                _load_editmeta,
+                key, logical_field, resolved_field_id,
+                jira_request=jira_request, context=context,
+            )
+            exact_future = pool.submit(
+                _exact_person,
+                key, logical_field, account_id,
+                jira_request=jira_request, context=context,
+            )
+            snapshot = snapshot_future.result()
+            if not _issue_supports_field(snapshot, logical_field):
+                return _metadata_payload(
+                    key, logical_field, current_value=snapshot["value"],
+                    updated=snapshot["updated"], revision=revision,
+                    editable=False, reason="issue_type_not_supported",
+                )
+            metadata = metadata_future.result()
+            if metadata is None:
+                return _metadata_payload(
+                    key, logical_field, current_value=snapshot["value"],
+                    updated=snapshot["updated"], revision=revision,
+                    editable=False, reason="field_not_editable",
+                )
+            exact = exact_future.result()
+        me = {"accountId": account_id, "displayName": context_display_name}
+    else:
+        snapshot = _load_snapshot(
+            key, logical_field, resolved_field_id,
             jira_request=jira_request, context=context,
         )
+        if not _issue_supports_field(snapshot, logical_field):
+            return _metadata_payload(
+                key, logical_field, current_value=snapshot["value"],
+                updated=snapshot["updated"], revision=revision,
+                editable=False, reason="issue_type_not_supported",
+            )
+        metadata = _load_editmeta(
+            key, logical_field, resolved_field_id,
+            jira_request=jira_request, context=context,
+        )
+        if metadata is None:
+            return _metadata_payload(
+                key, logical_field, current_value=snapshot["value"],
+                updated=snapshot["updated"], revision=revision,
+                editable=False, reason="field_not_editable",
+            )
+        me = None
+        exact = None
+    if logical_field in PEOPLE_FIELDS:
+        if me is None:
+            me = _load_context_person(context, jira_request=jira_request)
+            exact = _exact_person(
+                key, logical_field, me["accountId"],
+                jira_request=jira_request, context=context,
+            )
         allowed_ids = _allowed_account_ids(metadata)
         if exact is None or (allowed_ids is not None and me["accountId"] not in allowed_ids):
             eligibility = "ineligible"

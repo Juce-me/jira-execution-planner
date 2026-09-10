@@ -149,6 +149,7 @@ def resolve_db_request_auth_context(
             token_version=str(connection.token_version),
             account_status=user_status,
             is_admin=user.account_type == 'admin',
+            display_name=user.display_name or '',
             project_access=_project_access(session, connection),
             browser_session_id=browser_session_id,
             granted_scopes=granted_scopes,

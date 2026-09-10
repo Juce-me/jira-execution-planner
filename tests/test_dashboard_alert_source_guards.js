@@ -541,7 +541,7 @@ test('issue view helpers preserve status, priority, and team display behavior', 
 });
 
 test('issue status CSS keeps waiting statuses gray, progress statuses blue, and closed subtask statuses green', () => {
-    const engCss = readCssWithImports('eng.css');
+    const engCss = readCssWithImports('eng/epics.css');
     const epmCss = readCssWithImports('epm.css');
     const taskStatusRules = engCss.slice(
         engCss.indexOf('.task-status.done'),

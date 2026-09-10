@@ -378,8 +378,9 @@ test('current recognized track is omitted from the menu; unidentified shows both
     await trackTrigger(page, 'UNKNOWN-1').click();
     const unknownMenu = trackMenu(page, 'UNKNOWN-1');
     await expect(unknownMenu).toBeVisible();
-    const unknownLabels = await unknownMenu.locator('.project-track-transition-option-label').allTextContents();
-    expect(unknownLabels.sort()).toEqual(['Committed', 'Flexible']);
+    const unknownLabels = unknownMenu.locator('.project-track-transition-option-label');
+    await expect(unknownLabels).toHaveCount(2);
+    expect((await unknownLabels.allTextContents()).sort()).toEqual(['Committed', 'Flexible']);
 });
 
 test('failed write rolls back the emoji and keeps a retryable error in the open menu', async ({ page }) => {

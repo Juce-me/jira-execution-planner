@@ -15,6 +15,7 @@ import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
+import { getCookie, getCurrentQuarter, getServerConnectionErrorMessage, isActiveHomeTokenConnection, isBackendConnectionFailure, loadUiPrefs, saveUiPrefs, setCookie } from './dashboardRuntime.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
 import { isEngOnboardingModuleSurface } from './onboarding/onboardingModules.js';
 import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
@@ -31,6 +32,7 @@ import EngView from './eng/EngView.jsx';
 import EngBoardView from './eng/EngBoardView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
 import EngModeControl from './eng/EngModeControl.jsx';
+import EpicHeaderValueReadout from './eng/EpicHeaderValueReadout.jsx';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
@@ -301,9 +303,6 @@ import {
         const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access', 'performance']);
         const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels', 'boards']);
         const SHARED_CONFIGURATION_TAB_IDS = new Set(ADMIN_SETTINGS_TAB_IDS);
-        function isActiveHomeTokenConnection(connection) {
-            return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
-        }
 
         const createEmptyEpmConfigDraft = () => ({
             version: 2,
@@ -314,77 +313,6 @@ import {
 
         // Backend server URL
         const BACKEND_URL = resolveBackendUrl(window);
-
-        function isBackendConnectionFailure(err) {
-            if (!err || err.name === 'AbortError') return false;
-            const message = String(err.message || err || '').toLowerCase();
-            return message.includes('failed to fetch') ||
-                message.includes('load failed') ||
-                message.includes('networkerror') ||
-                message.includes('network error') ||
-                message.includes('connection refused');
-        }
-
-        function getServerConnectionErrorMessage(backendUrl) {
-            return `Server is not responding at ${backendUrl}. Start the Python server, then retry.`;
-        }
-
-        // Get current quarter in format "2025Q1"
-        function getCurrentQuarter() {
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = now.getMonth() + 1; // 1-12
-            const quarter = Math.ceil(month / 3);
-            return `${year}Q${quarter}`;
-        }
-
-        // Cookie helper functions
-        function setCookie(name, value, days = 365) {
-            const expires = new Date();
-            expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
-            document.cookie = `${name}=${JSON.stringify(value)};expires=${expires.toUTCString()};path=/`;
-        }
-
-        function getCookie(name) {
-            const nameEQ = name + "=";
-            const ca = document.cookie.split(';');
-            for (let i = 0; i < ca.length; i++) {
-                let c = ca[i];
-                while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-                if (c.indexOf(nameEQ) === 0) {
-                    try {
-                        return JSON.parse(c.substring(nameEQ.length, c.length));
-                    } catch (e) {
-                        return null;
-                    }
-                }
-            }
-            return null;
-        }
-
-        const UI_PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
-
-        function loadUiPrefs() {
-            try {
-                const raw = window.localStorage.getItem(UI_PREFS_KEY);
-                if (!raw) return null;
-                const prefs = JSON.parse(raw);
-                if (prefs && typeof prefs === 'object') {
-                    prefs.showScenario = false;
-                }
-                return prefs;
-            } catch (e) {
-                return null;
-            }
-        }
-
-        function saveUiPrefs(prefs) {
-	            try {
-	                window.localStorage.setItem(UI_PREFS_KEY, JSON.stringify(prefs));
-	            } catch (e) {
-	                // ignore
-	            }
-	        }
 
         function InitiativeIcon({ className = '', size = 14, title = 'INITIATIVE' }) {
             const classes = ['initiative-icon', className].filter(Boolean).join(' ');
@@ -14051,13 +13979,41 @@ import {
                             : epicInfo?.priority?.name || '';
                         const projectTrackValue = epicInfo?.projectTrack || '';
                         const projectTrackEmoji = getProjectTrackEmoji(projectTrackValue);
+                        const epicInteractionActive = statusTransitionActiveKey === epicGroup.key
+                            || priorityTransitionActiveKey === epicGroup.key
+                            || projectTrackTransitionActiveKey === epicGroup.key
+                            || issueFieldEdits.activeEditor?.issueKey === epicGroup.key;
                         const renderEpicPersonEditor = (field, label, value) => {
                             const editableEpic = issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && Boolean(epicInfo), active = editableEpic && issueFieldEdits.activeEditor?.issueKey === epicGroup.key && issueFieldEdits.activeEditor.field === field;
-                            if (!editableEpic) return value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
-                            return <IssuePersonEditor issueKey={epicGroup.key} field={field} fieldLabel={label} currentValue={value} isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
-                                suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
-                                submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)} pending={issueFieldEdits.pendingIssueKeys.has(epicGroup.key)} error={active ? issueFieldEdits.errorMessage : ''} statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''} recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''} configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
-                                onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: 'epic', sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />;
+                            const displayName = value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
+                            if (!editableEpic) {
+                                return (
+                                    <EpicHeaderValueReadout value={displayName} suppressed={epicInteractionActive}>
+                                        {({ discoveryProps }) => (
+                                            <span {...discoveryProps} className="epic-full-value-trigger epic-assignee-value">
+                                                {displayName}
+                                            </span>
+                                        )}
+                                    </EpicHeaderValueReadout>
+                                );
+                            }
+                            return (
+                                <EpicHeaderValueReadout
+                                    value={displayName}
+                                    suppressed={epicInteractionActive}
+                                    measureSelector="[data-issue-person-editor-trigger]"
+                                    nativeSelector="[data-issue-person-editor-trigger]"
+                                >
+                                    {({ triggerRef, pointerProps, focusProps }) => (
+                                        <span ref={triggerRef} {...pointerProps} {...focusProps} className="epic-full-value-trigger epic-assignee-value">
+                                            <IssuePersonEditor issueKey={epicGroup.key} field={field} fieldLabel={label} currentValue={value} isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
+                                                suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
+                                                submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)} pending={issueFieldEdits.pendingIssueKeys.has(epicGroup.key)} error={active ? issueFieldEdits.errorMessage : ''} statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''} recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''} configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
+                                                onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: 'epic', sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />
+                                        </span>
+                                    )}
+                                </EpicHeaderValueReadout>
+                            );
                         };
                         return (
                             <div
@@ -14137,18 +14093,36 @@ import {
                                                 )
                                             )}
                                             {epicGroup.key !== 'NO_EPIC' ? (
-                                                <a
-                                                    className="epic-link"
-                                                    href={jiraUrl ? `${jiraUrl}/browse/${epicGroup.key}` : '#'}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer" title={epicTitle} aria-label={epicTitle}
+                                                <EpicHeaderValueReadout
+                                                    value={epicTitle}
+                                                    suppressed={epicInteractionActive}
+                                                    measureSelector=".epic-name"
                                                 >
-                                                    <span className="epic-name">{epicTitle}</span>
-                                                    <span className="epic-key">{epicGroup.key}</span>
-                                                </a>
+                                                    {({ triggerRef, describedBy, pointerProps, focusProps }) => (
+                                                        <a
+                                                            ref={triggerRef}
+                                                            className="epic-link epic-full-value-trigger"
+                                                            href={jiraUrl ? `${jiraUrl}/browse/${epicGroup.key}` : '#'}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title={epicTitle}
+                                                            aria-label={epicTitle}
+                                                            aria-describedby={describedBy}
+                                                            {...pointerProps}
+                                                            {...focusProps}
+                                                        >
+                                                            <span className="epic-name">{epicTitle}</span>
+                                                            <span className="epic-key">{epicGroup.key}</span>
+                                                        </a>
+                                                    )}
+                                                </EpicHeaderValueReadout>
                                             ) : (
                                                 <>
-                                                    <span className="epic-name">{epicTitle}</span>
+                                                    <EpicHeaderValueReadout value={epicTitle} suppressed={epicInteractionActive}>
+                                                        {({ discoveryProps }) => (
+                                                            <span {...discoveryProps} className="epic-name epic-full-value-trigger">{epicTitle}</span>
+                                                        )}
+                                                    </EpicHeaderValueReadout>
                                                     <span className="epic-key">Unassigned</span>
                                                 </>
                                             )}
@@ -14174,38 +14148,61 @@ import {
 	                                    </div>
 	                                    <div className="epic-meta">
                                             {epicStatus && (
-                                                (statusTransitionEnabled && epicGroup.key !== 'NO_EPIC') ? (
-                                                    <StatusTransitionMenu
-                                                        issue={{ key: epicGroup.key, status: epicStatus, summary: epicTitle }}
-                                                        fallbackIssueType="Epic"
-                                                        statusLabel={epicStatus}
-                                                        statusClassName={epicStatusClassName}
-                                                        sourceSurface={statusTransitionSourceSurface}
-                                                        isOpen={statusTransitionActiveKey === epicGroup.key}
-                                                        options={transitionOptions}
-                                                        optionsLoading={transitionOptionsLoading}
-                                                        submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(epicGroup.key)}
-                                                        error={transitionError}
-                                                        errorCode={transitionErrorCode}
-                                                        result={transitionResult}
-                                                        targetsCount={statusTransitionTargetsCount}
-                                                        canToggleTargetSet={statusTransitionSourceSurface === 'planning'}
-                                                        isInTargetSet={selectedEpicStatusTargets.has(epicGroup.key)}
-                                                        onOpen={openSingleIssueStatusControl}
-                                                        onClose={closeSingleIssueStatusControl}
-                                                        onToggleTargetSet={() => toggleEpicStatusTarget(epicGroup.key)}
-                                                        onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
-                                                        previewOnly={onboardingPreviewSession}
-                                                        onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
-                                                    />
-                                                ) : (
-                                                    <StatusPill
-                                                        className={epicStatusClassName}
-                                                        label={epicStatus}
-                                                    />
-                                                )
+                                                <EpicHeaderValueReadout
+                                                    value={epicStatus}
+                                                    suppressed={epicInteractionActive}
+                                                    measureSelector=".status-pill"
+                                                    nativeSelector={statusTransitionEnabled && epicGroup.key !== 'NO_EPIC' ? '.status-pill' : ''}
+                                                >
+                                                    {statusTransitionEnabled && epicGroup.key !== 'NO_EPIC' ? (
+                                                        ({ triggerRef, pointerProps, focusProps }) => (
+                                                            <span ref={triggerRef} {...pointerProps} {...focusProps} className="epic-full-value-trigger epic-status-readout-target">
+                                                                <StatusTransitionMenu
+                                                                    issue={{ key: epicGroup.key, status: epicStatus, summary: epicTitle }}
+                                                                    fallbackIssueType="Epic"
+                                                                    statusLabel={epicStatus}
+                                                                    statusClassName={epicStatusClassName}
+                                                                    sourceSurface={statusTransitionSourceSurface}
+                                                                    isOpen={statusTransitionActiveKey === epicGroup.key}
+                                                                    options={transitionOptions}
+                                                                    optionsLoading={transitionOptionsLoading}
+                                                                    submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(epicGroup.key)}
+                                                                    error={transitionError}
+                                                                    errorCode={transitionErrorCode}
+                                                                    result={transitionResult}
+                                                                    targetsCount={statusTransitionTargetsCount}
+                                                                    canToggleTargetSet={statusTransitionSourceSurface === 'planning'}
+                                                                    isInTargetSet={selectedEpicStatusTargets.has(epicGroup.key)}
+                                                                    onOpen={openSingleIssueStatusControl}
+                                                                    onClose={closeSingleIssueStatusControl}
+                                                                    onToggleTargetSet={() => toggleEpicStatusTarget(epicGroup.key)}
+                                                                    onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
+                                                                    previewOnly={onboardingPreviewSession}
+                                                                    onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
+                                                                />
+                                                            </span>
+                                                        )
+                                                    ) : (
+                                                        ({ triggerRef, truncated, describedBy, pointerProps, focusProps }) => (
+                                                            <span
+                                                                ref={triggerRef}
+                                                                {...pointerProps}
+                                                                {...focusProps}
+                                                                className="epic-full-value-trigger epic-status-readout-target"
+                                                                tabIndex={truncated ? 0 : undefined}
+                                                                aria-label={epicStatus}
+                                                                aria-describedby={describedBy}
+                                                            >
+                                                                <StatusPill
+                                                                    className={`${epicStatusClassName} epic-status-value`}
+                                                                    label={epicStatus}
+                                                                />
+                                                            </span>
+                                                        )
+                                                    )}
+                                                </EpicHeaderValueReadout>
                                             )}
-	                                        <span>SP: {epicTotalSp.toFixed(1)}</span>
+	                                        <span className="epic-story-points">SP: {epicTotalSp.toFixed(1)}</span>
 	                                        {(epicInfo?.assignee?.displayName || (issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && epicInfo)) && (
 	                                            <span className="task-assignee epic-assignee">
 	                                                <span className="task-assignee-icon" aria-hidden="true">
@@ -14214,7 +14211,7 @@ import {
 	                                                        <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
 	                                                    </svg>
 	                                                </span>
-	                                                <span>{renderEpicPersonEditor('assignee', 'Assignee', epicInfo?.assignee)}</span>
+	                                                {renderEpicPersonEditor('assignee', 'Assignee', epicInfo?.assignee)}
 	                                            </span>
 	                                        )}
 	                                    </div>
@@ -15467,6 +15464,7 @@ import {
                                         <ProjectTrackBreakdownChart
                                             data={projectTrackBreakdown}
                                             resolveColor={resolveProjectTrackColor}
+                                            jiraUrl={jiraUrl}
                                         />
                                     </div>
 

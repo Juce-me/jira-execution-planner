@@ -273,7 +273,7 @@ test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
     // what still needs scoping away from EPM boards is the task list itself.
     [
         '.task-list:not(.epm-issue-board) > .epic-block',
-        '.task-list:not(.epm-issue-board) > .epic-block > .epic-header',
+        '.task-list:not(.epm-issue-board) .epic-block > .epic-header',
         '.task-list:not(.epm-issue-board) > .epic-block > .task-item',
         '.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-header',
         '.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-headline',

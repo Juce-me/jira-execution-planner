@@ -189,6 +189,33 @@ test('submit freezes context, keeps dispatched writes alive after close, and con
     assert.equal(mutations.length, 1);
 });
 
+test('a rejected Jira person keeps the current value and never confirms a local change', async () => {
+    const { createEngIssueFieldEditController } = await loadController();
+    let confirmations = 0;
+    const controller = createEngIssueFieldEditController({
+        backendUrl: '/root',
+        issueEditState: {
+            beginMutation: () => ({}),
+            confirmMutation: () => { confirmations += 1; },
+            markUnknown() {},
+        },
+        fetchEditableField: async () => metadata(),
+        searchUsers: async () => ({ options: [] }),
+        updateField: async () => {
+            throw Object.assign(new Error('synthetic rejection'), { code: 'target_unavailable' });
+        },
+        enqueueMutation: async (_keys, run) => run(),
+    });
+
+    await controller.openEditor({ issueKey: 'DEMO-1', field: 'assignee' });
+    await controller.submit({ accountId: 'missing' });
+
+    assert.equal(confirmations, 0);
+    assert.deepEqual(controller.getState().metadata.currentValue, { accountId: 'old', displayName: 'Old Owner' });
+    assert.equal(controller.getState().status, 'draft');
+    assert.equal(controller.getState().errorMessage, 'That person is no longer available for this field.');
+});
+
 test('same-site auth generation change drops a stale dispatched confirmation', async () => {
     const { createEngIssueFieldEditController } = await loadController();
     const write = deferred();

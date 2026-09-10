@@ -535,20 +535,326 @@
             border-radius: 8px;
         }
 
-        .task-list:not(.epm-issue-board) > .epic-block > .epic-header {
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header {
             padding: 0.32rem 0;
             margin-bottom: 0.5rem;
+            flex-direction: row;
+            align-items: baseline;
             gap: 0.65rem;
-            align-items: flex-start;
         }
 
-        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-title-row {
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-title-row {
             gap: 0.45rem;
+            align-items: baseline;
         }
 
-        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta {
             gap: 0.45rem 0.65rem;
-            padding-top: 0.05rem;
+            align-items: baseline;
+            align-self: baseline;
+            max-width: none;
+            min-width: 0;
+            flex-wrap: nowrap;
+            padding-top: 0;
+            font-size: 0.7rem;
+            line-height: 1.2;
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-status-pill,
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-story-points,
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-assignee input.issue-person-editor-trigger {
+            display: inline-flex;
+            align-items: center;
+            height: 1.5rem;
+            box-sizing: border-box;
+            white-space: nowrap;
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee {
+            font-size: 0.7rem;
+            line-height: 1.2;
+            align-items: baseline;
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee input.issue-person-editor-trigger {
+            line-height: 1.5rem;
+        }
+
+        @media (min-width: 761px) {
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header {
+                align-items: center;
+                gap: 12px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-title {
+                flex: 1 1 0;
+                min-width: min-content;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-title-row {
+                align-items: center;
+                gap: 6px;
+                min-width: min-content;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-link {
+                display: grid;
+                grid-template-columns: minmax(110px, 1fr) max-content;
+                align-items: baseline;
+                gap: 8px;
+                min-width: min-content;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-name {
+                min-width: 110px;
+                font-family: 'Crimson Pro', Georgia, serif;
+                font-size: 16px;
+                font-weight: 600;
+                line-height: 24px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-key {
+                position: static;
+                font-family: 'IBM Plex Mono', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 24px;
+                letter-spacing: 0;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta {
+                position: static;
+                flex: 0 1 auto;
+                align-items: center;
+                align-self: center;
+                justify-content: flex-end;
+                gap: 10px;
+                min-width: 0;
+                max-width: none;
+                padding-top: 0;
+                font-family: 'IBM Plex Mono', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 24px;
+                letter-spacing: 0;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-icon,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .task-priority-icon,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-track-indicator {
+                display: inline-flex;
+                flex: 0 0 24px;
+                align-items: center;
+                justify-content: center;
+                width: 24px;
+                height: 24px;
+                line-height: 24px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-icon svg {
+                width: 16px;
+                height: 16px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .task-priority-icon svg {
+                width: 18px;
+                height: 18px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-track-indicator {
+                font-size: 14px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-status-pill,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-story-points,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-assignee input.issue-person-editor-trigger {
+                height: 24px;
+                font-family: 'IBM Plex Mono', Arial, sans-serif;
+                font-size: 14px;
+                box-sizing: border-box;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-status-pill {
+                display: block;
+                flex: 0 1 auto;
+                min-width: 64px;
+                max-width: 140px;
+                padding: 0 8px;
+                border: 1px solid transparent;
+                overflow: hidden;
+                font-weight: 500;
+                line-height: 22px;
+                letter-spacing: 0;
+                text-overflow: ellipsis;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-readout-target,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .status-transition {
+                flex: 0 1 auto;
+                min-width: 0;
+                overflow: visible;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-value {
+                display: block;
+                flex: 0 1 auto;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status {
+                background: #f3f4f6;
+                color: #374151;
+                border-color: #9ca3af;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.done,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.completed {
+                background: #f6ffed;
+                color: #276408;
+                border-color: #94bd7c;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.killed {
+                background: #f3f4f6;
+                color: #4b5563;
+                border-color: #9ca3af;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.in-progress,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.accepted {
+                background: #e5f2ff;
+                color: #174f82;
+                border-color: #87b9df;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.release,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.waiting-for-release {
+                background: #e6fffb;
+                color: #075e54;
+                border-color: #5cbbb0;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.blocked {
+                background: #fff1f0;
+                color: #8f1d1d;
+                border-color: #e58b8b;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.waiting,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.to-do,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.awaiting-validation,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.pending {
+                background: #f3f4f6;
+                color: #374151;
+                border-color: #9ca3af;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.incomplete,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.postponed {
+                background: #fff7e6;
+                color: #7a4100;
+                border-color: #d9a657;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-story-points {
+                flex: 0 0 auto;
+                line-height: 24px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee {
+                flex: 0 1 auto;
+                align-items: center;
+                gap: 6px;
+                min-width: 126px;
+                max-width: none;
+                font-family: 'IBM Plex Mono', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 24px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee > span:last-child,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee-value {
+                min-width: 0;
+                overflow: hidden;
+                color: #885900;
+                font-weight: 500;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .issue-person-editor {
+                min-width: 0;
+                max-width: 100%;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee input.issue-person-editor-trigger {
+                max-width: 100%;
+                color: #885900;
+                font-weight: 500;
+                line-height: 24px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .task-assignee-icon {
+                flex: 0 0 20px;
+                width: 20px;
+                height: 24px;
+                color: #666;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .task-assignee-icon svg {
+                width: 21px;
+                height: 21px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-stat-toggle {
+                flex: 0 0 auto;
+                height: 24px;
+                margin-left: 0;
+                padding: 0 6px;
+                gap: 4px;
+                font-family: 'IBM Plex Mono', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                line-height: 22px;
+                letter-spacing: 0;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-stat-toggle svg {
+                width: 18px;
+                height: 18px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header :is(button, input, a, [tabindex]):focus-visible {
+                outline: 2px solid #174f82;
+                outline-offset: -2px;
+            }
+        }
+
+        .epic-full-value-readout {
+            position: fixed;
+            z-index: var(--modal-popup-z);
+            width: max-content;
+            max-width: min(18rem, calc(100vw - 16px));
+            padding: 0.35rem 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 8px;
+            background: #1f2937;
+            color: #fff;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.22);
+            font-family: 'IBM Plex Mono', Arial, sans-serif;
+            font-size: 12px;
+            font-weight: 400;
+            line-height: 1.4;
+            letter-spacing: 0;
+            text-align: left;
+            text-transform: none;
+            overflow-wrap: anywhere;
+            white-space: normal;
+            pointer-events: auto;
         }
 
         .task-list:not(.epm-issue-board) > .epic-block > .task-item {
@@ -581,14 +887,16 @@
         }
 
         @media (max-width: 760px) {
-            .task-list:not(.epm-issue-board) > .epic-block > .epic-header {
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header {
                 flex-direction: column;
                 align-items: stretch;
             }
 
-            .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta {
+                align-self: stretch;
                 max-width: none;
                 min-width: 0;
+                flex-wrap: wrap;
                 justify-content: flex-start;
             }
 

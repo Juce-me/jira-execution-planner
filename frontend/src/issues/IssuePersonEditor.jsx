@@ -12,12 +12,6 @@ function optionDisabled(person) {
     return person?.eligibility === 'ineligible' || person?.disabled === true;
 }
 
-function optionGuidance(person) {
-    if (person?.eligibility === 'ineligible') return 'Unavailable for this field.';
-    if (person?.eligibility === 'unverified') return 'Jira will verify access when selected.';
-    return '';
-}
-
 export default function IssuePersonEditor({
     issueKey,
     field = 'assignee',
@@ -50,6 +44,7 @@ export default function IssuePersonEditor({
     const inputRef = React.useRef(null);
     const recoveryButtonRef = React.useRef(null);
     const [localQuery, setLocalQuery] = React.useState('');
+    const [editingStarted, setEditingStarted] = React.useState(false);
     const [activeIndex, setActiveIndex] = React.useState(-1);
     const [recoveryBusy, setRecoveryBusy] = React.useState(false);
     const submittedRef = React.useRef(false);
@@ -89,6 +84,7 @@ export default function IssuePersonEditor({
     });
 
     React.useEffect(() => {
+        setEditingStarted(false);
         if (!isOpen) return;
         submittedRef.current = false;
         const firstEnabled = options.findIndex(person => !optionDisabled(person));
@@ -96,7 +92,9 @@ export default function IssuePersonEditor({
     }, [isOpen]);
 
     React.useEffect(() => {
-        if (isOpen && !loading) inputRef.current?.focus();
+        if (!isOpen || loading) return;
+        inputRef.current?.focus();
+        inputRef.current?.select();
     }, [isOpen, loading]);
 
     React.useEffect(() => {
@@ -105,7 +103,10 @@ export default function IssuePersonEditor({
     }, [submitting]);
 
     React.useEffect(() => {
-        if (error) submittedRef.current = false;
+        if (!error) return;
+        submittedRef.current = false;
+        setEditingStarted(false);
+        requestAnimationFrame(() => inputRef.current?.select());
     }, [error]);
 
     React.useEffect(() => {
@@ -198,7 +199,6 @@ export default function IssuePersonEditor({
             {!loading && options.length > 0 && (
                 <div id={`${listId}-options`} className="issue-person-editor-menu-options" role="listbox" aria-label={`${fieldLabel} people`}>
                     {options.map((person, index) => {
-                        const guidance = optionGuidance(person);
                         const isMe = person.accountId === metadata?.me?.accountId;
                         return (
                             <button
@@ -208,7 +208,7 @@ export default function IssuePersonEditor({
                                 className={`issue-person-editor-option${index === activeIndex ? ' is-active' : ''}`}
                                 role="option"
                                 aria-selected={index === activeIndex}
-                                aria-label={`${person.displayName}${isMe ? ', Me' : ''}${guidance ? `, ${guidance}` : ''}`}
+                                aria-label={`${person.displayName}${isMe ? ', Me' : ''}`}
                                 disabled={optionDisabled(person) || submitting || recoveryLocked || metadata?.editable !== true}
                                 onPointerMove={() => { if (!optionDisabled(person)) setActiveIndex(index); }}
                                 onClick={() => selectPerson(person)}
@@ -217,7 +217,6 @@ export default function IssuePersonEditor({
                                     {person.displayName}{isMe ? ' (Me)' : ''}
                                     {person.emailAddress && <small>{person.emailAddress}</small>}
                                 </span>
-                                {guidance && <span className="issue-person-editor-option-note">{guidance}</span>}
                             </button>
                         );
                     })}
@@ -237,8 +236,10 @@ export default function IssuePersonEditor({
             )}
         </div>
     ) : null;
-    const inputValue = isOpen ? effectiveQuery : displayName;
-    const inputWidth = Math.min(24, Math.max(4, Array.from(displayName).length, Array.from(inputValue).length)) + 0.35;
+    const inputValue = isOpen && editingStarted ? effectiveQuery : displayName;
+    const contentLength = Math.max(Array.from(displayName).length, Array.from(inputValue).length);
+    // Story metadata adds wide uppercase letter spacing; reserve enough width for it before ellipsizing.
+    const inputWidth = Math.min(40, Math.max(4, contentLength + 3)) + 0.35;
 
     return (
         <span className="issue-person-editor" ref={wrapperRef}>
@@ -271,6 +272,7 @@ export default function IssuePersonEditor({
                 onChange={event => {
                     if (!isOpen) return;
                     const value = event.target.value;
+                    setEditingStarted(true);
                     if (query === undefined) setLocalQuery(value);
                     setActiveIndex(-1);
                     onSearch?.(value);

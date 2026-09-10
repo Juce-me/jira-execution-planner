@@ -201,6 +201,49 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     });
 }
 
+test('person editor preserves the current value until typing and keeps failed changes out of the field', async ({ page }) => {
+    await mountHarness(page, { width: 1440, height: 900 });
+    const trigger = page.getByRole('combobox', { name: 'Assignee: Existing Owner' });
+    const closedValue = await trigger.evaluate(element => {
+        const style = getComputedStyle(element);
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = style.font;
+        return {
+            value: element.value,
+            available: element.clientWidth,
+            required: context.measureText(element.value).width,
+            scrollLeft: element.scrollLeft,
+        };
+    });
+    expect(closedValue.value).toBe('Existing Owner');
+    expect(closedValue.available).toBeGreaterThanOrEqual(closedValue.required);
+    expect(closedValue.scrollLeft).toBe(0);
+    await trigger.click();
+
+    const input = page.getByRole('combobox', { name: 'Search Assignee' });
+    await expect(input).toHaveValue('Existing Owner');
+    await expect(input).toBeFocused();
+    await expect(input).toHaveCSS('color', 'rgb(212, 136, 6)');
+    await expect(input).toHaveCSS('border-top-width', '0px');
+    await expect(input).toHaveCSS('border-right-width', '0px');
+    await expect(input).toHaveCSS('border-bottom-width', '1px');
+    await expect(input).toHaveCSS('border-left-width', '0px');
+    await expect(page.getByText('Jira will verify access when selected.')).toHaveCount(0);
+
+    await input.press('a');
+    await expect(input).toHaveValue('a');
+    await input.fill('ali');
+    await page.getByRole('option', { name: /Eligible Person/ }).click();
+    await expect.poll(() => page.evaluate(() => window.__issueEditorHarness.personSubmits)).toEqual(['eligible']);
+
+    await page.evaluate(() => window.__issueEditorHarness.setPersonError('Jira rejected this field value.'));
+    await expect(input).toHaveValue('Existing Owner');
+    await expect.poll(() => input.evaluate(element => element.scrollLeft)).toBe(0);
+    await expect(page.getByRole('alert', { name: 'Assignee error' })).toContainText('Jira rejected this field value.');
+    await page.screenshot({ path: path.join(screenshotDir, 'person-current-value-and-error-1440x900.png') });
+});
+
 test('story points stays inline, rejects blank, saves Enter once, and discards on blur', async ({ page }) => {
     await mountHarness(page, { width: 390, height: 844 });
     const input = page.getByRole('textbox', { name: 'Story Points' });

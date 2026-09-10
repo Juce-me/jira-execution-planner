@@ -99,7 +99,6 @@ class TestSprintDatesInFetch(unittest.TestCase):
         mock_search_response = MagicMock()
         mock_search_response.status_code = 200
         mock_search_response.json.return_value = {
-            'isLast': True,
             'issues': [
                 {
                     'key': 'TEST-1',
@@ -278,7 +277,6 @@ class TestMethod2BoardScoping(unittest.TestCase):
         mock_search_response = MagicMock()
         mock_search_response.status_code = 200
         mock_search_response.json.return_value = {
-            'isLast': True,
             'issues': [
                 {
                     'key': 'TEST-1',

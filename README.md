@@ -12,7 +12,6 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Project Filtering** - Separate Tech and Product tasks
 - ✅ **Clean, Minimalist UI** - Beautiful typography with smooth animations
 - ✅ **Auto-refresh** - Reload button for tasks and sprints
-- ✅ **Bounded Sprint Discovery** - Jira fallback discovery scans sprint-bearing issues once, rejects stalled pagination, and lets the user retry a timed-out catalog load
 - ✅ **Secure Credentials** - Local secrets stay outside git; DB/OAuth user tokens are encrypted in database storage
 - ✅ **Team-aware filtering** - Multi-team JQL plus UI dropdown to slice per team and see team name on each story
 - ✅ **Team groups** - Define workspace-shared department groups (1-12 teams), choose a shared default, and let each user choose which groups appear in dashboard controls
@@ -476,7 +475,6 @@ See the full guide:
 
 **Sprints loading slowly:**
 - First load fetches from Jira (may take a few seconds)
-- The Sprint dropdown remains available during discovery and shows the current loading state
 - Subsequent loads use 24-hour cache (instant)
 - To find board ID for faster loading: visit `http://localhost:5050/api/boards`
 

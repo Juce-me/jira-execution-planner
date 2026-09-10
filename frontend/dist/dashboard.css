@@ -790,12 +790,6 @@ h1 {
   background: var(--bg-primary);
   font-weight: 700;
 }
-.sprint-dropdown-retry {
-  width: 100%;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
 .sprint-dropdown-option + .sprint-dropdown-option {
   border-top: 1px dashed var(--border);
 }

@@ -98,7 +98,8 @@ function storyPayload(specs = EPIC_SPECS) {
 
 async function installBoardFixture(page, {
     board = { columns: BOARD_COLUMNS }, groups = null, epicSpecs = EPIC_SPECS,
-    strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0, sprintDelayMs = 0,
+    strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0,
+    sprintResponseGate = null,
 } = {}) {
     await installDashboardShell(page);
     if (sourceBundle) {
@@ -155,7 +156,7 @@ async function installBoardFixture(page, {
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/sprints') {
-            if (sprintDelayMs) await new Promise(resolve => setTimeout(resolve, sprintDelayMs));
+            if (sprintResponseGate) await sprintResponseGate;
             return json({ sprints: strictBoard ? [
                 { id: 34624, name: '2026Q2 Sprint 41', state: 'closed' },
                 { id: selectedSprintId, name: selectedSprintName, state: 'active' },
@@ -252,27 +253,6 @@ async function openBoard(page, {
     await settle(page);
 }
 
-test('Sprint selector opens and reports progress while sprint discovery is pending', async ({ page }) => {
-    const requests = [];
-    await installBoardFixture(page, { sourceBundle: true, sprintDelayMs: 30000, requests });
-    await page.addInitScript(() => {
-        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
-            selectedView: 'eng', selectedSprint: null, sprintName: '', activeGroupId: 'grp-default',
-            showBoard: false, showPlanning: false, showScenario: false,
-        }));
-    });
-    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
-    await expect.poll(() => requests.filter(pathname => pathname === '/api/sprints').length).toBe(1);
-
-    const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
-    await expect(sprintControl).toBeEnabled();
-    await expect(sprintControl).toContainText('Loading…');
-    await sprintControl.click();
-    await expect(page.getByRole('textbox', { name: 'Filter sprints' }).first()).toBeVisible();
-    await expect(page.getByText('Loading sprints...', { exact: true }).first()).toBeVisible();
-    await page.screenshot({ path: path.join(screenshotDir, 'sprint-loading-dropdown.png'), animations: 'disabled' });
-});
-
 test('Board adds Component and All work to the existing Sprint selector without another scope control', async ({ page }) => {
     const requests = [];
     await openBoard(page, { strictBoard: true, requests, sourceBundle: true, configDelayMs: 250 });
@@ -315,6 +295,31 @@ test('Board adds Component and All work to the existing Sprint selector without 
     await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
     await settle(page);
     expect(requests.filter((requestPath) => requestPath.includes('scope=all_work'))).toHaveLength(allWorkRequestCount);
+});
+
+test('restores the cached sprint immediately and validates it from the first-load catalog', async ({ page }) => {
+    let releaseSprints;
+    const sprintResponseGate = new Promise(resolve => { releaseSprints = resolve; });
+    const requests = [];
+    await installBoardFixture(page, { requests, sourceBundle: true, sprintResponseGate });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: false, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+    await expect(sprintControl).toContainText(selectedSprintName);
+    await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
+    await expect(page.locator('.task-item[data-task-key="PLAT-1-1"]')).toBeVisible();
+    await page.screenshot({ path: path.join(screenshotDir, 'cached-sprint-before-catalog.png'), animations: 'disabled' });
+
+    releaseSprints();
+    await expect(sprintControl).toBeEnabled();
+    await sprintControl.click();
+    await expect(page.getByText(selectedSprintName, { exact: false }).first()).toBeVisible();
 });
 
 test('Catch Up to Board reuses the loaded sprint snapshot without another Jira data request', async ({ page }) => {
@@ -1830,54 +1835,3 @@ test('All work renders component epics before discovery and preserves cards afte
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
     await page.screenshot({ path: path.join(screenshotDir, 'progressive-epic-timeout.png'), animations: 'disabled' });
 });
-
-for (const stalledPhase of ['headers', 'body']) {
-    test(`Sprint discovery recovers from stalled ${stalledPhase} with bounded timeout and explicit retry`, async ({ page }) => {
-        await installBoardFixture(page, { strictBoard: true, sourceBundle: true });
-        await page.clock.install();
-        await page.addInitScript(({ stalledPhase }) => {
-            localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
-                selectedView: 'eng', activeGroupId: 'grp-default', showBoard: false,
-                showPlanning: false, showScenario: false,
-            }));
-            const originalFetch = window.fetch.bind(window);
-            window.sprintAttemptCount = 0;
-            window.stallSprintAttempt = 1;
-            window.fetch = (input, options) => {
-                if (!String(input).includes('/api/sprints?')) return originalFetch(input, options);
-                if (++window.sprintAttemptCount !== window.stallSprintAttempt) return originalFetch(input, options);
-                if (stalledPhase === 'headers') return new Promise((resolve, reject) => {
-                    options?.signal?.addEventListener('abort', () => reject(options.signal.reason || new DOMException('Aborted', 'AbortError')), { once: true });
-                });
-                return Promise.resolve(new Response(new ReadableStream({
-                    start(controller) {
-                        controller.enqueue(new TextEncoder().encode('{"sprints":['));
-                        options?.signal?.addEventListener('abort', () => controller.error(options.signal.reason || new DOMException('Aborted', 'AbortError')), { once: true });
-                    },
-                }), { headers: { 'Content-Type': 'application/json' } }));
-            };
-        }, { stalledPhase });
-        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
-        await expect.poll(() => page.evaluate(() => window.sprintAttemptCount)).toBe(1);
-        await page.getByRole('button', { name: 'Select sprint' }).first().click();
-        await expect(page.getByText('Loading sprints...', { exact: true })).toBeVisible();
-        await page.clock.fastForward(61000);
-        await expect(page.getByText('Loading sprints...', { exact: true })).toHaveCount(0);
-        if (stalledPhase === 'headers') await page.screenshot({ path: path.join(screenshotDir, 'sprint-timeout-retry.png'), animations: 'disabled' });
-        await page.getByRole('button', { name: 'Retry sprints', exact: true }).click();
-        await expect.poll(() => page.evaluate(() => window.sprintAttemptCount)).toBe(2);
-        await expect(page.locator(`[data-sprint-id="${selectedSprintId}"]`)).toBeVisible();
-        await expect(page.getByText('Loading sprints...', { exact: true })).toHaveCount(0);
-        if (stalledPhase === 'headers') await page.screenshot({ path: path.join(screenshotDir, 'sprint-retry-loaded.png'), animations: 'disabled' });
-        if (stalledPhase === 'headers') {
-            await page.evaluate(() => { window.stallSprintAttempt = 3; });
-            await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
-            await expect.poll(() => page.evaluate(() => window.sprintAttemptCount)).toBe(3);
-            await page.getByRole('button', { name: 'Select sprint' }).first().click();
-            await expect(page.locator(`[data-sprint-id="${selectedSprintId}"]`)).toBeVisible();
-            await page.clock.fastForward(61000);
-            await expect(page.getByRole('button', { name: 'Retry sprints', exact: true })).toBeVisible();
-            await expect(page.locator(`[data-sprint-id="${selectedSprintId}"]`)).toBeVisible();
-        }
-    });
-}

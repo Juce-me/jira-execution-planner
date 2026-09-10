@@ -157,7 +157,7 @@ function makeCompletedCohortEpic(index) {
     };
 }
 
-function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey, epicProjectTrack, epicAssignee }) {
+function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey, epicProjectTrack, epicAssignee, epicStatus }) {
     return {
         id: key,
         key,
@@ -172,6 +172,7 @@ function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName
             epicSummary,
             epicProjectTrack: epicProjectTrack || null,
             epicAssignee: epicAssignee ? { displayName: epicAssignee } : null,
+            epicStatus: epicStatus || null,
             parentSummary: epicSummary,
             projectKey,
             teamId,
@@ -1079,7 +1080,7 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/stats/excluded-capacity-source') {
             return json({
                 data: {
-                    issues: excludedCapacitySourceIssues,
+                    issues: options.excludedCapacitySourceIssues || excludedCapacitySourceIssues,
                     meta: {
                         warnings: [],
                         queryPages: 1,
@@ -2448,6 +2449,48 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     await expect(statsView.locator('.project-track-phase-section')).toHaveCount(0);
 
     await captureSmokeScreenshot(page, 'statistics-project-track-team');
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Project Track excludes closed epics and links No track assignee segments to Jira epics', async ({ page }) => {
+    const calls = [];
+    const sourceIssues = [
+        makeExcludedCapacityIssue({
+            key: 'OPEN-STORY', epicKey: 'OPEN-EPIC', epicSummary: 'Open epic', teamId: 'team-alpha',
+            teamName: 'Alpha Team', points: 3, projectKey: 'PROD', epicProjectTrack: null,
+            epicAssignee: 'Dana Owner', epicStatus: 'In Progress',
+        }),
+        ...['Done', 'Killed', 'Incomplete'].map((epicStatus, index) => makeExcludedCapacityIssue({
+            key: `CLOSED-STORY-${index + 1}`, epicKey: `CLOSED-EPIC-${index + 1}`,
+            epicSummary: `${epicStatus} epic`, teamId: 'team-alpha', teamName: 'Alpha Team',
+            points: 5 + index, projectKey: 'PROD', epicProjectTrack: null,
+            epicAssignee: 'Dana Owner', epicStatus,
+        })),
+    ];
+    const apiMocks = await installApiMocks(page, calls, {
+        excludedCapacitySourceIssues: sourceIssues,
+        useCommittedDist: true,
+    });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true,
+        statsView: 'projectTrack', excludedCapacityStartSprintId: String(selectedSprintId),
+        excludedCapacityEndSprintId: String(selectedSprintId),
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+
+    const statsView = page.locator('.stats-view.open');
+    await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('3 SP');
+    const noTrackLink = statsView.getByRole('link', { name: "Open Dana Owner's no-track epics in Jira" });
+    await expect(noTrackLink).toBeVisible();
+    await expect(noTrackLink).toHaveAttribute('target', '_blank');
+    const noTrackJql = decodeURIComponent(new URL(await noTrackLink.getAttribute('href')).searchParams.get('jql'));
+    expect(noTrackJql).toBe('key in (OPEN-EPIC)');
+    expect(noTrackJql).not.toContain('CLOSED-EPIC');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

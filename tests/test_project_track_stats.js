@@ -7,6 +7,7 @@ import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals,
 const story = (key, sp, track, sprintId, opts = {}) => ({ key, fields: {
   customfield_10004: sp, epicKey: opts.epicKey || `${key}-EPIC`, epicProjectTrack: track,
   epicAssignee: opts.assignee ? { displayName: opts.assignee } : null,
+  epicStatus: opts.epicStatus || null,
   teamId: opts.teamId || 'team-a', teamName: opts.teamName, projectKey: opts.projectKey || 'PROD',
   customfield_10101: [{ id: sprintId, name: `Sprint ${sprintId}`, state: 'active' }] } });
 
@@ -47,6 +48,22 @@ test('exclude toggles drop ad hoc / excluded epics', () => {
     { ...base, adHocEpicSet: adHoc, excludedEpicSet: ex, excludeAdHoc: true })).total, 4);
   assert.equal(summarizeProjectTrackTotals(buildProjectTrackSprintSeries(tasks,
     { ...base, adHocEpicSet: adHoc, excludedEpicSet: ex, excludeExcludedCapacity: true })).total, 5);
+});
+
+test('Project Track excludes stories whose parent epic is Done, Killed, or Incomplete', () => {
+  const tasks = [
+    story('PROD-OPEN', 5, 'Committed', 10, { epicKey: 'E-OPEN', epicStatus: 'In Progress' }),
+    story('PROD-DONE', 7, 'Committed', 10, { epicKey: 'E-DONE', epicStatus: 'Done' }),
+    story('PROD-KILLED', 11, null, 10, { epicKey: 'E-KILLED', epicStatus: ' killed ' }),
+    story('PROD-INCOMPLETE', 13, 'Flexible', 10, { epicKey: 'E-INCOMPLETE', epicStatus: 'Incomplete' }),
+  ];
+
+  const series = buildProjectTrackSprintSeries(tasks, base);
+  const breakdown = buildProjectTrackBreakdownRows(tasks, { ...base, mode: 'epic' });
+
+  assert.equal(summarizeProjectTrackTotals(series).total, 5);
+  assert.deepEqual(inScopeEpicKeys(tasks, base), ['E-OPEN']);
+  assert.equal(breakdown.rows.reduce((total, row) => total + row.total, 0), 5);
 });
 
 test('epic mode places whole epic SP in its dominant sprint (tie-break by range order)', () => {
@@ -101,4 +118,18 @@ test('Team-mode rows use the real team name (not a group label); Epic-mode rows 
                      story('S2', 6, 'Committed', 20, { epicKey: 'E1', assignee: 'Dana' })];
   const epRows = buildProjectTrackBreakdownRows(epicTasks, { ...base, mode: 'epic' });
   assert.equal(epRows.rows.find(r => r.label === 'Dana').byTrack['Committed'], 8);
+});
+
+test('Epic-mode assignee rows retain the epic keys behind each Project Track segment', () => {
+  const tasks = [
+    story('S1', 2, null, 10, { epicKey: 'E-NONE', assignee: 'Dana' }),
+    story('S2', 3, 'Committed', 10, { epicKey: 'E-COMMITTED', assignee: 'Dana' }),
+    story('S3', 5, null, 20, { epicKey: 'E-NONE', assignee: 'Dana' }),
+  ];
+
+  const rows = buildProjectTrackBreakdownRows(tasks, { ...base, mode: 'epic' }).rows;
+  const dana = rows.find((row) => row.label === 'Dana');
+
+  assert.deepEqual(dana.epicKeysByTrack[NO_TRACK_LABEL], ['E-NONE']);
+  assert.deepEqual(dana.epicKeysByTrack.Committed, ['E-COMMITTED']);
 });

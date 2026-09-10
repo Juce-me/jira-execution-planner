@@ -9602,15 +9602,21 @@ input.story-points-editor.story-points-alert-highlight {
   color: #ffffff;
 }
 .cohort-grid-tooltip {
-  position: absolute;
+  position: fixed;
   width: 250px;
   border: 1px solid var(--border);
   border-radius: 0.45rem;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
   padding: 0.4rem 0.5rem;
-  z-index: 4;
+  z-index: calc(var(--sticky-control-overlay-z) + 5);
   pointer-events: none;
+}
+.cohort-grid-tooltip.is-left {
+  transform: translate(calc(-100% - 12px), -50%);
+}
+.cohort-grid-tooltip.is-right {
+  transform: translate(12px, -50%);
 }
 .cohort-grid-tooltip-title {
   font-family: "IBM Plex Mono", monospace;
@@ -10355,6 +10361,7 @@ a.project-track-phase-epic-link:focus-visible {
   font-weight: 700;
   font-family: inherit;
   line-height: 1;
+  text-decoration: none;
   background: var(--stacked-bar-color, #94a3b8);
   transition: none;
 }

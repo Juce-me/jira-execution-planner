@@ -3,6 +3,7 @@
 Status: executed (investigation only; no implementation)
 Date: 2026-09-10
 Type: bugfix analysis
+Review baseline: existing source/bundle was committed concurrently as `0bdda707d522937568657ae37e22a339cde32bd8`; this task made documentation and disposable specimen changes only.
 Current accuracy: current dirty worktree on `bugfix/jira-user-editor-current-value`, application baseline `7d605e7`; HEAD observed again as `ddf8099786c6ca97a2684d837aa7eb51ca49cbdc` after a concurrent documentation-only commit. This is not a clean committed application revision.
 
 ## Request and scope
@@ -58,9 +59,9 @@ Limits: the fixture deliberately suppresses Google Fonts (`tests/ui/epm_home_tok
 1. Mixed typography causes text-height mismatch. Prediction: changing only vertical offsets cannot change painted heights; normalizing the designed type scale should reduce the spread. Source and current rendering support the first claim; no candidate CSS was applied.
 2. Independent SVG/viewBox and emoji metrics cause icon mismatch. Prediction: equal outer SVG sizes retain differing painted bounds. Source geometry supports this; a future all-icon screenshot probe must validate it.
 3. Nonshrinking metadata causes title starvation. Prediction: longer names/statuses/query values consume title space at unchanged container width. Source establishes the mechanism; the plan requires stress fixtures rather than claiming every overflow case reproduced.
-4. Font loading/zoom changes apparent alignment. Prediction: loaded and fallback fonts produce different paint metrics under identical CSS. Fixture font suppression is confirmed; loaded-font comparison remains pending.
+4. Font loading/zoom changes apparent alignment. Prediction: loaded and fallback fonts produce different paint metrics under identical CSS. In the initial investigation, fixture font suppression was confirmed and loaded-font comparison was pending; the follow-up specimen below completes that comparison.
 
-No bisection, speculative CSS patch or candidate-layout experiment was performed because this turn ends before implementation. Findings distinguish source-supported causes from untested candidate remedies.
+During the initial investigation no bisection or candidate-layout experiment was performed. The subsequent user-directed follow-up below adds a disposable specimen without modifying application implementation. Findings distinguish source-supported causes from untested candidate remedies.
 
 ## Consumer and behavior inventory
 
@@ -72,9 +73,17 @@ The plan preserves status/priority/track handlers, Jira link, person current-val
 
 Read-only analysis reviewer independently inspected source, tests and MRT020/MRT021/MRT028 and confirmed the scale mismatch, omitted icons, inadequate pixel-bottom tests, width pressure and accessibility gaps. The independent reviewer then inspected this written analysis, diagnostic probe and baseline crop: validated after correcting revision provenance. No substantive findings remain. The documentation-only HEAD movement was not performed by this investigation. A separate reviewer assesses the implementation contract, not this reviewer's preferred layout.
 
+## Follow-up: invalid gate corrected
+
+The next user correction rejected the unpassable gate. That criticism was correct: exact arbitrary-string ink equality and untruncated combined worst-case widths were assistant-created constraints, not a useful interpretation of visual consistency. A review that merely called this blocked workflow sound did not complete the design task.
+
+The old task-zero screenshots also cannot justify the quoted feasibility totals: independent inspection found a blank stress crop and a controlled input showing a different value from an imperative assignment. Those images are excluded from the new evidence. The original five-role baseline measurements above remain limited diagnostic evidence; they do not define final acceptance.
+
+A new disposable browser specimen uses stable fixture state and the existing React renderer. It validates an intrinsic title/key grid, flexible person width, calibrated 16px serif/14px mono text, and smaller track artwork. 16 stress cases plus 4 ordinary/focus cases passed; loaded/fallback reference cap-height spreads are 0.60/0.79px, maximum overflow 0px, title minimum 110px and loaded-font person minimum 153.81px. These results replace the unresolved feasibility gate. See the linked plan for exact dimensions, commands, evidence, review and remaining functional checks. Product implementation remains untouched. Final independent analysis review inspected the three requested crops and both JSON result files and validated the corrected evidence and interpretation. The slightly larger track-circle footprint remains part of the per-variant artwork checks during implementation, not an unresolved feasibility gate.
+
 ## Correction learning
 
-For this regression, verify painted tops, bottoms and heights for every text, icon and pill, separately from hit boxes; never use equal control rectangles or text-bottom-only checks as visible-height acceptance. This tightens the existing root instruction's visible-alignment requirement without editing that concurrently dirty instruction file.
+For this regression, validate a concrete visual specimen yourself; compare optical typography and actual artwork separately from hit boxes, and never turn arbitrary glyph differences or all-untruncated stress strings into an unpassable prerequisite. The root instructions now record this concrete correction alongside the existing visible-alignment rule.
 
 ## Outcome and remaining work
 

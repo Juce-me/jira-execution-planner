@@ -288,6 +288,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In dashboard filters, reuse existing dropdown classes such as `team-dropdown-*` or `sprint-dropdown-*`; do not create bespoke hover, caret, radius, or action styles for one-off dropdowns.
 - Keep ENG issue-card structure and styling shared across Catch Up, Planning, and Statistics; Planning may only append its selection checkbox.
 - Keep the ENG epic title, key, status, SP, and assignee on one desktop row with aligned visible text baselines; verify rendered text in screenshots, not only equal element heights, and never substitute stacked rows or mobile work for this requirement.
+- For corrective UI plans, validate a concrete visual specimen yourself; never turn natural glyph variation or fully expanded worst-case strings into an unpassable gate delegated to the user.
 - For EPM project board visual changes, preserve clear per-project boundaries and verify collapsed and expanded states with screenshots before committing.
 - EPM project board status pills must reuse the existing status-pill sizing, casing, and success green; do not create one-off completed badge styling.
 - In ENG Group Board epic cards, keep summaries single-line and ellipsized within a fixed card layout; never wrap long titles or let them change card height.

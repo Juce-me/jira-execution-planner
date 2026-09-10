@@ -16,7 +16,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 ## Epic header regression review
 
 - [Visible-height analysis](SUPPORT-epic-header-visible-height-analysis.md): investigated and independently validated; existing geometry tests pass while a painted-text probe reproduces an 11px height spread. Application remains unchanged.
-- [Visible-height correction plan](EXEC-epic-header-visible-height.md): design-gated, not execution-ready. Independent review requires a proven readable sizing/width contract before implementation; user requested a stop after analysis and planning.
+- [Visible-height correction plan](EXEC-epic-header-visible-height.md): concrete specimen validated across 16 stress and 4 ordinary/focus cases. Corrected sizing, intrinsic width allocation and regression checks are specified; user requested a stop before implementation.
 
 ## Current DB Workflow
 

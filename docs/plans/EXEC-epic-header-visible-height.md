@@ -1,8 +1,9 @@
 # Epic header visible-height correction plan
 
-Status: planned — DESIGN-GATED; STOP before implementation; not execution-ready
+Status: planned — specimen validated; STOP before application implementation
 Date: 2026-09-10
 Type: bugfix
+Review baseline: existing source/bundle was committed concurrently as `0bdda707d522937568657ae37e22a339cde32bd8`; this task made documentation and disposable specimen changes only.
 Current accuracy: proposed contract for the dirty worktree application baseline `7d605e7`, with subsequent documentation-only HEAD `ddf8099786c6ca97a2684d837aa7eb51ca49cbdc`; not implemented or published.
 
 ## Goal and forbidden regressions
@@ -11,17 +12,49 @@ Make the ENG epic headline one aligned desktop row with equal visible item heigh
 
 Do not stack desktop metadata, shrink text to fit, hide whole required fields, change status meanings or labels, replace existing interaction flows, reset current person values, alter endpoint payloads/permissions, add dependencies, widen the app shell, redesign mobile or change EPM/Group Board layouts. Preserve every unrelated dirty edit. No commit, push or PR is authorized by this plan. This document is not an execution handoff.
 
-## Required visual contract and unresolved design gate
+## Validated visual specification
 
-The user's strict requirement is unchanged: all visible headline items have identical painted height and aligned top/bottom edges on one desktop row, with readable accessible content. No final size or typography specification has been selected. The earlier draft's 20 CSS px painted band is **unvalidated and not an implementation instruction**: preserving mixed fonts at that painted height may exceed the available row width. Independent review rejected treating it as execution-ready.
+The former exact-per-string painted-pixel gate was an authoring error. It converted visually consistent sizing into an impossible arbitrary-glyph constraint and delegated the resulting design problem to the user. It is removed. The correction is a single compact row with matched optical text size, normalized icon artwork and consistently sized control surfaces; visible rendering remains the acceptance target. Natural ascenders/descenders remain intact. No per-string scaling, stretching, clipped glyphs or tiny status labels.
 
-Plain text items are measured by glyph ink; icons by actual artwork including strokes; status and Included/Excluded controls by their painted outer surface, with their internal labels separately checked for readable scale and centering. Compare top, bottom and height across items, allowing at most 1 CSS px for raster edges in a pinned reference rendering, never deliberate visual-scale differences. Status label height must be reported too; a matching pill silhouette cannot excuse tiny text. This measurement interpretation must be shown explicitly in the feasibility evidence so it cannot mask the original defect.
+The disposable specimen uses the actual current React renderer and synthetic API fixtures. It changes only the browser's temporary stylesheet. It is not a production patch. Local reproduction:
 
-Strict actual-ink equality across arbitrary strings is not established: capitals, x-heights, descenders and mixed fonts vary. **There is no automatic descender exception.** Do not introduce per-string font scaling, stretching, clipping, a canonical-string-only PASS, or waive failing real labels. If one stable type specification per role cannot meet the strict requirement for representative varied labels and documented supported content, the design gate fails. Present measured alternatives and obtain the user's explicit decision before relaxing ink equality, changing the typography/artwork system or proceeding. Optical similarity is not silently substituted for exact visible equality.
+```sh
+node node_modules/@playwright/test/cli.js test --config tmp/epic-header-specimen.config.js --grep 'validated header design|ordinary header'
+```
 
-Readability and accessibility remain hard gates: text at least 14 CSS px, including pill labels; transparent interactive targets at least 24×24 CSS px with spacing; normal text contrast 4.5:1 and meaningful icons/focus indicators 3:1. These are proposed minimum checks, not a claim that the current UI meets them. Measure the current palette and use only scoped corrections retaining semantic hues. Keep the existing font families/artwork initially; do not swap emoji or global design tokens without an explicit design decision.
+| Role | Specification |
+| --- | --- |
+| Epic title | Crimson Pro 600, 16px, 24px line height; existing serif identity, single-line ellipsis |
+| Key, SP, person, status and capacity text | IBM Plex Mono 14px, 24px line height (22px inside bordered24px pills); 400 body/500 interactive weights; Arial/sans-serif fallback to preserve optical scale when webfonts fail |
+| Text calibration | Compare equivalent `Hx` cap/x-height samples per role; reference spread ≤1 CSSpx. Actual content receives screenshot review with natural glyph variation, not a false exact ink-height assertion |
+| Leading icons |24×24px slots/targets; epic artwork16px, priority SVG18px with its internal whitespace, track emoji14px to avoid the former oversized circle. Person SVG21px yields roughly16px stroke envelope inside a20px slot; capacity SVG18px. Keep semantic artwork and normalize individual priority/track variants by painted bounds during implementation |
+| Pills |24px surface height; same14px readable label scale as metadata. Status surface and label are reviewed separately; their equality is not asserted against plain text ink |
+| Spacing |12px between title/meta groups;6px leading slots,8px title/key,10px metadata; existing row padding, no taller stacked metadata |
+| Focus |2px contrasting inset outline on interactive controls, visible despite text clipping; no clipped external focus ring |
 
-Desktop evidence must cover 988, 1280, 1440 and 1920 viewport widths and actual content-container widths. Fit is one row without overlap. Show complete values when space permits; use existing title ellipsis first and constrain only exceptionally long person values while preserving complete accessible names and keyboard/pointer full-value discovery. No global font shrinking, hiding required fields, desktop horizontal scrolling, or metadata wrapping. Exact minimum title/person allocations are outputs of the feasibility gate, not the earlier draft's unproven 12ch/10ch promises. Until those readable allocations and longest supported fixed fields fit together, implementation remains blocked. Existing below-760px behavior is a preservation check, never substitute evidence.
+The local title/key link becomes a two-column grid: `minmax(110px,1fr) max-content`. The title wrapper and title row use intrinsic minimum sizing; title wrapper `flex:1 1 0`. Metadata uses `flex:0 1 auto; min-width:0; max-width:none`. Person removes the unconditional cap, uses a126px minimum outer allocation and preserves the existing intrinsic input width with `max-width:100%`. The status text is capped at140px with ellipsis; key and SP remain fully visible. This gives spare width to the name and protects a readable title segment when combined content is long. It does not require every extreme string to be fully visible simultaneously.
+
+Keep all required fields present. Use a compact in-app full-value readout on hover and keyboard focus for truncated title, status and person; leave normal click, typing and menu behavior unchanged. Retain full accessible names, keep it visible while either trigger or readout is hovered or the trigger has keyboard focus; dismiss on Escape or after both hover/focus leave, and suppress it while an editor/menu is active so it does not cover interaction. This readout is a small implementation obligation, not something the specimen already implements. Native title text alone is insufficient. Truncated readonly values receive a focusable discovery span (`tabIndex=0` only when truncated), full accessible text and `aria-describedby` to the readout; existing links/inputs/buttons retain their native focus targets. Position readouts in the established overlay layer with viewport bounds; test pointer transfer into the readout, Escape dismissal, keyboard focus, scroll/edge placement and absence of menu interception. The status cap must apply to its text-bearing pill, not clip its menu wrapper. Keep readonly person text in a named span so clipping and full-value access match the input variant.
+
+Preserve each status's semantic palette. The specimen demonstrates In Progress blue and an unknown-status neutral style only; its exploratory CSS must not be copied wholesale onto all statuses. Apply any necessary contrast correction per existing status class, including completed/blocked/killed states and readonly parity. Measured specimen text contrast: person 6.04:1, In Progress 7.46:1, neutral 8.39:1. Normal text must meet 4.5:1 and active meaningful icons/focus 3:1. Preserve disabled semantics.
+
+## Completed design validation
+
+Final combined run: **2 passed (24.5s)**, covering 20 rendering cases. Earlier separate runs: stress matrix 16 cases (19.8s), ordinary/focus matrix 4 cases (6.5s). Tested Catch Up and Planning at 988/1280/1440/1920 with actual local Crimson Pro/IBM Plex Mono font files and with fallback fonts; ordinary/focus cases at 988/1440 with loaded fonts. Font resources are explicitly loaded with `FontFace`, not inferred from CSS family names. Controlled text comes from fixture state; no transient input.value mutation is used.
+
+| Evidence | Result |
+| --- | --- |
+| Stress available header width |920.41px at 988 viewport;972.41px at the wider viewports |
+| Combined stress content |Long title, 16-character synthetic key, Ready for Deployment, SP9999.9, long person, leading icons, and Included control in Planning |
+| Horizontal overflow and pairwise item overlap |0px in all 16 cases |
+| Minimum visible title/name allocation |110px title;153.81px name with loaded fonts;165.22px name fallback |
+| Equivalent text cap-height spread |0.60px loaded;0.79px fallback |
+| Ordinary full name |Full 21-character name visible in all 4 cases, checked with actual text width |
+| Focus |Inset outline visibly intact in inspected Planning/Catch Up crops |
+
+Standalone before/after review artifact: `tmp/epic-header-design-preview.html`.
+
+Evidence lives in ignored `tmp/epic-header-analysis/`: `specimen-results.json`, `ordinary-results.json`, `specimen.css`, `specimen-loaded-988-Planning.png`, `ordinary-loaded-988-Planning.png`, `focus-988-Planning.png` and corresponding matrix crops. This is design feasibility evidence, not final app regression verification. No product source, generated bundle or permanent test was changed. Remaining implementation checks below are normal verification work, not a request for the user to solve an invented design gate.
 
 ## Allowed file map
 
@@ -30,7 +63,7 @@ All listed existing paths have been checked to exist. Re-read them and their ins
 | File | Allowed change |
 | --- | --- |
 | `frontend/src/styles/eng/issues.css` | Primary scoped ENG header layout, typography, artwork sizing, fit, focus and contrast rules; remove superseded header-only 24px/offset assumptions |
-| `frontend/src/dashboard.jsx` | Minimal epic-headline-only class/span/accessibility hooks if CSS cannot address paint/readonly content; preserve handlers, gates and shared renderer |
+| `frontend/src/dashboard.jsx` | Epic-headline-only readonly value span, full-value readout/accessible descriptions, Escape/focus/pointer handling and local class hooks; preserve existing handlers, gates and shared renderer |
 | `tests/ui/eng_group_board_card.spec.js` | Replace biased geometry criteria; add complete painted-item and fit/interaction cases with synthetic data |
 | `tests/ui/eng_issue_field_edits.spec.js` | Only needed header current-value, keyboard, width and recovery regression coverage |
 | `tests/test_eng_board_styles.js` | Replace obsolete style-source expectations, preserve meaningful scope guards |
@@ -44,29 +77,17 @@ Existing shared `epics.css`, `status-transitions.css`, `IssuePersonEditor.jsx`, 
 
 ## Tasks and verification gates
 
-### 0. Resolve visual feasibility before implementation
-
-This is a read-only design task. Do not edit product CSS/JS, shared assets or permanent tests to explore candidates. Diagnostic scripts may live only in ignored `tmp/` and measure the unchanged renderer/font metrics without applying candidate styles.
-
-Inventory actual font availability, current content width and every painted role. Use browser canvas `measureText` including actual bounding-box ascent/descent and screenshot evidence for SVG/emoji/strokes and controls. For each proposed stable per-role font size/band, calculate the combined width budget at the narrowest desktop container: all icons, gaps, key, status, SP, capacity control, and usable title/person segments. Also measure loaded-font and fallback states; computed font-family names alone are insufficient.
-
-Use explicit combined synthetic stress fixtures rather than one long value at a time: a long title with ascenders/descenders; 16-character issue key; a long multiword status such as `Ready for Deployment`; decimal total `9999.9`; `Excluded` control; a long multiword person name; all applicable icons. Repeat with uppercase-only and descender-heavy titles/names, short names, absent fields, editable/readonly rendering, query text and all track/priority values. This defines a required sample, not a promise that every possible Jira string has bounded width.
-
-Before the gate can pass, record an evidence table with proposed font/paint sizes, measured full-content and truncated budgets, remaining title/person width, actual ink-top/bottom/height spreads, supported conditions and per-fixture verdicts. No sample can be silently removed. Exact actual-ink equality that cannot be achieved by stable typography must be reported as a design conflict, not addressed with per-label scaling. The user's decision is required for any relaxation. A feasibility failure or unavailable loaded fonts keeps the plan design-gated.
-
-**Current result: NOT PASSED.** The original mismatch is reproduced; candidate sizing, loaded fonts and combined readable width have not been validated. No product or permanent test implementation may begin, even after a general instruction to execute, until this gate is resolved or the user explicitly changes the visual contract.
-
 ### 1. Freeze baseline and tests before changing appearance
 
 Read current diff, record head and checksums for pre-existing changes; confirm branch and remote freshness when available. Re-read instructions/postmortems and every named target. Keep local work in the current checkout. Do not execute if unrelated concurrent edits overlap the planned patch.
 
-Promote the diagnostic idea into permanent assertions that fail on the current UI. Test all painted items, not only text. Capture settled full-row and item crops, preserve device-scale metadata and normalize image coordinates to CSS pixels. Use actual foreground/background segmentation per item and require nonempty painted regions; a white status glyph mask must exclude white outside the pill. Include glyph tops/bottoms/heights, SVG stroke bounds, emoji paint and control surfaces. Keep text-label readability and vertical centering as separate checks inside painted controls. Establish the oracle on the rejected baseline before candidate CSS.
+Convert the validated specimen criteria into permanent assertions that fail on the current UI. Test all painted items, not only text; never reinstate exact arbitrary-string ink equality. Capture settled full-row and item crops, preserve device-scale metadata and normalize image coordinates to CSS pixels. Use actual foreground/background segmentation per item and require nonempty painted regions; a white status glyph mask must exclude white outside the pill. Record real-label glyph tops/bottoms/heights, SVG stroke bounds, emoji paint and control surfaces. Assert equivalent-glyph optical calibration and role-specific painted sizes, and retain independent visual review of actual labels. Keep text-label readability and vertical centering as separate checks inside painted controls. Establish the oracle on the rejected baseline before candidate CSS.
 
-Record loaded fonts via browser font APIs and actual successful font resources; `document.fonts.ready` with an empty font stylesheet is not proof. Existing fixture intentionally uses fallback fonts. For real-font evidence use the existing font service via a fixture override during diagnostics or an already installed equivalent resource; do not install a dependency or claim fallback screenshots validate loaded fonts. Missing font availability blocks loaded-font visual acceptance, not the source analysis. Capture fallback separately. Pin browser/platform/DPR for comparisons, then check DPR1/2 and browser zoom100/125/200; at effective desktop widths enforce the same row contract, at narrower widths verify existing accessibility/reflow without substituting mobile evidence.
+Record loaded fonts via browser font APIs and actual successful font resources; `document.fonts.ready` with an empty font stylesheet is not proof. Existing fixture intentionally uses fallback fonts. For real-font evidence use the existing font service via a fixture override during diagnostics or an already installed equivalent resource; do not install a dependency or claim fallback screenshots validate loaded fonts. Use the already validated loaded-font fixture and the separate fallback case; missing resources must be reported, never represented as a loaded-font pass. Capture fallback separately. Pin browser/platform/DPR for comparisons, then check DPR1/2 and browser zoom100/125/200; at effective desktop widths enforce the same row contract, at narrower widths verify existing accessibility/reflow without substituting mobile evidence.
 
 ### 2. Apply minimal scoped visual correction
 
-Use scoped CSS and existing renderer hooks. Normalize all visible item metrics and common vertical alignment together; remove only obsolete header rules from this correction. Normalize actual SVG artwork envelopes without changing priority/track meaning. Preserve current text family, label casing and single-row structure. Implement the stated fit budget and full-value access, keeping menus outside clipping contexts. No content-dependent JavaScript font scaling or arbitrary per-string offsets.
+Use scoped CSS and existing renderer hooks. Apply the concrete 16px/14px typography, intrinsic title/key grid, uncapped flexible person width, status text ellipsis and inset focus treatment above; normalize visible metrics and vertical alignment together; remove only obsolete header rules from this correction. Normalize actual SVG artwork envelopes without changing priority/track meaning. Preserve current text family, label casing and single-row structure. Implement the stated fit budget and full-value access, keeping menus outside clipping contexts. Add full-value readout behavior through the existing renderer without replacing edit/menu handlers. No content-dependent JavaScript font scaling or arbitrary per-string offsets.
 
 After each coherent change, compare settled before/after crops to every requirement. Do not accept a good title/status pair while missing person/priority/track/capacity. A failed visual criterion blocks completion even if interaction tests pass.
 
@@ -96,7 +117,7 @@ node node_modules/@playwright/test/cli.js test tests/ui/eng_group_board_card.spe
 git diff --check
 ```
 
-Add assertions for missing matrix cells to the allowlisted test files rather than treating unrelated existing totals as coverage. Identify actual reachable Statistics and Scenario guards before reporting coverage; not every Statistics tab renders epic lists. Retain the build-generated files required by `.github/workflows/verify-frontend-build.yml`. No full Python suite is required for this CSS-only scope; any later publication follows the repository's separate full-suite and explicit publication authorization rules.
+Add assertions for missing matrix cells to the allowlisted test files rather than treating unrelated existing totals as coverage. Identify actual reachable Statistics and Scenario guards before reporting coverage; not every Statistics tab renders epic lists. Retain the build-generated files required by `.github/workflows/verify-frontend-build.yml`. No full Python suite is required for this frontend-only scope; any later publication follows the repository's separate full-suite and explicit publication authorization rules.
 
 Provide an independent visual/spec reviewer the exact user constraints, baseline and final screenshots, the plan and current diff. Require per-item compliance first, then implementation review. Complete keyboard/focus/contrast and interaction checks before any completion claim. Record tested fonts, viewport/container widths, zoom/DPR, assertions, screenshots and limitations; no claim of universal raster equality. Update incident docs only with measured results. User visual acceptance remains distinct from test success.
 
@@ -106,6 +127,6 @@ No new event: layout/typography/artwork correction has no new product action. Ex
 
 ## Independent plan validation
 
-A separate read-only reviewer inspected the written contract and relevant source. Two P1 findings rejected the original numeric specification: (1) a 20px painted band plus large fixed-width metadata was not proven to fit the capped container; (2) strict per-string ink equality conflicted with an implicit descender exception. The plan now removes those unsupported implementation assumptions and adds the explicit read-only Task 0 gate. Final independent review: the correction workflow is sound and both P1 findings are addressed as explicit blocking design gates. The visual specification remains unvalidated and implementation is not ready. No additional blocking defect was found in the workflow itself. Residual risks are loaded/fallback font and emoji variation, strict per-label ink equality, and long fixed metadata within the capped container.
+The original review approved an unusable gated workflow and is superseded. Separate analysis review identified the invented arbitrary-glyph equality requirement and unreliable old task-zero screenshots. Separate plan review caught oversized track artwork, blanket status coloring, unconditional name caps and clipped focus. The specimen and contract address those findings with calibrated text, smaller track artwork, per-state palette requirements, intrinsic grid/flex allocation and inset focus. Final independent plan review inspected the rewritten contract, four representative crops and both result files. The plan is concrete and supported by the specimen; its readout hover-persistence/readonly-focus clarification is now incorporated. No unresolved design blocker remains. Full palette, conditional-state and functional verification remain explicit implementation work, not a completed claim.
 
-Backend endpoint/storage/workspace/auth migration coverage was reviewed and is inapplicable because none changes. Existing edit/recovery/401 states and request contracts remain regression obligations. No implementation is authorized or begun; a reviewed workflow does not mean the visual design has passed its gate.
+No endpoint, auth, storage or ownership migration is proposed; those migration matrices remain inapplicable. The full interaction/readonly/401/sticky/analytics matrix above must be verified during implementation. Design validation does not claim functional regression tests already passed. Stop before implementation as requested.

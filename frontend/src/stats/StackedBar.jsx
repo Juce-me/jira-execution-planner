@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { resolveFloatingHoverPosition } from '../ui/hoverBubblePosition.js';
+import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 
 // Generic horizontal stacked-bar primitive: N rows, each split into dynamic segments
 // sized by value share of the row total, with per-segment value labels (compact
@@ -55,6 +56,7 @@ export default function StackedBar({
     formatValue = defaultFormatValue,
     formatReadout,          // optional: ({ rowLabel, segmentKey, value }) => string
     renderRowLabel,         // optional: (row) => ReactNode; default = plain-text row.label
+    resolveSegmentLink,     // optional: ({ row, segmentKey, segment, value }) => tracked anchor props
     ariaLabel,
     emptyText = 'No data in range.'
 }) {
@@ -85,8 +87,8 @@ export default function StackedBar({
                 <div className="stacked-bar-rows">
                     {rowList.map((row) => {
                         const denominator = row.total || 0;
-                        const segMap = {};
-                        (row.segments || []).forEach((seg) => { segMap[seg.key] = seg.value || 0; });
+                        const segmentByKey = {};
+                        (row.segments || []).forEach((seg) => { segmentByKey[seg.key] = seg; });
                         return (
                             <div className="stacked-bar-row" key={row.id}>
                                 <div className="stacked-bar-meta">
@@ -97,17 +99,30 @@ export default function StackedBar({
                                 </div>
                                 <div className="stacked-bar-track">
                                     {order.map((key) => {
-                                        const value = segMap[key] || 0;
+                                        const segment = segmentByKey[key] || {};
+                                        const value = segment.value || 0;
                                         if (value <= 0) return null;
                                         const width = denominator > 0 ? (value / denominator) * 100 : 0;
                                         const valueText = formatValue(value);
                                         const segmentLabel = labelFor(key);
                                         const showFull = width >= FULL_SEGMENT_LABEL_MIN_WIDTH;
                                         const readoutData = { rowLabel: row.label, segmentKey: key, segmentLabel, valueText, value };
+                                        const segmentLink = resolveSegmentLink
+                                            ? resolveSegmentLink({ row, segmentKey: key, segment, value })
+                                            : null;
+                                        const SegmentControl = segmentLink?.href ? TrackedExternalLink : 'button';
                                         return (
-                                            <button
+                                            <SegmentControl
                                                 key={key}
-                                                type="button"
+                                                {...(segmentLink?.href
+                                                    ? {
+                                                        href: segmentLink.href,
+                                                        target: '_blank',
+                                                        rel: 'noopener noreferrer',
+                                                        title: segmentLink.title,
+                                                        analyticsMeta: segmentLink.analyticsMeta
+                                                      }
+                                                    : { type: 'button' })}
                                                 className="stacked-bar-segment"
                                                 style={{
                                                     width: `${Math.max(0, Math.min(100, width))}%`,
@@ -120,10 +135,10 @@ export default function StackedBar({
                                                 onFocus={(event) => setHovered(readoutFromElement(event, readoutData))}
                                                 onBlur={() => setHovered(null)}
                                                 onClick={(event) => setHovered(readoutFromElement(event, readoutData))}
-                                                aria-label={`${row.label} ${segmentLabel}: ${valueText}`}
+                                                aria-label={segmentLink?.ariaLabel || `${row.label} ${segmentLabel}: ${valueText}`}
                                             >
                                                 <span>{showFull ? `${segmentLabel} ${valueText}` : valueText}</span>
-                                            </button>
+                                            </SegmentControl>
                                         );
                                     })}
                                 </div>

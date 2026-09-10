@@ -5406,7 +5406,6 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
     epic_summary = str(epic_meta.get('summary') or '').strip()
     if not epic_summary and epic_key and parent_field.get('key') == epic_key and parent_summary:
         epic_summary = str(parent_summary or '').strip()
-    epic_project_track = epic_meta.get('projectTrack') or None
     epic_assignee_meta = epic_meta.get('assignee') if isinstance(epic_meta.get('assignee'), dict) else None
 
     status = fields.get('status') or {}
@@ -5433,7 +5432,8 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
             'teamId': team_id,
             'epicKey': epic_key,
             'epicSummary': epic_summary,
-            'epicProjectTrack': epic_project_track,
+            'epicProjectTrack': epic_meta.get('projectTrack') or None,
+            'epicStatus': epic_meta.get('status') or None,
             'epicAssignee': shape_jira_person(epic_assignee_meta),
             'customfield_10101': normalized_sprints,
             'parentSummary': parent_summary,
@@ -5473,10 +5473,10 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
             cache_key = excluded_capacity_epic_summary_cache_key(normalized, context=context)
             entry = EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE.get(cache_key)
             if entry and now - entry.get('timestamp', 0) < EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS \
-                    and 'projectTrack' in entry:
+                    and 'projectTrack' in entry and 'status' in entry:
                 summaries_by_normalized[normalized] = {
                     'summary': entry.get('summary', ''), 'projectTrack': entry.get('projectTrack'),
-                    'assignee': entry.get('assignee')}
+                    'status': entry.get('status'), 'assignee': entry.get('assignee')}
             else:
                 missing_keys.append(normalized)
 
@@ -5484,7 +5484,7 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
     for index in range(0, len(missing_keys), batch_size):
         batch = missing_keys[index:index + batch_size]
         fetched = {}
-        epic_records = fetch_issues_by_keys(batch, ['summary', project_track_field, 'assignee'], context=context)
+        epic_records = fetch_issues_by_keys(batch, ['summary', project_track_field, 'status', 'assignee'], context=context)
         for epic in epic_records:
             ef = epic.get('fields') or {}
             key = str(epic.get('key') or '').strip().upper()
@@ -5494,18 +5494,18 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
             track = (tv or {}).get('value') if isinstance(tv, dict) else None
             assignee = ef.get('assignee') or None
             fetched[key] = {'summary': str(ef.get('summary') or '').strip(), 'projectTrack': track,
-                            'assignee': shape_jira_person(assignee)}
+                            'status': (ef.get('status') or {}).get('name'), 'assignee': shape_jira_person(assignee)}
         with _cache_lock:
             if get_jira_issue_cache_generation() == cache_generation:
                 for normalized in batch:
-                    meta = fetched.get(normalized, {'summary': '', 'projectTrack': None, 'assignee': None})
+                    meta = fetched.get(normalized, {'summary': '', 'projectTrack': None, 'status': None, 'assignee': None})
                     EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context)] = {**meta, 'timestamp': time.time()}
                     summaries_by_normalized[normalized] = meta
             else:
                 summaries_by_normalized.update(fetched)
 
     return {original_by_normalized[normalized]: summaries_by_normalized.get(
-        normalized, {'summary': '', 'projectTrack': None, 'assignee': None})
+        normalized, {'summary': '', 'projectTrack': None, 'status': None, 'assignee': None})
         for normalized in normalized_keys}
 
 

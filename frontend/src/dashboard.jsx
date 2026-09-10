@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
-import { createPortal } from 'react-dom';
 import './styles/dashboard.css';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
@@ -16,6 +15,7 @@ import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
+import { getCookie, getCurrentQuarter, getServerConnectionErrorMessage, isActiveHomeTokenConnection, isBackendConnectionFailure, loadUiPrefs, saveUiPrefs, setCookie } from './dashboardRuntime.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
 import { isEngOnboardingModuleSurface } from './onboarding/onboardingModules.js';
 import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
@@ -32,6 +32,7 @@ import EngView from './eng/EngView.jsx';
 import EngBoardView from './eng/EngBoardView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
 import EngModeControl from './eng/EngModeControl.jsx';
+import EpicHeaderValueReadout from './eng/EpicHeaderValueReadout.jsx';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
@@ -302,9 +303,6 @@ import {
         const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access', 'performance']);
         const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels', 'boards']);
         const SHARED_CONFIGURATION_TAB_IDS = new Set(ADMIN_SETTINGS_TAB_IDS);
-        function isActiveHomeTokenConnection(connection) {
-            return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
-        }
 
         const createEmptyEpmConfigDraft = () => ({
             version: 2,
@@ -315,77 +313,6 @@ import {
 
         // Backend server URL
         const BACKEND_URL = resolveBackendUrl(window);
-
-        function isBackendConnectionFailure(err) {
-            if (!err || err.name === 'AbortError') return false;
-            const message = String(err.message || err || '').toLowerCase();
-            return message.includes('failed to fetch') ||
-                message.includes('load failed') ||
-                message.includes('networkerror') ||
-                message.includes('network error') ||
-                message.includes('connection refused');
-        }
-
-        function getServerConnectionErrorMessage(backendUrl) {
-            return `Server is not responding at ${backendUrl}. Start the Python server, then retry.`;
-        }
-
-        // Get current quarter in format "2025Q1"
-        function getCurrentQuarter() {
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = now.getMonth() + 1; // 1-12
-            const quarter = Math.ceil(month / 3);
-            return `${year}Q${quarter}`;
-        }
-
-        // Cookie helper functions
-        function setCookie(name, value, days = 365) {
-            const expires = new Date();
-            expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
-            document.cookie = `${name}=${JSON.stringify(value)};expires=${expires.toUTCString()};path=/`;
-        }
-
-        function getCookie(name) {
-            const nameEQ = name + "=";
-            const ca = document.cookie.split(';');
-            for (let i = 0; i < ca.length; i++) {
-                let c = ca[i];
-                while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-                if (c.indexOf(nameEQ) === 0) {
-                    try {
-                        return JSON.parse(c.substring(nameEQ.length, c.length));
-                    } catch (e) {
-                        return null;
-                    }
-                }
-            }
-            return null;
-        }
-
-        const UI_PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
-
-        function loadUiPrefs() {
-            try {
-                const raw = window.localStorage.getItem(UI_PREFS_KEY);
-                if (!raw) return null;
-                const prefs = JSON.parse(raw);
-                if (prefs && typeof prefs === 'object') {
-                    prefs.showScenario = false;
-                }
-                return prefs;
-            } catch (e) {
-                return null;
-            }
-        }
-
-        function saveUiPrefs(prefs) {
-	            try {
-	                window.localStorage.setItem(UI_PREFS_KEY, JSON.stringify(prefs));
-	            } catch (e) {
-	                // ignore
-	            }
-	        }
 
         function InitiativeIcon({ className = '', size = 14, title = 'INITIATIVE' }) {
             const classes = ['initiative-icon', className].filter(Boolean).join(' ');
@@ -414,220 +341,6 @@ import {
                         />
                     </svg>
                 </span>
-            );
-        }
-
-        function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', children }) {
-            const triggerRef = React.useRef(null);
-            const readoutRef = React.useRef(null);
-            const closeTimerRef = React.useRef(null);
-            const triggerHoveredRef = React.useRef(false);
-            const readoutHoveredRef = React.useRef(false);
-            const focusWithinRef = React.useRef(false);
-            const [truncated, setTruncated] = React.useState(false);
-            const [visible, setVisible] = React.useState(false);
-            const [position, setPosition] = React.useState({ left: 8, top: 8, placed: false, above: false });
-            const readoutId = React.useId().replace(/:/g, '');
-
-            const cancelClose = React.useCallback(() => {
-                if (closeTimerRef.current == null) return;
-                window.clearTimeout(closeTimerRef.current);
-                closeTimerRef.current = null;
-            }, []);
-
-            const scheduleClose = React.useCallback(() => {
-                cancelClose();
-                closeTimerRef.current = window.setTimeout(() => {
-                    closeTimerRef.current = null;
-                    if (!triggerHoveredRef.current && !readoutHoveredRef.current && !focusWithinRef.current) {
-                        setVisible(false);
-                    }
-                }, 80);
-            }, [cancelClose]);
-
-            const measureTruncation = React.useCallback(() => {
-                const root = triggerRef.current;
-                const node = measureSelector ? root?.querySelector?.(measureSelector) : root;
-                const next = Boolean(node && (
-                    node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1
-                ));
-                setTruncated(previous => (previous === next ? previous : next));
-                if (!next) setVisible(false);
-            }, [measureSelector]);
-
-            React.useLayoutEffect(() => {
-                measureTruncation();
-                const node = triggerRef.current;
-                if (!node || typeof ResizeObserver === 'undefined') return undefined;
-                const observer = new ResizeObserver(measureTruncation);
-                observer.observe(node);
-                const measuredNode = measureSelector ? node.querySelector?.(measureSelector) : null;
-                if (measuredNode && measuredNode !== node) observer.observe(measuredNode);
-                return () => observer.disconnect();
-            }, [measureTruncation, measureSelector, value]);
-
-            React.useEffect(() => {
-                const fontSet = document.fonts;
-                if (!fontSet?.ready) return undefined;
-                let active = true;
-                let frame = null;
-                const measureAfterFontLoad = () => {
-                    if (!active) return;
-                    if (frame != null) window.cancelAnimationFrame(frame);
-                    frame = window.requestAnimationFrame(measureTruncation);
-                };
-                fontSet.ready.then(measureAfterFontLoad);
-                fontSet.addEventListener?.('loadingdone', measureAfterFontLoad);
-                return () => {
-                    active = false;
-                    if (frame != null) window.cancelAnimationFrame(frame);
-                    fontSet.removeEventListener?.('loadingdone', measureAfterFontLoad);
-                };
-            }, [measureTruncation]);
-
-            React.useLayoutEffect(() => {
-                if (!nativeSelector) return undefined;
-                const nativeTarget = triggerRef.current?.querySelector?.(nativeSelector);
-                if (!nativeTarget) return undefined;
-                const descriptionId = truncated ? `epic-full-value-${readoutId}` : '';
-                if (descriptionId) nativeTarget.setAttribute('aria-describedby', descriptionId);
-                else nativeTarget.removeAttribute('aria-describedby');
-                return () => {
-                    if (nativeTarget.getAttribute('aria-describedby') === descriptionId) {
-                        nativeTarget.removeAttribute('aria-describedby');
-                    }
-                };
-            }, [nativeSelector, readoutId, truncated]);
-
-            const updatePosition = React.useCallback(() => {
-                const trigger = triggerRef.current;
-                const readout = readoutRef.current;
-                if (!trigger || !readout) return;
-                const triggerRect = trigger.getBoundingClientRect();
-                const readoutRect = readout.getBoundingClientRect();
-                const viewportWidth = window.visualViewport?.width || window.innerWidth;
-                const viewportHeight = window.visualViewport?.height || window.innerHeight;
-                const viewportLeft = window.visualViewport?.offsetLeft || 0;
-                const viewportTop = window.visualViewport?.offsetTop || 0;
-                const padding = 8;
-                const gap = 6;
-                const minLeft = viewportLeft + padding;
-                const maxLeft = Math.max(minLeft, viewportLeft + viewportWidth - padding - readoutRect.width);
-                const left = Math.min(Math.max(triggerRect.left, minLeft), maxLeft);
-                const belowTop = triggerRect.bottom + gap;
-                const above = belowTop + readoutRect.height > viewportTop + viewportHeight - padding;
-                const preferredTop = above ? triggerRect.top - readoutRect.height - gap : belowTop;
-                const maxTop = Math.max(viewportTop + padding, viewportTop + viewportHeight - padding - readoutRect.height);
-                const top = Math.min(Math.max(preferredTop, viewportTop + padding), maxTop);
-                setPosition({ left, top, placed: true, above });
-            }, []);
-
-            React.useLayoutEffect(() => {
-                if (!visible || suppressed) return undefined;
-                updatePosition();
-                window.addEventListener('scroll', updatePosition, true);
-                window.addEventListener('resize', updatePosition);
-                window.visualViewport?.addEventListener?.('resize', updatePosition);
-                window.visualViewport?.addEventListener?.('scroll', updatePosition);
-                return () => {
-                    window.removeEventListener('scroll', updatePosition, true);
-                    window.removeEventListener('resize', updatePosition);
-                    window.visualViewport?.removeEventListener?.('resize', updatePosition);
-                    window.visualViewport?.removeEventListener?.('scroll', updatePosition);
-                };
-            }, [suppressed, updatePosition, visible]);
-
-            React.useEffect(() => {
-                if (!visible || suppressed) return undefined;
-                const dismissOnEscape = event => {
-                    if (event.key !== 'Escape') return;
-                    triggerHoveredRef.current = false;
-                    readoutHoveredRef.current = false;
-                    setVisible(false);
-                };
-                document.addEventListener('keydown', dismissOnEscape, true);
-                return () => document.removeEventListener('keydown', dismissOnEscape, true);
-            }, [suppressed, visible]);
-
-            React.useEffect(() => {
-                if (suppressed) setVisible(false);
-            }, [suppressed]);
-
-            React.useEffect(() => () => cancelClose(), [cancelClose]);
-
-            const show = () => {
-                cancelClose();
-                if (truncated && !suppressed) {
-                    setPosition(previous => ({ ...previous, placed: false }));
-                    setVisible(true);
-                }
-            };
-            const pointerProps = {
-                onPointerEnter: () => {
-                    triggerHoveredRef.current = true;
-                    show();
-                },
-                onPointerLeave: () => {
-                    triggerHoveredRef.current = false;
-                    scheduleClose();
-                },
-            };
-            const focusProps = {
-                onFocus: () => {
-                    focusWithinRef.current = true;
-                    show();
-                },
-                onBlur: event => {
-                    if (triggerRef.current?.contains(event.relatedTarget)) return;
-                    focusWithinRef.current = false;
-                    scheduleClose();
-                },
-            };
-            const describedBy = truncated ? `epic-full-value-${readoutId}` : undefined;
-            const readout = visible && truncated && !suppressed ? createPortal(
-                <span
-                    ref={readoutRef}
-                    id={`epic-full-value-${readoutId}`}
-                    className={`epic-full-value-readout${position.above ? ' is-above' : ''}`}
-                    role="tooltip"
-                    style={{
-                        left: `${position.left}px`,
-                        top: `${position.top}px`,
-                        visibility: position.placed ? 'visible' : 'hidden',
-                    }}
-                    onPointerEnter={() => {
-                        readoutHoveredRef.current = true;
-                        cancelClose();
-                    }}
-                    onPointerLeave={() => {
-                        readoutHoveredRef.current = false;
-                        scheduleClose();
-                    }}
-                >
-                    {value}
-                </span>,
-                document.body
-            ) : null;
-
-            return (
-                <>
-                    {children({
-                        triggerRef,
-                        truncated,
-                        describedBy,
-                        pointerProps,
-                        focusProps,
-                        discoveryProps: {
-                            ref: triggerRef,
-                            ...pointerProps,
-                            ...focusProps,
-                            tabIndex: truncated ? 0 : undefined,
-                            'aria-label': value,
-                            'aria-describedby': describedBy,
-                        },
-                    })}
-                    {readout}
-                </>
             );
         }
 
@@ -15750,6 +15463,7 @@ import {
                                         <ProjectTrackBreakdownChart
                                             data={projectTrackBreakdown}
                                             resolveColor={resolveProjectTrackColor}
+                                            jiraUrl={jiraUrl}
                                         />
                                     </div>
 

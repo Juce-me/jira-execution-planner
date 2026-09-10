@@ -837,7 +837,7 @@ test('readonly truncated assignee preserves the current value and keyboard reado
     await expect(readout).toHaveCount(0);
 });
 
-test('epic headline priority, track, and status variants all retain visible paint', async ({ page }) => {
+test('epic headline priority, track, and status variants all retain visible treatment', async ({ page }) => {
     await openBoard(page, { width: 1440, height: 900 });
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
     await page.evaluate(() => document.fonts.ready);
@@ -854,53 +854,70 @@ test('epic headline priority, track, and status variants all retain visible pain
         expect((await paintedBounds(indicator)).count, `${track} track paint`).toBeGreaterThan(4);
     }
     for (const status of ['To Do', 'In Progress', 'Done']) {
-        const pill = headers.locator('.epic-status-pill').filter({ hasText: status }).first();
+        const pill = headers.getByRole('button', { name: status, exact: true }).first();
         await expect(pill).toBeVisible();
-        const paint = await paintedBounds(pill, 'dark');
-        expect(paint.count, `${status} status label paint ${JSON.stringify(paint)}`).toBeGreaterThan(4);
+        const treatment = await pill.evaluate(node => {
+            const style = getComputedStyle(node);
+            const box = node.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            const textBox = range.getBoundingClientRect();
+            return {
+                color: style.color,
+                backgroundColor: style.backgroundColor,
+                containsText: textBox.left >= box.left - 1 && textBox.right <= box.right + 1
+                    && textBox.top >= box.top - 1 && textBox.bottom <= box.bottom + 1,
+                textWidth: textBox.width,
+                textHeight: textBox.height,
+            };
+        });
+        expect(treatment.textWidth, `${status} status label width`).toBeGreaterThan(4);
+        expect(treatment.textHeight, `${status} status label height`).toBeGreaterThan(4);
+        expect(treatment.containsText, `${status} status label stays inside its surface`).toBe(true);
+        expect(treatment.color, `${status} foreground differs from its surface`).not.toBe(treatment.backgroundColor);
     }
 });
 
-test('fallback epic headline keeps the row contract at DPR 1/2 and zoom 100/125/200', async ({ browser }) => {
-    test.setTimeout(90000);
+test('fallback epic headline keeps the row contract at DPR 1/2 and zoom 100/125/200', async ({ page }) => {
+    test.setTimeout(60000);
+    await openBoard(page, {
+        width: 1440,
+        height: 900,
+        epicAssigneeName: 'Alexanderson Petrovsky',
+        firstEpicStatus: 'Ready for Deployment',
+        firstEpicStoryPoints: 9999.9,
+    });
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+    const session = await page.context().newCDPSession(page);
     const cases = [
         { dpr: 1, zoom: 1 },
         { dpr: 1, zoom: 2 },
         { dpr: 2, zoom: 1.25 },
     ];
     for (const scaleCase of cases) {
-        const context = await browser.newContext({
-            viewport: { width: 1440, height: 900 },
+        await session.send('Emulation.setDeviceMetricsOverride', {
+            width: 1440,
+            height: 900,
             deviceScaleFactor: scaleCase.dpr,
+            mobile: false,
         });
-        const page = await context.newPage();
-        try {
-            await openBoard(page, {
-                width: 1440,
-                height: 900,
-                epicAssigneeName: 'Alexanderson Petrovsky',
-                firstEpicStatus: 'Ready for Deployment',
-                firstEpicStoryPoints: 9999.9,
-            });
-            const session = await context.newCDPSession(page);
-            await session.send('Emulation.setPageScaleFactor', { pageScaleFactor: scaleCase.zoom });
-            const metrics = await page.locator('.epic-block').first().locator('.epic-header').evaluate(element => ({
-                dpr: window.devicePixelRatio,
-                zoom: window.visualViewport?.scale || 1,
-                overflow: element.scrollWidth - element.clientWidth,
-                titleWidth: element.querySelector('.epic-name').clientWidth,
-                fontResources: performance.getEntriesByType('resource')
-                    .filter(entry => entry.initiatorType === 'font').map(entry => entry.name),
-            }));
-            expect(metrics.dpr).toBe(scaleCase.dpr);
-            expect(metrics.zoom).toBeCloseTo(scaleCase.zoom, 2);
-            expect(metrics.overflow).toBeLessThanOrEqual(1);
-            expect(metrics.titleWidth).toBeGreaterThanOrEqual(110);
-            expect(metrics.fontResources, 'fixture is the explicitly separate fallback-font case').toEqual([]);
-        } finally {
-            await context.close();
-        }
+        await session.send('Emulation.setPageScaleFactor', { pageScaleFactor: scaleCase.zoom });
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const metrics = await page.locator('.epic-block').first().locator('.epic-header').evaluate(element => ({
+            dpr: window.devicePixelRatio,
+            zoom: window.visualViewport?.scale || 1,
+            overflow: element.scrollWidth - element.clientWidth,
+            titleWidth: element.querySelector('.epic-name').clientWidth,
+            fontResources: performance.getEntriesByType('resource')
+                .filter(entry => entry.initiatorType === 'font').map(entry => entry.name),
+        }));
+        expect(metrics.dpr).toBe(scaleCase.dpr);
+        expect(metrics.zoom).toBeCloseTo(scaleCase.zoom, 2);
+        expect(metrics.overflow).toBeLessThanOrEqual(1);
+        expect(metrics.titleWidth).toBeGreaterThanOrEqual(110);
+        expect(metrics.fontResources, 'fixture is the explicitly separate fallback-font case').toEqual([]);
     }
+    await session.detach();
 });
 
 test('Catch Up mobile epic metadata wraps without clipping any control or the full assignee', async ({ page }) => {

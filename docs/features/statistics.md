@@ -42,7 +42,7 @@ It also supports:
 Shows epic cohorts and open-epic aging from a selected start quarter.
 
 Main parts:
-- cohort heatmap by created period and elapsed period
+- cohort heatmap by created period and elapsed period; its hover detail renders above the graph panel
 - longest-open epics view
 - filters for project, assignee, grouping mode, and status
 
@@ -76,7 +76,7 @@ This view uses the same Start Sprint and End Sprint range as Excluded Capacity a
 
 ### Project Track
 
-Shows story points by Project Track (the Jira `Project Track[Dropdown]` custom field, e.g. `Flexible`/`Committed`) for the selected sprint range. Stories with no track on their parent epic fall into a `No track` bucket.
+Shows story points by Project Track (the Jira `Project Track[Dropdown]` custom field, e.g. `Flexible`/`Committed`) for the selected sprint range. Stories with no track on their parent epic fall into a `No track` bucket. Epics in `Done`, `Killed`, or `Incomplete` are excluded from every Project Track statistic.
 
 Filter bar (drives every section, no separate fetch):
 - **Start Sprint** / **End Sprint** — same sprint-range state as Excluded Capacity
@@ -91,7 +91,7 @@ A mode title (`EPIC MODE` / `TEAM MODE`) renders under the filter bar. Mode swit
 Main parts:
 - **Totals bar**: one horizontal stacked bar of SP by track, aggregated over the whole selected sprint range, with a value label on each segment.
 - **Per-sprint chart**: one vertical stacked bar per sprint in range, split by track (hidden when the range is a single sprint).
-- **By assignee / By team breakdown**: one horizontal stacked bar per assignee (Epic mode) or team (Team mode), split by track, each segment value-labelled.
+- **By assignee / By team breakdown**: one horizontal stacked bar per assignee (Epic mode) or team (Team mode), split by track, each segment value-labelled. In Epic mode, selecting an assignee's `No track` segment opens those epics in Jira.
 - **Time in Project Track phase** (Epic mode only): for each in-scope epic, days spent in each track state (`No track` → `Flexible` → `Committed`, derived from Jira changelog), each phase segment value-labelled in days, plus an aggregate summary (avg days to first track, avg days to Committed). Epic names link to Jira. If the epic set is capped server-side, a truncation notice is shown instead of silently dropping epics.
 
 ## Lead Time Definition

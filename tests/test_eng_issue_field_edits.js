@@ -93,6 +93,64 @@ test('below-threshold searches make no request and 300ms debounce dispatches onl
     assert.deepEqual(calls, ['Grace']);
 });
 
+test('mounted-session people cache restores discovered users and skips repeated Jira searches', async () => {
+    const { createEngIssueFieldEditController } = await loadController();
+    const searches = [];
+    const writes = [];
+    const controller = createEngIssueFieldEditController({
+        backendUrl: '/root', debounceMs: 0,
+        getContextKey: () => 'site-a|auth-1',
+        fetchEditableField: async () => metadata(),
+        searchUsers: async (_url, _key, payload) => {
+            searches.push(payload.query);
+            return { options: [{ accountId: 'grace', displayName: 'Grace Hopper' }] };
+        },
+        updateField: async (_url, issueKey, payload) => {
+            writes.push([issueKey, payload.value]);
+            return { result: 'success', value: { accountId: 'grace', displayName: 'Grace Hopper' }, mappingRevision: 'map-1' };
+        },
+        enqueueMutation: async (_keys, run) => run(),
+    });
+
+    await controller.openEditor({ issueKey: 'DEMO-1', field: 'assignee' });
+    await controller.search('Grace');
+    assert.deepEqual(controller.getState().suggestions.map(person => person.accountId), ['me', 'grace']);
+    await controller.search('grace');
+    assert.deepEqual(searches, ['Grace']);
+    controller.closeEditor();
+
+    await controller.openEditor({ issueKey: 'DEMO-2', field: 'assignee' });
+    assert.deepEqual(controller.getState().suggestions.map(person => person.accountId), ['me', 'grace']);
+    assert.equal(controller.getState().suggestions[1].eligibility, 'unverified');
+    assert.deepEqual(searches, ['Grace']);
+    await controller.submit({ accountId: 'grace' });
+    assert.deepEqual(writes, [['DEMO-2', { accountId: 'grace' }]]);
+});
+
+test('authentication context changes clear mounted-session people searches', async () => {
+    const { createEngIssueFieldEditController } = await loadController();
+    let authGeneration = 1;
+    let searches = 0;
+    const controller = createEngIssueFieldEditController({
+        backendUrl: '/root', debounceMs: 0,
+        getContextKey: () => `site-a|auth-${authGeneration}`,
+        fetchEditableField: async () => metadata(),
+        searchUsers: async () => {
+            searches += 1;
+            return { options: [{ accountId: 'grace', displayName: 'Grace Hopper' }] };
+        },
+        updateField: async () => ({}),
+    });
+
+    await controller.openEditor({ issueKey: 'DEMO-1', field: 'assignee' });
+    await controller.search('Grace');
+    authGeneration += 1;
+    controller.contextChanged({ authChanged: true });
+    await controller.openEditor({ issueKey: 'DEMO-1', field: 'assignee' });
+    await controller.search('Grace');
+    assert.equal(searches, 2);
+});
+
 test('submit freezes context, keeps dispatched writes alive after close, and confirms through Task 2 seams', async () => {
     const { createEngIssueFieldEditController } = await loadController();
     const write = deferred();

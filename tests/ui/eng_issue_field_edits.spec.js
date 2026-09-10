@@ -160,16 +160,18 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
                 return remove(type, listener, options);
             };
         });
-        const trigger = page.getByRole('button', { name: 'Assignee: Existing Owner' });
+        const trigger = page.getByRole('combobox', { name: 'Assignee: Existing Owner' });
         const closedTriggerHeight = await trigger.evaluate(element => element.getBoundingClientRect().height);
         await trigger.click();
         const input = page.getByRole('combobox', { name: 'Search Assignee' });
+        await expect(page.locator('.issue-person-editor-menu .component-search-input')).toHaveCount(0);
         await expect(input).toBeFocused();
+        await expect(input).toBeEditable();
         await expect(input).toHaveAttribute('aria-expanded', 'true');
         await expect(page.getByRole('option', { name: /Current Person/ })).toBeVisible();
         await expect(page.getByText(/Type at least 3 characters/)).toBeVisible();
         await expectInsideViewport(page.locator('.issue-person-editor-menu'), viewport);
-        expect(await trigger.evaluate(element => element.getBoundingClientRect().height)).toBe(closedTriggerHeight);
+        expect(await input.evaluate(element => element.getBoundingClientRect().height)).toBe(closedTriggerHeight);
 
         await input.fill('zzz');
         await expect(page.getByText(/No people found/)).toBeVisible();
@@ -187,11 +189,11 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         await page.evaluate(() => window.__issueEditorHarness.setPersonOpen(true));
         await expect(input).toBeFocused();
         await input.press('Escape');
-        await expect(trigger).toBeFocused();
-        await trigger.click();
+        await expect(page.getByRole('combobox', { name: 'Assignee: Existing Owner' })).toBeFocused();
+        await page.getByRole('combobox', { name: 'Assignee: Existing Owner' }).click();
         await page.getByRole('button', { name: 'Outside target' }).click();
         await expect(page.locator('.issue-person-editor-menu')).toHaveCount(0);
-        await expect(trigger).toBeFocused();
+        await expect(page.getByRole('combobox', { name: 'Assignee: Existing Owner' })).toBeFocused();
         await expect.poll(() => page.evaluate(() => {
             const counts = window.__visualViewportListeners;
             return counts.added > 0 && counts.added === counts.removed;

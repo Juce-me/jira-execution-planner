@@ -45,15 +45,15 @@ const LONG_EPIC_SUMMARY = 'Replace expression-based enrichment targeting with de
 // Priority-sorted (highest first, ties by key): Blocker < Critical < Major < Minor < Low < Trivial.
 const EXPECTED_ORDER = ['PLAT-1', 'PLAT-2', 'PLAT-7', 'PLAT-3', 'PLAT-4', 'PLAT-5', 'PLAT-6'];
 
-function epicPayload() {
+function epicPayload(firstEpicAssignee = 'Alice Adams', firstEpicStatus = null) {
     const epics = {};
-    EPIC_SPECS.forEach(([key, status, priority, assigneeName, deliveryOwnerName, projectTrack, updated]) => {
+    EPIC_SPECS.forEach(([key, status, priority, assigneeName, deliveryOwnerName, projectTrack, updated], index) => {
         epics[key] = {
             key,
             summary: key === 'PLAT-1' ? LONG_EPIC_SUMMARY : `${key} epic summary`,
-            status,
+            status: index === 0 && firstEpicStatus ? firstEpicStatus : status,
             priority,
-            assignee: assigneeName ? { displayName: assigneeName } : null,
+            assignee: assigneeName ? { displayName: index === 0 ? firstEpicAssignee : assigneeName } : null,
             projectTrack,
             updated,
         };
@@ -65,7 +65,7 @@ function epicPayload() {
     return epics;
 }
 
-function storyPayload() {
+function storyPayload(firstStoryAssignee = 'Planner', firstEpicStoryPoints = null) {
     // PLAT-1 gets two stories (one Done, one In Progress) to exercise the progress bar; every
     // other epic gets exactly one story, just enough for groupTasksByEpic to produce a group.
     // PLAT-4's points are deliberately fractional (Fix 6) — a column whose epics sum to a
@@ -81,9 +81,11 @@ function storyPayload() {
                 status: { name: 'Done' },
                 priority: { name: 'Major' },
                 issuetype: { name: 'Story' },
-                assignee: { displayName: 'Planner' },
+                assignee: { displayName: index === 0 ? firstStoryAssignee : 'Planner' },
                 updated: '2026-07-28T00:00:00.000+0000',
-                customfield_10004: key === 'PLAT-4' ? 4.5 : index + 1,
+                customfield_10004: key === 'PLAT-1' && firstEpicStoryPoints !== null
+                    ? firstEpicStoryPoints / 2
+                    : key === 'PLAT-4' ? 4.5 : index + 1,
                 epicKey: key,
                 parentSummary: `${key} epic summary`,
                 projectKey: 'PLAT',
@@ -103,7 +105,7 @@ function storyPayload() {
                     issuetype: { name: 'Story' },
                     assignee: { displayName: 'Planner' },
                     updated: '2026-07-28T00:00:00.000+0000',
-                    customfield_10004: 3,
+                    customfield_10004: firstEpicStoryPoints !== null ? firstEpicStoryPoints / 2 : 3,
                     epicKey: key,
                     parentSummary: `${key} epic summary`,
                     projectKey: 'PLAT',
@@ -117,7 +119,12 @@ function storyPayload() {
     return rows;
 }
 
-async function installBoardFixture(page, fieldCalls = []) {
+async function installBoardFixture(page, fieldCalls = [], {
+    storyAssigneeName = 'Planner',
+    epicAssigneeName = 'Alice Adams',
+    firstEpicStatus = null,
+    firstEpicStoryPoints = null,
+} = {}) {
     await installDashboardShell(page);
     await page.route('**/api/**', (route) => {
         const request = route.request();
@@ -185,8 +192,13 @@ async function installBoardFixture(page, fieldCalls = []) {
             if (purpose === 'ready-to-close' || project === 'tech') {
                 return json({ issues: [], epics: {}, epicsInScope: [], names: {} });
             }
-            const epics = epicPayload();
-            return json({ issues: storyPayload(), epics, epicsInScope: Object.values(epics), names: {} });
+            const epics = epicPayload(epicAssigneeName, firstEpicStatus);
+            return json({
+                issues: storyPayload(storyAssigneeName, firstEpicStoryPoints),
+                epics,
+                epicsInScope: Object.values(epics),
+                names: {},
+            });
         }
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json({ epics: [] });
@@ -196,10 +208,23 @@ async function installBoardFixture(page, fieldCalls = []) {
     });
 }
 
-async function openBoard(page, { width = 1280, height = 900, fieldCalls = [] } = {}) {
+async function openBoard(page, {
+    width = 1280,
+    height = 900,
+    fieldCalls = [],
+    storyAssigneeName = 'Planner',
+    epicAssigneeName = 'Alice Adams',
+    firstEpicStatus = null,
+    firstEpicStoryPoints = null,
+} = {}) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width, height });
-    await installBoardFixture(page, fieldCalls);
+    await installBoardFixture(page, fieldCalls, {
+        storyAssigneeName,
+        epicAssigneeName,
+        firstEpicStatus,
+        firstEpicStoryPoints,
+    });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -337,6 +362,203 @@ test('Catch Up confirmation reaches Planning and Story Points recalculate its se
     await expect.poll(async () => Number((await selected.innerText()).match(/·\s*([\d.]+)\s*SP/)?.[1])).toBe(before + 1);
     await page.screenshot({ path: path.join(screenshotDir, 'planning-inline-story-points.png') });
     expect(fieldCalls.filter(call => call.method === 'POST' && call.pathname.endsWith('/field'))).toHaveLength(2);
+});
+
+test('Catch Up story renders the full assignee name before and during editing', async ({ page }) => {
+    await openBoard(page, { width: 1874, height: 440, storyAssigneeName: 'Synthetic Planner' });
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+    const story = page.locator('.task-item[data-issue-key="PLAT-1-1"]');
+    const trigger = story.getByRole('combobox', { name: 'Assignee: Synthetic Planner' });
+
+    const closedMetrics = await trigger.evaluate(element => {
+        const style = getComputedStyle(element);
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = style.font;
+        const text = element.value;
+        const letterSpacing = Number.parseFloat(style.letterSpacing) || 0;
+        return {
+            available: element.clientWidth,
+            required: context.measureText(text).width + letterSpacing * Math.max(0, text.length - 1),
+            scrollLeft: element.scrollLeft,
+        };
+    });
+    expect(closedMetrics.available).toBeGreaterThanOrEqual(closedMetrics.required);
+    expect(closedMetrics.scrollLeft).toBe(0);
+
+    await trigger.click();
+    const input = page.getByRole('combobox', { name: 'Search Assignee' });
+    await expect(input).toHaveValue('Synthetic Planner');
+    await expect.poll(() => input.evaluate(element => element.scrollLeft)).toBe(0);
+    await page.screenshot({ path: path.join(screenshotDir, 'catch-up-full-assignee-1874x440.png') });
+});
+
+test('Catch Up epic meta keeps a long assignee on the status and Story Points row', async ({ page }) => {
+    await openBoard(page, { width: 988, height: 442, epicAssigneeName: 'Alexanderson Petrovsky' });
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+    const epicHeader = page.locator('.epic-block').first().locator('.epic-header');
+    const geometry = await epicHeader.evaluate(element => {
+        const titleRow = element.querySelector('.epic-title-row');
+        const name = element.querySelector('.epic-name');
+        const key = element.querySelector('.epic-key');
+        const meta = element.querySelector('.epic-meta');
+        const points = meta.querySelector('.epic-story-points');
+        const assignee = meta.querySelector('input.issue-person-editor-trigger');
+        const controls = [
+            meta.querySelector('.epic-status-pill'),
+            points,
+            assignee,
+        ];
+        const box = node => {
+            const rect = node.getBoundingClientRect();
+            return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, width: rect.width, height: rect.height };
+        };
+        return {
+            header: box(element),
+            titleRow: box(titleRow),
+            name: box(name),
+            key: box(key),
+            meta: box(meta),
+            controls: controls.map(control => {
+                const rect = control.getBoundingClientRect();
+                return { top: rect.top, bottom: rect.bottom, right: rect.right, height: rect.height };
+            }),
+            assigneeFits: assignee.scrollWidth <= assignee.clientWidth,
+            metaFontSize: Number.parseFloat(getComputedStyle(meta).fontSize),
+        };
+    });
+
+    expect(geometry.titleRow.top).toBeLessThan(geometry.meta.bottom);
+    expect(geometry.meta.top).toBeLessThan(geometry.titleRow.bottom);
+    expect(geometry.titleRow.right).toBeLessThanOrEqual(geometry.meta.left);
+    expect(geometry.name.width).toBeGreaterThanOrEqual(300);
+    expect(geometry.meta.right).toBeLessThanOrEqual(geometry.header.right + 1);
+    expect(geometry.meta.height).toBeLessThanOrEqual(25);
+    expect(geometry.controls.map(control => Math.round(control.height))).toEqual([24, 24, 24]);
+    expect(geometry.assigneeFits).toBe(true);
+    expect(geometry.metaFontSize).toBeLessThanOrEqual(12);
+    expect(geometry.header.height).toBeLessThanOrEqual(48);
+    await expect(epicHeader.locator('.epic-assignee')).toHaveCSS('text-transform', 'none');
+    const headerImage = await epicHeader.screenshot({ path: path.join(screenshotDir, 'epic-header-visible-alignment.png') });
+    const inkBottoms = await epicHeader.evaluate(async (header, base64) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${base64}`;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext('2d');
+        context.drawImage(image, 0, 0);
+        const pixels = context.getImageData(0, 0, image.width, image.height).data;
+        const origin = header.getBoundingClientRect();
+        return ['.epic-name', '.epic-key', '.epic-status-pill', '.epic-story-points', 'input.issue-person-editor-trigger'].map(selector => {
+            const box = header.querySelector(selector).getBoundingClientRect();
+            const inset = selector === '.epic-status-pill' ? 8 : 1;
+            let bottom = -1;
+            for (let y = Math.ceil(box.top - origin.top) + 2; y < Math.floor(box.bottom - origin.top) - 2; y += 1) {
+                for (let x = Math.ceil(box.left - origin.left) + inset; x < Math.floor(box.right - origin.left) - inset; x += 1) {
+                    const i = (y * image.width + x) * 4;
+                    const [r, g, b] = pixels.slice(i, i + 3);
+                    const ink = selector === '.epic-status-pill' ? r > 230 && g > 230 && b > 230
+                        : selector.startsWith('input') ? r > 150 && g > 70 && g < 180 && b < 70
+                        : r < 150 && g < 150 && b < 150;
+                    if (ink) bottom = y;
+                }
+            }
+            return { selector, bottom };
+        });
+    }, headerImage.toString('base64'));
+    expect(inkBottoms.every(item => item.bottom >= 0), JSON.stringify(inkBottoms)).toBe(true);
+    expect(Math.max(...inkBottoms.map(item => item.bottom)) - Math.min(...inkBottoms.map(item => item.bottom)), JSON.stringify(inkBottoms)).toBeLessThanOrEqual(3);
+    await page.screenshot({ path: path.join(screenshotDir, 'catch-up-epic-header-long-assignee-988x442.png') });
+});
+
+test('Catch Up desktop epic header keeps a long metadata row beside the title', async ({ page }) => {
+    await openBoard(page, { width: 1440, height: 600, epicAssigneeName: 'Alexanderson Maximilian Petrovsky-Smith' });
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+    const rows = await page.locator('.epic-block').first().locator('.epic-header').evaluate(element => {
+        const title = element.querySelector('.epic-title-row').getBoundingClientRect();
+        const meta = element.querySelector('.epic-meta').getBoundingClientRect();
+        const assignee = element.querySelector('input.issue-person-editor-trigger');
+        const controls = [
+            element.querySelector('.epic-status-pill'),
+            element.querySelector('.epic-story-points'),
+            assignee,
+        ].map(control => {
+            const box = control.getBoundingClientRect();
+            return { top: box.top, bottom: box.bottom, height: box.height };
+        });
+        return {
+            title: { top: title.top, bottom: title.bottom, right: title.right },
+            meta: { top: meta.top, bottom: meta.bottom, left: meta.left, height: meta.height },
+            controls,
+            assigneeFits: assignee.scrollWidth <= assignee.clientWidth,
+        };
+    });
+
+    expect(rows.title.top).toBeLessThan(rows.meta.bottom);
+    expect(rows.meta.top).toBeLessThan(rows.title.bottom);
+    expect(rows.title.right).toBeLessThanOrEqual(rows.meta.left);
+    expect(rows.meta.height).toBeLessThanOrEqual(25);
+    expect(rows.controls.map(control => Math.round(control.height))).toEqual([24, 24, 24]);
+    expect(rows.assigneeFits).toBe(true);
+    await page.screenshot({ path: path.join(screenshotDir, 'catch-up-epic-header-long-assignee-1440x600.png') });
+});
+
+test('Catch Up mobile epic metadata wraps without clipping any control or the full assignee', async ({ page }) => {
+    await openBoard(page, {
+        width: 390,
+        height: 844,
+        epicAssigneeName: 'Alexanderson Petrovsky',
+        firstEpicStatus: 'In Progress',
+        firstEpicStoryPoints: 24.6,
+    });
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+    const geometry = await page.locator('.epic-block').first().locator('.epic-header').evaluate(element => {
+        const header = element.getBoundingClientRect();
+        const meta = element.querySelector('.epic-meta');
+        const metaBox = meta.getBoundingClientRect();
+        const assignee = meta.querySelector('input.issue-person-editor-trigger');
+        const style = getComputedStyle(assignee);
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = style.font;
+        const letterSpacing = Number.parseFloat(style.letterSpacing) || 0;
+        const requiredTextWidth = context.measureText(assignee.value).width
+            + letterSpacing * Math.max(0, assignee.value.length - 1);
+        const controls = [
+            meta.querySelector('.epic-status-pill'),
+            meta.querySelector('.epic-story-points'),
+            assignee,
+        ].map(control => {
+            const box = control.getBoundingClientRect();
+            return { top: box.top, bottom: box.bottom, left: box.left, right: box.right, height: box.height };
+        });
+        return {
+            header: { left: header.left, right: header.right },
+            meta: { height: metaBox.height, scrollWidth: meta.scrollWidth, clientWidth: meta.clientWidth },
+            controls,
+            assigneeTextFits: requiredTextWidth <= assignee.clientWidth,
+        };
+    });
+
+    expect(geometry.meta.scrollWidth).toBeLessThanOrEqual(geometry.meta.clientWidth);
+    expect(geometry.meta.height).toBeLessThanOrEqual(56);
+    expect(geometry.controls.map(control => Math.round(control.height))).toEqual([24, 24, 24]);
+    geometry.controls.forEach(control => {
+        expect(control.left).toBeGreaterThanOrEqual(geometry.header.left - 1);
+        expect(control.right).toBeLessThanOrEqual(geometry.header.right + 1);
+    });
+    const rows = geometry.controls.reduce((grouped, control) => {
+        const rowKey = Math.round(control.top);
+        grouped[rowKey] = [...(grouped[rowKey] || []), control];
+        return grouped;
+    }, {});
+    Object.values(rows).forEach(row => {
+        expect(Math.max(...row.map(control => control.bottom)) - Math.min(...row.map(control => control.bottom))).toBeLessThanOrEqual(1);
+    });
+    expect(geometry.assigneeTextFits).toBe(true);
+    await page.screenshot({ path: path.join(screenshotDir, 'catch-up-epic-header-long-assignee-390x844.png') });
 });
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {

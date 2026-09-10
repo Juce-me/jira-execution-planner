@@ -6,6 +6,7 @@ const { readDashboardCssSource } = require('./css_source_helpers');
 
 const repoRoot = path.join(__dirname, '..');
 const boardCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'board.css');
+const issuesCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'issues.css');
 
 // An undefined custom property silently drops the WHOLE declaration it appears in, and this
 // design's assets have already been caught shipping four variables that exist in no stylesheet
@@ -95,4 +96,13 @@ test('board.css scopes its column classes so the composer preview cannot collide
             );
         });
     });
+});
+
+test('epic metadata sizes visible controls instead of their wrappers', async () => {
+    const source = fs.readFileSync(issuesCssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.doesNotMatch(source, /\.epic-meta\s*>\s*\*\s*\{[^}]*(?:^|;)\s*height\s*:/ms);
+    assert.doesNotMatch(source, /\.epic-assignee\s*\{[^}]*(?:^|;)\s*height\s*:/ms);
+    assert.match(source, /\.epic-meta\s+\.epic-status-pill[^}]*height:\s*1\.5rem/);
+    assert.match(source, /\.epic-meta\s+\.epic-story-points[^}]*height:\s*1\.5rem/);
+    assert.match(source, /\.epic-assignee\s+input\.issue-person-editor-trigger[^}]*height:\s*1\.5rem/);
 });

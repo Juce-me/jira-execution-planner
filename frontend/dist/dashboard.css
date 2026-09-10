@@ -6293,15 +6293,46 @@ button.task-priority-icon:focus-visible {
 .task-list:not(.epm-issue-board) > .epic-block > .epic-header {
   padding: 0.32rem 0;
   margin-bottom: 0.5rem;
+  flex-direction: row;
+  align-items: baseline;
   gap: 0.65rem;
-  align-items: flex-start;
 }
 .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-title-row {
   gap: 0.45rem;
+  align-items: baseline;
+}
+.task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-key,
+.task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
+  position: relative;
+  top: 0.125rem;
 }
 .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
   gap: 0.45rem 0.65rem;
-  padding-top: 0.05rem;
+  align-items: baseline;
+  align-self: baseline;
+  max-width: none;
+  min-width: 0;
+  flex-wrap: nowrap;
+  padding-top: 0;
+  font-size: 0.7rem;
+  line-height: 1.2;
+}
+.task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta .epic-status-pill,
+.task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta .epic-story-points,
+.task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta .epic-assignee input.issue-person-editor-trigger {
+  display: inline-flex;
+  align-items: center;
+  height: 1.5rem;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-assignee {
+  font-size: 0.7rem;
+  line-height: 1.2;
+  align-items: baseline;
+}
+.task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-assignee input.issue-person-editor-trigger {
+  line-height: 1.5rem;
 }
 .task-list:not(.epm-issue-board) > .epic-block > .task-item {
   padding: 0.72rem 0.95rem;
@@ -6332,8 +6363,10 @@ button.task-priority-icon:focus-visible {
     align-items: stretch;
   }
   .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
+    align-self: stretch;
     max-width: none;
     min-width: 0;
+    flex-wrap: wrap;
     justify-content: flex-start;
   }
 }
@@ -7347,8 +7380,7 @@ button.status-pill:focus-visible {
 .status-transition-menu-note,
 .priority-transition-menu-note,
 .project-track-transition-menu-note,
-.issue-person-editor-menu-note,
-.issue-person-editor-option-note {
+.issue-person-editor-menu-note {
   font-size: 0.72rem;
   line-height: 1.35;
   text-transform: none;
@@ -7391,8 +7423,7 @@ button.status-pill:focus-visible {
   display: flex;
   flex-direction: column;
 }
-.issue-person-editor-option-label small,
-.issue-person-editor-option-note {
+.issue-person-editor-option-label small {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7413,9 +7444,12 @@ input.issue-person-editor-trigger {
   padding: 0;
   border: 0;
   border-bottom: 1px solid transparent;
+  border-radius: 0;
+  outline: 0;
   background: transparent;
-  color: inherit;
+  color: #d48806;
   font: inherit;
+  font-weight: 600;
   text-align: inherit;
   text-transform: inherit;
   letter-spacing: inherit;
@@ -7423,6 +7457,7 @@ input.issue-person-editor-trigger {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+  box-shadow: none;
 }
 input.issue-person-editor-trigger:hover {
   transform: none;
@@ -7438,8 +7473,8 @@ input.issue-person-editor-trigger.is-pending {
   background-size: 100% 1px;
 }
 input.issue-person-editor-trigger:focus-visible {
-  outline: 2px solid rgba(47, 128, 237, 0.65);
-  outline-offset: 1px;
+  border-bottom-color: currentColor;
+  box-shadow: 0 1px 0 currentColor;
 }
 .story-points-editor-wrap {
   display: inline-flex;

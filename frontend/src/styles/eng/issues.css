@@ -538,17 +538,53 @@
         .task-list:not(.epm-issue-board) > .epic-block > .epic-header {
             padding: 0.32rem 0;
             margin-bottom: 0.5rem;
+            flex-direction: row;
+            align-items: baseline;
             gap: 0.65rem;
-            align-items: flex-start;
         }
 
         .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-title-row {
             gap: 0.45rem;
+            align-items: baseline;
+        }
+
+        /* Match the visible mono text to the serif title's lower ink edge. */
+        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-key,
+        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
+            position: relative;
+            top: 0.125rem;
         }
 
         .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
             gap: 0.45rem 0.65rem;
-            padding-top: 0.05rem;
+            align-items: baseline;
+            align-self: baseline;
+            max-width: none;
+            min-width: 0;
+            flex-wrap: nowrap;
+            padding-top: 0;
+            font-size: 0.7rem;
+            line-height: 1.2;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta .epic-status-pill,
+        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta .epic-story-points,
+        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta .epic-assignee input.issue-person-editor-trigger {
+            display: inline-flex;
+            align-items: center;
+            height: 1.5rem;
+            box-sizing: border-box;
+            white-space: nowrap;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-assignee {
+            font-size: 0.7rem;
+            line-height: 1.2;
+            align-items: baseline;
+        }
+
+        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-assignee input.issue-person-editor-trigger {
+            line-height: 1.5rem;
         }
 
         .task-list:not(.epm-issue-board) > .epic-block > .task-item {
@@ -587,8 +623,10 @@
             }
 
             .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
+                align-self: stretch;
                 max-width: none;
                 min-width: 0;
+                flex-wrap: wrap;
                 justify-content: flex-start;
             }
 

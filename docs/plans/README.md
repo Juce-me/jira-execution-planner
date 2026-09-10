@@ -13,6 +13,11 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 - `FUTURE-*`: deferred scope. Do not pull these into the current implementation unless the scope is explicitly reopened.
 - Do not create new date-only docs in `docs/plans/`. Use one of the prefixes above so execution state is visible from the filename.
 
+## Epic header regression review
+
+- [Visible-height analysis](SUPPORT-epic-header-visible-height-analysis.md): investigated and independently validated; existing geometry tests pass while a painted-text probe reproduces an 11px height spread. Application remains unchanged.
+- [Visible-height correction plan](EXEC-epic-header-visible-height.md): design-gated, not execution-ready. Independent review requires a proven readable sizing/width contract before implementation; user requested a stop after analysis and planning.
+
 ## Current DB Workflow
 
 - [OAuth inline issue editing implementation](EXEC-oauth-inline-issue-editing.md): implemented and verified locally for ENG Assignee, Epic Delivery Owner, and Story Points editors; live Jira evidence still gates final acceptance.

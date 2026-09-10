@@ -14204,7 +14204,7 @@ import {
                                                     />
                                                 )
                                             )}
-	                                        <span>SP: {epicTotalSp.toFixed(1)}</span>
+	                                        <span className="epic-story-points">SP: {epicTotalSp.toFixed(1)}</span>
 	                                        {(epicInfo?.assignee?.displayName || (issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && epicInfo)) && (
 	                                            <span className="task-assignee epic-assignee">
 	                                                <span className="task-assignee-icon" aria-hidden="true">

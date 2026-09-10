@@ -223,8 +223,7 @@
         .status-transition-menu-note,
         .priority-transition-menu-note,
         .project-track-transition-menu-note,
-        .issue-person-editor-menu-note,
-        .issue-person-editor-option-note {
+        .issue-person-editor-menu-note {
             font-size: 0.72rem;
             line-height: 1.35;
             text-transform: none;
@@ -275,8 +274,7 @@
             flex-direction: column;
         }
 
-        .issue-person-editor-option-label small,
-        .issue-person-editor-option-note {
+        .issue-person-editor-option-label small {
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -299,9 +297,12 @@
             padding: 0;
             border: 0;
             border-bottom: 1px solid transparent;
+            border-radius: 0;
+            outline: 0;
             background: transparent;
-            color: inherit;
+            color: #d48806;
             font: inherit;
+            font-weight: 600;
             text-align: inherit;
             text-transform: inherit;
             letter-spacing: inherit;
@@ -309,6 +310,7 @@
             text-overflow: ellipsis;
             white-space: nowrap;
             cursor: pointer;
+            box-shadow: none;
         }
 
         input.issue-person-editor-trigger:hover {
@@ -328,8 +330,8 @@
         }
 
         input.issue-person-editor-trigger:focus-visible {
-            outline: 2px solid rgba(47, 128, 237, 0.65);
-            outline-offset: 1px;
+            border-bottom-color: currentColor;
+            box-shadow: 0 1px 0 currentColor;
         }
 
         .story-points-editor-wrap {

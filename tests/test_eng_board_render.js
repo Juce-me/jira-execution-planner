@@ -128,3 +128,18 @@ test('strict structural columns without epics do not masquerade as loaded partia
     assert.match(markup, />Retry</);
     assert.doesNotMatch(markup, /class="eng-board"/);
 });
+
+test('strict pending cards show provisional work counts and gray placeholders without false zero totals', () => {
+    const group = { key: 'E-1', epic: { key: 'E-1', summary: 'Visible while children load', status: 'In Progress' },
+        tasks: [], storyPoints: 0, childrenIncomplete: true, childrenLoading: true,
+        childProgress: { total: 4, done: 2, inProgress: 1, doneWidth: '50%', inProgressWidth: '25%' } };
+    const column = { id: 'active', name: 'Active', colour: '#597ef7', star: true, statuses: ['In Progress'],
+        epicGroups: [group], epicCount: 1, storyPoints: 0, breach: null };
+    const markup = renderBoard({ strictColumns: [column], epicGroups: [group], loading: true, authorityPending: true });
+    assert.match(markup, /Visible while children load/);
+    assert.match(markup, /2 of 4\+ work items/);
+    assert.match(markup, /board-loading-bar/);
+    assert.match(markup, /SP pending/);
+    assert.doesNotMatch(markup, /0 of 0|0\.0 sp/);
+    assert.match(markup, /aria-busy="true"/);
+});

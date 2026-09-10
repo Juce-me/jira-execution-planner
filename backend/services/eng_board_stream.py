@@ -6,6 +6,7 @@ not register routes, access Flask state, or claim a hard execution deadline.
 
 import json
 import math
+import queue
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
 import threading
@@ -190,13 +191,24 @@ class EngBoardChildScheduler:
             self.scheduled_searches += 1
             return True
 
-    def results(self):
+    def results(self, *, progress_queue=None):
         completed = False
         try:
             while self._futures:
                 self.budget.check()
                 future = self._futures.pop(0)
                 try:
+                    if progress_queue is not None:
+                        while not future.done():
+                            try:
+                                yield progress_queue.get(timeout=min(0.05, self.budget.remaining()))
+                            except queue.Empty:
+                                pass
+                        while True:
+                            try:
+                                yield progress_queue.get_nowait()
+                            except queue.Empty:
+                                break
                     result = future.result(timeout=self.budget.remaining())
                 except TimeoutError as error:
                     self.budget.cancel()

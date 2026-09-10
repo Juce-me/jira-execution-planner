@@ -57,7 +57,7 @@ export function useStrictEngBoardPresentation({ active, owner, savedBoard, legac
     const filterState = useEngBoardFilters({ ...legacyFilterInput,
         isTechTask: active ? strictProjectClassifier : legacyFilterInput.isTechTask,
         strictEpicGroups: active ? model.epicGroups : null,
-        filtersEnabled: !active || model.membershipAuthoritative,
+        filtersEnabled: !active || model.authoritative,
     });
     React.useEffect(() => {
         if (active && !model.membershipAuthoritative) return;

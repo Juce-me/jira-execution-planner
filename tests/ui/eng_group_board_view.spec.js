@@ -1747,3 +1747,64 @@ test('leaving Board removes the scrollbar-width custom property it published', a
         () => document.documentElement.style.getPropertyValue('--board-scrollbar-width'),
     )).toBe('');
 });
+
+test('All work renders component epics before discovery and preserves cards after child timeout', async ({ page }) => {
+    await page.addInitScript(() => {
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = (input, options) => {
+            if (String(input).includes('/api/eng/board?')) {
+                const body = new ReadableStream({
+                    start(controller) {
+                        window.pushBoardFrame = frame => controller.enqueue(new TextEncoder().encode(`${JSON.stringify(frame)}\n`));
+                    },
+                });
+                return Promise.resolve(new Response(body, { headers: { 'Content-Type': 'application/x-ndjson' } }));
+            }
+            return originalFetch(input, options);
+        };
+    });
+    await openBoard(page, { strictBoard: true, sourceBundle: true, reducedMotion: false });
+    await page.getByRole('button', { name: 'Select sprint' }).first().click();
+    await page.getByText('All work', { exact: true }).first().click();
+    await page.waitForFunction(() => typeof window.pushBoardFrame === 'function');
+    const epic = { key: 'EXAMPLE-1', summary: 'Component epic loads first', status: { id: '2', name: 'In Progress' },
+        priority: null, assignee: null, deliveryOwner: null, projectTrack: null, updated: null, parent: null, columnId: 'active' };
+    const send = (sequence, body) => page.evaluate(frame => window.pushBoardFrame(frame), {
+        protocolVersion: 1, generationId: 'progressive-test', sequence, ...body,
+    });
+    await send(0, { type: 'start', scope: 'all_work', scopeVersion: 'test-v1', scopeCohortDigest: 'a'.repeat(64),
+        columns: [{ id: 'active', name: 'Active', color: '#597ef7', statusNames: ['In Progress'], terminal: false }] });
+    await send(1, { type: 'index', epics: [epic], membership: 'candidate' });
+    const card = page.locator('.ecard[data-epic-key="EXAMPLE-1"]');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('Loading work items');
+    await expect(card).not.toContainText('0 of 0');
+    await expect(card.locator('.erow2')).toHaveAttribute('aria-busy', 'true');
+    expect(await card.locator('.board-loading-bar').first().evaluate(el => getComputedStyle(el).animationName)).toBe('board-loading-shimmer');
+    await page.screenshot({ path: path.join(screenshotDir, 'progressive-epic-pending.png'), animations: 'disabled' });
+    await card.locator('.ecard-open').click();
+    const panel = page.getByRole('dialog');
+    await expect(panel.locator('.board-child-loading .board-loading-bar')).toHaveCount(3);
+    await expect(panel.locator('.board-child-loading')).toContainText('Loading work items');
+    await expect(panel.locator('.board-child-loading')).toHaveAttribute('aria-busy', 'true');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    expect(await panel.locator('.board-loading-bar').first().evaluate(el => getComputedStyle(el).animationName)).toBe('none');
+    await page.screenshot({ path: path.join(screenshotDir, 'progressive-epic-panel.png'), animations: 'disabled' });
+    await panel.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+    await send(2, { type: 'index', epics: [epic], membership: 'authoritative' });
+    await send(3, { type: 'progress', columnId: 'active', loadedChildren: 4,
+        byEpic: [{ epicKey: 'EXAMPLE-1', loadedChildren: 4, statusCounts: { Done: 2, 'In Progress': 1, Killed: 1 } }] });
+    await expect(card).toContainText('2 of 4+ work items');
+    await expect(page.getByRole('button', { name: 'Filters', exact: false }).first()).toBeDisabled();
+    await page.screenshot({ path: path.join(screenshotDir, 'progressive-epic-stats.png'), animations: 'disabled' });
+    await send(4, { type: 'error', code: 'deadline_exceeded' });
+    await expect(card).toBeVisible();
+    await expect(page.locator('.board-data-state')).toContainText('deadline exceeded');
+    await expect(card.locator('.erow2')).toHaveAttribute('aria-busy', 'false');
+    await expect(card.locator('.board-loading-bar')).toHaveCount(0);
+    await expect(page.locator('.col-head .sp')).toContainText('SP unavailable');
+    await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+    await page.screenshot({ path: path.join(screenshotDir, 'progressive-epic-timeout.png'), animations: 'disabled' });
+});

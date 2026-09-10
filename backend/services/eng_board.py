@@ -367,9 +367,29 @@ def discover_team_epics(search, *, projects, issue_type_ids, team_ids, existing_
         return list(existing_epics)
     counters = counters or PagerCounters()
     fields = ('parent',) + ((epic_link_field_id,) if epic_link_field_id else ())
+    discovery_jql = build_team_discovery_jql(
+        projects, issue_type_ids, team_ids=team_ids, team_field_id=team_field_id,
+    )
+    # Known component parents add no membership. Skip their stories during the
+    # discovery scan; hydration still fetches every child of the final union.
+    excluded = []
+    base_discovery_jql = discovery_jql
+    for key in sorted({_normalized_key(row.get('key')) for row in existing_epics} - {''}):
+        candidate_keys = excluded + [key]
+        clause = ','.join(_quote(value) for value in candidate_keys)
+        parent_clause = f'(parent NOT IN ({clause}) OR parent IS EMPTY)'
+        if epic_link_field_id:
+            field = f'cf[{_field_number(epic_link_field_id)}]'
+            parent_clause = f'({field} NOT IN ({clause}) OR ({field} IS EMPTY AND {parent_clause}))'
+        candidate = base_discovery_jql + ' AND ' + parent_clause
+        # Leave room for the continuation token; never turn this optimization
+        # into a new request-size failure for large department indexes.
+        if encoded_search_bytes(candidate, fields) > MAX_ENCODED_REQUEST_BYTES - 1024:
+            break
+        discovery_jql = candidate
+        excluded = candidate_keys
     stories = strict_search(
-        search, build_team_discovery_jql(projects, issue_type_ids, team_ids=team_ids,
-                                         team_field_id=team_field_id),
+        search, discovery_jql,
         fields, counters=counters, cancel_check=cancel_check, max_unique_keys=MAX_CHILDREN,
     )
     epics = {_normalized_key(row.get('key')): row for row in existing_epics}
@@ -468,7 +488,7 @@ class UniqueKeyBudget:
 
 
 def strict_search(search, jql, fields, *, counters=None, cancel_check=lambda: None,
-                  on_page=None, max_unique_keys=None, key_budget=None):
+                  on_page=None, on_rows=None, max_unique_keys=None, key_budget=None):
     counters = counters or PagerCounters()
     local_budget = UniqueKeyBudget(max_unique_keys) if max_unique_keys is not None else None
     token = None
@@ -517,6 +537,8 @@ def strict_search(search, jql, fields, *, counters=None, cancel_check=lambda: No
             # for arbitrary Jira fields. The caller receives only normalized,
             # bounded identities after the entire page and its budgets validate.
             on_page(tuple(page_keys))
+        if on_rows is not None:
+            on_rows(tuple(page_rows))
         if is_last:
             return rows
         seen_tokens.add(next_token)

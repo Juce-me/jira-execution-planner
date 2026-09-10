@@ -616,3 +616,36 @@ test('replacing a Board stream cancels only the retired measurement', async () =
     await Promise.all([first, second]);
     assert.equal(measurements[0].filter(value => value === 'finish').length, 0);
 });
+
+test('availability failure retains loaded epic index without granting child authority', () => {
+    const mod = loadModule();
+    for (const code of ['deadline_exceeded', 'jira_unavailable', 'unexpected_eof']) {
+        let state = mod.createEngBoardDataState();
+        state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42 });
+        state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
+        state = reduce(mod, state, { type: 'start_load', requestId: 1 });
+        state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: 'all_work' } });
+        state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', {
+            epics: [epic('E-1')], membership: 'authoritative',
+        }) });
+        state = reduce(mod, state, { type: 'load_failed', requestId: 1, code });
+        assert.equal(state.working.epicsByKey['E-1']?.key, 'E-1', code);
+        assert.equal(state.working.childrenAuthoritative, false);
+        assert.equal(state.status, 'error');
+    }
+});
+
+test('component candidate index is replaced by the complete All work union', () => {
+    const mod = loadModule();
+    let state = mod.createEngBoardDataState();
+    state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42 });
+    state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
+    state = reduce(mod, state, { type: 'start_load', requestId: 1 });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: 'all_work' } });
+    for (const [sequence, membership, epics] of [[1, 'candidate', [epic('E-1')]], [2, 'authoritative', [epic('E-1'), epic('E-2')]]]) {
+        state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', sequence, 'index', { epics, membership }) });
+    }
+    assert.equal(state.status, 'loading');
+    assert.equal(state.working.membershipAuthoritative, true);
+    assert.deepEqual(Object.keys(state.working.epicsByKey), ['E-1', 'E-2']);
+});

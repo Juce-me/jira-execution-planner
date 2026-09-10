@@ -183,6 +183,7 @@ class EngBoardRouteContractTests(unittest.TestCase):
         self.assertEqual(200, response.status_code, response.get_data(as_text=True))
         self.assertEqual('application/x-ndjson', response.mimetype)
         self.assertEqual('no-store', response.headers['Cache-Control'])
+        self.assertEqual('no', response.headers['X-Accel-Buffering'])
 
     def test_basic_mode_cannot_enter_db_oauth_candidate(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), patch.dict(
@@ -541,6 +542,8 @@ class EngBoardRouteContractTests(unittest.TestCase):
             start = json.loads(next(frames))
             index = json.loads(next(frames))
             focused = json.loads(next(frames))
+            while focused['type'] == 'progress':
+                focused = json.loads(next(frames))
             self.assertEqual(('start', 'index', 'column'), (start['type'], index['type'], focused['type']))
             self.assertEqual('todo', focused['columnId'])
             self.assertFalse(release_later.is_set())

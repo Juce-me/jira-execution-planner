@@ -767,7 +767,7 @@ export default function EngBoardView({
             {!stale && error && hasStrictContent && epicGroups.length > 0 && (
                 <div className="board-data-state is-error" role="alert">
                     <span>Loaded so far — {error}</span>
-                    {onRetry && <button type="button" onClick={onRetry}>Retry</button>}
+                    {onRetry && <button type="button" className="secondary compact" onClick={onRetry}>Retry</button>}
                 </div>
             )}
             {filterBar}
@@ -892,7 +892,9 @@ export default function EngBoardView({
                                     )}
                                     <span className="nm">{column.name}</span>
                                     <span className="ct">{column.epicCount}</span>
-                                    <span className="sp">epics · {column.storyPoints.toFixed(1)} sp</span>
+                                    <span className="sp">epics · {column.epicGroups.some(group => group.childrenIncomplete)
+                                        ? (column.epicGroups.some(group => group.childrenLoading) ? 'SP pending' : 'SP unavailable')
+                                        : `${column.storyPoints.toFixed(1)} sp`}</span>
                                     <span className="col-breach" title="Min/Max is set in Group Board settings">
                                         ⚠ {breach}
                                     </span>
@@ -912,7 +914,7 @@ export default function EngBoardView({
                                     type="button"
                                     className="col-strip"
                                     title={stripTitle}
-                                    aria-label={`Focus ${column.name}, ${column.epicCount} epics, ${column.storyPoints.toFixed(1)} story points`}
+                                    aria-label={`Focus ${column.name}, ${column.epicCount} epics, ${column.epicGroups.some(group => group.childrenIncomplete) ? (column.epicGroups.some(group => group.childrenLoading) ? 'story points pending' : 'story points unavailable') : `${column.storyPoints.toFixed(1)} story points`}`}
                                     onClick={(event) => focusFoldedRail(event, column.id)}
                                 >
                                     <span
@@ -932,7 +934,7 @@ export default function EngBoardView({
                                             epicGroup={epicGroup}
                                             renderPriorityIcon={renderPriorityIcon}
                                             onOpen={openPanel}
-                                            onDragStart={transitionsEnabled ? handleCardDragStart : null}
+                                            onDragStart={transitionsEnabled && !epicGroup.childrenIncomplete ? handleCardDragStart : null}
                                             onDragEnd={transitionsEnabled ? handleCardDragEnd : null}
                                             isDragging={draggingKey === epicGroup.key}
                                             isRejected={rejectedKey === epicGroup.key}

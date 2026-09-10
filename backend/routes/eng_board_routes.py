@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import secrets
+import queue
 import time
 
 from flask import Blueprint, Response, current_app, jsonify, request
@@ -529,6 +530,13 @@ def _frame_stream(server, snapshot, transport):
             max_unique_keys=eng_board.MAX_EPICS,
         ) if snapshot.components or snapshot.query.scope == 'sprint' else []
         if snapshot.query.scope == 'all_work' and snapshot.teams:
+            if epics:
+                provisional = eng_board.project_board(
+                    epics, [], project_map=snapshot.projects, columns=snapshot.board['columns'],
+                    project_track_field_id=snapshot.project_track_field_id,
+                    delivery_owner_field_id=snapshot.delivery_owner_field_id,
+                )
+                yield emit('index', epics=_shells(provisional), membership='candidate')
             epics = eng_board.discover_team_epics(
                 lambda payload: _search_page(server, snapshot, transport, payload, transport.budget.jira_retry_timeout()),
                 projects=snapshot.projects, issue_type_ids=snapshot.issue_type_ids,
@@ -572,9 +580,44 @@ def _frame_stream(server, snapshot, transport):
                 team_field_id=snapshot.team_field_id, team_ids=team_ids,
             )
 
+        progress_queue = queue.Queue(maxsize=2)
+
         def column_search(column_id, keys):
             def run(timeout):
                 children = []
+                progress_by_epic = {key: {'epicKey': key, 'loadedChildren': 0, 'statusCounts': {}} for key in keys}
+                def publish_page(rows):
+                    projection = eng_board.project_board(
+                        [raw_by_key[key] for key in keys], rows,
+                        project_map=snapshot.projects, columns=snapshot.board['columns'],
+                        epic_link_field_id=snapshot.epic_link_field_id,
+                        story_points_field_id=snapshot.story_points_field_id,
+                        team_field_id=snapshot.team_field_id, sprint_field_id=snapshot.sprint_field_id,
+                        project_track_field_id=snapshot.project_track_field_id,
+                        delivery_owner_field_id=snapshot.delivery_owner_field_id,
+                    )
+                    for row in projection['epics']:
+                        progress = progress_by_epic[row['key']]
+                        for child in row['children']:
+                            status = child['status']['name']
+                            progress['statusCounts'][status] = progress['statusCounts'].get(status, 0) + 1
+                            progress['loadedChildren'] += 1
+                    by_epic = [{**row, 'statusCounts': dict(row['statusCounts'])}
+                               for row in progress_by_epic.values()]
+                    update = (column_id, None, {
+                        'loadedChildren': sum(row['loadedChildren'] for row in by_epic), 'byEpic': by_epic,
+                    })
+                    # Progress is replaceable; final column frames carry every
+                    # child. A slow client must not accumulate a page backlog.
+                    while True:
+                        try:
+                            progress_queue.put_nowait(update)
+                            break
+                        except queue.Full:
+                            try:
+                                progress_queue.get_nowait()
+                            except queue.Empty:
+                                pass
                 try:
                     for batch in eng_board.split_epic_batches(keys, child_jql, child_fields):
                         _assert_current(snapshot)
@@ -582,6 +625,7 @@ def _frame_stream(server, snapshot, transport):
                             lambda payload: _search_page(server, snapshot, transport, payload, timeout),
                             child_jql(batch), child_fields, counters=counters,
                             cancel_check=lambda: _assert_current(snapshot), key_budget=child_budget,
+                            on_rows=publish_page,
                         ))
                     return column_id, children, None
                 except BoardJiraUnavailable:
@@ -591,13 +635,16 @@ def _frame_stream(server, snapshot, transport):
         searches = [column_search(column_id, column_keys[column_id])
                     for column_id in ordered_ids if column_keys[column_id]]
         scheduler = EngBoardChildScheduler(searches, budget=transport.budget) if searches else None
-        result_iterator = scheduler.results() if scheduler is not None else iter(())
+        result_iterator = scheduler.results(progress_queue=progress_queue) if scheduler is not None else iter(())
         emitted_epics = 0
         emitted_children = 0
         failed = []
         for column_id in ordered_ids:
             if column_keys[column_id]:
                 result_column_id, children, error = next(result_iterator)
+                while isinstance(error, dict):
+                    yield emit('progress', columnId=result_column_id, **error)
+                    result_column_id, children, error = next(result_iterator)
                 if result_column_id != column_id:
                     raise eng_board.EngBoardError(
                         'board_projection_invalid', phase='shape', reason='scheduler.order',
@@ -716,4 +763,5 @@ def get_eng_board():
         return _error('storage_unavailable', 503)
     response = Response(_frame_stream(server, snapshot, transport), content_type='application/x-ndjson')
     response.headers['Cache-Control'] = 'no-store'
+    response.headers['X-Accel-Buffering'] = 'no'
     return response

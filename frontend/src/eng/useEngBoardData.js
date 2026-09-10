@@ -106,12 +106,16 @@ function withTerminalError(state, code, terminal = null) {
     if (code === 'auth_required') {
         return { ...state, authLocked: true, status: 'auth_locked', error: { code }, refreshing: false };
     }
+    const retainContent = ['deadline_exceeded', 'jira_unavailable', 'unexpected_eof'].includes(code)
+        && state.working.indexReceived;
     return {
         ...state,
         status: 'error',
         error: { code },
         refreshing: false,
-        working: { ...emptyWorking(), columns: state.working.columns, terminal },
+        working: retainContent
+            ? { ...state.working, childrenAuthoritative: false, terminal: terminal || { type: 'error', code } }
+            : { ...emptyWorking(), columns: state.working.columns, terminal },
     };
 }
 
@@ -161,7 +165,9 @@ function applyFrame(state, frame) {
     }
 
     if (frame.type === 'index') {
-        if (state.working.indexReceived
+        if ((state.working.indexReceived && (state.working.membershipAuthoritative
+                || frame.membership !== 'authoritative'
+                || !hasAuthoritativeIndexScope(state.scopesByGroup[state.activeGroupId])))
             || frame.epics.some(epic => !knowsColumn(state.working, epic.columnId))) {
             return invalidFrame(state, frame);
         }
@@ -266,7 +272,7 @@ function applyFrame(state, frame) {
             status: 'partial_error',
             refreshing: false,
             error: { code: 'partial_error', failedColumnIds: frame.failedColumnIds },
-            working: { ...state.working, childrenAuthoritative: false, progressByColumn: {}, terminal: frame },
+            working: { ...state.working, childrenAuthoritative: false, terminal: frame },
         };
     }
 

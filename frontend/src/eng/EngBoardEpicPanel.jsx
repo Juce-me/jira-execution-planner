@@ -60,7 +60,9 @@ export default function EngBoardEpicPanel({
     const epicKey = (epicGroup && epicGroup.key) || epic.key || '';
     const summary = epic.summary || epicKey;
     const tasks = (epicGroup && epicGroup.tasks) || [];
-    const progress = computeEpicStoryProgress(tasks);
+    const progress = epicGroup.childProgress || computeEpicStoryProgress(tasks);
+    const incomplete = Boolean(epicGroup.childrenIncomplete);
+    const loading = Boolean(epicGroup.childrenLoading);
     const storyPoints = (((epicGroup && epicGroup.storyPoints) || 0)).toFixed(1);
     const titleId = `epic-panel-title-${epicKey}`;
 
@@ -350,7 +352,8 @@ export default function EngBoardEpicPanel({
                             <StatusPill className={getIssueStatusClassName(statusLabel)} label={statusLabel} />
                         )}
                         <span className="m-sp">
-                            {storyPoints} sp · {progress.done} of {progress.total} {workItemLabel} done
+                            {incomplete ? (loading ? `Loading ${workItemLabel}…` : `${workItemLabel} incomplete`)
+                                : `${storyPoints} sp · ${progress.done} of ${progress.total} ${workItemLabel} done`}
                         </span>
                         <span className="eperson"><span className="lbl">Assignee</span><b>{renderPersonEditor({ key: epicKey }, 'Epic', 'assignee', 'Assignee', epic.assignee)}</b></span>
                         <span className="eperson"><span className="lbl">Delivery owner</span><b>{renderPersonEditor({ key: epicKey }, 'Epic', 'deliveryOwner', 'Delivery owner', epic.deliveryOwner)}</b></span>
@@ -402,7 +405,8 @@ export default function EngBoardEpicPanel({
                         <div className="m-sec-head">
                             <span className="m-sec-label">{workItemLabel[0].toUpperCase() + workItemLabel.slice(1)} in scope</span>
                             <span className="m-sec-label">
-                                {rows.length} {rows.length === 1 ? workItemLabelSingular : workItemLabel} · {storyPoints} sp
+                                {incomplete ? (loading ? 'Loading…' : 'Incomplete')
+                                    : `${rows.length} ${rows.length === 1 ? workItemLabelSingular : workItemLabel} · ${storyPoints} sp`}
                             </span>
                             <span className="spacer" />
                             <div
@@ -461,6 +465,10 @@ export default function EngBoardEpicPanel({
                             Catch Up's enter animation and `overflow: hidden`, which would clip a
                             transition menu opened on the last row. The ROW classes — the thing
                             D22 governs — are inherited unchanged. */}
+                        {incomplete && <div className="board-child-loading" role="status" aria-busy={loading}>
+                            <span>{loading ? `Loading ${workItemLabel}…` : `${workItemLabel} could not finish loading. Retry the board to complete them.`}</span>
+                            {loading && <div aria-hidden="true"><span className="board-loading-bar" /><span className="board-loading-bar" /><span className="board-loading-bar" /></div>}
+                        </div>}
                         <div className="story-subtasks-rows">
                             {rows.map((task) => (
                                 <div

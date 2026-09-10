@@ -2,7 +2,10 @@ import ast
 import hashlib
 import json
 from pathlib import Path
+import threading
+import time
 import unittest
+from types import SimpleNamespace
 
 from backend.auth.context import RequestAuthContext
 from backend.auth.jira_auth import AuthError
@@ -54,6 +57,23 @@ class ScriptedJira:
         if isinstance(response, BaseException):
             raise response
         return response
+
+
+class DelayedAssigneeMetadataJira:
+    def __init__(self, delay_seconds=0.15):
+        self.delay_seconds = delay_seconds
+        self.calls = []
+        self._lock = threading.Lock()
+
+    def request(self, method, path, *, params=None, json_body=None, timeout=None, context=None):
+        with self._lock:
+            self.calls.append(path)
+        time.sleep(self.delay_seconds)
+        if path.endswith("/editmeta"):
+            return FakeResponse(200, editmeta_payload("assignee", "assignee"))
+        if path.endswith("/user/assignable/search"):
+            return FakeResponse(200, [person("me-1", "Current Person")])
+        return FakeResponse(200, issue_payload("assignee", None))
 
 
 def auth_context(*, workspace_id="workspace-1", cloud_id="cloud-1", account_id="me-1"):
@@ -132,6 +152,34 @@ class StoryPointValidationTests(unittest.TestCase):
 
 
 class EditableFieldMetadataTests(unittest.TestCase):
+    def test_assignee_metadata_runs_independent_jira_reads_in_one_latency_window(self):
+        context = SimpleNamespace(
+            workspace_id="workspace-1",
+            cloud_id="cloud-1",
+            atlassian_account_id="me-1",
+            display_name="Current Person",
+        )
+        jira = DelayedAssigneeMetadataJira()
+
+        started = time.perf_counter()
+        result = load_editable_field(
+            "DEMO-1", "assignee", jira_request=jira.request,
+            context=context, field_ids=FIELD_IDS,
+        )
+        elapsed = time.perf_counter() - started
+
+        self.assertTrue(result["editable"])
+        self.assertEqual(set(jira.calls), {
+            "/rest/api/3/issue/DEMO-1",
+            "/rest/api/3/issue/DEMO-1/editmeta",
+            "/rest/api/3/user/assignable/search",
+        })
+        self.assertLess(
+            elapsed,
+            0.30,
+            f"three 150 ms Jira reads should share one wait window, took {elapsed:.3f}s",
+        )
+
     def test_assignee_metadata_uses_exact_requests_and_reports_me_eligibility(self):
         context = auth_context()
         jira = ScriptedJira([

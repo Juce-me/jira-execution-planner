@@ -5406,8 +5406,6 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
     epic_summary = str(epic_meta.get('summary') or '').strip()
     if not epic_summary and epic_key and parent_field.get('key') == epic_key and parent_summary:
         epic_summary = str(parent_summary or '').strip()
-    epic_project_track = epic_meta.get('projectTrack') or None
-    epic_status = epic_meta.get('status') or None
     epic_assignee_meta = epic_meta.get('assignee') if isinstance(epic_meta.get('assignee'), dict) else None
 
     status = fields.get('status') or {}
@@ -5434,8 +5432,8 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
             'teamId': team_id,
             'epicKey': epic_key,
             'epicSummary': epic_summary,
-            'epicProjectTrack': epic_project_track,
-            'epicStatus': epic_status,
+            'epicProjectTrack': epic_meta.get('projectTrack') or None,
+            'epicStatus': epic_meta.get('status') or None,
             'epicAssignee': shape_jira_person(epic_assignee_meta),
             'customfield_10101': normalized_sprints,
             'parentSummary': parent_summary,
@@ -5494,10 +5492,9 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
                 continue
             tv = ef.get(project_track_field)
             track = (tv or {}).get('value') if isinstance(tv, dict) else None
-            status = (ef.get('status') or {}).get('name')
             assignee = ef.get('assignee') or None
             fetched[key] = {'summary': str(ef.get('summary') or '').strip(), 'projectTrack': track,
-                            'status': status, 'assignee': shape_jira_person(assignee)}
+                            'status': (ef.get('status') or {}).get('name'), 'assignee': shape_jira_person(assignee)}
         with _cache_lock:
             if get_jira_issue_cache_generation() == cache_generation:
                 for normalized in batch:

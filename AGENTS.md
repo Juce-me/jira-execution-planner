@@ -283,6 +283,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Chart legends must use native button controls, not span role=button handlers.
 - Chart hover readouts inside transformed or scrollable panels must be pointer-positioned with width/height edge bounds and covered by Playwright edge assertions before commit.
 - Chart hover readouts should size to content with a narrow max width; do not reserve a wide fixed box for short labels.
+- Apply and test ENG epic-header layout rules on both direct task-list epics and initiative-grouped epics nested under `.initiative-body`.
 - Excluded Capacity and Mono vs Cross stats must use cached progressive stats-source requests and must not load or render ENG alerts, filters, or task lists for those tabs.
 - In Mono vs Cross stats, Team Cross Share must render a per-sprint per-team graph of cross SP divided by total team story points; do not replace it with aggregate bars or text chips.
 - In dashboard filters, reuse existing dropdown classes such as `team-dropdown-*` or `sprint-dropdown-*`; do not create bespoke hover, caret, radius, or action styles for one-off dropdowns.

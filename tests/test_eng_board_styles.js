@@ -98,11 +98,39 @@ test('board.css scopes its column classes so the composer preview cannot collide
     });
 });
 
-test('epic metadata sizes visible controls instead of their wrappers', async () => {
+test('ENG epic headline source keeps the calibrated one-row sizing contract scoped away from EPM', async () => {
     const source = fs.readFileSync(issuesCssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const scoped = '.task-list:not(.epm-issue-board) .epic-block > .epic-header';
+
+    assert.ok(source.includes(scoped), 'epic headline correction must cover grouped ENG epics while remaining scoped away from EPM boards');
     assert.doesNotMatch(source, /\.epic-meta\s*>\s*\*\s*\{[^}]*(?:^|;)\s*height\s*:/ms);
     assert.doesNotMatch(source, /\.epic-assignee\s*\{[^}]*(?:^|;)\s*height\s*:/ms);
-    assert.match(source, /\.epic-meta\s+\.epic-status-pill[^}]*height:\s*1\.5rem/);
-    assert.match(source, /\.epic-meta\s+\.epic-story-points[^}]*height:\s*1\.5rem/);
-    assert.match(source, /\.epic-assignee\s+input\.issue-person-editor-trigger[^}]*height:\s*1\.5rem/);
+    assert.doesNotMatch(source, /\.epic-key\s*,[^{]*\.epic-meta\s*\{[^}]*\btop\s*:/s,
+        'vertical offsets cannot substitute for visible-size calibration');
+    assert.match(source, /\.epic-title\s*\{[^}]*flex:\s*1\s+1\s+0(?:px|%)?\s*;/s);
+    assert.match(source, /\.epic-link\s*\{[^}]*grid-template-columns:\s*minmax\(110px,\s*1fr\)\s+max-content\s*;/s);
+    assert.match(source, /\.epic-name[^}]*font-size:\s*16px\s*;[^}]*line-height:\s*24px\s*;/s);
+    assert.match(source, /\.epic-key[^}]*font-size:\s*14px\s*;[^}]*line-height:\s*24px\s*;/s);
+    assert.match(source, /\.epic-meta[^}]*flex:\s*0\s+1\s+auto\s*;[^}]*min-width:\s*0\s*;[^}]*max-width:\s*none\s*;/s);
+    assert.match(source, /\.epic-meta[^}]*font-size:\s*14px\s*;[^}]*line-height:\s*24px\s*;/s);
+    assert.match(source, /\.epic-status-pill[^}]*height:\s*24px\s*;/s);
+    assert.match(source, /\.epic-story-points[^}]*height:\s*24px\s*;/s);
+    assert.match(source, /\.epic-assignee\s+input\.issue-person-editor-trigger[^}]*height:\s*24px\s*;/s);
+    assert.match(source, /\.epic-assignee[^}]*min-width:\s*126px\s*;/s);
+    assert.match(source, /\.epic-status-pill[^}]*max-width:\s*140px\s*;[^}]*text-overflow:\s*ellipsis\s*;/s);
+});
+
+test('ENG epic headline source sizes artwork and keeps focus/readout visible', async () => {
+    const source = fs.readFileSync(issuesCssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+
+    assert.match(source, /\.epic-icon[^}]*width:\s*24px\s*;[^}]*height:\s*24px\s*;/s);
+    assert.match(source, /\.epic-icon\s+svg[^}]*width:\s*16px\s*;[^}]*height:\s*16px\s*;/s);
+    assert.match(source, /\.task-priority-icon[^}]*width:\s*24px\s*;[^}]*height:\s*24px\s*;/s);
+    assert.match(source, /\.task-priority-icon\s+svg[^}]*width:\s*18px\s*;[^}]*height:\s*18px\s*;/s);
+    assert.match(source, /\.task-priority-icon\s*,[^}]*\.epic-track-indicator\s*\{[^}]*width:\s*24px\s*;[^}]*height:\s*24px\s*;/s);
+    assert.match(source, /\.epic-track-indicator\s*\{[^}]*font-size:\s*14px\s*;/s);
+    assert.match(source, /\.epic-header\s+\.task-assignee-icon[^}]*width:\s*20px\s*;[^}]*height:\s*24px\s*;/s);
+    assert.match(source, /\.epic-header\s+\.task-assignee-icon\s+svg[^}]*width:\s*21px\s*;[^}]*height:\s*21px\s*;/s);
+    assert.match(source, /:is\(button,\s*input,\s*a,\s*\[tabindex\]\):focus-visible[^}]*outline:\s*2px[^}]*outline-offset:\s*-2px\s*;/s);
+    assert.match(source, /\.epic-full-value-readout\s*\{[^}]*position:\s*fixed\s*;[^}]*z-index:/s);
 });

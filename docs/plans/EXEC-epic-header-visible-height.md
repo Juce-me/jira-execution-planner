@@ -1,10 +1,10 @@
 # Epic header visible-height correction plan
 
-Status: planned — specimen validated; STOP before application implementation
+Status: implementation complete; verification in progress — pending user acceptance; not committed or published
 Date: 2026-09-10
 Type: bugfix
 Review baseline: existing source/bundle was committed concurrently as `0bdda707d522937568657ae37e22a339cde32bd8`; this task made documentation and disposable specimen changes only.
-Current accuracy: proposed contract for the dirty worktree application baseline `7d605e7`, with subsequent documentation-only HEAD `ddf8099786c6ca97a2684d837aa7eb51ca49cbdc`; not implemented or published.
+Current accuracy: implemented in the local worktree from baseline `43d38b9cc3835bb3923c7ad63439f188fb5b9ec2`; source, generated bundle, regression tests, analytics documentation, and incident records reflect the contract below. A user-reported initiative-group regression exposed an overly narrow direct-child selector; the correction and exact grouped fixture now cover both plain and initiative-nested Epic headers. One required Project Track test still has an unresolved async-option timing failure outside this plan's allowed edit map. User acceptance, commit, and publication remain pending.
 
 ## Goal and forbidden regressions
 
@@ -130,3 +130,7 @@ No new event: layout/typography/artwork correction has no new product action. Ex
 The original review approved an unusable gated workflow and is superseded. Separate analysis review identified the invented arbitrary-glyph equality requirement and unreliable old task-zero screenshots. Separate plan review caught oversized track artwork, blanket status coloring, unconditional name caps and clipped focus. The specimen and contract address those findings with calibrated text, smaller track artwork, per-state palette requirements, intrinsic grid/flex allocation and inset focus. Final independent plan review inspected the rewritten contract, four representative crops and both result files. The plan is concrete and supported by the specimen; its readout hover-persistence/readonly-focus clarification is now incorporated. No unresolved design blocker remains. Full palette, conditional-state and functional verification remain explicit implementation work, not a completed claim.
 
 No endpoint, auth, storage or ownership migration is proposed; those migration matrices remain inapplicable. The full interaction/readonly/401/sticky/analytics matrix above must be verified during implementation. Design validation does not claim functional regression tests already passed. Stop before implementation as requested.
+
+## Outcome
+
+Implemented in the local worktree. The production renderer now provides viewport-bounded full-value readouts for truncated Epic title, status, and person values; the scoped desktop CSS applies the validated one-row sizing and fit budget to both direct and initiative-grouped ENG Epic blocks; permanent source and Playwright coverage replaces the obsolete wrapper-only oracle. The generated frontend bundle and analytics allowlist are aligned. Verification evidence and any remaining environment limitations are recorded in the final execution report; no commit, push, PR, or user acceptance is claimed.

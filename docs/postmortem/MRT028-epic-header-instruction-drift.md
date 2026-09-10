@@ -76,15 +76,14 @@ Test totals and PASS labels were used as substitutes for requirement-specific ev
 
 ## Current resolution and its limits
 
-The local implementation now restores a horizontal desktop header, uses baseline alignment through the title and metadata rows, keeps metadata on one line, and normalizes its type scale. The actual status, SP, and input controls retain their height rules; a `0.125rem` relative offset on key/metadata addresses the observed optical difference from the serif title. These changes are scoped to the ENG epic header.
+The local implementation now applies the validated single-row desktop contract without per-string offsets: 16px Crimson Pro title type, 14px IBM Plex Mono metadata, normalized icon artwork, 24px control surfaces, intrinsic title/key allocation, flexible person width, and status ellipsis. Truncated title, status, and person values expose a viewport-bounded in-app readout through hover or keyboard focus; readouts dismiss on Escape and remain suppressed while field menus/editors are active. A user screenshot then exposed that the first selector covered only direct `.task-list` children and missed Epic blocks nested under `.initiative-body`; the selector and regression fixture now cover both ENG structures while continuing to exclude EPM. The changes preserve the existing mobile rule, Group Board cards, handlers, request payloads, and analytics actions.
 
-The latest screenshot check scans text-colored pixels for the title, key, status, SP, and person input, allowing a maximum three-pixel spread. This measures the requested visible relationship more directly than equal box heights, but it has material limits:
+Permanent tests now separate equivalent-glyph calibration from actual-content painted bounds. They measure every visible item, require nonempty painted regions, normalize screenshots to CSS pixels, distinguish the status label from its pill surface, check one-row fit/no overlap, and exercise pointer transfer, keyboard focus, Escape, edge bounds, readonly discovery, and editor suppression. This evidence still has material limits:
 
-- It uses one synthetic fixture and color thresholds; fonts, rasterization, zoom, theme, and glyph descenders can change the result.
-- The three-pixel tolerance and optical offset are implementation choices, not a user-approved definition of perfect alignment.
-- The title contains descenders, so a common typographic baseline does not imply identical lowest ink pixels for every string.
-- The 1440px case checks row geometry and a longer name; it does not repeat the pixel assertion.
-- Mobile work and its test remain in the existing dirty diff. Their relevance must be reconciled before publication; they are not evidence for this request.
+- Chromium rendering on the local platform is tested; universal raster equality across every browser/platform is not claimed.
+- Natural ascender/descender variation is retained, so actual strings are reviewed visually rather than forced to identical painted heights.
+- The loaded-font specimen and fallback specimen remain separate evidence; missing font resources are not represented as a loaded-font pass.
+- User acceptance and publication are still pending.
 
 Status remains **Monitoring** because a local correction and passing focused tests do not establish user acceptance, publication, or immunity to recurrence.
 
@@ -105,7 +104,7 @@ Exit code 0.
 
 Before the optical adjustment, the pixel test reported title/key/status/SP/input bottoms of `29/25/25/25/27`, failing its three-pixel tolerance. This is evidence of a detectable remaining discrepancy after the element-box tests had passed.
 
-Earlier broad test totals apply to earlier revisions and must not be presented as complete verification of the latest correction. This postmortem is a documentation-only change; it does not rerun or expand UI implementation work.
+The executed correction replaces that earlier evidence. The validated pre-implementation specimen passed 20 loaded/fallback rendering cases. The permanent candidate checks include the exact initiative-grouped screenshot content and fail when the former `max-width: 42%`/wrapping behavior is forced; with the corrected selector that focused case passes and its title, key, status, SP, and assignee share one row. The focused Node source/behavior suite passes 33/33. The final command totals and screenshots are recorded with the execution handoff. No commit, PR, publication, or user acceptance is claimed.
 
 ## Prevention: proposed AGENTS.md update
 

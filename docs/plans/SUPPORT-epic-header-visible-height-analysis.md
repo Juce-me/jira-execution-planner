@@ -1,5 +1,7 @@
 # Epic header visible-height regression analysis
 
+> **Current accuracy:** Historical diagnosis and design evidence. The correction was implemented and locally verified from `EXEC-epic-header-visible-height.md` on 2026-09-10; application source is now authoritative. User acceptance and publication remain pending.
+
 Status: executed (investigation only; no implementation)
 Date: 2026-09-10
 Type: bugfix analysis

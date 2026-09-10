@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import './styles/dashboard.css';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
@@ -413,6 +414,220 @@ import {
                         />
                     </svg>
                 </span>
+            );
+        }
+
+        function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', children }) {
+            const triggerRef = React.useRef(null);
+            const readoutRef = React.useRef(null);
+            const closeTimerRef = React.useRef(null);
+            const triggerHoveredRef = React.useRef(false);
+            const readoutHoveredRef = React.useRef(false);
+            const focusWithinRef = React.useRef(false);
+            const [truncated, setTruncated] = React.useState(false);
+            const [visible, setVisible] = React.useState(false);
+            const [position, setPosition] = React.useState({ left: 8, top: 8, placed: false, above: false });
+            const readoutId = React.useId().replace(/:/g, '');
+
+            const cancelClose = React.useCallback(() => {
+                if (closeTimerRef.current == null) return;
+                window.clearTimeout(closeTimerRef.current);
+                closeTimerRef.current = null;
+            }, []);
+
+            const scheduleClose = React.useCallback(() => {
+                cancelClose();
+                closeTimerRef.current = window.setTimeout(() => {
+                    closeTimerRef.current = null;
+                    if (!triggerHoveredRef.current && !readoutHoveredRef.current && !focusWithinRef.current) {
+                        setVisible(false);
+                    }
+                }, 80);
+            }, [cancelClose]);
+
+            const measureTruncation = React.useCallback(() => {
+                const root = triggerRef.current;
+                const node = measureSelector ? root?.querySelector?.(measureSelector) : root;
+                const next = Boolean(node && (
+                    node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1
+                ));
+                setTruncated(previous => (previous === next ? previous : next));
+                if (!next) setVisible(false);
+            }, [measureSelector]);
+
+            React.useLayoutEffect(() => {
+                measureTruncation();
+                const node = triggerRef.current;
+                if (!node || typeof ResizeObserver === 'undefined') return undefined;
+                const observer = new ResizeObserver(measureTruncation);
+                observer.observe(node);
+                const measuredNode = measureSelector ? node.querySelector?.(measureSelector) : null;
+                if (measuredNode && measuredNode !== node) observer.observe(measuredNode);
+                return () => observer.disconnect();
+            }, [measureTruncation, measureSelector, value]);
+
+            React.useEffect(() => {
+                const fontSet = document.fonts;
+                if (!fontSet?.ready) return undefined;
+                let active = true;
+                let frame = null;
+                const measureAfterFontLoad = () => {
+                    if (!active) return;
+                    if (frame != null) window.cancelAnimationFrame(frame);
+                    frame = window.requestAnimationFrame(measureTruncation);
+                };
+                fontSet.ready.then(measureAfterFontLoad);
+                fontSet.addEventListener?.('loadingdone', measureAfterFontLoad);
+                return () => {
+                    active = false;
+                    if (frame != null) window.cancelAnimationFrame(frame);
+                    fontSet.removeEventListener?.('loadingdone', measureAfterFontLoad);
+                };
+            }, [measureTruncation]);
+
+            React.useLayoutEffect(() => {
+                if (!nativeSelector) return undefined;
+                const nativeTarget = triggerRef.current?.querySelector?.(nativeSelector);
+                if (!nativeTarget) return undefined;
+                const descriptionId = truncated ? `epic-full-value-${readoutId}` : '';
+                if (descriptionId) nativeTarget.setAttribute('aria-describedby', descriptionId);
+                else nativeTarget.removeAttribute('aria-describedby');
+                return () => {
+                    if (nativeTarget.getAttribute('aria-describedby') === descriptionId) {
+                        nativeTarget.removeAttribute('aria-describedby');
+                    }
+                };
+            }, [nativeSelector, readoutId, truncated]);
+
+            const updatePosition = React.useCallback(() => {
+                const trigger = triggerRef.current;
+                const readout = readoutRef.current;
+                if (!trigger || !readout) return;
+                const triggerRect = trigger.getBoundingClientRect();
+                const readoutRect = readout.getBoundingClientRect();
+                const viewportWidth = window.visualViewport?.width || window.innerWidth;
+                const viewportHeight = window.visualViewport?.height || window.innerHeight;
+                const viewportLeft = window.visualViewport?.offsetLeft || 0;
+                const viewportTop = window.visualViewport?.offsetTop || 0;
+                const padding = 8;
+                const gap = 6;
+                const minLeft = viewportLeft + padding;
+                const maxLeft = Math.max(minLeft, viewportLeft + viewportWidth - padding - readoutRect.width);
+                const left = Math.min(Math.max(triggerRect.left, minLeft), maxLeft);
+                const belowTop = triggerRect.bottom + gap;
+                const above = belowTop + readoutRect.height > viewportTop + viewportHeight - padding;
+                const preferredTop = above ? triggerRect.top - readoutRect.height - gap : belowTop;
+                const maxTop = Math.max(viewportTop + padding, viewportTop + viewportHeight - padding - readoutRect.height);
+                const top = Math.min(Math.max(preferredTop, viewportTop + padding), maxTop);
+                setPosition({ left, top, placed: true, above });
+            }, []);
+
+            React.useLayoutEffect(() => {
+                if (!visible || suppressed) return undefined;
+                updatePosition();
+                window.addEventListener('scroll', updatePosition, true);
+                window.addEventListener('resize', updatePosition);
+                window.visualViewport?.addEventListener?.('resize', updatePosition);
+                window.visualViewport?.addEventListener?.('scroll', updatePosition);
+                return () => {
+                    window.removeEventListener('scroll', updatePosition, true);
+                    window.removeEventListener('resize', updatePosition);
+                    window.visualViewport?.removeEventListener?.('resize', updatePosition);
+                    window.visualViewport?.removeEventListener?.('scroll', updatePosition);
+                };
+            }, [suppressed, updatePosition, visible]);
+
+            React.useEffect(() => {
+                if (!visible || suppressed) return undefined;
+                const dismissOnEscape = event => {
+                    if (event.key !== 'Escape') return;
+                    triggerHoveredRef.current = false;
+                    readoutHoveredRef.current = false;
+                    setVisible(false);
+                };
+                document.addEventListener('keydown', dismissOnEscape, true);
+                return () => document.removeEventListener('keydown', dismissOnEscape, true);
+            }, [suppressed, visible]);
+
+            React.useEffect(() => {
+                if (suppressed) setVisible(false);
+            }, [suppressed]);
+
+            React.useEffect(() => () => cancelClose(), [cancelClose]);
+
+            const show = () => {
+                cancelClose();
+                if (truncated && !suppressed) {
+                    setPosition(previous => ({ ...previous, placed: false }));
+                    setVisible(true);
+                }
+            };
+            const pointerProps = {
+                onPointerEnter: () => {
+                    triggerHoveredRef.current = true;
+                    show();
+                },
+                onPointerLeave: () => {
+                    triggerHoveredRef.current = false;
+                    scheduleClose();
+                },
+            };
+            const focusProps = {
+                onFocus: () => {
+                    focusWithinRef.current = true;
+                    show();
+                },
+                onBlur: event => {
+                    if (triggerRef.current?.contains(event.relatedTarget)) return;
+                    focusWithinRef.current = false;
+                    scheduleClose();
+                },
+            };
+            const describedBy = truncated ? `epic-full-value-${readoutId}` : undefined;
+            const readout = visible && truncated && !suppressed ? createPortal(
+                <span
+                    ref={readoutRef}
+                    id={`epic-full-value-${readoutId}`}
+                    className={`epic-full-value-readout${position.above ? ' is-above' : ''}`}
+                    role="tooltip"
+                    style={{
+                        left: `${position.left}px`,
+                        top: `${position.top}px`,
+                        visibility: position.placed ? 'visible' : 'hidden',
+                    }}
+                    onPointerEnter={() => {
+                        readoutHoveredRef.current = true;
+                        cancelClose();
+                    }}
+                    onPointerLeave={() => {
+                        readoutHoveredRef.current = false;
+                        scheduleClose();
+                    }}
+                >
+                    {value}
+                </span>,
+                document.body
+            ) : null;
+
+            return (
+                <>
+                    {children({
+                        triggerRef,
+                        truncated,
+                        describedBy,
+                        pointerProps,
+                        focusProps,
+                        discoveryProps: {
+                            ref: triggerRef,
+                            ...pointerProps,
+                            ...focusProps,
+                            tabIndex: truncated ? 0 : undefined,
+                            'aria-label': value,
+                            'aria-describedby': describedBy,
+                        },
+                    })}
+                    {readout}
+                </>
             );
         }
 
@@ -14050,13 +14265,41 @@ import {
                             : epicInfo?.priority?.name || '';
                         const projectTrackValue = epicInfo?.projectTrack || '';
                         const projectTrackEmoji = getProjectTrackEmoji(projectTrackValue);
+                        const epicInteractionActive = statusTransitionActiveKey === epicGroup.key
+                            || priorityTransitionActiveKey === epicGroup.key
+                            || projectTrackTransitionActiveKey === epicGroup.key
+                            || issueFieldEdits.activeEditor?.issueKey === epicGroup.key;
                         const renderEpicPersonEditor = (field, label, value) => {
                             const editableEpic = issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && Boolean(epicInfo), active = editableEpic && issueFieldEdits.activeEditor?.issueKey === epicGroup.key && issueFieldEdits.activeEditor.field === field;
-                            if (!editableEpic) return value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
-                            return <IssuePersonEditor issueKey={epicGroup.key} field={field} fieldLabel={label} currentValue={value} isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
-                                suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
-                                submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)} pending={issueFieldEdits.pendingIssueKeys.has(epicGroup.key)} error={active ? issueFieldEdits.errorMessage : ''} statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''} recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''} configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
-                                onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: 'epic', sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />;
+                            const displayName = value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
+                            if (!editableEpic) {
+                                return (
+                                    <EpicHeaderValueReadout value={displayName} suppressed={epicInteractionActive}>
+                                        {({ discoveryProps }) => (
+                                            <span {...discoveryProps} className="epic-full-value-trigger epic-assignee-value">
+                                                {displayName}
+                                            </span>
+                                        )}
+                                    </EpicHeaderValueReadout>
+                                );
+                            }
+                            return (
+                                <EpicHeaderValueReadout
+                                    value={displayName}
+                                    suppressed={epicInteractionActive}
+                                    measureSelector="[data-issue-person-editor-trigger]"
+                                    nativeSelector="[data-issue-person-editor-trigger]"
+                                >
+                                    {({ triggerRef, pointerProps, focusProps }) => (
+                                        <span ref={triggerRef} {...pointerProps} {...focusProps} className="epic-full-value-trigger epic-assignee-value">
+                                            <IssuePersonEditor issueKey={epicGroup.key} field={field} fieldLabel={label} currentValue={value} isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
+                                                suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
+                                                submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)} pending={issueFieldEdits.pendingIssueKeys.has(epicGroup.key)} error={active ? issueFieldEdits.errorMessage : ''} statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''} recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''} configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
+                                                onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: 'epic', sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />
+                                        </span>
+                                    )}
+                                </EpicHeaderValueReadout>
+                            );
                         };
                         return (
                             <div
@@ -14136,18 +14379,36 @@ import {
                                                 )
                                             )}
                                             {epicGroup.key !== 'NO_EPIC' ? (
-                                                <a
-                                                    className="epic-link"
-                                                    href={jiraUrl ? `${jiraUrl}/browse/${epicGroup.key}` : '#'}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer" title={epicTitle} aria-label={epicTitle}
+                                                <EpicHeaderValueReadout
+                                                    value={epicTitle}
+                                                    suppressed={epicInteractionActive}
+                                                    measureSelector=".epic-name"
                                                 >
-                                                    <span className="epic-name">{epicTitle}</span>
-                                                    <span className="epic-key">{epicGroup.key}</span>
-                                                </a>
+                                                    {({ triggerRef, describedBy, pointerProps, focusProps }) => (
+                                                        <a
+                                                            ref={triggerRef}
+                                                            className="epic-link epic-full-value-trigger"
+                                                            href={jiraUrl ? `${jiraUrl}/browse/${epicGroup.key}` : '#'}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title={epicTitle}
+                                                            aria-label={epicTitle}
+                                                            aria-describedby={describedBy}
+                                                            {...pointerProps}
+                                                            {...focusProps}
+                                                        >
+                                                            <span className="epic-name">{epicTitle}</span>
+                                                            <span className="epic-key">{epicGroup.key}</span>
+                                                        </a>
+                                                    )}
+                                                </EpicHeaderValueReadout>
                                             ) : (
                                                 <>
-                                                    <span className="epic-name">{epicTitle}</span>
+                                                    <EpicHeaderValueReadout value={epicTitle} suppressed={epicInteractionActive}>
+                                                        {({ discoveryProps }) => (
+                                                            <span {...discoveryProps} className="epic-name epic-full-value-trigger">{epicTitle}</span>
+                                                        )}
+                                                    </EpicHeaderValueReadout>
                                                     <span className="epic-key">Unassigned</span>
                                                 </>
                                             )}
@@ -14173,36 +14434,59 @@ import {
 	                                    </div>
 	                                    <div className="epic-meta">
                                             {epicStatus && (
-                                                (statusTransitionEnabled && epicGroup.key !== 'NO_EPIC') ? (
-                                                    <StatusTransitionMenu
-                                                        issue={{ key: epicGroup.key, status: epicStatus, summary: epicTitle }}
-                                                        fallbackIssueType="Epic"
-                                                        statusLabel={epicStatus}
-                                                        statusClassName={epicStatusClassName}
-                                                        sourceSurface={statusTransitionSourceSurface}
-                                                        isOpen={statusTransitionActiveKey === epicGroup.key}
-                                                        options={transitionOptions}
-                                                        optionsLoading={transitionOptionsLoading}
-                                                        submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(epicGroup.key)}
-                                                        error={transitionError}
-                                                        errorCode={transitionErrorCode}
-                                                        result={transitionResult}
-                                                        targetsCount={statusTransitionTargetsCount}
-                                                        canToggleTargetSet={statusTransitionSourceSurface === 'planning'}
-                                                        isInTargetSet={selectedEpicStatusTargets.has(epicGroup.key)}
-                                                        onOpen={openSingleIssueStatusControl}
-                                                        onClose={closeSingleIssueStatusControl}
-                                                        onToggleTargetSet={() => toggleEpicStatusTarget(epicGroup.key)}
-                                                        onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
-                                                        previewOnly={onboardingPreviewSession}
-                                                        onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
-                                                    />
-                                                ) : (
-                                                    <StatusPill
-                                                        className={epicStatusClassName}
-                                                        label={epicStatus}
-                                                    />
-                                                )
+                                                <EpicHeaderValueReadout
+                                                    value={epicStatus}
+                                                    suppressed={epicInteractionActive}
+                                                    measureSelector=".status-pill"
+                                                    nativeSelector={statusTransitionEnabled && epicGroup.key !== 'NO_EPIC' ? '.status-pill' : ''}
+                                                >
+                                                    {statusTransitionEnabled && epicGroup.key !== 'NO_EPIC' ? (
+                                                        ({ triggerRef, pointerProps, focusProps }) => (
+                                                            <span ref={triggerRef} {...pointerProps} {...focusProps} className="epic-full-value-trigger epic-status-readout-target">
+                                                                <StatusTransitionMenu
+                                                                    issue={{ key: epicGroup.key, status: epicStatus, summary: epicTitle }}
+                                                                    fallbackIssueType="Epic"
+                                                                    statusLabel={epicStatus}
+                                                                    statusClassName={epicStatusClassName}
+                                                                    sourceSurface={statusTransitionSourceSurface}
+                                                                    isOpen={statusTransitionActiveKey === epicGroup.key}
+                                                                    options={transitionOptions}
+                                                                    optionsLoading={transitionOptionsLoading}
+                                                                    submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(epicGroup.key)}
+                                                                    error={transitionError}
+                                                                    errorCode={transitionErrorCode}
+                                                                    result={transitionResult}
+                                                                    targetsCount={statusTransitionTargetsCount}
+                                                                    canToggleTargetSet={statusTransitionSourceSurface === 'planning'}
+                                                                    isInTargetSet={selectedEpicStatusTargets.has(epicGroup.key)}
+                                                                    onOpen={openSingleIssueStatusControl}
+                                                                    onClose={closeSingleIssueStatusControl}
+                                                                    onToggleTargetSet={() => toggleEpicStatusTarget(epicGroup.key)}
+                                                                    onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
+                                                                    previewOnly={onboardingPreviewSession}
+                                                                    onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
+                                                                />
+                                                            </span>
+                                                        )
+                                                    ) : (
+                                                        ({ triggerRef, truncated, describedBy, pointerProps, focusProps }) => (
+                                                            <span
+                                                                ref={triggerRef}
+                                                                {...pointerProps}
+                                                                {...focusProps}
+                                                                className="epic-full-value-trigger epic-status-readout-target"
+                                                                tabIndex={truncated ? 0 : undefined}
+                                                                aria-label={epicStatus}
+                                                                aria-describedby={describedBy}
+                                                            >
+                                                                <StatusPill
+                                                                    className={`${epicStatusClassName} epic-status-value`}
+                                                                    label={epicStatus}
+                                                                />
+                                                            </span>
+                                                        )
+                                                    )}
+                                                </EpicHeaderValueReadout>
                                             )}
 	                                        <span className="epic-story-points">SP: {epicTotalSp.toFixed(1)}</span>
 	                                        {(epicInfo?.assignee?.displayName || (issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && epicInfo)) && (
@@ -14213,7 +14497,7 @@ import {
 	                                                        <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
 	                                                    </svg>
 	                                                </span>
-	                                                <span>{renderEpicPersonEditor('assignee', 'Assignee', epicInfo?.assignee)}</span>
+	                                                {renderEpicPersonEditor('assignee', 'Assignee', epicInfo?.assignee)}
 	                                            </span>
 	                                        )}
 	                                    </div>

@@ -130,7 +130,7 @@
         .task-remove {
             position: absolute;
             top: 0.45rem;
-            right: 0.45rem;
+            right: 0;
             width: 1.5rem;
             height: 1.5rem;
             border: 1px solid var(--border);

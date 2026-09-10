@@ -257,18 +257,15 @@ export default function IssueCard({
                             {task.fields.summary}
                         </a>
                     </h3>
-                    {showPlanning && storyPointsNode}
-                    {showPlanning && selectionCheckbox}
                     {canSelect && !showPlanning && selectionCheckbox}
                 </div>
-                {!showPlanning && (
-                    <div className="task-header-right">
-                        <span className="task-inline-meta">
-                            {taskKeyLink}
-                            {storyPointsNode}
-                        </span>
-                    </div>
-                )}
+                <div className="task-header-right">
+                    <span className="task-inline-meta">
+                        {taskKeyLink}
+                        {storyPointsNode}
+                        {showPlanning && selectionCheckbox}
+                    </span>
+                </div>
             </div>
             <div className="task-detail-row">
                 <div className="task-meta">
@@ -329,11 +326,6 @@ export default function IssueCard({
                     {subtaskToggle && (
                         <span className="task-subtask-meta">
                             {subtaskToggle}
-                        </span>
-                    )}
-                    {showPlanning && (
-                        <span className="task-inline-meta planning-selection-meta">
-                            {taskKeyLink}
                         </span>
                     )}
                 </div>

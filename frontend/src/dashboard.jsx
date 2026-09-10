@@ -15466,6 +15466,7 @@ import {
                                         <ProjectTrackBreakdownChart
                                             data={projectTrackBreakdown}
                                             resolveColor={resolveProjectTrackColor}
+                                            jiraUrl={jiraUrl}
                                         />
                                     </div>
 

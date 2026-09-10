@@ -1,4 +1,9 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
+import { resolveFloatingHoverPosition } from '../ui/hoverBubblePosition.js';
+
+const TOOLTIP_WIDTH = 250;
+const TOOLTIP_HEIGHT = 150;
 
 function getHeatLevel(count, maxValue) {
     if (!count || !maxValue) return 0;
@@ -26,13 +31,14 @@ function CohortGrid({ model, selectedRowKey, onSelectRow }) {
             setTooltip(null);
             return;
         }
-        const rect = wrapRef.current?.getBoundingClientRect();
-        if (!rect) return;
-        const left = Math.min(Math.max(8, event.clientX - rect.left + 10), rect.width - 260);
-        const top = Math.max(8, event.clientY - rect.top + 10);
+        const point = resolveFloatingHoverPosition({
+            x: event.clientX,
+            y: event.clientY,
+            bubbleWidth: TOOLTIP_WIDTH,
+            bubbleHeight: TOOLTIP_HEIGHT
+        });
         setTooltip({
-            left,
-            top,
+            ...point,
             row,
             cell,
             column
@@ -76,7 +82,7 @@ function CohortGrid({ model, selectedRowKey, onSelectRow }) {
     ].filter((item) => item.count > 0);
 
     return (
-        <div className="cohort-grid-wrap" ref={wrapRef} onMouseLeave={() => setTooltip(null)}>
+        <div className="cohort-grid-wrap" ref={wrapRef}>
             <div
                 className={`cohort-grid-scale-frame ${scale < 1 ? 'is-scaled' : ''}`}
                 ref={frameRef}
@@ -116,8 +122,9 @@ function CohortGrid({ model, selectedRowKey, onSelectRow }) {
                                                 <td
                                                     key={`${row.key}-${column.key}`}
                                                     className={`cohort-cell level-${level} ${cell.count ? 'has-value' : ''}`}
-                                                    onMouseMove={(event) => handleCellHover(event, row, cell, column)}
-                                                    onMouseEnter={(event) => handleCellHover(event, row, cell, column)}
+                                                    onPointerMove={(event) => handleCellHover(event, row, cell, column)}
+                                                    onPointerEnter={(event) => handleCellHover(event, row, cell, column)}
+                                                    onPointerLeave={() => setTooltip(null)}
                                                 >
                                                     {cell.count || ''}
                                                 </td>
@@ -130,8 +137,11 @@ function CohortGrid({ model, selectedRowKey, onSelectRow }) {
                     </table>
                 </div>
             </div>
-            {tooltip && (
-                <div className="cohort-grid-tooltip" style={{ left: tooltip.left, top: tooltip.top }}>
+            {tooltip && typeof document !== 'undefined' && document.body && createPortal(
+                <div
+                    className={`cohort-grid-tooltip is-${tooltip.side || 'right'}`}
+                    style={{ left: tooltip.x, top: tooltip.y }}
+                >
                     <div className="cohort-grid-tooltip-title">{tooltip.row.label} · {tooltip.column.label}</div>
                     <div className="cohort-grid-tooltip-meta">Resolved epics: <strong>{tooltip.cell.count}</strong></div>
                     {resolvedSegments.map((segment) => (
@@ -140,7 +150,8 @@ function CohortGrid({ model, selectedRowKey, onSelectRow }) {
                             <span>{segment.count}</span>
                         </div>
                     ))}
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

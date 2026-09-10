@@ -287,7 +287,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
             'summary': 'Story A',
             'parent': {'key': 'PROD-12', 'fields': {'issuetype': {'name': 'Epic'}, 'summary': 'Epic A'}},
             'customfield_10004': 5}}
-        epic_meta = {'PROD-12': {'summary': 'Epic A', 'projectTrack': 'Committed',
+        epic_meta = {'PROD-12': {'summary': 'Epic A', 'projectTrack': 'Committed', 'status': 'In Progress',
                                  'assignee': {'accountId': 'acct-owner', 'displayName': 'Synthetic Owner'}}}
         with patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_10004'):
             payload = jira_server.build_excluded_capacity_issue_payload(
@@ -296,6 +296,19 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
         self.assertEqual(payload['fields']['epicProjectTrack'], 'Committed')
         self.assertEqual(payload['fields']['epicAssignee'], {
             'accountId': 'acct-owner', 'displayName': 'Synthetic Owner'})
+        self.assertEqual(payload['fields']['epicStatus'], 'In Progress')
+
+    def test_epic_metadata_fetch_requests_and_returns_status(self):
+        jira_server.clear_auth_sensitive_caches('test_setup')
+        epic = {'key': 'PROD-12', 'fields': {
+            'summary': 'Epic A', 'customfield_track': {'value': 'Committed'},
+            'status': {'name': 'In Progress'}, 'assignee': None}}
+        with patch.object(jira_server, 'get_project_track_field_id', return_value='customfield_track'), \
+             patch.object(jira_server, 'fetch_issues_by_keys', return_value=[epic]) as fetch:
+            result = jira_server.fetch_cached_excluded_capacity_epic_summaries(['PROD-12'])
+
+        self.assertEqual(fetch.call_args.args[1], ['summary', 'customfield_track', 'status', 'assignee'])
+        self.assertEqual(result['PROD-12']['status'], 'In Progress')
 
     def test_issue_payload_handles_missing_track_and_assignee(self):
         issue = {'id': '2', 'key': 'PROD-101', 'fields': {
@@ -306,6 +319,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
                 issue, team_field_id=None, epic_link_field_id=None, sprint_field_id=None,
                 epic_summary_by_key=epic_meta)
         self.assertIsNone(payload['fields']['epicProjectTrack'])
+        self.assertIsNone(payload['fields']['epicStatus'])
         self.assertIsNone(payload['fields']['epicAssignee'])
 
 

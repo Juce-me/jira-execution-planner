@@ -517,26 +517,39 @@ def _frame_stream(server, snapshot, transport):
         )
         index_started = time.monotonic()
         terminal_statuses = snapshot.board['columns'][-1]['statuses']
-        index_jql = eng_board.build_epic_index_jql(
-            snapshot.projects, snapshot.components if snapshot.components else (), terminal_statuses,
-            snapshot.board['doneEpicRetentionDays'] or 28,
-        )
         epic_fields = tuple(dict.fromkeys(eng_board.EPIC_FIELDS + tuple(
             value for value in (snapshot.project_track_field_id, snapshot.delivery_owner_field_id) if value
         )))
-        epics = eng_board.strict_search(
-            lambda payload: _search_page(server, snapshot, transport, payload, transport.budget.jira_retry_timeout()),
-            index_jql, epic_fields, counters=counters, cancel_check=lambda: _assert_current(snapshot),
-            max_unique_keys=eng_board.MAX_EPICS,
-        ) if snapshot.components or snapshot.query.scope == 'sprint' else []
+        search_page = lambda payload: _search_page(
+            server, snapshot, transport, payload, transport.budget.jira_retry_timeout(),
+        )
+        if snapshot.components:
+            epics = []
+            for epics, component_index_complete in eng_board.iter_component_epic_batches(
+                    search_page, projects=snapshot.projects, components=snapshot.components,
+                    epic_fields=epic_fields, terminal_statuses=terminal_statuses,
+                    retention_days=snapshot.board['doneEpicRetentionDays'] or 28,
+                    counters=counters, cancel_check=lambda: _assert_current(snapshot)):
+                if (not component_index_complete
+                        or (snapshot.query.scope == 'all_work' and snapshot.teams and epics)):
+                    provisional = eng_board.project_board(
+                        epics, [], project_map=snapshot.projects, columns=snapshot.board['columns'],
+                        project_track_field_id=snapshot.project_track_field_id,
+                        delivery_owner_field_id=snapshot.delivery_owner_field_id,
+                    )
+                    yield emit('index', epics=_shells(provisional), membership='candidate')
+        elif snapshot.query.scope == 'sprint':
+            index_jql = eng_board.build_epic_index_jql(
+                snapshot.projects, (), terminal_statuses,
+                snapshot.board['doneEpicRetentionDays'] or 28,
+            )
+            epics = eng_board.strict_search(
+                search_page, index_jql, epic_fields, counters=counters,
+                cancel_check=lambda: _assert_current(snapshot), max_unique_keys=eng_board.MAX_EPICS,
+            )
+        else:
+            epics = []
         if snapshot.query.scope == 'all_work' and snapshot.teams:
-            if epics:
-                provisional = eng_board.project_board(
-                    epics, [], project_map=snapshot.projects, columns=snapshot.board['columns'],
-                    project_track_field_id=snapshot.project_track_field_id,
-                    delivery_owner_field_id=snapshot.delivery_owner_field_id,
-                )
-                yield emit('index', epics=_shells(provisional), membership='candidate')
             epics = eng_board.discover_team_epics(
                 lambda payload: _search_page(server, snapshot, transport, payload, transport.budget.jira_retry_timeout()),
                 projects=snapshot.projects, issue_type_ids=snapshot.issue_type_ids,

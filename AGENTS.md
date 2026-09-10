@@ -354,4 +354,5 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In ENG Story displays, render a null Jira Story Points value as `0 SP` while preserving null internally until the user saves a number.
 - In ENG Catch Up and Planning, do not add Delivery Owner to Epic metadata; Story Points editing must reuse the inline SP slot as an input with no button or popup, preserve inherited typography, and keep a 23px minimum input width.
 - Missing-Story-Points alert links must reveal and highlight the Story on the ENG dashboard and focus its inline Story Points input in edit mode instead of navigating directly to Jira.
-- Preserve sprint startup as cache-first: restore the saved sprint value immediately, fetch the cached sprint catalog on first load, and select the current sprint when there is no valid saved selection.
+- Preserve sprint startup as cache-first: persist and restore both saved sprint id and name immediately, fetch the cached sprint catalog on first load, keep Board cross-sprint choices inactive while that request is pending, and select the current sprint when there is no valid saved selection.
+- Batch ENG Board Component discovery under the encoded Jira request limit; never concatenate the full Department Component catalog into one JQL.

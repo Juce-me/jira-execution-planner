@@ -635,17 +635,21 @@ test('availability failure retains loaded epic index without granting child auth
     }
 });
 
-test('component candidate index is replaced by the complete All work union', () => {
+test('cumulative component candidate indexes are replaced by the complete All work union', () => {
     const mod = loadModule();
     let state = mod.createEngBoardDataState();
     state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42 });
     state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
     state = reduce(mod, state, { type: 'start_load', requestId: 1 });
     state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: 'all_work' } });
-    for (const [sequence, membership, epics] of [[1, 'candidate', [epic('E-1')]], [2, 'authoritative', [epic('E-1'), epic('E-2')]]]) {
+    for (const [sequence, membership, epics] of [
+        [1, 'candidate', [epic('E-1')]],
+        [2, 'candidate', [epic('E-1'), epic('E-2')]],
+        [3, 'authoritative', [epic('E-1'), epic('E-2'), epic('E-3')]],
+    ]) {
         state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', sequence, 'index', { epics, membership }) });
     }
     assert.equal(state.status, 'loading');
     assert.equal(state.working.membershipAuthoritative, true);
-    assert.deepEqual(Object.keys(state.working.epicsByKey), ['E-1', 'E-2']);
+    assert.deepEqual(Object.keys(state.working.epicsByKey), ['E-1', 'E-2', 'E-3']);
 });

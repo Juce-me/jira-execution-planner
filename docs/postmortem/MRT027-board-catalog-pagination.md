@@ -62,6 +62,12 @@ Two follow-up changes incorrectly treated the shared Sprint selector as a new di
 
 The correction removes those changes and restores the prior server cache and first-load catalog flow. The saved Sprint id and label now initialize together, so the selected Sprint is usable immediately while the first-load catalog request validates it. If there is no valid saved selection, the existing loader selects the current Sprint. A browser regression holds the catalog response, proves the cached Sprint is restored before it completes, verifies the selected-sprint data request proceeds, and then proves the selector becomes available from the returned catalog.
 
+## Follow-up: Component index exceeded the Jira URL budget (2026-09-10)
+
+A live All work request was rejected before Jira search with `phase=index`, `limit=url_bytes`, and an observed encoded request size of 11,774 bytes. The index path concatenated every configured Department Component into one JQL request even though the strict transport caps encoded Jira GET searches at 7,000 bytes. Parent and child key searches were already batched; Component discovery was the missing case. Dependencies were outside this endpoint and did not contribute to the failure.
+
+The correction splits exact Component names into bounded searches with continuation-token headroom, shares the existing request/deadline counters across them, and deduplicates their Epic union under one incremental 1,000-key ceiling. Candidate Epic cards publish after each Component batch; membership becomes authoritative only after the complete union. Sprint startup also persists both the cached id and label, and the Board keeps All work and Component inactive while the first catalog request is pending. Regression coverage sends a synthetic Component catalog large enough to exceed the original URL budget through the actual stream, paginates the batches with a large token, and verifies every emitted Jira request stays within the cap.
+
 ## Lessons learned
 
 Passing tests cannot validate a product interpretation when the fixtures and assertions were derived from that same unconfirmed interpretation. A plan can be detailed and still contain a strategic ambiguity.
@@ -80,6 +86,7 @@ The existing control and data owner are part of the product contract. “Make sp
 - Test authoritative empty snapshots separately from loading/provisional empty state.
 - Keep endpoint-shaped pagination fixtures distinct for Jira project search and enhanced issue search.
 - Include permission-reduced embedded resources, list-valued configured fields, Team variants, and legacy Sprint values in projection fixtures. Keep fixed field-level reasons in sanitized rejection logs.
+- Exercise request-size limits with the full configured Component catalog, not only short single-Component fixtures.
 
 ## Action items
 

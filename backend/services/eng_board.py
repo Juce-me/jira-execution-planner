@@ -27,6 +27,7 @@ MAX_EPICS = 1000
 MAX_CHILDREN = 10000
 MAX_BATCH_SIZE = 40
 MAX_ENCODED_REQUEST_BYTES = 7000
+COMPONENT_PAGE_TOKEN_HEADROOM_BYTES = 1024
 CUSTOM_FIELD_RE = re.compile(r'^customfield_(\d+)$')
 
 EPIC_FIELDS = (
@@ -426,6 +427,69 @@ def discover_team_epics(search, *, projects, issue_type_ids, team_ids, existing_
     return [epics[key] for key in sorted(epics)]
 
 
+def split_component_batches(components, build_jql, fields):
+    """Split exact Jira Component names without normalizing their case."""
+    batches = []
+    current = []
+    normalized = tuple(dict.fromkeys(
+        str(value).strip() for value in components or () if str(value).strip()
+    ))
+    for component in normalized:
+        trial = current + [component]
+        if (len(trial) <= MAX_BATCH_SIZE
+                and encoded_search_bytes(build_jql(trial), fields)
+                <= MAX_ENCODED_REQUEST_BYTES - COMPONENT_PAGE_TOKEN_HEADROOM_BYTES):
+            current = trial
+            continue
+        request_bytes = encoded_search_bytes(build_jql([component]), fields)
+        if not current:
+            raise EngBoardError('board_scope_too_large', phase='index', limit='url_bytes',
+                                observed=request_bytes)
+        batches.append(tuple(current))
+        current = [component]
+        if request_bytes > MAX_ENCODED_REQUEST_BYTES - COMPONENT_PAGE_TOKEN_HEADROOM_BYTES:
+            raise EngBoardError('board_scope_too_large', phase='index', limit='url_bytes',
+                                observed=request_bytes)
+    if current:
+        batches.append(tuple(current))
+    return tuple(batches)
+
+
+def iter_component_epic_batches(search, *, projects, components, epic_fields, terminal_statuses,
+                                retention_days=28, counters=None, cancel_check=lambda: None):
+    """Yield the cumulative Component-owned Epic index after each bounded search."""
+    counters = counters or PagerCounters()
+
+    def component_jql(batch):
+        return build_epic_index_jql(projects, batch, terminal_statuses, retention_days)
+
+    batches = split_component_batches(components, component_jql, epic_fields)
+    epics = {}
+    union_budget = UnionKeyBudget(MAX_EPICS)
+    for batch_index, batch in enumerate(batches):
+        rows = strict_search(
+            search, component_jql(batch), epic_fields, counters=counters,
+            cancel_check=cancel_check, max_unique_keys=MAX_EPICS, key_budget=union_budget,
+        )
+        for row in rows:
+            key = _normalized_key(row.get('key'))
+            if not key:
+                raise EngBoardError('board_projection_invalid', phase='index')
+            epics[key] = row
+        if len(epics) > MAX_EPICS:
+            raise EngBoardError('board_scope_too_large', phase='index', limit='unique_keys',
+                                observed=len(epics))
+        yield [epics[key] for key in sorted(epics)], batch_index == len(batches) - 1
+
+
+def discover_component_epics(search, **kwargs):
+    """Fetch the complete Component-owned Epic index within Jira GET limits."""
+    epics = []
+    for epics, _complete in iter_component_epic_batches(search, **kwargs):
+        pass
+    return epics
+
+
 def split_epic_batches(epic_keys, build_jql, fields):
     batches = []
     current = []
@@ -485,6 +549,24 @@ class UniqueKeyBudget:
             if observed > self.limit or (observed == self.limit and not complete):
                 raise EngBoardError('board_scope_too_large', phase='index', limit='unique_keys', observed=observed)
             self.keys.update(keys)
+
+
+class UnionKeyBudget:
+    """Incremental ceiling that permits overlap between independent searches."""
+
+    def __init__(self, limit):
+        self.limit = int(limit)
+        self.keys = set()
+        self.lock = threading.RLock()
+
+    def accept(self, keys, *, complete):
+        with self.lock:
+            additions = set(keys) - self.keys
+            observed = len(self.keys) + len(additions)
+            if observed > self.limit:
+                raise EngBoardError('board_scope_too_large', phase='index', limit='unique_keys',
+                                    observed=observed)
+            self.keys.update(additions)
 
 
 def strict_search(search, jql, fields, *, counters=None, cancel_check=lambda: None,

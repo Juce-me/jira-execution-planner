@@ -99,7 +99,7 @@ function storyPayload(specs = EPIC_SPECS) {
 async function installBoardFixture(page, {
     board = { columns: BOARD_COLUMNS }, groups = null, epicSpecs = EPIC_SPECS,
     strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0,
-    sprintResponseGate = null,
+    sprintResponseGate = null, sprints = null, requestUrls = null,
 } = {}) {
     await installDashboardShell(page);
     if (sourceBundle) {
@@ -113,6 +113,7 @@ async function installBoardFixture(page, {
     await page.route('**/api/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
+        requestUrls?.push(`${url.pathname}${url.search}`);
         requests?.push(url.pathname === '/api/eng/board' ? `${url.pathname}${url.search}` : url.pathname);
         const json = (body, status = 200) => route.fulfill({
             status,
@@ -156,12 +157,13 @@ async function installBoardFixture(page, {
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/sprints') {
-            if (sprintResponseGate) await sprintResponseGate;
-            return json({ sprints: strictBoard ? [
+            const gate = typeof sprintResponseGate === 'function' ? sprintResponseGate() : sprintResponseGate;
+            if (gate) await gate;
+            return json({ sprints: sprints || (strictBoard ? [
                 { id: 34624, name: '2026Q2 Sprint 41', state: 'closed' },
                 { id: selectedSprintId, name: selectedSprintName, state: 'active' },
                 { id: 34626, name: '2026Q3 Sprint 43', state: 'future' },
-            ] : [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+            ] : [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }]) });
         }
         if (url.pathname === '/api/eng/board') {
             const scope = url.searchParams.get('scope') || 'sprint';
@@ -298,28 +300,78 @@ test('Board adds Component and All work to the existing Sprint selector without 
 });
 
 test('restores the cached sprint immediately and validates it from the first-load catalog', async ({ page }) => {
+    let activeSprintGate = null;
     let releaseSprints;
-    const sprintResponseGate = new Promise(resolve => { releaseSprints = resolve; });
     const requests = [];
-    await installBoardFixture(page, { requests, sourceBundle: true, sprintResponseGate });
-    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+    await installBoardFixture(page, {
+        requests, sourceBundle: true, strictBoard: true,
+        sprintResponseGate: () => activeSprintGate,
+    });
+    await page.addInitScript(({ selectedSprintId }) => {
+        if (localStorage.getItem('jira_dashboard_ui_prefs_v1')) return;
         localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
-            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
-            activeGroupId: 'grp-default', showBoard: false, showPlanning: false, showScenario: false,
+            selectedView: 'eng', selectedSprint: selectedSprintId,
+            activeGroupId: 'grp-default', showBoard: true, showPlanning: false, showScenario: false,
         }));
-    }, { selectedSprintId, selectedSprintName });
+    }, { selectedSprintId });
 
-    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await expect.poll(() => page.evaluate(() => JSON.parse(
+        localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}',
+    ).sprintName)).toBe(selectedSprintName);
+
+    activeSprintGate = new Promise(resolve => { releaseSprints = resolve; });
+    requests.length = 0;
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
     const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
     await expect(sprintControl).toContainText(selectedSprintName);
     await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
-    await expect(page.locator('.task-item[data-task-key="PLAT-1-1"]')).toBeVisible();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    await sprintControl.click();
+    const allWorkOption = page.getByText('All work', { exact: true }).first();
+    const componentOption = page.getByText('Component', { exact: true }).first();
+    await expect(allWorkOption).toHaveAttribute('aria-disabled', 'true');
+    await expect(componentOption).toHaveAttribute('aria-disabled', 'true');
+    await allWorkOption.click();
+    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
     await page.screenshot({ path: path.join(screenshotDir, 'cached-sprint-before-catalog.png'), animations: 'disabled' });
 
     releaseSprints();
-    await expect(sprintControl).toBeEnabled();
-    await sprintControl.click();
-    await expect(page.getByText(selectedSprintName, { exact: false }).first()).toBeVisible();
+    await expect(allWorkOption).toHaveAttribute('aria-disabled', 'false');
+    await expect(componentOption).toHaveAttribute('aria-disabled', 'false');
+    await allWorkOption.click();
+    await expect.poll(() => requests.filter(path => path.includes('scope=all_work')).length).toBe(1);
+});
+
+test('selects the current sprint on first load when no cached sprint exists', async ({ page }) => {
+    const requestUrls = [];
+    const currentSprint = { id: 34626, name: '2026Q3 Sprint 42', state: 'active' };
+    await installBoardFixture(page, {
+        sourceBundle: true,
+        requestUrls,
+        sprints: [
+            { id: 34624, name: '2026Q2', state: 'closed' },
+            currentSprint,
+            { id: 34627, name: '2026Q4', state: 'future' },
+        ],
+    });
+    await page.addInitScript(() => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', activeGroupId: 'grp-default', showBoard: true,
+            showPlanning: false, showScenario: false,
+        }));
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(currentSprint.name);
+    await expect.poll(() => requestUrls.some(path => (
+        path.startsWith('/api/tasks-with-team-name?')
+        && new URLSearchParams(path.split('?')[1]).get('sprint') === String(currentSprint.id)
+    ))).toBe(true);
+    expect(requestUrls.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
 });
 
 test('Catch Up to Board reuses the loaded sprint snapshot without another Jira data request', async ({ page }) => {

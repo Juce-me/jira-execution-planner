@@ -488,7 +488,7 @@ import {
                 [homeTokenConnection]
             );
             const showEpmNavigation = authMode === 'basic' || hasActiveHomeTokenConnection;
-            const [sprintName, setSprintName] = useState(savedPrefsRef.current.sprintName || 'Sprint');
+            const [sprintName, setSprintName] = useState(savedPrefsRef.current.sprintName || '');
             const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
             const [epmProjectSort, setEpmProjectSort] = useState(normalizeEpmProjectSort(savedPrefsRef.current.epmProjectSort || DEFAULT_EPM_PROJECT_SORT));
@@ -6348,7 +6348,7 @@ import {
                     epmSelectedProjectId,
                     epmProjectSort,
                     engEpicSort,
-                    selectedSprint,
+                    selectedSprint, sprintName,
                     selectedTeams,
                     activeGroupId,
                     showPlanning,
@@ -6405,7 +6405,7 @@ import {
                 epmSelectedProjectId,
                 epmProjectSort,
                 engEpicSort,
-                selectedSprint,
+                selectedSprint, sprintName,
                 selectedTeams,
                 activeGroupId,
                 showPlanning,
@@ -6739,7 +6739,7 @@ import {
                     setAvailableSprints(sprints);
                     setSprintError('');
 
-                    const preferredSprintId = savedPrefsRef.current.selectedSprint;
+                    const preferredSprintId = selectedSprint || savedPrefsRef.current.selectedSprint;
                     const preferredSprint = preferredSprintId ? sprints.find(s => String(s.id) === String(preferredSprintId)) : null;
 
                     if (preferredSprint) {
@@ -6748,7 +6748,7 @@ import {
                     } else {
                         // Auto-select current quarter if available
                         const currentQuarter = getCurrentQuarter();
-                        const currentSprint = sprints.find(s => s.name === currentQuarter);
+                        const currentSprint = sprints.find(s => String(s.state || '').toLowerCase() === 'active') || sprints.find(s => s.name === currentQuarter);
                         if (currentSprint) {
                             setSelectedSprint(currentSprint.id);
                             setSprintName(currentSprint.name);
@@ -13722,7 +13722,8 @@ import {
             ) : null;
 
             const boardConfigAvailable = boardAllWorkAvailable === true && Boolean(activeGroup?.board?.columns?.length);
-            const boardComponentEnabled = boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length); const boardAllWorkEnabled = boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length || activeGroup?.teamIds?.length);
+            const sprintCatalogReady = !sprintsLoading;
+            const boardComponentEnabled = sprintCatalogReady && boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length); const boardAllWorkEnabled = sprintCatalogReady && boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length || activeGroup?.teamIds?.length);
             const renderSprintControl = (surface) => {
                 const boardScopeControl = selectedView === 'eng' && showBoard; const canOpen = boardScopeControl || (!sprintsLoading && availableSprints.length > 0);
                 const displayedSprint = boardScopeControl && boardStrictScope ? (boardStrictScope === 'component' ? 'Component' : 'All work') : (sprintName || 'Sprint');

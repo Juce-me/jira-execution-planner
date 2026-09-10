@@ -166,7 +166,6 @@ function applyFrame(state, frame) {
 
     if (frame.type === 'index') {
         if ((state.working.indexReceived && (state.working.membershipAuthoritative
-                || frame.membership !== 'authoritative'
                 || !hasAuthoritativeIndexScope(state.scopesByGroup[state.activeGroupId])))
             || frame.epics.some(epic => !knowsColumn(state.working, epic.columnId))) {
             return invalidFrame(state, frame);

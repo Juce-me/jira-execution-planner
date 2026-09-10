@@ -36,6 +36,94 @@ class EngBoardScopeTests(unittest.TestCase):
         result = eng_board.validate_scope_configuration('all_work', board, (), team_ids=('team-a',))
         self.assertEqual((), result['components'])
 
+    def test_component_epic_discovery_batches_url_budget_and_deduplicates_union(self):
+        components = tuple(f'Exact Component {index:03d} ' + ('x' * 48) for index in range(150))
+        calls = []
+        self.assertGreater(
+            eng_board.encoded_search_bytes(
+                eng_board.build_epic_index_jql(
+                    (('PROD', 'product'),), components, ('Done',),
+                ),
+                eng_board.EPIC_FIELDS,
+            ),
+            eng_board.MAX_ENCODED_REQUEST_BYTES,
+        )
+
+        def search(params):
+            calls.append(params)
+            return {'isLast': True, 'issues': [issue('PROD-1', issue_type='Epic')]}
+
+        rows = eng_board.discover_component_epics(
+            search, projects=(('PROD', 'product'),), components=components,
+            epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=('Done',),
+        )
+
+        self.assertEqual(['PROD-1'], [row['key'] for row in rows])
+        self.assertGreater(len(calls), 1)
+        for call in calls:
+            self.assertLessEqual(
+                eng_board.encoded_search_bytes(call['jql'], call['fields']),
+                eng_board.MAX_ENCODED_REQUEST_BYTES,
+            )
+        combined_jql = '\n'.join(call['jql'] for call in calls)
+        for component in components:
+            self.assertEqual(1, combined_jql.count(f'"{component}"'))
+
+    def test_component_epic_discovery_enforces_unique_cap_across_batches(self):
+        calls = []
+
+        def search(params):
+            calls.append(params)
+            return {'isLast': True, 'issues': [
+                issue(f'PROD-{len(calls)}', issue_type='Epic'),
+            ]}
+
+        with patch.object(eng_board, 'MAX_BATCH_SIZE', 1), patch.object(eng_board, 'MAX_EPICS', 1):
+            with self.assertRaisesRegex(eng_board.EngBoardError, 'board_scope_too_large') as raised:
+                eng_board.discover_component_epics(
+                    search, projects=(('PROD', 'product'),), components=('First', 'Second'),
+                    epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+                )
+        self.assertEqual('unique_keys', raised.exception.limit)
+        self.assertEqual(2, raised.exception.observed)
+
+    def test_component_epic_batches_reserve_continuation_token_headroom(self):
+        components = tuple(f'Component {index:03d} ' + ('x' * 48) for index in range(150))
+        counters = eng_board.PagerCounters()
+        search_number = 0
+
+        def search(params):
+            nonlocal search_number
+            request_bytes = eng_board.encoded_search_bytes(
+                params['jql'], params['fields'], params.get('nextPageToken'),
+            )
+            self.assertLessEqual(request_bytes, eng_board.MAX_ENCODED_REQUEST_BYTES)
+            if params.get('nextPageToken'):
+                return {'isLast': True, 'issues': [
+                    issue(f'PROD-{search_number * 2}', issue_type='Epic'),
+                ]}
+            search_number += 1
+            return {
+                'isLast': False, 'nextPageToken': 't' * 900,
+                'issues': [issue(f'PROD-{search_number * 2 - 1}', issue_type='Epic')],
+            }
+
+        rows = eng_board.discover_component_epics(
+            search, projects=(('PROD', 'product'),), components=components,
+            epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=('Done',), counters=counters,
+        )
+
+        self.assertEqual(search_number * 2, len(rows))
+        self.assertEqual(search_number * 2, counters.pages)
+        self.assertGreater(search_number, 1)
+
+        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_scope_too_large'):
+            eng_board.discover_component_epics(
+                lambda _params: self.fail('Oversized singleton must fail before Jira search'),
+                projects=(('PROD', 'product'),), components=('small', 'x' * 5700),
+                epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=('Done',),
+            )
+
     def test_team_discovery_merges_cross_team_parents_and_keeps_parent_status(self):
         calls = []
         direct = issue('PROD-1', issue_type='Epic')

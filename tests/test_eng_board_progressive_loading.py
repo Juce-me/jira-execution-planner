@@ -11,6 +11,36 @@ from tests.test_eng_board_routes import FakeResponse, board_snapshot, db_context
 
 
 class EngBoardProgressiveLoadingTests(unittest.TestCase):
+    def test_large_component_index_is_batched_before_authoritative_frame(self):
+        components = tuple(f'Component {index:03d} ' + ('x' * 48) for index in range(150))
+        queries = []
+
+        def search(payload, **kwargs):
+            queries.append(payload)
+            if 'issuetype = Epic' in payload['jql']:
+                return FakeResponse({'issues': [epic('ABC-1', 'To Do')], 'isLast': True})
+            return FakeResponse({'issues': [], 'isLast': True})
+
+        with patch.object(eng_board_routes, '_assert_current', return_value=db_context()):
+            frames = [json.loads(line) for line in eng_board_routes._frame_stream(
+                SimpleNamespace(current_jira_search=search), board_snapshot(components=components),
+                EngBoardRequestTransport(),
+            )]
+
+        index_queries = [query for query in queries if 'issuetype = Epic' in query['jql']]
+        self.assertGreater(len(index_queries), 1)
+        for query in index_queries:
+            self.assertLessEqual(
+                eng_board.encoded_search_bytes(query['jql'], query['fields']),
+                eng_board.MAX_ENCODED_REQUEST_BYTES,
+            )
+        indexes = [frame for frame in frames if frame['type'] == 'index']
+        self.assertGreater(len(indexes), 2)
+        self.assertTrue(all(row['membership'] == 'candidate' for row in indexes[:-1]))
+        self.assertEqual('authoritative', indexes[-1]['membership'])
+        self.assertEqual(['ABC-1'], [row['key'] for row in indexes[-1]['epics']])
+        self.assertEqual('success', frames[-1]['outcome'])
+
     def test_component_epics_are_visible_before_team_discovery_deadline(self):
         clock = [0.0]
         def search(payload, **kwargs):

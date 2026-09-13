@@ -32,6 +32,7 @@ import EngView from './eng/EngView.jsx';
 import EngBoardView from './eng/EngBoardView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
 import EngModeControl from './eng/EngModeControl.jsx';
+import { resolveEngSprintSelectorState } from './eng/engSprintSelectorState.js';
 import EpicHeaderValueReadout from './eng/EpicHeaderValueReadout.jsx';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
@@ -246,6 +247,7 @@ import SettingsModal from './settings/SettingsModal.jsx';
 import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import GroupBoardsTab from './settings/GroupBoardsTab.jsx';
 import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
+import { createSettingsDraftReadGuard, useSettingsConfigBaselineRevision } from './settings/settingsConfigReadState.js';
 import AdminAccessSettings, { useAdminAccessSettings } from './settings/AdminAccessSettings.jsx';
 import AdminSettingsTabs from './settings/AdminSettingsTabs.jsx';
 import PerformanceSettings from './settings/PerformanceSettings.jsx';
@@ -494,6 +496,8 @@ import {
             const [teamCatalogState, setTeamCatalogState] = useState({ catalog: {}, meta: {} });
             const [groupsLoading, setGroupsLoading] = useState(true);
             const [groupsError, setGroupsError] = useState('');
+            const [boardGroupsReadFailed, setBoardGroupsReadFailed] = useState(false);
+            const groupsReadGenerationRef = useRef(0);
             const [groupWarnings, setGroupWarnings] = useState([]);
             const [groupConfigSource, setGroupConfigSource] = useState('');
             const [boardView, setBoardView] = useState(null);
@@ -524,6 +528,8 @@ import {
             const sharedConfigRevisionRef = useRef(0);
             const lastCommittedWorkspaceSectionsRef = useRef([]);
             const [sharedConfigReady, setSharedConfigReady] = useState(false);
+            const boardConfigReadGenerationRef = useRef(0);
+            const settingsDraftSnapshotRef = useRef({});
             const [groupImportText, setGroupImportText] = useState('');
             const [showGroupImport, setShowGroupImport] = useState(false);
             const [showGroupAdvanced, setShowGroupAdvanced] = useState(false);
@@ -678,6 +684,22 @@ import {
             } = useJiraFieldPickers({ backendUrl: BACKEND_URL, jiraFields });
             const [issueTypesDraft, setIssueTypesDraft] = useState(['Story']);
             const issueTypesBaselineRef = useRef(JSON.stringify(['Story']));
+            const {
+                baselineRevision: settingsConfigBaselineRevision,
+                acceptBaseline: acceptSettingsConfigBaseline,
+            } = useSettingsConfigBaselineRevision();
+            settingsDraftSnapshotRef.current = {
+                projects: JSON.stringify(selectedProjectsDraft),
+                board: JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }),
+                capacity: JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }),
+                priorityWeights: JSON.stringify(priorityWeightsDraft),
+                issueTypes: JSON.stringify(issueTypesDraft),
+                sprintField: JSON.stringify({ fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft }),
+                parentNameField: JSON.stringify({ fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft }),
+                storyPointsField: JSON.stringify({ fieldId: storyPointsFieldIdDraft, fieldName: storyPointsFieldNameDraft }),
+                teamField: JSON.stringify({ fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft }),
+                deliveryOwnerField: JSON.stringify({ fieldId: deliveryOwnerFieldIdDraft, fieldName: deliveryOwnerFieldNameDraft }),
+            };
             const [availableIssueTypes, setAvailableIssueTypes] = useState([]);
             const [issueTypeSearchQuery, setIssueTypeSearchQuery] = useState('');
             const [issueTypeSearchOpen, setIssueTypeSearchOpen] = useState(false);
@@ -693,6 +715,7 @@ import {
             const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
             const [showBoard, setShowBoard] = useState(savedPrefsRef.current.showBoard ?? false);
             const [boardAllWorkAvailable, setBoardAllWorkAvailable] = useState(null);
+            const [boardBootstrapStatus, setBoardBootstrapStatus] = useState('loading');
             const [boardStrictScope, setBoardStrictScope] = useState('');
             const [showDependencies, setShowDependencies] = useState(true);
             const [searchQuery, setSearchQuery] = useState(savedPrefsRef.current.searchQuery ?? '');
@@ -804,8 +827,8 @@ import {
             const excludedCapacityEpicDropdownRef = useRef(null);
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
             const isCatchUpMode = selectedView === 'eng' && !showPlanning && !showStats && !showScenario && !showBoard;
-            const strictBoardActive = selectedView === 'eng' && showBoard && !sprintsLoading && availableSprints.length > 0 && boardAllWorkAvailable === true && ['all_work', 'component'].includes(boardStrictScope);
-            useEffect(() => { if (selectedView !== 'eng' || !showBoard || boardAllWorkAvailable === false) setBoardStrictScope(''); }, [selectedView, showBoard, boardAllWorkAvailable]);
+            const boardScopeRequested = selectedView === 'eng' && showBoard && ['component', 'all_work'].includes(boardStrictScope);
+            useEffect(() => { if (selectedView !== 'eng' || !showBoard) setBoardStrictScope(''); }, [selectedView, showBoard]);
             const [projectTrackCapacitySide, setProjectTrackCapacitySide] = useState(
                 ['product', 'tech', 'both'].includes(savedPrefsRef.current.projectTrackCapacitySide) ? savedPrefsRef.current.projectTrackCapacitySide : 'product'
             );
@@ -2379,6 +2402,9 @@ import {
             };
 
             const loadGroupsConfig = async () => {
+                const readGeneration = groupsReadGenerationRef.current + 1;
+                groupsReadGenerationRef.current = readGeneration;
+                const shouldApplyResult = () => groupsReadGenerationRef.current === readGeneration;
                 setGroupsLoading(true);
                 setGroupsError('');
                 try {
@@ -2387,26 +2413,32 @@ import {
                         throw new Error(`Groups config error ${response.status}`);
                     }
                     const payload = await response.json();
+                    if (!shouldApplyResult()) return false;
                     const normalized = applyLocalGroupPreferences(payload, savedPrefsRef.current);
                     clearServerConnectionError();
                     setGroupsConfig(normalized);
                     setGroupPreferences(normalized.preferences);
                     setGroupWarnings(payload.warnings || []);
                     setGroupConfigSource(normalized.source || payload.source || '');
+                    setBoardGroupsReadFailed(false);
                     setActiveGroupId(prev => {
                         const effectiveIds = effectiveVisibleGroupIds(normalized, normalized.preferences);
                         const preferred = normalized.preferences?.activeGroupId || savedPrefsRef.current.activeGroupId || prev;
                         return resolveVisibleActiveGroupId(normalized, effectiveIds, preferred);
                     });
+                    return true;
                 } catch (err) {
-                    if (isAuthenticationRequiredError(err)) return;
+                    if (!shouldApplyResult()) return false;
+                    setBoardGroupsReadFailed(true);
+                    if (isAuthenticationRequiredError(err)) return false;
                     if (reportServerConnectionError(err)) {
                         setGroupsError('');
                     } else {
                         setGroupsError(err.message || 'Failed to load groups config.');
                     }
+                    return false;
                 } finally {
-                    setGroupsLoading(false);
+                    if (shouldApplyResult()) setGroupsLoading(false);
                 }
             };
 
@@ -2618,22 +2650,22 @@ import {
 
             const isProjectsDraftDirty = React.useMemo(() => {
                 return JSON.stringify(selectedProjectsDraft) !== selectedProjectsBaselineRef.current;
-            }, [selectedProjectsDraft]);
+            }, [selectedProjectsDraft, settingsConfigBaselineRevision]);
 
             const isPriorityWeightsDirty = React.useMemo(() => {
                 return JSON.stringify(priorityWeightsDraft) !== priorityWeightsBaselineRef.current;
-            }, [priorityWeightsDraft]);
+            }, [priorityWeightsDraft, settingsConfigBaselineRevision]);
 
-            const isBoardConfigDirty = React.useMemo(() => Boolean(boardConfigBaselineRef.current) && JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }) !== boardConfigBaselineRef.current, [boardIdDraft, boardNameDraft]);
+            const isBoardConfigDirty = React.useMemo(() => Boolean(boardConfigBaselineRef.current) && JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }) !== boardConfigBaselineRef.current, [boardIdDraft, boardNameDraft, settingsConfigBaselineRevision]);
 
             const isCapacityDraftDirty = React.useMemo(() => Boolean(capacityBaselineRef.current) && (
                 JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current
                 || (capacityVerificationRequired && Boolean(capacityProjectDraft && capacityFieldIdDraft))
-            ), [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft, capacityVerificationRequired]);
+            ), [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft, capacityVerificationRequired, settingsConfigBaselineRevision]);
 
             const isIssueTypesDraftDirty = React.useMemo(() => {
                 return JSON.stringify(issueTypesDraft) !== issueTypesBaselineRef.current;
-            }, [issueTypesDraft]);
+            }, [issueTypesDraft, settingsConfigBaselineRevision]);
 
             const isEpmConfigDirty = React.useMemo(() => {
                 return JSON.stringify(epmConfigDraft) !== epmConfigBaselineRef.current;
@@ -3670,17 +3702,26 @@ import {
                     if (!firstRunConfigurationActive) {
                         // Ordinary settings saves refresh derived configuration and dashboard data.
                         // First-run waits for the private handoff so retries never refetch committed sections.
+                        const boardConfigReadGeneration = boardConfigReadGenerationRef.current + 1;
+                        boardConfigReadGenerationRef.current = boardConfigReadGeneration;
+                        const shouldApplyBoardConfigRead = () => boardConfigReadGenerationRef.current === boardConfigReadGeneration;
+                        setBoardBootstrapStatus('loading');
                         try {
                             const cfg = await fetchAppConfig(BACKEND_URL);
-                            setAuthMode(cfg.authMode || '');
-                            setCapacityEnabled(Boolean(cfg.capacityProject || cfg.capacityConfigRequiresResolution));
-                            setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
-                            setUserCanEditSettings(cfg.userCanEditSettings === true);
-                            setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
-                            setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true); setBoardAllWorkAvailable(cfg.boardAllWorkAvailable === true);
-                            setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
+                            if (shouldApplyBoardConfigRead()) {
+                                setAuthMode(cfg.authMode || '');
+                                setCapacityEnabled(Boolean(cfg.capacityProject || cfg.capacityConfigRequiresResolution));
+                                setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
+                                setUserCanEditSettings(cfg.userCanEditSettings === true);
+                                setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
+                                setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
+                                setBoardAllWorkAvailable(cfg.boardAllWorkAvailable);
+                                setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
+                                setBoardBootstrapStatus('ready');
+                            }
                         } catch (err) {
-                            if (isAuthenticationRequiredError(err)) throw err; setBoardAllWorkAvailable(false);
+                            if (shouldApplyBoardConfigRead()) setBoardBootstrapStatus('error');
+                            if (isAuthenticationRequiredError(err)) throw err;
                             /* best-effort */
                         }
                         invalidateSprintDataForConfigSave(refreshTarget);
@@ -4571,51 +4612,75 @@ import {
                 }, 120);
             };
 
-            const loadSelectedProjects = async () => {
+            const loadSelectedProjects = async ({
+                readGeneration = boardConfigReadGenerationRef.current,
+                preserveDraft = isProjectsDraftDirty,
+            } = {}) => {
+                const shouldApplyResult = () => boardConfigReadGenerationRef.current === readGeneration;
+                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
                 try {
                     const response = await requestSelectedProjects(BACKEND_URL);
                     if (!response.ok) throw new Error(`Selected projects fetch error ${response.status}`);
                     const data = await response.json();
+                    if (!shouldApplyResult()) return false;
                     const selected = data.selected || [];
                     clearServerConnectionError();
-                    setSelectedProjectsDraft(selected);
+                    if (!preserveDraft && !draftReadGuard.draftChanged('projects')) setSelectedProjectsDraft(selected);
                     setSavedSelectedProjects(selected);
-                    selectedProjectsBaselineRef.current = JSON.stringify(selected);
+                    acceptSettingsConfigBaseline(selectedProjectsBaselineRef, JSON.stringify(selected));
+                    return true;
                 } catch (err) {
-                    if (isAuthenticationRequiredError(err)) return;
+                    if (!shouldApplyResult()) return false;
+                    if (isAuthenticationRequiredError(err)) return false;
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load selected projects:', err);
                     }
+                    return false;
                 }
             };
 
-            const loadBoardConfig = async () => {
+            const loadBoardConfig = async ({
+                readGeneration = boardConfigReadGenerationRef.current,
+                preserveDraft = isBoardConfigDirty,
+            } = {}) => {
+                const shouldApplyResult = () => boardConfigReadGenerationRef.current === readGeneration;
+                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
                 try {
                     const response = await requestBoardConfig(BACKEND_URL);
-                    if (!response.ok) return;
+                    if (!response.ok) return false;
                     const data = await response.json();
+                    if (!shouldApplyResult()) return false;
                     const nextBoardId = String(data.boardId || '');
                     const nextBoardName = String(data.boardName || '');
-                    setBoardIdDraft(nextBoardId);
+                    if (!preserveDraft && !draftReadGuard.draftChanged('board')) {
+                        setBoardIdDraft(nextBoardId);
+                        setBoardNameDraft(nextBoardName);
+                    }
                     setSavedBoardId(nextBoardId);
-                    setBoardNameDraft(nextBoardName);
-                    boardConfigBaselineRef.current = JSON.stringify({ boardId: nextBoardId, boardName: nextBoardName });
+                    acceptSettingsConfigBaseline(boardConfigBaselineRef, JSON.stringify({ boardId: nextBoardId, boardName: nextBoardName }));
+                    return true;
                 } catch (err) {
+                    if (!shouldApplyResult()) return false;
                     console.error('Failed to load board config:', err);
+                    return false;
                 }
             };
 
-            const loadPriorityWeightsConfig = async () => {
+            const loadPriorityWeightsConfig = async ({ shouldApplyDraft = () => true } = {}) => {
+                const preserveDraft = isPriorityWeightsDirty;
+                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
                 try {
                     const response = await requestPriorityWeightsConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     const rows = clonePriorityWeightRows(data.weights);
                     clearServerConnectionError();
-                    setPriorityWeightsDraft(rows);
+                    if (!preserveDraft && !draftReadGuard.draftChanged('priorityWeights') && shouldApplyDraft()) {
+                        setPriorityWeightsDraft(rows);
+                    }
                     setEffectivePriorityWeightsRows(rows);
                     setPriorityWeightsSource(String(data.source || 'default'));
-                    priorityWeightsBaselineRef.current = JSON.stringify(rows);
+                    acceptSettingsConfigBaseline(priorityWeightsBaselineRef, JSON.stringify(rows));
                 } catch (err) {
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load priority weights config:', err);
@@ -4636,7 +4701,7 @@ import {
                     sharedConfigRevisionRef.current,
                 );
                 commitSharedConfigRevision(payload);
-                boardConfigBaselineRef.current = JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft });
+                acceptSettingsConfigBaseline(boardConfigBaselineRef, JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }));
                 setSavedBoardId(boardIdDraft);
                 return payload;
             };
@@ -4651,7 +4716,7 @@ import {
                 setPriorityWeightsDraft(rows);
                 setEffectivePriorityWeightsRows(rows);
                 setPriorityWeightsSource(String(data.source || 'config'));
-                priorityWeightsBaselineRef.current = JSON.stringify(rows);
+                acceptSettingsConfigBaseline(priorityWeightsBaselineRef, JSON.stringify(rows));
             };
 
             const addProjectSelection = (key, type = 'product') => {
@@ -4782,7 +4847,7 @@ import {
                 try {
                     const payload = await requestSaveSelectedProjects(BACKEND_URL, selectedProjectsDraft, sharedConfigRevisionRef.current);
                     commitSharedConfigRevision(payload);
-                    selectedProjectsBaselineRef.current = JSON.stringify(selectedProjectsDraft);
+                    acceptSettingsConfigBaseline(selectedProjectsBaselineRef, JSON.stringify(selectedProjectsDraft));
                     setSavedSelectedProjects([...selectedProjectsDraft]);
                 } catch (err) {
                     setGroupDraftError(err.message || 'Failed to save project selection.');
@@ -4792,15 +4857,19 @@ import {
                 }
             };
 
-            const loadCapacityConfig = async ({ authMode: requestedAuthMode = authMode } = {}) => {
+            const loadCapacityConfig = async ({ authMode: requestedAuthMode = authMode, shouldApplyDraft = () => true } = {}) => {
+                const preserveDraft = isCapacityDraftDirty;
+                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
                 try {
                     const response = await requestCapacityConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
-                    setCapacityProjectDraft(data.project || '');
-                    setCapacityFieldIdDraft(data.fieldId || '');
-                    setCapacityFieldNameDraft(data.fieldName || '');
-                    capacityBaselineRef.current = JSON.stringify({ project: data.project || '', fieldId: data.fieldId || '', fieldName: data.fieldName || '' });
+                    if (!preserveDraft && !draftReadGuard.draftChanged('capacity') && shouldApplyDraft()) {
+                        setCapacityProjectDraft(data.project || '');
+                        setCapacityFieldIdDraft(data.fieldId || '');
+                        setCapacityFieldNameDraft(data.fieldName || '');
+                    }
+                    acceptSettingsConfigBaseline(capacityBaselineRef, JSON.stringify({ project: data.project || '', fieldId: data.fieldId || '', fieldName: data.fieldName || '' }));
                     setCapacityVerificationRequired(Boolean(
                         requestedAuthMode === 'atlassian_oauth'
                         && data.project
@@ -4819,18 +4888,22 @@ import {
                     sharedConfigRevisionRef.current,
                 );
                 commitSharedConfigRevision(payload);
-                capacityBaselineRef.current = JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft });
+                acceptSettingsConfigBaseline(capacityBaselineRef, JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }));
                 setCapacityVerificationRequired(false);
             };
 
-            const loadIssueTypesConfig = async () => {
+            const loadIssueTypesConfig = async ({ shouldApplyDraft = () => true } = {}) => {
+                const preserveDraft = isIssueTypesDraftDirty;
+                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
                 try {
                     const response = await requestIssueTypesConfig(BACKEND_URL);
                     if (!response.ok) return;
                     const data = await response.json();
                     const types = data.issueTypes || ['Story'];
-                    setIssueTypesDraft(types);
-                    issueTypesBaselineRef.current = JSON.stringify(types);
+                    if (!preserveDraft && !draftReadGuard.draftChanged('issueTypes') && shouldApplyDraft()) {
+                        setIssueTypesDraft(types);
+                    }
+                    acceptSettingsConfigBaseline(issueTypesBaselineRef, JSON.stringify(types));
                 } catch (err) {
                     console.error('Failed to load issue types config:', err);
                 }
@@ -4839,7 +4912,7 @@ import {
             const saveIssueTypesConfig = async () => {
                 const payload = await requestSaveIssueTypesConfig(BACKEND_URL, issueTypesDraft, sharedConfigRevisionRef.current);
                 commitSharedConfigRevision(payload);
-                issueTypesBaselineRef.current = JSON.stringify(issueTypesDraft);
+                acceptSettingsConfigBaseline(issueTypesBaselineRef, JSON.stringify(issueTypesDraft));
             };
 
             const fetchAvailableIssueTypes = async () => {
@@ -5407,6 +5480,28 @@ import {
                 });
                 return ids;
             }, [activeGroup]);
+            const sprintCatalogReady = !sprintsLoading && availableSprints.length > 0;
+            const engSprintSelectorState = React.useMemo(() => resolveEngSprintSelectorState({
+                boardMode: selectedView === 'eng' && showBoard,
+                catalogReady: sprintCatalogReady,
+                bootstrapStatus: boardBootstrapStatus,
+                capability: boardAllWorkAvailable,
+                groupsLoading,
+                groupsFailed: boardGroupsReadFailed,
+                group: activeGroup,
+                savedProjects: savedSelectedProjects,
+                savedBoardId,
+            }), [
+                selectedView, showBoard, sprintCatalogReady, boardBootstrapStatus,
+                boardAllWorkAvailable, groupsLoading, boardGroupsReadFailed, activeGroup,
+                savedSelectedProjects, savedBoardId,
+            ]);
+            const selectedScopeReadiness = boardStrictScope === 'component'
+                ? engSprintSelectorState.componentReadiness
+                : boardStrictScope === 'all_work'
+                    ? engSprintSelectorState.allWorkReadiness
+                    : 'ready';
+            const strictBoardActive = boardScopeRequested && selectedScopeReadiness === 'ready';
             const statsTeamColorMap = React.useMemo(() => buildTeamColorMap(
                 activeGroupTeamIds.map((teamId) => ({ id: teamId, name: resolveTeamName(teamId) }))
             ), [activeGroupTeamIds, teamNameLookup]);
@@ -6381,14 +6476,34 @@ import {
             ]);
 
             const loadConfig = async ({ preserveEpmDraft = false } = {}) => {
+                const readGeneration = boardConfigReadGenerationRef.current + 1;
+                boardConfigReadGenerationRef.current = readGeneration;
+                const shouldApplyResult = () => boardConfigReadGenerationRef.current === readGeneration;
                 const epmRequestGeneration = epmConfigDraftGenerationRef.current;
                 const shouldPreserveEpmDraft = () => preserveEpmDraft
                     || epmConfigDraftGenerationRef.current !== epmRequestGeneration;
+                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
+                const initiallyDirtyDrafts = {
+                    projects: isProjectsDraftDirty,
+                    board: isBoardConfigDirty,
+                    capacity: isCapacityDraftDirty,
+                    priorityWeights: isPriorityWeightsDirty,
+                    issueTypes: isIssueTypesDraftDirty,
+                    sprintField: isSprintFieldDirty,
+                    parentNameField: isParentNameFieldDirty,
+                    storyPointsField: isStoryPointsFieldDirty,
+                    teamField: isTeamFieldDirty,
+                    deliveryOwnerField: isDeliveryOwnerFieldDirty,
+                };
+                const shouldPreserveSettingsDraft = section => initiallyDirtyDrafts[section]
+                    || draftReadGuard.draftChanged(section);
                 setSharedConfigReady(false);
+                setBoardBootstrapStatus('loading');
                 try {
                     const config = await fetchAppConfig(BACKEND_URL);
+                    if (!shouldApplyResult()) return false;
                     performanceGate.resolve(config.performanceDebugEnabled === true);
-                    setPerformanceAdminAvailable(config.performanceAdminAvailable === true); setBoardAllWorkAvailable(config.boardAllWorkAvailable === true);
+                    setPerformanceAdminAvailable(config.performanceAdminAvailable === true);
                     const resumePrincipal = {
                         workspaceId: String(config.viewConfig?.workspaceId || ''),
                         viewConfigId: String(config.viewConfig?.viewConfigId || ''),
@@ -6405,6 +6520,7 @@ import {
                             );
                         }
                     }
+                    if (!shouldApplyResult()) return false;
                     authResumePrincipalRef.current = resumePrincipal;
                     const resumeStorage = getAuthResumeStorage(window);
                     const resume = resumeStorage && !planningAuthResumePersistenceFailedRef.current
@@ -6434,21 +6550,25 @@ import {
                     const sharedConfig = config.sharedConfig;
                     if (sharedConfig && Number.isInteger(config.sharedConfigRevision)) {
                         const selectedProjects = sharedConfig.projects?.selected || [];
-                        setSelectedProjectsDraft(selectedProjects);
+                        if (!shouldPreserveSettingsDraft('projects')) setSelectedProjectsDraft(selectedProjects);
                         setSavedSelectedProjects(selectedProjects);
-                        selectedProjectsBaselineRef.current = JSON.stringify(selectedProjects);
+                        acceptSettingsConfigBaseline(selectedProjectsBaselineRef, JSON.stringify(selectedProjects));
                         const board = sharedConfig.board || {};
                         const nextBoardId = String(board.boardId || '');
                         const nextBoardName = String(board.boardName || '');
-                        setBoardIdDraft(nextBoardId);
+                        if (!shouldPreserveSettingsDraft('board')) {
+                            setBoardIdDraft(nextBoardId);
+                            setBoardNameDraft(nextBoardName);
+                        }
                         setSavedBoardId(nextBoardId);
-                        setBoardNameDraft(nextBoardName);
-                        boardConfigBaselineRef.current = JSON.stringify({ boardId: nextBoardId, boardName: nextBoardName });
+                        acceptSettingsConfigBaseline(boardConfigBaselineRef, JSON.stringify({ boardId: nextBoardId, boardName: nextBoardName }));
                         const capacity = sharedConfig.capacity || {};
-                        setCapacityProjectDraft(capacity.project || '');
-                        setCapacityFieldIdDraft(capacity.fieldId || '');
-                        setCapacityFieldNameDraft(capacity.fieldName || '');
-                        capacityBaselineRef.current = JSON.stringify({ project: capacity.project || '', fieldId: capacity.fieldId || '', fieldName: capacity.fieldName || '' });
+                        if (!shouldPreserveSettingsDraft('capacity')) {
+                            setCapacityProjectDraft(capacity.project || '');
+                            setCapacityFieldIdDraft(capacity.fieldId || '');
+                            setCapacityFieldNameDraft(capacity.fieldName || '');
+                        }
+                        acceptSettingsConfigBaseline(capacityBaselineRef, JSON.stringify({ project: capacity.project || '', fieldId: capacity.fieldId || '', fieldName: capacity.fieldName || '' }));
                         setCapacityVerificationRequired(Boolean(
                             config.authMode === 'atlassian_oauth'
                             && capacity.project
@@ -6456,41 +6576,65 @@ import {
                             && config.capacityMutationEnabled !== true
                         ));
                         const weightRows = clonePriorityWeightRows(sharedConfig.statsPriorityWeights);
-                        setPriorityWeightsDraft(weightRows);
+                        if (!shouldPreserveSettingsDraft('priorityWeights')) setPriorityWeightsDraft(weightRows);
                         setEffectivePriorityWeightsRows(weightRows);
                         setPriorityWeightsSource(sharedConfig.statsPriorityWeights ? 'config' : 'default');
-                        priorityWeightsBaselineRef.current = JSON.stringify(weightRows);
+                        acceptSettingsConfigBaseline(priorityWeightsBaselineRef, JSON.stringify(weightRows));
                         const issueTypes = sharedConfig.issueTypes || ['Story'];
-                        setIssueTypesDraft(issueTypes);
-                        issueTypesBaselineRef.current = JSON.stringify(issueTypes);
-                        seedSharedFieldConfigs(sharedConfig);
+                        if (!shouldPreserveSettingsDraft('issueTypes')) setIssueTypesDraft(issueTypes);
+                        acceptSettingsConfigBaseline(issueTypesBaselineRef, JSON.stringify(issueTypes));
+                        seedSharedFieldConfigs(sharedConfig, { shouldPreserveDraft: shouldPreserveSettingsDraft });
                         const personalEpm = config.viewConfig?.view?.epm || config.epm;
                         if (!shouldPreserveEpmDraft()) applySavedEpmConfig(personalEpm);
                         sharedConfigRevisionRef.current = config.sharedConfigRevision;
                         setSharedConfigRevision(config.sharedConfigRevision);
                         setWorkspaceConfigConflict(null);
+                        setBoardAllWorkAvailable(config.boardAllWorkAvailable);
+                        setBoardBootstrapStatus('ready');
                     } else {
                         if (!shouldPreserveEpmDraft()) applySavedEpmConfig(config.viewConfig?.view?.epm || config.epm);
-                        const fallbackConfigLoads = [loadSelectedProjects(), loadPriorityWeightsConfig()];
+                        const authorityLoads = [loadSelectedProjects({ readGeneration, preserveDraft: shouldPreserveSettingsDraft('projects') })];
+                        const fallbackConfigLoads = [];
+                        if (!shouldPreserveSettingsDraft('priorityWeights')) fallbackConfigLoads.push(loadPriorityWeightsConfig({
+                            shouldApplyDraft: () => shouldApplyResult() && !shouldPreserveSettingsDraft('priorityWeights'),
+                        }));
                         if (config.authMode === 'atlassian_oauth') {
-                            fallbackConfigLoads.push(
-                                loadBoardConfig(),
-                                loadCapacityConfig({ authMode: config.authMode }),
-                                loadAllFieldConfigs(),
-                                loadIssueTypesConfig(),
-                            );
+                            authorityLoads.push(loadBoardConfig({ readGeneration, preserveDraft: shouldPreserveSettingsDraft('board') }));
+                            if (!shouldPreserveSettingsDraft('capacity')) fallbackConfigLoads.push(loadCapacityConfig({
+                                authMode: config.authMode,
+                                shouldApplyDraft: () => shouldApplyResult() && !shouldPreserveSettingsDraft('capacity'),
+                            }));
+                            fallbackConfigLoads.push(loadAllFieldConfigs({
+                                shouldApplyResult,
+                                readOptionsForField: section => draftReadGuard.fieldReadOptions(section, {
+                                    preserveDraft: initiallyDirtyDrafts[section],
+                                }),
+                            }));
+                            if (!shouldPreserveSettingsDraft('issueTypes')) fallbackConfigLoads.push(loadIssueTypesConfig({
+                                shouldApplyDraft: () => shouldApplyResult() && !shouldPreserveSettingsDraft('issueTypes'),
+                            }));
                         }
-                        await Promise.all(fallbackConfigLoads);
+                        const [authorityResults] = await Promise.all([
+                            Promise.all(authorityLoads),
+                            Promise.all(fallbackConfigLoads),
+                        ]);
+                        if (!shouldApplyResult()) return false;
+                        setBoardAllWorkAvailable(config.boardAllWorkAvailable);
+                        setBoardBootstrapStatus(authorityResults.every(Boolean) ? 'ready' : 'error');
                     }
+                    return true;
                 } catch (err) {
-                    performanceGate.resolve(false); setBoardAllWorkAvailable(false);
-                    if (isAuthenticationRequiredError(err)) return;
+                    if (!shouldApplyResult()) return false;
+                    performanceGate.resolve(false);
+                    setBoardBootstrapStatus('error');
+                    if (isAuthenticationRequiredError(err)) return false;
                     if (!reportServerConnectionError(err)) {
                         console.error('Failed to load config:', err);
                     }
                     if (!shouldPreserveEpmDraft()) applySavedEpmConfig(createEmptyEpmConfigDraft());
+                    return false;
                 } finally {
-                    setSharedConfigReady(true);
+                    if (shouldApplyResult()) setSharedConfigReady(true);
                 }
             };
 
@@ -13651,9 +13795,7 @@ import {
                 <EpmProjectCollapseAllButton label={epmProjectCollapseAllLabel} onClick={toggleAllVisibleEpmProjectsCollapsed} pressed={allVisibleEpmProjectsCollapsed} />
             ) : null;
 
-            const boardConfigAvailable = boardAllWorkAvailable === true && Boolean(activeGroup?.board?.columns?.length) && Boolean(savedSelectedProjects.length || String(savedBoardId).trim());
-            const sprintCatalogReady = !sprintsLoading;
-            const boardComponentEnabled = sprintCatalogReady && boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length); const boardAllWorkEnabled = sprintCatalogReady && boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length || activeGroup?.teamIds?.length);
+            const boardComponentEnabled = engSprintSelectorState.componentReadiness === 'ready'; const boardAllWorkEnabled = engSprintSelectorState.allWorkReadiness === 'ready';
             const renderSprintControl = (surface) => {
                 const boardScopeControl = selectedView === 'eng' && showBoard; const canOpen = boardScopeControl ? !sprintsLoading : (!sprintsLoading && availableSprints.length > 0);
                 const displayedSprint = boardScopeControl && boardStrictScope ? (boardStrictScope === 'component' ? 'Component' : 'All work') : (!selectedSprint && sprintsLoading ? 'Loading…' : (sprintName || 'Sprint'));
@@ -13953,8 +14095,6 @@ import {
                 void refreshHomeTokenConnectionStatus();
                 void loadConfig();
                 void loadGroupsConfig();
-                void loadSelectedProjects();
-                void loadPriorityWeightsConfig();
                 void loadSprints(true, { queueIfBusy: true });
                 if (selectedView === 'epm') {
                     void refreshEpmView();

@@ -352,12 +352,23 @@ def get_sprints():
     """Fetch available sprints - uses cache if valid, otherwise fetches from Jira"""
     try:
         force_refresh = request.args.get('refresh', '').lower() == 'true'
-        cache_enabled = _settings_process_cache_enabled()
+        auth_context = current_request_auth_context()
+        file_cache_enabled = _settings_process_cache_enabled()
+        process_cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+        board_id = str(get_effective_board_id() or '').strip()
+        process_cache_key = build_jira_home_process_cache_key(auth_context, board_id)
 
         formatted_sprints = []
 
+        if process_cache_enabled and not force_refresh:
+            with _cache_lock:
+                cached_entry = SPRINTS_PROCESS_CACHE.get(process_cache_key)
+            if cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < CACHE_EXPIRY_HOURS * 3600:
+                formatted_sprints = cached_entry.get('data') or []
+                log_info(f'Loaded {len(formatted_sprints)} sprints from process cache')
+
         # Check if we should use cache
-        if cache_enabled and not force_refresh and is_cache_valid():
+        if not formatted_sprints and file_cache_enabled and not force_refresh and is_cache_valid():
             cache_data = load_sprints_cache()
             if cache_data and 'sprints' in cache_data:
                 formatted_sprints = cache_data['sprints']
@@ -371,8 +382,15 @@ def get_sprints():
             formatted_sprints = fetch_sprints_from_jira()
 
             # Save to cache
-            if cache_enabled and formatted_sprints:
+            if file_cache_enabled and formatted_sprints:
                 save_sprints_cache(formatted_sprints)
+
+        if process_cache_enabled and formatted_sprints:
+            with _cache_lock:
+                SPRINTS_PROCESS_CACHE[process_cache_key] = {
+                    'timestamp': time.time(),
+                    'data': formatted_sprints,
+                }
 
         log_info(f'Total quarterly sprints: {len(formatted_sprints)}')
 
@@ -1158,6 +1176,7 @@ def save_board_config_endpoint():
         revision = _persist_shared_section('board', board_value, base_revision)
         with _cache_lock:
             TASKS_CACHE.clear()
+            SPRINTS_PROCESS_CACHE.clear()
         invalidate_sprints_cache()
     except WorkspaceConfigConflict as error:
         return _workspace_conflict_response(error)

@@ -1,5 +1,6 @@
 import ast
 import pathlib
+import re
 import unittest
 from unittest.mock import patch
 
@@ -180,7 +181,7 @@ class EngBoardScopeTests(unittest.TestCase):
             epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
         ))
 
-    def test_team_discovery_rejects_truncation_and_parent_overflow(self):
+    def test_team_discovery_rejects_truncated_work_scan(self):
         kwargs = dict(projects=(('PROD', 'product'),), issue_type_ids=('10001',),
                       team_ids=('team-a',), existing_epics=[], epic_fields=eng_board.EPIC_FIELDS,
                       terminal_statuses=())
@@ -189,11 +190,184 @@ class EngBoardScopeTests(unittest.TestCase):
                 eng_board.discover_team_epics(
                     lambda _: {'isLast': False, 'nextPageToken': 'next',
                                'issues': [issue('PROD-10', parent='PROD-1')]}, **kwargs)
+
+    def test_team_discovery_filters_raw_parents_before_epic_limit(self):
+        responses = iter((
+            {'isLast': True, 'issues': [
+                issue('PROD-10', parent='PROD-1'),
+                issue('PROD-11', parent='PROD-2'),
+            ]},
+            {'isLast': True, 'issues': [issue('PROD-1', issue_type='Epic')]},
+        ))
         with patch.object(eng_board, 'MAX_EPICS', 1):
-            with self.assertRaisesRegex(eng_board.EngBoardError, 'board_scope_too_large'):
-                eng_board.discover_team_epics(
-                    lambda _: {'isLast': True, 'issues': [issue('PROD-10', parent='PROD-1'),
-                                                        issue('PROD-11', parent='PROD-2')]}, **kwargs)
+            rows = eng_board.discover_team_epics(
+                lambda _: next(responses), projects=(('PROD', 'product'),),
+                issue_type_ids=('10001',), team_ids=('team-a',), existing_epics=[],
+                epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+            )
+        self.assertEqual(['PROD-1'], [row['key'] for row in rows])
+
+    def test_team_discovery_yields_admitted_prefix_before_exact_overflow(self):
+        responses = iter((
+            {'isLast': True, 'issues': [
+                issue('PROD-10', parent='PROD-1'),
+                issue('PROD-11', parent='PROD-2'),
+            ]},
+            {'isLast': True, 'issues': [issue('PROD-1', issue_type='Epic')]},
+            {'isLast': True, 'issues': [issue('PROD-2', issue_type='Epic')]},
+        ))
+        with patch.object(eng_board, 'MAX_EPICS', 1), patch.object(eng_board, 'MAX_BATCH_SIZE', 1):
+            batches = eng_board.iter_team_epic_batches(
+                lambda _: next(responses), projects=(('PROD', 'product'),),
+                issue_type_ids=('10001',), team_ids=('team-a',), existing_epics=[],
+                epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+            )
+            rows, complete = next(batches)
+            self.assertEqual((['PROD-1'], False), ([row['key'] for row in rows], complete))
+            with self.assertRaisesRegex(eng_board.EngBoardError, 'board_scope_too_large') as raised:
+                next(batches)
+        self.assertEqual(('index', 'unique_keys', 2), (
+            raised.exception.phase, raised.exception.limit, raised.exception.observed,
+        ))
+
+    def test_team_discovery_yields_prefix_before_same_batch_overflow(self):
+        responses = iter((
+            {'isLast': True, 'issues': [
+                issue('WORK-1', parent='PROD-2'), issue('WORK-2', parent='PROD-3'),
+            ]},
+            {'isLast': True, 'issues': [
+                issue('PROD-2', issue_type='Epic'), issue('PROD-3', issue_type='Epic'),
+            ]},
+        ))
+        with patch.object(eng_board, 'MAX_EPICS', 2):
+            batches = eng_board.iter_team_epic_batches(
+                lambda _: next(responses), projects=(('PROD', 'product'),),
+                issue_type_ids=('10001',), team_ids=('team-a',),
+                existing_epics=[issue('PROD-1', issue_type='Epic')],
+                epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+            )
+            rows, complete = next(batches)
+            self.assertEqual((['PROD-1', 'PROD-2'], False), (
+                [row['key'] for row in rows], complete,
+            ))
+            with self.assertRaisesRegex(eng_board.EngBoardError, 'board_scope_too_large') as raised:
+                next(batches)
+        self.assertEqual(('index', 'unique_keys', 3), (
+            raised.exception.phase, raised.exception.limit, raised.exception.observed,
+        ))
+
+    def test_team_discovery_rejects_malformed_overflow_suffix_before_prefix_yield(self):
+        malformed = issue('PROD-3', issue_type='Epic')
+        malformed['fields']['summary'] = None
+        responses = iter((
+            {'isLast': True, 'issues': [
+                issue('WORK-1', parent='PROD-2'), issue('WORK-2', parent='PROD-3'),
+            ]},
+            {'isLast': True, 'issues': [issue('PROD-2', issue_type='Epic'), malformed]},
+        ))
+        with patch.object(eng_board, 'MAX_EPICS', 2):
+            batches = eng_board.iter_team_epic_batches(
+                lambda _: next(responses), projects=(('PROD', 'product'),),
+                issue_type_ids=('10001',), team_ids=('team-a',),
+                existing_epics=[issue('PROD-1', issue_type='Epic')],
+                epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+            )
+            with self.assertRaisesRegex(eng_board.EngBoardError, 'board_projection_invalid'):
+                next(batches)
+
+    def test_team_discovery_rejects_unencodable_overflow_suffix_before_prefix_yield(self):
+        malformed = issue('PROD-3', issue_type='Epic')
+        malformed['fields']['summary'] = '\ud800'
+        responses = iter((
+            {'isLast': True, 'issues': [
+                issue('WORK-1', parent='PROD-2'), issue('WORK-2', parent='PROD-3'),
+            ]},
+            {'isLast': True, 'issues': [issue('PROD-2', issue_type='Epic'), malformed]},
+        ))
+        with patch.object(eng_board, 'MAX_EPICS', 2):
+            batches = eng_board.iter_team_epic_batches(
+                lambda _: next(responses), projects=(('PROD', 'product'),),
+                issue_type_ids=('10001',), team_ids=('team-a',),
+                existing_epics=[issue('PROD-1', issue_type='Epic')],
+                epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+            )
+            with self.assertRaisesRegex(eng_board.EngBoardError, 'board_projection_invalid'):
+                next(batches)
+
+    def test_team_discovery_exact_epic_limit_completes_with_sorted_final_union(self):
+        parent_keys = [f'PROD-{index + 1:04d}' for index in range(eng_board.MAX_EPICS)]
+        parent_calls = []
+
+        def search(params):
+            jql = params['jql']
+            if 'issuetype in' in jql:
+                offset = int(params.get('nextPageToken', '0'))
+                keys = parent_keys[offset:offset + eng_board.PAGE_SIZE]
+                last = offset + eng_board.PAGE_SIZE >= len(parent_keys)
+                return {
+                    'isLast': last,
+                    'issues': [issue(f'WORK-{offset + index + 1:04d}', parent=key)
+                               for index, key in enumerate(keys)],
+                    **({} if last else {'nextPageToken': str(offset + eng_board.PAGE_SIZE)}),
+                }
+            keys = re.findall(r'"(PROD-\d+)"', jql)
+            parent_calls.append(tuple(keys))
+            return {'isLast': True, 'issues': [issue(key, issue_type='Epic') for key in keys]}
+
+        updates = list(eng_board.iter_team_epic_batches(
+            search, projects=(('PROD', 'product'),), issue_type_ids=('10001',),
+            team_ids=('team-a',), existing_epics=[], epic_fields=eng_board.EPIC_FIELDS,
+            terminal_statuses=('Done',),
+        ))
+        self.assertEqual(eng_board.MAX_EPICS, len(updates[-1][0]))
+        self.assertTrue(updates[-1][1])
+        self.assertEqual(parent_keys, [row['key'] for row in updates[-1][0]])
+        self.assertEqual(25, len(parent_calls))
+        self.assertTrue(all(len(batch) <= eng_board.MAX_BATCH_SIZE for batch in parent_calls))
+
+    def test_team_discovery_final_marker_and_wrapper_are_sorted(self):
+        existing = [issue('PROD-2', issue_type='Epic'), issue('PROD-1', issue_type='Epic')]
+        updates = list(eng_board.iter_team_epic_batches(
+            lambda _: self.fail('Unexpected Jira request'), projects=(('PROD', 'product'),),
+            issue_type_ids=('10001',), team_ids=(), existing_epics=existing,
+            epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+        ))
+        self.assertEqual(1, len(updates))
+        self.assertTrue(updates[0][1])
+        self.assertEqual(['PROD-1', 'PROD-2'], [row['key'] for row in updates[0][0]])
+        self.assertEqual(['PROD-1', 'PROD-2'], [row['key'] for row in eng_board.discover_team_epics(
+            lambda _: self.fail('Unexpected Jira request'), projects=(('PROD', 'product'),),
+            issue_type_ids=('10001',), team_ids=(), existing_epics=existing,
+            epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+        )])
+
+    def test_team_discovery_rejects_non_string_existing_epic_key(self):
+        row = issue('PROD-1', issue_type='Epic')
+        row['key'] = True
+        batches = eng_board.iter_team_epic_batches(
+            lambda _: self.fail('Unexpected Jira request'), projects=(('PROD', 'product'),),
+            issue_type_ids=('10001',), team_ids=(), existing_epics=[row],
+            epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+        )
+        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_projection_invalid'):
+            next(batches)
+
+    def test_team_discovery_epic_link_empty_dict_key_falls_back_to_parent(self):
+        for link_key in (None, ''):
+            with self.subTest(link_key=link_key):
+                story = issue('WORK-1', parent='PROD-2')
+                story['fields']['customfield_10014'] = {'key': link_key}
+                responses = iter((
+                    {'isLast': True, 'issues': [story]},
+                    {'isLast': True, 'issues': [issue('PROD-2', issue_type='Epic')]},
+                ))
+                rows = eng_board.discover_team_epics(
+                    lambda _: next(responses), projects=(('PROD', 'product'),),
+                    issue_type_ids=('10001',), team_ids=('team-a',), existing_epics=[],
+                    epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=(),
+                    epic_link_field_id='customfield_10014',
+                )
+                self.assertEqual(['PROD-2'], [row['key'] for row in rows])
 
     def test_team_discovery_rejects_unrequested_parent_response(self):
         responses = iter((
@@ -216,6 +390,10 @@ class EngBoardScopeTests(unittest.TestCase):
         for selected, fallback, expected in cases:
             with self.subTest(selected=selected, fallback=fallback):
                 self.assertEqual(expected, eng_board.normalize_projects(selected, saved_board_project_key=fallback))
+
+    def test_project_profiles_require_selected_or_saved_board_project(self):
+        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_project_scope_required'):
+            eng_board.normalize_projects([], saved_board_project_key=None)
 
     def test_epic_link_resolution_requires_the_schema_identity_not_a_display_name(self):
         catalog = [
@@ -416,6 +594,75 @@ class EngBoardScopeTests(unittest.TestCase):
 
 
 class EngBoardPagingTests(unittest.TestCase):
+    def test_strict_page_iterator_delivers_validated_page_before_next_request(self):
+        calls = []
+
+        def search(payload):
+            calls.append(payload.get('nextPageToken'))
+            if payload.get('nextPageToken'):
+                return {'issues': [issue('P-2')], 'isLast': True}
+            return {
+                'issues': [issue('P-1')], 'isLast': False,
+                'nextPageToken': 'next',
+            }
+
+        pages = eng_board.iter_strict_search_pages(
+            search, 'project = "P"', ('summary',),
+        )
+        rows, is_last = next(pages)
+        self.assertEqual((['P-1'], False), ([row['key'] for row in rows], is_last))
+        self.assertEqual([None], calls)
+        rows, is_last = next(pages)
+        self.assertEqual((['P-2'], True), ([row['key'] for row in rows], is_last))
+        self.assertEqual([None, 'next'], calls)
+        with self.assertRaises(StopIteration):
+            next(pages)
+
+    def test_strict_page_iterator_never_yields_a_malformed_page(self):
+        published = []
+        pages = eng_board.iter_strict_search_pages(
+            lambda _payload: {
+                'issues': [issue('P-1'), issue(' p-1 ')], 'isLast': True,
+            },
+            'project = "P"', ('summary',),
+        )
+        with self.assertRaisesRegex(eng_board.EngBoardError, 'board_projection_invalid'):
+            published.append(next(pages))
+        self.assertEqual([], published)
+
+    def test_strict_page_iterator_cancels_after_response_before_yield(self):
+        response_returned = False
+        checks = 0
+
+        def search(_payload):
+            nonlocal response_returned
+            response_returned = True
+            return {'issues': [issue('P-1')], 'isLast': True}
+
+        def cancel_check():
+            nonlocal checks
+            checks += 1
+            if response_returned:
+                raise RuntimeError('stale generation detail')
+
+        pages = eng_board.iter_strict_search_pages(
+            search, 'project = "P"', ('summary',), cancel_check=cancel_check,
+        )
+        with self.assertRaisesRegex(RuntimeError, 'stale generation detail'):
+            next(pages)
+        self.assertEqual(2, checks)
+
+    def test_strict_page_iterator_yields_empty_final_marker(self):
+        counters = eng_board.PagerCounters()
+        self.assertEqual(
+            [((), True)],
+            list(eng_board.iter_strict_search_pages(
+                lambda _payload: {'issues': [], 'isLast': True},
+                'project = "P"', ('summary',), counters=counters,
+            )),
+        )
+        self.assertEqual(1, counters.pages)
+
     def test_empty_nonfinal_page_continues_and_callback_sees_only_validated_pages(self):
         bodies = iter((
             {'issues': [], 'isLast': False, 'nextPageToken': 'next'},

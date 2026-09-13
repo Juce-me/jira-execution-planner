@@ -107,8 +107,9 @@ export function createBoardLoadMeasurement({ enabled, groupId = '', scopeType = 
     let focusedContentPending = false;
     let finished = false;
     let finishing = false;
+    let retired = false;
     const publish = sample => {
-        if (!enabled || finished) return;
+        if (!enabled || finished || retired) return;
         finished = true;
         try { Promise.resolve(emit(sample)).catch(() => {}); } catch (_) { /* best-effort diagnostics */ }
     };
@@ -131,7 +132,7 @@ export function createBoardLoadMeasurement({ enabled, groupId = '', scopeType = 
     };
     const finish = async (terminal = {}) => {
         const { outcome } = terminal;
-        if (!enabled || finished) return;
+        if (!enabled || finished || retired) return;
         if (finishing) {
             if (outcome === 'cancelled') publish(buildSample(terminal));
             return;
@@ -139,19 +140,20 @@ export function createBoardLoadMeasurement({ enabled, groupId = '', scopeType = 
         finishing = true;
         if (outcome === 'cancelled') return publish(buildSample(terminal));
         await afterPaint();
-        if (finished) return;
+        if (finished || retired) return;
         publish(buildSample(terminal));
     };
     return {
-        start(frame) { if (!finished && frame?.type === 'start') startFrame = frame; },
-        addPayloadBytes(value) { if (!finished && Number.isFinite(value) && value >= 0) payloadBytes += value; },
+        start(frame) { if (!finished && !retired && frame?.type === 'start') startFrame = frame; },
+        addPayloadBytes(value) { if (!finished && !retired && Number.isFinite(value) && value >= 0) payloadBytes += value; },
         async focusedContentReady() {
-            if (!enabled || finished || firstFocusedContentMs !== null || focusedContentPending) return;
+            if (!enabled || finished || retired || firstFocusedContentMs !== null || focusedContentPending) return;
             focusedContentPending = true;
             await afterPaint();
-            if (!finished) firstFocusedContentMs = Math.max(0, now() - started);
+            if (!finished && !retired) firstFocusedContentMs = Math.max(0, now() - started);
         },
         finish,
         cancel() { return finish({ outcome: 'cancelled' }); },
+        retire() { retired = true; },
     };
 }

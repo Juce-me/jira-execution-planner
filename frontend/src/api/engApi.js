@@ -25,10 +25,8 @@ export const fetchSprints = (backendUrl, { forceRefresh = false } = {}) => {
     }
     return apiFetch(`${backendUrl}/api/sprints?${params}`, {
         method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        cache: 'no-cache'
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
     });
 };
 

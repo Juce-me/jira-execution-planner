@@ -15,7 +15,7 @@ import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
-import { getCookie, getCurrentQuarter, getServerConnectionErrorMessage, isActiveHomeTokenConnection, isBackendConnectionFailure, loadUiPrefs, saveUiPrefs, setCookie } from './dashboardRuntime.js';
+import { getCookie, getCurrentQuarter, getServerConnectionErrorMessage, isActiveHomeTokenConnection, isBackendConnectionFailure, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie } from './dashboardRuntime.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
 import { isEngOnboardingModuleSurface } from './onboarding/onboardingModules.js';
 import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
@@ -345,7 +345,7 @@ import {
         }
 
         function App() {
-            const savedPrefsRef = useRef(loadUiPrefs() || {});
+            const savedPrefsRef = useRef(loadUiPrefs() || {}), sprintCatalogCacheRef = useRef(loadCachedSprintCatalog(savedPrefsRef.current));
             const perfEnabled = React.useMemo(
                 () => new URLSearchParams(window.location.search).has('perf'),
                 []
@@ -485,8 +485,7 @@ import {
             const [epmSubGoalOpen, setEpmSubGoalOpen] = useState(false);
             const [epmRootGoalIndex, setEpmRootGoalIndex] = useState(0);
             const [epmSubGoalIndex, setEpmSubGoalIndex] = useState(0);
-            const [availableSprints, setAvailableSprints] = useState([]);
-            const [sprintsLoading, setSprintsLoading] = useState(true);
+            const [availableSprints, setAvailableSprints] = useState(sprintCatalogCacheRef.current.sprints), [sprintsLoading, setSprintsLoading] = useState(sprintCatalogCacheRef.current.sprints.length === 0);
             const [groupsConfig, setGroupsConfig] = useState({
                 version: 1,
                 groups: [],
@@ -805,7 +804,7 @@ import {
             const excludedCapacityEpicDropdownRef = useRef(null);
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
             const isCatchUpMode = selectedView === 'eng' && !showPlanning && !showStats && !showScenario && !showBoard;
-            const strictBoardActive = selectedView === 'eng' && showBoard && boardAllWorkAvailable === true && ['all_work', 'component'].includes(boardStrictScope);
+            const strictBoardActive = selectedView === 'eng' && showBoard && !sprintsLoading && availableSprints.length > 0 && boardAllWorkAvailable === true && ['all_work', 'component'].includes(boardStrictScope);
             useEffect(() => { if (selectedView !== 'eng' || !showBoard || boardAllWorkAvailable === false) setBoardStrictScope(''); }, [selectedView, showBoard, boardAllWorkAvailable]);
             const [projectTrackCapacitySide, setProjectTrackCapacitySide] = useState(
                 ['product', 'tech', 'both'].includes(savedPrefsRef.current.projectTrackCapacitySide) ? savedPrefsRef.current.projectTrackCapacitySide : 'product'
@@ -6276,7 +6275,7 @@ import {
                     epmSelectedProjectId,
                     epmProjectSort,
                     engEpicSort,
-                    selectedSprint, sprintName,
+                    selectedSprint, sprintName, sprintCatalog: sprintCatalogCacheRef.current,
                     selectedTeams,
                     activeGroupId,
                     showPlanning,
@@ -6496,9 +6495,9 @@ import {
             };
 
             useEffect(() => {
-                if (selectedView !== 'eng') return;
-                if (isStatsSourceOnlyStatsView) return;
+                if (selectedView !== 'eng' || isStatsSourceOnlyStatsView) return;
                 if (strictBoardActive || (showBoard && boardAllWorkAvailable === null)) return;
+                if (sprintsLoading || !selectedSprintInfo) return;
                 // Load tasks when sprint changes (team is filtered client-side)
                 if (selectedSprint === null) {
                     return;
@@ -6581,7 +6580,7 @@ import {
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
-            }, [selectedView, isStatsSourceOnlyStatsView, strictBoardActive, showBoard, boardAllWorkAvailable, selectedSprint, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
+            }, [selectedView, isStatsSourceOnlyStatsView, strictBoardActive, showBoard, boardAllWorkAvailable, sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
@@ -6654,7 +6653,7 @@ import {
                     return;
                 }
                 sprintLoadInFlightRef.current = true;
-                setSprintsLoading(true);
+                setSprintsLoading(sprintCatalogCacheRef.current.sprints.length === 0);
                 try {
                     const response = await requestSprints(BACKEND_URL, { forceRefresh });
 
@@ -6664,6 +6663,8 @@ import {
 
                     const data = await response.json();
                     const sprints = data.sprints || [];
+                    if (!sprints.length) throw new Error('No sprint values returned by Jira');
+                    sprintCatalogCacheRef.current = { cachedAt: Date.now(), sprints }; savedPrefsRef.current = { ...(loadUiPrefs() || {}), sprintCatalog: sprintCatalogCacheRef.current }; saveUiPrefs(savedPrefsRef.current);
                     setAvailableSprints(sprints);
                     setSprintError('');
 
@@ -6692,6 +6693,7 @@ import {
                     clearServerConnectionError();
                 } catch (err) {
                     if (isAuthenticationRequiredError(err)) return;
+                    if (sprintCatalogCacheRef.current.sprints.length) { console.warn('Sprint refresh failed; using cached catalog:', err); setSprintError(''); return; }
                     if (reportServerConnectionError(err)) {
                         setSprintError('');
                     } else {
@@ -13649,12 +13651,12 @@ import {
                 <EpmProjectCollapseAllButton label={epmProjectCollapseAllLabel} onClick={toggleAllVisibleEpmProjectsCollapsed} pressed={allVisibleEpmProjectsCollapsed} />
             ) : null;
 
-            const boardConfigAvailable = boardAllWorkAvailable === true && Boolean(activeGroup?.board?.columns?.length);
+            const boardConfigAvailable = boardAllWorkAvailable === true && Boolean(activeGroup?.board?.columns?.length) && Boolean(savedSelectedProjects.length || String(savedBoardId).trim());
             const sprintCatalogReady = !sprintsLoading;
             const boardComponentEnabled = sprintCatalogReady && boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length); const boardAllWorkEnabled = sprintCatalogReady && boardConfigAvailable && Boolean(activeGroup?.missingInfoComponents?.length || activeGroup?.teamIds?.length);
             const renderSprintControl = (surface) => {
-                const boardScopeControl = selectedView === 'eng' && showBoard; const canOpen = boardScopeControl || (!sprintsLoading && availableSprints.length > 0);
-                const displayedSprint = boardScopeControl && boardStrictScope ? (boardStrictScope === 'component' ? 'Component' : 'All work') : (sprintName || 'Sprint');
+                const boardScopeControl = selectedView === 'eng' && showBoard; const canOpen = boardScopeControl ? !sprintsLoading : (!sprintsLoading && availableSprints.length > 0);
+                const displayedSprint = boardScopeControl && boardStrictScope ? (boardStrictScope === 'component' ? 'Component' : 'All work') : (!selectedSprint && sprintsLoading ? 'Loading…' : (sprintName || 'Sprint'));
                 const normalizedSprintSearch = sprintSearch.trim().toLowerCase();
                 const componentMatchesSearch = !normalizedSprintSearch || 'component'.includes(normalizedSprintSearch);
                 const allWorkMatchesSearch = !normalizedSprintSearch || 'all work'.includes(normalizedSprintSearch);
@@ -13707,10 +13709,10 @@ import {
                             <div className="sprint-dropdown-panel">
                                 <div className="sprint-dropdown-list">
                                     {boardScopeControl && allWorkMatchesSearch && <div className="sprint-dropdown-option" aria-disabled={!boardAllWorkEnabled}
-                                        title={boardAllWorkEnabled ? 'Show retained work across the Department' : 'All work requires a saved Board and Department Components or Teams'}
+                                        title={boardAllWorkEnabled ? 'Show retained work across the Department' : 'All work requires saved Jira projects or a Jira Board, plus Department Components or Teams'}
                                         onClick={() => { if (!boardAllWorkEnabled) return; trackFilterChanged('sprint', { sprint_selection_state: 'all_work', source_surface: 'board', scope_type: 'all_work' }); setBoardStrictScope('all_work'); setShowSprintDropdown(false); }}>All work</div>}
                                     {boardScopeControl && componentMatchesSearch && <div className="sprint-dropdown-option" aria-disabled={!boardComponentEnabled}
-                                        title={boardComponentEnabled ? 'Show retained work owned by Department Components' : 'Component scope requires a saved Board and Department Components'}
+                                        title={boardComponentEnabled ? 'Show retained work owned by Department Components' : 'Component scope requires saved Jira projects or a Jira Board, plus Department Components'}
                                         onClick={() => { if (!boardComponentEnabled) return; trackFilterChanged('sprint', { sprint_selection_state: 'component', source_surface: 'board', scope_type: 'component' }); setBoardStrictScope('component'); setShowSprintDropdown(false); }}>Component</div>}
                                     {sprintsLoading ? (
                                         <div className="sprint-dropdown-option">Loading sprints...</div>
@@ -14413,7 +14415,7 @@ import {
                 if (activeGroupDraft) updateGroupDraftBoard(activeGroupDraft.id, nextBoard);
             };
             const random = Math.random;
-            const engBoardDataProps = strictEngBoardViewProps({ active: strictBoardActive, owner: strictBoard, model: strictBoardModel, legacyLoading: loading, legacyError: displayedEngError, legacyRetry: retryEngLoad });
+            const engBoardDataProps = strictEngBoardViewProps({ active: strictBoardActive, owner: strictBoard, model: strictBoardModel, legacyLoading: sprintsLoading || loading, legacyError: displayedEngError, legacyRetry: retryEngLoad });
 
             return (
                 <div className="container" style={containerStyle}>
@@ -16688,7 +16690,7 @@ import {
 
                             {shouldRenderEngTaskList && (
                                 <EngView
-                                    selectedView={selectedView}
+                                    selectedView={selectedView} sprintCatalogLoading={sprintsLoading}
                                     productTasksLoading={productTasksLoading}
                                     techTasksLoading={techTasksLoading}
                                     loading={loading}

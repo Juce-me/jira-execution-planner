@@ -99,7 +99,7 @@ class EngBoardBasicCompatibilityTests(unittest.TestCase):
         self.app.register_blueprint(eng_board_routes.bp)
         self.client = self.app.test_client()
 
-    def _success_stream(self, _server, snapshot, _transport):
+    def _success_stream(self, _server, snapshot, _transport, *, generation_id=None):
         focused = snapshot.query.focused_column_id or 'todo'
         yield _line(0, 'start', scope=snapshot.query.scope,
                     scopeVersion='scope-basic', scopeCohortDigest='cohort-basic',
@@ -238,7 +238,11 @@ class EngBoardBasicCompatibilityTests(unittest.TestCase):
             parse_groups_config_env=Mock(side_effect=AssertionError('OAuth route used group env fallback')),
         )
         sentinel = SimpleNamespace(query=eng_board_routes.BoardQuery(
-            'department-a', 'all_work', None, None, False))
+            'department-a', 'all_work', None, None, False),
+            scope_version='scope-basic', scope_cohort_digest='0' * 64,
+            board={'columns': [
+                {'id': 'todo', 'name': 'To do', 'statuses': ['To Do'], 'colour': '#64748b'},
+            ]})
         with patch.object(eng_board_routes, 'get_jira_server', return_value=server), \
              patch.object(eng_board_routes, 'database_storage_enabled', return_value=True), \
              patch.object(eng_board_routes, '_capture_snapshot', return_value=sentinel), \

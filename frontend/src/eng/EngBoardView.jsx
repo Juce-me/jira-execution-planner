@@ -746,7 +746,7 @@ export default function EngBoardView({
         return (
             <>
                 {filterBar}
-                <div className="error">
+                <div className="error" role="alert">
                     {error}
                     <div style={{ marginTop: '1rem' }}>
                         <button onClick={onRetry}>Retry</button>

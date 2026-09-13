@@ -7,6 +7,7 @@ import { ENG_EPIC_SORT_OPTIONS, getEngEpicSortLabel } from './engTaskUtils.js';
 
 export default function EngView({
     selectedView,
+    sprintCatalogLoading,
     productTasksLoading,
     techTasksLoading,
     loading,
@@ -52,6 +53,10 @@ export default function EngView({
         document.addEventListener('mousedown', onDocClick);
         return () => document.removeEventListener('mousedown', onDocClick);
     }, [showSortDropdown]);
+
+    if (sprintCatalogLoading) {
+        return <LoadingState title="Loading sprints" message="Resolving sprint values from Jira." />;
+    }
 
     const selectEngEpicSort = (value) => {
         setEngEpicSort(value);   // dashboard handler also fires the sort_changed analytics event

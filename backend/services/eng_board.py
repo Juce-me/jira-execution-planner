@@ -72,6 +72,19 @@ def _normalized_key(value):
     return str(value or '').strip().upper()
 
 
+def _strict_normalized_key(value, *, optional=False, phase='shape', reason='epic.key'):
+    if value is None and optional:
+        return ''
+    if not isinstance(value, str) or not value.strip():
+        raise EngBoardError('board_projection_invalid', phase=phase, reason=reason)
+    key = value.strip().upper()
+    try:
+        key.encode('utf-8')
+    except UnicodeEncodeError as error:
+        raise EngBoardError('board_projection_invalid', phase=phase, reason=reason) from error
+    return key
+
+
 def _normalized_names(values):
     return {str(value or '').strip().casefold() for value in values or () if str(value or '').strip()}
 
@@ -354,20 +367,30 @@ def build_team_discovery_jql(projects, issue_type_ids, *, team_ids,
             f'cf[{team_number}] in (' + ','.join(_quote(value) for value in teams) + ')')
 
 
-def discover_team_epics(search, *, projects, issue_type_ids, team_ids, existing_epics,
-                        epic_fields, terminal_statuses, retention_days=28,
-                        team_field_id='customfield_30101', epic_link_field_id=None,
-                        counters=None, cancel_check=lambda: None):
-    """Union component Epics with department-story parents under strict budgets.
+def iter_team_epic_batches(search, *, projects, issue_type_ids, team_ids, existing_epics,
+                           epic_fields, terminal_statuses, retention_days=28,
+                           team_field_id='customfield_30101', epic_link_field_id=None,
+                           counters=None, cancel_check=lambda: None):
+    """Yield the eligible Team-parent Epic union after each bounded lookup.
 
     The story scan is capped at MAX_CHILDREN, parent searches are key batches,
     and every request shares the generation pager and cancellation/deadline.
     Parent lookup applies the Epic's own status/retention, never story status.
     """
+    epics = {}
+    for row in existing_epics:
+        key = _validate_epic_required_row(row)
+        if key in epics:
+            raise EngBoardError('board_projection_invalid', phase='index')
+        epics[key] = row
+    if len(epics) > MAX_EPICS:
+        raise EngBoardError('board_scope_too_large', phase='index', limit='unique_keys',
+                            observed=len(epics))
     if not team_ids:
-        return list(existing_epics)
+        yield [epics[key] for key in sorted(epics)], True
+        return
     counters = counters or PagerCounters()
-    fields = ('parent',) + ((epic_link_field_id,) if epic_link_field_id else ())
+    story_fields = ('parent',) + ((epic_link_field_id,) if epic_link_field_id else ())
     discovery_jql = build_team_discovery_jql(
         projects, issue_type_ids, team_ids=team_ids, team_field_id=team_field_id,
     )
@@ -385,46 +408,82 @@ def discover_team_epics(search, *, projects, issue_type_ids, team_ids, existing_
         candidate = base_discovery_jql + ' AND ' + parent_clause
         # Leave room for the continuation token; never turn this optimization
         # into a new request-size failure for large department indexes.
-        if encoded_search_bytes(candidate, fields) > MAX_ENCODED_REQUEST_BYTES - 1024:
+        if encoded_search_bytes(candidate, story_fields) > MAX_ENCODED_REQUEST_BYTES - 1024:
             break
         discovery_jql = candidate
         excluded = candidate_keys
     stories = strict_search(
         search, discovery_jql,
-        fields, counters=counters, cancel_check=cancel_check, max_unique_keys=MAX_CHILDREN,
+        story_fields, counters=counters, cancel_check=cancel_check, max_unique_keys=MAX_CHILDREN,
     )
-    epics = {_normalized_key(row.get('key')): row for row in existing_epics}
-    if '' in epics or len(epics) != len(existing_epics):
-        raise EngBoardError('board_projection_invalid', phase='index')
     parent_keys = set()
     for story in stories:
         fields = story.get('fields')
         if not isinstance(fields, dict):
             raise EngBoardError('board_projection_invalid', phase='page')
         link = fields.get(epic_link_field_id) if epic_link_field_id else None
-        key = _normalized_key(link.get('key') if isinstance(link, dict) else link)
+        link_key = link.get('key') if isinstance(link, dict) else link
+        if link_key is None or (isinstance(link_key, str) and not link_key.strip()):
+            key = ''
+        else:
+            key = _strict_normalized_key(
+                link_key, phase='page', reason='story.epic_link',
+            )
         if not key:
             parent = fields.get('parent')
             if parent is not None and not isinstance(parent, dict):
                 raise EngBoardError('board_projection_invalid', phase='page')
-            key = _normalized_key((parent or {}).get('key'))
+            key = _strict_normalized_key(
+                parent.get('key') if parent is not None else None,
+                optional=parent is None, phase='page', reason='story.parent',
+            )
         if key and key not in epics:
             parent_keys.add(key)
-    if len(epics) + len(parent_keys) > MAX_EPICS:
-        raise EngBoardError('board_scope_too_large', phase='index', limit='unique_keys',
-                            observed=len(epics) + len(parent_keys))
     base_jql = build_epic_index_jql(projects, (), terminal_statuses, retention_days)
     def parent_jql(keys):
         return base_jql + ' AND key in (' + ','.join(_quote(key) for key in keys) + ')'
     for batch in split_epic_batches(sorted(parent_keys), parent_jql, epic_fields):
         rows = strict_search(search, parent_jql(batch), epic_fields, counters=counters,
                              cancel_check=cancel_check, max_unique_keys=MAX_EPICS)
+        normalized_rows = []
         for row in rows:
-            key = _normalized_key(row.get('key'))
+            key = _validate_epic_required_row(row)
             if key not in batch:
                 raise EngBoardError('board_projection_invalid', phase='page')
+            normalized_rows.append((key, row))
+        prior_keys = set(epics)
+        pending_error = None
+        for key, row in normalized_rows:
+            observed = len(epics) + int(key not in epics)
+            if observed > MAX_EPICS:
+                pending_error = EngBoardError(
+                    'board_scope_too_large', phase='index', limit='unique_keys',
+                    observed=observed,
+                )
+                break
             epics[key] = row
-    return [epics[key] for key in sorted(epics)]
+        if set(epics) != prior_keys:
+            yield [epics[key] for key in sorted(epics)], False
+        if pending_error is not None:
+            raise pending_error
+    yield [epics[key] for key in sorted(epics)], True
+
+
+def discover_team_epics(search, *, projects, issue_type_ids, team_ids, existing_epics,
+                        epic_fields, terminal_statuses, retention_days=28,
+                        team_field_id='customfield_30101', epic_link_field_id=None,
+                        counters=None, cancel_check=lambda: None):
+    """Collect the complete eligible Team-parent Epic union."""
+    epics = []
+    for epics, _complete in iter_team_epic_batches(
+            search, projects=projects, issue_type_ids=issue_type_ids,
+            team_ids=team_ids, existing_epics=existing_epics,
+            epic_fields=epic_fields, terminal_statuses=terminal_statuses,
+            retention_days=retention_days, team_field_id=team_field_id,
+            epic_link_field_id=epic_link_field_id, counters=counters,
+            cancel_check=cancel_check):
+        pass
+    return epics
 
 
 def split_component_batches(components, build_jql, fields):
@@ -457,7 +516,7 @@ def split_component_batches(components, build_jql, fields):
 
 def iter_component_epic_batches(search, *, projects, components, epic_fields, terminal_statuses,
                                 retention_days=28, counters=None, cancel_check=lambda: None):
-    """Yield the cumulative Component-owned Epic index after each bounded search."""
+    """Yield cumulative Component Epics as validated pages add membership."""
     counters = counters or PagerCounters()
 
     def component_jql(batch):
@@ -467,19 +526,21 @@ def iter_component_epic_batches(search, *, projects, components, epic_fields, te
     epics = {}
     union_budget = UnionKeyBudget(MAX_EPICS)
     for batch_index, batch in enumerate(batches):
-        rows = strict_search(
-            search, component_jql(batch), epic_fields, counters=counters,
-            cancel_check=cancel_check, max_unique_keys=MAX_EPICS, key_budget=union_budget,
-        )
-        for row in rows:
-            key = _normalized_key(row.get('key'))
-            if not key:
-                raise EngBoardError('board_projection_invalid', phase='index')
-            epics[key] = row
-        if len(epics) > MAX_EPICS:
-            raise EngBoardError('board_scope_too_large', phase='index', limit='unique_keys',
-                                observed=len(epics))
-        yield [epics[key] for key in sorted(epics)], batch_index == len(batches) - 1
+        for page_rows, is_last in iter_strict_search_pages(
+                search, component_jql(batch), epic_fields, counters=counters,
+                cancel_check=cancel_check, max_unique_keys=MAX_EPICS,
+                key_budget=union_budget):
+            prior_keys = set(epics)
+            for row in page_rows:
+                key = _normalized_key(row.get('key'))
+                if not key:
+                    raise EngBoardError('board_projection_invalid', phase='index')
+                epics[key] = row
+            complete = batch_index == len(batches) - 1 and is_last
+            if set(epics) != prior_keys or complete:
+                yield [epics[key] for key in sorted(epics)], complete
+    if not batches:
+        yield [], True
 
 
 def discover_component_epics(search, **kwargs):
@@ -569,14 +630,15 @@ class UnionKeyBudget:
             self.keys.update(additions)
 
 
-def strict_search(search, jql, fields, *, counters=None, cancel_check=lambda: None,
-                  on_page=None, on_rows=None, max_unique_keys=None, key_budget=None):
+def iter_strict_search_pages(search, jql, fields, *, counters=None,
+                             cancel_check=lambda: None, max_unique_keys=None,
+                             key_budget=None):
+    """Yield fully validated strict-search pages with search-local paging state."""
     counters = counters or PagerCounters()
     local_budget = UniqueKeyBudget(max_unique_keys) if max_unique_keys is not None else None
     token = None
     seen_tokens = set()
     seen_keys = set()
-    rows = []
     pages = 0
     while True:
         cancel_check()
@@ -613,18 +675,32 @@ def strict_search(search, jql, fields, *, counters=None, cancel_check=lambda: No
             if budget is not None:
                 budget.accept(page_keys, complete=is_last)
         seen_keys.update(page_keys)
+        if not is_last:
+            seen_tokens.add(next_token)
+            token = next_token
+        # A scope/auth rotation while Jira was responding must not publish the
+        # now-stale validated page into the current generation.
+        cancel_check()
+        yield tuple(page_rows), is_last
+        if is_last:
+            return
+
+
+def strict_search(search, jql, fields, *, counters=None, cancel_check=lambda: None,
+                  on_page=None, on_rows=None, max_unique_keys=None, key_budget=None):
+    rows = []
+    for page_rows, _is_last in iter_strict_search_pages(
+            search, jql, fields, counters=counters, cancel_check=cancel_check,
+            max_unique_keys=max_unique_keys, key_budget=key_budget):
         rows.extend(page_rows)
         if on_page is not None:
             # Page callbacks are a progressive-display seam, not an escape hatch
             # for arbitrary Jira fields. The caller receives only normalized,
             # bounded identities after the entire page and its budgets validate.
-            on_page(tuple(page_keys))
+            on_page(tuple(_normalized_key(row['key']) for row in page_rows))
         if on_rows is not None:
-            on_rows(tuple(page_rows))
-        if is_last:
-            return rows
-        seen_tokens.add(next_token)
-        token = next_token
+            on_rows(page_rows)
+    return rows
 
 
 def classify_project(fields, project_map, *, fallback_product_projects=(), fallback_tech_projects=()):
@@ -785,6 +861,39 @@ def _shape_value(reason, projector, *args, **kwargs):
         if error.code == 'board_projection_invalid' and error.phase == 'shape' and error.reason == 'none':
             error.reason = reason
         raise
+
+
+def _validate_epic_required_row(row):
+    """Validate fields every admitted Epic shell requires before partial yield."""
+    key = _strict_normalized_key(
+        row.get('key') if isinstance(row, dict) else None,
+        phase='shape', reason='epic.key',
+    )
+    fields = row.get('fields') or {}
+    if not isinstance(fields, dict):
+        raise EngBoardError('board_projection_invalid', phase='shape', reason='epic.fields')
+    required_shell = {
+        'key': key,
+        'summary': _shape_value('epic.summary', _text, fields.get('summary')),
+        'status': _shape_value('epic.status', _named, fields.get('status')),
+        'priority': _shape_value(
+            'epic.priority', _named, fields.get('priority'), nullable=True,
+        ),
+        'assignee': _shape_value(
+            'epic.assignee', _person, fields.get('assignee'), nullable=True,
+        ),
+        'updated': _shape_value(
+            'epic.updated', _text, fields.get('updated'), nullable=True,
+        ),
+        'parent': _shape_value('epic.parent', _parent, fields.get('parent')),
+    }
+    try:
+        canonical_bytes(required_shell)
+    except (TypeError, ValueError, UnicodeEncodeError) as error:
+        raise EngBoardError(
+            'board_projection_invalid', phase='shape', reason='epic.encoding',
+        ) from error
+    return key
 
 
 def project_board(epics, children, *, project_map, columns, epic_link_field_id=None,

@@ -51,6 +51,12 @@ _MAX = {
 class EngBoardFrameError(ValueError):
     """A frame cannot be safely represented by the frozen wire contract."""
 
+    def __init__(self, code='invalid_frame', *, limit=None, observed=None):
+        super().__init__(code)
+        self.code = code
+        self.limit = limit
+        self.observed = observed
+
 
 class EngBoardRequestDeadline(RuntimeError):
     """The cooperative request budget expired before more work was admitted."""
@@ -242,8 +248,8 @@ class EngBoardChildScheduler:
         self._pool.shutdown(wait=False, cancel_futures=True)
 
 
-def _fail(code='invalid_frame'):
-    raise EngBoardFrameError(code)
+def _fail(code='invalid_frame', *, limit=None, observed=None):
+    raise EngBoardFrameError(code, limit=limit, observed=observed)
 
 
 def _exact(value, required, optional=()):
@@ -492,7 +498,7 @@ class EngBoardStreamWriter:
         self.total_bytes = 0
         self.complete = False
 
-    def write(self, frame):
+    def _prepare(self, frame):
         if self.complete:
             _fail('stream_complete')
         if not isinstance(frame, dict):
@@ -505,10 +511,12 @@ class EngBoardStreamWriter:
         if self.sequence is None:
             if frame['sequence'] != 0 or frame['type'] != 'start':
                 _fail('invalid_sequence')
-            self.generation_id = frame['generationId']
+            pending_generation_id = frame['generationId']
         elif frame['sequence'] != self.sequence + 1:
             _fail('invalid_sequence')
-        if frame['generationId'] != self.generation_id:
+        else:
+            pending_generation_id = self.generation_id
+        if frame['generationId'] != pending_generation_id:
             _fail('invalid_generation')
         terminal = _validate_body(frame)
         try:
@@ -518,10 +526,30 @@ class EngBoardStreamWriter:
         except (TypeError, ValueError, UnicodeError) as error:
             raise EngBoardFrameError('invalid_frame') from error
         if len(encoded_frame) > self.max_frame_bytes:
-            _fail('frame_too_large')
+            _fail(
+                'frame_too_large', limit=self.max_frame_bytes,
+                observed=len(encoded_frame),
+            )
         encoded_line = encoded_frame + b'\n'
-        if self.total_bytes + len(encoded_line) > self.max_generation_bytes:
-            _fail('generation_too_large')
+        return encoded_line, terminal, pending_generation_id
+
+    def prepare(self, frame):
+        """Return the exact validated NDJSON line without mutating writer state."""
+        encoded_line, _terminal, _pending_generation_id = self._prepare(frame)
+        return encoded_line
+
+    def write(self, frame, *, reserve_bytes=0):
+        if (isinstance(reserve_bytes, bool) or not isinstance(reserve_bytes, int)
+                or reserve_bytes < 0):
+            raise ValueError('reserve_bytes must be a non-negative integer')
+        encoded_line, terminal, pending_generation_id = self._prepare(frame)
+        observed = self.total_bytes + len(encoded_line) + reserve_bytes
+        if observed > self.max_generation_bytes:
+            _fail(
+                'generation_too_large', limit=self.max_generation_bytes,
+                observed=observed,
+            )
+        self.generation_id = pending_generation_id
         self.sequence = frame['sequence']
         self.total_bytes += len(encoded_line)
         self.complete = terminal

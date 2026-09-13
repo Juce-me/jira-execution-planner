@@ -1,4 +1,13 @@
 const UI_PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
+const SPRINT_CATALOG_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function loadCachedSprintCatalog(prefs, now = Date.now()) {
+    const cache = prefs?.sprintCatalog;
+    const cachedAt = Number(cache?.cachedAt);
+    if (!Number.isFinite(cachedAt) || now - cachedAt < 0 || now - cachedAt >= SPRINT_CATALOG_CACHE_TTL_MS) return { cachedAt: 0, sprints: [] };
+    const sprints = Array.isArray(cache?.sprints) ? cache.sprints.filter(sprint => sprint && sprint.id !== null && sprint.id !== undefined && String(sprint.name || '').trim()) : [];
+    return sprints.length ? { cachedAt, sprints } : { cachedAt: 0, sprints: [] };
+}
 
 export function isActiveHomeTokenConnection(connection) {
     return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);

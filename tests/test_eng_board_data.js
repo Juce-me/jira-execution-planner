@@ -17,6 +17,54 @@ function loadModule() {
     return mod.exports;
 }
 
+function loadOwnerAndApi() {
+    const result = esbuild.buildSync({
+        stdin: {
+            resolveDir: path.join(__dirname, '..'),
+            contents: `export * from './frontend/src/eng/useEngBoardData.js'; export { consumeEngBoardResponse } from './frontend/src/api/engBoardApi.js';`,
+            loader: 'jsx',
+        },
+        bundle: true, write: false, platform: 'node', format: 'cjs', external: ['react'],
+    });
+    const entry = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngBoardData.js');
+    const mod = new Module(entry, module);
+    mod.paths = Module._nodeModulePaths(path.dirname(entry));
+    mod._compile(result.outputFiles[0].text, entry);
+    return mod.exports;
+}
+
+function loadOwnerAndViewModel() {
+    const result = esbuild.buildSync({
+        stdin: {
+            resolveDir: path.join(__dirname, '..'),
+            contents: `export * from './frontend/src/eng/useEngBoardData.js'; export { buildStrictEngBoardViewModel } from './frontend/src/eng/engBoardViewModel.js';`,
+            loader: 'jsx',
+        },
+        bundle: true, write: false, platform: 'node', format: 'cjs', external: ['react'],
+    });
+    const entry = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngBoardData.js');
+    const mod = new Module(entry, module);
+    mod.paths = Module._nodeModulePaths(path.dirname(entry));
+    mod._compile(result.outputFiles[0].text, entry);
+    return mod.exports;
+}
+
+function loadOwnerAndPerformance() {
+    const result = esbuild.buildSync({
+        stdin: {
+            resolveDir: path.join(__dirname, '..'),
+            contents: `export * from './frontend/src/eng/useEngBoardData.js'; export { createBoardLoadMeasurement } from './frontend/src/eng/loadPerformance.js';`,
+            loader: 'jsx',
+        },
+        bundle: true, write: false, platform: 'node', format: 'cjs', external: ['react'],
+    });
+    const entry = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngBoardData.js');
+    const mod = new Module(entry, module);
+    mod.paths = Module._nodeModulePaths(path.dirname(entry));
+    mod._compile(result.outputFiles[0].text, entry);
+    return mod.exports;
+}
+
 function epic(key, columnId = 'todo') {
     return { key, columnId, summary: key, status: { id: '1', name: 'Todo' } };
 }
@@ -38,6 +86,34 @@ function start(generationId, scopeVersion = 'scope-v1', columnIds = ['todo']) {
 
 function reduce(mod, state, action) {
     return mod.engBoardDataReducer(state, action);
+}
+
+function wireEpic(key, columnId = 'todo') {
+    return {
+        key, summary: key, status: { id: '1', name: 'Todo' }, priority: null,
+        assignee: null, deliveryOwner: null, projectTrack: 'product', updated: null,
+        parent: null, columnId,
+    };
+}
+
+function wireDiagnostics(completeness = 'complete') {
+    return {
+        indexMs: 1, focusedCompleteMs: 2, durationMs: 3, jiraRequests: 1,
+        jiraPages: 1, jiraRetries: 0, peakChildSearches: 1, cacheState: 'miss', completeness,
+    };
+}
+
+function bufferedBoardResponse(frames) {
+    const text = frames.map(value => `${JSON.stringify(value)}\n`).join('');
+    return new Response(text, { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } });
+}
+
+function byteLimitTerminalResponse() {
+    return bufferedBoardResponse([
+        { ...start('byte-limit'), scope: 'component' },
+        frame('byte-limit', 1, 'index', { epics: [wireEpic('ABC-1')], membership: 'candidate' }),
+        frame('byte-limit', 2, 'error', { code: 'scope_too_large' }),
+    ]);
 }
 
 test('first visit inherits the mandatory sprint once and each Department keeps independent scope', () => {
@@ -652,4 +728,545 @@ test('cumulative component candidate indexes are replaced by the complete All wo
     assert.equal(state.status, 'loading');
     assert.equal(state.working.membershipAuthoritative, true);
     assert.deepEqual(Object.keys(state.working.epicsByKey), ['E-1', 'E-2', 'E-3']);
+});
+
+test('scope_too_large retains cold All work candidates without granting authority or caching', () => {
+    const mod = loadModule();
+    let state = mod.createEngBoardDataState();
+    state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+    state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
+    state = reduce(mod, state, { type: 'start_load', requestId: 1, refresh: false });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', {
+        epics: [epic('E-1')], membership: 'candidate',
+    }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, 'error', { code: 'scope_too_large' }) });
+
+    assert.equal(state.status, 'error');
+    assert.equal(state.error.code, 'scope_too_large');
+    assert.equal(state.working.candidateEpicsByKey['E-1']?.key, 'E-1');
+    assert.equal(state.working.membershipAuthoritative, false);
+    assert.equal(state.working.childrenAuthoritative, false);
+    assert.equal(state.snapshots[state.activeKey], undefined);
+});
+
+test('scope_too_large retains authoritative index and completed columns as partial working data', () => {
+    const mod = loadModule();
+    let state = mod.createEngBoardDataState();
+    state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+    state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
+    state = reduce(mod, state, { type: 'start_load', requestId: 1, refresh: false });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1', 'scope-v1', ['todo', 'done']), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', {
+        epics: [epic('E-1')], membership: 'authoritative',
+    }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, 'column', {
+        columnId: 'todo', epics: [epic('E-1')], children: [child('C-1', 'E-1')], authoritative: true,
+    }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 3, 'error', { code: 'scope_too_large' }) });
+
+    assert.equal(state.status, 'error');
+    assert.equal(state.working.epicsByKey['E-1']?.key, 'E-1');
+    assert.equal(state.working.childrenByKey['C-1']?.key, 'C-1');
+    assert.equal(state.working.columnAuthority.todo, true);
+    assert.equal(state.working.childrenAuthoritative, false);
+    assert.equal(state.snapshots[state.activeKey], undefined);
+});
+
+test('compatible refresh hard limit retains the complete stale snapshot and keeps partial work separate', () => {
+    const mod = loadModule();
+    let state = mod.createEngBoardDataState();
+    state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+    state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
+    state = reduce(mod, state, { type: 'start_load', requestId: 1, refresh: false });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', { epics: [epic('E-1')], membership: 'authoritative' }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, 'column', { columnId: 'todo', epics: [epic('E-1')], children: [child('C-1', 'E-1')], authoritative: true }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 3, 'complete', { outcome: 'success', authoritative: true, epicCount: 1, childCount: 1, diagnostics: {} }) });
+    state = reduce(mod, state, { type: 'start_load', requestId: 2, refresh: true });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: { ...start('g2'), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 1, 'index', { epics: [epic('E-1'), epic('E-2')], membership: 'candidate' }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 2, 'error', { code: 'scope_too_large' }) });
+
+    assert.equal(state.status, 'error');
+    assert.equal(state.error.code, 'scope_too_large');
+    assert.deepEqual(Object.keys(state.staleSnapshot.epicsByKey), ['E-1']);
+    assert.deepEqual(Object.keys(state.staleSnapshot.childrenByKey), ['C-1']);
+    assert.deepEqual(Object.keys(state.working.candidateEpicsByKey), ['E-1', 'E-2']);
+    assert.equal(state.snapshots[state.activeKey].epicsByKey['E-2'], undefined);
+    assert.equal(state.working.childrenAuthoritative, false);
+});
+
+test('compatible retry success atomically replaces the stale snapshot after a hard limit', () => {
+    const mod = loadModule();
+    let state = mod.createEngBoardDataState();
+    state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+    state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
+    state = reduce(mod, state, { type: 'start_load', requestId: 1 });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', { epics: [epic('E-1')], membership: 'authoritative' }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, 'column', { columnId: 'todo', epics: [epic('E-1')], children: [child('C-1', 'E-1')], authoritative: true }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 3, 'complete', { outcome: 'success', authoritative: true, epicCount: 1, childCount: 1, diagnostics: {} }) });
+    state = reduce(mod, state, { type: 'start_load', requestId: 2, refresh: true });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: { ...start('g2'), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 1, 'index', { epics: [epic('E-1'), epic('E-2')], membership: 'candidate' }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 2, 'error', { code: 'scope_too_large' }) });
+    state = reduce(mod, state, { type: 'start_load', requestId: 3, refresh: true });
+    state = reduce(mod, state, { type: 'frame', requestId: 3, frame: { ...start('g3'), scope: 'all_work' } });
+    assert.deepEqual(Object.keys(state.staleSnapshot.epicsByKey), ['E-1']);
+    state = reduce(mod, state, { type: 'frame', requestId: 3, frame: frame('g3', 1, 'index', { epics: [epic('E-2')], membership: 'authoritative' }) });
+    assert.deepEqual(Object.keys((state.staleSnapshot || state.working).epicsByKey), ['E-1']);
+    assert.deepEqual(Object.keys(state.snapshots[state.activeKey].epicsByKey), ['E-1']);
+    assert.deepEqual(Object.keys(state.working.epicsByKey), ['E-2']);
+    state = reduce(mod, state, { type: 'frame', requestId: 3, frame: frame('g3', 2, 'column', { columnId: 'todo', epics: [epic('E-2')], children: [child('C-2', 'E-2')], authoritative: true }) });
+    assert.deepEqual(Object.keys((state.staleSnapshot || state.working).epicsByKey), ['E-1']);
+    assert.deepEqual(Object.keys((state.staleSnapshot || state.working).childrenByKey), ['C-1']);
+    assert.deepEqual(Object.keys(state.snapshots[state.activeKey].epicsByKey), ['E-1']);
+    assert.deepEqual(Object.keys(state.working.epicsByKey), ['E-2']);
+    assert.deepEqual(Object.keys(state.working.childrenByKey), ['C-2']);
+    state = reduce(mod, state, { type: 'frame', requestId: 3, frame: frame('g3', 3, 'complete', { outcome: 'success', authoritative: true, epicCount: 1, childCount: 1, diagnostics: {} }) });
+    assert.equal(state.status, 'success');
+    assert.equal(state.staleSnapshot, null);
+    assert.deepEqual(Object.keys(state.snapshots[state.activeKey].epicsByKey), ['E-2']);
+    assert.deepEqual(Object.keys(state.snapshots[state.activeKey].childrenByKey), ['C-2']);
+});
+
+test('retry after a cold hard limit replaces partial data only after complete success', () => {
+    const mod = loadModule();
+    let state = mod.createEngBoardDataState();
+    state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+    state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
+    state = reduce(mod, state, { type: 'start_load', requestId: 1 });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', { epics: [epic('OLD')], membership: 'candidate' }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, 'error', { code: 'scope_too_large' }) });
+    state = reduce(mod, state, { type: 'start_load', requestId: 2 });
+    assert.equal(state.working.candidateEpicsByKey.OLD, undefined);
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: { ...start('g2'), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 1, 'index', { epics: [epic('NEW')], membership: 'authoritative' }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 2, 'column', { columnId: 'todo', epics: [epic('NEW')], children: [], authoritative: true }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 3, 'complete', { outcome: 'success', authoritative: true, epicCount: 1, childCount: 0, diagnostics: {} }) });
+    assert.equal(state.status, 'success');
+    assert.deepEqual(Object.keys(state.snapshots[state.activeKey].epicsByKey), ['NEW']);
+});
+
+test('incompatible scope version drops the old snapshot before retaining new partial candidates', () => {
+    const mod = loadModule();
+    let state = mod.createEngBoardDataState();
+    state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+    state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
+    state = reduce(mod, state, { type: 'start_load', requestId: 1 });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', { epics: [epic('OLD')], membership: 'authoritative' }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, 'column', { columnId: 'todo', epics: [epic('OLD')], children: [], authoritative: true }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 3, 'complete', { outcome: 'success', authoritative: true, epicCount: 1, childCount: 0, diagnostics: {} }) });
+    state = reduce(mod, state, { type: 'start_load', requestId: 2, refresh: true });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: { ...start('g2', 'scope-v2'), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 1, 'index', { epics: [epic('NEW')], membership: 'candidate' }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 2, 'error', { code: 'scope_too_large' }) });
+    assert.equal(state.status, 'error');
+    assert.equal(state.error.code, 'scope_too_large');
+    assert.equal(state.staleSnapshot, null);
+    assert.equal(state.snapshots[state.activeKey], undefined);
+    assert.deepEqual(Object.keys(state.working.candidateEpicsByKey), ['NEW']);
+});
+
+test('cross-sprint column authority is rejected until All work membership is final', () => {
+    const mod = loadModule();
+    let state = mod.createEngBoardDataState();
+    state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+    state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
+    state = reduce(mod, state, { type: 'start_load', requestId: 1 });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: 'all_work' } });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', { epics: [epic('E-1')], membership: 'candidate' }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, 'column', { columnId: 'todo', epics: [epic('E-1')], children: [], authoritative: true }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 3, 'index', { epics: [epic('E-1'), epic('E-2')], membership: 'authoritative' }) });
+    state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 4, 'complete', { outcome: 'success', authoritative: true, epicCount: 2, childCount: 0, diagnostics: {} }) });
+    assert.equal(state.status, 'error');
+    assert.equal(state.error.code, 'invalid_frame');
+    assert.equal(state.snapshots[state.activeKey], undefined);
+});
+
+test('cross-sprint child frames require authoritative membership while Sprint keeps legacy ordering', async t => {
+    const mod = loadModule();
+    const childFrames = [
+        ['progress', { columnId: 'todo', loadedChildren: 1, byEpic: [] }],
+        ['column', { columnId: 'todo', epics: [epic('E-1')], children: [], authoritative: true }],
+        ['column_error', { columnId: 'todo', code: 'jira_unavailable', retryable: true }],
+    ];
+    for (const scopeType of ['all_work', 'component']) {
+        for (const [type, fields] of childFrames) {
+            await t.test(`${scopeType} rejects ${type} after only a candidate index`, () => {
+                let state = mod.createEngBoardDataState();
+                state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+                state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: scopeType } });
+                state = reduce(mod, state, { type: 'start_load', requestId: 1 });
+                state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: scopeType } });
+                state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', {
+                    epics: [epic('E-1')], membership: 'candidate',
+                }) });
+                state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, type, fields) });
+                assert.equal(state.status, 'error');
+                assert.equal(state.error.code, 'invalid_frame');
+            });
+        }
+    }
+    await t.test('Sprint still accepts progress before an index', () => {
+        let state = mod.createEngBoardDataState();
+        state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+        state = reduce(mod, state, { type: 'start_load', requestId: 1 });
+        state = reduce(mod, state, { type: 'frame', requestId: 1, frame: start('g1') });
+        state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'progress', {
+            columnId: 'todo', loadedChildren: 1, byEpic: [],
+        }) });
+        assert.equal(state.status, 'loading');
+        assert.equal(state.working.progressByColumn.todo.loadedChildren, 1);
+    });
+});
+
+test('owner display source gives the view model cold partial cards but keeps compatible stale authority', () => {
+    const mod = loadOwnerAndViewModel();
+    const buildState = ({ stale }) => {
+        let state = mod.createEngBoardDataState();
+        state = reduce(mod, state, { type: 'select_group', groupId: 'a', inheritedSprintId: 42, revision: 'r1' });
+        state = reduce(mod, state, { type: 'set_scope', groupId: 'a', scope: { type: 'all_work' } });
+        state = reduce(mod, state, { type: 'start_load', requestId: 1 });
+        state = reduce(mod, state, { type: 'frame', requestId: 1, frame: { ...start('g1'), scope: 'all_work' } });
+        if (stale) {
+            state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', { epics: [epic('OLD')], membership: 'authoritative' }) });
+            state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, 'column', { columnId: 'todo', epics: [epic('OLD')], children: [child('OLD-1', 'OLD')], authoritative: true }) });
+            state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 3, 'complete', { outcome: 'success', authoritative: true, epicCount: 1, childCount: 1, diagnostics: {} }) });
+            state = reduce(mod, state, { type: 'start_load', requestId: 2, refresh: true });
+            state = reduce(mod, state, { type: 'frame', requestId: 2, frame: { ...start('g2'), scope: 'all_work' } });
+            state = reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 1, 'index', { epics: [epic('NEW')], membership: 'candidate' }) });
+            return reduce(mod, state, { type: 'frame', requestId: 2, frame: frame('g2', 2, 'error', { code: 'scope_too_large' }) });
+        }
+        state = reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 1, 'index', { epics: [epic('NEW')], membership: 'candidate' }) });
+        return reduce(mod, state, { type: 'frame', requestId: 1, frame: frame('g1', 2, 'error', { code: 'scope_too_large' }) });
+    };
+
+    const coldState = buildState({ stale: false });
+    const coldModel = mod.buildStrictEngBoardViewModel(coldState.staleSnapshot || coldState.working);
+    assert.deepEqual(coldModel.epicGroups.map(group => group.key), ['NEW']);
+    assert.equal(coldModel.authoritative, false);
+    assert.equal(coldModel.childrenAuthoritative, false);
+
+    const staleState = buildState({ stale: true });
+    const staleModel = mod.buildStrictEngBoardViewModel(staleState.staleSnapshot || staleState.working);
+    assert.deepEqual(staleModel.epicGroups.map(group => group.key), ['OLD']);
+    assert.equal(staleModel.authoritative, true);
+    assert.equal(staleModel.childrenAuthoritative, true);
+});
+
+test('buffered parser frames reduce through the owner while focused telemetry is unresolved', async () => {
+    const mod = loadOwnerAndApi();
+    let release;
+    const focused = new Promise(resolve => { release = resolve; });
+    const frames = [
+        { ...start('g1'), scope: 'all_work' },
+        frame('g1', 1, 'index', { epics: [wireEpic('E-1')], membership: 'authoritative' }),
+        frame('g1', 2, 'column', { columnId: 'todo', epics: [wireEpic('E-1')], children: [], authoritative: true }),
+        frame('g1', 3, 'complete', { outcome: 'success', authoritative: true, epicCount: 1, childCount: 0, diagnostics: wireDiagnostics() }),
+    ];
+    const owner = mod.createEngBoardDataOwner({
+        createMeasurement: () => ({
+            start() {}, addPayloadBytes() {}, focusedContentReady: () => focused,
+            finish() {}, cancel() {},
+        }),
+        streamBoard: options => mod.consumeEngBoardResponse(bufferedBoardResponse(frames), options),
+    });
+    owner.selectGroup('a', 42, 'r1');
+    const loading = owner.setScope({ type: 'all_work' });
+    let observedStatus;
+    try {
+        await new Promise(resolve => setImmediate(resolve));
+        await new Promise(resolve => setImmediate(resolve));
+        observedStatus = owner.getState().status;
+    } finally {
+        release();
+        await loading;
+    }
+    assert.equal(observedStatus, 'success');
+});
+
+test('parseable byte-limit terminal reduces through the owner and retains its candidate', async () => {
+    const mod = loadOwnerAndApi();
+    const response = byteLimitTerminalResponse();
+    const owner = mod.createEngBoardDataOwner({
+        streamBoard: options => mod.consumeEngBoardResponse(response, options),
+    });
+    owner.selectGroup('a', 42, 'r1');
+    assert.equal(await owner.setScope({ type: 'component' }), 'error');
+    const state = owner.getState();
+    assert.equal(state.status, 'error');
+    assert.equal(state.error.code, 'scope_too_large');
+    assert.deepEqual(Object.keys(state.working.candidateEpicsByKey), ['ABC-1']);
+    assert.equal(state.working.childrenAuthoritative, false);
+    assert.equal(state.snapshots[state.activeKey], undefined);
+});
+
+test('optional Board measurement throws and rejections never become data failures', async t => {
+    const mod = loadModule();
+    const cases = [
+        ['start throws', { start: () => { throw new Error('telemetry'); } }],
+        ['payload throws', { addPayloadBytes: () => { throw new Error('telemetry'); } }],
+        ['focused rejects', { focusedContentReady: () => Promise.reject(new Error('telemetry')) }],
+        ['finish rejects', { finish: () => Promise.reject(new Error('telemetry')) }],
+    ];
+    for (const [name, failing] of cases) {
+        await t.test(name, async () => {
+            const measurement = {
+                start() {}, addPayloadBytes() {}, focusedContentReady() {}, finish() {}, cancel() {},
+                ...failing,
+            };
+            const owner = mod.createEngBoardDataOwner({
+                createMeasurement: () => measurement,
+                streamBoard: async options => {
+                    await options.onFrame(start('g1'));
+                    await options.onFrame(frame('g1', 1, 'index', { epics: [epic('E-1')], membership: 'candidate' }));
+                    await options.onFrame(frame('g1', 2, 'column', { columnId: 'todo', epics: [epic('E-1')], children: [], authoritative: true }));
+                    await options.onFrame(frame('g1', 3, 'complete', { outcome: 'success', authoritative: true, epicCount: 1, childCount: 0, diagnostics: {} }));
+                },
+            });
+            owner.selectGroup('a', 42, 'r1');
+            assert.equal(await owner.load(), 'success');
+            assert.equal(owner.getState().status, 'success');
+        });
+    }
+});
+
+test('a held terminal observer finishes once and cannot interfere with a newer request', async () => {
+    const mod = loadModule();
+    const streams = [];
+    const calls = [];
+    let releaseFinish;
+    const heldFinish = new Promise(resolve => { releaseFinish = resolve; });
+    const owner = mod.createEngBoardDataOwner({
+        createMeasurement: () => {
+            const id = calls.filter(call => call[0] === 'create').length + 1;
+            calls.push(['create', id]);
+            return {
+                start() {}, addPayloadBytes() {}, focusedContentReady() {},
+                finish: () => {
+                    calls.push(['finish', id]);
+                    return id === 1 ? heldFinish : undefined;
+                },
+                cancel: () => calls.push(['cancel', id]),
+            };
+        },
+        streamBoard: options => new Promise(resolve => streams.push({ options, resolve })),
+    });
+    owner.selectGroup('a', 42, 'r1');
+    const first = owner.load();
+    await streams[0].options.onFrame(start('g1'));
+    await streams[0].options.onFrame(frame('g1', 1, 'index', { epics: [], membership: 'authoritative' }));
+    await streams[0].options.onFrame(frame('g1', 2, 'column', { columnId: 'todo', epics: [], children: [], authoritative: true }));
+    const terminalObservation = streams[0].options.onFrame(frame('g1', 3, 'complete', {
+        outcome: 'success', authoritative: true, epicCount: 0, childCount: 0, diagnostics: {},
+    }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(owner.getState().status, 'success');
+
+    const second = owner.refresh();
+    assert.deepEqual(calls.filter(call => call[0] === 'finish'), [['finish', 1]]);
+    assert.deepEqual(calls.filter(call => call[0] === 'cancel'), [['cancel', 1]]);
+    releaseFinish();
+    await terminalObservation;
+    await new Promise(resolve => setImmediate(resolve));
+    await streams[1].options.onFrame(start('g2'));
+    assert.equal(owner.getState().generationId, 'g2');
+
+    owner.dispose();
+    streams[0].resolve();
+    streams[1].resolve();
+    await Promise.all([first, second]);
+    assert.deepEqual(calls.filter(call => call[0] === 'finish'), [['finish', 1]]);
+    assert.deepEqual(calls.filter(call => call[0] === 'cancel'), [['cancel', 1], ['cancel', 2]]);
+});
+
+test('held cancellation and late observer rejection cannot affect replacement or leak unhandled rejection', async () => {
+    const mod = loadModule();
+    const streams = [];
+    const calls = [];
+    let rejectCancel;
+    const heldCancel = new Promise((resolve, reject) => { rejectCancel = reject; });
+    const unhandled = [];
+    const onUnhandled = reason => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    const owner = mod.createEngBoardDataOwner({
+        createMeasurement: () => {
+            const id = calls.filter(call => call[0] === 'create').length + 1;
+            calls.push(['create', id]);
+            return {
+                start() {}, addPayloadBytes() {}, focusedContentReady() {}, finish() {},
+                cancel: () => {
+                    calls.push(['cancel', id]);
+                    return id === 1 ? heldCancel : undefined;
+                },
+            };
+        },
+        streamBoard: options => new Promise((resolve, reject) => streams.push({ options, resolve, reject })),
+    });
+    try {
+        owner.selectGroup('a', 42, 'r1');
+        const first = owner.load();
+        const second = owner.refresh();
+        assert.deepEqual(calls.filter(call => call[0] === 'cancel'), [['cancel', 1]]);
+        rejectCancel(new Error('late optional cancellation'));
+        await new Promise(resolve => setImmediate(resolve));
+        await streams[1].options.onFrame(start('g2'));
+        assert.equal(owner.getState().generationId, 'g2');
+        assert.deepEqual(unhandled, []);
+        streams[0].reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        owner.dispose();
+        streams[1].reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        await Promise.all([first, second]);
+    } finally {
+        process.off('unhandledRejection', onUnhandled);
+    }
+});
+
+test('auth lock and unmount retire measurements without emitting terminal samples', async t => {
+    const mod = loadModule();
+    for (const mode of ['auth frame', 'auth throw', 'unmount']) {
+        await t.test(mode, async () => {
+            const calls = [];
+            let stream;
+            const owner = mod.createEngBoardDataOwner({
+                onAuthRequired: () => calls.push('auth'),
+                createMeasurement: () => ({
+                    start() {}, addPayloadBytes() {}, focusedContentReady() {},
+                    finish: () => calls.push('finish'), cancel: () => calls.push('cancel'),
+                }),
+                streamBoard: options => new Promise((resolve, reject) => { stream = { options, resolve, reject }; }),
+            });
+            owner.selectGroup('a', 42, 'r1');
+            const loading = owner.load();
+            if (mode === 'auth frame') {
+                await stream.options.onFrame(start('g1'));
+                await stream.options.onFrame(frame('g1', 1, 'error', { code: 'auth_required' }));
+                stream.resolve();
+            } else if (mode === 'auth throw') {
+                stream.reject(Object.assign(new Error('auth'), { code: 'auth_required' }));
+            } else {
+                owner.dispose();
+                stream.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+            }
+            await loading;
+            assert.equal(calls.filter(value => value === 'finish').length, 0);
+            assert.equal(calls.filter(value => value === 'cancel').length, 1);
+            assert.equal(calls.filter(value => value === 'auth').length, mode === 'unmount' ? 0 : 1);
+        });
+    }
+});
+
+test('a throwing measurement factory is observational and does not prevent Board success', async () => {
+    const mod = loadModule();
+    const owner = mod.createEngBoardDataOwner({
+        createMeasurement: () => { throw new Error('optional factory failed'); },
+        streamBoard: async options => {
+            await options.onFrame(start('g1'));
+            await options.onFrame(frame('g1', 1, 'index', { epics: [], membership: 'authoritative' }));
+            await options.onFrame(frame('g1', 2, 'column', { columnId: 'todo', epics: [], children: [], authoritative: true }));
+            await options.onFrame(frame('g1', 3, 'complete', {
+                outcome: 'success', authoritative: true, epicCount: 0, childCount: 0, diagnostics: {},
+            }));
+        },
+    });
+    owner.selectGroup('a', 42, 'r1');
+    assert.equal(await owner.load(), 'success');
+});
+
+test('pending real Board finish is silently suppressed by supersede, unmount, or auth lock', async t => {
+    const mod = loadOwnerAndPerformance();
+    for (const mode of ['supersede', 'unmount', 'auth lock']) {
+        await t.test(mode, async () => {
+            const samples = [];
+            const paints = [];
+            const streams = [];
+            const owner = mod.createEngBoardDataOwner({
+                createMeasurement: options => mod.createBoardLoadMeasurement({
+                    ...options, enabled: true, emit: sample => samples.push(sample),
+                    afterPaint: () => new Promise(resolve => paints.push(resolve)),
+                }),
+                streamBoard: options => new Promise((resolve, reject) => streams.push({ options, resolve, reject })),
+            });
+            owner.selectGroup('a', 42, 'r1');
+            const first = owner.load();
+            await streams[0].options.onFrame(start('g1'));
+            await streams[0].options.onFrame(frame('g1', 1, 'index', { epics: [], membership: 'authoritative' }));
+            await streams[0].options.onFrame(frame('g1', 2, 'column', {
+                columnId: 'todo', epics: [], children: [], authoritative: true,
+            }));
+            await streams[0].options.onFrame(frame('g1', 3, 'complete', {
+                outcome: 'success', authoritative: true, epicCount: 0, childCount: 0, diagnostics: {},
+            }));
+            assert.equal(owner.getState().status, 'success');
+            assert.equal(paints.length, 2, 'focused content and terminal paint should both be pending');
+
+            let replacement = null;
+            if (mode === 'supersede') {
+                streams[0].resolve();
+                await first;
+                replacement = owner.refresh();
+            } else if (mode === 'unmount') {
+                streams[0].resolve();
+                await first;
+                owner.dispose();
+            } else {
+                streams[0].reject(Object.assign(new Error('auth'), { code: 'auth_required' }));
+                await first;
+            }
+            for (const release of paints.splice(0)) release();
+            await new Promise(resolve => setImmediate(resolve));
+            assert.deepEqual(samples, [], `${mode} must not emit a cancelled or terminal performance sample`);
+            if (replacement) {
+                owner.dispose();
+                streams[1].reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+                await replacement;
+            }
+        });
+    }
+});
+
+test('sync throws and rejected promises from every optional Board observer stay contained', async t => {
+    const mod = loadModule();
+    const methods = ['start', 'addPayloadBytes', 'focusedContentReady', 'finish', 'cancel'];
+    for (const rejection of ['throw', 'reject']) {
+        for (const method of methods) {
+            await t.test(`${method} ${rejection}`, async () => {
+                const streams = [];
+                const measurement = {
+                    start() {}, addPayloadBytes() {}, focusedContentReady() {}, finish() {}, cancel() {},
+                };
+                measurement[method] = () => {
+                    if (rejection === 'throw') throw new Error(`${method} optional failure`);
+                    return Promise.reject(new Error(`${method} optional rejection`));
+                };
+                const owner = mod.createEngBoardDataOwner({
+                    createMeasurement: () => measurement,
+                    streamBoard: options => new Promise((resolve, reject) => streams.push({ options, resolve, reject })),
+                });
+                owner.selectGroup('a', 42, 'r1');
+                const loading = owner.load();
+                if (method === 'cancel') {
+                    owner.dispose();
+                    streams[0].reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+                    assert.equal(await loading, 'ignored');
+                } else {
+                    await streams[0].options.onFrame(start('g1'), { payloadBytes: 10 });
+                    await streams[0].options.onFrame(frame('g1', 1, 'index', { epics: [], membership: 'authoritative' }));
+                    await streams[0].options.onFrame(frame('g1', 2, 'column', {
+                        columnId: 'todo', epics: [], children: [], authoritative: true,
+                    }));
+                    await streams[0].options.onFrame(frame('g1', 3, 'complete', {
+                        outcome: 'success', authoritative: true, epicCount: 0, childCount: 0, diagnostics: {},
+                    }));
+                    streams[0].resolve();
+                    assert.equal(await loading, 'success');
+                }
+                await new Promise(resolve => setImmediate(resolve));
+            });
+        }
+    }
 });

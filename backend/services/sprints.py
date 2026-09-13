@@ -289,29 +289,9 @@ def fetch_sprints_from_jira(
         base_jql = strip_sprint_clause(base_jql)
 
         sprints_dict = {}
+        sprint_jql = add_clause_to_jql(base_jql, 'Sprint is not EMPTY')
         issues_count = _collect_sprints_by_jql(
-            base_jql,
-            sprints_dict,
-            jira_search_request=jira_search_request,
-            get_sprint_field_id=get_sprint_field_id,
-        )
-        closed_jql = add_clause_to_jql(base_jql, 'Sprint in closedSprints()')
-        issues_count += _collect_sprints_by_jql(
-            closed_jql,
-            sprints_dict,
-            jira_search_request=jira_search_request,
-            get_sprint_field_id=get_sprint_field_id,
-        )
-        future_jql = add_clause_to_jql(base_jql, 'Sprint in futureSprints()')
-        issues_count += _collect_sprints_by_jql(
-            future_jql,
-            sprints_dict,
-            jira_search_request=jira_search_request,
-            get_sprint_field_id=get_sprint_field_id,
-        )
-        open_jql = add_clause_to_jql(base_jql, 'Sprint in openSprints()')
-        issues_count += _collect_sprints_by_jql(
-            open_jql,
+            sprint_jql,
             sprints_dict,
             jira_search_request=jira_search_request,
             get_sprint_field_id=get_sprint_field_id,

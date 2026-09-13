@@ -99,7 +99,7 @@ function storyPayload(specs = EPIC_SPECS) {
 async function installBoardFixture(page, {
     board = { columns: BOARD_COLUMNS }, groups = null, epicSpecs = EPIC_SPECS,
     strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0, configResponseGate = null,
-    sprintResponseGate = null, sprints = null, sprintsStatus = 200, requestUrls = null,
+    sprintResponseGate = null, sprints = null, sprintsStatus = 200, requestUrls = null, requestLog = null,
     selectedProjects = [{ key: 'PLAT', type: 'product' }], savedBoardId = '',
     boardCapability = strictBoard, performanceLoads = null, performanceResponseGate = null,
     performanceStatus = 201, jiraProjects = [{ key: 'DRAFT', name: 'Draft Project' }],
@@ -118,6 +118,7 @@ async function installBoardFixture(page, {
         const request = route.request();
         const url = new URL(request.url());
         requestUrls?.push(`${url.pathname}${url.search}`);
+        requestLog?.push({ url: request.url(), method: request.method() });
         requests?.push(url.pathname === '/api/eng/board' ? `${url.pathname}${url.search}` : url.pathname);
         const json = (body, status = 200) => route.fulfill({
             status,
@@ -264,7 +265,7 @@ async function installBoardFixture(page, {
 
 async function openBoard(page, {
     width = 1280, height = 900, board, groups, epicSpecs, reducedMotion, strictBoard, requests, sourceBundle, configDelayMs,
-    configResponseGate,
+    configResponseGate, sprints, requestLog,
     selectedProjects, savedBoardId, boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
     expectBoardColumns = true,
 } = {}) {
@@ -279,6 +280,8 @@ async function openBoard(page, {
         ...(sourceBundle === undefined ? {} : { sourceBundle }),
         ...(configDelayMs === undefined ? {} : { configDelayMs }),
         ...(configResponseGate === undefined ? {} : { configResponseGate }),
+        ...(sprints === undefined ? {} : { sprints }),
+        ...(requestLog === undefined ? {} : { requestLog }),
         ...(selectedProjects === undefined ? {} : { selectedProjects }),
         ...(savedBoardId === undefined ? {} : { savedBoardId }),
         ...(boardCapability === undefined ? {} : { boardCapability }),
@@ -348,29 +351,59 @@ for (const authority of [
     }
 }
 
-for (const scope of ['component', 'all_work']) {
-    test(`missing saved Jira authority guards ${scope} after the sprint catalog loads`, async ({ page }) => {
-        const requests = [];
-        await openBoard(page, { strictBoard: true, sourceBundle: true, requests,
-            selectedProjects: [], savedBoardId: '' });
-
-        const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
-        await expect(sprintControl).toContainText(selectedSprintName);
+for (const scopeLabel of ['Component', 'All work']) {
+    test(`selector regression: missing authority selects ${scopeLabel}`, async ({ page }) => {
+        const requestLog = [];
+        await openBoard(page, {
+            strictBoard: true,
+            sourceBundle: true,
+            requestLog,
+            selectedProjects: [],
+            savedBoardId: '',
+            sprints: [
+                { id: selectedSprintId + 2, name: '2027Q2', state: 'future' },
+                { id: selectedSprintId, name: '2027Q1', state: 'active' },
+                { id: selectedSprintId - 2, name: '2026Q4', state: 'closed' },
+            ],
+        });
+        const ordinaryTaskRequestsBeforeSelection = requestLog.filter(({ url, method }) => (
+            method === 'GET' && new URL(url).pathname === '/api/tasks-with-team-name'
+        ));
+        const initialLaneProjects = ordinaryTaskRequestsBeforeSelection
+            .filter(({ url }) => !new URL(url).searchParams.has('purpose'))
+            .map(({ url }) => new URL(url).searchParams.get('project'));
+        expect(initialLaneProjects).toEqual(expect.arrayContaining(['product', 'tech']));
         await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
-        await sprintControl.click();
-        const allWorkOption = page.getByText('All work', { exact: true }).first();
-        const componentOption = page.getByText('Component', { exact: true }).first();
-        await expect(allWorkOption).toHaveAttribute('aria-disabled', 'true');
-        await expect(componentOption).toHaveAttribute('aria-disabled', 'true');
-        await expect(allWorkOption).toHaveAttribute('title', /saved Jira projects or a Jira Board/);
-        await expect(componentOption).toHaveAttribute('title', /saved Jira projects or a Jira Board/);
-        await (scope === 'component' ? componentOption : allWorkOption).dispatchEvent('click');
-        await waitTwoFrames(page);
-
-        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+        const jiraExportButton = page.getByRole('button', { name: 'Open Jira issue menu' });
+        await expect(jiraExportButton).toBeVisible();
+        await expect(jiraExportButton).toBeEnabled();
+        await jiraExportButton.click();
+        await expect(page.getByRole('menuitem', { name: /Open stories/ })).toBeVisible();
         await page.keyboard.press('Escape');
-        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+
+        const sprintControl = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        await sprintControl.click();
+        const sprintPanel = page.locator('.sprint-dropdown-panel');
+        await expect(sprintPanel).toContainText('2027Q2');
+        await expect(sprintPanel).toContainText('2027Q1');
+        await expect(sprintPanel).toContainText('2026Q4');
+        await expect(sprintPanel.getByText(scopeLabel, { exact: true })).toBeVisible();
+        await page.getByRole('option', { name: scopeLabel, exact: true }).click();
+        await expect(sprintControl).toContainText(scopeLabel);
+        await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
+            'Select Jira projects or a Jira source Board before loading this scope.'
+        );
+        await waitTwoFrames(page);
+        expect(requestLog.filter(({ url }) => new URL(url).pathname === '/api/eng/board')).toEqual([]);
+        expect(requestLog.filter(({ url, method }) => (
+            method === 'GET' && new URL(url).pathname === '/api/tasks-with-team-name'
+        ))).toHaveLength(ordinaryTaskRequestsBeforeSelection.length);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Open Jira issue menu' })).toHaveCount(0);
+        await expect(page.getByRole('menuitem', { name: /Open stories/ })).toHaveCount(0);
+        await expect.poll(() => page.evaluate(() => JSON.parse(
+            localStorage.getItem('jira_dashboard_ui_prefs_v1')
+        ).selectedSprint)).toBe(selectedSprintId);
     });
 }
 

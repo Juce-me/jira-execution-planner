@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { strictEngBoardViewProps } from '../frontend/src/eng/useStrictEngBoardIntegration.js';
+
+test('selector scheduling keeps requested scope suppression separate from ready owner activation', () => {
+    const source = fs.readFileSync(new URL('../frontend/src/dashboard.jsx', import.meta.url), 'utf8');
+    assert.match(source, /const strictBoardActive = boardScopeRequested && selectedScopeReadiness === 'ready';/);
+    assert.match(source, /if \(boardScopeRequested\) return;/);
+    assert.match(source, /strictBoardActive: boardScopeRequested,/);
+    assert.match(source, /useStrictEngBoardOwner\(\{ active: strictBoardOwnerActive,/);
+    assert.match(source, /groupRevision: acceptedStrictBoardRevision,/);
+    assert.match(source, /acceptedBoardConfigRef\.current = false;/);
+    assert.match(source, /acceptedGroupsConfigRef\.current = false;/);
+    assert.doesNotMatch(source, /showBoard && boardAllWorkAvailable === null/);
+});
 
 test('strict Board view props contain data state but no scope control', () => {
     const owner = {

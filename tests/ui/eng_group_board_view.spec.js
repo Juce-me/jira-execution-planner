@@ -99,13 +99,28 @@ function storyPayload(specs = EPIC_SPECS) {
 async function installBoardFixture(page, {
     board = { columns: BOARD_COLUMNS }, groups = null, epicSpecs = EPIC_SPECS,
     strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0, configResponseGate = null,
+    configStatus = 200, taskResponseGate = null, boardResponseGate = null, strictEpicKeyForRequest = null,
+    homeTokenDelayMs = 0, homeTokenFailureCount = 0,
+    groupsResponseGate = null, groupsStatus = 200, groupsSource = 'test', groupPreferences = null,
+    groupPreferencesResponseGate = null,
     sprintResponseGate = null, sprints = null, sprintsStatus = 200, requestUrls = null, requestLog = null,
     selectedProjects = [{ key: 'PLAT', type: 'product' }], savedBoardId = '',
+    projectSaveResponseGate = null, boardConfigSaveResponseGate = null,
     boardCapability = strictBoard, performanceLoads = null, performanceResponseGate = null,
     performanceStatus = 201, jiraProjects = [{ key: 'DRAFT', name: 'Draft Project' }],
     jiraBoards = [{ id: '99', name: 'Draft Board', type: 'scrum' }], analyticsEnabled = false,
     userCanEditSettings = true, settingsAdminOnly = false,
 } = {}) {
+    let strictBoardRequestCount = 0;
+    let acceptedSelectedProjects = selectedProjects;
+    let acceptedSavedBoardId = savedBoardId;
+    let acceptedSavedBoardName = savedBoardId ? 'Synthetic Board' : '';
+    let acceptedWorkspaceRevision = 1;
+    let acceptedGroupsRevision = 1;
+    let acceptedGroupPreferences = groupPreferences;
+    let homeTokenRequestCount = 0;
+    let configRequestCount = 0;
+    let groupsRequestCount = 0;
     await installDashboardShell(page);
     if (sourceBundle) {
         await page.unroute('**/frontend/dist/dashboard.js');
@@ -144,11 +159,23 @@ async function installBoardFixture(page, {
             if (performanceStatus !== 201) return json({ error: 'performance_unavailable' }, performanceStatus);
             return json({ recorded: true }, 201);
         }
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
+        if (url.pathname === '/api/me/connections/home-token') {
+            homeTokenRequestCount += 1;
+            if (homeTokenDelayMs) await new Promise(resolve => setTimeout(resolve, homeTokenDelayMs));
+            if (homeTokenRequestCount <= homeTokenFailureCount) return route.abort('failed');
+            return json({ connected: false });
+        }
+        if (url.pathname === '/api/team-catalog') {
+            return json({ catalog: { 'team-alpha': 'Alpha Team' }, meta: { source: 'test' } });
+        }
         if (url.pathname === '/api/config') {
-            if (configResponseGate) await configResponseGate;
+            configRequestCount += 1;
+            const configGate = typeof configResponseGate === 'function'
+                ? configResponseGate({ requestIndex: configRequestCount })
+                : configResponseGate;
+            if (configGate) await configGate;
             if (configDelayMs) await new Promise(resolve => setTimeout(resolve, configDelayMs));
-            return json({
+            const config = {
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
                 groupQueryTemplateEnabled: false,
@@ -156,19 +183,32 @@ async function installBoardFixture(page, {
                 userCanEditSettings,
                 authMode: 'atlassian_oauth',
                 boardAllWorkAvailable: boardCapability,
-                projectsConfigured: selectedProjects.length > 0,
+                projectsConfigured: acceptedSelectedProjects.length > 0,
                 performanceDebugEnabled: true,
-                sharedConfigRevision: 1,
+                sharedConfigRevision: acceptedWorkspaceRevision,
                 sharedConfig: {
-                    projects: { selected: selectedProjects },
-                    board: { boardId: savedBoardId, boardName: savedBoardId ? 'Synthetic Board' : '' },
+                    projects: { selected: acceptedSelectedProjects },
+                    board: { boardId: acceptedSavedBoardId, boardName: acceptedSavedBoardName },
+                    sprintField: { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+                    parentNameField: { fieldId: 'customfield_10021', fieldName: 'Parent Link' },
+                    storyPointsField: { fieldId: 'customfield_10022', fieldName: 'Story points' },
+                    teamField: { fieldId: 'customfield_10023', fieldName: 'Team' },
                 },
                 epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
-            });
+            };
+            const responseStatus = typeof configStatus === 'function'
+                ? configStatus({ requestIndex: configRequestCount })
+                : configStatus;
+            return responseStatus === 200 ? json(config) : json({ error: 'config_unavailable' }, responseStatus);
         }
         if (url.pathname === '/api/version') return json({ enabled: false });
         if (url.pathname === '/api/groups-config') {
-            return json({
+            groupsRequestCount += 1;
+            const groupsGate = typeof groupsResponseGate === 'function'
+                ? groupsResponseGate({ requestIndex: groupsRequestCount })
+                : groupsResponseGate;
+            if (groupsGate) await groupsGate;
+            const defaultPayload = {
                 version: 1,
                 groups: groups ?? [{
                     id: 'grp-default',
@@ -179,19 +219,67 @@ async function installBoardFixture(page, {
                     ...(board ? { board } : {}),
                 }],
                 defaultGroupId: 'grp-default',
-                source: 'test',
-            });
+                configRevision: acceptedGroupsRevision,
+                source: groupsSource,
+                ...(acceptedGroupPreferences ? { preferences: acceptedGroupPreferences } : {}),
+            };
+            if (request.method() === 'POST') {
+                acceptedGroupsRevision += 1;
+                return json({ ...request.postDataJSON(), configRevision: acceptedGroupsRevision, source: groupsSource });
+            }
+            const responseStatus = typeof groupsStatus === 'function'
+                ? groupsStatus({ requestIndex: groupsRequestCount })
+                : groupsStatus;
+            return responseStatus === 200 ? json(defaultPayload) : json({ error: 'groups_unavailable' }, responseStatus);
         }
-        if (url.pathname === '/api/projects/selected') return json({ selected: selectedProjects, configRevision: 1 });
+        if (url.pathname === '/api/groups-preferences') {
+            const payload = request.postDataJSON();
+            const preferencesGate = typeof groupPreferencesResponseGate === 'function'
+                ? groupPreferencesResponseGate(payload)
+                : groupPreferencesResponseGate;
+            if (preferencesGate) await preferencesGate;
+            acceptedGroupPreferences = {
+                customized: true,
+                preferenceExists: true,
+                onboardingRequired: false,
+                onboardingDone: true,
+                visibleGroupIds: payload.visibleGroupIds || [],
+                effectiveVisibleGroupIds: payload.visibleGroupIds || [],
+                activeGroupId: payload.activeGroupId || null,
+            };
+            return json({ preferences: acceptedGroupPreferences });
+        }
+        if (url.pathname === '/api/projects/selected') {
+            if (request.method() === 'POST') {
+                const projectSaveGate = typeof projectSaveResponseGate === 'function'
+                    ? projectSaveResponseGate(request.postDataJSON())
+                    : projectSaveResponseGate;
+                if (projectSaveGate) await projectSaveGate;
+                acceptedSelectedProjects = request.postDataJSON().selected || [];
+                acceptedWorkspaceRevision += 1;
+            }
+            return json({ selected: acceptedSelectedProjects, configRevision: acceptedWorkspaceRevision });
+        }
         if (url.pathname === '/api/board-config') {
+            if (request.method() === 'POST') {
+                const submittedBoard = request.postDataJSON();
+                const boardConfigSaveGate = typeof boardConfigSaveResponseGate === 'function'
+                    ? boardConfigSaveResponseGate(submittedBoard)
+                    : boardConfigSaveResponseGate;
+                if (boardConfigSaveGate) await boardConfigSaveGate;
+                acceptedSavedBoardId = String(submittedBoard.boardId || '');
+                acceptedSavedBoardName = String(submittedBoard.boardName || '');
+                acceptedWorkspaceRevision += 1;
+            }
             return json({
-                boardId: savedBoardId,
-                boardName: savedBoardId ? 'Synthetic Board' : '',
+                boardId: acceptedSavedBoardId,
+                boardName: acceptedSavedBoardName,
                 source: 'config',
-                configRevision: 1,
+                configRevision: acceptedWorkspaceRevision,
             });
         }
         if (url.pathname === '/api/projects') return json({ projects: jiraProjects });
+        if (url.pathname === '/api/components') return json({ components: [{ id: 'platform', name: 'Platform' }] });
         if (url.pathname === '/api/boards') return json({ boards: jiraBoards });
         if (url.pathname === '/api/sprints') {
             const gate = typeof sprintResponseGate === 'function' ? sprintResponseGate() : sprintResponseGate;
@@ -204,21 +292,29 @@ async function installBoardFixture(page, {
             ] : [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }]) });
         }
         if (url.pathname === '/api/eng/board') {
-            if (strictBoard && !selectedProjects.length && !String(savedBoardId).trim()) {
+            strictBoardRequestCount += 1;
+            const boardGate = typeof boardResponseGate === 'function'
+                ? boardResponseGate({ url, requestIndex: strictBoardRequestCount })
+                : boardResponseGate;
+            if (boardGate) await boardGate;
+            if (strictBoard && !acceptedSelectedProjects.length && !String(acceptedSavedBoardId).trim()) {
                 return json({ error: 'board_config_invalid' }, 409);
             }
             const scope = url.searchParams.get('scope') || 'sprint';
-            const generationId = `generation-${scope}`;
+            const strictEpicKey = typeof strictEpicKeyForRequest === 'function'
+                ? strictEpicKeyForRequest({ url, requestIndex: strictBoardRequestCount })
+                : strictEpicKeyForRequest || 'STRICT-1';
+            const generationId = `generation-${scope}-${strictBoardRequestCount}`;
             const base = (sequence, frame) => ({
                 protocolVersion: 1, generationId, sequence, ...frame,
             });
             const epic = {
-                key: 'STRICT-1', summary: 'Strict Board epic', status: { id: '2', name: 'In Progress' },
+                key: strictEpicKey, summary: 'Strict Board epic', status: { id: '2', name: 'In Progress' },
                 priority: { id: '1', name: 'Blocker' }, assignee: null, deliveryOwner: null,
                 projectTrack: null, updated: null, parent: null, columnId: 'active',
             };
             const child = {
-                key: 'STRICT-BUG-1', epicKey: 'STRICT-1', summary: 'Eligible Bug',
+                key: `${strictEpicKey}-CHILD`, epicKey: strictEpicKey, summary: 'Eligible Bug',
                 status: { id: '1', name: 'To Do' }, priority: null,
                 issueType: { id: '10004', name: 'Bug' }, assignee: null, updated: null,
                 storyPoints: 3, team: null, project: { id: '10000', name: 'Platform' },
@@ -249,6 +345,10 @@ async function installBoardFixture(page, {
         }
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
         if (url.pathname === '/api/tasks-with-team-name') {
+            const taskGate = typeof taskResponseGate === 'function'
+                ? taskResponseGate({ url, request })
+                : taskResponseGate;
+            if (taskGate) await taskGate;
             const purpose = url.searchParams.get('purpose');
             const project = url.searchParams.get('project');
             if (purpose === 'ready-to-close' || project === 'tech') {
@@ -267,8 +367,10 @@ async function installBoardFixture(page, {
 
 async function openBoard(page, {
     width = 1280, height = 900, board, groups, epicSpecs, reducedMotion, strictBoard, requests, sourceBundle, configDelayMs,
-    configResponseGate, sprints, requestLog,
-    selectedProjects, savedBoardId, boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
+    configResponseGate, configStatus, taskResponseGate, boardResponseGate, strictEpicKeyForRequest,
+    homeTokenDelayMs, homeTokenFailureCount, groupsResponseGate, groupsStatus, groupsSource, groupPreferences, sprints, requestLog,
+    selectedProjects, savedBoardId, projectSaveResponseGate, boardConfigSaveResponseGate,
+    boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
     analyticsEnabled,
     userCanEditSettings, settingsAdminOnly,
     expectBoardColumns = true,
@@ -284,10 +386,22 @@ async function openBoard(page, {
         ...(sourceBundle === undefined ? {} : { sourceBundle }),
         ...(configDelayMs === undefined ? {} : { configDelayMs }),
         ...(configResponseGate === undefined ? {} : { configResponseGate }),
+        ...(configStatus === undefined ? {} : { configStatus }),
+        ...(taskResponseGate === undefined ? {} : { taskResponseGate }),
+        ...(boardResponseGate === undefined ? {} : { boardResponseGate }),
+        ...(strictEpicKeyForRequest === undefined ? {} : { strictEpicKeyForRequest }),
+        ...(homeTokenDelayMs === undefined ? {} : { homeTokenDelayMs }),
+        ...(homeTokenFailureCount === undefined ? {} : { homeTokenFailureCount }),
+        ...(groupsResponseGate === undefined ? {} : { groupsResponseGate }),
+        ...(groupsStatus === undefined ? {} : { groupsStatus }),
+        ...(groupsSource === undefined ? {} : { groupsSource }),
+        ...(groupPreferences === undefined ? {} : { groupPreferences }),
         ...(sprints === undefined ? {} : { sprints }),
         ...(requestLog === undefined ? {} : { requestLog }),
         ...(selectedProjects === undefined ? {} : { selectedProjects }),
         ...(savedBoardId === undefined ? {} : { savedBoardId }),
+        ...(projectSaveResponseGate === undefined ? {} : { projectSaveResponseGate }),
+        ...(boardConfigSaveResponseGate === undefined ? {} : { boardConfigSaveResponseGate }),
         ...(boardCapability === undefined ? {} : { boardCapability }),
         ...(performanceLoads === undefined ? {} : { performanceLoads }),
         ...(performanceResponseGate === undefined ? {} : { performanceResponseGate }),
@@ -318,6 +432,99 @@ async function openBoard(page, {
 const waitTwoFrames = page => page.evaluate(() => new Promise(resolve => (
     requestAnimationFrame(() => requestAnimationFrame(resolve))
 )));
+
+async function installIncrementalStrictBoardResponse(page, requests) {
+    await page.exposeFunction('recordIncrementalStrictBoardRequest', requestUrl => {
+        requests.push(requestUrl);
+    });
+    await page.addInitScript(() => {
+        const originalFetch = window.fetch.bind(window);
+        const encoder = new TextEncoder();
+        let intercepted = false;
+        let controller = null;
+        let cancelled = false;
+        const generationId = 'generation-component-incremental';
+        const frame = (sequence, value) => JSON.stringify({
+            protocolVersion: 1,
+            generationId,
+            sequence,
+            ...value,
+        }) + '\n';
+        const epic = {
+            key: 'STRICT-PARTIAL-OLD', summary: 'Retired partial epic',
+            status: { id: '2', name: 'In Progress' }, priority: { id: '1', name: 'Blocker' },
+            assignee: null, deliveryOwner: null, projectTrack: null, updated: null,
+            parent: null, columnId: 'active',
+        };
+        window.__releaseRetiredStrictFrames = () => {
+            const result = { attempted: true, cancelled, enqueued: false };
+            try {
+                controller.enqueue(encoder.encode(frame(3, {
+                    type: 'column', columnId: 'active', epics: [epic], authoritative: true,
+                    children: [{
+                        key: 'STRICT-PARTIAL-OLD-CHILD', epicKey: epic.key, summary: 'Late retired child',
+                        status: { id: '1', name: 'To Do' }, priority: null,
+                        issueType: { id: '10004', name: 'Bug' }, assignee: null, updated: null,
+                        storyPoints: 5, team: null, project: { id: '10000', name: 'Platform' },
+                        projectClassification: 'other', sprintIds: [34625],
+                    }],
+                })));
+                controller.enqueue(encoder.encode(frame(4, {
+                    type: 'complete', outcome: 'success', authoritative: true, epicCount: 1, childCount: 1,
+                    diagnostics: {
+                        indexMs: 11, focusedCompleteMs: 12, durationMs: 13, jiraRequests: 4,
+                        jiraPages: 4, jiraRetries: 0, peakChildSearches: 1,
+                        cacheState: 'miss', completeness: 'complete',
+                    },
+                })));
+                controller.close();
+                result.enqueued = true;
+            } catch (_err) {
+                // Cancellation is the expected transport-level retirement path.
+            }
+            return result;
+        };
+        window.fetch = async (input, init) => {
+            const rawUrl = typeof input === 'string' ? input : input.url;
+            const url = new URL(rawUrl, window.location.origin);
+            if (!intercepted && url.pathname === '/api/eng/board' && url.searchParams.get('scope') === 'component') {
+                intercepted = true;
+                await window.recordIncrementalStrictBoardRequest(`${url.pathname}${url.search}`);
+                const stream = new ReadableStream({
+                    start(nextController) {
+                        controller = nextController;
+                        [
+                            frame(0, {
+                                type: 'start', scope: 'component', scopeVersion: 'scope-component-old',
+                                scopeCohortDigest: 'b'.repeat(64),
+                                columns: [{
+                                    id: 'active', name: 'Active', color: '#597ef7',
+                                    statusNames: ['In Progress'], terminal: false,
+                                }],
+                            }),
+                            frame(1, { type: 'index', epics: [epic], membership: 'authoritative' }),
+                            frame(2, {
+                                type: 'progress', columnId: 'active', loadedChildren: 1,
+                                byEpic: [{
+                                    epicKey: epic.key, loadedChildren: 1,
+                                    statusCounts: { 'To Do': 1 },
+                                }],
+                            }),
+                        ].forEach(value => controller.enqueue(encoder.encode(value)));
+                    },
+                    cancel() {
+                        cancelled = true;
+                    },
+                });
+                return new Response(stream, {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/x-ndjson' },
+                });
+            }
+            return originalFetch(input, init);
+        };
+    });
+}
 
 const expectActiveSprintOption = async (page, expectedName) => {
     const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
@@ -1133,6 +1340,762 @@ test('completed sprint catalog does not authorize strict scopes before delayed s
         await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
     } finally {
         releaseConfig?.();
+    }
+});
+
+test('selector scheduling: held capability permits ordinary load', async ({ page }) => {
+    let releaseConfig;
+    const configResponseGate = new Promise(resolve => { releaseConfig = resolve; });
+    const requests = [];
+    await installBoardFixture(page, { requests, sourceBundle: true, strictBoard: true, configResponseGate });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: true, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => requests.filter(path => path === '/api/tasks-with-team-name').length).toBe(2);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+    } finally {
+        releaseConfig?.();
+    }
+});
+
+test('selector scheduling: blocked scope never falls back', async ({ page }) => {
+    let releaseConfig;
+    const configResponseGate = new Promise(resolve => { releaseConfig = resolve; });
+    const requests = [];
+    await installBoardFixture(page, {
+        requests, sourceBundle: true, strictBoard: true, configResponseGate, selectedProjects: [],
+    });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: true, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
+        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        await trigger.click();
+        await page.getByRole('option', { name: 'Component', exact: true }).click();
+        await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
+            .toContainText('Loading Board configuration…');
+        const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
+
+        releaseConfig();
+        releaseConfig = null;
+        await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
+            'Select Jira projects or a Jira source Board before loading this scope.'
+        );
+        await waitTwoFrames(page);
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+    } finally {
+        releaseConfig?.();
+    }
+});
+
+test('selector scheduling: capability failure preserves intent', async ({ page }) => {
+    let releaseConfig;
+    const configResponseGate = new Promise(resolve => { releaseConfig = resolve; });
+    const requests = [];
+    await installBoardFixture(page, {
+        requests, sourceBundle: true, strictBoard: true, configResponseGate, configStatus: 503,
+    });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: true, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
+        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        await trigger.click();
+        await page.getByRole('option', { name: 'All work', exact: true }).click();
+        const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
+
+        releaseConfig();
+        releaseConfig = null;
+        await expect(trigger).toContainText('All work');
+        await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
+            .toContainText('Board configuration could not be loaded.');
+        await waitTwoFrames(page);
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+    } finally {
+        releaseConfig?.();
+    }
+});
+
+test('selector scheduling: group revision retires old generation', async ({ page }) => {
+    let releaseOldBoard;
+    const oldBoardGate = new Promise(resolve => { releaseOldBoard = resolve; });
+    const requests = [];
+    await openBoard(page, {
+        requests,
+        sourceBundle: true,
+        strictBoard: true,
+        boardResponseGate: ({ requestIndex }) => requestIndex === 1 ? oldBoardGate : null,
+        strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1 ? 'STRICT-OLD' : 'STRICT-NEW',
+    });
+
+    try {
+        await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+        await page.getByRole('option', { name: 'Component', exact: true }).click();
+        await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
+
+        await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+        const dialog = page.getByRole('dialog').first();
+        await dialog.getByRole('tab', { name: 'Boards', exact: true }).click();
+        await dialog.locator('.board-column-name').first().fill('Backlog');
+        await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+        await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(2);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-NEW"]')).toBeVisible();
+        releaseOldBoard();
+        releaseOldBoard = null;
+        await waitTwoFrames(page);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-OLD"]')).toHaveCount(0);
+        expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(2);
+    } finally {
+        releaseOldBoard?.();
+    }
+});
+
+for (const postSaveConfigRead of [
+    { name: 'post-save config acceptance waits before replacement load', status: 200, authLocked: false },
+    { name: 'post-save config failure retires affected generation', status: 503, authLocked: false },
+    { name: 'post-save config 401 retires affected generation', status: 401, authLocked: true },
+]) {
+    test(`selector scheduling: ${postSaveConfigRead.name}`, async ({ page }) => {
+        const group = (id, name) => ({
+            id,
+            name,
+            teamIds: ['team-alpha'],
+            teamLabels: { 'team-alpha': 'Alpha Team' },
+            missingInfoComponents: ['Platform'],
+            board: { columns: BOARD_COLUMNS },
+        });
+        let releaseOldBoard;
+        const oldBoardGate = new Promise(resolve => { releaseOldBoard = resolve; });
+        let releaseGroupPreferences;
+        const groupPreferencesGate = new Promise(resolve => { releaseGroupPreferences = resolve; });
+        let releasePostSaveConfig;
+        const postSaveConfigGate = new Promise(resolve => { releasePostSaveConfig = resolve; });
+        const requests = [];
+        const performanceLoads = [];
+        await openBoard(page, {
+            requests,
+            performanceLoads,
+            sourceBundle: true,
+            strictBoard: true,
+            groups: [group('grp-default', 'Default'), group('grp-second', 'Second')],
+            groupsSource: 'workspace_db',
+            groupPreferences: {
+                customized: true,
+                preferenceExists: true,
+                onboardingRequired: false,
+                onboardingDone: true,
+                visibleGroupIds: ['grp-default', 'grp-second'],
+                effectiveVisibleGroupIds: ['grp-default', 'grp-second'],
+                activeGroupId: 'grp-default',
+            },
+            boardResponseGate: ({ requestIndex }) => requestIndex === 1 ? oldBoardGate : null,
+            strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1 ? 'STRICT-SAVE-OLD' : 'STRICT-SAVE-NEW',
+            groupPreferencesResponseGate: postSaveConfigRead.status === 200 ? groupPreferencesGate : null,
+            configResponseGate: ({ requestIndex }) => requestIndex === 2 ? postSaveConfigGate : null,
+            configStatus: ({ requestIndex }) => requestIndex === 2 ? postSaveConfigRead.status : 200,
+        });
+
+        try {
+            const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+            await trigger.click();
+            await page.getByRole('option', { name: 'Component', exact: true }).click();
+            await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
+            const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
+
+            await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+            const dialog = page.getByRole('dialog').first();
+            if (postSaveConfigRead.status === 200) {
+                await dialog.getByRole('tab', { name: 'Team groups', exact: true }).click();
+                await dialog.getByRole('button', { name: 'Second', exact: true }).click();
+                const visibility = dialog.getByRole('checkbox', { name: 'Show in Department selector', exact: true });
+                await expect(visibility).toBeChecked();
+                await visibility.uncheck();
+            }
+            await dialog.getByRole('tab', { name: 'Boards', exact: true }).click();
+            if (postSaveConfigRead.status === 200) {
+                await dialog.getByRole('button', { name: /^Default 7 columns$/ }).click();
+            }
+            await dialog.locator('.board-column-name').first().fill('Post-save backlog');
+            await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+            if (postSaveConfigRead.status === 200) {
+                await expect.poll(() => requests.filter(path => path === '/api/groups-preferences').length).toBe(1);
+                await waitTwoFrames(page);
+                expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+                expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+                releaseGroupPreferences();
+                releaseGroupPreferences = null;
+            }
+            await expect.poll(() => requests.filter(path => path === '/api/config').length).toBe(2);
+            await waitTwoFrames(page);
+            expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+            expect(performanceLoads.filter(load => load.scopeType === 'component')).toHaveLength(0);
+
+            releasePostSaveConfig();
+            releasePostSaveConfig = null;
+            if (postSaveConfigRead.status === 200) {
+                await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(2);
+                await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-SAVE-NEW"]')).toBeVisible();
+            } else if (postSaveConfigRead.authLocked) {
+                await expect(page.getByRole('alertdialog')).toContainText('Sign in required');
+            } else {
+                await expect(trigger).toContainText('Component');
+                await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
+                    .toContainText('Board configuration could not be loaded.');
+            }
+
+            releaseOldBoard();
+            releaseOldBoard = null;
+            await waitTwoFrames(page);
+            await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-SAVE-OLD"]')).toHaveCount(0);
+            expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+
+            if (postSaveConfigRead.status === 200) {
+                expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(2);
+                await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'component').length).toBe(1);
+            } else {
+                expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+                expect(performanceLoads.filter(load => load.scopeType === 'component')).toHaveLength(0);
+            }
+
+            if (postSaveConfigRead.status === 503) {
+                await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).first().click();
+                await expect.poll(() => requests.filter(path => path === '/api/config').length).toBe(3);
+                await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(2);
+                await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-SAVE-NEW"]')).toBeVisible();
+                await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-SAVE-OLD"]')).toHaveCount(0);
+            }
+        } finally {
+            releaseGroupPreferences?.();
+            releasePostSaveConfig?.();
+            releaseOldBoard?.();
+        }
+    });
+}
+
+test('selector scheduling: workspace combined save waits for config acceptance', async ({ page }) => {
+    let releaseProjectSave;
+    const projectSaveGate = new Promise(resolve => { releaseProjectSave = resolve; });
+    let releaseBoardSave;
+    const boardSaveGate = new Promise(resolve => { releaseBoardSave = resolve; });
+    let releasePostSaveConfig;
+    const postSaveConfigGate = new Promise(resolve => { releasePostSaveConfig = resolve; });
+    const requests = [];
+    const requestLog = [];
+    const performanceLoads = [];
+    await openBoard(page, {
+        requests,
+        requestLog,
+        performanceLoads,
+        sourceBundle: true,
+        strictBoard: true,
+        projectSaveResponseGate: projectSaveGate,
+        boardConfigSaveResponseGate: boardSaveGate,
+        configResponseGate: ({ requestIndex }) => requestIndex === 2 ? postSaveConfigGate : null,
+        strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1
+            ? 'STRICT-WORKSPACE-OLD'
+            : 'STRICT-WORKSPACE-NEW',
+    });
+
+    const strictRequests = () => requests.filter(path => path.includes('scope=component'));
+    const postRequests = path => requestLog.filter(entry => (
+        entry.method === 'POST' && new URL(entry.url).pathname === path
+    ));
+
+    try {
+        await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+        await page.getByRole('option', { name: 'Component', exact: true }).click();
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-WORKSPACE-OLD"]')).toBeVisible();
+        await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'component').length).toBe(1);
+        const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
+
+        await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+        const dialog = page.getByRole('dialog').first();
+        await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
+        await dialog.getByRole('tab', { name: 'Scope projects', exact: true }).click();
+        const projectSearch = dialog.getByPlaceholder('Search projects to add...');
+        await projectSearch.fill('DRAFT');
+        await dialog.locator('.project-result-item, .team-search-result-item').filter({ hasText: 'DRAFT' })
+            .getByRole('button', { name: 'Product' }).click();
+        await dialog.getByRole('tab', { name: 'Jira source', exact: true }).click();
+        await dialog.getByPlaceholder('Search boards...').fill('Draft');
+        await dialog.locator('.team-search-result-item').filter({ hasText: 'Draft Board' }).click();
+        await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+        await expect.poll(() => postRequests('/api/projects/selected').length).toBe(1);
+        await waitTwoFrames(page);
+        expect(strictRequests()).toHaveLength(1);
+        releaseProjectSave();
+        releaseProjectSave = null;
+
+        await expect.poll(() => postRequests('/api/board-config').length).toBe(1);
+        await waitTwoFrames(page);
+        expect(strictRequests()).toHaveLength(1);
+        releaseBoardSave();
+        releaseBoardSave = null;
+
+        await expect.poll(() => requests.filter(path => path === '/api/config').length).toBe(2);
+        await waitTwoFrames(page);
+        expect(strictRequests()).toHaveLength(1);
+        expect(performanceLoads.filter(load => load.scopeType === 'component')).toHaveLength(1);
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+
+        releasePostSaveConfig();
+        releasePostSaveConfig = null;
+        await expect.poll(() => strictRequests().length).toBe(2);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-WORKSPACE-NEW"]')).toBeVisible();
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-WORKSPACE-OLD"]')).toHaveCount(0);
+        await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'component').length).toBe(2);
+        expect(postRequests('/api/projects/selected')).toHaveLength(1);
+        expect(postRequests('/api/board-config')).toHaveLength(1);
+        expect(requests.filter(path => path === '/api/config')).toHaveLength(2);
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+    } finally {
+        releaseProjectSave?.();
+        releaseBoardSave?.();
+        releasePostSaveConfig?.();
+    }
+});
+
+for (const preferenceConfigRead of [
+    { name: 'preference-only save preserves identical accepted generation', status: 200, authLocked: false },
+    { name: 'preference-only save failure retires accepted generation', status: 503, authLocked: false },
+    { name: 'preference-only save 401 gates accepted generation', status: 401, authLocked: true },
+]) {
+    test(`selector scheduling: ${preferenceConfigRead.name}`, async ({ page }) => {
+        const group = (id, name) => ({
+            id,
+            name,
+            teamIds: ['team-alpha'],
+            teamLabels: { 'team-alpha': 'Alpha Team' },
+            missingInfoComponents: ['Platform'],
+            board: { columns: BOARD_COLUMNS },
+        });
+        let releasePostSaveConfig;
+        const postSaveConfigGate = new Promise(resolve => { releasePostSaveConfig = resolve; });
+        const requests = [];
+        const requestLog = [];
+        const performanceLoads = [];
+        await openBoard(page, {
+            requests,
+            requestLog,
+            performanceLoads,
+            sourceBundle: true,
+            strictBoard: true,
+            groups: [group('grp-default', 'Default'), group('grp-second', 'Second')],
+            groupsSource: 'workspace_db',
+            groupPreferences: {
+                customized: true,
+                preferenceExists: true,
+                onboardingRequired: false,
+                onboardingDone: true,
+                visibleGroupIds: ['grp-default', 'grp-second'],
+                effectiveVisibleGroupIds: ['grp-default', 'grp-second'],
+                activeGroupId: 'grp-default',
+            },
+            configResponseGate: ({ requestIndex }) => requestIndex === 2 ? postSaveConfigGate : null,
+            configStatus: ({ requestIndex }) => requestIndex === 2 ? preferenceConfigRead.status : 200,
+        });
+
+        try {
+            const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+            await trigger.click();
+            await page.getByRole('option', { name: 'Component', exact: true }).click();
+            const strictCard = page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]');
+            await expect(strictCard).toBeVisible();
+            await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'component').length).toBe(1);
+            const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
+
+            await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+            const dialog = page.getByRole('dialog').first();
+            await dialog.getByRole('button', { name: 'Second', exact: true }).click();
+            const visibility = dialog.getByRole('checkbox', { name: 'Show in Department selector', exact: true });
+            await expect(visibility).toBeChecked();
+            await visibility.uncheck();
+            const requestCountBeforeSave = requestLog.length;
+            await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+            await expect.poll(() => requests.filter(path => path === '/api/groups-preferences').length).toBe(1);
+            await expect.poll(() => requests.filter(path => path === '/api/config').length).toBe(2);
+            expect(requestLog.slice(requestCountBeforeSave)
+                .filter(entry => entry.method === 'POST')
+                .map(entry => new URL(entry.url).pathname)).toEqual(['/api/groups-preferences']);
+            await waitTwoFrames(page);
+            expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+
+            releasePostSaveConfig();
+            releasePostSaveConfig = null;
+            if (preferenceConfigRead.status === 200) {
+                await page.waitForLoadState('networkidle');
+                await expect(strictCard).toBeVisible();
+            } else if (preferenceConfigRead.authLocked) {
+                await expect(page.getByRole('alertdialog')).toContainText('Sign in required');
+            } else {
+                await expect(trigger).toContainText('Component');
+                await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
+                    .toContainText('Board configuration could not be loaded.');
+                await expect(strictCard).toHaveCount(0);
+            }
+            await waitTwoFrames(page);
+            expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+            expect(performanceLoads.filter(load => load.scopeType === 'component')).toHaveLength(1);
+            expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+        } finally {
+            releasePostSaveConfig?.();
+        }
+    });
+}
+
+test('selector scheduling: Department change preserves intent and retires stale work', async ({ page }) => {
+    const group = (id, name, components) => ({
+        id,
+        name,
+        teamIds: ['team-alpha'],
+        teamLabels: { 'team-alpha': 'Alpha Team' },
+        missingInfoComponents: components,
+        board: { columns: BOARD_COLUMNS },
+    });
+    let releaseOldBoard;
+    const oldBoardGate = new Promise(resolve => { releaseOldBoard = resolve; });
+    const requests = [];
+    await openBoard(page, {
+        requests,
+        sourceBundle: true,
+        strictBoard: true,
+        groups: [group('grp-default', 'Default', ['Platform']), group('grp-invalid', 'Invalid', [])],
+        boardResponseGate: ({ requestIndex }) => requestIndex === 1 ? oldBoardGate : null,
+        strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1 ? 'STRICT-OLD' : 'STRICT-NEW',
+    });
+
+    try {
+        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        await trigger.click();
+        await page.getByRole('option', { name: 'Component', exact: true }).click();
+        await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
+        const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
+
+        const groupToggle = page.locator('.view-selector .group-dropdown-toggle');
+        await groupToggle.click();
+        await page.locator('.view-selector .group-dropdown-option', { hasText: 'Invalid' }).click();
+        await expect(trigger).toContainText('Component');
+        await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
+            .toContainText('Add Components to this Department to use Component scope.');
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+
+        await groupToggle.click();
+        await page.locator('.view-selector .group-dropdown-option', { hasText: 'Default' }).click();
+        await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(2);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-NEW"]')).toBeVisible();
+        releaseOldBoard();
+        releaseOldBoard = null;
+        await waitTwoFrames(page);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-OLD"]')).toHaveCount(0);
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+    } finally {
+        releaseOldBoard?.();
+    }
+});
+
+test('selector scheduling: incrementally delivered retired frames cannot publish or cache', async ({ page }) => {
+    const requests = [];
+    const performanceLoads = [];
+    await installBoardFixture(page, {
+        requests,
+        performanceLoads,
+        sourceBundle: true,
+        strictBoard: true,
+        strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1
+            ? 'STRICT-NEW-ALL'
+            : 'STRICT-FRESH-COMPONENT',
+    });
+    await installIncrementalStrictBoardResponse(page, requests);
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: true, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    await trigger.click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-PARTIAL-OLD"]')).toBeVisible();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-PARTIAL-OLD"]'))
+        .toContainText('loaded so far');
+    const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
+    expect(requests.filter(path => path.includes('/api/eng/board?'))).toHaveLength(1);
+
+    await trigger.click();
+    await page.getByRole('option', { name: 'All work', exact: true }).click();
+    await expect.poll(() => requests.filter(path => path.includes('/api/eng/board?')).length).toBe(2);
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-NEW-ALL"]')).toBeVisible();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-PARTIAL-OLD"]')).toHaveCount(0);
+
+    const releaseResult = await page.evaluate(() => window.__releaseRetiredStrictFrames());
+    expect(releaseResult.attempted).toBe(true);
+    expect(releaseResult.cancelled).toBe(true);
+    await waitTwoFrames(page);
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-NEW-ALL"]')).toBeVisible();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-PARTIAL-OLD"]')).toHaveCount(0);
+    expect(performanceLoads.filter(load => load.scopeType === 'component')).toHaveLength(0);
+    await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'all_work').length).toBe(1);
+
+    await trigger.click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    await expect.poll(() => requests.filter(path => path.includes('/api/eng/board?')).length).toBe(3);
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-FRESH-COMPONENT"]')).toBeVisible();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-PARTIAL-OLD"]')).toHaveCount(0);
+    await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'component').length).toBe(1);
+    expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+});
+
+test('selector scheduling: unchanged accepted configuration reread does not reload', async ({ page }) => {
+    const requests = [];
+    await openBoard(page, {
+        requests,
+        sourceBundle: true,
+        strictBoard: true,
+        homeTokenDelayMs: 1500,
+        homeTokenFailureCount: 1,
+    });
+    await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
+    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+    const configReads = requests.filter(path => path === '/api/config').length;
+    const groupReads = requests.filter(path => path === '/api/groups-config').length;
+
+    await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
+    await expect.poll(() => requests.filter(path => path === '/api/config').length).toBe(configReads + 1);
+    await expect.poll(() => requests.filter(path => path === '/api/groups-config').length).toBe(groupReads + 1);
+    await waitTwoFrames(page);
+    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+});
+
+for (const configFailure of [
+    { source: 'config', status: 503, name: 'failed config reread retires held generation', authLocked: false },
+    { source: 'groups', status: 503, name: 'failed group reread retires held generation', authLocked: false },
+    { source: 'config', status: 401, name: 'config 401 locks and retires held generation', authLocked: true },
+]) {
+    test(`selector scheduling: ${configFailure.name}`, async ({ page }) => {
+        let releaseOldBoard;
+        const oldBoardGate = new Promise(resolve => { releaseOldBoard = resolve; });
+        let releaseReread;
+        const rereadGate = new Promise(resolve => { releaseReread = resolve; });
+        const requests = [];
+        const performanceLoads = [];
+        await openBoard(page, {
+            requests,
+            performanceLoads,
+            sourceBundle: true,
+            strictBoard: true,
+            boardResponseGate: ({ requestIndex }) => requestIndex === 1 ? oldBoardGate : null,
+            strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1 ? 'STRICT-OLD' : 'STRICT-NEW',
+            configResponseGate: ({ requestIndex }) => configFailure.source === 'config' && requestIndex === 2 ? rereadGate : null,
+            configStatus: ({ requestIndex }) => configFailure.source === 'config' && requestIndex === 2 ? configFailure.status : 200,
+            groupsResponseGate: ({ requestIndex }) => configFailure.source === 'groups' && requestIndex === 2 ? rereadGate : null,
+            groupsStatus: ({ requestIndex }) => configFailure.source === 'groups' && requestIndex === 2 ? configFailure.status : 200,
+            homeTokenDelayMs: 1500,
+            homeTokenFailureCount: 1,
+        });
+
+        try {
+            await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+            const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+            await trigger.click();
+            await page.getByRole('option', { name: 'Component', exact: true }).click();
+            await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
+            const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
+
+            await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
+            const rereadPath = configFailure.source === 'config' ? '/api/config' : '/api/groups-config';
+            await expect.poll(() => requests.filter(path => path === rereadPath).length).toBe(2);
+            releaseReread();
+            releaseReread = null;
+            if (configFailure.authLocked) {
+                await expect(page.getByRole('alertdialog')).toContainText('Sign in required');
+            } else {
+                await expect(trigger).toContainText('Component');
+                await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
+                    .toContainText('Board configuration could not be loaded.');
+            }
+
+            releaseOldBoard();
+            releaseOldBoard = null;
+            await page.waitForLoadState('networkidle');
+            expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+            expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+            expect(performanceLoads.filter(load => load.scopeType === 'component')).toHaveLength(0);
+            if (!configFailure.authLocked) {
+                await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).first().click();
+                await expect.poll(() => requests.filter(path => path === rereadPath).length).toBe(3);
+                await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(2);
+                await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-NEW"]')).toBeVisible();
+                await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-OLD"]')).toHaveCount(0);
+            }
+        } finally {
+            releaseReread?.();
+            releaseOldBoard?.();
+        }
+    });
+}
+
+test('selector scheduling: successful Department save accepts failed group reread recovery', async ({ page }) => {
+    const requests = [];
+    const requestLog = [];
+    const performanceLoads = [];
+    await openBoard(page, {
+        requests,
+        requestLog,
+        performanceLoads,
+        sourceBundle: true,
+        strictBoard: true,
+        strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1
+            ? 'STRICT-GROUP-BEFORE'
+            : 'STRICT-GROUP-AFTER',
+        groupsStatus: ({ requestIndex }) => requestIndex === 2 ? 503 : 200,
+        homeTokenDelayMs: 1500,
+        homeTokenFailureCount: 1,
+    });
+
+    await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    await trigger.click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-GROUP-BEFORE"]')).toBeVisible();
+    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+    const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
+
+    await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
+    await expect.poll(() => requestLog.filter(entry => (
+        entry.method === 'GET' && new URL(entry.url).pathname === '/api/groups-config'
+    )).length).toBe(2);
+    await expect(trigger).toContainText('Component');
+    await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
+        .toContainText('Board configuration could not be loaded.');
+    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+
+    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('tab', { name: 'Boards', exact: true }).click();
+    await dialog.locator('.board-column-name').first().fill('Recovered backlog');
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+    await expect.poll(() => requestLog.filter(entry => (
+        entry.method === 'POST' && new URL(entry.url).pathname === '/api/groups-config'
+    )).length).toBe(1);
+    await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(2);
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-GROUP-AFTER"]')).toBeVisible();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-GROUP-BEFORE"]')).toHaveCount(0);
+    await waitTwoFrames(page);
+
+    expect(requestLog.filter(entry => (
+        entry.method === 'GET' && new URL(entry.url).pathname === '/api/groups-config'
+    ))).toHaveLength(2);
+    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(2);
+    expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+    await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'component').length).toBe(2);
+
+    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByRole('tab', { name: 'Team groups', exact: true }).click();
+    await expect(dialog.getByText('Groups config error 503', { exact: true })).toHaveCount(0);
+    expect(requestLog.filter(entry => (
+        entry.method === 'GET' && new URL(entry.url).pathname === '/api/groups-config'
+    ))).toHaveLength(2);
+    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(2);
+    expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+});
+
+test('selector scheduling: revoked configuration blocks and repaired configuration loads once', async ({ page }) => {
+    const requests = [];
+    await openBoard(page, {
+        requests,
+        sourceBundle: true,
+        strictBoard: true,
+        strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1 ? 'STRICT-BEFORE' : 'STRICT-AFTER',
+    });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-BEFORE"]')).toBeVisible();
+    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+
+    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+    let dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByRole('tab', { name: 'Team groups', exact: true }).click();
+    await dialog.locator('.component-chip', { hasText: 'Platform' }).getByRole('button').click();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+    await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
+        'Add Components to this Department to use Component scope.'
+    );
+    await waitTwoFrames(page);
+    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+
+    await page.getByRole('button', { name: 'Add Components', exact: true }).click();
+    dialog = page.getByRole('dialog').first();
+    const search = dialog.getByPlaceholder('Search components...');
+    await search.fill('Platform');
+    await dialog.locator('.component-search-result-item', { hasText: 'Platform' }).click();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+
+    await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(2);
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-AFTER"]')).toBeVisible();
+    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(2);
+});
+
+test('selector scheduling: in-flight ordinary Board reuse', async ({ page }) => {
+    let releaseTasks;
+    const taskResponseGate = new Promise(resolve => { releaseTasks = resolve; });
+    const requests = [];
+    await installBoardFixture(page, { requests, sourceBundle: true, strictBoard: true, taskResponseGate });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: true, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => requests.filter(path => path === '/api/tasks-with-team-name').length).toBe(2);
+        const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
+        await modes.getByRole('radio', { name: 'Planning' }).click();
+        await modes.getByRole('radio', { name: 'Board' }).click();
+        await waitTwoFrames(page);
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(2);
+        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+
+        releaseTasks();
+        releaseTasks = null;
+        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    } finally {
+        releaseTasks?.();
     }
 });
 

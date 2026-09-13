@@ -306,6 +306,11 @@ import {
         const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access', 'performance']);
         const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels', 'boards']);
         const SHARED_CONFIGURATION_TAB_IDS = new Set(ADMIN_SETTINGS_TAB_IDS);
+        const stableAcceptedConfigValue = (value) => {
+            if (Array.isArray(value)) return value.map(stableAcceptedConfigValue);
+            if (!value || typeof value !== 'object') return value;
+            return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableAcceptedConfigValue(value[key])]));
+        };
 
         const createEmptyEpmConfigDraft = () => ({
             version: 2,
@@ -498,6 +503,7 @@ import {
             const [groupsLoading, setGroupsLoading] = useState(true);
             const [groupsError, setGroupsError] = useState('');
             const [boardGroupsReadFailed, setBoardGroupsReadFailed] = useState(false);
+            const acceptedGroupsConfigRef = useRef(false);
             const groupsReadGenerationRef = useRef(0);
             const [groupWarnings, setGroupWarnings] = useState([]);
             const [groupConfigSource, setGroupConfigSource] = useState('');
@@ -529,6 +535,7 @@ import {
             const sharedConfigRevisionRef = useRef(0);
             const lastCommittedWorkspaceSectionsRef = useRef([]);
             const [sharedConfigReady, setSharedConfigReady] = useState(false);
+            const acceptedBoardConfigRef = useRef(false);
             const boardConfigReadGenerationRef = useRef(0);
             const settingsDraftSnapshotRef = useRef({});
             const [groupImportText, setGroupImportText] = useState('');
@@ -2512,6 +2519,7 @@ import {
                     const payload = await response.json();
                     if (!shouldApplyResult()) return false;
                     const normalized = applyLocalGroupPreferences(payload, savedPrefsRef.current);
+                    acceptedGroupsConfigRef.current = true;
                     clearServerConnectionError();
                     setGroupsConfig(normalized);
                     setGroupPreferences(normalized.preferences);
@@ -2526,6 +2534,7 @@ import {
                     return true;
                 } catch (err) {
                     if (!shouldApplyResult()) return false;
+                    acceptedGroupsConfigRef.current = false;
                     setBoardGroupsReadFailed(true);
                     if (isAuthenticationRequiredError(err)) return false;
                     if (reportServerConnectionError(err)) {
@@ -3637,6 +3646,8 @@ import {
                     adminAccess: canEditSharedConfiguration && isAdminAccessDirty && !skipAdminSections.adminAccess,
                 };
                 const savingAdminSettings = Object.values(adminSectionsToSave).some(Boolean);
+                const boardAffectingAdminSave = Object.entries(adminSectionsToSave)
+                    .some(([section, pending]) => pending && section !== 'adminAccess');
                 const sharedGroupsChanged = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current);
                 const pendingSections = { admin: savingAdminSettings, groups: sharedGroupsChanged, epm: false, preference: false };
                 if (!groupDraft) return buildSettingsSaveOutcome({ pendingSections, pendingAdminSections: adminSectionsToSave, error: 'Group settings are unavailable.' });
@@ -3668,6 +3679,11 @@ import {
                     let capacityChanged = false;
                     let fieldConfigsChanged = false;
                     let issueTypesChanged = false;
+
+                    if (!firstRunConfigurationActive && boardAffectingAdminSave) {
+                        acceptedBoardConfigRef.current = false;
+                        setBoardBootstrapStatus('loading');
+                    }
 
                     if (savingAdminSettings) {
                         // Save project selection if changed
@@ -3765,7 +3781,14 @@ import {
                         if (firstRunConfigurationActive && !snapshotVerification.ok) {
                             throw new Error(snapshotVerification.error);
                         }
+                        if (!firstRunConfigurationActive) {
+                            acceptedBoardConfigRef.current = false;
+                            setBoardBootstrapStatus('loading');
+                        }
                         normalized = applySavedGroupsConfig(normalizedPayload);
+                        acceptedGroupsConfigRef.current = true;
+                        setBoardGroupsReadFailed(false);
+                        setGroupsError('');
                         groupsCommitted = true;
                     }
                     const refreshTarget = getConfigSaveRefreshTarget({
@@ -3795,6 +3818,13 @@ import {
                     if (projectsChanged || priorityWeightsChanged || boardChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
                         groupStateRef.current.clear();
                     }
+                    const acceptedBoardConfigurationChanged = sharedGroupsChanged
+                        || projectsChanged
+                        || priorityWeightsChanged
+                        || boardChanged
+                        || capacityChanged
+                        || issueTypesChanged
+                        || fieldConfigsChanged;
 
                     if (!firstRunConfigurationActive) {
                         // Ordinary settings saves refresh derived configuration and dashboard data.
@@ -3802,6 +3832,7 @@ import {
                         const boardConfigReadGeneration = boardConfigReadGenerationRef.current + 1;
                         boardConfigReadGenerationRef.current = boardConfigReadGeneration;
                         const shouldApplyBoardConfigRead = () => boardConfigReadGenerationRef.current === boardConfigReadGeneration;
+                        if (acceptedBoardConfigurationChanged) acceptedBoardConfigRef.current = false;
                         setBoardBootstrapStatus('loading');
                         try {
                             const cfg = await fetchAppConfig(BACKEND_URL);
@@ -3814,10 +3845,14 @@ import {
                                 setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
                                 setBoardAllWorkAvailable(cfg.boardAllWorkAvailable);
                                 setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
+                                acceptedBoardConfigRef.current = true;
                                 setBoardBootstrapStatus('ready');
                             }
                         } catch (err) {
-                            if (shouldApplyBoardConfigRead()) setBoardBootstrapStatus('error');
+                            if (shouldApplyBoardConfigRead()) {
+                                acceptedBoardConfigRef.current = false;
+                                setBoardBootstrapStatus('error');
+                            }
                             if (isAuthenticationRequiredError(err)) throw err;
                             /* best-effort */
                         }
@@ -3848,6 +3883,9 @@ import {
                         pendingAdminSections: {},
                     });
                 } catch (err) {
+                    if (!firstRunConfigurationActive && boardAffectingAdminSave) {
+                        setBoardBootstrapStatus('error');
+                    }
                     const committedSections = {
                         admin: Object.values(committedAdminSections).some(Boolean),
                         groups: groupsCommitted,
@@ -5599,6 +5637,51 @@ import {
                     ? engSprintSelectorState.allWorkReadiness
                     : 'ready';
             const strictBoardActive = boardScopeRequested && selectedScopeReadiness === 'ready';
+            const acceptedEngSprintSelectorState = React.useMemo(() => resolveEngSprintSelectorState({
+                boardMode: selectedView === 'eng' && showBoard,
+                catalogReady: sprintCatalogReady,
+                bootstrapStatus: acceptedBoardConfigRef.current ? 'ready' : boardBootstrapStatus,
+                capability: boardAllWorkAvailable,
+                groupsLoading: acceptedGroupsConfigRef.current ? false : groupsLoading,
+                groupsFailed: acceptedGroupsConfigRef.current ? false : boardGroupsReadFailed,
+                group: activeGroup,
+                savedProjects: savedSelectedProjects,
+                savedBoardId,
+            }), [
+                selectedView, showBoard, sprintCatalogReady, boardBootstrapStatus,
+                boardAllWorkAvailable, groupsLoading, boardGroupsReadFailed, activeGroup,
+                savedSelectedProjects, savedBoardId,
+            ]);
+            const acceptedSelectedScopeReadiness = boardStrictScope === 'component'
+                ? acceptedEngSprintSelectorState.componentReadiness
+                : boardStrictScope === 'all_work'
+                    ? acceptedEngSprintSelectorState.allWorkReadiness
+                    : 'ready';
+            const strictBoardOwnerActive = boardScopeRequested && acceptedSelectedScopeReadiness === 'ready';
+            const acceptedStrictBoardRevision = React.useMemo(() => JSON.stringify(stableAcceptedConfigValue({
+                workspaceConfigRevision: sharedConfigRevision,
+                departmentConfigRevision: groupsConfig.configRevision,
+                department: activeGroup ? {
+                    id: String(activeGroup.id || ''),
+                    boardColumns: activeGroup.board?.columns || [],
+                    components: [...new Set((activeGroup.missingInfoComponents || [])
+                        .map(value => String(value || '').trim()).filter(Boolean))].sort(),
+                    teams: [...activeGroupTeamIds].sort(),
+                } : null,
+                jiraAuthority: {
+                    projects: (savedSelectedProjects || [])
+                        .map(project => ({
+                            key: String(project?.key || '').trim().toUpperCase(),
+                            type: String(project?.type || '').trim(),
+                        }))
+                        .filter(project => project.key)
+                        .sort((left, right) => left.key.localeCompare(right.key) || left.type.localeCompare(right.type)),
+                    sourceBoardId: String(savedBoardId || '').trim(),
+                },
+            })), [
+                sharedConfigRevision, groupsConfig.configRevision, activeGroup, activeGroupTeamIds,
+                savedSelectedProjects, savedBoardId,
+            ]);
             const statsTeamColorMap = React.useMemo(() => buildTeamColorMap(
                 activeGroupTeamIds.map((teamId) => ({ id: teamId, name: resolveTeamName(teamId) }))
             ), [activeGroupTeamIds, teamNameLookup]);
@@ -6147,7 +6230,7 @@ import {
             useEffect(() => {
                 if (!activeGroupId) return;
                 if (activeGroupRef.current === activeGroupId) return;
-                setBoardStrictScope(''); activeGroupRef.current = activeGroupId;
+                activeGroupRef.current = activeGroupId;
                 const cached = groupStateRef.current.get(activeGroupId);
                 const matchesScope = cached &&
                     cached.planningScopeKey === planningScopeKey &&
@@ -6688,6 +6771,7 @@ import {
                         setSharedConfigRevision(config.sharedConfigRevision);
                         setWorkspaceConfigConflict(null);
                         setBoardAllWorkAvailable(config.boardAllWorkAvailable);
+                        acceptedBoardConfigRef.current = true;
                         setBoardBootstrapStatus('ready');
                     } else {
                         if (!shouldPreserveEpmDraft()) applySavedEpmConfig(config.viewConfig?.view?.epm || config.epm);
@@ -6718,11 +6802,14 @@ import {
                         ]);
                         if (!shouldApplyResult()) return false;
                         setBoardAllWorkAvailable(config.boardAllWorkAvailable);
-                        setBoardBootstrapStatus(authorityResults.every(Boolean) ? 'ready' : 'error');
+                        const authorityReady = authorityResults.every(Boolean);
+                        acceptedBoardConfigRef.current = authorityReady;
+                        setBoardBootstrapStatus(authorityReady ? 'ready' : 'error');
                     }
                     return true;
                 } catch (err) {
                     if (!shouldApplyResult()) return false;
+                    acceptedBoardConfigRef.current = false;
                     performanceGate.resolve(false);
                     setBoardBootstrapStatus('error');
                     if (isAuthenticationRequiredError(err)) return false;
@@ -6738,7 +6825,7 @@ import {
 
             useEffect(() => {
                 if (selectedView !== 'eng' || isStatsSourceOnlyStatsView) return;
-                if (strictBoardActive || (showBoard && boardAllWorkAvailable === null)) return;
+                if (boardScopeRequested) return;
                 if (sprintsLoading || !selectedSprintInfo) return;
                 // Load tasks when sprint changes (team is filtered client-side)
                 if (selectedSprint === null) {
@@ -6822,7 +6909,7 @@ import {
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
-            }, [selectedView, isStatsSourceOnlyStatsView, strictBoardActive, showBoard, boardAllWorkAvailable, sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
+            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
@@ -7001,9 +7088,9 @@ import {
                 setReadyToCloseTechEpicsInScope,
                 onServerConnectionFailure: reportServerConnectionError,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
-                strictBoardActive,
+                strictBoardActive: boardScopeRequested,
             });
-            const strictBoard = useStrictEngBoardOwner({ active: strictBoardActive, backendUrl: BACKEND_URL, departmentId: activeGroupId, sprintId: selectedSprint, groupRevision: sharedConfigRevision, resolvedFocusColumnId: boardView?.focusedId || null, performanceGate, strictScope: boardStrictScope, trackApiResult, onAuthRequired: () => trackAppError('auth', 'session_recovery', 'reauth') });
+            const strictBoard = useStrictEngBoardOwner({ active: strictBoardOwnerActive, backendUrl: BACKEND_URL, departmentId: activeGroupId, sprintId: selectedSprint, groupRevision: acceptedStrictBoardRevision, resolvedFocusColumnId: boardView?.focusedId || null, performanceGate, strictScope: boardStrictScope, trackApiResult, onAuthRequired: () => trackAppError('auth', 'session_recovery', 'reauth') });
             const strictBoardData = strictBoard.data; const refreshAfterStrictBoardMutation = strictBoard.refresh; const refreshLegacyBoardTasks = () => loadMeasuredGroupTasks({ forceRefresh: true });
             const loadMeasuredGroupTasks = (options = {}) => {
                 activePerformanceLoadRef.current?.cancel();
@@ -11904,7 +11991,7 @@ import {
             );
             // Board's own epic-level filter pipeline (§7.1, D19, O6) — sprint/group/team scope
             // only, gated by neither surface's facets (the leak Task 11 flagged).
-            const strictBoardPresentation = useStrictEngBoardPresentation({ active: strictBoardActive, owner: strictBoard, savedBoard: activeGroup?.board || null, searchQuery, showBoard, visibleTaskCount: visibleTasks.length, trackSearch, legacyFilterInput: { scopeTasks: engFilterScopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection: engBoardFilterSelection } });
+            const strictBoardPresentation = useStrictEngBoardPresentation({ active: boardScopeRequested, owner: strictBoard, savedBoard: activeGroup?.board || null, searchQuery, showBoard, visibleTaskCount: visibleTasks.length, trackSearch, legacyFilterInput: { scopeTasks: engFilterScopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection: engBoardFilterSelection } });
             const { boardEpicGroups, boardFilters, boardEpicGroupsFiltered, model: strictBoardModel, workItemKeys: activeJiraExportWorkItemKeys } = strictBoardPresentation;
             const boardJiraEpicKeys = React.useMemo(
                 () => normalizeJiraExportKeys(boardEpicGroupsFiltered.filter(group => group.key !== 'NO_EPIC').map(group => group.key)),
@@ -12018,7 +12105,7 @@ import {
             );
 
             useEffect(() => {
-                if (strictBoardActive) { setDependencyData({}); return; }
+                if (boardScopeRequested) { setDependencyData({}); return; }
                 if (!showDependencies && !showBlockedAlert) {
                     setDependencyData({});
                     if (selectedView === 'eng') activePerformanceLoadRef.current?.dependenciesFinished();
@@ -12041,7 +12128,7 @@ import {
                 const measuredLoad = selectedView === 'eng' ? activePerformanceLoadRef.current : null;
                 const started = performance.now();
                 void fetchDependencies(keys).then(outcome => measuredLoad?.dependenciesFinished(outcome, performance.now() - started));
-            }, [selectedView, strictBoardActive, showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading, epmRollupLoading, performanceLoadRevision, dependencyRefreshNonce]);
+            }, [selectedView, boardScopeRequested, showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading, epmRollupLoading, performanceLoadRevision, dependencyRefreshNonce]);
 
             useEffect(() => {
                 if (!showDependencies) {
@@ -12382,14 +12469,14 @@ import {
                 invalidateEngIssueFieldSources({ field: fieldName });
                 applyLocalSubtaskField(issueKey, fieldName, fieldValue);
             }, [applyLocalSubtaskField, strictBoard]);
-            const strictBoardMutationProps = strictEngBoardMutationProps({ active: strictBoardActive, coordinator: strictBoard.mutationCoordinator, refresh: refreshAfterStrictBoardMutation, sourceSurface: statusTransitionSourceSurface, loadLegacy: refreshLegacyBoardTasks, retrySubtasks: retryStorySubtasks });
+            const strictBoardMutationProps = strictEngBoardMutationProps({ active: boardScopeRequested, coordinator: strictBoard.mutationCoordinator, refresh: refreshAfterStrictBoardMutation, sourceSurface: statusTransitionSourceSurface, loadLegacy: refreshLegacyBoardTasks, retrySubtasks: retryStorySubtasks });
             const issueFieldEdits = useEngIssueFieldEdits({ backendUrl: BACKEND_URL, issueEditState: issueEditStateRef.current, getContextKey: () => `${authMode}|${jiraUrl}|${authResumeStagedRevision}`,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'), onAction: (workflowAction, editor, result) => trackIssueFieldEditAction(workflowAction, { fieldName: editor.field === 'deliveryOwner' ? 'delivery_owner' : editor.field === 'storyPoints' ? 'story_points' : editor.field, issueKind: editor.issueKind, sourceSurface: editor.sourceSurface, result }), onConfirm: ({ issueKey, field, value }) => applyLocalEngIssueField(issueKey, field === 'storyPoints' ? 'customfield_10004' : field, value) });
             const issueFieldEditsEnabled = authMode === 'atlassian_oauth' && statusTransitionEnabled; React.useEffect(() => { issueFieldEdits.contextChanged(); }, [selectedSprint, activeGroupId, statusTransitionSourceSurface, issueFieldEditsEnabled]);
             const statusTransitions = useEngStatusTransitions({
                 backendUrl: BACKEND_URL,
                 selectedStories: selectedTasksList,
-                epicGroups: strictBoardActive ? boardEpicGroups : epicGroups,
+                epicGroups: boardScopeRequested ? boardEpicGroups : epicGroups,
                 storySubtasksByKey,
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
@@ -14738,7 +14825,7 @@ import {
                 if (activeGroupDraft) updateGroupDraftBoard(activeGroupDraft.id, nextBoard);
             };
             const random = Math.random;
-            const engBoardDataProps = strictEngBoardViewProps({ active: strictBoardActive, owner: strictBoard, model: strictBoardModel, legacyLoading: sprintsLoading || loading, legacyError: displayedEngError, legacyRetry: retryEngLoad });
+            const engBoardDataProps = strictEngBoardViewProps({ active: boardScopeRequested, owner: strictBoard, model: strictBoardModel, legacyLoading: sprintsLoading || loading, legacyError: displayedEngError, legacyRetry: retryEngLoad });
             if (strictBoardActive && strictBoardData.error?.code === 'board_config_invalid') {
                 engBoardDataProps.error = 'Board configuration could not be used. Review Board setup and retry.';
             }
@@ -17070,7 +17157,7 @@ import {
                                 jiraUrl={jiraUrl}
                                 backendUrl={BACKEND_URL}
                                 transitionsEnabled={statusTransitionEnabled
-                                    && (!strictBoardActive || strictBoardModel.childrenAuthoritative)}
+                                    && (!boardScopeRequested || strictBoardModel.childrenAuthoritative)}
                                 statusTransitions={statusTransitions}
                                 priorityTransitions={priorityTransitions}
                                 projectTrackTransitions={projectTrackTransitions}

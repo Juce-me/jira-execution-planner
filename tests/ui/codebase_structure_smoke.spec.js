@@ -2727,7 +2727,7 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
     };
     const exerciseOpenStates = async (dropdown, { kind, inputName, query }, closedWidth, screenshotPrefix) => {
         const toggle = dropdown.locator(`.${kind}-dropdown-toggle`);
-        const input = dropdown.getByRole('textbox', { name: inputName });
+        const input = dropdown.getByRole(kind === 'sprint' ? 'combobox' : 'textbox', { name: inputName });
         await toggle.focus();
         await page.keyboard.press('Enter');
         await expect(input).toBeFocused();
@@ -2768,9 +2768,9 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
     const selectedSprint = controls.locator('.sprint-dropdown.header-filter-dropdown');
     await selectedSprint.locator('.sprint-dropdown-toggle').focus();
     await page.keyboard.press('Enter');
-    await selectedSprint.getByRole('textbox', { name: 'Filter sprints' }).fill('International Platform Reliability and Migration');
+    await selectedSprint.getByRole('combobox', { name: 'Filter sprints' }).fill('International Platform Reliability and Migration');
     await selectedSprint.locator('.sprint-dropdown-option', { hasText: headerLongSprintEastName }).click();
-    await expect(selectedSprint.getByRole('textbox', { name: 'Filter sprints' })).toHaveCount(0);
+    await expect(selectedSprint.getByRole('combobox', { name: 'Filter sprints' })).toHaveCount(0);
 
     // Preserve sibling reset, selection, checkbox, and outside-click paths after the geometry contracts.
     const group = controls.locator('.group-dropdown.header-filter-dropdown');
@@ -3182,6 +3182,73 @@ test('EPM lifecycle tabs load after config with scoped rollup requests and stick
         expect(metadataCalls.length).toBeLessThanOrEqual(1);
         expect(tabRollups).toHaveLength(1);
     });
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('EPM Sprint selector native options keep readable stable shared styling', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls);
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'epm',
+        epmTab: 'active',
+        epmSelectedProjectId: '',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    const option = page.getByRole('option').first();
+    await expect(option).toBeVisible();
+
+    const readOptionStyle = locator => locator.evaluate(node => {
+        const style = getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        const panelBackground = getComputedStyle(node.closest('.sprint-dropdown-panel')).backgroundColor;
+        const parseRgb = value => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+        const luminance = value => {
+            const channels = parseRgb(value).map(channel => {
+                const normalized = channel / 255;
+                return normalized <= 0.03928
+                    ? normalized / 12.92
+                    : ((normalized + 0.055) / 1.055) ** 2.4;
+            });
+            return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+        };
+        const background = style.backgroundColor === 'rgba(0, 0, 0, 0)'
+            ? panelBackground
+            : style.backgroundColor;
+        const foregroundLuminance = luminance(style.color);
+        const backgroundLuminance = luminance(background);
+        const contrast = (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+            / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+        return {
+            contrast,
+            marginRight: style.marginRight,
+            transform: style.transform,
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+        };
+    });
+    const beforeHover = await readOptionStyle(option);
+    expect(beforeHover.contrast).toBeGreaterThanOrEqual(4.5);
+    expect(beforeHover.marginRight).toBe('0px');
+    expect(beforeHover.transform).toBe('none');
+
+    await option.hover();
+    const afterHover = await readOptionStyle(option);
+    expect(afterHover.contrast).toBeGreaterThanOrEqual(4.5);
+    expect(afterHover.marginRight).toBe('0px');
+    expect(afterHover.transform).toBe('none');
+    expect(afterHover.left).toBeCloseTo(beforeHover.left, 1);
+    expect(afterHover.top).toBeCloseTo(beforeHover.top, 1);
+    expect(afterHover.width).toBeCloseTo(beforeHover.width, 1);
+    expect(afterHover.height).toBeCloseTo(beforeHover.height, 1);
+    await page.screenshot({ path: `${screenshotDir}/epm-sprint-selector-native-options.png`, animations: 'disabled' });
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

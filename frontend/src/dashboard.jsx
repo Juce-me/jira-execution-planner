@@ -12,6 +12,7 @@ import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
 import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
+import LoadingState from './ui/LoadingState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
@@ -855,7 +856,11 @@ import {
             const teamDropdownRefs = useRef({ main: null, compact: null });
             const [sprintSearch, setSprintSearch] = useState('');
             const [showSprintDropdown, setShowSprintDropdown] = useState(false);
+            const [sprintActiveOptionIndex, setSprintActiveOptionIndex] = useState(0);
             const sprintDropdownRefs = useRef({ main: null, compact: null });
+            const sprintTriggerRefs = useRef({ main: null, compact: null });
+            const sprintSelectorOriginRef = useRef(null);
+            const boardScopeRetryRef = useRef(null);
             const [capacityEnabled, setCapacityEnabled] = useState(false);
             const [capacityState, setCapacityState] = useState(() => ({ capacityByTeam: {}, capacityTargetsByTeam: {}, capacityIssueCount: null, mutationEnabled: false, scopeSignature: '' }));
             const capacityStateRef = useRef(capacityState);
@@ -1765,6 +1770,95 @@ import {
                 });
             }, [availableSprints, sprintSearch]);
 
+            const sprintOptionDomId = (surface, option) => {
+                const suffix = option.kind === 'sprint'
+                    ? `sprint-${String(option.sprint.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`
+                    : option.scope.replace(/_/g, '-');
+                return `sprint-${surface}-option-${suffix}`;
+            };
+
+            const getSprintSelectorOptions = (boardScopeControl) => {
+                const normalizedSearch = sprintSearch.trim().toLowerCase();
+                const options = [];
+                if (boardScopeControl && (!normalizedSearch || 'all work'.includes(normalizedSearch))) {
+                    options.push({
+                        kind: 'scope', scope: 'all_work', label: 'All work',
+                        readiness: engSprintSelectorState.allWorkReadiness,
+                    });
+                }
+                if (boardScopeControl && (!normalizedSearch || 'component'.includes(normalizedSearch))) {
+                    options.push({
+                        kind: 'scope', scope: 'component', label: 'Component',
+                        readiness: engSprintSelectorState.componentReadiness,
+                    });
+                }
+                filteredSprints.forEach(sprint => options.push({
+                    kind: 'sprint', sprint, label: String(sprint.name || 'Sprint'),
+                }));
+                return options;
+            };
+
+            const closeSprintSelector = ({ restoreFocus = false } = {}) => {
+                const origin = sprintSelectorOriginRef.current;
+                setShowSprintDropdown(false);
+                setSprintActiveOptionIndex(0);
+                sprintSelectorOriginRef.current = null;
+                if (!restoreFocus || !origin) return;
+                window.requestAnimationFrame(() => sprintTriggerRefs.current[origin]?.focus?.());
+            };
+
+            const selectBoardScope = (scope) => {
+                if (!engSprintSelectorState.boardSelectable) return;
+                if (boardStrictScope !== scope) {
+                    trackFilterChanged('sprint', {
+                        sprint_selection_state: scope,
+                        source_surface: 'board',
+                        scope_type: scope,
+                    });
+                    setBoardStrictScope(scope);
+                }
+                closeSprintSelector({ restoreFocus: true });
+            };
+
+            const selectOrdinarySprint = (sprint, boardScopeControl) => {
+                const sameOrdinarySelection = !boardStrictScope
+                    && String(selectedSprint) === String(sprint.id);
+                if (!sameOrdinarySelection) {
+                    const state = (sprint.state || '').toLowerCase();
+                    trackFilterChanged('sprint', {
+                        sprint_selection_state: analyticsToken(state || 'unknown'),
+                        source_surface: currentDashboardView(),
+                        scope_type: boardScopeControl ? 'sprint' : currentDashboardView(),
+                    });
+                    teamSelectionCarryForwardRef.current = activeGroupId ? {
+                        scopeKey: buildTeamSelectionScopeKey({ sprintId: sprint.id, groupId: activeGroupId }),
+                        selectedTeams: normalizeSelectedTeams(selectedTeams),
+                    } : null;
+                    setSelectedSprint(sprint.id);
+                    setSprintName(sprint.name);
+                }
+                if (boardScopeControl) setBoardStrictScope('');
+                closeSprintSelector({ restoreFocus: true });
+            };
+
+            const commitSprintSelectorOption = (option, boardScopeControl) => {
+                if (!option) return;
+                if (option.kind === 'scope') {
+                    selectBoardScope(option.scope);
+                    return;
+                }
+                selectOrdinarySprint(option.sprint, boardScopeControl);
+            };
+
+            const openSprintSelector = (surface, options) => {
+                sprintSelectorOriginRef.current = surface;
+                const selectedIndex = options.findIndex(option => option.kind === 'scope'
+                    ? option.scope === boardStrictScope
+                    : !boardStrictScope && String(option.sprint.id) === String(selectedSprint));
+                setSprintActiveOptionIndex(Math.max(0, selectedIndex));
+                applyExclusiveDropdownState('sprint', false);
+            };
+
             const filteredControlGroups = React.useMemo(() => {
                 const query = groupDropdownQuery.trim().toLowerCase();
                 if (!query) return visibleControlGroups || [];
@@ -1782,7 +1876,10 @@ import {
             }, [showTeamDropdown]);
 
             useEffect(() => {
-                if (!showSprintDropdown) setSprintSearch('');
+                if (!showSprintDropdown) {
+                    setSprintSearch('');
+                    setSprintActiveOptionIndex(0);
+                }
             }, [showSprintDropdown]);
 
             const getActiveControlSurfaceName = () => (compactStickyVisible ? 'compact' : 'main');
@@ -6149,10 +6246,9 @@ import {
             }, [showPlanning, isCompletedSprintSelected, isFutureSprintSelected]);
 
             useEffect(() => {
-                if (!selectedSprint) return;
                 if (!showSprintDropdown) return;
                 const dropdownNode = getActiveDropdownNode(sprintDropdownRefs);
-                const optionEl = dropdownNode?.querySelector(`[data-sprint-id="${selectedSprint}"]`);
+                const optionEl = dropdownNode?.querySelector('.sprint-dropdown-option.is-active');
                 const listEl = dropdownNode?.querySelector('.sprint-dropdown-list');
                 if (!optionEl) return;
                 if (!listEl) return;
@@ -6168,7 +6264,7 @@ import {
                 } else if (optionBottom > viewportBottom) {
                     listEl.scrollTop = Math.max(0, optionBottom - listEl.clientHeight + padding);
                 }
-            }, [showSprintDropdown, selectedSprint, filteredSprints?.length, compactStickyVisible]);
+            }, [showSprintDropdown, sprintActiveOptionIndex, sprintSearch, filteredSprints?.length, compactStickyVisible]);
 
             const resetSprintScopedState = React.useCallback(() => {
                 abortSprintFetches();
@@ -6269,6 +6365,8 @@ import {
                     if (!node) return;
                     if (!node.contains(event.target)) {
                         setShowSprintDropdown(false);
+                        setSprintActiveOptionIndex(0);
+                        sprintSelectorOriginRef.current = null;
                     }
                 };
                 document.addEventListener('mousedown', handleClickOutside);
@@ -13606,6 +13704,8 @@ import {
             useEffect(() => {
                 setShowTeamDropdown(false);
                 setShowSprintDropdown(false);
+                setSprintActiveOptionIndex(0);
+                sprintSelectorOriginRef.current = null;
                 setShowGroupDropdown(false);
                 setShowEpmProjectDropdown(false);
                 setShowEpmSubGoalFilterDropdown(false);
@@ -13795,93 +13895,162 @@ import {
                 <EpmProjectCollapseAllButton label={epmProjectCollapseAllLabel} onClick={toggleAllVisibleEpmProjectsCollapsed} pressed={allVisibleEpmProjectsCollapsed} />
             ) : null;
 
-            const boardComponentEnabled = engSprintSelectorState.componentReadiness === 'ready'; const boardAllWorkEnabled = engSprintSelectorState.allWorkReadiness === 'ready';
             const renderSprintControl = (surface) => {
-                const boardScopeControl = selectedView === 'eng' && showBoard; const canOpen = boardScopeControl ? !sprintsLoading : (!sprintsLoading && availableSprints.length > 0);
+                const boardScopeControl = selectedView === 'eng' && showBoard;
+                const canOpen = engSprintSelectorState.ordinarySelectable;
                 const displayedSprint = boardScopeControl && boardStrictScope ? (boardStrictScope === 'component' ? 'Component' : 'All work') : (!selectedSprint && sprintsLoading ? 'Loading…' : (sprintName || 'Sprint'));
-                const normalizedSprintSearch = sprintSearch.trim().toLowerCase();
-                const componentMatchesSearch = !normalizedSprintSearch || 'component'.includes(normalizedSprintSearch);
-                const allWorkMatchesSearch = !normalizedSprintSearch || 'all work'.includes(normalizedSprintSearch);
-                const pseudoScopeMatchesSearch = boardScopeControl && (componentMatchesSearch || allWorkMatchesSearch);
+                const options = getSprintSelectorOptions(boardScopeControl);
+                const activeIndex = options.length
+                    ? Math.min(Math.max(sprintActiveOptionIndex, 0), options.length - 1)
+                    : -1;
+                const listboxId = `sprint-${surface}-listbox`;
+                const isActiveOpen = showSprintDropdown && surface === activeControlSurface;
+                const handleFilterKeyDown = (event) => {
+                    event.stopPropagation();
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        closeSprintSelector({ restoreFocus: true });
+                        return;
+                    }
+                    if (event.key === 'Tab') {
+                        window.setTimeout(() => {
+                            setShowSprintDropdown(false);
+                            setSprintActiveOptionIndex(0);
+                            sprintSelectorOriginRef.current = null;
+                        }, 0);
+                        return;
+                    }
+                    if (!options.length) return;
+                    if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        setSprintActiveOptionIndex(Math.min(activeIndex + 1, options.length - 1));
+                        return;
+                    }
+                    if (event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        setSprintActiveOptionIndex(Math.max(activeIndex - 1, 0));
+                        return;
+                    }
+                    if (event.key === 'Home') {
+                        event.preventDefault();
+                        setSprintActiveOptionIndex(0);
+                        return;
+                    }
+                    if (event.key === 'End') {
+                        event.preventDefault();
+                        setSprintActiveOptionIndex(options.length - 1);
+                        return;
+                    }
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        commitSprintSelectorOption(options[activeIndex], boardScopeControl);
+                    }
+                };
                 return (<ControlField label="Sprint">
-                    <div className={`sprint-dropdown${selectedView === 'eng' ? ' header-filter-dropdown header-filter-dropdown--sprint' : ''}`} ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
-                        <div
-                            className={`sprint-dropdown-toggle ${showSprintDropdown ? 'open' : ''}`}
-                            role={showSprintDropdown ? undefined : 'button'}
-                            aria-label={showSprintDropdown ? undefined : 'Select sprint'}
-                            tabIndex={showSprintDropdown ? undefined : (canOpen ? 0 : -1)}
-                            onClick={() => { if (showSprintDropdown || !canOpen) return; applyExclusiveDropdownState('sprint', showSprintDropdown); }}
-                            onKeyDown={(event) => {
-                                if (showSprintDropdown || !canOpen) return;
-                                if (event.key === 'Enter' || event.key === ' ') {
-                                    event.preventDefault();
-                                    applyExclusiveDropdownState('sprint', showSprintDropdown);
-                                }
-                            }}
-                            aria-disabled={!canOpen}
-                            data-onboarding-target="sprint"
-                            data-onboarding-surface={surface}
-                        >
-                            {showSprintDropdown ? (
+                    <div className={`sprint-dropdown sprint-selector-control${selectedView === 'eng' ? ' header-filter-dropdown header-filter-dropdown--sprint' : ''}`} ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
+                        {isActiveOpen ? (
+                            <div
+                                className="sprint-dropdown-toggle open"
+                                data-onboarding-target="sprint"
+                                data-onboarding-surface={surface}
+                            >
                                 <input
                                     type="text"
                                     className="dropdown-toggle-filter-input"
                                     value={sprintSearch}
-                                    onChange={(event) => setSprintSearch(event.target.value)}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onKeyDown={(event) => {
-                                        event.stopPropagation();
-                                        if (event.key === 'Escape') {
-                                            event.preventDefault();
-                                            setShowSprintDropdown(false);
-                                        }
+                                    onChange={(event) => {
+                                        setSprintSearch(event.target.value);
+                                        setSprintActiveOptionIndex(0);
                                     }}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onKeyDown={handleFilterKeyDown}
                                     placeholder={displayedSprint}
                                     aria-label="Filter sprints"
-                                    autoFocus={surface === activeControlSurface}
+                                    role="combobox"
+                                    aria-autocomplete="list"
+                                    aria-expanded="true"
+                                    aria-controls={listboxId}
+                                    aria-activedescendant={activeIndex >= 0
+                                        ? sprintOptionDomId(surface, options[activeIndex])
+                                        : undefined}
+                                    autoFocus
                                 />
-                            ) : (
+                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                    <path d="M6 9L1 4h10z"/>
+                                </svg>
+                            </div>
+                        ) : (
+                            <button
+                                ref={(node) => { sprintTriggerRefs.current[surface] = node; }}
+                                type="button"
+                                className="sprint-dropdown-toggle"
+                                aria-label="Select sprint"
+                                aria-haspopup="listbox"
+                                aria-expanded="false"
+                                aria-controls={listboxId}
+                                aria-disabled={!canOpen}
+                                disabled={!canOpen}
+                                tabIndex={canOpen ? 0 : -1}
+                                onClick={() => {
+                                    if (!canOpen) return;
+                                    openSprintSelector(surface, options);
+                                }}
+                                data-onboarding-target="sprint"
+                                data-onboarding-surface={surface}
+                            >
                                 <span>{displayedSprint}</span>
-                            )}
-                            <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                <path d="M6 9L1 4h10z"/>
-                            </svg>
-                        </div>
-                        {showSprintDropdown && surface === activeControlSurface && (
+                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                                    <path d="M6 9L1 4h10z"/>
+                                </svg>
+                            </button>
+                        )}
+                        {isActiveOpen && (
                             <div className="sprint-dropdown-panel">
-                                <div className="sprint-dropdown-list">
-                                    {boardScopeControl && allWorkMatchesSearch && <div className="sprint-dropdown-option" aria-disabled={!boardAllWorkEnabled}
-                                        title={boardAllWorkEnabled ? 'Show retained work across the Department' : 'All work requires saved Jira projects or a Jira Board, plus Department Components or Teams'}
-                                        onClick={() => { if (!boardAllWorkEnabled) return; trackFilterChanged('sprint', { sprint_selection_state: 'all_work', source_surface: 'board', scope_type: 'all_work' }); setBoardStrictScope('all_work'); setShowSprintDropdown(false); }}>All work</div>}
-                                    {boardScopeControl && componentMatchesSearch && <div className="sprint-dropdown-option" aria-disabled={!boardComponentEnabled}
-                                        title={boardComponentEnabled ? 'Show retained work owned by Department Components' : 'Component scope requires saved Jira projects or a Jira Board, plus Department Components'}
-                                        onClick={() => { if (!boardComponentEnabled) return; trackFilterChanged('sprint', { sprint_selection_state: 'component', source_surface: 'board', scope_type: 'component' }); setBoardStrictScope('component'); setShowSprintDropdown(false); }}>Component</div>}
-                                    {sprintsLoading ? (
-                                        <div className="sprint-dropdown-option">Loading sprints...</div>
-                                    ) : availableSprints.length === 0 ? (
-                                        <div className="sprint-dropdown-option">No sprints available</div>
-                                    ) : filteredSprints.length === 0 && !pseudoScopeMatchesSearch ? (
-                                        <div className="dropdown-filter-empty" role="status">No matching sprints</div>
+                                <div className="sprint-dropdown-list" id={listboxId} role="listbox" aria-label="Sprint options">
+                                    {sprintsLoading && options.length === 0 ? (
+                                        <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">Loading sprints...</div>
+                                    ) : availableSprints.length === 0 && options.length === 0 ? (
+                                        <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">No sprints available</div>
+                                    ) : options.length === 0 ? (
+                                        <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">No matching sprints</div>
                                     ) : (
-                                        filteredSprints.map(sprint => {
-                                            const state = (sprint.state || '').toLowerCase();
+                                        options.map((option, optionIndex) => {
+                                            const selected = option.kind === 'scope'
+                                                ? boardStrictScope === option.scope
+                                                : !boardStrictScope && String(option.sprint.id) === String(selectedSprint);
+                                            const state = option.kind === 'sprint'
+                                                ? (option.sprint.state || '').toLowerCase()
+                                                : '';
                                             const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
+                                            const readinessText = option.kind === 'scope'
+                                                ? (option.readiness === 'ready' ? 'Ready'
+                                                    : ['loading', 'catalog_pending'].includes(option.readiness)
+                                                        ? 'Loading configuration'
+                                                        : 'Setup needed')
+                                                : '';
+                                            const descriptionId = option.kind === 'scope'
+                                                ? `${sprintOptionDomId(surface, option)}-readiness`
+                                                : undefined;
                                             return (
-                                                <div
-                                                    key={sprint.id}
-                                                    className="sprint-dropdown-option"
-                                                    data-sprint-id={sprint.id}
-                                                    onClick={() => {
-                                                        trackFilterChanged('sprint', { sprint_selection_state: analyticsToken(state || 'unknown'), source_surface: currentDashboardView(), scope_type: boardScopeControl ? 'sprint' : currentDashboardView() });
-                                                        if (boardScopeControl) setBoardStrictScope('');
-                                                        teamSelectionCarryForwardRef.current = activeGroupId ? { scopeKey: buildTeamSelectionScopeKey({ sprintId: sprint.id, groupId: activeGroupId }), selectedTeams: normalizeSelectedTeams(selectedTeams) } : null;
-                                                        setSelectedSprint(sprint.id);
-                                                        setSprintName(sprint.name);
-                                                        setShowSprintDropdown(false);
-                                                    }}
+                                                <button
+                                                    key={option.kind === 'scope' ? option.scope : option.sprint.id}
+                                                    id={sprintOptionDomId(surface, option)}
+                                                    type="button"
+                                                    role="option"
+                                                    tabIndex={-1}
+                                                    aria-label={option.label}
+                                                    aria-selected={selected}
+                                                    aria-describedby={descriptionId}
+                                                    className={`sprint-dropdown-option${selected ? ' selected' : ''}${optionIndex === activeIndex ? ' is-active' : ''}`}
+                                                    data-sprint-id={option.kind === 'sprint' ? option.sprint.id : undefined}
+                                                    onMouseMove={() => setSprintActiveOptionIndex(optionIndex)}
+                                                    onClick={() => commitSprintSelectorOption(option, boardScopeControl)}
                                                 >
-                                                    {marker} {sprint.name}
-                                                </div>
+                                                    <span>{option.kind === 'sprint' ? `${marker} ${option.label}` : option.label}</span>
+                                                    {option.kind === 'scope' && (
+                                                        <span id={descriptionId} className="sprint-option-readiness">{readinessText}</span>
+                                                    )}
+                                                </button>
                                             );
                                         })
                                     )}
@@ -14500,12 +14669,24 @@ import {
                 ) : null;
 
             const longAbsenceRefreshRef = useRef(null);
+            const retryBoardScopeConfiguration = () => {
+                if (boardScopeRetryRef.current) return boardScopeRetryRef.current;
+                const retry = Promise.all([loadConfig(), loadGroupsConfig()]).finally(() => {
+                    if (boardScopeRetryRef.current === retry) boardScopeRetryRef.current = null;
+                });
+                boardScopeRetryRef.current = retry;
+                return retry;
+            };
             const refreshActiveViewFromJira = () => {
                 if (selectedView === 'epm') {
                     void refreshEpmView();
                     return;
                 }
                 if (strictBoardActive) { void strictBoardData.refresh(); return; }
+                if (boardScopeRequested) {
+                    if (selectedScopeReadiness !== 'unsupported') void retryBoardScopeConfiguration();
+                    return;
+                }
                 if (activeGroupId) {
                     groupStateRef.current.delete(activeGroupId);
                 }
@@ -14526,7 +14707,9 @@ import {
                 rearmCatchUpAlerts();
                 loadMeasuredGroupTasks({ forceRefresh: true });
             };
-            const manualRefreshDisabled = selectedView === 'eng' ? (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized' : loading || selectedSprint === null)
+            const manualRefreshDisabled = selectedView === 'eng' ? (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized'
+                : boardScopeRequested ? ['loading', 'catalog_pending', 'unsupported'].includes(selectedScopeReadiness)
+                : loading || selectedSprint === null)
                 : (epmProjectsLoading || epmRollupLoading);
             longAbsenceRefreshRef.current = manualRefreshDisabled ? null : refreshActiveViewFromJira;
             useEffect(() => {
@@ -14556,6 +14739,84 @@ import {
             };
             const random = Math.random;
             const engBoardDataProps = strictEngBoardViewProps({ active: strictBoardActive, owner: strictBoard, model: strictBoardModel, legacyLoading: sprintsLoading || loading, legacyError: displayedEngError, legacyRetry: retryEngLoad });
+            if (strictBoardActive && strictBoardData.error?.code === 'board_config_invalid') {
+                engBoardDataProps.error = 'Board configuration could not be used. Review Board setup and retry.';
+            }
+            const openBoardDepartmentSettings = (tab) => {
+                trackSettingsAction(tab, 'open', { source_surface: 'board' });
+                setShowGroupManage(true);
+                selectDepartmentSettingsTab(tab);
+            };
+            const openBoardAdminScopeSettings = () => {
+                if (userCanEditSettings !== true) return;
+                trackSettingsAction('scope', 'open', { source_surface: 'board' });
+                setShowGroupManage(true);
+                selectAdminSettingsTab('scope');
+            };
+            const renderBlockedBoardScope = () => {
+                if (!boardScopeRequested || strictBoardActive) return null;
+                const readiness = selectedScopeReadiness === 'catalog_pending'
+                    ? 'loading'
+                    : selectedScopeReadiness;
+                if (readiness === 'loading') {
+                    return (
+                        <LoadingState
+                            className="board-scope-status"
+                            title="Loading Board configuration…"
+                            ariaLabel="Board scope status"
+                        />
+                    );
+                }
+                let content;
+                if (readiness === 'error') {
+                    content = (
+                        <EmptyState title="Board configuration could not be loaded.">
+                            <button type="button" onClick={() => void retryBoardScopeConfiguration()}>Retry configuration</button>
+                        </EmptyState>
+                    );
+                } else if (readiness === 'unsupported') {
+                    content = <EmptyState title="Cross-sprint Board is unavailable in this environment. Choose a Sprint to continue." />;
+                } else if (readiness === 'department_required') {
+                    content = (
+                        <EmptyState title="Choose a Department to use this Board scope.">
+                            <button type="button" onClick={() => openBoardDepartmentSettings('teams')}>Choose a Department</button>
+                        </EmptyState>
+                    );
+                } else if (readiness === 'columns_required') {
+                    content = (
+                        <EmptyState title="Configure Board columns for this Department.">
+                            <button type="button" onClick={() => openBoardDepartmentSettings('boards')}>Configure Board columns</button>
+                        </EmptyState>
+                    );
+                } else if (readiness === 'projects_required') {
+                    content = (
+                        <EmptyState title="Select Jira projects or a Jira source Board before loading this scope.">
+                            {userCanEditSettings === true ? (
+                                <button type="button" onClick={openBoardAdminScopeSettings}>Select Jira projects</button>
+                            ) : (
+                                <p>Ask a workspace tool administrator to configure Jira scope.</p>
+                            )}
+                        </EmptyState>
+                    );
+                } else if (readiness === 'components_required') {
+                    content = (
+                        <EmptyState title="Add Components to this Department to use Component scope.">
+                            <button type="button" onClick={() => openBoardDepartmentSettings('teams')}>Add Components</button>
+                        </EmptyState>
+                    );
+                } else {
+                    content = (
+                        <EmptyState title="Add Teams or Components to this Department to use All work.">
+                            <button type="button" onClick={() => openBoardDepartmentSettings('teams')}>Configure Department membership</button>
+                        </EmptyState>
+                    );
+                }
+                return (
+                    <section className="board-scope-status" role="status" aria-label="Board scope status" aria-live="polite">
+                        {content}
+                    </section>
+                );
+            };
 
             return (
                 <div className="container" style={containerStyle}>
@@ -14581,15 +14842,17 @@ import {
                                 <div className="header-actions-row">
                                     {renderViewSwitch()}
                                     {renderSearchControl('main')}
-                                    <JiraExportButton
-                                        onboardingTarget="jira-export"
-                                        jiraUrl={jiraUrl}
-                                        epicKeys={activeJiraExportEpicKeys}
-                                        storyKeys={activeJiraExportStoryKeys}
-                                        workItemKeys={strictBoardActive ? activeJiraExportWorkItemKeys : undefined}
-                                        className="jira-export-header"
-                                        sourceSurface={selectedView === 'epm' ? 'epm' : (showScenario ? 'scenario' : showStats ? 'stats' : showPlanning ? 'planning' : showBoard ? 'board' : 'catch_up')}
-                                    />
+                                    {!(boardScopeRequested && !strictBoardActive) && (
+                                        <JiraExportButton
+                                            onboardingTarget="jira-export"
+                                            jiraUrl={jiraUrl}
+                                            epicKeys={activeJiraExportEpicKeys}
+                                            storyKeys={activeJiraExportStoryKeys}
+                                            workItemKeys={strictBoardActive ? activeJiraExportWorkItemKeys : undefined}
+                                            className="jira-export-header"
+                                            sourceSurface={selectedView === 'epm' ? 'epm' : (showScenario ? 'scenario' : showStats ? 'stats' : showPlanning ? 'planning' : showBoard ? 'board' : 'catch_up')}
+                                        />
+                                    )}
                                     <IconButton
                                         variant="secondary compact"
                                         className="header-icon-button refresh-icon"
@@ -16793,32 +17056,34 @@ import {
                     </div>
                     )}
                     {selectedView === 'eng' && showBoard && (
-                        <EngBoardView
-                            board={activeGroup?.board || null}
-                            epicGroups={boardEpicGroupsFiltered}
-                            {...engBoardDataProps}
-                            view={boardView}
-                            onViewChange={setBoardView}
-                            renderPriorityIcon={renderPriorityIcon}
-                            engFilters={boardFilters}
-                            onFacetChange={setEngBoardFilterSelection}
-                            onFilterBarHeightChange={handleFilterBarHeightChange}
-                            jiraUrl={jiraUrl}
-                            backendUrl={BACKEND_URL}
-                            transitionsEnabled={statusTransitionEnabled
-                                && (!strictBoardActive || strictBoardModel.childrenAuthoritative)}
-                            statusTransitions={statusTransitions}
-                            priorityTransitions={priorityTransitions}
-                            projectTrackTransitions={projectTrackTransitions}
-                            statusTransitionSubmitting={statusTransitionSubmitting}
-                            onSubmitStatusTransition={handleSubmitStatusTransition}
-                            issueFieldEdits={issueFieldEditsEnabled ? issueFieldEdits : null}
-                            onConfigure={() => {
-                                trackSettingsAction('boards', 'open', { source_surface: 'board' });
-                                setShowGroupManage(true);
-                                selectDepartmentSettingsTab('boards');
-                            }}
-                        />
+                        boardScopeRequested && !strictBoardActive ? renderBlockedBoardScope() : (
+                            <EngBoardView
+                                board={activeGroup?.board || null}
+                                epicGroups={boardEpicGroupsFiltered}
+                                {...engBoardDataProps}
+                                view={boardView}
+                                onViewChange={setBoardView}
+                                renderPriorityIcon={renderPriorityIcon}
+                                engFilters={boardFilters}
+                                onFacetChange={setEngBoardFilterSelection}
+                                onFilterBarHeightChange={handleFilterBarHeightChange}
+                                jiraUrl={jiraUrl}
+                                backendUrl={BACKEND_URL}
+                                transitionsEnabled={statusTransitionEnabled
+                                    && (!strictBoardActive || strictBoardModel.childrenAuthoritative)}
+                                statusTransitions={statusTransitions}
+                                priorityTransitions={priorityTransitions}
+                                projectTrackTransitions={projectTrackTransitions}
+                                statusTransitionSubmitting={statusTransitionSubmitting}
+                                onSubmitStatusTransition={handleSubmitStatusTransition}
+                                issueFieldEdits={issueFieldEditsEnabled ? issueFieldEdits : null}
+                                onConfigure={() => {
+                                    trackSettingsAction('boards', 'open', { source_surface: 'board' });
+                                    setShowGroupManage(true);
+                                    selectDepartmentSettingsTab('boards');
+                                }}
+                            />
+                        )
                     )}
                     {!isLeadTimesFocusMode && (
                         <>

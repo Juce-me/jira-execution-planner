@@ -103,7 +103,8 @@ async function installBoardFixture(page, {
     selectedProjects = [{ key: 'PLAT', type: 'product' }], savedBoardId = '',
     boardCapability = strictBoard, performanceLoads = null, performanceResponseGate = null,
     performanceStatus = 201, jiraProjects = [{ key: 'DRAFT', name: 'Draft Project' }],
-    jiraBoards = [{ id: '99', name: 'Draft Board', type: 'scrum' }],
+    jiraBoards = [{ id: '99', name: 'Draft Board', type: 'scrum' }], analyticsEnabled = false,
+    userCanEditSettings = true, settingsAdminOnly = false,
 } = {}) {
     await installDashboardShell(page);
     if (sourceBundle) {
@@ -131,6 +132,7 @@ async function installBoardFixture(page, {
         if (url.pathname === '/api/auth/status') {
             return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
         }
+        if (url.pathname === '/api/analytics/context') return json({ enabled: analyticsEnabled });
         if (url.pathname === '/api/performance/context') return json({ enabled: true });
         if (url.pathname === '/api/performance/loads') {
             const observation = request.postDataJSON();
@@ -150,8 +152,8 @@ async function installBoardFixture(page, {
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
                 groupQueryTemplateEnabled: false,
-                settingsAdminOnly: false,
-                userCanEditSettings: true,
+                settingsAdminOnly,
+                userCanEditSettings,
                 authMode: 'atlassian_oauth',
                 boardAllWorkAvailable: boardCapability,
                 projectsConfigured: selectedProjects.length > 0,
@@ -168,7 +170,7 @@ async function installBoardFixture(page, {
         if (url.pathname === '/api/groups-config') {
             return json({
                 version: 1,
-                groups: groups || [{
+                groups: groups ?? [{
                     id: 'grp-default',
                     name: 'Default',
                     teamIds: ['team-alpha'],
@@ -267,6 +269,8 @@ async function openBoard(page, {
     width = 1280, height = 900, board, groups, epicSpecs, reducedMotion, strictBoard, requests, sourceBundle, configDelayMs,
     configResponseGate, sprints, requestLog,
     selectedProjects, savedBoardId, boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
+    analyticsEnabled,
+    userCanEditSettings, settingsAdminOnly,
     expectBoardColumns = true,
 } = {}) {
     if (reducedMotion) await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -288,6 +292,9 @@ async function openBoard(page, {
         ...(performanceLoads === undefined ? {} : { performanceLoads }),
         ...(performanceResponseGate === undefined ? {} : { performanceResponseGate }),
         ...(performanceStatus === undefined ? {} : { performanceStatus }),
+        ...(analyticsEnabled === undefined ? {} : { analyticsEnabled }),
+        ...(userCanEditSettings === undefined ? {} : { userCanEditSettings }),
+        ...(settingsAdminOnly === undefined ? {} : { settingsAdminOnly }),
     });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -311,6 +318,409 @@ async function openBoard(page, {
 const waitTwoFrames = page => page.evaluate(() => new Promise(resolve => (
     requestAnimationFrame(() => requestAnimationFrame(resolve))
 )));
+
+const expectActiveSprintOption = async (page, expectedName) => {
+    const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+    const activeId = await combobox.getAttribute('aria-activedescendant');
+    expect(activeId).toBeTruthy();
+    const activeOption = page.locator(`#${activeId}`);
+    await expect(activeOption).toHaveRole('option');
+    await expect(activeOption).toHaveAttribute('type', 'button');
+    await expect(activeOption).toHaveAttribute('tabindex', '-1');
+    await expect(activeOption).toHaveAccessibleName(expectedName);
+    return activeOption;
+};
+
+test('selector keyboard: ordinary', async ({ page }) => {
+    const requestLog = [];
+    await openBoard(page, { strictBoard: true, sourceBundle: true, requestLog });
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+
+    await expect(trigger).toHaveAttribute('type', 'button');
+    await expect(trigger).toHaveAttribute('aria-haspopup', 'listbox');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(trigger).toHaveAttribute('aria-controls', 'sprint-main-listbox');
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+    await expect(combobox).toBeFocused();
+    await expect(combobox).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('listbox', { name: 'Sprint options', exact: true })).toBeVisible();
+    await combobox.fill('2026Q3 Sprint 43');
+    await page.keyboard.press('ArrowDown');
+    await expectActiveSprintOption(page, '2026Q3 Sprint 43');
+    await page.keyboard.press('Enter');
+
+    await expect(trigger).toContainText('2026Q3 Sprint 43');
+    await expect(trigger).toBeFocused();
+    await expect.poll(() => requestLog.some(({ url, method }) => {
+        const parsed = new URL(url);
+        return method === 'GET'
+            && parsed.pathname === '/api/tasks-with-team-name'
+            && parsed.searchParams.get('sprint') === '34626';
+    })).toBe(true);
+
+    await trigger.click();
+    await page.keyboard.press('End');
+    await expectActiveSprintOption(page, '2026Q3 Sprint 43');
+    await page.keyboard.press('ArrowUp');
+    await expectActiveSprintOption(page, selectedSprintName);
+    await page.keyboard.press('Home');
+    await expectActiveSprintOption(page, 'All work');
+    await combobox.fill('does-not-exist');
+    await expect(combobox).not.toHaveAttribute('aria-activedescendant');
+    await expect(page.getByRole('status', { name: 'Sprint options status', exact: true }))
+        .toHaveText('No matching sprints');
+    await page.keyboard.press('Escape');
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('listbox', { name: 'Sprint options', exact: true })).toHaveCount(0);
+    await expect(trigger).not.toBeFocused();
+});
+
+test('selector keyboard: Component', async ({ page }) => {
+    const requests = [];
+    await openBoard(page, { strictBoard: true, sourceBundle: true, requests });
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+    await combobox.fill('Component');
+    await page.keyboard.press('ArrowDown');
+    await expectActiveSprintOption(page, 'Component');
+    await page.keyboard.press('Enter');
+
+    await expect(trigger).toContainText('Component');
+    await expect(trigger).toBeFocused();
+    await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
+    const strictRequest = requests.find(path => path.includes('scope=component'));
+    expect(new URLSearchParams(strictRequest.split('?')[1]).has('sprintId')).toBe(false);
+});
+
+test('selector keyboard: All work', async ({ page }) => {
+    const requests = [];
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        requests,
+        selectedProjects: [],
+        savedBoardId: '',
+    });
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+    await combobox.fill('All');
+    await page.keyboard.press('Space');
+    await page.keyboard.type('work');
+    await expect(combobox).toHaveValue('All work');
+    await page.keyboard.press('ArrowDown');
+    const activeOption = await expectActiveSprintOption(page, 'All work');
+    const descriptionId = await activeOption.getAttribute('aria-describedby');
+    expect(descriptionId).toBeTruthy();
+    await expect(page.locator(`#${descriptionId}`)).toContainText('Setup needed');
+    await page.keyboard.press('Enter');
+
+    await expect(trigger).toContainText('All work');
+    await expect(trigger).toBeFocused();
+    await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
+        'Select Jira projects or a Jira source Board before loading this scope.'
+    );
+    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toEqual([]);
+});
+
+for (const modeName of ['Catch Up', 'Planning', 'Board', 'Statistics', 'Scenario']) {
+    test(`selector modes: ${modeName} supports pointer and keyboard Sprint selection`, async ({ page }) => {
+        const requestLog = [];
+        const sprints = [
+            { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+            { id: 34624, name: '2026Q2 Sprint 41', state: 'active' },
+            { id: 34626, name: '2026Q3 Sprint 43', state: 'active' },
+        ];
+        await openBoard(page, { strictBoard: true, sourceBundle: true, requestLog, sprints });
+        if (modeName !== 'Board') {
+            await page.getByRole('radiogroup', { name: 'ENG view mode' })
+                .getByRole('radio', { name: modeName, exact: true }).click();
+        }
+
+        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        await trigger.click();
+        const pointerOption = page.getByRole('option', { name: '2026Q2 Sprint 41', exact: true });
+        await expect(pointerOption).toHaveAttribute('aria-selected', 'false');
+        await pointerOption.click();
+        await expect(trigger).toContainText('2026Q2 Sprint 41');
+        await expect(trigger).toBeFocused();
+        await expect.poll(() => requestLog.some(({ url, method }) => {
+            const parsed = new URL(url);
+            return method === 'GET'
+                && parsed.pathname === '/api/tasks-with-team-name'
+                && parsed.searchParams.get('sprint') === '34624';
+        })).toBe(true);
+
+        await trigger.focus();
+        await page.keyboard.press('Enter');
+        const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+        await combobox.fill('2026Q3 Sprint 43');
+        await page.keyboard.press('ArrowDown');
+        await expectActiveSprintOption(page, '2026Q3 Sprint 43');
+        await page.keyboard.press('Enter');
+        await expect(trigger).toContainText('2026Q3 Sprint 43');
+        await expect(trigger).toBeFocused();
+        await expect.poll(() => requestLog.some(({ url, method }) => {
+            const parsed = new URL(url);
+            return method === 'GET'
+                && parsed.pathname === '/api/tasks-with-team-name'
+                && parsed.searchParams.get('sprint') === '34626';
+        })).toBe(true);
+        await expect.poll(() => page.evaluate(() => JSON.parse(
+            localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'
+        ).selectedSprint)).toBe(34626);
+    });
+}
+
+test('selector analytics: accepted Board scope emits once and search or reselect emits nothing', async ({ page }) => {
+    const requests = [];
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        requests,
+        analyticsEnabled: true,
+    });
+    await expect.poll(() => page.evaluate(() => (window.dataLayer || []).some(entry => (
+        entry?.event_name === 'page_view'
+    )))).toBe(true);
+    await page.evaluate(() => { window.dataLayer.length = 0; });
+
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    await trigger.click();
+    const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+    await combobox.fill('Component');
+    await waitTwoFrames(page);
+    expect(await page.evaluate(() => (window.dataLayer || []).filter(entry => (
+        entry?.event_name === 'filter_changed'
+    )))).toEqual([]);
+
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => (window.dataLayer || []).filter(entry => (
+        entry?.event_name === 'filter_changed'
+    )).length)).toBe(1);
+    const events = await page.evaluate(() => (window.dataLayer || []).filter(entry => (
+        entry?.event_name === 'filter_changed'
+    )));
+    expect(events).toEqual([expect.objectContaining({
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'filter_changed',
+        feature_name: 'dashboard',
+        filter_type: 'sprint',
+        source_surface: 'board',
+        scope_type: 'component',
+        sprint_selection_state: 'component',
+    })]);
+    expect(Object.values(events[0]).some(value => String(value).includes('34625'))).toBe(false);
+
+    await trigger.click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    await waitTwoFrames(page);
+    expect(await page.evaluate(() => (window.dataLayer || []).filter(entry => (
+        entry?.event_name === 'filter_changed'
+    )).length)).toBe(1);
+    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+});
+
+test('selector blocked state: Refresh retries configuration once and admin action opens Scope projects', async ({ page }) => {
+    const requestLog = [];
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        requestLog,
+        selectedProjects: [],
+        savedBoardId: '',
+    });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    const initialConfigReads = requestLog.filter(({ url }) => new URL(url).pathname === '/api/config').length;
+    const initialGroupReads = requestLog.filter(({ url }) => new URL(url).pathname === '/api/groups-config').length;
+
+    const refresh = page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).first();
+    await expect(refresh).toBeEnabled();
+    await refresh.click();
+    await expect.poll(() => requestLog.filter(({ url }) => new URL(url).pathname === '/api/config').length)
+        .toBe(initialConfigReads + 1);
+    await expect.poll(() => requestLog.filter(({ url }) => new URL(url).pathname === '/api/groups-config').length)
+        .toBe(initialGroupReads + 1);
+    expect(requestLog.filter(({ url }) => new URL(url).pathname === '/api/eng/board')).toEqual([]);
+
+    await page.getByRole('button', { name: 'Select Jira projects', exact: true }).click();
+    await expect(page.getByRole('dialog').first()).toBeVisible();
+    await expect(page.locator('#admin-settings-scope-tab')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#admin-settings-scope-panel')).toBeVisible();
+});
+
+test('selector blocked state: configuration error action coordinates one retry', async ({ page }) => {
+    const requestLog = [];
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        requestLog,
+        boardCapability: null,
+        expectBoardColumns: false,
+    });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    const initialConfigReads = requestLog.filter(({ url }) => new URL(url).pathname === '/api/config').length;
+    const initialGroupReads = requestLog.filter(({ url }) => new URL(url).pathname === '/api/groups-config').length;
+    await page.getByRole('button', { name: 'Retry configuration', exact: true }).click();
+    await expect.poll(() => requestLog.filter(({ url }) => new URL(url).pathname === '/api/config').length)
+        .toBe(initialConfigReads + 1);
+    await expect.poll(() => requestLog.filter(({ url }) => new URL(url).pathname === '/api/groups-config').length)
+        .toBe(initialGroupReads + 1);
+    expect(requestLog.filter(({ url }) => new URL(url).pathname === '/api/eng/board')).toEqual([]);
+});
+
+test('selector blocked state: non-admin project setup gives administrator guidance only', async ({ page }) => {
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        selectedProjects: [],
+        savedBoardId: '',
+        userCanEditSettings: false,
+        settingsAdminOnly: true,
+    });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: 'All work', exact: true }).click();
+    const status = page.getByRole('status', { name: 'Board scope status', exact: true });
+    await expect(status).toContainText('Select Jira projects or a Jira source Board before loading this scope.');
+    await expect(status).toContainText('Ask a workspace tool administrator to configure Jira scope.');
+    await expect(status.getByRole('button', { name: 'Select Jira projects' })).toHaveCount(0);
+    await waitTwoFrames(page);
+    await page.screenshot({ path: path.join(screenshotDir, 'semantic-selector-blocked.png'), animations: 'disabled' });
+});
+
+test('selector blocked state: All work requires Department membership', async ({ page }) => {
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        groups: [{
+            id: 'grp-default',
+            name: 'Default',
+            teamIds: [],
+            missingInfoComponents: [],
+            board: { columns: BOARD_COLUMNS },
+        }],
+        expectBoardColumns: false,
+    });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: 'All work', exact: true }).click();
+    await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
+        'Add Teams or Components to this Department to use All work.'
+    );
+});
+
+test('selector blocked state: Component setup opens Department Team groups', async ({ page }) => {
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        groups: [{
+            id: 'grp-default',
+            name: 'Default',
+            teamIds: ['team-alpha'],
+            teamLabels: { 'team-alpha': 'Alpha Team' },
+            board: { columns: BOARD_COLUMNS },
+        }],
+    });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    await page.getByRole('button', { name: 'Add Components', exact: true }).click();
+
+    const dialog = page.getByRole('dialog').first();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Departments', exact: true })).toHaveClass(/active/);
+    await expect(dialog.getByRole('tab', { name: 'Team groups', exact: true })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('selector blocked state: zero Departments action opens Department Team groups', async ({ page }) => {
+    await openBoard(page, { strictBoard: true, sourceBundle: true, groups: [] });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    await page.getByRole('button', { name: 'Choose a Department', exact: true }).click();
+
+    const dialog = page.getByRole('dialog').first();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Departments', exact: true })).toHaveClass(/active/);
+    await expect(dialog.getByRole('tab', { name: 'Team groups', exact: true })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('selector compact surface: remount closes stale panel and preserves geometry and hit testing', async ({ page }) => {
+    await openBoard(page, { strictBoard: true, sourceBundle: true, width: 800, height: 420, reducedMotion: true });
+    const mainTrigger = page.locator('.view-selector').getByRole('button', { name: 'Select sprint', exact: true });
+    const mainGeometry = await mainTrigger.evaluate(node => {
+        const rect = node.getBoundingClientRect();
+        const icon = node.querySelector('svg').getBoundingClientRect();
+        return { width: rect.width, height: rect.height, iconWidth: icon.width, iconHeight: icon.height };
+    });
+    await mainTrigger.click();
+    await expect(page.getByRole('listbox', { name: 'Sprint options', exact: true })).toHaveCount(1);
+
+    await page.evaluate(() => window.scrollTo(0, 500));
+    const compactHeader = page.locator('.compact-sticky-header.is-visible');
+    await expect(compactHeader).toBeVisible();
+    await expect(page.getByRole('listbox', { name: 'Sprint options', exact: true })).toHaveCount(0);
+    const compactTrigger = compactHeader.getByRole('button', { name: 'Select sprint', exact: true });
+    const compactGeometry = await compactTrigger.evaluate(node => {
+        const rect = node.getBoundingClientRect();
+        const icon = node.querySelector('svg').getBoundingClientRect();
+        return { width: rect.width, height: rect.height, iconWidth: icon.width, iconHeight: icon.height };
+    });
+    expect(compactGeometry.height).toBeCloseTo(mainGeometry.height, 0);
+    expect(compactGeometry.iconWidth).toBeCloseTo(mainGeometry.iconWidth, 1);
+    expect(compactGeometry.iconHeight).toBeCloseTo(mainGeometry.iconHeight, 1);
+
+    await compactTrigger.click();
+    const listbox = page.getByRole('listbox', { name: 'Sprint options', exact: true });
+    await expect(listbox).toBeVisible();
+    await expect(listbox.getByRole('option')).toHaveCount(5);
+    expect(await listbox.getByRole('option').evaluateAll(options => options.every(option => (
+        option.id.startsWith('sprint-compact-option-')
+    )))).toBe(true);
+    const openGeometry = await compactHeader.locator('.sprint-dropdown').evaluate(root => {
+        const rootRect = root.getBoundingClientRect();
+        const toggle = root.querySelector('.sprint-dropdown-toggle').getBoundingClientRect();
+        const panel = root.querySelector('.sprint-dropdown-panel').getBoundingClientRect();
+        const list = root.querySelector('.sprint-dropdown-list');
+        const optionNodes = [...root.querySelectorAll('.sprint-dropdown-option')];
+        const option = optionNodes[0].getBoundingClientRect();
+        const hit = document.elementFromPoint(option.left + option.width / 2, option.top + option.height / 2);
+        return {
+            rootWidth: rootRect.width,
+            toggleWidth: toggle.width,
+            panelWidth: panel.width,
+            panelLeft: panel.left,
+            panelRight: panel.right,
+            viewportWidth: window.innerWidth,
+            listHorizontalOverflow: list.scrollWidth - list.clientWidth,
+            optionsContained: optionNodes.every(node => {
+                const rect = node.getBoundingClientRect();
+                return rect.left >= panel.left && rect.right <= panel.right;
+            }),
+            hitOption: Boolean(hit?.closest('.sprint-dropdown-option')),
+            panelZ: Number(getComputedStyle(root.querySelector('.sprint-dropdown-panel')).zIndex),
+            boardZ: Number.parseFloat(getComputedStyle(document.querySelector('.eng-board')).zIndex) || 0,
+        };
+    });
+    expect(openGeometry.panelWidth).toBeCloseTo(openGeometry.toggleWidth, 0);
+    expect(openGeometry.panelLeft).toBeGreaterThanOrEqual(0);
+    expect(openGeometry.panelRight).toBeLessThanOrEqual(openGeometry.viewportWidth);
+    expect(openGeometry.listHorizontalOverflow).toBeLessThanOrEqual(1);
+    expect(openGeometry.optionsContained).toBe(true);
+    expect(openGeometry.hitOption).toBe(true);
+    expect(openGeometry.panelZ).toBeGreaterThan(openGeometry.boardZ);
+    await page.screenshot({ path: path.join(screenshotDir, 'semantic-selector-compact.png'), animations: 'disabled' });
+});
 
 test('fallback authority endpoints mirror saved Board-only bootstrap revision and source', async ({ page }) => {
     await installBoardFixture(page, { sourceBundle: true, strictBoard: true, selectedProjects: [], savedBoardId: '42' });
@@ -408,15 +818,22 @@ for (const scopeLabel of ['Component', 'All work']) {
 }
 
 for (const profile of [
+    { name: 'no selected Department', boardCapability: true, board: { columns: BOARD_COLUMNS },
+        groups: [], component: false, allWork: false,
+        reason: 'Choose a Department to use this Board scope.' },
     { name: 'a false capability', boardCapability: false, board: { columns: BOARD_COLUMNS },
-        groups: null, component: false, allWork: false },
+        groups: null, component: false, allWork: false,
+        reason: 'Cross-sprint Board is unavailable in this environment. Choose a Sprint to continue.' },
     { name: 'a null capability', boardCapability: null, board: { columns: BOARD_COLUMNS },
-        groups: null, component: false, allWork: false },
+        groups: null, component: false, allWork: false,
+        reason: 'Board configuration could not be loaded.', expectBoardColumns: false },
     { name: 'missing Department columns', boardCapability: true, board: { columns: [] },
-        groups: null, component: false, allWork: false, expectBoardColumns: false },
+        groups: null, component: false, allWork: false, expectBoardColumns: false,
+        reason: 'Configure Board columns for this Department.' },
     { name: 'a team-only Department', boardCapability: true, board: { columns: BOARD_COLUMNS },
         groups: [{ id: 'grp-default', name: 'Default', teamIds: ['team-alpha'], teamLabels: { 'team-alpha': 'Alpha Team' },
-            board: { columns: BOARD_COLUMNS } }], component: false, allWork: true },
+            board: { columns: BOARD_COLUMNS } }], component: false, allWork: true,
+        reason: 'Add Components to this Department to use Component scope.' },
 ]) {
     test(`${profile.name} applies the strict Board scope eligibility rules`, async ({ page }) => {
         const requests = [];
@@ -425,12 +842,16 @@ for (const profile of [
             expectBoardColumns: profile.expectBoardColumns ?? true });
 
         await page.getByRole('button', { name: 'Select sprint' }).first().click();
-        const componentOption = page.getByText('Component', { exact: true }).first();
-        const allWorkOption = page.getByText('All work', { exact: true }).first();
-        await expect(componentOption).toHaveAttribute('aria-disabled', String(!profile.component));
-        await expect(allWorkOption).toHaveAttribute('aria-disabled', String(!profile.allWork));
-        if (!profile.component) await componentOption.dispatchEvent('click');
-        if (!profile.allWork) await allWorkOption.dispatchEvent('click');
+        const componentOption = page.getByRole('option', { name: 'Component', exact: true });
+        const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
+        await expect(componentOption).not.toHaveAttribute('aria-disabled');
+        await expect(allWorkOption).not.toHaveAttribute('aria-disabled');
+        const componentDescriptionId = await componentOption.getAttribute('aria-describedby');
+        const allWorkDescriptionId = await allWorkOption.getAttribute('aria-describedby');
+        await expect(page.locator(`#${componentDescriptionId}`)).toHaveText(profile.component ? 'Ready' : 'Setup needed');
+        await expect(page.locator(`#${allWorkDescriptionId}`)).toHaveText(profile.allWork ? 'Ready' : 'Setup needed');
+        await componentOption.dispatchEvent('click');
+        await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(profile.reason);
         await waitTwoFrames(page);
         expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
     });
@@ -463,8 +884,10 @@ for (const draftCase of [
         await draftCase.edit(dialog);
 
         await page.locator('.sprint-dropdown-toggle[aria-label="Select sprint"]').first().dispatchEvent('click');
-        await expect(page.getByText('Component', { exact: true }).first()).toHaveAttribute('aria-disabled', 'false');
-        await expect(page.getByText('All work', { exact: true }).first()).toHaveAttribute('aria-disabled', 'false');
+        const componentOption = page.getByRole('option', { name: 'Component', exact: true });
+        const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
+        await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+        await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
     });
 }
 
@@ -501,10 +924,22 @@ for (const draftCase of [
 
         await page.locator('.sprint-dropdown-toggle[aria-label="Select sprint"]').first().dispatchEvent('click');
         const panel = page.locator('.sprint-dropdown-panel');
-        await expect(panel.getByText('Component', { exact: true })).toHaveAttribute('aria-disabled', 'true');
-        await expect(panel.getByText('All work', { exact: true })).toHaveAttribute('aria-disabled', 'true');
-        await panel.getByText('Component', { exact: true }).dispatchEvent('click');
-        await panel.getByText('All work', { exact: true }).dispatchEvent('click');
+        const componentOption = panel.getByRole('option', { name: 'Component', exact: true });
+        await expect(componentOption).not.toHaveAttribute('aria-disabled');
+        await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Setup needed');
+        await componentOption.dispatchEvent('click');
+        await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
+            'Select Jira projects or a Jira source Board before loading this scope.'
+        );
+        await page.getByRole('button', { name: 'Select sprint', exact: true }).first().dispatchEvent('click');
+        const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
+        await expect(allWorkOption).not.toHaveAttribute('aria-disabled');
+        await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Setup needed');
+        await allWorkOption.dispatchEvent('click');
+        await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText('All work');
+        await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
+            'Select Jira projects or a Jira source Board before loading this scope.'
+        );
         await waitTwoFrames(page);
         expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
     });
@@ -542,8 +977,8 @@ test('Board adds Component and All work to the existing Sprint selector without 
 
     await sprintControl.click();
     const scopeOptions = page.locator('.sprint-dropdown-panel .sprint-dropdown-option');
-    await expect(scopeOptions.nth(0)).toHaveText('All work');
-    await expect(scopeOptions.nth(1)).toHaveText('Component');
+    await expect(scopeOptions.nth(0)).toHaveAccessibleName('All work');
+    await expect(scopeOptions.nth(1)).toHaveAccessibleName('Component');
     await expect(scopeOptions.nth(2)).toContainText('2026Q2 Sprint 41');
     await page.screenshot({ path: path.join(screenshotDir, 'three-scope-sprint-selector.png'), animations: 'disabled' });
     await scopeOptions.nth(1).click();
@@ -613,10 +1048,10 @@ test('restores a cached Sprint catalog immediately while refreshing Jira in the 
 
     releaseSprints();
     await sprintControl.click();
-    const allWorkOption = page.locator('.sprint-dropdown-panel').getByText('All work', { exact: true });
-    const componentOption = page.locator('.sprint-dropdown-panel').getByText('Component', { exact: true });
-    await expect(allWorkOption).toHaveAttribute('aria-disabled', 'false');
-    await expect(componentOption).toHaveAttribute('aria-disabled', 'false');
+    const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
+    const componentOption = page.getByRole('option', { name: 'Component', exact: true });
+    await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+    await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
     await allWorkOption.click();
     await expect.poll(() => requests.filter(path => path.includes('scope=all_work')).length).toBe(1);
 });
@@ -650,10 +1085,10 @@ test('saved Sprint Board authority stays guarded until a held sprint catalog is 
         await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
         await sprintControl.click();
         const panel = page.locator('.sprint-dropdown-panel');
-        const allWorkOption = panel.getByText('All work', { exact: true });
-        const componentOption = panel.getByText('Component', { exact: true });
-        await expect(allWorkOption).toHaveAttribute('aria-disabled', 'false');
-        await expect(componentOption).toHaveAttribute('aria-disabled', 'false');
+        const allWorkOption = panel.getByRole('option', { name: 'All work', exact: true });
+        const componentOption = panel.getByRole('option', { name: 'Component', exact: true });
+        await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+        await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
         await componentOption.click();
         await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
     } finally {
@@ -679,14 +1114,23 @@ test('completed sprint catalog does not authorize strict scopes before delayed s
         const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
         await sprintControl.click();
         const panel = page.locator('.sprint-dropdown-panel');
-        await expect(panel.getByText('All work', { exact: true })).toHaveAttribute('aria-disabled', 'true');
-        await expect(panel.getByText('Component', { exact: true })).toHaveAttribute('aria-disabled', 'true');
+        const allWorkOption = panel.getByRole('option', { name: 'All work', exact: true });
+        const componentOption = panel.getByRole('option', { name: 'Component', exact: true });
+        await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Loading configuration');
+        await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Loading configuration');
+        await componentOption.click();
+        await expect(sprintControl).toContainText('Component');
+        const boardScopeStatus = page.getByRole('status', { name: 'Board scope status', exact: true });
+        await expect(boardScopeStatus).toContainText(
+            'Loading Board configuration…'
+        );
+        await expect(boardScopeStatus.locator('[role="status"]')).toHaveCount(0);
         expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
 
         releaseConfig();
         releaseConfig = null;
-        await expect(panel.getByText('All work', { exact: true })).toHaveAttribute('aria-disabled', 'false');
-        await expect(panel.getByText('Component', { exact: true })).toHaveAttribute('aria-disabled', 'false');
+        await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
     } finally {
         releaseConfig?.();
     }
@@ -912,7 +1356,8 @@ for (const strictFailure of [
         const sprintRequestCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
         await sprintControl.click();
         await page.getByText(strictFailure.label, { exact: true }).first().click();
-        await expect(page.locator('.error')).toContainText('board config invalid');
+        await expect(page.locator('.error')).toContainText('Board configuration could not be used. Review Board setup and retry.');
+        await expect(page.locator('.error')).not.toContainText('board config invalid');
         await expect(page.getByText('Loaded so far')).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(strictFailure.label);
         await page.screenshot({ path: path.join(screenshotDir, `strict-error-${strictFailure.scope}.png`), animations: 'disabled' });

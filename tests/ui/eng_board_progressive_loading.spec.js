@@ -316,8 +316,16 @@ async function openScenario(page, server, scenario, { sourceRoot = repoRoot, rev
     await expect(sprint).toContainText(selectedSprintName);
     await sprint.click();
     const scopeName = scenario === 'team_parent_lookup_2' ? 'All work' : 'Component';
-    const option = page.locator('.sprint-dropdown-option').filter({ hasText: new RegExp(`^${scopeName}$`) });
-    await expect(option).toHaveAttribute('aria-disabled', 'false');
+    const isHistoricalSelector = revision === baselineRevision;
+    const option = isHistoricalSelector
+        ? page.locator('.sprint-dropdown-option').filter({ hasText: new RegExp(`^${scopeName}$`) })
+        : page.getByRole('option', { name: scopeName, exact: true });
+    if (isHistoricalSelector) {
+        await expect(option).toHaveAttribute('aria-disabled', 'false');
+    } else {
+        await expect(option).not.toHaveAttribute('aria-disabled');
+        await expect(page.locator(`#${await option.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+    }
     const requestPromise = page.waitForRequest(request => isCampaignBoardUrl(request.url()));
     const requestStartMs = await page.evaluate(() => performance.now());
     await option.click();
@@ -561,8 +569,9 @@ test('diagnoses strict Component owner activation and Board request routing', as
         const sprint = page.getByRole('button', { name: 'Select sprint' }).first();
         await expect(sprint).toContainText(selectedSprintName);
         await sprint.click();
-        const component = page.locator('.sprint-dropdown-option').filter({ hasText: /^Component$/ });
-        await expect(component).toHaveAttribute('aria-disabled', 'false');
+        const component = page.getByRole('option', { name: 'Component', exact: true });
+        await expect(component).not.toHaveAttribute('aria-disabled');
+        await expect(page.locator(`#${await component.getAttribute('aria-describedby')}`)).toHaveText('Ready');
         await component.click();
         await expect(sprint).toContainText('Component');
         await expect.poll(() => browserRequests.some(url => url.includes('/api/eng/board?'))).toBe(true);

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
@@ -19,10 +20,19 @@ const administratorConfigPaths = new Set([
 ]);
 
 let fixture;
+let sourceDashboardJs;
 
 test.beforeAll(async () => {
     fs.mkdirSync(screenshotDir, { recursive: true });
     fixture = await import('../fixtures/groupBoardReference.mjs');
+    sourceDashboardJs = esbuild.buildSync({
+        entryPoints: [path.join(__dirname, '..', '..', 'frontend', 'src', 'dashboard.jsx')],
+        bundle: true,
+        write: false,
+        format: 'iife',
+        loader: { '.css': 'empty' },
+        define: { 'process.env.NODE_ENV': '"test"' },
+    }).outputFiles[0].text;
 });
 
 function requestBody(request) {
@@ -86,6 +96,7 @@ function conflictingServerConfig() {
 }
 
 async function mockConfigSettings(page, {
+    sourceBundle = false,
     groupsConfig = baseGroupsConfig(),
     conflictCurrents = [],
     failGroupsSaveOnce = null,
@@ -103,6 +114,8 @@ async function mockConfigSettings(page, {
     epmLoadGate = null,
     workspaceLoadGate = null,
     workspaceLoadResponse = null,
+    fallbackSectionLoadGate = null,
+    fallbackSectionResponses = {},
     configRetryAuthRequired = false,
     failFirstGroupsConnection = false,
     keepServerConnectionError = false,
@@ -137,6 +150,13 @@ async function mockConfigSettings(page, {
     };
 
     await installDashboardShell(page);
+    if (sourceBundle) {
+        await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
+            status: 200,
+            contentType: 'application/javascript',
+            body: sourceDashboardJs,
+        }));
+    }
     await page.addInitScript(() => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
             selectedView: 'eng',
@@ -280,7 +300,8 @@ async function mockConfigSettings(page, {
                 return route.abort('connectionrefused');
             }
             if (keepServerConnectionError) return json({ error: 'unavailable' }, 500);
-            return json({ selected: [{ key: 'DEMO', type: 'product' }] });
+            if (fallbackSectionLoadGate) await fallbackSectionLoadGate.promise;
+            return json(fallbackSectionResponses[url.pathname] || { selected: [{ key: 'DEMO', type: 'product' }] });
         }
         if (url.pathname === '/api/projects') return json({ projects: [{ key: 'DEMO', name: 'Demo' }, { key: 'EXTRA', name: 'Extra' }] });
         if (url.pathname === '/api/fields') {
@@ -298,19 +319,32 @@ async function mockConfigSettings(page, {
                 scoped: false,
             });
         }
-        if (url.pathname === '/api/board-config') return json({ boardId: fixture.REFERENCE_BOARD_ID, boardName: 'Synthetic Board' });
+        if (url.pathname === '/api/board-config') {
+            if (fallbackSectionLoadGate) await fallbackSectionLoadGate.promise;
+            return json(fallbackSectionResponses[url.pathname] || { boardId: fixture.REFERENCE_BOARD_ID, boardName: 'Synthetic Board' });
+        }
         if (url.pathname === '/api/board-config/statuses') return json(fixture.referenceStatusesResponse());
         if (url.pathname === '/api/stats/priority-weights-config') {
             if (keepServerConnectionError) return json({ error: 'unavailable' }, 500);
-            return json({ weights: priorityWeights });
+            if (fallbackSectionLoadGate) await fallbackSectionLoadGate.promise;
+            return json(fallbackSectionResponses[url.pathname] || { weights: priorityWeights });
         }
-        if (url.pathname === '/api/capacity/config') return json(capacityConfig);
-        if (url.pathname === '/api/sprint-field/config') return json({ fieldId: 'customfield_10020', fieldName: 'Sprint' });
-        if (url.pathname === '/api/parent-name-field/config') return json({ fieldId: 'customfield_10021', fieldName: 'Parent Link' });
-        if (url.pathname === '/api/story-points-field/config') return json({ fieldId: 'customfield_10022', fieldName: 'Story points' });
-        if (url.pathname === '/api/team-field/config') return json({ fieldId: 'customfield_10023', fieldName: 'Team' });
-        if (url.pathname === '/api/delivery-owner-field/config') return json(deliveryOwnerFieldConfig);
-        if (url.pathname === '/api/issue-types/config') return json({ issueTypes: ['Story'] });
+        if (url.pathname === '/api/capacity/config') {
+            if (fallbackSectionLoadGate) await fallbackSectionLoadGate.promise;
+            return json(fallbackSectionResponses[url.pathname] || capacityConfig);
+        }
+        if (administratorConfigPaths.has(url.pathname)) {
+            if (fallbackSectionLoadGate) await fallbackSectionLoadGate.promise;
+            const defaults = {
+                '/api/sprint-field/config': { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+                '/api/parent-name-field/config': { fieldId: 'customfield_10021', fieldName: 'Parent Link' },
+                '/api/story-points-field/config': { fieldId: 'customfield_10022', fieldName: 'Story points' },
+                '/api/team-field/config': { fieldId: 'customfield_10023', fieldName: 'Team' },
+                '/api/delivery-owner-field/config': deliveryOwnerFieldConfig,
+                '/api/issue-types/config': { issueTypes: ['Story'] },
+            };
+            return json(fallbackSectionResponses[url.pathname] || defaults[url.pathname] || {});
+        }
         return json({});
     });
 
@@ -538,6 +572,79 @@ test('Use latest replaces workspace drafts without touching a dirty private EPM 
     await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeEnabled();
     expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/config')).toHaveLength(2);
     expect(workspacePosts(calls, '/api/epm/config')).toHaveLength(0);
+});
+
+test('fallback completion recomputes aggregate Save eligibility from accepted remote baselines', async ({ page }) => {
+    const workspaceLoadGate = deferred();
+    const fallbackSectionLoadGate = deferred();
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
+        workspaceSnapshots: [sharedWorkspaceSnapshot()],
+        workspaceLoadGate,
+        workspaceLoadResponse: {
+            body: {
+                jiraUrl: 'https://jira.example',
+                authMode: 'atlassian_oauth',
+                projectsConfigured: true,
+                settingsAdminOnly: false,
+                userCanEditSettings: true,
+                userCanEditEpmConfig: true,
+                boardAllWorkAvailable: true,
+            },
+        },
+        fallbackSectionLoadGate,
+        fallbackSectionResponses: {
+            '/api/projects/selected': {
+                selected: [{ key: 'DEMO', type: 'product' }, { key: 'EXTRA', type: 'product' }],
+            },
+            '/api/board-config': { boardId: '9', boardName: 'Remote Board' },
+            '/api/sprint-field/config': { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+        },
+        workspaceSaveResponses: {
+            '/api/board-config': [{ status: 409, body: {
+                error: 'workspace_config_conflict',
+                message: 'Shared settings changed while you were editing. Your changes are still unsaved.',
+                currentRevision: 5,
+                current: { section: 'board', value: { boardId: '9', boardName: 'Remote Board' }, configRevision: 5 },
+            } }],
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Jira source' }).click();
+    await dialog.getByRole('button', { name: 'Clear sprint board' }).click();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    const banner = dialog.locator('.group-modal-validation');
+    await expect(banner.getByRole('button', { name: 'Use latest' })).toBeVisible();
+    await banner.getByRole('button', { name: 'Use latest' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/config').length).toBe(2);
+
+    await dialog.getByRole('button', { name: 'Remove sprint field' }).click();
+    await dialog.getByPlaceholder('Search fields...').fill('Sprint (new)');
+    await dialog.locator('.team-search-result-item', { hasText: 'Sprint (new)' }).click();
+    await dialog.getByRole('tab', { name: 'Scope projects' }).click();
+    await dialog.getByPlaceholder('Search projects to add...').fill('EXTRA');
+    await dialog.locator('.team-search-result-item', { hasText: 'EXTRA' }).getByRole('button', { name: 'Product' }).click();
+
+    workspaceLoadGate.resolve();
+    await expect.poll(() => calls.filter(call => (
+        call.method === 'GET' && administratorConfigPaths.has(call.pathname)
+    )).length).toBe(administratorConfigPaths.size);
+    const fallbackResponses = Promise.all([...administratorConfigPaths].map(pathname => page.waitForResponse(response => (
+        response.request().method() === 'GET' && new URL(response.url()).pathname === pathname
+    ))));
+    fallbackSectionLoadGate.resolve();
+    await fallbackResponses;
+
+    await expect(dialog.locator('.group-modal-dirty')).toHaveText('Unsaved changes · 2');
+    await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeEnabled();
+    await expect(dialog.locator('#admin-settings-scope-panel')).toContainText('EXTRA');
+    await dialog.getByRole('tab', { name: 'Jira source' }).click();
+    await expect(dialog.locator('#admin-settings-source-panel')).toContainText('Sprint (new)');
+    await expect(dialog.locator('#admin-settings-source-panel')).toContainText('No board selected');
 });
 
 for (const workspaceResult of [

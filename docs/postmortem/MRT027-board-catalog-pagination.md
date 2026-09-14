@@ -106,7 +106,7 @@ The existing control and data owner are part of the product contract. “Make sp
 - Apply membership ceilings to validated admitted entities, not unresolved relationship candidates, and test the filtered-success case above the raw-candidate count.
 - Join the production stream to the real owner and DOM with held response gates; parser-only or browser-injected fixtures do not prove pager-to-card delivery.
 - Reserve a valid terminal before emitting optional cumulative frames, and test the exact byte boundary through writer, parser and owner.
-- Model cross-sprint fixtures with the same persisted authority as production: strict capability, Department Board columns, a settled Sprint catalog, and either saved Jira selected projects or a saved Jira source Board. Assert missing authority disables Component and All work without disabling or refetching ordinary Sprint Board.
+- Model cross-sprint fixtures with the same persisted authority as production: strict capability, Department Board columns, a settled Sprint catalog, and either saved Jira selected projects or a saved Jira source Board. The 2026-09-14 selector correction supersedes the earlier disabled/no-op prevention rule: missing authority must still block every strict request, but Component and All work remain selectable and show the explicit setup state without revealing or refetching ordinary Sprint Board.
 - Keep operational observation validators, persistence, and report filters aligned with every emitted Board scope. Test Component and All work with a null Sprint through validation, committed storage, HTTP ingestion, and filtered retrieval; never fabricate the saved Sprint for a cross-sprint sample.
 
 ## Action items

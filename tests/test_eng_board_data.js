@@ -258,6 +258,38 @@ test('late frames from an old request or generation cannot publish into the acti
     assert.deepEqual(unchanged.working.epicsByKey, {});
 });
 
+test('selector scheduling: accepted string revision retires old generation', async () => {
+    const mod = loadModule();
+    const streams = [];
+    const owner = mod.createEngBoardDataOwner({
+        streamBoard: options => new Promise(resolve => streams.push({ options, resolve })),
+    });
+    const firstRevision = '{"workspace":1,"department":1,"authority":"PLAT"}';
+    const secondRevision = '{"workspace":1,"department":2,"authority":"PLAT"}';
+    owner.selectGroup('a', 42, firstRevision);
+    const first = owner.load();
+    assert.equal(owner.selectGroup('a', 42, firstRevision), false);
+    assert.equal(streams.length, 1);
+    assert.equal(streams[0].options.signal.aborted, false);
+
+    assert.equal(owner.selectGroup('a', 42, secondRevision), true);
+    assert.equal(streams[0].options.signal.aborted, true);
+    const second = owner.load();
+    streams[0].options.onFrame(start('old'));
+    streams[0].options.onFrame(frame('old', 1, 'index', {
+        epics: [epic('OLD-1')], membership: 'authoritative',
+    }));
+    streams[1].options.onFrame(start('new'));
+    streams[1].options.onFrame(frame('new', 1, 'index', {
+        epics: [epic('NEW-1')], membership: 'authoritative',
+    }));
+    assert.deepEqual(Object.keys(owner.getState().working.epicsByKey), ['NEW-1']);
+
+    streams[0].resolve();
+    streams[1].resolve();
+    await Promise.all([first, second]);
+});
+
 test('index Epics must reference a column declared by start', async t => {
     const mod = loadModule();
     for (const membership of ['candidate', 'authoritative']) {

@@ -505,6 +505,7 @@ import {
             const [boardGroupsReadFailed, setBoardGroupsReadFailed] = useState(false);
             const acceptedGroupsConfigRef = useRef(false);
             const groupsReadGenerationRef = useRef(0);
+            const groupsSaveReadFenceRef = useRef(0);
             const [groupWarnings, setGroupWarnings] = useState([]);
             const [groupConfigSource, setGroupConfigSource] = useState('');
             const [boardView, setBoardView] = useState(null);
@@ -537,6 +538,8 @@ import {
             const [sharedConfigReady, setSharedConfigReady] = useState(false);
             const acceptedBoardConfigRef = useRef(false);
             const boardConfigReadGenerationRef = useRef(0);
+            const boardConfigSaveReadFenceRef = useRef(0);
+            const settingsSaveReadFenceSequenceRef = useRef(0);
             const settingsDraftSnapshotRef = useRef({});
             const [groupImportText, setGroupImportText] = useState('');
             const [showGroupImport, setShowGroupImport] = useState(false);
@@ -2518,9 +2521,14 @@ import {
             };
 
             const loadGroupsConfig = async () => {
-                const readGeneration = groupsReadGenerationRef.current + 1;
-                groupsReadGenerationRef.current = readGeneration;
-                const shouldApplyResult = () => groupsReadGenerationRef.current === readGeneration;
+                const saveReadFence = groupsSaveReadFenceRef.current;
+                const readGeneration = saveReadFence
+                    ? groupsReadGenerationRef.current
+                    : groupsReadGenerationRef.current + 1;
+                if (!saveReadFence) groupsReadGenerationRef.current = readGeneration;
+                const shouldApplyResult = () => saveReadFence === 0
+                    && groupsSaveReadFenceRef.current === 0
+                    && groupsReadGenerationRef.current === readGeneration;
                 setGroupsLoading(true);
                 setGroupsError('');
                 try {
@@ -3668,6 +3676,31 @@ import {
                     trackSettingsAction(groupManageTab, 'save_result', { result: 'failure', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
                     return buildSettingsSaveOutcome({ pendingSections, pendingAdminSections: adminSectionsToSave, error: groupConfigValidationErrors[0] });
                 }
+                const fencesBoardConfigReads = boardAffectingAdminSave || sharedGroupsChanged;
+                const fencesGroupReads = sharedGroupsChanged;
+                const saveReadFence = fencesBoardConfigReads || fencesGroupReads
+                    ? settingsSaveReadFenceSequenceRef.current + 1
+                    : 0;
+                if (saveReadFence) settingsSaveReadFenceSequenceRef.current = saveReadFence;
+                if (fencesBoardConfigReads) {
+                    boardConfigReadGenerationRef.current += 1;
+                    boardConfigSaveReadFenceRef.current = saveReadFence;
+                }
+                if (fencesGroupReads) {
+                    groupsReadGenerationRef.current += 1;
+                    groupsSaveReadFenceRef.current = saveReadFence;
+                }
+                const clearSaveReadFence = () => {
+                    if (!saveReadFence) return;
+                    if (boardConfigSaveReadFenceRef.current === saveReadFence) {
+                        boardConfigSaveReadFenceRef.current = 0;
+                        setSharedConfigReady(true);
+                    }
+                    if (groupsSaveReadFenceRef.current === saveReadFence) {
+                        groupsSaveReadFenceRef.current = 0;
+                        setGroupsLoading(false);
+                    }
+                };
                 setGroupSaving(true);
                 setGroupDraftError('');
                 setGroupsConfigConflict(null);
@@ -3843,12 +3876,15 @@ import {
                         // First-run waits for the private handoff so retries never refetch committed sections.
                         const boardConfigReadGeneration = boardConfigReadGenerationRef.current + 1;
                         boardConfigReadGenerationRef.current = boardConfigReadGeneration;
-                        const shouldApplyBoardConfigRead = () => boardConfigReadGenerationRef.current === boardConfigReadGeneration;
+                        const expectedSaveReadFence = fencesBoardConfigReads ? saveReadFence : 0;
+                        const shouldApplyBoardConfigRead = () => boardConfigReadGenerationRef.current === boardConfigReadGeneration
+                            && boardConfigSaveReadFenceRef.current === expectedSaveReadFence;
                         if (acceptedBoardConfigurationChanged) acceptedBoardConfigRef.current = false;
                         setBoardBootstrapStatus('loading');
                         try {
                             const cfg = await fetchAppConfig(BACKEND_URL);
                             if (shouldApplyBoardConfigRead()) {
+                                clearSaveReadFence();
                                 setAuthMode(cfg.authMode || '');
                                 setCapacityEnabled(Boolean(cfg.capacityProject || cfg.capacityConfigRequiresResolution));
                                 setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
@@ -3862,6 +3898,7 @@ import {
                             }
                         } catch (err) {
                             if (shouldApplyBoardConfigRead()) {
+                                clearSaveReadFence();
                                 acceptedBoardConfigRef.current = false;
                                 setBoardBootstrapStatus('error');
                             }
@@ -3895,6 +3932,7 @@ import {
                         pendingAdminSections: {},
                     });
                 } catch (err) {
+                    clearSaveReadFence();
                     if (!firstRunConfigurationActive && boardAffectingAdminSave) {
                         setBoardBootstrapStatus('error');
                     }
@@ -3962,6 +4000,7 @@ import {
                         error: err.message || 'Failed to save groups.',
                     });
                 } finally {
+                    clearSaveReadFence();
                     setGroupPreferencesSaving(false);
                     setGroupSaving(false);
                 }
@@ -4242,7 +4281,7 @@ import {
             const useLatestWorkspaceConfig = async () => {
                 setWorkspaceConfigConflict(null);
                 setGroupDraftError('');
-                await loadConfig({ preserveEpmDraft: isEpmConfigDirty });
+                await loadConfig({ preserveEpmDraft: isEpmConfigDirty, replaceWorkspaceDrafts: true });
                 if (firstRunConfigurationActive) returnFromFirstRunConfigurationRecovery();
             };
 
@@ -4763,7 +4802,10 @@ import {
                 readGeneration = boardConfigReadGenerationRef.current,
                 preserveDraft = isProjectsDraftDirty,
             } = {}) => {
-                const shouldApplyResult = () => boardConfigReadGenerationRef.current === readGeneration;
+                const saveReadFence = boardConfigSaveReadFenceRef.current;
+                const shouldApplyResult = () => saveReadFence === 0
+                    && boardConfigSaveReadFenceRef.current === 0
+                    && boardConfigReadGenerationRef.current === readGeneration;
                 const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
                 try {
                     const response = await requestSelectedProjects(BACKEND_URL);
@@ -4790,7 +4832,10 @@ import {
                 readGeneration = boardConfigReadGenerationRef.current,
                 preserveDraft = isBoardConfigDirty,
             } = {}) => {
-                const shouldApplyResult = () => boardConfigReadGenerationRef.current === readGeneration;
+                const saveReadFence = boardConfigSaveReadFenceRef.current;
+                const shouldApplyResult = () => saveReadFence === 0
+                    && boardConfigSaveReadFenceRef.current === 0
+                    && boardConfigReadGenerationRef.current === readGeneration;
                 const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
                 try {
                     const response = await requestBoardConfig(BACKEND_URL);
@@ -6668,10 +6713,15 @@ import {
                 updateDismissedHash
             ]);
 
-            const loadConfig = async ({ preserveEpmDraft = false } = {}) => {
-                const readGeneration = boardConfigReadGenerationRef.current + 1;
-                boardConfigReadGenerationRef.current = readGeneration;
-                const shouldApplyResult = () => boardConfigReadGenerationRef.current === readGeneration;
+            const loadConfig = async ({ preserveEpmDraft = false, replaceWorkspaceDrafts = false } = {}) => {
+                const saveReadFence = boardConfigSaveReadFenceRef.current;
+                const readGeneration = saveReadFence
+                    ? boardConfigReadGenerationRef.current
+                    : boardConfigReadGenerationRef.current + 1;
+                if (!saveReadFence) boardConfigReadGenerationRef.current = readGeneration;
+                const shouldApplyResult = () => saveReadFence === 0
+                    && boardConfigSaveReadFenceRef.current === 0
+                    && boardConfigReadGenerationRef.current === readGeneration;
                 const epmRequestGeneration = epmConfigDraftGenerationRef.current;
                 const shouldPreserveEpmDraft = () => preserveEpmDraft
                     || epmConfigDraftGenerationRef.current !== epmRequestGeneration;
@@ -6688,7 +6738,10 @@ import {
                     teamField: isTeamFieldDirty,
                     deliveryOwnerField: isDeliveryOwnerFieldDirty,
                 };
-                const shouldPreserveSettingsDraft = section => initiallyDirtyDrafts[section]
+                const shouldPreserveSettingsDraft = section => !replaceWorkspaceDrafts && (
+                    initiallyDirtyDrafts[section] || draftReadGuard.draftChanged(section)
+                );
+                const shouldPreserveFallbackDraft = section => initiallyDirtyDrafts[section]
                     || draftReadGuard.draftChanged(section);
                 setSharedConfigReady(false);
                 setBoardBootstrapStatus('loading');
@@ -6787,13 +6840,13 @@ import {
                         setBoardBootstrapStatus('ready');
                     } else {
                         if (!shouldPreserveEpmDraft()) applySavedEpmConfig(config.viewConfig?.view?.epm || config.epm);
-                        const authorityLoads = [loadSelectedProjects({ readGeneration, preserveDraft: shouldPreserveSettingsDraft('projects') })];
+                        const authorityLoads = [loadSelectedProjects({ readGeneration, preserveDraft: shouldPreserveFallbackDraft('projects') })];
                         const fallbackConfigLoads = [];
                         if (!shouldPreserveSettingsDraft('priorityWeights')) fallbackConfigLoads.push(loadPriorityWeightsConfig({
                             shouldApplyDraft: () => shouldApplyResult() && !shouldPreserveSettingsDraft('priorityWeights'),
                         }));
                         if (config.authMode === 'atlassian_oauth') {
-                            authorityLoads.push(loadBoardConfig({ readGeneration, preserveDraft: shouldPreserveSettingsDraft('board') }));
+                            authorityLoads.push(loadBoardConfig({ readGeneration, preserveDraft: shouldPreserveFallbackDraft('board') }));
                             if (!shouldPreserveSettingsDraft('capacity')) fallbackConfigLoads.push(loadCapacityConfig({
                                 authMode: config.authMode,
                                 shouldApplyDraft: () => shouldApplyResult() && !shouldPreserveSettingsDraft('capacity'),

@@ -706,7 +706,7 @@ test('private EPM bootstrap and save state are independent from shared administr
     assert.ok(!workspaceConflictSource.includes('epm:'), 'Workspace conflict pending sections must exclude private EPM state');
 
     assert.ok(
-        dashboardSource.includes('await loadConfig({ preserveEpmDraft: isEpmConfigDirty });'),
+        dashboardSource.includes('await loadConfig({ preserveEpmDraft: isEpmConfigDirty, replaceWorkspaceDrafts: true });'),
         'Use latest must preserve a dirty private EPM draft and baseline'
     );
     assert.ok(

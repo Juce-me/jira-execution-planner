@@ -1830,6 +1830,12 @@ import {
             const selectOrdinarySprint = (sprint, boardScopeControl) => {
                 const sameOrdinarySelection = !boardStrictScope
                     && String(selectedSprint) === String(sprint.id);
+                const projectTrackSprintId = showStats && statsView === 'projectTrack'
+                    ? String(sprint.id)
+                    : '';
+                const projectTrackRangeMatches = projectTrackSprintId
+                    && String(excludedCapacityStartSprintId) === projectTrackSprintId
+                    && String(excludedCapacityEndSprintId) === projectTrackSprintId;
                 if (!sameOrdinarySelection) {
                     const state = (sprint.state || '').toLowerCase();
                     trackFilterChanged('sprint', {
@@ -1843,6 +1849,12 @@ import {
                     } : null;
                     setSelectedSprint(sprint.id);
                     setSprintName(sprint.name);
+                }
+                if (projectTrackSprintId && (!sameOrdinarySelection || !projectTrackRangeMatches)) {
+                    excludedCapacityForceRefreshRef.current = true;
+                    setExcludedCapacityStartSprintId(projectTrackSprintId);
+                    setExcludedCapacityEndSprintId(projectTrackSprintId);
+                    setExcludedCapacityRefreshNonce(previous => previous + 1);
                 }
                 if (boardScopeControl) setBoardStrictScope('');
                 closeSprintSelector({ restoreFocus: true });

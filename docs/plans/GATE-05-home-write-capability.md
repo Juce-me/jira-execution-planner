@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-09-13. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-09-14. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,9 +15,9 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-09-13 |
-| Last result | Not run — the persistent Sprint/Team catalog plan review found 0 of 4 Home-write probe inputs in the process environment; no approved disposable target or mutation authorization was supplied. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. |
-| Next review | 2026-09-14 (Europe/Berlin) |
+| Checked on | 2026-09-14 |
+| Last result | Not run — the ENG Board selector execution found 0 of 4 Home-write probe inputs in the process environment; no approved disposable target or mutation authorization was supplied. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. |
+| Next review | 2026-09-21 (Europe/Berlin) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -130,6 +130,10 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-09-14: The ENG Board selector execution found none of the four required
+  Home-write probe inputs and no approved disposable Home project. No mutation probe ran;
+  this frontend read-path change adds no Home/Townsquare write route or mutation. Keep blocked
+  with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-12: The ENG Board progressive-loading execution found none of the four required
   Home-write probe inputs and no approved disposable Home project. No mutation probe ran;
   this Board read-path change adds no Home/Townsquare write route or mutation. Keep blocked

@@ -134,7 +134,11 @@ async function installBoardFixture(page, {
         const request = route.request();
         const url = new URL(request.url());
         requestUrls?.push(`${url.pathname}${url.search}`);
-        requestLog?.push({ url: request.url(), method: request.method() });
+        requestLog?.push({
+            url: request.url(),
+            method: request.method(),
+            body: request.postDataJSON?.() ?? null,
+        });
         requests?.push(url.pathname === '/api/eng/board' ? `${url.pathname}${url.search}` : url.pathname);
         const json = (body, status = 200) => route.fulfill({
             status,
@@ -373,6 +377,7 @@ async function openBoard(page, {
     boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
     analyticsEnabled,
     userCanEditSettings, settingsAdminOnly,
+    initialPrefs = {},
     expectBoardColumns = true,
 } = {}) {
     if (reducedMotion) await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -421,12 +426,54 @@ async function openBoard(page, {
         showPlanning: false,
         showScenario: false,
         showAlertsPanel: false,
+        ...initialPrefs,
     });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     if (expectBoardColumns) {
         await page.waitForSelector('.eng-board .col', { timeout: 10000 });
         await settle(page);
     }
+}
+
+const statsSourceRequests = (requestLog) => requestLog.filter(({ url, method }) => (
+    method === 'POST' && new URL(url).pathname === '/api/stats/excluded-capacity-source'
+));
+
+const ordinarySprintRequests = (requestLog, sprintId) => requestLog.filter(({ url, method }) => {
+    const parsed = new URL(url);
+    return method === 'GET'
+        && parsed.pathname === '/api/tasks-with-team-name'
+        && parsed.searchParams.get('sprint') === String(sprintId);
+});
+
+async function expectOneStatsSprintReload(requestLog, sprintId, countBefore, { refresh = false } = {}) {
+    await expect.poll(() => statsSourceRequests(requestLog).length).toBe(countBefore + 1);
+    const newRequests = statsSourceRequests(requestLog).slice(countBefore);
+    expect(newRequests).toHaveLength(1);
+    expect(newRequests[0].body).toEqual({
+        sprintIds: [String(sprintId)],
+        teamIds: ['team-alpha'],
+        ...(refresh ? { refresh: true } : {}),
+    });
+}
+
+async function expectLockedSelectorInteractionBlocked(page, trigger) {
+    const lockedApp = page.locator('#root > div[aria-hidden="true"]');
+    await expect(lockedApp).toHaveCount(1);
+    await expect(trigger).toHaveCount(0);
+    const mountedTrigger = page.locator('.sprint-dropdown-toggle').first();
+    const pointerError = await mountedTrigger.click({ timeout: 500 }).then(
+        () => '',
+        error => String(error?.message || error),
+    );
+    expect(pointerError).toMatch(/intercepts pointer events/i);
+    const signIn = page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' });
+    await expect(signIn).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(signIn).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(signIn).toBeFocused();
+    await expect(page.getByRole('listbox', { name: 'Sprint options', exact: true })).toHaveCount(0);
 }
 
 const waitTwoFrames = page => page.evaluate(() => new Promise(resolve => (
@@ -639,18 +686,35 @@ test('selector keyboard: All work', async ({ page }) => {
     expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toEqual([]);
 });
 
-for (const modeName of ['Catch Up', 'Planning', 'Board', 'Statistics', 'Scenario']) {
-    test(`selector modes: ${modeName} supports pointer and keyboard Sprint selection`, async ({ page }) => {
+for (const modeProfile of [
+    { name: 'Catch Up', source: 'tasks' },
+    { name: 'Planning', source: 'tasks' },
+    { name: 'Board', source: 'tasks' },
+    { name: 'Statistics', source: 'stats', initialPrefs: { statsView: 'projectTrack' } },
+    { name: 'Scenario', source: 'tasks' },
+]) {
+    test(`selector modes: ${modeProfile.name} supports pointer and keyboard Sprint selection`, async ({ page }) => {
         const requestLog = [];
         const sprints = [
             { id: selectedSprintId, name: selectedSprintName, state: 'active' },
             { id: 34624, name: '2026Q2 Sprint 41', state: 'active' },
             { id: 34626, name: '2026Q3 Sprint 43', state: 'active' },
         ];
-        await openBoard(page, { strictBoard: true, sourceBundle: true, requestLog, sprints });
-        if (modeName !== 'Board') {
+        await openBoard(page, {
+            strictBoard: true,
+            sourceBundle: true,
+            requestLog,
+            sprints,
+            initialPrefs: modeProfile.initialPrefs,
+        });
+        if (modeProfile.name !== 'Board') {
             await page.getByRole('radiogroup', { name: 'ENG view mode' })
-                .getByRole('radio', { name: modeName, exact: true }).click();
+                .getByRole('radio', { name: modeProfile.name, exact: true }).click();
+        }
+        await expect(page.getByRole('radiogroup', { name: 'ENG view mode' })
+            .getByRole('radio', { name: modeProfile.name, exact: true })).toHaveAttribute('aria-checked', 'true');
+        if (modeProfile.source === 'stats') {
+            await expectOneStatsSprintReload(requestLog, selectedSprintId, 0);
         }
 
         const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
@@ -660,12 +724,17 @@ for (const modeName of ['Catch Up', 'Planning', 'Board', 'Statistics', 'Scenario
         await pointerOption.click();
         await expect(trigger).toContainText('2026Q2 Sprint 41');
         await expect(trigger).toBeFocused();
-        await expect.poll(() => requestLog.some(({ url, method }) => {
-            const parsed = new URL(url);
-            return method === 'GET'
-                && parsed.pathname === '/api/tasks-with-team-name'
-                && parsed.searchParams.get('sprint') === '34624';
-        })).toBe(true);
+        if (modeProfile.source === 'stats') {
+            await expectOneStatsSprintReload(requestLog, 34624, 1, { refresh: true });
+            expect(ordinarySprintRequests(requestLog, 34624)).toEqual([]);
+        } else {
+            await expect.poll(() => requestLog.some(({ url, method }) => {
+                const parsed = new URL(url);
+                return method === 'GET'
+                    && parsed.pathname === '/api/tasks-with-team-name'
+                    && parsed.searchParams.get('sprint') === '34624';
+            })).toBe(true);
+        }
 
         await trigger.focus();
         await page.keyboard.press('Enter');
@@ -676,16 +745,260 @@ for (const modeName of ['Catch Up', 'Planning', 'Board', 'Statistics', 'Scenario
         await page.keyboard.press('Enter');
         await expect(trigger).toContainText('2026Q3 Sprint 43');
         await expect(trigger).toBeFocused();
-        await expect.poll(() => requestLog.some(({ url, method }) => {
-            const parsed = new URL(url);
-            return method === 'GET'
-                && parsed.pathname === '/api/tasks-with-team-name'
-                && parsed.searchParams.get('sprint') === '34626';
-        })).toBe(true);
+        if (modeProfile.source === 'stats') {
+            await expectOneStatsSprintReload(requestLog, 34626, 2, { refresh: true });
+            expect(ordinarySprintRequests(requestLog, 34626)).toEqual([]);
+        } else {
+            await expect.poll(() => requestLog.some(({ url, method }) => {
+                const parsed = new URL(url);
+                return method === 'GET'
+                    && parsed.pathname === '/api/tasks-with-team-name'
+                    && parsed.searchParams.get('sprint') === '34626';
+            })).toBe(true);
+        }
         await expect.poll(() => page.evaluate(() => JSON.parse(
             localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'
         ).selectedSprint)).toBe(34626);
+        if (modeProfile.name === 'Scenario') {
+            expect(requestLog.filter(({ url, method }) => (
+                method !== 'GET' && new URL(url).pathname.startsWith('/api/scenario')
+            ))).toEqual([]);
+            await expect(page.getByRole('button', { name: 'Run Scenario', exact: true })).toBeVisible();
+        }
     });
+}
+
+test('selector Project Track: explicit Sprint selection bypasses prewarmed source caches', async ({ page }) => {
+    const requestLog = [];
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        requestLog,
+        analyticsEnabled: true,
+        sprints: [
+            { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+            { id: 34624, name: '2026Q2 Sprint 41', state: 'active' },
+        ],
+        initialPrefs: { statsView: 'projectTrack' },
+    });
+    await page.getByRole('radiogroup', { name: 'ENG view mode' })
+        .getByRole('radio', { name: 'Statistics', exact: true }).click();
+    await expectOneStatsSprintReload(requestLog, selectedSprintId, 0);
+
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    await trigger.click();
+    await page.getByRole('option', { name: '2026Q2 Sprint 41', exact: true }).click();
+    await expectOneStatsSprintReload(requestLog, 34624, 1, { refresh: true });
+
+    await trigger.click();
+    await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
+    await expectOneStatsSprintReload(requestLog, selectedSprintId, 2, { refresh: true });
+    await page.waitForTimeout(250);
+    expect(statsSourceRequests(requestLog)).toHaveLength(3);
+});
+
+test('selector Project Track: current Sprint repairs a divergent range once then becomes a no-op', async ({ page }) => {
+    const requestLog = [];
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        requestLog,
+        analyticsEnabled: true,
+        sprints: [
+            { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+            { id: 34624, name: '2026Q2 Sprint 41', state: 'active' },
+        ],
+        initialPrefs: {
+            statsView: 'projectTrack',
+            excludedCapacityStartSprintId: '34624',
+            excludedCapacityEndSprintId: '34624',
+        },
+    });
+    await expect.poll(() => page.evaluate(() => (window.dataLayer || []).some(entry => (
+        entry?.event_name === 'page_view'
+    )))).toBe(true);
+    await page.evaluate(() => { window.dataLayer.length = 0; });
+    await page.getByRole('radiogroup', { name: 'ENG view mode' })
+        .getByRole('radio', { name: 'Statistics', exact: true }).click();
+    await expectOneStatsSprintReload(requestLog, 34624, 0);
+
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    await trigger.click();
+    await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
+    await expectOneStatsSprintReload(requestLog, selectedSprintId, 1, { refresh: true });
+    await expect.poll(() => page.evaluate(() => {
+        const prefs = JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}');
+        return [prefs.excludedCapacityStartSprintId, prefs.excludedCapacityEndSprintId];
+    })).toEqual([String(selectedSprintId), String(selectedSprintId)]);
+    expect(await page.evaluate(() => (window.dataLayer || []).filter(entry => (
+        entry?.event_name === 'filter_changed'
+    )))).toEqual([]);
+
+    await trigger.click();
+    await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
+    await page.waitForTimeout(250);
+    expect(statsSourceRequests(requestLog)).toHaveLength(2);
+    expect(await page.evaluate(() => (window.dataLayer || []).filter(entry => (
+        entry?.event_name === 'filter_changed'
+    )))).toEqual([]);
+});
+
+test('selector modes: task-backed Statistics keeps the ordinary Sprint task source', async ({ page }) => {
+    const requestLog = [];
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        requestLog,
+        sprints: [
+            { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+            { id: 34624, name: '2026Q2 Sprint 41', state: 'active' },
+        ],
+        initialPrefs: { statsView: 'teams' },
+    });
+    await page.getByRole('radiogroup', { name: 'ENG view mode' })
+        .getByRole('radio', { name: 'Statistics', exact: true }).click();
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    await trigger.click();
+    await page.getByRole('option', { name: '2026Q2 Sprint 41', exact: true }).click();
+    await expect.poll(() => requestLog.some(({ url, method }) => {
+        const parsed = new URL(url);
+        return method === 'GET'
+            && parsed.pathname === '/api/tasks-with-team-name'
+            && parsed.searchParams.get('sprint') === '34624';
+    })).toBe(true);
+    expect(statsSourceRequests(requestLog)).toEqual([]);
+});
+
+test('selector modes: closed and future Sprint choices preserve mode eligibility', async ({ page }) => {
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        sprints: [
+            { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+            { id: 34624, name: '2026Q2 Sprint 41', state: 'closed' },
+            { id: 34626, name: '2026Q3 Sprint 43', state: 'future' },
+        ],
+    });
+    const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+
+    await trigger.click();
+    await page.getByRole('option', { name: '2026Q2 Sprint 41', exact: true }).click();
+    await expect(modes.getByRole('radio', { name: 'Planning', exact: true })).toBeDisabled();
+    await expect(modes.getByRole('radio', { name: 'Scenario', exact: true })).toBeDisabled();
+    await expect(modes.getByRole('radio', { name: 'Statistics', exact: true })).toBeEnabled();
+    await expect(modes.getByRole('radio', { name: 'Board', exact: true })).toBeEnabled();
+
+    await trigger.click();
+    await page.getByRole('option', { name: '2026Q3 Sprint 43', exact: true }).click();
+    await expect(modes.getByRole('radio', { name: 'Planning', exact: true })).toBeEnabled();
+    await expect(modes.getByRole('radio', { name: 'Scenario', exact: true })).toBeEnabled();
+    await expect(modes.getByRole('radio', { name: 'Statistics', exact: true })).toBeDisabled();
+    await expect(modes.getByRole('radio', { name: 'Board', exact: true })).toBeEnabled();
+});
+
+const selectorModePrefs = (modeName) => ({
+    showBoard: modeName === 'Board',
+    showPlanning: modeName === 'Planning',
+    showStats: modeName === 'Statistics',
+    showScenario: modeName === 'Scenario',
+    ...(modeName === 'Statistics' ? { statsView: 'projectTrack' } : {}),
+});
+
+for (const modeName of ['Catch Up', 'Planning', 'Board', 'Statistics', 'Scenario']) {
+    for (const configProfile of [
+        { name: 'is delayed', delayed: true },
+        { name: 'reports unavailable capability', boardCapability: false },
+        { name: 'fails to load', configStatus: 503 },
+    ]) {
+        test(`selector config matrix: ${modeName} remains operable when Board config ${configProfile.name}`, async ({ page }) => {
+            let releaseConfig;
+            const configResponseGate = configProfile.delayed
+                ? new Promise(resolve => { releaseConfig = resolve; })
+                : null;
+            const requestLog = [];
+            const requests = [];
+            const sprints = [
+                { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+                { id: 34624, name: '2026Q2 Sprint 41', state: 'active' },
+            ];
+            const initialPrefs = selectorModePrefs(modeName);
+
+            try {
+                if (configProfile.delayed) {
+                    await installBoardFixture(page, {
+                        strictBoard: true,
+                        sourceBundle: true,
+                        requests,
+                        requestLog,
+                        sprints,
+                        configResponseGate,
+                    });
+                    await page.addInitScript(({ initialPrefs }) => {
+                        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+                            selectedView: 'eng',
+                            selectedSprint: 34625,
+                            sprintName: '2026Q2 Sprint 42',
+                            activeGroupId: 'grp-default',
+                            showAlertsPanel: false,
+                            ...initialPrefs,
+                        }));
+                    }, { initialPrefs });
+                    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+                } else {
+                    await openBoard(page, {
+                        strictBoard: true,
+                        sourceBundle: true,
+                        requests,
+                        requestLog,
+                        sprints,
+                        boardCapability: configProfile.boardCapability,
+                        configStatus: configProfile.configStatus,
+                        initialPrefs,
+                        expectBoardColumns: modeName === 'Board',
+                    });
+                }
+
+                const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
+                const activeMode = modes.getByRole('radio', { name: modeName, exact: true });
+                if (await activeMode.getAttribute('aria-checked') !== 'true') await activeMode.click();
+                await expect(activeMode).toHaveAttribute('aria-checked', 'true');
+                if (modeName === 'Statistics') {
+                    await expectOneStatsSprintReload(requestLog, selectedSprintId, 0);
+                }
+                const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+                await expect(trigger).toBeEnabled();
+                await trigger.click();
+                await page.getByRole('option', { name: '2026Q2 Sprint 41', exact: true }).click();
+                await expect(trigger).toContainText('2026Q2 Sprint 41');
+                await expect.poll(() => page.evaluate(() => JSON.parse(
+                    localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'
+                ).selectedSprint)).toBe(34624);
+
+                if (modeName === 'Statistics') {
+                    await expectOneStatsSprintReload(requestLog, 34624, 1, { refresh: true });
+                    expect(ordinarySprintRequests(requestLog, 34624)).toEqual([]);
+                } else {
+                    await expect.poll(() => requestLog.some(({ url, method }) => {
+                        const parsed = new URL(url);
+                        return method === 'GET'
+                            && parsed.pathname === '/api/tasks-with-team-name'
+                            && parsed.searchParams.get('sprint') === '34624';
+                    })).toBe(true);
+                }
+                if (modeName === 'Board' && configProfile.delayed) {
+                    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toEqual([]);
+                }
+                if (modeName === 'Scenario') {
+                    expect(requestLog.filter(({ url, method }) => (
+                        method !== 'GET' && new URL(url).pathname.startsWith('/api/scenario')
+                    ))).toEqual([]);
+                }
+            } finally {
+                releaseConfig?.();
+            }
+        });
+    }
 }
 
 test('selector analytics: accepted Board scope emits once and search or reselect emits nothing', async ({ page }) => {
@@ -947,123 +1260,208 @@ test('fallback authority endpoints mirror saved Board-only bootstrap revision an
     });
 });
 
-for (const authority of [
-    { name: 'saved projects', selectedProjects: [{ key: 'PLAT', type: 'product' }], savedBoardId: '' },
-    { name: 'a saved Sprint Board', selectedProjects: [], savedBoardId: '42' },
-]) {
-    for (const scope of ['component', 'all_work']) {
-        test(`${authority.name} authorizes ${scope} without sending a sprint id`, async ({ page }) => {
-            const requests = [];
-            await openBoard(page, { strictBoard: true, sourceBundle: true, requests,
-                selectedProjects: authority.selectedProjects, savedBoardId: authority.savedBoardId });
+const boardAuthorityReadinessProfiles = [
+    {
+        name: 'saved projects',
+        selectedProjects: [{ key: 'PLAT', type: 'product' }],
+        savedBoardId: '',
+        component: { ready: true },
+        all_work: { ready: true },
+    },
+    {
+        name: 'saved source Board',
+        selectedProjects: [],
+        savedBoardId: '42',
+        component: { ready: true },
+        all_work: { ready: true },
+    },
+    {
+        name: 'missing authority',
+        selectedProjects: [],
+        savedBoardId: '',
+        component: { reason: 'Select Jira projects or a Jira source Board before loading this scope.' },
+        all_work: { reason: 'Select Jira projects or a Jira source Board before loading this scope.' },
+    },
+    {
+        name: 'missing Department columns',
+        board: { columns: [] },
+        expectBoardColumns: false,
+        component: { reason: 'Configure Board columns for this Department.' },
+        all_work: { reason: 'Configure Board columns for this Department.' },
+    },
+    {
+        name: 'Team-only Department',
+        groups: [{
+            id: 'grp-default',
+            name: 'Default',
+            teamIds: ['team-alpha'],
+            teamLabels: { 'team-alpha': 'Alpha Team' },
+            missingInfoComponents: [],
+            board: { columns: BOARD_COLUMNS },
+        }],
+        component: { reason: 'Add Components to this Department to use Component scope.' },
+        all_work: { ready: true },
+    },
+    {
+        name: 'Components-only Department',
+        groups: [{
+            id: 'grp-default',
+            name: 'Default',
+            teamIds: [],
+            teamLabels: {},
+            missingInfoComponents: ['Platform'],
+            board: { columns: BOARD_COLUMNS },
+        }],
+        expectBoardColumns: false,
+        component: { ready: true },
+        all_work: { ready: true },
+    },
+    {
+        name: 'Department without membership',
+        groups: [{
+            id: 'grp-default',
+            name: 'Default',
+            teamIds: [],
+            teamLabels: {},
+            missingInfoComponents: [],
+            board: { columns: BOARD_COLUMNS },
+        }],
+        expectBoardColumns: false,
+        component: { reason: 'Add Components to this Department to use Component scope.' },
+        all_work: { reason: 'Add Teams or Components to this Department to use All work.' },
+    },
+    {
+        name: 'configuration pending',
+        configPending: true,
+        component: { reason: 'Loading Board configuration…', readyAfterRelease: true },
+        all_work: { reason: 'Loading Board configuration…', readyAfterRelease: true },
+    },
+    {
+        name: 'configuration error',
+        configStatus: 503,
+        component: { reason: 'Board configuration could not be loaded.' },
+        all_work: { reason: 'Board configuration could not be loaded.' },
+    },
+    {
+        name: 'false capability',
+        boardCapability: false,
+        component: { reason: 'Cross-sprint Board is unavailable in this environment. Choose a Sprint to continue.' },
+        all_work: { reason: 'Cross-sprint Board is unavailable in this environment. Choose a Sprint to continue.' },
+    },
+    {
+        name: 'no selected Department',
+        groups: [],
+        expectBoardColumns: false,
+        component: { reason: 'Choose a Department to use this Board scope.' },
+        all_work: { reason: 'Choose a Department to use this Board scope.' },
+    },
+];
 
-            const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
-            await sprintControl.click();
-            await page.getByText(scope === 'component' ? 'Component' : 'All work', { exact: true }).first().click();
+for (const profile of boardAuthorityReadinessProfiles) {
+    for (const scopeProfile of [
+        { scope: 'component', label: 'Component' },
+        { scope: 'all_work', label: 'All work' },
+    ]) {
+        test(`selector Board matrix: ${profile.name} × ${scopeProfile.label}`, async ({ page }) => {
+            let releaseConfig;
+            const configResponseGate = profile.configPending
+                ? new Promise(resolve => { releaseConfig = resolve; })
+                : null;
+            const requestLog = [];
+            const fixtureOptions = {
+                strictBoard: true,
+                sourceBundle: true,
+                requestLog,
+                selectedProjects: profile.selectedProjects,
+                savedBoardId: profile.savedBoardId,
+                board: profile.board,
+                groups: profile.groups,
+                boardCapability: profile.boardCapability,
+                configStatus: profile.configStatus,
+                configResponseGate,
+            };
 
-            await expect.poll(() => requests.filter(path => path.includes(`scope=${scope}`)).length).toBe(1);
-            const strictRequest = requests.find(path => path.includes(`scope=${scope}`));
-            expect(new URLSearchParams(strictRequest.split('?')[1]).has('sprintId')).toBe(false);
+            try {
+                if (profile.configPending) {
+                    await installBoardFixture(page, fixtureOptions);
+                    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+                        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+                            selectedView: 'eng',
+                            selectedSprint: selectedSprintId,
+                            sprintName: selectedSprintName,
+                            activeGroupId: 'grp-default',
+                            showBoard: true,
+                            showPlanning: false,
+                            showScenario: false,
+                            showAlertsPanel: false,
+                        }));
+                    }, { selectedSprintId, selectedSprintName });
+                    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+                    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+                } else {
+                    await openBoard(page, {
+                        ...fixtureOptions,
+                        expectBoardColumns: profile.expectBoardColumns ?? true,
+                    });
+                }
+
+                const boardRequests = () => requestLog.filter(({ url, method }) => (
+                    method === 'GET' && new URL(url).pathname === '/api/eng/board'
+                ));
+                const ordinaryRequests = () => requestLog.filter(({ url, method }) => (
+                    method === 'GET' && new URL(url).pathname === '/api/tasks-with-team-name'
+                ));
+                const ordinaryCountBeforeSelection = ordinaryRequests().length;
+                const expectation = profile[scopeProfile.scope];
+                const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+                await expect(trigger).toBeEnabled();
+                await trigger.click();
+                await page.getByRole('option', { name: scopeProfile.label, exact: true }).click();
+                await expect(trigger).toHaveText(scopeProfile.label);
+
+                if (expectation.ready) {
+                    await expect.poll(() => boardRequests().length).toBe(1);
+                    const strictRequest = new URL(boardRequests()[0].url);
+                    expect(strictRequest.searchParams.get('scope')).toBe(scopeProfile.scope);
+                    expect(strictRequest.searchParams.has('sprintId')).toBe(false);
+                    const card = page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]');
+                    await expect(card).toBeVisible();
+                    await expect(card).toContainText('Strict Board epic');
+                    await expect(card).toContainText(/1 work item/i);
+                    await waitTwoFrames(page);
+                    expect(boardRequests()).toHaveLength(1);
+                    expect(ordinaryRequests()).toHaveLength(ordinaryCountBeforeSelection);
+                    return;
+                }
+
+                await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
+                    .toContainText(expectation.reason);
+                await waitTwoFrames(page);
+                expect(boardRequests()).toHaveLength(0);
+                expect(ordinaryRequests()).toHaveLength(ordinaryCountBeforeSelection);
+                await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toHaveCount(0);
+                await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toHaveCount(0);
+
+                if (expectation.readyAfterRelease) {
+                    releaseConfig();
+                    releaseConfig = null;
+                    await expect.poll(() => boardRequests().length).toBe(1);
+                    const strictRequest = new URL(boardRequests()[0].url);
+                    expect(strictRequest.searchParams.get('scope')).toBe(scopeProfile.scope);
+                    expect(strictRequest.searchParams.has('sprintId')).toBe(false);
+                    const card = page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]');
+                    await expect(card).toBeVisible();
+                    await expect(card).toContainText(/1 work item/i);
+                    await waitTwoFrames(page);
+                    expect(boardRequests()).toHaveLength(1);
+                    expect(ordinaryRequests()).toHaveLength(ordinaryCountBeforeSelection);
+                }
+            } finally {
+                releaseConfig?.();
+            }
         });
     }
 }
-
-for (const scopeLabel of ['Component', 'All work']) {
-    test(`selector regression: missing authority selects ${scopeLabel}`, async ({ page }) => {
-        const requestLog = [];
-        await openBoard(page, {
-            strictBoard: true,
-            sourceBundle: true,
-            requestLog,
-            selectedProjects: [],
-            savedBoardId: '',
-            sprints: [
-                { id: selectedSprintId + 2, name: '2027Q2', state: 'future' },
-                { id: selectedSprintId, name: '2027Q1', state: 'active' },
-                { id: selectedSprintId - 2, name: '2026Q4', state: 'closed' },
-            ],
-        });
-        const ordinaryTaskRequestsBeforeSelection = requestLog.filter(({ url, method }) => (
-            method === 'GET' && new URL(url).pathname === '/api/tasks-with-team-name'
-        ));
-        const initialLaneProjects = ordinaryTaskRequestsBeforeSelection
-            .filter(({ url }) => !new URL(url).searchParams.has('purpose'))
-            .map(({ url }) => new URL(url).searchParams.get('project'));
-        expect(initialLaneProjects).toEqual(expect.arrayContaining(['product', 'tech']));
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
-        const jiraExportButton = page.getByRole('button', { name: 'Open Jira issue menu' });
-        await expect(jiraExportButton).toBeVisible();
-        await expect(jiraExportButton).toBeEnabled();
-        await jiraExportButton.click();
-        await expect(page.getByRole('menuitem', { name: /Open stories/ })).toBeVisible();
-        await page.keyboard.press('Escape');
-
-        const sprintControl = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
-        await sprintControl.click();
-        const sprintPanel = page.locator('.sprint-dropdown-panel');
-        await expect(sprintPanel).toContainText('2027Q2');
-        await expect(sprintPanel).toContainText('2027Q1');
-        await expect(sprintPanel).toContainText('2026Q4');
-        await expect(sprintPanel.getByText(scopeLabel, { exact: true })).toBeVisible();
-        await page.getByRole('option', { name: scopeLabel, exact: true }).click();
-        await expect(sprintControl).toContainText(scopeLabel);
-        await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
-            'Select Jira projects or a Jira source Board before loading this scope.'
-        );
-        await waitTwoFrames(page);
-        expect(requestLog.filter(({ url }) => new URL(url).pathname === '/api/eng/board')).toEqual([]);
-        expect(requestLog.filter(({ url, method }) => (
-            method === 'GET' && new URL(url).pathname === '/api/tasks-with-team-name'
-        ))).toHaveLength(ordinaryTaskRequestsBeforeSelection.length);
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toHaveCount(0);
-        await expect(page.getByRole('button', { name: 'Open Jira issue menu' })).toHaveCount(0);
-        await expect(page.getByRole('menuitem', { name: /Open stories/ })).toHaveCount(0);
-        await expect.poll(() => page.evaluate(() => JSON.parse(
-            localStorage.getItem('jira_dashboard_ui_prefs_v1')
-        ).selectedSprint)).toBe(selectedSprintId);
-    });
-}
-
-for (const profile of [
-    { name: 'no selected Department', boardCapability: true, board: { columns: BOARD_COLUMNS },
-        groups: [], component: false, allWork: false,
-        reason: 'Choose a Department to use this Board scope.' },
-    { name: 'a false capability', boardCapability: false, board: { columns: BOARD_COLUMNS },
-        groups: null, component: false, allWork: false,
-        reason: 'Cross-sprint Board is unavailable in this environment. Choose a Sprint to continue.' },
-    { name: 'a null capability', boardCapability: null, board: { columns: BOARD_COLUMNS },
-        groups: null, component: false, allWork: false,
-        reason: 'Board configuration could not be loaded.', expectBoardColumns: false },
-    { name: 'missing Department columns', boardCapability: true, board: { columns: [] },
-        groups: null, component: false, allWork: false, expectBoardColumns: false,
-        reason: 'Configure Board columns for this Department.' },
-    { name: 'a team-only Department', boardCapability: true, board: { columns: BOARD_COLUMNS },
-        groups: [{ id: 'grp-default', name: 'Default', teamIds: ['team-alpha'], teamLabels: { 'team-alpha': 'Alpha Team' },
-            board: { columns: BOARD_COLUMNS } }], component: false, allWork: true,
-        reason: 'Add Components to this Department to use Component scope.' },
-]) {
-    test(`${profile.name} applies the strict Board scope eligibility rules`, async ({ page }) => {
-        const requests = [];
-        await openBoard(page, { strictBoard: true, sourceBundle: true, requests,
-            boardCapability: profile.boardCapability, board: profile.board, groups: profile.groups,
-            expectBoardColumns: profile.expectBoardColumns ?? true });
-
-        await page.getByRole('button', { name: 'Select sprint' }).first().click();
-        const componentOption = page.getByRole('option', { name: 'Component', exact: true });
-        const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
-        await expect(componentOption).not.toHaveAttribute('aria-disabled');
-        await expect(allWorkOption).not.toHaveAttribute('aria-disabled');
-        const componentDescriptionId = await componentOption.getAttribute('aria-describedby');
-        const allWorkDescriptionId = await allWorkOption.getAttribute('aria-describedby');
-        await expect(page.locator(`#${componentDescriptionId}`)).toHaveText(profile.component ? 'Ready' : 'Setup needed');
-        await expect(page.locator(`#${allWorkDescriptionId}`)).toHaveText(profile.allWork ? 'Ready' : 'Setup needed');
-        await componentOption.dispatchEvent('click');
-        await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(profile.reason);
-        await waitTwoFrames(page);
-        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
-    });
-}
-
 for (const draftCase of [
     {
         name: 'project removal', selectedProjects: [{ key: 'PLAT', type: 'product' }], savedBoardId: '',
@@ -1921,14 +2319,26 @@ for (const configFailure of [
             groupsStatus: ({ requestIndex }) => configFailure.source === 'groups' && requestIndex === 2 ? configFailure.status : 200,
             homeTokenDelayMs: 1500,
             homeTokenFailureCount: 1,
+            analyticsEnabled: configFailure.authLocked,
         });
 
         try {
             await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+            if (configFailure.authLocked) {
+                await expect.poll(() => page.evaluate(() => (window.dataLayer || []).some(entry => (
+                    entry?.event_name === 'page_view'
+                )))).toBe(true);
+                await page.evaluate(() => { window.dataLayer.length = 0; });
+            }
             const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
             await trigger.click();
             await page.getByRole('option', { name: 'Component', exact: true }).click();
             await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
+            if (configFailure.authLocked) {
+                await expect.poll(() => page.evaluate(() => (window.dataLayer || []).filter(entry => (
+                    entry?.event_name === 'filter_changed'
+                )).length)).toBe(1);
+            }
             const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
 
             await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
@@ -1938,6 +2348,8 @@ for (const configFailure of [
             releaseReread = null;
             if (configFailure.authLocked) {
                 await expect(page.getByRole('alertdialog')).toContainText('Sign in required');
+                await page.evaluate(() => { window.dataLayer.length = 0; });
+                await expectLockedSelectorInteractionBlocked(page, trigger);
             } else {
                 await expect(trigger).toContainText('Component');
                 await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
@@ -1950,6 +2362,12 @@ for (const configFailure of [
             expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
             expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
             expect(performanceLoads.filter(load => load.scopeType === 'component')).toHaveLength(0);
+            if (configFailure.authLocked) {
+                expect(requests.filter(path => path === rereadPath)).toHaveLength(2);
+                expect(await page.evaluate(() => (window.dataLayer || []).filter(entry => (
+                    entry?.event_name === 'filter_changed'
+                )))).toEqual([]);
+            }
             if (!configFailure.authLocked) {
                 await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).first().click();
                 await expect.poll(() => requests.filter(path => path === rereadPath).length).toBe(3);
@@ -2096,6 +2514,243 @@ test('selector scheduling: in-flight ordinary Board reuse', async ({ page }) => 
         await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
     } finally {
         releaseTasks?.();
+    }
+});
+
+test('selector round trips: held Catch Up lane continues through ordinary Board entry', async ({ page }) => {
+    let releaseTasks;
+    const taskResponseGate = new Promise(resolve => { releaseTasks = resolve; });
+    const requests = [];
+    await installBoardFixture(page, { requests, sourceBundle: true, strictBoard: true, taskResponseGate });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: false, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => requests.filter(path => path === '/api/tasks-with-team-name').length).toBe(2);
+        await page.getByRole('radiogroup', { name: 'ENG view mode' })
+            .getByRole('radio', { name: 'Board', exact: true }).click();
+        await waitTwoFrames(page);
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(2);
+        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+
+        releaseTasks();
+        releaseTasks = null;
+        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(2);
+    } finally {
+        releaseTasks?.();
+    }
+});
+
+for (const scopeProfile of [
+    { scope: 'component', label: 'Component' },
+    { scope: 'all_work', label: 'All work' },
+]) {
+    test(`selector round trips: ready ${scopeProfile.label} returns to the saved ordinary Sprint`, async ({ page }) => {
+        const requests = [];
+        await openBoard(page, { strictBoard: true, sourceBundle: true, requests });
+        const ordinaryCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
+        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        await trigger.click();
+        await page.getByRole('option', { name: scopeProfile.label, exact: true }).click();
+        await expect.poll(() => requests.filter(path => path.includes(`scope=${scopeProfile.scope}`)).length).toBe(1);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
+
+        await trigger.click();
+        await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
+        await expect(trigger).toContainText(selectedSprintName);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await waitTwoFrames(page);
+        expect(requests.filter(path => path.includes(`scope=${scopeProfile.scope}`))).toHaveLength(1);
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCount);
+        await expect.poll(() => page.evaluate(() => JSON.parse(
+            localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'
+        ).selectedSprint)).toBe(selectedSprintId);
+    });
+}
+
+for (const siblingMode of ['Catch Up', 'Statistics', 'Scenario']) {
+    test(`selector round trips: ordinary Board to ${siblingMode} to Board restores its cached Sprint`, async ({ page }) => {
+        const requests = [];
+        const requestLog = [];
+        await openBoard(page, {
+            strictBoard: true,
+            sourceBundle: true,
+            requests,
+            requestLog,
+            initialPrefs: siblingMode === 'Statistics' ? { statsView: 'projectTrack' } : {},
+        });
+        const ordinaryLaneCount = () => requestLog.filter(({ url, method }) => {
+            const parsed = new URL(url);
+            return method === 'GET'
+                && parsed.pathname === '/api/tasks-with-team-name'
+                && !parsed.searchParams.has('purpose');
+        }).length;
+        const initialOrdinaryLaneCount = ordinaryLaneCount();
+        const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
+        await modes.getByRole('radio', { name: siblingMode, exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first())
+            .toContainText(selectedSprintName);
+        await modes.getByRole('radio', { name: 'Board', exact: true }).click();
+        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await waitTwoFrames(page);
+        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+        expect(ordinaryLaneCount()).toBe(initialOrdinaryLaneCount);
+        if (siblingMode === 'Scenario') {
+            expect(requestLog.filter(({ url, method }) => (
+                method !== 'GET' && new URL(url).pathname.startsWith('/api/scenario')
+            ))).toEqual([]);
+        }
+    });
+}
+
+for (const siblingMode of ['Catch Up', 'Planning', 'Statistics', 'Scenario']) {
+    test(`selector round trips: strict Component to ${siblingMode} to Board restores ordinary Sprint`, async ({ page }) => {
+        const requests = [];
+        const requestLog = [];
+        await openBoard(page, {
+            strictBoard: true,
+            sourceBundle: true,
+            requests,
+            requestLog,
+            initialPrefs: siblingMode === 'Statistics' ? { statsView: 'projectTrack' } : {},
+        });
+        const ordinaryLaneCount = () => requestLog.filter(({ url, method }) => {
+            const parsed = new URL(url);
+            return method === 'GET'
+                && parsed.pathname === '/api/tasks-with-team-name'
+                && !parsed.searchParams.has('purpose');
+        }).length;
+        const initialOrdinaryLaneCount = ordinaryLaneCount();
+        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        await trigger.click();
+        await page.getByRole('option', { name: 'Component', exact: true }).click();
+        await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
+
+        const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
+        await modes.getByRole('radio', { name: siblingMode, exact: true }).click();
+        await expect(trigger).toContainText(selectedSprintName);
+        await modes.getByRole('radio', { name: 'Board', exact: true }).click();
+        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await waitTwoFrames(page);
+        expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+        expect(ordinaryLaneCount()).toBe(initialOrdinaryLaneCount);
+        expect(requests.some(path => path.includes('scope=sprint'))).toBe(false);
+    });
+}
+
+test('selector round trips: rapid Component to All work to ordinary retires both strict generations', async ({ page }) => {
+    let releaseComponent;
+    const componentGate = new Promise(resolve => { releaseComponent = resolve; });
+    const requests = [];
+    await openBoard(page, {
+        strictBoard: true,
+        sourceBundle: true,
+        requests,
+        boardResponseGate: ({ url }) => url.searchParams.get('scope') === 'component' ? componentGate : null,
+    });
+    const ordinaryCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
+    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+
+    try {
+        await trigger.click();
+        await page.getByRole('option', { name: 'Component', exact: true }).click();
+        await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
+        await trigger.click();
+        await page.getByRole('option', { name: 'All work', exact: true }).click();
+        await expect.poll(() => requests.filter(path => path.includes('scope=all_work')).length).toBe(1);
+        await trigger.click();
+        await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
+        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+
+        releaseComponent();
+        releaseComponent = null;
+        await waitTwoFrames(page);
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toHaveCount(0);
+        expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+        expect(requests.filter(path => path.includes('scope=all_work'))).toHaveLength(1);
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCount);
+    } finally {
+        releaseComponent?.();
+    }
+});
+
+test('selector auth matrix: strict stream 401 locks globally and retires a delayed older scope', async ({ page }) => {
+    let releaseComponent;
+    const componentGate = new Promise(resolve => { releaseComponent = resolve; });
+    const strictAttempts = [];
+    const requests = [];
+    await installBoardFixture(page, {
+        requests,
+        sourceBundle: true,
+        strictBoard: true,
+        analyticsEnabled: true,
+    });
+    await page.route('**/api/eng/board?**', async route => {
+        const url = new URL(route.request().url());
+        const scope = url.searchParams.get('scope');
+        strictAttempts.push(scope);
+        if (scope === 'component') {
+            await componentGate;
+            try {
+                await route.fallback();
+            } catch (_error) {
+                // The auth lock or scope retirement may already have cancelled the request.
+            }
+            return;
+        }
+        await route.fulfill({
+            status: 401,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'authentication_required' }),
+        });
+    });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: true, showPlanning: false, showScenario: false,
+        }));
+    }, { selectedSprintId, selectedSprintName });
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+        await expect.poll(() => page.evaluate(() => (window.dataLayer || []).some(entry => (
+            entry?.event_name === 'page_view'
+        )))).toBe(true);
+        await page.evaluate(() => { window.dataLayer.length = 0; });
+        const ordinaryCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
+        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        await trigger.click();
+        await page.getByRole('option', { name: 'Component', exact: true }).click();
+        await expect.poll(() => strictAttempts.filter(scope => scope === 'component').length).toBe(1);
+        await trigger.click();
+        await page.getByRole('option', { name: 'All work', exact: true }).click();
+        await expect(page.getByRole('alertdialog')).toContainText('Sign in required');
+        await expect.poll(() => page.evaluate(() => (window.dataLayer || []).filter(entry => (
+            entry?.event_name === 'filter_changed'
+        )).length)).toBe(2);
+        await page.evaluate(() => { window.dataLayer.length = 0; });
+        await expectLockedSelectorInteractionBlocked(page, trigger);
+
+        releaseComponent();
+        releaseComponent = null;
+        await waitTwoFrames(page);
+        await expect(page.getByRole('alertdialog')).toContainText('Sign in required');
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toHaveCount(0);
+        expect(strictAttempts.filter(scope => scope === 'component')).toHaveLength(1);
+        expect(strictAttempts.filter(scope => scope === 'all_work')).toHaveLength(1);
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCount);
+        expect(await page.evaluate(() => (window.dataLayer || []).filter(entry => (
+            entry?.event_name === 'filter_changed'
+        )))).toEqual([]);
+    } finally {
+        releaseComponent?.();
     }
 });
 

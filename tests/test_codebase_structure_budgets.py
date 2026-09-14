@@ -136,7 +136,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # stale-load protection, and persistence gating before Department editing unlocks (+74).
     # Merge resolution retains contextual onboarding wiring alongside both changes (+75).
     # In-app metrics: generation/dependency lifecycle and admin panel wiring (+27).
-    "frontend/src/dashboard.jsx": 17521,
+    # ENG shared Sprint selector availability separates selection/readiness, adds semantic
+    # listbox interaction, explicit blocked-scope scheduling, and cache-bypassing Project Track
+    # range synchronization on explicit Sprint commitment (+504).
+    "frontend/src/dashboard.jsx": 18025,
 }
 
 

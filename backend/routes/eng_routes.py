@@ -1,13 +1,32 @@
 """ENG task, team, and dependency route blueprint."""
 
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+import hashlib
+import json
 import re
+import threading
 import time
 
 from flask import Blueprint
 
 from backend.auth.cache_policy import build_jira_home_process_cache_key, jira_home_partitioned_process_cache_enabled
 from backend.auth.scope_policy import missing_context_oauth_scopes
+from backend.auth.db_context import is_db_auth_context
+from backend.auth.jira_auth import AuthError
+from backend.auth.project_access import project_access_denied_response, project_access_status
 from backend.epm.home import adf_to_html
+from backend.services import eng_board, shared_group_config
+from backend.services.eng_board_stream import (
+    EngBoardRequestBudget,
+    EngBoardRequestDeadline,
+    EngBoardRequestTransport,
+)
+from backend.services.story_readiness import (
+    InvalidCompleteReadinessInput,
+    project_story_readiness,
+)
+from backend.services.team_catalog import normalize_team_catalog
 from backend.services.eng_subtasks import (
     SUBTASK_FIELDS,
     SubtasksFetchError,
@@ -51,6 +70,28 @@ bp = Blueprint("eng_routes", __name__)
 SUBTASKS_CACHE = {}
 SUBTASKS_CACHE_TTL_SECONDS = 300
 
+_STORY_READINESS_CACHE = OrderedDict()
+_STORY_READINESS_INFLIGHT = {}
+_STORY_READINESS_LOCK = threading.RLock()
+_STORY_READINESS_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix='story-readiness')
+_STORY_READINESS_CACHE_TTL_SECONDS = 300
+_STORY_READINESS_CACHE_MAX_ENTRIES = 128
+_STORY_READINESS_MAX_EPICS = 2000
+_STORY_READINESS_MAX_CHILDREN = 20000
+_STORY_READINESS_DEADLINE_SECONDS = 25
+
+_STORY_READINESS_ERRORS = {
+    'invalid_story_readiness_scope': (400, 'Story readiness scope is invalid.'),
+    'story_readiness_scope_not_found': (404, 'Story readiness scope was not found.'),
+    'story_readiness_configuration_invalid': (409, 'Story readiness configuration is incomplete.'),
+    'story_readiness_scope_too_large': (422, 'Story readiness scope is too large.'),
+    'story_readiness_unavailable': (502, 'Story readiness is temporarily unavailable.'),
+}
+
+
+class _StoryReadinessConfigurationError(ValueError):
+    pass
+
 # One project key, letters/digits/underscore, then a numeric suffix, e.g. PROD-1, TECH_2-22.
 _ISSUE_KEY_RE = re.compile(r'^[A-Z][A-Z0-9_]+-\d+$')
 
@@ -70,6 +111,516 @@ def _eng_auth_error_response(error):
         payload, status = oauth_auth_required_payload()
         return jsonify(payload), status
     return auth_error_response(error, 401)
+
+
+def _story_readiness_response(payload, status=200, *, cache_result=None, timing=None):
+    response = jsonify(payload)
+    response.status_code = status
+    response.headers['Cache-Control'] = 'private, no-store'
+    if cache_result is not None:
+        response.headers['X-Story-Readiness-Cache'] = cache_result
+    if timing is not None:
+        response.headers['Server-Timing'] = timing
+    return response
+
+
+def _story_readiness_error(code):
+    status, message = _STORY_READINESS_ERRORS[code]
+    return _story_readiness_response({'error': code, 'message': message}, status)
+
+
+def _story_readiness_bool(value):
+    normalized = str(value or 'false').strip().lower()
+    if normalized not in {'true', 'false'}:
+        raise ValueError('invalid_refresh')
+    return normalized == 'true'
+
+
+def _story_readiness_digest(value):
+    encoded = json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode('utf-8')).hexdigest()
+
+
+def _story_readiness_effective_groups(context):
+    db_context = context if is_db_auth_context(context) else None
+    return shared_group_config.load_effective_groups(
+        db_context,
+        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        validate_groups_config_fn=validate_groups_config,
+        dashboard_loader=load_dashboard_config,
+        groups_file_loader=lambda: load_groups_config_file(resolve_groups_config_path()),
+        environment_loader=parse_groups_config_env,
+        default_builder=build_default_groups_config,
+    )
+
+
+def _story_readiness_team_catalog(context):
+    if is_db_auth_context(context):
+        raw = build_db_config_repository().load_team_catalog(context) or {}
+    else:
+        raw = load_team_catalog() or {}
+    return normalize_team_catalog(raw)
+
+
+def _story_readiness_dashboard_snapshot(context, *, fresh=False):
+    if fresh and is_db_auth_context(context):
+        return build_db_config_repository().load_dashboard_config_snapshot(
+            context,
+            fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+            legacy_site_url=JIRA_URL or '',
+        )
+    return load_dashboard_config_snapshot()
+
+
+def _story_readiness_projects(config):
+    selected = ((config or {}).get('projects') or {}).get('selected') or []
+    projects = []
+    seen = set()
+    for raw in selected:
+        if isinstance(raw, str):
+            key, kind = raw, 'product'
+        elif isinstance(raw, dict):
+            key, kind = raw.get('key'), raw.get('type', 'product')
+        else:
+            continue
+        key = str(key or '').strip().upper()
+        kind = str(kind or '').strip().lower()
+        if key and kind in {'product', 'tech'} and key not in seen:
+            projects.append({'key': key, 'type': kind})
+            seen.add(key)
+    return projects
+
+
+def _story_readiness_group_snapshot(groups, group_id, catalog):
+    match = next((group for group in groups.get('groups') or []
+                  if str(group.get('id') or '').strip() == group_id), None)
+    if match is None:
+        return None
+    labels = match.get('teamLabels') if isinstance(match.get('teamLabels'), dict) else {}
+    teams = []
+    for raw_id in match.get('teamIds') or []:
+        team_id = str(raw_id or '').strip()
+        label = str(labels.get(team_id) or '').strip()
+        if not team_id or not label:
+            raise _StoryReadinessConfigurationError('missing_team_label')
+        entry = catalog.get(team_id) or {}
+        teams.append({'id': team_id, 'name': str(entry.get('name') or team_id), 'label': label})
+    return {
+        'id': group_id,
+        'revision': int(groups.get('configRevision') or 0),
+        'teams': teams,
+    }
+
+
+def _story_readiness_cache_key(
+        context, requested, group_snapshot, projects, config_snapshot, config, catalog,
+        issue_generation):
+    return _story_readiness_digest({
+        'auth': build_jira_home_process_cache_key(context, 'story-readiness'),
+        'group': group_snapshot,
+        'sprint': list(requested),
+        'configRevision': int(getattr(config_snapshot, 'config_revision', 0) or 0),
+        'config': config,
+        'catalog': catalog,
+        'projects': projects,
+        'projectAccess': [project_access_status(context, kind) for kind in ('product', 'tech')],
+        'issueGeneration': issue_generation,
+    })
+
+
+def _story_readiness_access_denied(context):
+    for project_type in ('product', 'tech'):
+        if getattr(context, 'auth_mode', 'basic') != 'basic':
+            snapshots = [item for item in (getattr(context, 'project_access', ()) or ())
+                         if getattr(item, 'project_type', '') == project_type]
+            if not snapshots:
+                return _story_readiness_response({
+                    'error': 'missing_project_access',
+                    'message': 'Your Jira account does not have confirmed access to this project view.',
+                    'projectType': project_type,
+                    'projectAccessStatus': 'unknown',
+                    'recoveryUrl': '/auth/missing-project-access',
+                }, 403)
+        response, status = project_access_denied_response(context, project_type)
+        if response is not None:
+            response.status_code = status
+            response.headers['Cache-Control'] = 'private, no-store'
+            return response
+    return None
+
+
+def _story_readiness_response_json(response):
+    if response.status_code != 200:
+        raise RuntimeError('jira_unavailable')
+    try:
+        payload = response.json()
+    except Exception as exc:
+        raise RuntimeError('jira_unavailable') from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError('jira_unavailable')
+    return payload
+
+
+def _story_readiness_search(context, transport, jql, fields, *, counters, key_budget=None,
+                            max_unique_keys=None):
+    def search(payload):
+        response = current_jira_search(
+            payload,
+            context=context,
+            timeout=transport.budget.jira_retry_timeout(),
+            diagnostic_transport=transport,
+        )
+        return _story_readiness_response_json(response)
+
+    return eng_board.strict_search(
+        search, jql, fields, counters=counters, cancel_check=transport.budget.check,
+        key_budget=key_budget, max_unique_keys=max_unique_keys,
+    )
+
+
+def _story_readiness_validate_sprint(context, transport, requested, board_id):
+    sprint_id, sprint_name, sprint_state = requested
+    found = None
+    if board_id:
+        start_at = 0
+        seen_offsets = set()
+        while True:
+            transport.budget.check('sprint')
+            response = current_jira_get(
+                f'/rest/agile/1.0/board/{board_id}/sprint',
+                params={'state': 'active,future,closed', 'startAt': start_at, 'maxResults': 100},
+                context=context, timeout=transport.budget.jira_retry_timeout(),
+                diagnostic_transport=transport,
+            )
+            body = _story_readiness_response_json(response)
+            values = body.get('values')
+            if not isinstance(values, list):
+                raise RuntimeError('jira_unavailable')
+            for item in values:
+                if isinstance(item, dict) and str(item.get('id')) == sprint_id:
+                    found = item
+            if body.get('isLast') is True:
+                break
+            next_offset = start_at + len(values)
+            if not values or next_offset in seen_offsets:
+                raise RuntimeError('jira_unavailable')
+            seen_offsets.add(next_offset)
+            start_at = next_offset
+    else:
+        response = current_jira_get(
+            f'/rest/agile/1.0/sprint/{sprint_id}', context=context,
+            timeout=transport.budget.jira_retry_timeout(), diagnostic_transport=transport,
+        )
+        if response.status_code == 404:
+            raise LookupError('invalid_sprint_tuple')
+        found = _story_readiness_response_json(response)
+    if (not isinstance(found, dict)
+            or str(found.get('id')) != sprint_id
+            or str(found.get('name') or '').strip() != sprint_name
+            or str(found.get('state') or '').strip().lower() != sprint_state):
+        raise LookupError('invalid_sprint_tuple')
+
+
+def _story_readiness_quote(value):
+    return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+
+def _story_readiness_values(value):
+    if isinstance(value, list):
+        return value
+    return [value] if value not in (None, '') else []
+
+
+def _story_readiness_ids(value):
+    result = []
+    for item in _story_readiness_values(value):
+        if isinstance(item, dict):
+            item = item.get('id') or item.get('teamId') or item.get('value')
+        text = str(item or '').strip()
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _story_readiness_project_track(value):
+    if isinstance(value, list):
+        tracks = [track for item in value if (track := _story_readiness_project_track(item))]
+        return tracks[0] if len(set(tracks)) == 1 else ''
+    if isinstance(value, dict):
+        value = value.get('value', value.get('name'))
+    return str(value or '').strip() if isinstance(value, str) else ''
+
+
+def _story_readiness_compute(context, requested, group_snapshot, projects, config, transport):
+    started = time.monotonic()
+    board = (config.get('board') or {}) if isinstance(config, dict) else {}
+    _story_readiness_validate_sprint(context, transport, requested, str(board.get('boardId') or '').strip())
+    sprint_id, sprint_name, sprint_state = requested
+    project_keys = [item['key'] for item in projects]
+    project_map = {item['key']: item['type'] for item in projects}
+    if not project_keys or not group_snapshot['teams']:
+        raise _StoryReadinessConfigurationError('configuration_incomplete')
+
+    sprint_field = str(((config.get('sprintField') or {}).get('fieldId')) or get_sprint_field_id()).strip()
+    team_field = str(((config.get('teamField') or {}).get('fieldId')) or get_team_field_id()).strip()
+    track_field = str(((config.get('projectTrackField') or {}).get('fieldId')) or get_project_track_field_id()).strip()
+    if not sprint_field or not team_field:
+        raise _StoryReadinessConfigurationError('configuration_incomplete')
+
+    counters = eng_board.PagerCounters()
+    project_jql = ', '.join(_story_readiness_quote(key) for key in project_keys)
+    label_jql = ', '.join(_story_readiness_quote(team['label']) for team in group_snapshot['teams'])
+    discovery_jql = (
+        f'project in ({project_jql}) AND issuetype = Epic '
+        f'AND status not in (Done, Killed, Incomplete, Postponed) '
+        f'AND ({sprint_field} = {sprint_id} OR labels = {_story_readiness_quote(sprint_name)}) '
+        f'AND labels in ({label_jql}) ORDER BY key ASC'
+    )
+    discovery_started = time.monotonic()
+    candidates = _story_readiness_search(
+        context, transport, discovery_jql, ('project',), counters=counters,
+        max_unique_keys=_STORY_READINESS_MAX_EPICS,
+    )
+    discovery_ms = (time.monotonic() - discovery_started) * 1000
+    epic_keys = sorted({str(item.get('key') or '').strip().upper() for item in candidates})
+
+    if not epic_keys:
+        result = project_story_readiness({
+            'status': 'complete',
+            'canonicalSprint': {'id': sprint_id, 'name': sprint_name, 'state': sprint_state},
+            'groupSnapshot': group_snapshot,
+            'projectAccessSnapshot': {'product': 'accessible', 'tech': 'accessible'},
+            'epics': [],
+            'children': [],
+        })
+        total_ms = (time.monotonic() - started) * 1000
+        return result, (
+            f'discovery;dur={discovery_ms:.1f}, child-distribution;dur=0.0, '
+            f'enrichment;dur=0.0, total;dur={total_ms:.1f}'
+        )
+
+    epic_link_field = None
+    fields_response = current_jira_get(
+        '/rest/api/3/field', context=context,
+        timeout=transport.budget.jira_retry_timeout(), diagnostic_transport=transport,
+    )
+    if fields_response.status_code == 200:
+        try:
+            field_rows = fields_response.json()
+        except Exception:
+            field_rows = None
+        if not isinstance(field_rows, list):
+            raise RuntimeError('jira_unavailable')
+        for field in field_rows:
+            if isinstance(field, dict) and str(field.get('name') or '').strip().lower() == 'epic link':
+                epic_link_field = str(field.get('id') or '').strip() or None
+                break
+    else:
+        raise RuntimeError('jira_unavailable')
+
+    child_started = time.monotonic()
+    children = []
+    child_budget = eng_board.UniqueKeyBudget(_STORY_READINESS_MAX_CHILDREN)
+    child_fields = ['status', 'parent', sprint_field, team_field]
+    if epic_link_field:
+        child_fields.append(epic_link_field)
+    for batch in eng_board.split_epic_batches(
+            epic_keys,
+            lambda keys: 'issuetype = Story AND parent in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
+            child_fields):
+        clauses = ['parent in (' + ','.join(_story_readiness_quote(key) for key in batch) + ')']
+        if epic_link_field:
+            clauses.append(f'{epic_link_field} in (' + ','.join(_story_readiness_quote(key) for key in batch) + ')')
+        rows = _story_readiness_search(
+            context, transport, f'issuetype = Story AND ({" OR ".join(clauses)})', child_fields,
+            counters=counters, key_budget=child_budget,
+        )
+        for row in rows:
+            fields = row.get('fields') if isinstance(row.get('fields'), dict) else {}
+            parent = fields.get('parent') if isinstance(fields.get('parent'), dict) else {}
+            epic_key = str(parent.get('key') or fields.get(epic_link_field or '') or '').strip().upper()
+            children.append({
+                'key': str(row.get('key') or '').strip().upper(),
+                'epicKey': epic_key,
+                'statusName': str((fields.get('status') or {}).get('name') or '').strip(),
+                'sprintIds': _story_readiness_ids(fields.get(sprint_field)),
+                'teamIds': _story_readiness_ids(fields.get(team_field)),
+            })
+    child_ms = (time.monotonic() - child_started) * 1000
+
+    enrichment_started = time.monotonic()
+    epics = []
+    enrichment_fields = ['summary', 'status', 'priority', 'assignee', 'labels', 'parent',
+                         'project', track_field]
+    for batch in eng_board.split_epic_batches(
+            epic_keys,
+            lambda keys: 'key in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
+            enrichment_fields):
+        batch_set = set(batch)
+        rows = _story_readiness_search(
+            context, transport,
+            'key in (' + ','.join(_story_readiness_quote(key) for key in batch) + ')',
+            enrichment_fields, counters=counters,
+        )
+        if {str(row.get('key') or '').strip().upper() for row in rows} != batch_set:
+            raise RuntimeError('jira_unavailable')
+        for row in rows:
+            fields = row.get('fields') if isinstance(row.get('fields'), dict) else {}
+            project_key = str((fields.get('project') or {}).get('key') or '').strip().upper()
+            parent = fields.get('parent') if isinstance(fields.get('parent'), dict) else None
+            parent_fields = parent.get('fields') if isinstance(parent, dict) and isinstance(parent.get('fields'), dict) else {}
+            initiative = None
+            if parent and parent.get('key') and parent_fields.get('summary'):
+                initiative = {'key': str(parent['key']), 'summary': str(parent_fields['summary'])}
+            epics.append({
+                'key': str(row.get('key') or '').strip().upper(),
+                'summary': str(fields.get('summary') or '').strip(),
+                'status': {'name': str((fields.get('status') or {}).get('name') or '').strip()},
+                'priority': ({'name': str((fields.get('priority') or {}).get('name') or '').strip()}
+                             if fields.get('priority') else None),
+                'assignee': fields.get('assignee') if isinstance(fields.get('assignee'), dict) else None,
+                'labels': fields.get('labels') if isinstance(fields.get('labels'), list) else [],
+                'projectTrack': _story_readiness_project_track(fields.get(track_field)),
+                'projectKey': project_key,
+                'projectClass': project_map.get(project_key, ''),
+                'initiative': initiative,
+            })
+    enrichment_ms = (time.monotonic() - enrichment_started) * 1000
+    result = project_story_readiness({
+        'status': 'complete',
+        'canonicalSprint': {'id': sprint_id, 'name': sprint_name, 'state': sprint_state},
+        'groupSnapshot': group_snapshot,
+        'projectAccessSnapshot': {'product': 'accessible', 'tech': 'accessible'},
+        'epics': epics,
+        'children': children,
+    })
+    total_ms = (time.monotonic() - started) * 1000
+    timing = (
+        f'discovery;dur={discovery_ms:.1f}, child-distribution;dur={child_ms:.1f}, '
+        f'enrichment;dur={enrichment_ms:.1f}, total;dur={total_ms:.1f}'
+    )
+    return result, timing
+
+
+@bp.route('/api/eng/story-readiness', methods=['GET'])
+def get_story_readiness():
+    try:
+        sprint_id = str(request.args.get('sprint') or '').strip()
+        sprint_name = str(request.args.get('sprintName') or '').strip()
+        sprint_state = str(request.args.get('sprintState') or '').strip().lower()
+        group_id = str(request.args.get('groupId') or '').strip()
+        refresh = _story_readiness_bool(request.args.get('refresh', 'false'))
+        if not sprint_id or not sprint_id.isdigit() or not sprint_name or not group_id or sprint_state not in {'active', 'future'}:
+            raise ValueError('invalid_scope')
+    except ValueError:
+        return _story_readiness_error('invalid_story_readiness_scope')
+
+    try:
+        context = current_request_auth_context()
+    except AuthError as exc:
+        return _eng_auth_error_response(exc)
+    denied = _story_readiness_access_denied(context)
+    if denied is not None:
+        return denied
+    try:
+        config_snapshot = _story_readiness_dashboard_snapshot(context)
+        config = dict(config_snapshot.payload or {})
+        groups = _story_readiness_effective_groups(context)
+        catalog = _story_readiness_team_catalog(context)
+        group_snapshot = _story_readiness_group_snapshot(groups, group_id, catalog)
+        if group_snapshot is None:
+            return _story_readiness_error('story_readiness_scope_not_found')
+        projects = _story_readiness_projects(config)
+        team_ids = [team['id'] for team in group_snapshot['teams']]
+        team_labels = [team['label'] for team in group_snapshot['teams']]
+        if (not group_snapshot['teams'] or not projects
+                or len(set(team_ids)) != len(team_ids)
+                or len(set(team_labels)) != len(team_labels)):
+            return _story_readiness_error('story_readiness_configuration_invalid')
+        issue_generation = get_jira_issue_cache_generation()
+        requested = (sprint_id, sprint_name, sprint_state)
+        cache_key = _story_readiness_cache_key(
+            context, requested, group_snapshot, projects, config_snapshot, config,
+            catalog, issue_generation,
+        )
+    except AuthError as exc:
+        return _eng_auth_error_response(exc)
+    except Exception:
+        return _story_readiness_error('story_readiness_configuration_invalid')
+
+    now = time.monotonic()
+    if not refresh:
+        with _STORY_READINESS_LOCK:
+            cached = _STORY_READINESS_CACHE.get(cache_key)
+            if cached and now - cached['storedAt'] < _STORY_READINESS_CACHE_TTL_SECONDS:
+                _STORY_READINESS_CACHE.move_to_end(cache_key)
+                return _story_readiness_response(
+                    cached['payload'], cache_result='hit', timing=cached['timing'],
+                )
+
+    transport = EngBoardRequestTransport(budget=EngBoardRequestBudget.start(_STORY_READINESS_DEADLINE_SECONDS))
+    with _STORY_READINESS_LOCK:
+        future = _STORY_READINESS_INFLIGHT.get(cache_key)
+        if future is None:
+            future = _STORY_READINESS_EXECUTOR.submit(
+                _story_readiness_compute, context, requested,
+                group_snapshot, projects, config, transport,
+            )
+            _STORY_READINESS_INFLIGHT[cache_key] = future
+            def retire(completed, *, expected_key=cache_key):
+                with _STORY_READINESS_LOCK:
+                    if _STORY_READINESS_INFLIGHT.get(expected_key) is completed:
+                        _STORY_READINESS_INFLIGHT.pop(expected_key, None)
+            future.add_done_callback(retire)
+    try:
+        payload, timing = future.result(timeout=_STORY_READINESS_DEADLINE_SECONDS)
+        if get_jira_issue_cache_generation() != issue_generation:
+            raise RuntimeError('stale_generation')
+        try:
+            fresh_config_snapshot = _story_readiness_dashboard_snapshot(context, fresh=True)
+            fresh_config = dict(fresh_config_snapshot.payload or {})
+            fresh_groups = _story_readiness_effective_groups(context)
+            fresh_catalog = _story_readiness_team_catalog(context)
+            fresh_group = _story_readiness_group_snapshot(fresh_groups, group_id, fresh_catalog)
+            fresh_projects = _story_readiness_projects(fresh_config)
+        except AuthError:
+            raise
+        except Exception as exc:
+            raise RuntimeError('stale_scope') from exc
+        if fresh_group is None or _story_readiness_cache_key(
+                context, requested, fresh_group, fresh_projects, fresh_config_snapshot,
+                fresh_config, fresh_catalog, issue_generation) != cache_key:
+            raise RuntimeError('stale_scope')
+    except AuthError as exc:
+        return _eng_auth_error_response(exc)
+    except LookupError:
+        return _story_readiness_error('invalid_story_readiness_scope')
+    except eng_board.EngBoardError as exc:
+        if exc.code == 'board_scope_too_large':
+            return _story_readiness_error('story_readiness_scope_too_large')
+        return _story_readiness_error('story_readiness_unavailable')
+    except _StoryReadinessConfigurationError:
+        return _story_readiness_error('story_readiness_configuration_invalid')
+    except InvalidCompleteReadinessInput:
+        return _story_readiness_error('story_readiness_unavailable')
+    except (EngBoardRequestDeadline, TimeoutError):
+        transport.budget.cancel()
+        return _story_readiness_error('story_readiness_unavailable')
+    except Exception:
+        return _story_readiness_error('story_readiness_unavailable')
+    finally:
+        with _STORY_READINESS_LOCK:
+            if _STORY_READINESS_INFLIGHT.get(cache_key) is future and future.done():
+                _STORY_READINESS_INFLIGHT.pop(cache_key, None)
+
+    with _STORY_READINESS_LOCK:
+        _STORY_READINESS_CACHE[cache_key] = {
+            'payload': payload, 'timing': timing, 'storedAt': time.monotonic(),
+        }
+        _STORY_READINESS_CACHE.move_to_end(cache_key)
+        while len(_STORY_READINESS_CACHE) > _STORY_READINESS_CACHE_MAX_ENTRIES:
+            _STORY_READINESS_CACHE.popitem(last=False)
+    return _story_readiness_response(payload, cache_result='miss', timing=timing)
 
 
 def clear_jira_issue_status_caches(reason='issue_status_transition'):

@@ -25,7 +25,11 @@ def register_security_headers(flask_app):
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Content-Security-Policy", _content_security_policy())
         if request.path.startswith("/api/"):
-            response.headers["Cache-Control"] = "no-store"
+            if not (
+                request.path == "/api/eng/story-readiness"
+                and response.headers.get("Cache-Control") == "private, no-store"
+            ):
+                response.headers["Cache-Control"] = "no-store"
         if os.getenv("SESSION_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes"}:
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response

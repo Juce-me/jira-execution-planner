@@ -1,4 +1,4 @@
-import { apiFetch, getJson, trackedFetch } from './http.js';
+import { apiFetch, getJson, jsonOrStructuredError, trackedFetch } from './http.js';
 
 export const fetchMissingPlanningInfo = (backendUrl, { sprintId, teamIds = [], components = [], signal } = {}) => {
     const params = new URLSearchParams({ sprint: String(sprintId), t: Date.now().toString() });
@@ -71,6 +71,35 @@ export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', gr
         cache: 'no-cache',
         signal
     }, { featureName: 'eng' });
+};
+
+export const fetchStoryReadiness = async (backendUrl, {
+    sprint,
+    sprintName,
+    sprintState,
+    groupId,
+    refresh = false,
+    signal,
+} = {}) => {
+    const params = new URLSearchParams({
+        sprint: String(sprint ?? ''),
+        sprintName: String(sprintName ?? ''),
+        sprintState: String(sprintState ?? ''),
+        groupId: String(groupId ?? ''),
+    });
+    if (refresh) params.set('refresh', 'true');
+    const response = await trackedFetch(
+        'eng_story_readiness',
+        `${backendUrl}/api/eng/story-readiness?${params.toString()}`,
+        {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-cache',
+            signal,
+        },
+        { featureName: 'eng', suppressAbortResult: true },
+    );
+    return jsonOrStructuredError(response, 'Story readiness');
 };
 
 export const fetchStorySubtasks = (backendUrl, { parentKey, sprint, refresh = false, signal } = {}) => {

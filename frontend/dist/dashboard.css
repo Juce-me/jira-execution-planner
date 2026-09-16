@@ -5727,6 +5727,34 @@ button.alerts-panel-summary-pill.done:hover {
   cursor: pointer;
   overflow: hidden;
 }
+.alert-story-local-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.alert-story-local-link:focus-visible {
+  outline: 2px solid var(--focus-ring, #2563eb);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.story-readiness-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.8rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #d8a83f;
+  border-radius: 8px;
+  background: #fffaf0;
+  color: #6f4800;
+  font-size: 0.78rem;
+}
 .alert-story-link {
   color: var(--text-primary);
   text-decoration: none;
@@ -6616,6 +6644,118 @@ button.task-priority-icon:focus-visible {
   padding-top: 0.32rem;
   gap: 0.48rem;
 }
+.task-list:not(.epm-issue-board) .epic-block.epic-block-no-child-stories {
+  border-style: dotted;
+}
+.task-list:not(.epm-issue-board) .epic-block > .story-requirement-card {
+  --story-requirement-tone: #8a5a00;
+  --story-requirement-border: #d8a83f;
+  --story-requirement-surface: #fffaf0;
+  display: block;
+  width: 100%;
+  margin-bottom: 0.55rem;
+  padding: 0.72rem 0.95rem;
+  border: 1px dashed var(--story-requirement-border);
+  border-left: 3px dashed var(--story-requirement-tone);
+  border-radius: 8px;
+  outline: none;
+  background: var(--story-requirement-surface);
+  color: inherit;
+  text-decoration: none;
+  scroll-margin-block: calc(var(--epic-sticky-top, 0px) + 1rem);
+}
+.task-list:not(.epm-issue-board) .epic-block > .story-requirement-card.story-requirement-active {
+  --story-requirement-tone: #a61b13;
+  --story-requirement-border: #dc756a;
+  --story-requirement-surface: #fff5f3;
+}
+.task-list:not(.epm-issue-board) .epic-block > .story-requirement-card:hover {
+  color: inherit;
+  box-shadow: 0 5px 14px rgba(26, 26, 26, 0.08);
+}
+.task-list:not(.epm-issue-board) .epic-block > .story-requirement-card:focus-visible {
+  outline: 3px solid #174f82;
+  outline-offset: 3px;
+}
+.task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+.task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  color: var(--story-requirement-tone);
+}
+.task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-title-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-title {
+  flex: 1 1 auto;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.23;
+}
+.task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-instruction {
+  margin-left: auto;
+  color: #615b53;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+.task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  flex-wrap: wrap;
+  margin-top: 0.45rem;
+  padding-left: 1.72rem;
+  color: var(--story-requirement-tone);
+}
+.task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0.18rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.64);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-urgency {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.task-list:not(.epm-issue-board) .story-requirement-card.story-requirement-highlight {
+  animation: story-requirement-highlight 1.6s ease-in-out;
+}
+@keyframes story-requirement-highlight {
+  0%, 100% {
+    box-shadow: none;
+  }
+  25%, 65% {
+    box-shadow: 0 0 0 4px rgba(23, 79, 130, 0.24);
+  }
+}
 @media (max-width: 760px) {
   .task-list:not(.epm-issue-board) .epic-block > .epic-header {
     flex-direction: column;
@@ -6627,6 +6767,23 @@ button.task-priority-icon:focus-visible {
     min-width: 0;
     flex-wrap: wrap;
     justify-content: flex-start;
+  }
+  .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-title-line {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-instruction {
+    width: 100%;
+    margin-left: 0;
+  }
+  .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-meta {
+    padding-left: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-list:not(.epm-issue-board) .story-requirement-card.story-requirement-highlight {
+    animation-duration: 0.01ms;
   }
 }
 

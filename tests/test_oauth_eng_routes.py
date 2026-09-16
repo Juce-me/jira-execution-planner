@@ -1,4 +1,5 @@
 import base64
+import dataclasses
 import os
 import threading
 import time
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from backend.auth.cache_policy import build_jira_home_process_cache_key
+from backend.auth.context import ProjectAccessSnapshot
 from backend.routes import eng_routes
 from backend.services.jira_issue_priorities import IssuePriorityServiceError
 from backend.services.jira_issue_project_track import ProjectTrackServiceError
@@ -179,6 +181,55 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(body["error"], "auth_connection_stale")
         self.assertEqual(body["message"], "Your Jira connection changed. Reconnect to continue.")
         self.assertEqual(body["recoveryUrl"], "/auth/reconnect")
+
+    def test_story_readiness_worker_receives_captured_oauth_context(self):
+        context = dataclasses.replace(
+            _local_oauth_context(),
+            project_access=(
+                ProjectAccessSnapshot('PROD', 'product', 'accessible'),
+                ProjectAccessSnapshot('TECH', 'tech', 'accessible'),
+            ),
+        )
+        groups = {
+            'configRevision': 2,
+            'groups': [{
+                'id': 'dept', 'teamIds': ['team-a'],
+                'teamLabels': {'team-a': 'team_alpha'},
+            }],
+        }
+        config = {'projects': {'selected': [
+            {'key': 'PROD', 'type': 'product'}, {'key': 'TECH', 'type': 'tech'},
+        ]}}
+        payload = {
+            'schemaVersion': 1,
+            'scope': {'groupId': 'dept', 'groupRevision': 2, 'sprintId': '42',
+                      'sprintName': 'Sprint 42', 'sprintState': 'active'},
+            'complete': True,
+            'epics': [],
+        }
+
+        def compute(captured, *_args):
+            self.assertEqual(captured, context)
+            return payload, 'total;dur=1.0'
+
+        with eng_routes._STORY_READINESS_LOCK:
+            eng_routes._STORY_READINESS_CACHE.clear()
+            eng_routes._STORY_READINESS_INFLIGHT.clear()
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
+             patch.object(jira_server, 'load_dashboard_config_snapshot', return_value=SimpleNamespace(
+                 payload=config, config_revision=4)), \
+             patch.object(eng_routes, '_story_readiness_effective_groups', return_value=groups), \
+             patch.object(eng_routes, '_story_readiness_team_catalog', return_value={
+                 'team-a': {'id': 'team-a', 'name': 'Alpha'}}), \
+             patch.object(jira_server, 'get_jira_issue_cache_generation', return_value=1), \
+             patch.object(eng_routes, '_story_readiness_compute', side_effect=compute):
+            response = self.client.get(
+                '/api/eng/story-readiness?sprint=42&sprintName=Sprint%2042&sprintState=active&groupId=dept'
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertTrue(response.get_json()['complete'])
 
     def test_tasks_with_team_name_uses_oauth_partitioned_cache(self):
         stored_at = time.time()

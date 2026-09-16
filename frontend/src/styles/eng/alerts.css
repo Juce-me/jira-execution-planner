@@ -483,18 +483,38 @@
             overflow: hidden;
         }
 
-        .alert-story-local-link {
+        button.alert-story-local-link {
             appearance: none;
+            display: block;
+            width: 100%;
+            margin: 0;
             border: 0;
+            border-radius: 0;
             padding: 0;
             background: transparent;
-            color: inherit;
+            color: var(--text-primary);
             font: inherit;
+            font-weight: 600;
+            letter-spacing: normal;
+            line-height: inherit;
+            text-transform: none;
             text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
             cursor: pointer;
+            transform: none;
+            box-shadow: none;
         }
 
-        .alert-story-local-link:focus-visible {
+        button.alert-story-local-link:hover {
+            background: transparent;
+            color: var(--text-primary);
+            transform: none;
+            box-shadow: none;
+        }
+
+        button.alert-story-local-link:focus-visible {
             outline: 2px solid var(--focus-ring, #2563eb);
             outline-offset: 3px;
             border-radius: 3px;

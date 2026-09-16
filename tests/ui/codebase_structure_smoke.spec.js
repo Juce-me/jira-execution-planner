@@ -838,6 +838,9 @@ async function installApiMocks(page, calls, options = {}) {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-capacity-smoke' });
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
+        }
         if (url.pathname === '/api/me/connections/home-token') {
             return json({
                 connected: true,

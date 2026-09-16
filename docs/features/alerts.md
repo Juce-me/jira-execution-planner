@@ -94,7 +94,7 @@ Shows one requirement per expected Team on an in-scope Epic that does not have a
 
 The same complete Story-readiness snapshot drives the Catch Up alert and the synthetic `Story required` rows in the Catch Up and Planning hierarchies. `Blocked`, `Done`, `Killed`, and `Incomplete` Stories do not satisfy readiness. A failed, partial, or stale snapshot never produces a requirement.
 
-The alert title is local navigation to the exact `(Department, sprint, Epic, Team)` requirement. Its separate `Open epic in Jira` link is the external action. Dismissing the alert entry does not hide the hierarchy row. The panel's headline count remains a unique-Epic count even when one Epic has requirements for multiple Teams.
+The alert title is local navigation to the exact `(Department, sprint, Epic, Team)` requirement and reuses the established alert-row title style. Team groups display the configured Team-catalog name, never the internal Team id. Activation clears only target-hiding list state to a truly neutral reveal state, then scrolls, focuses, and highlights the exact ghost. The hierarchy ghost is the Jira-opening action. Dismissing the alert entry does not hide the hierarchy row. The panel's headline count remains a unique-Epic count even when one Epic has requirements for multiple Teams.
 
 ## Alert Precedence
 

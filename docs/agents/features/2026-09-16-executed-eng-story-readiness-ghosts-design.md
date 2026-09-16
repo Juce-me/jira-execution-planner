@@ -108,8 +108,9 @@ single line; this feature does not add a new Epic-header field.
 - The ghost is one semantic external link to the Jira Epic. Its accessible name describes the Epic,
   expected Team, selected sprint, and creation purpose. It supports keyboard activation and normal
   new-tab gestures.
-- The Catch Up Stories Required alert title is a native local-navigation button. Its separate
-  `Open epic in Jira` link remains an external action.
+- The Catch Up Stories Required alert title is a native local-navigation button styled identically
+  to the established alert title link. The row keeps the existing title, note, and dismiss-action
+  composition; it does not add a separate Jira action.
 - Local alert activation clears only list filters/search needed to reveal the target, preserves the
   selected Department, Teams, and sprint, scrolls the exact composite ghost into a sticky-safe
   centered position, moves focus to it, and briefly highlights it. Reduced-motion preference uses
@@ -304,9 +305,9 @@ It is rejected.
   are suppressed.
 - Any failed page, silent cap, or incomplete child scan makes the snapshot unavailable; no partial
   absence claim is rendered.
-- The combined Product/Tech cohort is all-or-nothing: if access to either configured project view is
-  inaccessible or unknown, the complete snapshot fails with the existing sanitized project-access
-  recovery instead of asserting absence from the remaining project.
+- The configured project cohort is all-or-nothing when an access snapshot explicitly marks one of
+  its project types inaccessible or unknown. An absent snapshot follows existing ENG behavior and
+  defers to Jira; Jira denial or failure suppresses the complete snapshot with a sanitized error.
 - Old group/sprint/auth revisions are aborted and ignored. The response scope must exactly match the
   current cohort before it can update UI.
 - Duplicate Epic keys across configured projects are canonicalized deterministically; conflicting
@@ -378,11 +379,18 @@ Confirmed by the user on 2026-09-16:
 Implemented as planned on 2026-09-16. The application now derives an authoritative, progressively
 loaded Story-readiness snapshot, renders Variant A requirement rows in Catch Up and Planning, keeps
 synthetic requirements outside real Jira Story collections, and exposes Catch-Up-only local alert
-navigation with a separate Jira Epic link.
+navigation through the established alert title, note, and dismiss-only composition. The hierarchy
+ghost remains the Jira Epic link.
 
 Automated verification covers active/future urgency, direct and Initiative grouping, no-child-Epic
 outlines, Planning ordering, loading isolation, keyboard focus, local alert reveal, and narrow
 viewport containment. A settled Planning screenshot was compared with the approved reference.
+After the alert-row regression was reported, a settled hover-state crop and computed-style checks
+confirmed that the local-navigation button reuses the existing alert presentation without a dark
+button surface or secondary action. A subsequent live-data correction unwraps the persisted
+Team-catalog envelope so group headers show names rather than ids, and explicit navigation clears
+the normal Killed exclusion to a truly neutral reveal state before scrolling and focusing the exact
+ghost.
 
 ## Current Accuracy
 

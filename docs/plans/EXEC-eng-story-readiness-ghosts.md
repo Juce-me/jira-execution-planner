@@ -87,7 +87,7 @@ not open gate items:
 | Missing/foreign group | `404 story_readiness_scope_not_found` |
 | Unsupported sprint state | `400 invalid_story_readiness_scope`; completed/unknown sprint states are suppressed before request and render no ghosts |
 | Authentication | Existing sanitized `401` codes and global auth lock behavior; never return raw Jira/auth text |
-| Authorization/project access | Existing sanitized `403 missing_project_access` behavior; the combined Product/Tech snapshot is all-or-nothing when either view is inaccessible or unknown |
+| Authorization/project access | Check only configured project types through the existing ENG access helper. An absent snapshot defers to Jira; an explicit inaccessible/unknown snapshot returns sanitized `403 missing_project_access` |
 | Configuration conflict | `409 story_readiness_configuration_invalid` for unusable field/group configuration |
 | Jira/partial/pagination failure | `502 story_readiness_unavailable`; never return `complete: true` with a partial scan |
 | Scope safety limit | `422 story_readiness_scope_too_large`; never truncate or cache the cohort |
@@ -155,8 +155,10 @@ The fixed route-owned bodies are:
 
 For 403, reuse `project_access_denied_response()` exactly:
 `{"error":"missing_project_access","message":"Your Jira account does not have confirmed access to this project view.","projectType":"product|tech","projectAccessStatus":"inaccessible|unknown","recoveryUrl":"/auth/missing-project-access"}`.
-Check Product then Tech deterministically and report the first unavailable view. The 401 body remains
-owned by the existing auth helper.
+Check configured project types deterministically and report the first explicitly unavailable view.
+As on existing ENG routes, an absent access snapshot is not itself a denial; the Jira request remains
+authoritative and Jira failures use the sanitized `502` response. The 401 body remains owned by the
+existing auth helper.
 
 ## User-visible State Machine
 
@@ -269,7 +271,8 @@ empty result. Jira I/O and Flask stay outside this interface.
       that result and never calls global `load_dashboard_config()` as an authorization boundary.
 - [x] Add failing route tests for the full Endpoint Contract Matrix, including cross-workspace and
       missing group ids, absent DB row with legacy fallback, DB/OAuth user Jira context,
-      revoked/disabled auth, inaccessible and unknown Product and Tech access independently,
+      revoked/disabled auth, configured inaccessible and unknown Product/Tech access independently,
+      absent access snapshots deferring to Jira, unconfigured project types being ignored,
       Basic/local compatibility, and sanitized failures.
 - [x] Register exact GET `/api/eng/story-readiness` in `ENDPOINT_POLICIES` as
       `authenticated_read`. Prove it matches exactly one policy and that no unsafe method is
@@ -449,8 +452,9 @@ empty result. Jira I/O and Flask stay outside this interface.
       refresh, and same-scope cache restoration. Switching away clears the prior scope's entries, so
       switching back starts undismissed; refresh within the same scope preserves dismissals. Do not
       overload `dismissedAlertKeys`.
-- [x] Replace nested `role=button`/anchor markup with a native local-navigation button plus a separate
-      external Jira link.
+- [x] Replace nested `role=button`/anchor markup with a native local-navigation button that reuses
+      the established alert-row typography and layout. Do not add a secondary action to this row;
+      the hierarchy ghost remains the explicit Jira-opening action.
 - [x] Add `data-epic-key` and composite requirement target ids to the hierarchy. The Epic-specific
       navigator clears only hiding list filters, waits for rendering, scrolls with reduced-motion and
       sticky offsets, focuses the target, and applies a temporary highlight.
@@ -474,8 +478,8 @@ empty result. Jira I/O and Flask stay outside this interface.
 - Modify: `docs/ontology.md`
 
 - [x] Reuse `external_link_opened` with `link_type=jira_issue_browse`, `issue_kind=epic`, and
-      `source_surface=catch_up|planning` for ghost activation and the touched alert's explicit
-      `Open epic in Jira` link.
+      `source_surface=catch_up|planning` for ghost activation. Alert-to-ghost navigation remains a
+      local navigation mechanic with no analytics event.
 - [x] Prove the payload excludes Epic keys, Team/sprint names, labels, Jira URLs, JQL, reasons, and
       raw counts.
 - [x] Record a no-new-event allowlist entry for alert-to-local-ghost navigation.
@@ -535,8 +539,8 @@ empty result. Jira I/O and Flask stay outside this interface.
 - Active ghosts are red and Future ghosts yellow, with text/icon/outline semantics and accessible
   labels independent of color.
 - Every ghost visibly names the selected target sprint and expected Team.
-- Alert activation reveals, focuses, and highlights the exact composite ghost locally; ghost and
-  explicit alert links open the Jira Epic externally.
+- Alert activation reveals, focuses, and highlights the exact composite ghost locally; the ghost
+  opens the Jira Epic externally.
 - Dismissal is per requirement and affects only the alert.
 - Story, SP, capacity, selection, dependency, export, mutation, and analytics contracts remain based
   only on real Jira issues.
@@ -592,8 +596,20 @@ its remaining error is an environment-bound suite-order PostgreSQL dependency in
 `test_basic_mode_does_not_apply_oauth_route_guard`, which passes alone. A real server launch and
 live Jira cold/warm timing could not run because local PostgreSQL is unavailable.
 
+A post-implementation correction on 2026-09-16 aligned project-access handling with existing ENG
+routes and restored the established alert-row design. The endpoint now checks only configured
+project types, lets absent access snapshots defer to Jira, denies explicit inaccessible/unknown
+records, and sanitizes Jira failures. The Stories Required alert keeps local reveal behavior while
+reusing the existing title, note, and dismiss-only composition. Focused verification passed 116
+backend tests, 66 frontend unit/source tests, and 12 Playwright tests; the production bundle rebuilt
+successfully and the settled hover-state crop was inspected against the existing alert reference.
+The follow-up functional correction unwraps the persisted Team-catalog envelope before resolving
+display names and gives explicit alert navigation a truly neutral facet reset, so a target hidden by
+the normal Killed exclusion can render before the bounded reveal retry.
+
 ## Current Accuracy
 
-Accurate for the branch implementation on 2026-09-16. Keep this `EXEC-*` name until acceptance or
-merge. The code and current product documentation are the source of truth; live operational timing
-and `/api/test` remain to be recorded in an environment with PostgreSQL and Jira access.
+Accurate for the corrected branch implementation on 2026-09-16. Keep this `EXEC-*` name until
+acceptance or merge. The code and current product documentation are the source of truth; live
+operational timing and `/api/test` remain to be recorded in an environment with PostgreSQL and Jira
+access.

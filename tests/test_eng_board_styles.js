@@ -99,7 +99,7 @@ test('board.css scopes its column classes so the composer preview cannot collide
     });
 });
 
-test('ENG epic headline source keeps the calibrated one-row sizing contract scoped away from EPM', async () => {
+test('ENG epic headline source keeps one-row sizing without restyling the shared status pill', async () => {
     const source = fs.readFileSync(issuesCssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     const scoped = '.task-list:not(.epm-issue-board) .epic-block > .epic-header';
 
@@ -114,11 +114,11 @@ test('ENG epic headline source keeps the calibrated one-row sizing contract scop
     assert.match(source, /\.epic-key[^}]*font-size:\s*14px\s*;[^}]*line-height:\s*24px\s*;/s);
     assert.match(source, /\.epic-meta[^}]*flex:\s*0\s+1\s+auto\s*;[^}]*min-width:\s*0\s*;[^}]*max-width:\s*none\s*;/s);
     assert.match(source, /\.epic-meta[^}]*font-size:\s*14px\s*;[^}]*line-height:\s*24px\s*;/s);
-    assert.match(source, /\.epic-status-pill[^}]*height:\s*24px\s*;/s);
     assert.match(source, /\.epic-story-points[^}]*height:\s*24px\s*;/s);
     assert.match(source, /\.epic-assignee\s+input\.issue-person-editor-trigger[^}]*height:\s*24px\s*;/s);
     assert.match(source, /\.epic-assignee[^}]*min-width:\s*126px\s*;/s);
-    assert.match(source, /\.epic-status-pill[^}]*max-width:\s*140px\s*;[^}]*text-overflow:\s*ellipsis\s*;/s);
+    assert.doesNotMatch(source, /\.epic-status-pill[^}]*(?:height|min-width|max-width|padding|border):/s,
+        'epic header layout must not replace the shared status-pill geometry');
 });
 
 test('ENG epic headline source sizes artwork and keeps focus/readout visible', async () => {

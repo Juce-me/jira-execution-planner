@@ -159,7 +159,8 @@ def _story_readiness_team_catalog(context):
         raw = build_db_config_repository().load_team_catalog(context) or {}
     else:
         raw = load_team_catalog() or {}
-    return normalize_team_catalog(raw)
+    catalog = raw.get('catalog') if isinstance(raw, dict) and 'catalog' in raw else raw
+    return normalize_team_catalog(catalog or {})
 
 
 def _story_readiness_dashboard_snapshot(context, *, fresh=False):
@@ -215,6 +216,7 @@ def _story_readiness_group_snapshot(groups, group_id, catalog):
 def _story_readiness_cache_key(
         context, requested, group_snapshot, projects, config_snapshot, config, catalog,
         issue_generation):
+    project_types = sorted({project['type'] for project in projects})
     return _story_readiness_digest({
         'auth': build_jira_home_process_cache_key(context, 'story-readiness'),
         'group': group_snapshot,
@@ -223,24 +225,16 @@ def _story_readiness_cache_key(
         'config': config,
         'catalog': catalog,
         'projects': projects,
-        'projectAccess': [project_access_status(context, kind) for kind in ('product', 'tech')],
+        'projectAccess': {
+            kind: project_access_status(context, kind)
+            for kind in project_types
+        },
         'issueGeneration': issue_generation,
     })
 
 
-def _story_readiness_access_denied(context):
-    for project_type in ('product', 'tech'):
-        if getattr(context, 'auth_mode', 'basic') != 'basic':
-            snapshots = [item for item in (getattr(context, 'project_access', ()) or ())
-                         if getattr(item, 'project_type', '') == project_type]
-            if not snapshots:
-                return _story_readiness_response({
-                    'error': 'missing_project_access',
-                    'message': 'Your Jira account does not have confirmed access to this project view.',
-                    'projectType': project_type,
-                    'projectAccessStatus': 'unknown',
-                    'recoveryUrl': '/auth/missing-project-access',
-                }, 403)
+def _story_readiness_access_denied(context, project_types):
+    for project_type in sorted(set(project_types)):
         response, status = project_access_denied_response(context, project_type)
         if response is not None:
             response.status_code = status
@@ -519,21 +513,31 @@ def get_story_readiness():
         context = current_request_auth_context()
     except AuthError as exc:
         return _eng_auth_error_response(exc)
-    denied = _story_readiness_access_denied(context)
-    if denied is not None:
-        return denied
     try:
         config_snapshot = _story_readiness_dashboard_snapshot(context)
         config = dict(config_snapshot.payload or {})
+        projects = _story_readiness_projects(config)
+    except AuthError as exc:
+        return _eng_auth_error_response(exc)
+    except Exception:
+        return _story_readiness_error('story_readiness_configuration_invalid')
+    if not projects:
+        return _story_readiness_error('story_readiness_configuration_invalid')
+    denied = _story_readiness_access_denied(
+        context,
+        {project['type'] for project in projects},
+    )
+    if denied is not None:
+        return denied
+    try:
         groups = _story_readiness_effective_groups(context)
         catalog = _story_readiness_team_catalog(context)
         group_snapshot = _story_readiness_group_snapshot(groups, group_id, catalog)
         if group_snapshot is None:
             return _story_readiness_error('story_readiness_scope_not_found')
-        projects = _story_readiness_projects(config)
         team_ids = [team['id'] for team in group_snapshot['teams']]
         team_labels = [team['label'] for team in group_snapshot['teams']]
-        if (not group_snapshot['teams'] or not projects
+        if (not group_snapshot['teams']
                 or len(set(team_ids)) != len(team_ids)
                 or len(set(team_labels)) != len(team_labels)):
             return _story_readiness_error('story_readiness_configuration_invalid')

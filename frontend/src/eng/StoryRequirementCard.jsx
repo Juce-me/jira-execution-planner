@@ -78,7 +78,7 @@ export default function StoryRequirementCard({
                 <span className="story-requirement-title-line">
                     <span className="story-requirement-title">Story required</span>
                     <span className="story-requirement-instruction">
-                        Open the Epic in Jira to create this Team&apos;s Story.
+                        Create in Jira.
                     </span>
                 </span>
             </span>

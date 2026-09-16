@@ -1,6 +1,4 @@
 import * as React from 'react';
-import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
-import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
 
 const ALERT_SUMMARY_CONFIG = [
     { key: 'missing', label: 'Missing info', tone: 'missing', sectionId: 'eng-alert-missing' },
@@ -767,7 +765,6 @@ export default function EngAlertsPanel({
                                                                                 <button className="alert-story-link alert-story-local-link" type="button" onClick={() => handleStoryRequirementClick(entry)}>{epic.key} · {epic.summary}</button>
                                                                                 <div className="alert-story-note">{getFuturePlanningNeedsStoriesReasonText(entry.reason)}</div>
                                                                             </div>
-                                                                            <TrackedExternalLink className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: 'epic', sourceSurface: 'catch_up' })}>Open epic in Jira →</TrackedExternalLink>
                                                                             <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissStoryRequirement(entry); }} title="Dismiss this Story requirement from alerts" type="button">×</button>
                                                                         </div>
                                                                     )})}

@@ -18,7 +18,7 @@ function story(key = 'MIX-1', overrides = {}) {
         key,
         fields: {
             summary: overrides.summary || 'Existing delivery story',
-            status: { name: 'To Do' },
+            status: { name: overrides.status || 'To Do' },
             priority: { name: 'High' },
             issuetype: { name: 'Story' },
             assignee: { displayName: 'Synthetic Owner' },
@@ -220,6 +220,75 @@ test('Planning requests readiness without starting Catch Up alert sources', asyn
     ))).toEqual([]);
 });
 
+test('epic status pills keep the established filled status treatment', async ({ page }) => {
+    await installFixture(page, {
+        productIssues: [story()],
+        productEpics: { 'MIX-EPIC': productEpic() },
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const status = page.locator('.epic-status-pill.in-progress').first();
+    await expect(status).toBeVisible();
+    await expect(status).toHaveCSS('background-color', 'rgb(105, 192, 255)');
+    await expect(status).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(status).toHaveCSS('border-top-width', '0px');
+    await expect(status).toHaveCSS('font-size', '9.28px');
+    await expect(status).toHaveCSS('height', '29.75px');
+    await expect(status).toHaveCSS('padding-top', '2.88px');
+    await expect(status).toHaveCSS('padding-right', '7.68px');
+    await expect(status).toHaveCSS('min-width', 'auto');
+    await expect(status).toHaveCSS('max-width', 'none');
+});
+
+test('Back to top stays above page content throughout scrolling', async ({ page }) => {
+    const productIssues = [];
+    const productEpics = {};
+    for (let index = 0; index < 24; index += 1) {
+        const epicKey = `MIX-EPIC-${index}`;
+        productIssues.push(story(`MIX-${index}`, { epicKey, epicSummary: `Mixed coverage epic ${index}` }));
+        productEpics[epicKey] = productEpic(epicKey, `Mixed coverage epic ${index}`);
+    }
+    await installFixture(page, { productIssues, productEpics, showAlertsPanel: false });
+    await page.setViewportSize({ width: 800, height: 860 });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.evaluate(() => window.scrollTo(0, 160));
+    await expect(page.locator('.back-to-top')).toBeVisible();
+
+    const overlaps = await page.evaluate(async () => {
+        const failures = [];
+        const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        for (let scrollY = 160; scrollY <= maxScroll; scrollY += 32) {
+            window.scrollTo(0, scrollY);
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            const button = document.querySelector('.back-to-top');
+            if (!button) {
+                failures.push({ scrollY, topClass: 'missing-back-to-top' });
+                break;
+            }
+            const rect = button.getBoundingClientRect();
+            const xValues = [rect.left + 4, rect.left + (rect.width / 2), rect.right - 4];
+            const yValues = [rect.top + 4, rect.top + (rect.height / 2), rect.bottom - 4];
+            for (const x of xValues) {
+                for (const y of yValues) {
+                    const top = document.elementFromPoint(x, y);
+                    if (!button.contains(top)) {
+                        failures.push({
+                            scrollY,
+                            x: Math.round(x),
+                            y: Math.round(y),
+                            topClass: top?.className || top?.tagName || null,
+                        });
+                    }
+                }
+            }
+            if (failures.length) break;
+        }
+        return failures;
+    });
+
+    expect(overlaps).toEqual([]);
+});
+
 for (const sprintState of ['active', 'future']) {
     test(`${sprintState} requirement is an external Jira link with the matching urgency`, async ({ page }) => {
         await installFixture(page, {
@@ -233,6 +302,8 @@ for (const sprintState of ['active', 'future']) {
         await expect(card).toHaveClass(new RegExp(`story-requirement-${sprintState}`));
         await expect(card).toContainText('Team: Beta Team');
         await expect(card).toContainText(`Target sprint: ${sprintName}`);
+        await expect(card).toContainText('Create in Jira.');
+        await expect(card).not.toContainText("Open the Epic in Jira to create this Team's Story.");
         await expect(card).toContainText(sprintState === 'active' ? 'Current sprint · action needed' : 'Future sprint · plan ahead');
         await expect(card).toHaveAttribute('href', 'https://jira.example/browse/ZERO-EPIC');
         await expect(card).toHaveAttribute('target', '_blank');
@@ -336,8 +407,16 @@ test('keyboard activation and narrow layout preserve native link behavior and co
     expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
 });
 
-test('Stories Required local action focuses the ghost while the Jira action remains external', async ({ page }) => {
+test('Stories Required reuses the existing alert row style and focuses the local ghost', async ({ page }) => {
     await installFixture(page, {
+        productIssues: [
+            story('MIX-1'),
+            story('KILLED-1', { status: 'Killed', epicKey: 'KILLED-EPIC', epicSummary: 'Killed epic' }),
+        ],
+        productEpics: {
+            'MIX-EPIC': productEpic(),
+            'KILLED-EPIC': productEpic('KILLED-EPIC', 'Killed epic'),
+        },
         readinessEpics: [readinessEpic('ZERO-EPIC')],
         showAlertsPanel: true,
     });
@@ -345,14 +424,39 @@ test('Stories Required local action focuses the ghost while the Jira action rema
 
     const section = page.locator('#eng-alert-needs-stories');
     const localAction = section.locator('.alert-story-local-link');
-    const jiraAction = section.getByRole('link', { name: 'Open epic in Jira →' });
     await expect(localAction).toHaveJSProperty('tagName', 'BUTTON');
-    await expect(jiraAction).toHaveAttribute('href', 'https://jira.example/browse/ZERO-EPIC');
-    await expect(jiraAction).toHaveAttribute('target', '_blank');
+    await expect(section.locator('.alert-action')).toHaveCount(0);
+
+    await localAction.hover();
+    const styles = await localAction.evaluate((node) => {
+        const computed = getComputedStyle(node);
+        const note = getComputedStyle(node.nextElementSibling);
+        return {
+            backgroundColor: computed.backgroundColor,
+            boxShadow: computed.boxShadow,
+            transform: computed.transform,
+            textTransform: computed.textTransform,
+            letterSpacing: computed.letterSpacing,
+            marginRight: computed.marginRight,
+            fontFamily: computed.fontFamily,
+            noteFontFamily: note.fontFamily,
+        };
+    });
+    expect(styles).toMatchObject({
+        backgroundColor: 'rgba(0, 0, 0, 0)',
+        boxShadow: 'none',
+        transform: 'none',
+        textTransform: 'none',
+        letterSpacing: 'normal',
+        marginRight: '0px',
+    });
+    expect(styles.fontFamily).toBe(styles.noteFontFamily);
 
     const initialUrl = page.url();
-    await localAction.click();
     const ghost = page.locator('.story-requirement-card[data-epic-key="ZERO-EPIC"]');
+    await expect(ghost).toHaveCount(0);
+    await localAction.click();
+    await expect(ghost).toBeVisible();
     await expect(ghost).toBeFocused();
     await expect(ghost).toHaveClass(/story-requirement-highlight/);
     expect(page.url()).toBe(initialUrl);

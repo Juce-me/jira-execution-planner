@@ -560,7 +560,6 @@
             line-height: 1.2;
         }
 
-        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-status-pill,
         .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-story-points,
         .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-assignee input.issue-person-editor-trigger {
             display: inline-flex;
@@ -665,27 +664,12 @@
                 font-size: 14px;
             }
 
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-status-pill,
             .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-story-points,
             .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-assignee input.issue-person-editor-trigger {
                 height: 24px;
                 font-family: 'IBM Plex Mono', Arial, sans-serif;
                 font-size: 14px;
                 box-sizing: border-box;
-            }
-
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-status-pill {
-                display: block;
-                flex: 0 1 auto;
-                min-width: 64px;
-                max-width: 140px;
-                padding: 0 8px;
-                border: 1px solid transparent;
-                overflow: hidden;
-                font-weight: 500;
-                line-height: 22px;
-                letter-spacing: 0;
-                text-overflow: ellipsis;
             }
 
             .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-readout-target,
@@ -702,61 +686,6 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
-            }
-
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status {
-                background: #f3f4f6;
-                color: #374151;
-                border-color: #9ca3af;
-            }
-
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.done,
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.completed {
-                background: #f6ffed;
-                color: #276408;
-                border-color: #94bd7c;
-            }
-
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.killed {
-                background: #f3f4f6;
-                color: #4b5563;
-                border-color: #9ca3af;
-            }
-
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.in-progress,
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.accepted {
-                background: #e5f2ff;
-                color: #174f82;
-                border-color: #87b9df;
-            }
-
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.release,
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.waiting-for-release {
-                background: #e6fffb;
-                color: #075e54;
-                border-color: #5cbbb0;
-            }
-
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.blocked {
-                background: #fff1f0;
-                color: #8f1d1d;
-                border-color: #e58b8b;
-            }
-
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.waiting,
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.to-do,
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.awaiting-validation,
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.pending {
-                background: #f3f4f6;
-                color: #374151;
-                border-color: #9ca3af;
-            }
-
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.incomplete,
-            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-pill.task-status.postponed {
-                background: #fff7e6;
-                color: #7a4100;
-                border-color: #d9a657;
             }
 
             .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-story-points {

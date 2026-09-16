@@ -13478,8 +13478,15 @@ import {
                 setSearchInput('');
                 setSearchQuery('');
                 setBurnoutTaskFilter(null);
-                clearEngFacetFilters();
-            }, [clearEngFacetFilters]);
+                resetEngFacetFilters({
+                    setEngStatusFilter,
+                    setEngPriorityFilter,
+                    setEngProjectTrackFilter,
+                    defaultEngStatusFilter: null,
+                    setShowTech,
+                    setShowProduct,
+                });
+            }, []);
             const handleStoryRequirementClick = React.useCallback((entry) => {
                 if (!entry?.id) return;
                 setStoryRequirementNavigationError('');

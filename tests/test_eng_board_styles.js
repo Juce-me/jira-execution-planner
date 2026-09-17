@@ -7,6 +7,7 @@ const { readDashboardCssSource } = require('./css_source_helpers');
 const repoRoot = path.join(__dirname, '..');
 const boardCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'board.css');
 const issuesCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'issues.css');
+const statusTransitionsCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'status-transitions.css');
 const storyRequirementCardPath = path.join(repoRoot, 'frontend', 'src', 'eng', 'StoryRequirementCard.jsx');
 
 // An undefined custom property silently drops the WHOLE declaration it appears in, and this
@@ -149,11 +150,14 @@ test('Story requirement card is one tracked external link with bounded Jira anal
 
 test('Story requirement styles echo ENG Story cards without changing Epic header geometry or EPM', async () => {
     const source = fs.readFileSync(issuesCssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const statusSource = fs.readFileSync(statusTransitionsCssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     const scopedCard = '.task-list:not(.epm-issue-board) .epic-block > .story-requirement-card';
 
     assert.ok(source.includes(scopedCard));
+    assert.match(source, /\.task-list:not\(\.epm-issue-board\)\s+\.epic-block\s*\{[^}]*border-radius:\s*10px\s*;/s);
     assert.match(source, /\.epic-block\.epic-block-no-child-stories\s*\{[^}]*border-style:\s*dotted\s*;/s);
-    assert.match(source, /\.story-requirement-card\s*\{[^}]*width:\s*100%\s*;[^}]*padding:\s*0\.72rem\s+0\.95rem\s*;[^}]*border:\s*1px\s+dashed/s);
+    assert.match(source, /\.story-requirement-card\s*\{[^}]*width:\s*100%\s*;[^}]*padding:\s*0\.72rem\s+0\.95rem\s*;[^}]*border:\s*1px\s+dashed[^}]*border-radius:\s*10px\s*;/s);
+    assert.match(statusSource, /\.status-transition,[^{]*\{[^}]*border-radius:\s*10px\s*;/s);
     assert.match(source, /\.story-requirement-active\s*\{[^}]*--story-requirement-tone:\s*#a61b13\s*;/s);
     assert.match(source, /\.story-requirement-card:focus-visible\s*\{[^}]*outline:\s*3px\s+solid\s+#174f82\s*;/s);
     assert.match(source, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.story-requirement-card\.story-requirement-highlight/s);

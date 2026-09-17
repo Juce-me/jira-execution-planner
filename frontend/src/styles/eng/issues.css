@@ -532,7 +532,11 @@
         .task-list:not(.epm-issue-board) > .epic-block {
             padding: 0.55rem;
             margin-bottom: 0.8rem;
-            border-radius: 8px;
+            border-radius: 10px;
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block {
+            border-radius: 10px;
         }
 
         .task-list:not(.epm-issue-board) .epic-block > .epic-header {
@@ -829,7 +833,7 @@
             padding: 0.72rem 0.95rem;
             border: 1px dashed var(--story-requirement-border);
             border-left: 3px dashed var(--story-requirement-tone);
-            border-radius: 8px;
+            border-radius: 10px;
             outline: none;
             background: var(--story-requirement-surface);
             color: inherit;

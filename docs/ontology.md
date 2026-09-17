@@ -4,7 +4,7 @@ Coverage: verified entry points and relationships for the Statistics area involv
 
 ## ENG Story Readiness
 
-Verified on: 2026-09-16.
+Verified on: 2026-09-17.
 
 - **Catch Up hierarchy**: Story-oriented ENG list grouped under Epic headers and optionally Initiative headers. Entry points: `frontend/src/dashboard.jsx`, `frontend/src/eng/useEngWorkHierarchy.js`, `frontend/src/eng/engWorkHierarchy.js`, and `frontend/src/eng/EngView.jsx`; real Story row: `frontend/src/issues/IssueCard.jsx`; synthetic requirement row: `frontend/src/eng/StoryRequirementCard.jsx`; established layout tests: `tests/ui/codebase_structure_smoke.spec.js`, `tests/ui/eng_group_board_card.spec.js`, and `tests/ui/eng_missing_story_ghosts.spec.js`. Consumes visible selected-sprint Stories, normalized Epic metadata, and a complete Story-readiness snapshot; requirements remain outside real Story collections.
 - **Planning hierarchy**: Catch Up's hierarchy with Planning controls, selection, Story Points, and capacity behavior. Entry points: `frontend/src/dashboard.jsx` and `frontend/src/eng/EngView.jsx`; tests: `tests/ui/planning_selection_defaults.spec.js` and `tests/ui/planning_capacity_editing.spec.js`. Depends on real Jira Story collections; synthetic requirements must not enter selection or capacity inputs.

@@ -373,3 +373,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - ENG alert navigation that promises to reveal a filtered target must clear to a truly neutral facet state, not the normal default-hidden state, and must be tested with that hidden option present in scope.
 - Team-catalog readers must unwrap the persisted `{catalog, meta}` envelope and normalize the inner `catalog`; never pass the envelope to a flat Team-map normalizer or display a Team id as its name.
 - ENG epic-header layout rules must preserve the complete shared `.task-status` presentation—geometry, typography, border, and colors; never add header-specific status-pill restyling.
+- When the user names an existing component as the visual reference, change the compared elements to match that reference; do not restyle the reference component unless explicitly requested.

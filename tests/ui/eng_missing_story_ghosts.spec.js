@@ -334,6 +334,20 @@ test('no-story Epics are dotted directly and inside Initiative grouping while mi
     const directZero = page.locator('.epic-block[data-epic-key="DIRECT-ZERO"]');
     await expect(directZero).toHaveClass(/epic-block-no-child-stories/);
     await expect(directZero).toHaveCSS('border-top-style', 'dotted');
+    const directRequirement = directZero.locator('[id^="story-required"]');
+    const nestedRequirement = nestedZero.locator('[id^="story-required"]');
+    const directStatusTransition = directZero.locator('.status-transition');
+    const nestedStatusTransition = nestedZero.locator('.status-transition');
+    for (const roundedElement of [
+        directZero,
+        nestedZero,
+        directRequirement,
+        nestedRequirement,
+        directStatusTransition,
+        nestedStatusTransition,
+    ]) {
+        await expect(roundedElement).toHaveCSS('border-radius', '10px');
+    }
     await expect(page.locator('.initiative-body .epic-block[data-epic-key="DIRECT-ZERO"]')).toHaveCount(0);
     const mixed = page.locator('.epic-block[data-epic-key="MIX-EPIC"]');
     await expect(mixed).not.toHaveClass(/epic-block-no-child-stories/);

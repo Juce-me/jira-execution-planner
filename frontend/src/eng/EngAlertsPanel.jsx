@@ -7,7 +7,7 @@ const ALERT_SUMMARY_CONFIG = [
     { key: 'backlog', label: 'Backlog', tone: 'following', sectionId: 'eng-alert-backlog' },
     { key: 'missingTeam', label: 'Missing team', tone: 'following', sectionId: 'eng-alert-missing-team' },
     { key: 'missingLabels', label: 'Missing labels', tone: 'following', sectionId: 'eng-alert-missing-labels' },
-    { key: 'needsStories', label: 'Needs stories', tone: 'following', sectionId: 'eng-alert-needs-stories' },
+    { key: 'needsStories', label: 'Stories required', tone: 'following', sectionId: 'eng-alert-needs-stories' },
     { key: 'waiting', label: 'Waiting', tone: 'following', sectionId: 'eng-alert-waiting' },
     { key: 'empty', label: 'Empty epic', tone: 'empty', sectionId: 'eng-alert-empty' },
     { key: 'done', label: 'Ready to close', tone: 'done', sectionId: 'eng-alert-done' },
@@ -41,7 +41,10 @@ export default function EngAlertsPanel({
         getBlockedAlertStatusLabel,
         getFuturePlanningNeedsStoriesReasonText,
         handleAlertStoryClick,
+        handleStoryRequirementClick,
+        dismissStoryRequirement,
         isFutureSprintSelected,
+        storyReadinessSprintState,
         jiraUrl,
         missingAlertTeams,
         missingLabelEpicTeams,
@@ -720,10 +723,10 @@ export default function EngAlertsPanel({
                                             </div>
                                         )}
 
-                                        {isFutureSprintSelected && needsStoriesEntries.length > 0 && (
-                                            <div className={`alert-card following ${showNeedsStoriesAlert ? '' : 'collapsed'}`} id="eng-alert-needs-stories" tabIndex={-1}>
+                                        {needsStoriesEntries.length > 0 && (
+                                            <div className={`alert-card ${storyReadinessSprintState === 'active' ? 'blocked' : 'following'} ${showNeedsStoriesAlert ? '' : 'collapsed'}`} id="eng-alert-needs-stories" tabIndex={-1}>
                                                 <div className="alert-card-header">
-                                                    <button className="alert-toggle" onClick={() => setShowNeedsStoriesAlert(prev => !prev)} title={showNeedsStoriesAlert ? 'Collapse needs stories panel' : 'Expand needs stories panel'}>
+                                                    <button className="alert-toggle" onClick={() => setShowNeedsStoriesAlert(prev => !prev)} title={showNeedsStoriesAlert ? 'Collapse Stories Required panel' : 'Expand Stories Required panel'}>
                                                         <span className="alert-toggle-icon" aria-hidden="true">
                                                             <svg className={`alert-toggle-chevron ${showNeedsStoriesAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
                                                                 <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -731,8 +734,8 @@ export default function EngAlertsPanel({
                                                         </span>
                                                         <span className="alert-toggle-label">{showNeedsStoriesAlert ? 'Hide' : 'Show'}</span>
                                                     </button>
-                                                    <div className="alert-title">📝 Needs Stories</div>
-                                                    <div className="alert-subtitle">These epics are labeled correctly but still are not sprint-ready for the selected future sprint.</div>
+                                                    <div className="alert-title">📝 Stories Required</div>
+                                                    <div className="alert-subtitle">These labeled Epics still need an actionable Story for the selected sprint and Team.</div>
                                                     <div className="alert-chip">{needsStoriesEpics.length} {needsStoriesEpics.length === 1 ? 'epic' : 'epics'}</div>
                                                 </div>
                                                 <div className={`alert-card-body ${showNeedsStoriesAlert ? '' : 'collapsed'}`}>
@@ -757,13 +760,12 @@ export default function EngAlertsPanel({
                                                                     {group.items.map(entry => {
                                                                         const epic = entry.epic;
                                                                         return (
-                                                                        <div key={epic.key} className="alert-story">
-                                                                            <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
+                                                                        <div key={entry.id} className="alert-story">
+                                                                            <div className="alert-story-main">
+                                                                                <button className="alert-story-link alert-story-local-link" type="button" onClick={() => handleStoryRequirementClick(entry)}>{epic.key} · {epic.summary}</button>
                                                                                 <div className="alert-story-note">{getFuturePlanningNeedsStoriesReasonText(entry.reason)}</div>
                                                                             </div>
-                                                                            <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Open epic →</a>
-                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
+                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissStoryRequirement(entry); }} title="Dismiss this Story requirement from alerts" type="button">×</button>
                                                                         </div>
                                                                     )})}
                                                                 </div>

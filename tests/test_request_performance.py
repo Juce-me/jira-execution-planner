@@ -122,3 +122,34 @@ class RequestPerformanceTests(unittest.TestCase):
             result = endpoint()
         self.assertEqual(result.json['loadMetrics']['jiraRequests'], 1)
         self.assertEqual(result.json['loadMetrics']['jiraPages'], 1)
+
+    def test_story_readiness_sprint_validation_uses_captured_context_in_worker(self):
+        import jira_server as server
+        from backend.routes import eng_routes
+        from backend.services.eng_board_stream import EngBoardRequestBudget, EngBoardRequestTransport
+        from tests.auth_mode_test_utils import force_basic_auth_mode
+        force_basic_auth_mode(self, server)
+
+        with server.app.test_request_context('/'):
+            context = server.current_request_auth_context()
+        eng_routes.bind_server_globals(vars(eng_routes))
+
+        response = Mock(status_code=200)
+        response.json.return_value = {'id': 42, 'name': 'Sprint 42', 'state': 'active'}
+        response.iter_content.return_value = [b'{"id":42,"name":"Sprint 42","state":"active"}']
+        response.headers = {}
+
+        def worker():
+            self.assertFalse(has_request_context())
+            transport = EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25))
+            eng_routes._story_readiness_validate_sprint(
+                context, transport, ('42', 'Sprint 42', 'active'), '',
+            )
+
+        http_session = Mock(get=Mock(return_value=response))
+        with patch.object(server, 'HTTP_SESSION', http_session), \
+             patch.object(server, 'JIRA_SEARCH_CIRCUIT_BREAKER', jira_client.JiraCircuitBreaker()), \
+             ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(worker).result()
+
+        self.assertEqual(http_session.get.call_count, 1)

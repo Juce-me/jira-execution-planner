@@ -31,6 +31,7 @@ import { useStorySubtasks } from './issues/useStorySubtasks.js';
 import EngView from './eng/EngView.jsx';
 import EngBoardView from './eng/EngBoardView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
+import StoryRequirementCard from './eng/StoryRequirementCard.jsx';
 import EngModeControl from './eng/EngModeControl.jsx';
 import EpicHeaderValueReadout from './eng/EpicHeaderValueReadout.jsx';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
@@ -38,6 +39,8 @@ import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
 import { ENG_TASK_LOAD_OUTCOME, useEngSprintData } from './eng/useEngSprintData.js';
+import { useStoryReadiness } from './eng/useStoryReadiness.js';
+import { buildStoryReadinessAlertModel, storyReadinessStatusMessage, useEngWorkHierarchy } from './eng/useEngWorkHierarchy.js';
 import { strictEngBoardMutationProps, strictEngBoardViewProps, useStrictEngBoardOwner, useStrictEngBoardPresentation } from './eng/useStrictEngBoardIntegration.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
 import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
@@ -46,6 +49,7 @@ import { useEngIssueFieldEdits } from './eng/useEngIssueFieldEdits.js';
 import { applyLocalEpicDetailsFieldUpdate } from './eng/engIssueLocalUpdates.js';
 import { createEngIssueEditState, patchEngIssueList, patchEngLoadedState } from './eng/engIssueEditState.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
+import { navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
 import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
@@ -139,7 +143,7 @@ import { summarizeTrackPhaseDurations } from './stats/projectTrackPhaseStats.js'
 import { epicHasExplicitlyEmptySprintValue, epicHasSelectedSprintLabel, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
-import { buildNeedsStoriesTeamEntries, getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
+import { getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
 import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
 import {
     fetchMissingPlanningInfo as requestMissingPlanningInfo,
@@ -967,6 +971,8 @@ import {
             const [showDoneEpicAlert, setShowDoneEpicAlert] = useState(savedPrefsRef.current.showDoneEpicAlert ?? true);
             const [showAlertsPanel, setShowAlertsPanel] = useState(savedPrefsRef.current.showAlertsPanel ?? true);
             const [dismissedAlertKeys, setDismissedAlertKeys] = useState([]);
+            const [dismissedStoryRequirementIds, setDismissedStoryRequirementIds] = useState([]);
+            const [storyRequirementNavigationError, setStoryRequirementNavigationError] = useState('');
             const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
             const [configRefreshNonce, setConfigRefreshNonce] = useState(0);
             const alertDismissedRef = useRef(false);
@@ -993,6 +999,7 @@ import {
             const catchUpAlertVersionRef = useRef(0);
             const groupLoadVersionRef = useRef(0);
             const rearmCatchUpAlerts = () => { catchUpAlertLoadRef.current = ''; catchUpAlertForceRefreshRef.current = true; catchUpAlertVersionRef.current += 1; setCatchUpAlertRefreshNonce(value => value + 1); };
+            const storyRequirementScopeRef = useRef('');
             const epmSettingsProjectsRequestIdRef = useRef(0);
             const epmSettingsProjectsCacheRef = useRef(new Map());
             const epmDraftIdCounterRef = useRef(0);
@@ -6759,6 +6766,22 @@ import {
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 strictBoardActive,
             });
+            const storyReadiness = useStoryReadiness({
+                backendUrl: BACKEND_URL,
+                enabled: selectedView === 'eng' && (isCatchUpMode || showPlanning),
+                primaryReady: tasksFetched
+                    && !loading
+                    && !productTasksLoading
+                    && !techTasksLoading
+                    && String(lastLoadedSprintRef.current ?? '') === String(selectedSprint ?? ''),
+                groupId: activeGroupId,
+                sprintId: selectedSprint,
+                sprintName: selectedSprintInfo?.name || '',
+                sprintState: selectedSprintState,
+                authRevision: authResumeStagedRevision,
+                configRevision: `${sharedConfigRevision}:${configRefreshNonce}`,
+                refreshRevision: catchUpAlertRefreshNonce,
+            });
             const strictBoard = useStrictEngBoardOwner({ active: strictBoardActive, backendUrl: BACKEND_URL, departmentId: activeGroupId, sprintId: selectedSprint, groupRevision: sharedConfigRevision, resolvedFocusColumnId: boardView?.focusedId || null, performanceGate, strictScope: boardStrictScope, trackApiResult, onAuthRequired: () => trackAppError('auth', 'session_recovery', 'reauth') });
             const strictBoardData = strictBoard.data; const refreshAfterStrictBoardMutation = strictBoard.refresh; const refreshLegacyBoardTasks = () => loadMeasuredGroupTasks({ forceRefresh: true });
             const loadMeasuredGroupTasks = (options = {}) => {
@@ -11594,6 +11617,7 @@ import {
             // out here explicitly or the whole task list renders underneath the board.
             const shouldRenderEngTaskList = selectedView === 'eng' && !showBoard && !isStatsSourceOnlyStatsView;
             const displayedEngError = sprintError || error;
+            const storyReadinessMessage = storyReadinessStatusMessage(storyReadiness.status, storyRequirementNavigationError);
             const onboardingEngReadiness = deriveOnboardingEngReadiness({
                 tasksFetched,
                 loading,
@@ -11602,62 +11626,26 @@ import {
                 displayedEngError
             });
             const retryEngLoad = sprintError ? () => loadSprints(true) : fetchTasks;
-            const groupTasksByEpic = (taskList) => {
-                const grouped = {};
-                taskList.forEach(task => {
-                    const epicKey = task.fields.epicKey || 'NO_EPIC';
-                    if (!grouped[epicKey]) {
-                        grouped[epicKey] = {
-                            epic: epicDetails[epicKey] || null,
-                            key: epicKey,
-                            tasks: [],
-                            storyPoints: 0,
-                            parentSummary: task.fields.parentSummary || null
-                        };
-                    }
-
-                    grouped[epicKey].tasks.push(task);
-                    const sp = parseFloat(task.fields.customfield_10004 || 0);
-                    if (!Number.isNaN(sp)) {
-                        grouped[epicKey].storyPoints += sp;
-                    }
-                    if (!grouped[epicKey].parentSummary && task.fields.parentSummary) {
-                        grouped[epicKey].parentSummary = task.fields.parentSummary;
-                    }
-                });
-                return grouped;
-            };
-
-            const groupEpicsByInitiative = (epicGroupsArray) => {
-                const initiativeMap = {};
-                const noInitiative = [];
-
-                epicGroupsArray.forEach(eg => {
-                    const initiative = epicDetails[eg.key]?.initiative;
-                    if (initiative && initiative.key) {
-                        if (!initiativeMap[initiative.key]) {
-                            initiativeMap[initiative.key] = {
-                                initiative,
-                                epicGroups: [],
-                            };
-                        }
-                        initiativeMap[initiative.key].epicGroups.push(eg);
-                    } else {
-                        noInitiative.push(eg);
-                    }
-                });
-
-                const result = Object.values(initiativeMap);
-                if (noInitiative.length > 0) {
-                    result.push({ initiative: null, epicGroups: noInitiative });
-                }
-                return result;
-            };
-
-            const epicGroups = React.useMemo(
-                () => sortEpicGroups(Object.values(groupTasksByEpic(visibleTasksForList)), engEpicSort),
-                [visibleTasksForList, epicDetails, engEpicSort]
-            );
+            const {
+                hierarchy: engWorkHierarchy,
+                epicGroups,
+                initiativeGroups,
+                hasInitiativeData,
+                groupByInitiative,
+                groupTasksByEpic,
+            } = useEngWorkHierarchy({
+                visibleTasksForList, epicDetails, capacityTasks,
+                readinessSnapshot: storyReadiness.snapshot,
+                readinessStatus: storyReadiness.status,
+                showPlanning, selectedSprint,
+                selectedSprintName: selectedSprintInfo?.name || '',
+                selectedSprintState, activeGroupId, selectedTeams, isAllTeamsSelected,
+                showTech, showProduct, searchQuery,
+                statusNeutral: engCatchUpFilters.facetViews?.[0]?.isNeutral && !burnoutTaskFilter,
+                priorityNeutral: engCatchUpFilters.facetViews?.[1]?.isNeutral && !burnoutTaskFilter,
+                admitsEpicProjectTrack: engCatchUpFilters.admitsEpicProjectTrack,
+                engEpicSort, groupByInitiativeChoice,
+            });
             // Board's own epic-level filter pipeline (§7.1, D19, O6) — sprint/group/team scope
             // only, gated by neither surface's facets (the leak Task 11 flagged).
             const strictBoardPresentation = useStrictEngBoardPresentation({ active: strictBoardActive, owner: strictBoard, savedBoard: activeGroup?.board || null, searchQuery, showBoard, visibleTaskCount: visibleTasks.length, trackSearch, legacyFilterInput: { scopeTasks: engFilterScopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection: engBoardFilterSelection } });
@@ -11670,22 +11658,6 @@ import {
                 () => collectJiraExportKeysFromTasks(boardEpicGroupsFiltered.flatMap(group => group.tasks || []), 'stories'),
                 [boardEpicGroupsFiltered]
             );
-            const hasInitiativeData = React.useMemo(() => {
-                return capacityTasks.some(task => {
-                    const epicKey = task?.fields?.epicKey;
-                    return Boolean(epicKey && epicDetails[epicKey]?.initiative?.key);
-                });
-            }, [capacityTasks, epicDetails]);
-
-            // §2: an explicit choice survives initiative data arriving; a user who has never
-            // chosen still gets today's data-driven default.
-            const groupByInitiative = groupByInitiativeChoice ?? hasInitiativeData;
-
-            const initiativeGroups = React.useMemo(() => {
-                if (!groupByInitiative) return null;
-                return groupEpicsByInitiative(epicGroups);
-            }, [groupByInitiative, epicGroups, epicDetails]);
-
             const compactStickyTop = compactStickyVisible ? compactHeaderOffset : 0;
             const planningStickyHeight = showPlanning ? planningOffset : 0;
             const filterBarStickyTop = compactStickyTop + planningStickyHeight; const epicStickyTop = filterBarStickyTop + filterBarHeight;
@@ -13043,40 +13015,15 @@ import {
                 () => new Set(missingLabelEpics.map(epic => epic.key).filter(Boolean)),
                 [missingLabelEpics]
             );
-            const needsStoriesEntries = React.useMemo(() => {
-                if (!isFutureSprintSelected) return [];
-                return planningCandidateEpics.reduce((entries, epic) => {
-                    if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key) || missingLabelEpicKeySet.has(epic.key)) {
-                        return entries;
-                    }
-                    const teamLabel = getFuturePlanningTeamLabel(epic);
-                    if (!teamLabel || !epicHasPlanningSprintLabel(epic) || !epicHasLabel(epic, teamLabel)) {
-                        return entries;
-                    }
-                    // One entry per labeled team that still owes a sprint story; a team
-                    // with its own sprint story is dropped even if peers on the same epic
-                    // are still missing one.
-                    entries.push(...buildNeedsStoriesTeamEntries({
-                        epic,
-                        teamInfos: getFuturePlanningTeamInfos(epic),
-                        epicStories: storiesByEpicKey.get(epic.key) || [],
-                        normalizeStatus: (value) => normalizeStatus(value),
-                        isTaskInSelectedSprint
-                    }));
-                    return entries;
-                }, []);
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet, getFuturePlanningTeamLabel, epicHasPlanningSprintLabel, epicHasLabel, storiesByEpicKey, isTaskInSelectedSprint, getFuturePlanningTeamInfos]);
-            const needsStoriesEpics = React.useMemo(() => {
-                const seen = new Set();
-                const epics = [];
-                needsStoriesEntries.forEach((entry) => {
-                    const key = entry.epic?.key;
-                    if (!key || seen.has(key)) return;
-                    seen.add(key);
-                    epics.push(entry.epic);
-                });
-                return epics;
-            }, [needsStoriesEntries]);
+            const storyReadinessAlerts = React.useMemo(() => buildStoryReadinessAlertModel({
+                selectedSprintState, dismissedIds: dismissedStoryRequirementIds,
+                alertTargets: engWorkHierarchy.alertTargets || [], isFutureSprintSelected,
+                backlogEpicKeys: backlogEpicKeySet, missingTeamEpicKeys: missingTeamEpicKeySet,
+                missingLabelEpicKeys: missingLabelEpicKeySet, normalizeStatus,
+            }), [selectedSprintState, dismissedStoryRequirementIds, engWorkHierarchy.alertTargets, isFutureSprintSelected, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet]);
+            const needsStoriesEntries = storyReadinessAlerts.entries;
+            const needsStoriesEpics = storyReadinessAlerts.epics;
+            const storyReadinessEpicKeySet = storyReadinessAlerts.epicKeySet;
 
             const emptyEpics = epicsInScope
                 .filter(epic => {
@@ -13261,12 +13208,13 @@ import {
                 const futureRoutedEpicKeys = new Set(futureRoutedEpics.map(epic => epic.key).filter(Boolean));
                 return emptyEpics.filter(epic => {
                     if (!epic?.key) return false;
+                    if (storyReadinessEpicKeySet.has(epic.key)) return false;
                     if (Number(epic.selectedActionableStories || 0) > 0) return false;
                     if (epicsWithActionableStoriesInSelectedSprint.has(epic.key)) return false;
                     if (futureRoutedEpicKeys.has(epic.key)) return false;
                     return true;
                 });
-            }, [isFutureSprintSelected, emptyEpics, epicsWithActionableStoriesInSelectedSprint, futureRoutedEpics]);
+            }, [isFutureSprintSelected, emptyEpics, epicsWithActionableStoriesInSelectedSprint, futureRoutedEpics, storyReadinessEpicKeySet]);
             const emptyEpicTeams = groupAlertsByTeam(emptyEpicsForAlert, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
 
             const waitingForStoriesEpics = React.useMemo(() => {
@@ -13276,12 +13224,13 @@ import {
                 const seen = new Set();
                 const merged = [...analysisWaitingEpics, ...postponedEmptyEpics].filter(epic => {
                     if (!epic?.key) return false;
+                    if (storyReadinessEpicKeySet.has(epic.key)) return false;
                     if (seen.has(epic.key)) return false;
                     seen.add(epic.key);
                     return true;
                 });
                 return merged;
-            }, [isFutureSprintSelected, analysisWaitingEpics, postponedEmptyEpics]);
+            }, [isFutureSprintSelected, analysisWaitingEpics, postponedEmptyEpics, storyReadinessEpicKeySet]);
 
             const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const backlogEpicTeams = groupAlertsByTeam(backlogEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
@@ -13525,6 +13474,41 @@ import {
             };
             const showGroupControl = (visibleControlGroups || []).length > 1; const searchActive = Boolean(String(searchInput || searchQuery || '').trim()); const searchPanelActive = searchActive || searchFocused;
             const clearEngFacetFilters = React.useCallback(() => resetEngFacetFilters({ setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct }), []);
+            const clearStoryRequirementHidingFilters = React.useCallback(() => {
+                setSearchInput('');
+                setSearchQuery('');
+                setBurnoutTaskFilter(null);
+                resetEngFacetFilters({
+                    setEngStatusFilter,
+                    setEngPriorityFilter,
+                    setEngProjectTrackFilter,
+                    defaultEngStatusFilter: null,
+                    setShowTech,
+                    setShowProduct,
+                });
+            }, []);
+            const handleStoryRequirementClick = React.useCallback((entry) => {
+                if (!entry?.id) return;
+                setStoryRequirementNavigationError('');
+                navigateToStoryRequirement({
+                    requirementId: entry.id,
+                    clearHidingFilters: clearStoryRequirementHidingFilters,
+                    prefersReducedMotion,
+                    onMissing: () => setStoryRequirementNavigationError('The Story requirement could not be revealed. Retry Story readiness or adjust the selected Department.'),
+                });
+            }, [clearStoryRequirementHidingFilters]);
+            const dismissStoryRequirement = React.useCallback((entry) => {
+                if (!entry?.id) return;
+                setDismissedStoryRequirementIds(previous => previous.includes(entry.id) ? previous : [...previous, entry.id]);
+            }, []);
+            useEffect(() => {
+                const scopeKey = `${activeGroupId || ''}::${selectedSprint || ''}`;
+                if (storyRequirementScopeRef.current && storyRequirementScopeRef.current !== scopeKey) {
+                    setDismissedStoryRequirementIds([]);
+                    setStoryRequirementNavigationError('');
+                }
+                storyRequirementScopeRef.current = scopeKey;
+            }, [activeGroupId, selectedSprint]);
             const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
             const renderSearchControl = (surface, extraClassName = '') => (
@@ -14017,8 +14001,9 @@ import {
                         return (
                             <div
                                 key={epicGroup.key}
-                                className={`epic-block ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? 'epic-excluded' : ''} ${stickyEpicFocusKey === epicGroup.key ? 'epic-block-sticky-focus' : ''}`}
+                                className={`epic-block ${epicGroup.hasNoChildStories ? 'epic-block-no-child-stories' : ''} ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? 'epic-excluded' : ''} ${stickyEpicFocusKey === epicGroup.key ? 'epic-block-sticky-focus' : ''}`}
                                 data-onboarding-target="hierarchy-epic"
+                                data-epic-key={epicGroup.key}
                                 ref={(node) => {
                                     if (!node) {
                                         epicRefMap.current.delete(epicGroup.key);
@@ -14215,7 +14200,18 @@ import {
 	                                        )}
 	                                    </div>
 	                                </div>
-                                {epicGroup.tasks.map(task => {
+                                {(epicGroup.rows || epicGroup.tasks.map(task => ({ kind: 'story', id: task.key, task }))).map(row => {
+                                    if (row.kind === 'story_requirement') {
+                                        return (
+                                            <StoryRequirementCard
+                                                key={row.id}
+                                                requirement={row}
+                                                jiraUrl={jiraUrl}
+                                                sourceSurface={showPlanning ? 'planning' : 'catch_up'}
+                                            />
+                                        );
+                                    }
+                                    const task = row.task;
                                     const teamInfo = getTeamInfo(task);
                                     const teamLabel = getIssueTeamLabel(teamInfo);
                                     const statusClassName = getIssueStatusClassName(task.fields.status?.name);
@@ -16721,7 +16717,10 @@ import {
                                                 getBlockedAlertStatusLabel,
                                                 getFuturePlanningNeedsStoriesReasonText,
                                                 handleAlertStoryClick,
+                                                handleStoryRequirementClick,
+                                                dismissStoryRequirement,
                                                 isFutureSprintSelected,
+                                                storyReadinessSprintState: selectedSprintState,
                                                 jiraUrl,
                                                 missingAlertTeams,
                                                 missingLabelEpicTeams,
@@ -16765,6 +16764,10 @@ import {
                                     setGroupByInitiative={setGroupByInitiativeChoice}
                                     InitiativeIcon={InitiativeIcon}
                                     visibleTasksForList={visibleTasksForList}
+                                    hierarchyCounts={engWorkHierarchy.counts}
+                                    readinessStatus={storyReadiness.status}
+                                    readinessError={storyReadinessMessage}
+                                    onRetryReadiness={storyReadiness.retry}
                                     activeDependencyFocus={activeDependencyFocus}
                                     handleDependencyFocusClick={handleDependencyFocusClick}
                                     initiativeGroups={initiativeGroups}

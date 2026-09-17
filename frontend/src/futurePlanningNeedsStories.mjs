@@ -1,10 +1,13 @@
 function isTerminalStory(task, normalizeStatus) {
     const status = normalizeStatus(task?.fields?.status?.name);
-    return status === 'done' || status === 'killed' || status === 'incomplete';
+    return status === 'blocked' || status === 'done' || status === 'killed' || status === 'incomplete';
 }
 
 export function getFuturePlanningNeedsStoriesReasonText(reason) {
     if (reason === 'no_stories') return 'No stories yet for this sprint.';
+    if (reason === 'selected_stories_not_actionable') return 'Selected-sprint stories exist, but none are actionable.';
+    if (reason === 'stories_outside_sprint') return 'Stories exist, but not in the selected sprint.';
+    if (reason === 'team_uncovered') return 'This Team has no actionable Story in the selected sprint.';
     if (reason === 'only_closed_stories') return 'Only closed stories exist for this epic.';
     if (reason === 'stories_in_other_sprint') return 'Open stories exist, but not in the selected sprint.';
     if (reason === 'team_missing_selected') return 'This team has no story for the selected sprint.';

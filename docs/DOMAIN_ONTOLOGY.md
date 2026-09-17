@@ -51,6 +51,28 @@ a direct Epic field.
 A Sprint is a delivery-time scope. Sprint selection limits the issues considered by the current
 view. It does not change field ownership.
 
+### Story readiness
+
+Story readiness is the application-owned assessment of whether each expected Team on an in-scope
+Epic has at least one actionable Story in the selected active or future Sprint. An expected Team is
+created only by an exact configured Team-label match on the Epic. `Blocked`, `Done`, `Killed`, and
+`Incomplete` Stories are not actionable for this assessment.
+
+Story readiness is valid only when the exhaustive, scope-stamped snapshot is complete. A failed,
+partial, stale, or scope-mismatched snapshot is unavailable rather than evidence that work is
+missing.
+
+### Story requirement
+
+A Story requirement is one unmet `(Department, Sprint, Epic, expected Team)` contribution. It is
+application guidance, not a Jira issue. The `Story required` row may open the owning Epic in Jira so
+a user can create a Story, but it has no issue key, Story Points, status, priority, dependency,
+selection, mutation, or export identity of its own.
+
+Story requirements are consumed by the Catch Up and Planning hierarchy and by the Catch Up-only
+Stories Required alert. Alert dismissal changes only alert-session state and never removes the
+hierarchy's readiness truth.
+
 ## View projections
 
 ### Catch Up
@@ -67,6 +89,8 @@ Catch Up is a Story-oriented task list grouped under Epic headers.
 - Both Project Track options unchecked admits only Stories whose existing parent Epic has a
   genuinely unset Project Track.
 - Stories without a parent Epic do not match that explicit-empty state.
+- A complete Story-readiness snapshot may add synthetic Story-requirement rows without adding them
+  to the Catch Up Story collection or Story count.
 
 ### Board
 
@@ -78,6 +102,10 @@ options unchecked means only Epics with a genuinely unset Project Track.
 Planning and Scenario reuse the shared Story task-list projection where applicable. When they use
 the Project Track facet, they inherit Catch Up's parent-Epic relationship and entity-specific
 counts rather than defining a separate interpretation.
+
+Planning consumes Story readiness and places requirement-bearing Initiatives and Epics first, but
+requirements never enter selection, capacity, Story Points, dependencies, exports, or mutations.
+Scenario does not consume Story readiness.
 
 ### Statistics
 

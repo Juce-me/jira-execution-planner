@@ -375,6 +375,9 @@ async function installDashboardFromSource(page, options = {}) {
             unexpectedApiRequests.push(`${method} ${url.pathname}`);
             return json(route, { error: 'legacy scenario overrides route must not be called' }, 500);
         }
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json(route, { schemaVersion: 1, complete: true, scope: {}, epics: [] });
+        }
         if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/status') {

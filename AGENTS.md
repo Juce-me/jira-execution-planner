@@ -368,3 +368,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In ENG Story displays, render a null Jira Story Points value as `0 SP` while preserving null internally until the user saves a number.
 - In ENG Catch Up and Planning, do not add Delivery Owner to Epic metadata; Story Points editing must reuse the inline SP slot as an input with no button or popup, preserve inherited typography, and keep a 23px minimum input width.
 - Missing-Story-Points alert links must reveal and highlight the Story on the ENG dashboard and focus its inline Story Points input in edit mode instead of navigating directly to Jira.
+- When replacing an ENG alert data source, preserve the existing alert producer as a fallback until the replacement succeeds for the same scope; never remove a working alert solely because a broader endpoint was added.
+- In ENG alert panels, new categories must reuse the existing `.alert-story` title/note/dismiss composition and visual styles; native button semantics must neutralize the global button surface, and no secondary row action may be added unless explicitly requested.
+- ENG alert navigation that promises to reveal a filtered target must clear to a truly neutral facet state, not the normal default-hidden state, and must be tested with that hidden option present in scope.
+- Team-catalog readers must unwrap the persisted `{catalog, meta}` envelope and normalize the inner `catalog`; never pass the envelope to a flat Team-map normalizer or display a Team id as its name.
+- ENG epic-header layout rules must preserve the complete shared `.task-status` presentation—geometry, typography, border, and colors; never add header-specific status-pill restyling.
+- When the user names an existing component as the visual reference, change the compared elements to match that reference; do not restyle the reference component unless explicitly requested.

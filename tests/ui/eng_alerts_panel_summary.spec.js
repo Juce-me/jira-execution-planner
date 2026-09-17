@@ -153,6 +153,19 @@ async function installAlertsFixture(page) {
             return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
         }
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json({
+                schemaVersion: 1,
+                complete: true,
+                scope: {
+                    groupId: 'grp-default',
+                    sprintId: String(selectedSprintId),
+                    sprintName: selectedSprintName,
+                    sprintState: 'active',
+                },
+                epics: [],
+            });
+        }
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');

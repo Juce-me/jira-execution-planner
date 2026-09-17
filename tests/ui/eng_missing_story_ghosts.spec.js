@@ -13,6 +13,7 @@ function deferred() {
 
 function story(key = 'MIX-1', overrides = {}) {
     const epicKey = overrides.epicKey || 'MIX-EPIC';
+    const projectKey = overrides.projectKey || 'MIX';
     return {
         id: key,
         key,
@@ -26,9 +27,9 @@ function story(key = 'MIX-1', overrides = {}) {
             customfield_10004: 3,
             epicKey,
             parentSummary: overrides.epicSummary || 'Mixed coverage epic',
-            projectKey: 'MIX',
-            teamId: 'team-alpha',
-            teamName: 'Alpha Team',
+            projectKey,
+            teamId: overrides.teamId || 'team-alpha',
+            teamName: overrides.teamName || 'Alpha Team',
             sprint: [{ id: sprintId, name: sprintName, state: overrides.sprintState || 'active' }],
         },
     };
@@ -40,6 +41,8 @@ function readinessEpic(key, {
     teamId = 'team-beta',
     teamName = 'Beta Team',
     initiative = null,
+    projectKey = 'MIX',
+    projectClass = 'product',
 } = {}) {
     return {
         key,
@@ -47,8 +50,8 @@ function readinessEpic(key, {
         status: { name: 'In Progress' },
         priority: { name: 'High' },
         assignee: { displayName: 'Epic Owner' },
-        projectKey: 'MIX',
-        projectClass: 'product',
+        projectKey,
+        projectClass,
         projectTrack: 'product',
         initiative,
         missingTeams: [{ id: teamId, name: teamName, reason }],
@@ -74,6 +77,8 @@ async function installFixture(page, {
     sprintState = 'active',
     productIssues = [],
     productEpics = {},
+    techIssues = [],
+    techEpics = {},
     readinessEpics = [],
     primaryGates = {},
     readinessGate = null,
@@ -143,7 +148,7 @@ async function installFixture(page, {
             if (project === 'product') {
                 return json({ issues: productIssues, epics: productEpics, epicsInScope: Object.values(productEpics), names: {} });
             }
-            return json({ issues: [], epics: {}, epicsInScope: [], names: {} });
+            return json({ issues: techIssues, epics: techEpics, epicsInScope: Object.values(techEpics), names: {} });
         }
         if (url.pathname === '/api/eng/story-readiness') {
             if (readinessGate) await readinessGate.promise;
@@ -436,7 +441,13 @@ test('Stories Required reuses the existing alert row style and focuses the local
     });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 
+    const searchInput = page.getByRole('textbox', { name: 'Search tickets...' });
     const section = page.locator('#eng-alert-needs-stories');
+    await searchInput.fill('no matching alert');
+    await expect(section).toHaveCount(0);
+    await searchInput.fill('ZERO-EPIC');
+    await expect(section).toBeVisible();
+
     const localAction = section.locator('.alert-story-local-link');
     await expect(localAction).toHaveJSProperty('tagName', 'BUTTON');
     await expect(section.locator('.alert-action')).toHaveCount(0);
@@ -468,10 +479,40 @@ test('Stories Required reuses the existing alert row style and focuses the local
 
     const initialUrl = page.url();
     const ghost = page.locator('.story-requirement-card[data-epic-key="ZERO-EPIC"]');
-    await expect(ghost).toHaveCount(0);
+    await expect(ghost).toBeVisible();
     await localAction.click();
     await expect(ghost).toBeVisible();
     await expect(ghost).toBeFocused();
     await expect(ghost).toHaveClass(/story-requirement-highlight/);
     expect(page.url()).toBe(initialUrl);
+});
+
+test('Product-only filter removes Tech Stories Required alerts', async ({ page }) => {
+    await installFixture(page, {
+        productIssues: [story('PROD-1', { epicKey: 'PROD-EPIC', projectKey: 'PROD' })],
+        productEpics: { 'PROD-EPIC': productEpic('PROD-EPIC', 'Product delivery epic') },
+        techIssues: [story('TECH-1', {
+            epicKey: 'TECH-EPIC',
+            projectKey: 'TECH',
+            teamId: 'team-beta',
+            teamName: 'Beta Team',
+        })],
+        techEpics: {
+            'TECH-EPIC': { ...productEpic('TECH-EPIC', 'Tech delivery epic'), projectKey: 'TECH', projectClass: 'tech' },
+        },
+        readinessEpics: [
+            readinessEpic('PROD-ZERO', { projectKey: 'PROD', projectClass: 'product' }),
+            readinessEpic('TECH-ZERO', { projectKey: 'TECH', projectClass: 'tech' }),
+        ],
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const section = page.locator('#eng-alert-needs-stories');
+    await expect(section.locator('.alert-story')).toHaveCount(2);
+    await page.locator('.fb-trigger').click();
+    await page.locator('.popover .pop-group[data-facet="projects"] .pop-opt[data-option="tech"]').click();
+
+    await expect(section.locator('.alert-story')).toHaveCount(1);
+    await expect(section).toContainText('PROD-ZERO');
+    await expect(section).not.toContainText('TECH-ZERO');
 });

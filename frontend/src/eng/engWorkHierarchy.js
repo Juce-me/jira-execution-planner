@@ -1,4 +1,4 @@
-import { sortEpicGroups } from './engTaskUtils.js';
+import { matchesEngEpicSearch, sortEpicGroups } from './engTaskUtils.js';
 import { buildStoryRequirementId } from './alertEpicNavigation.js';
 
 const SUPPORTED_SPRINT_STATES = new Set(['active', 'future']);
@@ -142,18 +142,6 @@ function selectedTeamSet(filters) {
     return filters.allTeamsSelected === true || ids.size === 0 ? null : ids;
 }
 
-function epicMatchesSearch(epic, query) {
-    const needle = normalized(query);
-    if (!needle) return true;
-    return [
-        epic?.key,
-        epic?.summary,
-        epic?.assignee?.displayName,
-        epic?.initiative?.key,
-        epic?.initiative?.summary,
-    ].some(value => normalized(value).includes(needle));
-}
-
 function projectVisible(epic, filters) {
     const projectClass = normalized(epic?.projectClass);
     if (projectClass === 'tech') return filters.showTech !== false;
@@ -182,7 +170,7 @@ function requirementVisible(requirement, filters) {
     return storyFacetsAreNeutral(filters)
         && projectVisible(requirement.epic, filters)
         && projectTrackVisible(requirement.epic, filters)
-        && epicMatchesSearch(requirement.epic, filters.searchQuery);
+        && matchesEngEpicSearch(requirement.epic, filters.searchQuery);
 }
 
 function requirementFrom(epic, team, scope) {

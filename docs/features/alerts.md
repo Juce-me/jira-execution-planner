@@ -8,12 +8,14 @@ The dashboard uses alert panels to highlight work that needs attention in the cu
 - Alert panels load only in Catch Up. Board, Planning, Statistics, and Scenario do not request or render the panels.
 - Catch Up renders Product and Tech tasks first. After both visible task requests finish, alert enrichment, missing-info, ready-to-close, and future-backlog sources load progressively in the background without blocking the task list.
 - Story readiness is a separate progressive read used by both Catch Up and Planning after Product and Tech Stories render. Planning does not start the unrelated Catch Up alert sources.
+- Every Catch Up filter also filters every alert category. Story alerts use the exact visible Story set after Team, Status, Priority, Product/Tech, Project Track, search, and focused-stat filtering. Epic alerts, including Stories Required, apply the equivalent Epic fields and facet rules. Alert rows, category summary chips, and the total count all reflect the filtered result.
 - Task refreshes and status or priority changes invalidate any pending alert cohort in every ENG mode; stale responses are ignored, and the alerts reload after returning to Catch Up.
 - Each panel can be collapsed.
 - Dismissed alert items stay hidden in the browser until the local alert state is reset.
 - Postponed work is routed separately so it does not also appear in ordinary hygiene panels.
 
 Analytics allowlist reason: no analytics event is added because this changes automatic request scheduling, not a user interaction or reportable product action.
+Search-driven alert filtering is covered by the existing privacy-bounded `app_search` event. Other filter changes retain the existing `filter_changed` contract. Alert filtering adds no event and never sends query or alert contents.
 
 ## Current Alert Panels
 

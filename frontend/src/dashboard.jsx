@@ -50,6 +50,7 @@ import { applyLocalEpicDetailsFieldUpdate } from './eng/engIssueLocalUpdates.js'
 import { createEngIssueEditState, patchEngIssueList, patchEngLoadedState } from './eng/engIssueEditState.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
 import { navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
+import { useEngAlertFilters } from './eng/useEngAlertFilters.js';
 import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
@@ -13116,9 +13117,6 @@ import {
                 return list.sort((a, b) => a.name.localeCompare(b.name));
             };
 
-            const missingAlertTeams = groupAlertsByTeam(consolidatedMissingStories, (item) => getTeamInfo(item.task));
-            const blockedAlertTeams = groupAlertsByTeam(blockedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
-            const doneEpicTeams = groupAlertsByTeam(doneStoryEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const postponedTasks = React.useMemo(() => {
                 return tasks.filter(task => {
                     if (!task?.key) return false;
@@ -13168,8 +13166,6 @@ import {
                 selectedSprintInfo?.name
             ]);
 
-            const postponedAlertTeams = groupAlertsByTeam(postponedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
-            const postponedEpicTeams = groupAlertsByTeam(futureRoutedEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
             const postponedEmptyEpics = React.useMemo(() => {
                 return emptyEpics.filter(epic => {
                     const status = normalizeStatus(epic.status?.name);
@@ -13215,8 +13211,6 @@ import {
                     return true;
                 });
             }, [isFutureSprintSelected, emptyEpics, epicsWithActionableStoriesInSelectedSprint, futureRoutedEpics, storyReadinessEpicKeySet]);
-            const emptyEpicTeams = groupAlertsByTeam(emptyEpicsForAlert, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-
             const waitingForStoriesEpics = React.useMemo(() => {
                 if (isFutureSprintSelected) {
                     return [];
@@ -13232,58 +13226,52 @@ import {
                 return merged;
             }, [isFutureSprintSelected, analysisWaitingEpics, postponedEmptyEpics, storyReadinessEpicKeySet]);
 
-            const analysisEpicTeams = groupAlertsByTeam(waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const backlogEpicTeams = groupAlertsByTeam(backlogEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const missingTeamEpicTeams = groupAlertsByTeam(missingTeamEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const missingLabelEpicTeams = groupAlertsByTeam(missingLabelEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const needsStoriesTeams = groupAlertsByTeam(needsStoriesEntries, (entry) => entry.team, (a, b) => (a.epic.summary || '').localeCompare(b.epic.summary || ''));
+            const {
+                visibleAlertCollections,
+                missingAlertKeySet,
+                blockedAlertKeySet,
+                postponedAlertKeySet,
+                backlogAlertKeySet,
+                needsStoriesAlertKeySet,
+                waitingAlertKeySet,
+                emptyAlertKeySet,
+                doneAlertKeySet,
+                alertCounts,
+                alertItemCount,
+            } = useEngAlertFilters({
+                collections: {
+                    consolidatedMissingStories,
+                    blockedTasks,
+                    postponedTasks,
+                    futureRoutedEpics,
+                    backlogEpics,
+                    missingTeamEpics,
+                    missingLabelEpics,
+                    needsStoriesEntries,
+                    needsStoriesEpics,
+                    waitingForStoriesEpics,
+                    emptyEpicsForAlert,
+                    doneStoryEpics,
+                },
+                visibleTasks: visibleTasksForList,
+                searchQuery,
+                epicDetails,
+                filters: engCatchUpFilters,
+                techProjectKeys,
+                focusedFilterActive: Boolean(burnoutTaskFilter),
+            });
 
-            const missingAlertKeySet = React.useMemo(
-                () => new Set(consolidatedMissingStories.map(item => item.task?.key).filter(Boolean)),
-                [consolidatedMissingStories]
-            );
-            const blockedAlertKeySet = React.useMemo(
-                () => new Set(blockedTasks.map(task => task.key).filter(Boolean)),
-                [blockedTasks]
-            );
-            const postponedAlertKeySet = React.useMemo(
-                () => new Set([...postponedTasks.map(task => task.key), ...futureRoutedEpics.map(epic => epic.key)].filter(Boolean)),
-                [postponedTasks, futureRoutedEpics]
-            );
-            const backlogAlertKeySet = React.useMemo(
-                () => new Set(backlogEpics.map(epic => epic.key).filter(Boolean)),
-                [backlogEpics]
-            );
-            const needsStoriesAlertKeySet = React.useMemo(
-                () => new Set(needsStoriesEpics.map(epic => epic.key).filter(Boolean)),
-                [needsStoriesEpics]
-            );
-            const waitingAlertKeySet = React.useMemo(
-                () => new Set(waitingForStoriesEpics.map(epic => epic.key).filter(Boolean)),
-                [waitingForStoriesEpics]
-            );
-            const emptyAlertKeySet = React.useMemo(
-                () => new Set(emptyEpicsForAlert.map(epic => epic.key).filter(Boolean)),
-                [emptyEpicsForAlert]
-            );
-            const doneAlertKeySet = React.useMemo(
-                () => new Set(doneStoryEpics.map(epic => epic.key).filter(Boolean)),
-                [doneStoryEpics]
-            );
-
-            const alertCounts = {
-                missing: consolidatedMissingStories.length,
-                blocked: blockedTasks.length,
-                followup: postponedTasks.length + futureRoutedEpics.length,
-                backlog: backlogEpics.length,
-                missingTeam: missingTeamEpics.length,
-                missingLabels: missingLabelEpics.length,
-                needsStories: needsStoriesEpics.length,
-                waiting: waitingForStoriesEpics.length,
-                empty: emptyEpicsForAlert.length,
-                done: doneStoryEpics.length
-            };
-            const alertItemCount = alertCounts.missing + alertCounts.blocked + alertCounts.followup + alertCounts.backlog + alertCounts.missingTeam + alertCounts.missingLabels + alertCounts.needsStories + alertCounts.waiting + alertCounts.empty + alertCounts.done;
+            const missingAlertTeams = groupAlertsByTeam(visibleAlertCollections.consolidatedMissingStories, (item) => getTeamInfo(item.task));
+            const blockedAlertTeams = groupAlertsByTeam(visibleAlertCollections.blockedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
+            const doneEpicTeams = groupAlertsByTeam(visibleAlertCollections.doneStoryEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const postponedAlertTeams = groupAlertsByTeam(visibleAlertCollections.postponedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
+            const postponedEpicTeams = groupAlertsByTeam(visibleAlertCollections.futureRoutedEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const emptyEpicTeams = groupAlertsByTeam(visibleAlertCollections.emptyEpicsForAlert, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const analysisEpicTeams = groupAlertsByTeam(visibleAlertCollections.waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const backlogEpicTeams = groupAlertsByTeam(visibleAlertCollections.backlogEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const missingTeamEpicTeams = groupAlertsByTeam(visibleAlertCollections.missingTeamEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const missingLabelEpicTeams = groupAlertsByTeam(visibleAlertCollections.missingLabelEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
+            const needsStoriesTeams = groupAlertsByTeam(visibleAlertCollections.needsStoriesEntries, (entry) => entry.team, (a, b) => (a.epic.summary || '').localeCompare(b.epic.summary || ''));
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -16701,19 +16689,19 @@ import {
                                             alertProps={{
                                                 analysisEpicTeams,
                                                 backlogEpicTeams,
-                                                backlogEpics,
+                                                backlogEpics: visibleAlertCollections.backlogEpics,
                                                 blockedAlertTeams,
-                                                blockedTasks,
+                                                blockedTasks: visibleAlertCollections.blockedTasks,
                                                 buildKeyListLink,
                                                 buildTeamStatusLink,
-                                                consolidatedMissingStories,
+                                                consolidatedMissingStories: visibleAlertCollections.consolidatedMissingStories,
                                                 dismissAlertItem,
                                                 doneEpicTeams,
-                                                doneStoryEpics,
+                                                doneStoryEpics: visibleAlertCollections.doneStoryEpics,
                                                 emptyEpicTeams,
-                                                emptyEpics,
-                                                emptyEpicsForAlert,
-                                                futureRoutedEpics,
+                                                emptyEpics: visibleAlertCollections.emptyEpicsForAlert,
+                                                emptyEpicsForAlert: visibleAlertCollections.emptyEpicsForAlert,
+                                                futureRoutedEpics: visibleAlertCollections.futureRoutedEpics,
                                                 getBlockedAlertStatusLabel,
                                                 getFuturePlanningNeedsStoriesReasonText,
                                                 handleAlertStoryClick,
@@ -16724,15 +16712,15 @@ import {
                                                 jiraUrl,
                                                 missingAlertTeams,
                                                 missingLabelEpicTeams,
-                                                missingLabelEpics,
+                                                missingLabelEpics: visibleAlertCollections.missingLabelEpics,
                                                 missingTeamEpicTeams,
-                                                missingTeamEpics,
-                                                needsStoriesEntries,
-                                                needsStoriesEpics,
+                                                missingTeamEpics: visibleAlertCollections.missingTeamEpics,
+                                                needsStoriesEntries: visibleAlertCollections.needsStoriesEntries,
+                                                needsStoriesEpics: visibleAlertCollections.needsStoriesEpics,
                                                 needsStoriesTeams,
                                                 postponedAlertTeams,
                                                 postponedEpicTeams,
-                                                postponedTasks,
+                                                postponedTasks: visibleAlertCollections.postponedTasks,
                                                 setShowBacklogAlert,
                                                 setShowBlockedAlert,
                                                 setShowDoneEpicAlert,
@@ -16753,7 +16741,7 @@ import {
                                                 showNeedsStoriesAlert,
                                                 showPostponedAlert,
                                                 showWaitingAlert,
-                                                waitingForStoriesEpics,
+                                                waitingForStoriesEpics: visibleAlertCollections.waitingForStoriesEpics,
                                             }}
                                         />
                                     ) : null}

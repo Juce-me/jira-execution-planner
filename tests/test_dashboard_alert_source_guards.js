@@ -241,7 +241,7 @@ test('Story readiness alerts use the authoritative composite Team requirements',
     assert.match(hierarchySource, /alertTargets\.filter/);
     assert.match(
         source,
-        /const needsStoriesTeams = groupAlertsByTeam\(needsStoriesEntries, \(entry\) => entry\.team,/
+        /const needsStoriesTeams = groupAlertsByTeam\(visibleAlertCollections\.needsStoriesEntries, \(entry\) => entry\.team,/
     );
     assert.match(
         source,

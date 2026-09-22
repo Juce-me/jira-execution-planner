@@ -107,6 +107,12 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Frontend Planning Workflow
 
+0. `EXEC-connection-recovery-reload.md`
+   - Active implementation plan for replacing the partial Retry connection loader fan-out with a
+     guarded document reload. The plan preserves dirty Settings and Scenario Planner work in a
+     strict, expiring, tab-local capsule, restores it only after fresh same-principal bootstrap, and
+     keeps revision conflicts explicit without replaying writes.
+
 0. `EXEC-defer-eng-alert-loading.md`
    - Implemented and verified locally on 2026-08-08; pending acceptance or merge. Separates first-screen Product/Tech data from alert enrichment, then starts missing-info and every other alert source only after visible data and only in Catch Up.
 

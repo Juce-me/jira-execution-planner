@@ -71,7 +71,8 @@ The capsule must be:
 
 - versioned and schema validated with exact-key checks;
 - limited to 30 minutes and a documented maximum serialized byte size;
-- bound to the authenticated workspace id, private view-config id, and stable application user id;
+- bound to the authenticated workspace id and private view-config id, whose ownership already scopes
+  the existing auth-resume capsule to the current application user;
 - written only after all required identity fields are known;
 - strict about allowed Settings and Scenario fields;
 - cleared on expiry, malformed data, size overflow, principal mismatch, successful restoration, or

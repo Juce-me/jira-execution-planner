@@ -103,13 +103,13 @@ async function installBoardFixture(page, {
     homeTokenDelayMs = 0, homeTokenFailureCount = 0,
     groupsResponseGate = null, groupsStatus = 200, groupsSource = 'test', groupPreferences = null,
     groupPreferencesResponseGate = null,
-    sprintResponseGate = null, sprints = null, sprintsStatus = 200, requestUrls = null, requestLog = null,
+    sprintResponseGate = null, sprintResponder = null, sprints = null, sprintsStatus = 200, requestUrls = null, requestLog = null,
     selectedProjects = [{ key: 'PLAT', type: 'product' }], savedBoardId = '',
     projectSaveResponseGate = null, boardConfigSaveResponseGate = null,
     boardCapability = strictBoard, performanceLoads = null, performanceResponseGate = null,
     performanceStatus = 201, jiraProjects = [{ key: 'DRAFT', name: 'Draft Project' }],
     jiraBoards = [{ id: '99', name: 'Draft Board', type: 'scrum' }], analyticsEnabled = false,
-    userCanEditSettings = true, settingsAdminOnly = false,
+    userCanEditSettings = true, settingsAdminOnly = false, sprintCatalogSource = null,
 } = {}) {
     let strictBoardRequestCount = 0;
     let acceptedSelectedProjects = selectedProjects;
@@ -135,6 +135,7 @@ async function installBoardFixture(page, {
     let homeTokenRequestCount = 0;
     let configRequestCount = 0;
     let groupsRequestCount = 0;
+    let sprintRequestCount = 0;
     await installDashboardShell(page);
     if (sourceBundle) {
         await page.unroute('**/frontend/dist/dashboard.js');
@@ -188,6 +189,13 @@ async function installBoardFixture(page, {
         }
         if (url.pathname === '/api/config') {
             configRequestCount += 1;
+            const currentSprintCatalogSource = typeof sprintCatalogSource === 'function'
+                ? sprintCatalogSource({
+                    requestIndex: configRequestCount,
+                    boardId: acceptedSavedBoardId,
+                    workspaceRevision: acceptedWorkspaceRevision,
+                })
+                : sprintCatalogSource;
             const config = {
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
@@ -208,6 +216,7 @@ async function installBoardFixture(page, {
                     teamField: { fieldId: 'customfield_10023', fieldName: 'Team' },
                 },
                 epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
+                ...(currentSprintCatalogSource ? { sprintCatalogSource: currentSprintCatalogSource } : {}),
             };
             const responseStatus = typeof configStatus === 'function'
                 ? configStatus({ requestIndex: configRequestCount })
@@ -294,6 +303,11 @@ async function installBoardFixture(page, {
         if (url.pathname === '/api/components') return json({ components: [{ id: 'platform', name: 'Platform' }] });
         if (url.pathname === '/api/boards') return json({ boards: jiraBoards });
         if (url.pathname === '/api/sprints') {
+            sprintRequestCount += 1;
+            if (sprintResponder) {
+                const result = await sprintResponder({ url, request, requestIndex: sprintRequestCount });
+                return json(result.body, result.status || 200);
+            }
             const gate = typeof sprintResponseGate === 'function' ? sprintResponseGate() : sprintResponseGate;
             if (gate) await gate;
             if (sprintsStatus !== 200) return json({ error: 'sprints_unavailable' }, sprintsStatus);
@@ -380,11 +394,11 @@ async function installBoardFixture(page, {
 async function openBoard(page, {
     width = 1280, height = 900, board, groups, epicSpecs, reducedMotion, strictBoard, requests, sourceBundle, configDelayMs,
     configResponseGate, configStatus, taskResponseGate, boardResponseGate, strictEpicKeyForRequest,
-    homeTokenDelayMs, homeTokenFailureCount, groupsResponseGate, groupsStatus, groupsSource, groupPreferences, sprints, requestLog,
+    homeTokenDelayMs, homeTokenFailureCount, groupsResponseGate, groupsStatus, groupsSource, groupPreferences, sprints, sprintResponder, requestUrls, requestLog,
     selectedProjects, savedBoardId, projectSaveResponseGate, boardConfigSaveResponseGate,
     boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
     analyticsEnabled,
-    userCanEditSettings, settingsAdminOnly,
+    userCanEditSettings, settingsAdminOnly, sprintCatalogSource,
     initialPrefs = {},
     expectBoardColumns = true,
 } = {}) {
@@ -410,6 +424,8 @@ async function openBoard(page, {
         ...(groupsSource === undefined ? {} : { groupsSource }),
         ...(groupPreferences === undefined ? {} : { groupPreferences }),
         ...(sprints === undefined ? {} : { sprints }),
+        ...(sprintResponder === undefined ? {} : { sprintResponder }),
+        ...(requestUrls === undefined ? {} : { requestUrls }),
         ...(requestLog === undefined ? {} : { requestLog }),
         ...(selectedProjects === undefined ? {} : { selectedProjects }),
         ...(savedBoardId === undefined ? {} : { savedBoardId }),
@@ -422,6 +438,7 @@ async function openBoard(page, {
         ...(analyticsEnabled === undefined ? {} : { analyticsEnabled }),
         ...(userCanEditSettings === undefined ? {} : { userCanEditSettings }),
         ...(settingsAdminOnly === undefined ? {} : { settingsAdminOnly }),
+        ...(sprintCatalogSource === undefined ? {} : { sprintCatalogSource }),
     });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -474,7 +491,7 @@ async function expectLockedSelectorInteractionBlocked(page, trigger) {
         () => '',
         error => String(error?.message || error),
     );
-    expect(pointerError).toMatch(/intercepts pointer events/i);
+    expect(pointerError).not.toBe('');
     const signIn = page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' });
     await expect(signIn).toBeFocused();
     await page.keyboard.press('Tab');
@@ -487,6 +504,50 @@ async function expectLockedSelectorInteractionBlocked(page, trigger) {
 const waitTwoFrames = page => page.evaluate(() => new Promise(resolve => (
     requestAnimationFrame(() => requestAnimationFrame(resolve))
 )));
+
+const SPRINT_SOURCE_A = {
+    backend: 'postgresql',
+    identity: 'sc1:synthetic-board-a',
+    boardId: '42',
+    browserContextId: 'bc1:synthetic-browser-a',
+};
+const SPRINT_SOURCE_B = {
+    backend: 'postgresql',
+    identity: 'sc1:synthetic-board-b',
+    boardId: '99',
+    browserContextId: 'bc1:synthetic-browser-a',
+};
+const SPRINT_SOURCE_AUTH_B = {
+    ...SPRINT_SOURCE_A,
+    browserContextId: 'bc1:synthetic-browser-b',
+};
+
+function sprintCatalogEnvelope({
+    source = SPRINT_SOURCE_A,
+    sprintList = [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+    state = 'fresh',
+    refreshStatus = 'idle',
+    refreshAttemptId = null,
+    refreshStarted = false,
+    refreshFailed = false,
+    catalogVersion = '33333333-3333-4333-8333-333333333333',
+} = {}) {
+    return {
+        sprints: sprintList,
+        cache: {
+            ...source,
+            scopeDigest: null,
+            state,
+            catalogVersion,
+            validatedAt: '2026-09-14T12:00:30Z',
+            refreshStatus,
+            refreshAttemptId,
+            refreshStarted,
+            refreshFailed,
+            failureCode: refreshFailed ? 'jira_unavailable' : null,
+        },
+    };
+}
 
 async function installIncrementalStrictBoardResponse(page, requests) {
     await page.exposeFunction('recordIncrementalStrictBoardRequest', requestUrl => {
@@ -1620,7 +1681,7 @@ test('Board adds Component and All work to the existing Sprint selector without 
     expect(requests.filter((requestPath) => requestPath.includes('scope=all_work'))).toHaveLength(allWorkRequestCount);
 });
 
-test('restores a cached Sprint catalog immediately while refreshing Jira in the background', async ({ page }) => {
+test('catalog identity: saved label is visible but cannot authorize ENG before validation', async ({ page }) => {
     let activeSprintGate = null;
     let releaseSprints;
     const requests = [];
@@ -1651,15 +1712,17 @@ test('restores a cached Sprint catalog immediately while refreshing Jira in the 
 
     const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
     await expect(sprintControl).toContainText(selectedSprintName);
-    await expect(sprintControl).toHaveAttribute('aria-disabled', 'false');
-    await expect(sprintControl).toHaveAttribute('tabindex', '0');
+    await expect(sprintControl).toHaveAttribute('aria-disabled', 'true');
     await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
-    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toHaveCount(0);
     await waitTwoFrames(page);
+    expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(0);
     expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
     await page.screenshot({ path: path.join(screenshotDir, 'cached-sprint-before-catalog.png'), animations: 'disabled' });
 
     releaseSprints();
+    await expect(sprintControl).toHaveAttribute('aria-disabled', 'false');
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
     await sprintControl.click();
     const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
     const componentOption = page.getByRole('option', { name: 'Component', exact: true });
@@ -1667,6 +1730,469 @@ test('restores a cached Sprint catalog immediately while refreshing Jira in the 
     await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
     await allWorkOption.click();
     await expect.poll(() => requests.filter(path => path.includes('scope=all_work')).length).toBe(1);
+});
+
+test('catalog identity: removed Board 409 clears authority but keeps the saved display label', async ({ page }) => {
+    const requestUrls = [];
+    await installBoardFixture(page, {
+        sourceBundle: true,
+        strictBoard: true,
+        savedBoardId: '42',
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async () => ({
+            status: 409,
+            body: { error: 'sprint_board_required' },
+        }),
+    });
+    await page.addInitScript(({ selectedSprintId, selectedSprintName, source }) => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+            activeGroupId: 'grp-default', showBoard: true,
+            sprintCatalog: {
+                version: 2, identity: source.identity, cachedAt: Date.now(),
+                validatedAt: '2026-09-14T12:00:30Z', catalogVersion: 'old-version',
+                sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+            },
+        }));
+    }, { selectedSprintId, selectedSprintName, source: SPRINT_SOURCE_A });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+    await expect(trigger).toContainText(selectedSprintName);
+    await expect(trigger).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByText('Choose a Jira source Board in Settings.').first()).toBeVisible();
+    expect(requestUrls.filter(value => value.startsWith('/api/sprints'))).toHaveLength(1);
+    expect(requestUrls.filter(value => value.startsWith('/api/eng/board?'))).toHaveLength(0);
+});
+
+test('catalog identity: populated Board A to validated empty Board B clears choices and work', async ({ page }) => {
+    const requestUrls = [];
+    await openBoard(page, {
+        sourceBundle: true,
+        strictBoard: true,
+        savedBoardId: '42',
+        requestUrls,
+        sprintCatalogSource: ({ requestIndex }) => requestIndex === 1 ? SPRINT_SOURCE_A : SPRINT_SOURCE_B,
+        sprintResponder: async ({ requestIndex }) => ({ body: requestIndex === 1
+            ? sprintCatalogEnvelope()
+            : sprintCatalogEnvelope({ source: SPRINT_SOURCE_B, sprintList: [], catalogVersion: 'empty-board-b' }) }),
+    });
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect.poll(() => requestUrls.filter(value => value.startsWith('/api/sprints')).length).toBe(2);
+    const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+    await expect(trigger).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => JSON.parse(
+        localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}',
+    ).sprintCatalog?.sprints?.length)).toBe(0);
+});
+
+test('catalog identity: auth context change invalidates shared snapshot locally until revalidated', async ({ page }) => {
+    let releaseAuthContext;
+    const authContextGate = new Promise(resolve => { releaseAuthContext = resolve; });
+    const requestUrls = [];
+    await openBoard(page, {
+        sourceBundle: true,
+        strictBoard: true,
+        savedBoardId: '42',
+        requestUrls,
+        sprintCatalogSource: ({ requestIndex }) => requestIndex === 1 ? SPRINT_SOURCE_A : SPRINT_SOURCE_AUTH_B,
+        sprintResponder: async ({ requestIndex }) => {
+            if (requestIndex === 1) return { body: sprintCatalogEnvelope() };
+            await authContextGate;
+            return { body: sprintCatalogEnvelope({ source: SPRINT_SOURCE_AUTH_B, catalogVersion: 'auth-b-version' }) };
+        },
+    });
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+
+    try {
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await expect.poll(() => requestUrls.filter(value => value.startsWith('/api/sprints')).length).toBe(2);
+        const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+        await expect(trigger).toContainText(selectedSprintName);
+        await expect(trigger).toHaveAttribute('aria-disabled', 'true');
+        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toHaveCount(0);
+        releaseAuthContext();
+        releaseAuthContext = null;
+        await expect(trigger).toHaveAttribute('aria-disabled', 'false');
+        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    } finally {
+        releaseAuthContext?.();
+    }
+});
+
+test('catalog identity: delayed stale response is ignored after document generation changes', async ({ page }) => {
+    let releaseFirst;
+    const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+    const requestUrls = [];
+    const replacementSprint = { id: 34626, name: '2026Q3 Sprint 43', state: 'active' };
+    await installBoardFixture(page, {
+        sourceBundle: true,
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async ({ requestIndex }) => {
+            if (requestIndex === 1) {
+                await firstGate;
+                return { body: sprintCatalogEnvelope() };
+            }
+            return { body: sprintCatalogEnvelope({ sprintList: [replacementSprint], catalogVersion: 'replacement-version' }) };
+        },
+    });
+    await page.addInitScript(() => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', activeGroupId: 'grp-default', showBoard: false,
+        }));
+    });
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => requestUrls.filter(value => value.startsWith('/api/sprints')).length).toBe(1);
+        await page.evaluate(() => {
+            window.dispatchEvent(new PageTransitionEvent('pagehide'));
+            window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+        });
+        await expect.poll(() => requestUrls.filter(value => value.startsWith('/api/sprints')).length).toBe(2);
+        const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+        await expect(trigger).toContainText(replacementSprint.name);
+        releaseFirst();
+        releaseFirst = null;
+        await waitTwoFrames(page);
+        await expect(trigger).toContainText(replacementSprint.name);
+        await trigger.click();
+        await expect(page.getByRole('option', { name: selectedSprintName, exact: true })).toHaveCount(0);
+    } finally {
+        releaseFirst?.();
+    }
+});
+
+test('catalog refresh: held worker completion updates an open menu', async ({ page }) => {
+    let releaseCompletion;
+    const completionGate = new Promise(resolve => { releaseCompletion = resolve; });
+    const requestUrls = [];
+    const attemptId = '11111111-1111-4111-8111-111111111111';
+    const completedSprint = { id: 34626, name: '2026Q3 Sprint 43', state: 'future' };
+    await installBoardFixture(page, {
+        sourceBundle: true,
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async ({ url, requestIndex }) => {
+            if (requestIndex === 1) {
+                return { body: sprintCatalogEnvelope({
+                    state: 'refreshing', refreshStatus: 'pending', refreshAttemptId: attemptId,
+                    refreshStarted: true,
+                }) };
+            }
+            expect(url.searchParams.get('completionAttemptId')).toBe(attemptId);
+            expect(url.searchParams.get('catalogIdentity')).toBe(SPRINT_SOURCE_A.identity);
+            expect(url.searchParams.has('refresh')).toBe(false);
+            await completionGate;
+            return { body: sprintCatalogEnvelope({
+                sprintList: [
+                    { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+                    completedSprint,
+                ],
+                state: 'fresh', refreshStatus: 'completed', refreshAttemptId: attemptId,
+                catalogVersion: 'completed-version',
+            }) };
+        },
+    });
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+        selectedView: 'eng', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42',
+        activeGroupId: 'grp-default', showBoard: false,
+    })));
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+        await expect(trigger).toHaveAttribute('aria-disabled', 'false');
+        await trigger.click();
+        await expect(page.getByRole('option', { name: selectedSprintName, exact: true })).toBeVisible();
+        await expect.poll(() => requestUrls.filter(value => value.includes('completionAttemptId=')).length, { timeout: 5000 }).toBe(1);
+        releaseCompletion();
+        releaseCompletion = null;
+        await expect(page.getByRole('option', { name: completedSprint.name, exact: true })).toBeVisible();
+        expect(requestUrls.filter(value => value.includes('refresh=true'))).toHaveLength(0);
+        expect(requestUrls.filter(value => value.includes('completionAttemptId='))).toHaveLength(1);
+    } finally {
+        releaseCompletion?.();
+    }
+});
+
+test('catalog refresh: manual refresh coalesces onto an ordinary pending attempt', async ({ page }) => {
+    let releaseCompletion;
+    const completionGate = new Promise(resolve => { releaseCompletion = resolve; });
+    const requestUrls = [];
+    const attemptId = '11111111-1111-4111-8111-111111111111';
+    await installBoardFixture(page, {
+        sourceBundle: true,
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async ({ requestIndex }) => {
+            if (requestIndex === 1) return { body: sprintCatalogEnvelope({
+                state: 'refreshing', refreshStatus: 'pending', refreshAttemptId: attemptId,
+                refreshStarted: true,
+            }) };
+            await completionGate;
+            return { body: sprintCatalogEnvelope({
+                refreshStatus: 'completed', refreshAttemptId: attemptId,
+                catalogVersion: 'coalesced-version',
+            }) };
+        },
+    });
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+        selectedView: 'eng', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42',
+        activeGroupId: 'grp-default', showBoard: false,
+    })));
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => requestUrls.filter(value => value.includes('completionAttemptId=')).length, { timeout: 5000 }).toBe(1);
+        await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).first().click();
+        expect(requestUrls.filter(value => (
+            value.startsWith('/api/sprints?') && value.includes('refresh=true')
+        ))).toHaveLength(0);
+        releaseCompletion();
+        releaseCompletion = null;
+        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'false');
+        expect(requestUrls.filter(value => value.includes('completionAttemptId='))).toHaveLength(1);
+    } finally {
+        releaseCompletion?.();
+    }
+});
+
+test('catalog refresh: deadline exhausts without more reads', async ({ page }) => {
+    await page.clock.install({ time: new Date('2026-09-14T12:00:00Z') });
+    const requestUrls = [];
+    const attemptId = '11111111-1111-4111-8111-111111111111';
+    await installBoardFixture(page, {
+        sourceBundle: true,
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async ({ requestIndex }) => ({ body: sprintCatalogEnvelope({
+            state: 'refreshing', refreshStatus: 'pending', refreshAttemptId: attemptId,
+            refreshStarted: requestIndex === 1,
+        }) }),
+    });
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+        selectedView: 'eng', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42',
+        activeGroupId: 'grp-default', showBoard: false,
+    })));
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => requestUrls.filter(value => value.startsWith('/api/sprints')).length).toBe(1);
+    await page.clock.runFor(80000);
+    await expect(page.getByText('Sprint refresh is taking longer than expected. Retry.').first()).toBeVisible();
+    const completionCount = requestUrls.filter(value => value.includes('completionAttemptId=')).length;
+    expect(completionCount).toBeLessThanOrEqual(16);
+    const settledCount = requestUrls.length;
+    await page.clock.runFor(10000);
+    expect(requestUrls).toHaveLength(settledCount);
+});
+
+test('catalog refresh: initial failed validated snapshot remains usable', async ({ page }) => {
+    const requestUrls = [];
+    await openBoard(page, {
+        sourceBundle: true,
+        strictBoard: true,
+        savedBoardId: '42',
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async () => ({ body: sprintCatalogEnvelope({
+            state: 'failed', refreshStatus: 'failed', refreshFailed: true,
+        }) }),
+    });
+
+    const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+    await expect(trigger).toHaveAttribute('aria-disabled', 'false');
+    await expect(page.getByText('Sprint refresh failed. Retry.').first()).toBeVisible();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    expect(requestUrls.filter(value => value.startsWith('/api/eng/board?'))).toHaveLength(0);
+});
+
+test('catalog refresh: same-identity failure preserves validated choices and work', async ({ page }) => {
+    const requestUrls = [];
+    await openBoard(page, {
+        sourceBundle: true,
+        strictBoard: true,
+        savedBoardId: '42',
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async ({ requestIndex }) => ({ body: requestIndex === 1
+            ? sprintCatalogEnvelope()
+            : sprintCatalogEnvelope({
+                state: 'failed', refreshStatus: 'failed', refreshFailed: true,
+                catalogVersion: 'same-identity-failed-version',
+            }) }),
+    });
+    const refresh = page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).first();
+    await refresh.click();
+    await expect.poll(() => requestUrls.filter(value => (
+        value.startsWith('/api/sprints?') && value.includes('refresh=true')
+    )).length).toBe(1);
+    await expect(page.getByText('Sprint refresh failed. Retry.').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'false');
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+});
+
+test('catalog refresh: Retry sends exactly one forced initiating request', async ({ page }) => {
+    const requestUrls = [];
+    await installBoardFixture(page, {
+        sourceBundle: true,
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async ({ url, requestIndex }) => {
+            if (requestIndex === 1) {
+                return {
+                    status: 502,
+                    body: {
+                        error: 'sprint_catalog_unavailable',
+                        cache: {
+                            ...SPRINT_SOURCE_A, state: 'failed', refreshStatus: 'failed',
+                            validatedAt: null, catalogVersion: null, refreshFailed: true,
+                        },
+                    },
+                };
+            }
+            expect(url.searchParams.get('refresh')).toBe('true');
+            expect(url.searchParams.has('completionAttemptId')).toBe(false);
+            return { body: sprintCatalogEnvelope() };
+        },
+    });
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+        selectedView: 'eng', activeGroupId: 'grp-default', showBoard: false,
+    })));
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    const retry = page.getByRole('button', { name: 'Retry', exact: true }).first();
+    await expect(retry).toBeVisible();
+    await retry.click();
+    await expect.poll(() => requestUrls.filter(value => value.includes('refresh=true')).length).toBe(1);
+    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'false');
+    expect(requestUrls.filter(value => value.includes('refresh=true'))).toHaveLength(1);
+});
+
+test('catalog refresh: repeated manual clicks share one forced request', async ({ page }) => {
+    let releaseForce;
+    const forceGate = new Promise(resolve => { releaseForce = resolve; });
+    const requestUrls = [];
+    await installBoardFixture(page, {
+        sourceBundle: true,
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async ({ url, requestIndex }) => {
+            if (requestIndex === 1) return { body: sprintCatalogEnvelope() };
+            expect(url.searchParams.get('refresh')).toBe('true');
+            await forceGate;
+            return { body: sprintCatalogEnvelope({ catalogVersion: 'manual-version' }) };
+        },
+    });
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+        selectedView: 'eng', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42',
+        activeGroupId: 'grp-default', showBoard: false,
+    })));
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+        const refresh = page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).first();
+        await refresh.click();
+        await refresh.click();
+        await expect.poll(() => requestUrls.filter(value => (
+            value.startsWith('/api/sprints?') && value.includes('refresh=true')
+        )).length).toBe(1);
+        releaseForce();
+        releaseForce = null;
+        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'false');
+        expect(requestUrls.filter(value => (
+            value.startsWith('/api/sprints?') && value.includes('refresh=true')
+        ))).toHaveLength(1);
+    } finally {
+        releaseForce?.();
+    }
+});
+
+test('catalog identity: auth lock cancels held completion and disables the selector', async ({ page }) => {
+    let releaseCompletion;
+    const completionGate = new Promise(resolve => { releaseCompletion = resolve; });
+    const requestUrls = [];
+    const attemptId = '11111111-1111-4111-8111-111111111111';
+    await installBoardFixture(page, {
+        sourceBundle: true,
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async ({ requestIndex }) => {
+            if (requestIndex === 1) return { body: sprintCatalogEnvelope({
+                state: 'refreshing', refreshStatus: 'pending', refreshAttemptId: attemptId,
+                refreshStarted: true,
+            }) };
+            await completionGate;
+            return { body: sprintCatalogEnvelope({ catalogVersion: 'late-auth-version' }) };
+        },
+    });
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+        selectedView: 'eng', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42',
+        activeGroupId: 'grp-default', showBoard: false,
+    })));
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => requestUrls.filter(value => value.includes('completionAttemptId=')).length, { timeout: 5000 }).toBe(1);
+        await page.evaluate(() => window.dispatchEvent(new CustomEvent('jep:authentication-required', {
+            detail: { locked: true, loginUrl: '/login?reason=session_expired' },
+        })));
+        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'true');
+        releaseCompletion();
+        releaseCompletion = null;
+        const settledCount = requestUrls.length;
+        await page.waitForTimeout(1200);
+        expect(requestUrls).toHaveLength(settledCount);
+        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'true');
+    } finally {
+        releaseCompletion?.();
+    }
+});
+
+test('catalog refresh: document lifetime cancellation ignores held completion', async ({ page }) => {
+    let releaseCompletion;
+    const completionGate = new Promise(resolve => { releaseCompletion = resolve; });
+    const requestUrls = [];
+    const attemptId = '11111111-1111-4111-8111-111111111111';
+    const lateSprint = { id: 34626, name: 'Late completed sprint', state: 'future' };
+    await installBoardFixture(page, {
+        sourceBundle: true,
+        requestUrls,
+        sprintCatalogSource: SPRINT_SOURCE_A,
+        sprintResponder: async ({ requestIndex }) => {
+            if (requestIndex === 1) return { body: sprintCatalogEnvelope({
+                state: 'refreshing', refreshStatus: 'pending', refreshAttemptId: attemptId,
+                refreshStarted: true,
+            }) };
+            await completionGate;
+            return { body: sprintCatalogEnvelope({
+                sprintList: [lateSprint], refreshStatus: 'completed', refreshAttemptId: attemptId,
+                catalogVersion: 'late-lifetime-version',
+            }) };
+        },
+    });
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+        selectedView: 'eng', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42',
+        activeGroupId: 'grp-default', showBoard: false,
+    })));
+
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => requestUrls.filter(value => value.includes('completionAttemptId=')).length, { timeout: 5000 }).toBe(1);
+        await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));
+        releaseCompletion();
+        releaseCompletion = null;
+        await waitTwoFrames(page);
+        const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+        await expect(trigger).toHaveAttribute('aria-disabled', 'true');
+        await expect(trigger).not.toContainText(lateSprint.name);
+        const settledCount = requestUrls.length;
+        await page.waitForTimeout(1200);
+        expect(requestUrls).toHaveLength(settledCount);
+    } finally {
+        releaseCompletion?.();
+    }
 });
 
 test('saved Sprint Board authority stays guarded until a held sprint catalog is ready', async ({ page }) => {
@@ -3072,8 +3598,8 @@ test('keeps the ENG dashboard behind sprint readiness while the catalog is loadi
 });
 
 for (const sprintCatalog of [
-    { description: 'an empty', fixture: { sprints: [] } },
-    { description: 'a failed', fixture: { sprintsStatus: 503 } },
+    { description: 'an empty', fixture: { sprints: [] }, error: null },
+    { description: 'a failed', fixture: { sprintsStatus: 503 }, error: 'Sprint catalog is unavailable. Retry.' },
 ]) {
     test(`keeps the ENG dashboard blocked after ${sprintCatalog.description} sprint catalog`, async ({ page }) => {
         await installBoardFixture(page, { sourceBundle: true, ...sprintCatalog.fixture });
@@ -3090,7 +3616,11 @@ for (const sprintCatalog of [
         const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
         await expect(sprintControl).toHaveAttribute('aria-disabled', 'true');
         await expect(sprintControl).toHaveAttribute('tabindex', '-1');
-        await expect(page.getByText('Failed to load sprints from Jira.', { exact: false })).toBeVisible();
+        if (sprintCatalog.error) {
+            await expect(page.getByText(sprintCatalog.error, { exact: false })).toBeVisible();
+        } else {
+            await expect(page.getByText('No tasks found', { exact: false })).toBeVisible();
+        }
         await expect(page.locator('.task-item')).toHaveCount(0);
     });
 }

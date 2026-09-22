@@ -257,7 +257,10 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const saveAllSettings = async (options = {}) => {'), 'Expected synchronous guarded settings save boundary');
     assert.ok(dashboardSource.includes('const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;'), 'Expected unified save to detect dirty EPM settings');
     assert.ok(dashboardSource.includes('await saveEpmConfig();'), 'Expected unified settings save to persist dirty EPM settings');
-    assert.ok(dashboardSource.includes('void saveAllSettings({ firstRunSession:'), 'Expected footer Save to use the modal-wide settings handler');
+    assert.ok(dashboardSource.includes('const settingsSaveHandler = () => {')
+        && dashboardSource.includes('void saveAllSettings({')
+        && dashboardSource.includes('firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null,'),
+    'Expected footer Save to use the modal-wide settings handler');
     assert.ok(dashboardSource.includes("setGroupDraftError(message);") && dashboardSource.includes('throw err;'), 'Expected EPM save failures to surface and block shared save');
     assert.ok(epmSettingsUiSource.includes('Atlassian site'), 'Expected Atlassian site copy');
     assert.ok(epmSettingsUiSource.includes('Main goal'), 'Expected Main goal copy');

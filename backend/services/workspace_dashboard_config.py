@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from copy import deepcopy
+import hashlib
 import json
 
-from sqlalchemy import Text, cast, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import Text, cast, select, text, update
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from backend.config.shared_config import (
     ADMIN_CONFIG_SECTIONS,
@@ -34,6 +35,62 @@ class WorkspaceConfigConflict(Exception):
 
 class TeamCatalogConflict(Exception):
     pass
+
+
+class WorkspaceConfigFenceUnavailable(RuntimeError):
+    pass
+
+
+def workspace_config_fence_key(workspace_id):
+    raw = b'workspace-catalog-config-v1\0' + str(workspace_id).encode('utf-8')
+    return int.from_bytes(hashlib.sha256(raw).digest()[:8], 'big', signed=True)
+
+
+def _remaining_milliseconds(budget):
+    if budget is None:
+        return 5000
+    method = getattr(budget, 'remaining', None)
+    if callable(method):
+        try:
+            remaining = method('workspace_config_fence')
+        except TypeError:
+            remaining = method()
+    else:
+        remaining = float(budget)
+    if remaining <= 0:
+        raise WorkspaceConfigFenceUnavailable('config_storage_unavailable')
+    return max(1, min(5000, int(remaining * 1000)))
+
+
+def acquire_workspace_config_fence(session, workspace_id, *, budget=None, nonblocking=False):
+    if session.bind.dialect.name != 'postgresql':
+        return True
+    try:
+        if nonblocking:
+            return bool(session.execute(
+                text('SELECT pg_try_advisory_xact_lock(:lock_key)'),
+                {'lock_key': workspace_config_fence_key(workspace_id)},
+            ).scalar())
+        milliseconds = _remaining_milliseconds(budget)
+        timeout_value = f'{milliseconds}ms'
+        session.execute(
+            text("SELECT set_config('lock_timeout', :timeout_value, true)"),
+            {'timeout_value': timeout_value},
+        )
+        session.execute(
+            text("SELECT set_config('statement_timeout', :timeout_value, true)"),
+            {'timeout_value': timeout_value},
+        )
+        session.execute(
+            text('SELECT pg_advisory_xact_lock(:lock_key)'),
+            {'lock_key': workspace_config_fence_key(workspace_id)},
+        )
+        return True
+    except DBAPIError as error:
+        code = getattr(getattr(error, 'orig', None), 'sqlstate', None)
+        if code in {'55P03', '57014'}:
+            raise WorkspaceConfigFenceUnavailable('config_storage_unavailable') from None
+        raise
 
 
 def _decoded_payload(raw_payload):
@@ -78,9 +135,17 @@ def _fallback_snapshot(context, fallback_loader, legacy_site_url):
 
 def load_workspace_config(context, *, fallback_loader=None, legacy_site_url='', database_url=None):
     with db_engine.session_scope(database_url) as session:
-        row = _current(session, context.workspace_id)
-        if row is not None:
-            return _snapshot(row)
+        return load_workspace_config_in_session(
+            session, context, fallback_loader=fallback_loader, legacy_site_url=legacy_site_url,
+        )
+
+
+def load_workspace_config_in_session(
+    session, context, *, fallback_loader=None, legacy_site_url='',
+):
+    row = _current(session, context.workspace_id)
+    if row is not None:
+        return _snapshot(row)
     return _fallback_snapshot(context, fallback_loader, legacy_site_url)
 
 
@@ -111,6 +176,7 @@ def update_workspace_config_section(
     revision = _revision(base_revision)
     normalized_value = normalize_workspace_admin_payload({section: value})[section]
     with db_engine.session_scope(database_url) as session:
+        acquire_workspace_config_fence(session, context.workspace_id)
         row = _current(session, context.workspace_id)
         if row is None:
             if revision != 0:
@@ -182,44 +248,62 @@ def save_workspace_team_catalog(context, payload, *, merge=False, database_url=N
     incoming = deepcopy(payload or {})
     for _attempt in range(3):
         with db_engine.session_scope(database_url) as session:
-            row = session.execute(
-                select(models.WorkspaceTeamCatalog).where(
-                    models.WorkspaceTeamCatalog.workspace_id == context.workspace_id,
+            acquire_workspace_config_fence(session, context.workspace_id)
+            try:
+                return merge_workspace_team_catalog_in_session(
+                    session, context, incoming, merge=merge,
                 )
-            ).scalars().first()
-            if row is None:
-                saved = incoming
-                candidate = models.WorkspaceTeamCatalog(
-                    workspace_id=context.workspace_id,
-                    payload=saved,
-                    config_revision=1,
-                    updated_by=getattr(context, 'user_id', None),
-                )
-                session.add(candidate)
-                try:
-                    session.flush()
-                    return deepcopy(saved)
-                except IntegrityError:
-                    session.rollback()
-                    continue
-            revision = int(row.config_revision or 1)
-            saved = deepcopy(incoming)
-            if merge:
-                existing = deepcopy(row.payload or {'catalog': {}, 'meta': {}})
-                saved['catalog'] = {**(existing.get('catalog') or {}), **(incoming.get('catalog') or {})}
-            result = session.execute(
-                update(models.WorkspaceTeamCatalog)
-                .where(
-                    models.WorkspaceTeamCatalog.workspace_id == context.workspace_id,
-                    models.WorkspaceTeamCatalog.config_revision == revision,
-                )
-                .values(
-                    payload=saved,
-                    config_revision=revision + 1,
-                    updated_by=getattr(context, 'user_id', None),
-                    updated_at=models._utcnow(),
-                )
-            )
-            if result.rowcount == 1:
-                return deepcopy(saved)
+            except (IntegrityError, TeamCatalogConflict):
+                session.rollback()
+                continue
     raise TeamCatalogConflict('team_catalog_conflict')
+
+
+def merge_workspace_team_catalog_in_session(session, context, payload, *, merge):
+    incoming = deepcopy(payload or {})
+    nonblank_catalog = {
+        key: {**value, 'name': str(value.get('name') or '').strip()}
+        for key, value in (incoming.get('catalog') or {}).items()
+        if isinstance(value, dict) and str(value.get('name') or '').strip()
+    }
+    incoming['catalog'] = nonblank_catalog
+    row = session.execute(
+        select(models.WorkspaceTeamCatalog).where(
+            models.WorkspaceTeamCatalog.workspace_id == context.workspace_id,
+        )
+    ).scalars().first()
+    if row is None:
+        saved = incoming
+        session.add(models.WorkspaceTeamCatalog(
+            workspace_id=context.workspace_id, payload=saved, config_revision=1,
+            updated_by=getattr(context, 'user_id', None),
+        ))
+        session.flush()
+        return deepcopy(saved)
+    revision = int(row.config_revision or 1)
+    saved = deepcopy(incoming)
+    if merge:
+        existing = deepcopy(row.payload or {'catalog': {}, 'meta': {}})
+        deltas = {
+            key: value for key, value in (incoming.get('catalog') or {}).items()
+            if isinstance(value, dict) and str(value.get('name') or '').strip()
+        }
+        saved = existing
+        saved['catalog'] = {**(existing.get('catalog') or {}), **deltas}
+        if incoming.get('meta'):
+            saved['meta'] = {**(existing.get('meta') or {}), **incoming['meta']}
+    result = session.execute(
+        update(models.WorkspaceTeamCatalog)
+        .where(
+            models.WorkspaceTeamCatalog.workspace_id == context.workspace_id,
+            models.WorkspaceTeamCatalog.config_revision == revision,
+        )
+        .values(
+            payload=saved, config_revision=revision + 1,
+            updated_by=getattr(context, 'user_id', None), updated_at=models._utcnow(),
+        )
+    )
+    if result.rowcount != 1:
+        raise TeamCatalogConflict('team_catalog_conflict')
+    session.flush()
+    return deepcopy(saved)

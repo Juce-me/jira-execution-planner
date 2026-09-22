@@ -29,9 +29,31 @@ export const fetchTeamCatalog = (backendUrl) =>
 export const saveTeamCatalog = (backendUrl, { catalog, meta, merge }) =>
     postJsonWithCsrf(backendUrl, '/api/team-catalog', { catalog, meta, merge });
 
-export const fetchAllTeams = (backendUrl, { sprint }) => {
-    const sprintParam = sprint || '';
-    return apiFetch(`${backendUrl}/api/teams?_t=${Date.now()}&sprint=${sprintParam}&all=true`);
+export const fetchAllTeams = (backendUrl, {
+    sprint,
+    refresh = false,
+    completionAttemptId = null,
+    catalogIdentity = null,
+    signal,
+} = {}) => {
+    if (Boolean(completionAttemptId) !== Boolean(catalogIdentity)) {
+        return Promise.reject(new Error('Team completion reads require attempt and catalog identity.'));
+    }
+    if (refresh && completionAttemptId) {
+        return Promise.reject(new Error('Team completion reads cannot force a refresh.'));
+    }
+    const params = new URLSearchParams({
+        _t: Date.now().toString(),
+        sprint: String(sprint || ''),
+        all: 'true',
+    });
+    if (refresh) params.set('refresh', 'true');
+    if (completionAttemptId) params.set('completionAttemptId', String(completionAttemptId));
+    if (catalogIdentity) params.set('catalogIdentity', String(catalogIdentity));
+    return apiFetch(`${backendUrl}/api/teams?${params.toString()}`, {
+        cache: 'no-cache',
+        signal,
+    });
 };
 
 export const resolveTeams = (backendUrl, teamIds) => {

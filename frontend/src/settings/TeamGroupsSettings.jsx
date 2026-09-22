@@ -110,7 +110,6 @@ export default function TeamGroupsSettings(props) {
                                 <div className="group-modal-body group-modal-split">
                                     <fieldset
                                         className={`group-pane group-pane-left team-catalog-edit-lock ${showGroupListMobile ? 'is-mobile-active' : ''}`}
-                                        disabled={loadingTeams || !teamCatalogReady}
                                         aria-busy={loadingTeams}
                                     >
                                         <div className="group-pane-header">
@@ -147,6 +146,8 @@ export default function TeamGroupsSettings(props) {
                                                 <div className="group-pane-empty">No groups match this search.</div>
                                             ) : filteredGroupDrafts.map(group => {
                                                 const teamCount = (group.teamIds || []).filter(teamId => String(teamId || '').trim()).length;
+                                                const hasGroupScope = teamCount > 0
+                                                    || (group.missingInfoComponents || []).some(component => String(component || '').trim());
                                                 const isActive = activeGroupDraft?.id === group.id;
                                                 const isDefault = personalGroupPreferencesEnabled
                                                     ? favoriteGroupDraftId === group.id
@@ -238,7 +239,7 @@ export default function TeamGroupsSettings(props) {
                                                                     if (personalGroupPreferencesEnabled) setFavoriteGroupDraft(group.id);
                                                                     else toggleDefaultGroupDraft(group.id);
                                                                 }}
-                                                                disabled={groupVisibilitySaving || !(group.teamIds || []).some(teamId => String(teamId || '').trim())}
+                                                                disabled={groupVisibilitySaving || !hasGroupScope}
                                                             >{isDefault ? '♥' : '♡'}</button>
                                                         )}
                                                         {isActive && nameConflict && (
@@ -290,7 +291,8 @@ export default function TeamGroupsSettings(props) {
                                                 data-first-run-guide-allow={firstRunConfigurationActive ? 'teams' : undefined}
                                                 onClick={fetchAllTeamsFromJira}
                                                 type="button"
-                                                disabled={loadingTeams || !teamCatalogCanRefresh}
+                                                aria-label="Refresh teams"
+                                                disabled={!teamCatalogCanRefresh}
                                             >
                                                 {loadingTeams ? 'Refreshing...' : 'Refresh teams'}
                                             </button>
@@ -303,7 +305,7 @@ export default function TeamGroupsSettings(props) {
                                             <div className="group-modal-meta">
                                                 {loadingTeams
                                                     ? 'Loading teams...'
-                                                    : (teamCatalogCanRefresh ? 'Refresh teams to enable editing.' : 'Waiting for sprint data...')}
+                                                    : (teamCatalogCanRefresh ? 'Refresh teams to add teams.' : 'Waiting for sprint data...')}
                                             </div>
                                         )}
                                         {(groupDraft?.groups || []).length === 0 && (
@@ -312,7 +314,6 @@ export default function TeamGroupsSettings(props) {
                                         {activeGroupDraft ? (
                                             <fieldset
                                                 className="group-editor team-catalog-edit-lock"
-                                                disabled={loadingTeams || !teamCatalogReady}
                                                 aria-busy={loadingTeams}
                                             >
                                                 <div className="group-preference-row">
@@ -370,7 +371,7 @@ export default function TeamGroupsSettings(props) {
                                                     </div>
                                                     {(activeGroupDraft.teamIds || []).length === 0 ? (
                                                         <div className="team-selector-empty">
-                                                            Add at least one team. Teams define which Jira work appears for this Department.
+                                                            Add Teams for Team-scoped Jira work, or use Components below.
                                                         </div>
                                                     ) : (
                                                         <div className="selected-teams-list is-capped">
@@ -422,13 +423,16 @@ export default function TeamGroupsSettings(props) {
                                                                             No teams found
                                                                         </div>
                                                                     ) : activeTeamResultsLimited.map((team, index) => (
-                                                                        <div
+                                                                        <button
                                                                             key={team.id}
+                                                                            type="button"
                                                                             className={`team-search-result-item ${index === activeTeamIndex ? 'active' : ''}`}
                                                                             onClick={() => addTeamToGroup(activeGroupDraft.id, team.id)}
+                                                                            disabled={!team.canAdd}
+                                                                            title={team.availableInSprint === false ? 'Not in the selected sprint' : undefined}
                                                                         >
                                                                             {team.name}
-                                                                        </div>
+                                                                        </button>
                                                                     ))}
                                                                 </div>
                                                             )}

@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-09-14. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-09-21. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,9 +15,9 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-09-14 |
-| Last result | Not run — the ENG Board selector execution found 0 of 4 Home-write probe inputs in the process environment; no approved disposable target or mutation authorization was supplied. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. |
-| Next review | 2026-09-21 (Europe/Berlin) |
+| Checked on | 2026-09-21 |
+| Last result | Not run — persistent Sprint/Team catalog Task 0 baseline review found 0 of 4 Home-write probe inputs in the process environment; no approved disposable target or mutation authorization was supplied. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. This read-only Jira catalog plan does not depend on Home write capability. |
+| Next review | 2026-09-28 (Europe/Berlin) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 
@@ -130,6 +130,16 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-09-21: Persistent Sprint/Team catalog Task 0 baseline review found none of the
+  four required Home-write probe inputs and no approved disposable Home project. No
+  mutation probe ran; this read-only Jira catalog plan adds no Home/Townsquare
+  write route or mutation and does not depend on this gate. Keep blocked with
+  `FAIL insufficient_home_write_probe_input`.
+- 2026-09-20: Persistent Sprint/Team catalog plan revalidation found none of the four
+  required Home-write probe inputs and no approved disposable Home project. No mutation
+  probe ran; this read-only Jira catalog plan adds no Home/Townsquare write route or
+  mutation and does not depend on this gate. Keep blocked with
+  `FAIL insufficient_home_write_probe_input`.
 - 2026-09-14: The ENG Board selector execution found none of the four required
   Home-write probe inputs and no approved disposable Home project. No mutation probe ran;
   this frontend read-path change adds no Home/Townsquare write route or mutation. Keep blocked

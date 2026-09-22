@@ -77,7 +77,7 @@ assert(
     && source.includes('canComplete: () => !readPendingAuthenticationRequired(),'),
   'authenticated config bootstrap must recheck its terminal latch inside coordinator completion'
 );
-const configFetchIndex = source.indexOf('const config = await fetchAppConfig(BACKEND_URL);');
+const configFetchIndex = source.indexOf('let config = await fetchAppConfig(BACKEND_URL);');
 const completionIndex = source.indexOf('await completeAuthRecovery(', configFetchIndex);
 const resumeReadIndex = source.indexOf('readAuthResumeState(', configFetchIndex);
 assert(

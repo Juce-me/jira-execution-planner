@@ -13,6 +13,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import create_engine, inspect, pool, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.auth.db_browser_sessions import create_browser_session
@@ -193,6 +194,304 @@ class DbMigrationTests(unittest.TestCase):
             factory.assert_called()
             self.assertEqual(factory.call_args.args[0], database_url)
             self.assertIs(factory.call_args.kwargs["poolclass"], pool.NullPool)
+
+    def test_catalog_migration_empty_upgrade_downgrade_and_reupgrade(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'catalogs.db')}"
+            config = self._config(database_url)
+            command.upgrade(config, '20260908_0015')
+            engine = create_engine(database_url, future=True)
+            try:
+                with engine.begin() as connection:
+                    connection.execute(text("""
+                        INSERT INTO users (
+                            id, external_provider, external_subject, account_type,
+                            status, created_by, created_at, updated_at
+                        ) VALUES (
+                            '00000000-0000-0000-0000-000000000001', 'atlassian',
+                            'catalog-user', 'user', 'active', 'test',
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+                    connection.execute(text("""
+                        INSERT INTO workspaces (
+                            id, environment_key, name, created_by, created_at, updated_at
+                        ) VALUES (
+                            '00000000-0000-0000-0000-000000000002', 'catalog-test',
+                            'Catalog test', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+                    connection.execute(text("""
+                        INSERT INTO workspace_dashboard_configs (
+                            id, workspace_id, payload_version, payload, config_revision,
+                            updated_by, created_at, updated_at
+                        ) VALUES (
+                            '00000000-0000-0000-0000-000000000003',
+                            '00000000-0000-0000-0000-000000000002', 1,
+                            '{"board":{"boardId":"17"}}', 3,
+                            '00000000-0000-0000-0000-000000000001',
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+                    connection.execute(text("""
+                        INSERT INTO workspace_team_catalogs (
+                            id, workspace_id, payload_version, payload, config_revision,
+                            updated_by, created_at, updated_at
+                        ) VALUES (
+                            '00000000-0000-0000-0000-000000000004',
+                            '00000000-0000-0000-0000-000000000002', 1,
+                            '{"catalog":{"team-1":{"name":"Synthetic"}}}', 2,
+                            '00000000-0000-0000-0000-000000000001',
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """))
+            finally:
+                engine.dispose()
+
+            command.upgrade(config, '20260913_0016')
+            engine = create_engine(database_url, future=True)
+            try:
+                inspector = inspect(engine)
+                expected_common = {
+                    'id', 'workspace_id', 'payload_version', 'updated_by',
+                    'created_at', 'updated_at', 'validated_at', 'catalog_version',
+                    'refresh_attempt_id', 'attempt_identity', 'attempt_config_digest',
+                    'attempt_deadline_at', 'refresh_status', 'failure_code',
+                    'last_failure_at', 'retry_at', 'refresh_lease_owner',
+                    'refresh_lease_until',
+                }
+                self.assertEqual(
+                    {column['name'] for column in inspector.get_columns('workspace_sprint_catalogs')},
+                    expected_common | {'board_id', 'sprints', 'next_refresh_at'},
+                )
+                self.assertEqual(
+                    {column['name'] for column in inspector.get_columns('workspace_sprint_team_catalogs')},
+                    expected_common | {
+                        'sprint_id', 'sprint_name', 'scope_digest', 'teams',
+                        'attempt_scope_digest',
+                    },
+                )
+                for table, identity_column in (
+                    ('workspace_sprint_catalogs', 'board_id'),
+                    ('workspace_sprint_team_catalogs', 'sprint_id'),
+                ):
+                    columns = {column['name']: column for column in inspector.get_columns(table)}
+                    self.assertEqual(str(columns['payload_version']['default']).strip("'\""), '1')
+                    payload_column = 'sprints' if table == 'workspace_sprint_catalogs' else 'teams'
+                    self.assertIn('[]', str(columns[payload_column]['default']))
+                    uniques = {
+                        frozenset(item['column_names'])
+                        for item in inspector.get_unique_constraints(table)
+                    }
+                    self.assertIn(frozenset({'workspace_id', identity_column}), uniques)
+                    self.assertFalse(any('updated_by' in columns for columns in uniques))
+                    foreign_keys = {
+                        tuple(item['constrained_columns']): (
+                            item['referred_table'], item['options'].get('ondelete')
+                        )
+                        for item in inspector.get_foreign_keys(table)
+                    }
+                    self.assertEqual(foreign_keys[('workspace_id',)], ('workspaces', 'CASCADE'))
+                    self.assertEqual(foreign_keys[('updated_by',)], ('users', 'SET NULL'))
+                    indexes = {item['name']: item['column_names'] for item in inspector.get_indexes(table)}
+                    self.assertTrue(any('attempt_deadline_at' in value for value in indexes.values()))
+                    self.assertTrue(any('refresh_lease_until' in value for value in indexes.values()))
+                with engine.connect() as connection:
+                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_catalogs')).scalar_one(), 0)
+                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_team_catalogs')).scalar_one(), 0)
+            finally:
+                engine.dispose()
+
+            command.downgrade(config, '20260908_0015')
+            engine = create_engine(database_url, future=True)
+            try:
+                tables = set(inspect(engine).get_table_names())
+                self.assertNotIn('workspace_sprint_catalogs', tables)
+                self.assertNotIn('workspace_sprint_team_catalogs', tables)
+                with engine.connect() as connection:
+                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_dashboard_configs')).scalar_one(), 1)
+                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_team_catalogs')).scalar_one(), 1)
+                    self.assertEqual(connection.execute(text('SELECT count(*) FROM users')).scalar_one(), 1)
+            finally:
+                engine.dispose()
+
+            command.upgrade(config, '20260913_0016')
+            engine = create_engine(database_url, future=True)
+            try:
+                with engine.connect() as connection:
+                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_catalogs')).scalar_one(), 0)
+                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_team_catalogs')).scalar_one(), 0)
+                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_dashboard_configs')).scalar_one(), 1)
+                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_team_catalogs')).scalar_one(), 1)
+            finally:
+                engine.dispose()
+
+    def test_catalog_model_identity_attempt_and_lease_constraints(self):
+        engine = create_engine('sqlite+pysqlite:///:memory:', future=True)
+        models.Base.metadata.create_all(engine)
+        now = datetime.now(timezone.utc)
+        workspace_id = '00000000-0000-0000-0000-000000000011'
+        user_id = '00000000-0000-0000-0000-000000000012'
+        with engine.begin() as connection:
+            connection.execute(models.Workspace.__table__.insert(), {
+                'id': workspace_id, 'environment_key': 'catalog-model',
+                'name': 'Catalog model', 'created_by': 'test',
+            })
+            connection.execute(models.User.__table__.insert(), {
+                'id': user_id, 'external_provider': 'atlassian',
+                'external_subject': 'catalog-model-user', 'created_by': 'test',
+            })
+
+        common = {
+            'workspace_id': workspace_id,
+            'updated_by': user_id,
+            'refresh_status': 'idle',
+        }
+        sprint_base = {**common, 'board_id': '17'}
+        team_base = {**common, 'sprint_id': '23', 'sprint_name': 'Sprint 23'}
+
+        def insert_ok(table, values):
+            with engine.begin() as connection:
+                connection.execute(table.insert(), values)
+
+        def insert_rejected(table, values):
+            with self.assertRaises(IntegrityError):
+                with engine.begin() as connection:
+                    connection.execute(table.insert(), values)
+
+        sprint_table = models.WorkspaceSprintCatalog.__table__
+        team_table = models.WorkspaceSprintTeamCatalog.__table__
+        self.assertNotIn('attempt_scope_digest', sprint_table.c)
+        self.assertIn('attempt_scope_digest', team_table.c)
+        for table, base in ((sprint_table, sprint_base), (team_table, team_base)):
+            insert_ok(table, dict(base))
+            with engine.connect() as connection:
+                row = connection.execute(
+                    table.select().where(table.c.workspace_id == workspace_id)
+                ).mappings().first()
+            self.assertEqual(row['payload_version'], 1)
+            self.assertEqual(row['sprints' if table is sprint_table else 'teams'], [])
+            with engine.begin() as connection:
+                connection.execute(table.delete())
+
+            for bad_identity in ('', '0', '-1', '1.5', 'abc', '01'):
+                identity_key = 'board_id' if table is sprint_table else 'sprint_id'
+                insert_rejected(table, {**base, identity_key: bad_identity})
+            insert_rejected(table, {**base, 'refresh_status': 'unknown'})
+            insert_rejected(table, {**base, 'failure_code': 'unknown'})
+            insert_rejected(table, {**base, 'validated_at': now})
+            insert_rejected(table, {**base, 'catalog_version': '00000000-0000-0000-0000-000000000020'})
+            if table is team_table:
+                insert_rejected(table, {
+                    **base, 'validated_at': now,
+                    'catalog_version': '00000000-0000-0000-0000-000000000020',
+                })
+                insert_ok(table, {
+                    **base, 'scope_digest': 'scope', 'validated_at': now,
+                    'catalog_version': '00000000-0000-0000-0000-000000000020',
+                })
+                with engine.begin() as connection:
+                    connection.execute(table.delete())
+
+            attempt = {
+                'refresh_attempt_id': '00000000-0000-0000-0000-000000000030',
+                'attempt_identity': 'identity',
+                'attempt_config_digest': 'config',
+                'attempt_deadline_at': now,
+            }
+            if table is team_table:
+                attempt['attempt_scope_digest'] = 'attempt-scope'
+            lease = {
+                'refresh_lease_owner': '00000000-0000-0000-0000-000000000031',
+                'refresh_lease_until': now,
+            }
+            failure = {
+                'failure_code': 'jira_unavailable',
+                'last_failure_at': now,
+                'retry_at': now,
+            }
+            insert_ok(table, {**base, **attempt, **lease, 'refresh_status': 'pending'})
+            with engine.begin() as connection:
+                connection.execute(table.delete())
+            insert_ok(table, {**base, **attempt, 'refresh_status': 'completed'})
+            with engine.begin() as connection:
+                connection.execute(table.delete())
+            insert_ok(table, {**base, **attempt, **failure, 'refresh_status': 'failed'})
+            with engine.begin() as connection:
+                connection.execute(table.delete())
+
+            status_group_matrix = [
+                ('idle_with_full_attempt', {**base, **attempt}),
+                ('idle_with_full_lease', {**base, **lease}),
+                ('pending_without_attempt', {**base, **lease, 'refresh_status': 'pending'}),
+                ('completed_without_attempt', {**base, 'refresh_status': 'completed'}),
+                ('failed_without_attempt', {**base, **failure, 'refresh_status': 'failed'}),
+                ('pending_without_lease', {**base, **attempt, 'refresh_status': 'pending'}),
+                ('completed_with_full_lease', {
+                    **base, **attempt, **lease, 'refresh_status': 'completed',
+                }),
+                ('failed_with_full_lease', {
+                    **base, **attempt, **failure, **lease, 'refresh_status': 'failed',
+                }),
+                ('idle_with_full_failure', {**base, **failure}),
+                ('pending_with_full_failure', {
+                    **base, **attempt, **lease, **failure, 'refresh_status': 'pending',
+                }),
+                ('completed_with_full_failure', {
+                    **base, **attempt, **failure, 'refresh_status': 'completed',
+                }),
+                ('failed_without_failure', {**base, **attempt, 'refresh_status': 'failed'}),
+            ]
+            for case, invalid in status_group_matrix:
+                with self.subTest(table=table.name, case=case):
+                    insert_rejected(table, invalid)
+
+            atomicity_cases = [
+                {**base, 'refresh_attempt_id': attempt['refresh_attempt_id']},
+                {**base, 'refresh_lease_owner': lease['refresh_lease_owner']},
+                {**base, 'refresh_lease_until': now},
+            ]
+            for invalid in atomicity_cases:
+                insert_rejected(table, invalid)
+            for key in attempt:
+                incomplete = {**base, **attempt, **lease, 'refresh_status': 'pending'}
+                incomplete[key] = None
+                insert_rejected(table, incomplete)
+            for key in failure:
+                incomplete = {**base, **attempt, **failure, 'refresh_status': 'failed'}
+                incomplete[key] = None
+                insert_rejected(table, incomplete)
+
+        engine.dispose()
+
+    def test_catalog_migration_postgresql_offline_sql(self):
+        config = self._config('postgresql+psycopg://user@db.example:5432/planner?sslmode=require')
+        output = io.StringIO()
+        config.output_buffer = output
+        with patch.dict(os.environ, {'DATABASE_CONNECTION_MODE': 'url'}, clear=False):
+            command.upgrade(config, '20260913_0016', sql=True)
+        sql = output.getvalue()
+        for required in (
+            'CREATE TABLE workspace_sprint_catalogs',
+            'CREATE TABLE workspace_sprint_team_catalogs',
+            'workspace_id, board_id',
+            'workspace_id, sprint_id',
+            'ON DELETE CASCADE',
+            'ON DELETE SET NULL',
+            'attempt_scope_digest',
+            'refresh_budget_exhausted',
+            'catalog_runtime_unavailable',
+            'CREATE INDEX ix_workspace_sprint_catalogs_attempt_deadline',
+            'CREATE INDEX ix_workspace_sprint_catalogs_lease_until',
+            'CREATE INDEX ix_workspace_sprint_team_catalogs_attempt_deadline',
+            'CREATE INDEX ix_workspace_sprint_team_catalogs_lease_until',
+        ):
+            self.assertIn(required, sql)
+        sprint_sql, team_sql = sql.split('CREATE TABLE workspace_sprint_team_catalogs', 1)
+        self.assertNotIn('attempt_scope_digest', sprint_sql)
+        self.assertIn('attempt_scope_digest', team_sql)
+        self.assertNotIn('INSERT INTO workspace_sprint_catalogs', sql)
+        self.assertNotIn('INSERT INTO workspace_sprint_team_catalogs', sql)
 
     def test_workspace_config_migration_is_data_neutral_and_reversible(self):
         with tempfile.TemporaryDirectory() as tmpdir:

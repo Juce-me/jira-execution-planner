@@ -1,9 +1,26 @@
 """Sprint cache and Jira sprint discovery helpers."""
 
 import json
+import math
 import os
 import re
 from datetime import datetime, timedelta
+
+
+BOARD_SPRINT_MAX_PAGES = 100
+BOARD_SPRINT_MAX_ROWS = 10000
+
+
+class SprintCatalogFetchError(RuntimeError):
+    """Fixed failure boundary for strict Board Sprint discovery."""
+
+    ALLOWED_CODES = frozenset({'jira_unavailable', 'catalog_incomplete'})
+
+    def __init__(self, code):
+        if code not in self.ALLOWED_CODES:
+            raise ValueError('invalid Sprint catalog failure code')
+        self.code = code
+        super().__init__(code)
 
 
 def _noop(*_args, **_kwargs):
@@ -170,6 +187,155 @@ def _format_quarter_sprint(sprint):
         'startDate': sprint.get('startDate'),
         'endDate': sprint.get('endDate'),
     }
+
+
+def _strict_sprint_id(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    numeric = int(value)
+    if numeric <= 0 or numeric != value:
+        return None
+    return numeric
+
+
+def _is_cooperative_deadline(error):
+    return getattr(error, 'code', None) in {
+        'measurement_deadline_exceeded',
+        'refresh_budget_exhausted',
+    }
+
+
+def _is_catalog_lock_timeout(error):
+    current = error
+    while current is not None:
+        if str(getattr(current, 'sqlstate', '') or '') in {'55P03', '57014'}:
+            return True
+        current = getattr(current, 'orig', None) or getattr(current, '__cause__', None)
+    return False
+
+
+def fetch_board_sprints(*, board_id, jira_get, auth_error_class, budget):
+    """Fetch one complete, verified Sprint catalog from a Jira Board."""
+    effective_board_id = str(board_id or '').strip()
+    collected = []
+    start_at = 0
+    page_count = 0
+    raw_count = 0
+
+    while True:
+        budget.check('sprint_page')
+        timeout = min(15, budget.remaining('sprint_page'))
+        try:
+            response = jira_get(
+                f'/rest/agile/1.0/board/{effective_board_id}/sprint',
+                params={
+                    'maxResults': 100,
+                    'startAt': start_at,
+                    'state': 'active,future,closed',
+                },
+                timeout=timeout,
+            )
+        except auth_error_class:
+            raise
+        except Exception as exc:
+            if _is_cooperative_deadline(exc) or _is_catalog_lock_timeout(exc):
+                raise
+            raise SprintCatalogFetchError('jira_unavailable') from exc
+
+        try:
+            status_code = response.status_code
+        except Exception as exc:
+            if _is_cooperative_deadline(exc):
+                raise
+            raise SprintCatalogFetchError('catalog_incomplete') from exc
+        if isinstance(status_code, bool) or not isinstance(status_code, int):
+            raise SprintCatalogFetchError('catalog_incomplete')
+        if status_code == 401:
+            raise auth_error_class('auth_required', 'Atlassian authentication is required.')
+        if status_code != 200:
+            raise SprintCatalogFetchError('jira_unavailable')
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise SprintCatalogFetchError('catalog_incomplete') from exc
+        if not isinstance(data, dict):
+            raise SprintCatalogFetchError('catalog_incomplete')
+
+        values = data.get('values')
+        is_last = data.get('isLast')
+        response_start = data.get('startAt')
+        response_max = data.get('maxResults')
+        if (
+            not isinstance(values, list)
+            or not isinstance(is_last, bool)
+            or isinstance(response_start, bool)
+            or not isinstance(response_start, int)
+            or response_start != start_at
+            or isinstance(response_max, bool)
+            or not isinstance(response_max, int)
+            or response_max != 100
+            or len(values) > response_max
+            or any(not isinstance(item, dict) for item in values)
+        ):
+            raise SprintCatalogFetchError('catalog_incomplete')
+
+        page_count += 1
+        raw_count += len(values)
+        if page_count > BOARD_SPRINT_MAX_PAGES or raw_count > BOARD_SPRINT_MAX_ROWS:
+            raise SprintCatalogFetchError('catalog_incomplete')
+
+        for sprint in values:
+            sprint_id_value = sprint.get('id')
+            name = sprint.get('name', '')
+            state = sprint.get('state', '')
+            start_date = sprint.get('startDate')
+            end_date = sprint.get('endDate')
+            if (
+                isinstance(sprint_id_value, float) and not math.isfinite(sprint_id_value)
+                or not isinstance(name, str)
+                or not isinstance(state, str)
+                or start_date is not None and not isinstance(start_date, str)
+                or end_date is not None and not isinstance(end_date, str)
+            ):
+                raise SprintCatalogFetchError('catalog_incomplete')
+            origin = sprint.get('originBoardId')
+            if origin is not None:
+                origin_id = _strict_sprint_id(origin)
+                if origin_id is None:
+                    raise SprintCatalogFetchError('catalog_incomplete')
+                if str(origin_id) != effective_board_id:
+                    continue
+            sprint_id = _strict_sprint_id(sprint_id_value)
+            formatted = _format_quarter_sprint(sprint)
+            if formatted is None or sprint_id is None:
+                continue
+            formatted['id'] = sprint_id
+            collected.append(formatted)
+
+        budget.check('sprint_page')
+        if is_last:
+            break
+        if not values or page_count >= BOARD_SPRINT_MAX_PAGES:
+            raise SprintCatalogFetchError('catalog_incomplete')
+        next_start = response_start + len(values)
+        if next_start <= start_at:
+            raise SprintCatalogFetchError('catalog_incomplete')
+        budget.check('sprint_page')
+        start_at = next_start
+
+    state_priority = {'active': 0, 'closed': 1, 'future': 2}
+    winners = {}
+    for sprint in collected:
+        name = sprint['name']
+        rank = (state_priority.get((sprint.get('state') or '').lower(), 9), sprint['id'])
+        previous = winners.get(name)
+        if previous is None or rank < previous[0]:
+            winners[name] = (rank, sprint)
+
+    budget.check('sprint_publish')
+    return sorted((entry[1] for entry in winners.values()), key=lambda item: item['name'], reverse=True)
 
 
 def _collect_sprints_by_jql(jql_query, sprints_dict, *, jira_search_request, get_sprint_field_id):

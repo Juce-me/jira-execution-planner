@@ -174,6 +174,23 @@ class TestTeamCatalogAPI(unittest.TestCase):
         self.assertEqual(data['catalog']['t1']['name'], 'Team One')
         self.assertEqual(saved_catalogs[0][0]['catalog']['t1']['name'], 'Team One')
 
+    def test_db_team_catalog_post_is_names_only(self):
+        repository = SimpleNamespace(
+            save_team_catalog=lambda *_args, **_kwargs: self.fail(
+                'membership-shaped payload reached the names repository'
+            ),
+        )
+        with patch.object(jira_server, 'config_storage_db_enabled', return_value=True), \
+             patch.object(settings_routes, 'db_repository', return_value=repository), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=_verified_context()):
+            response = self.client.post(
+                '/api/team-catalog',
+                data=json.dumps({'teams': [{'id': 't1', 'name': 'Team One'}]}),
+                content_type='application/json',
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json(), {'error': 'unsupported_team_catalog_field'})
+
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestTeamCatalogMigration(unittest.TestCase):

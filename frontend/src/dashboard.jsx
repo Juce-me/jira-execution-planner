@@ -16,7 +16,7 @@ import LoadingState from './ui/LoadingState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
-import { getCookie, getCurrentQuarter, getServerConnectionErrorMessage, isActiveHomeTokenConnection, isBackendConnectionFailure, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie } from './dashboardRuntime.js';
+import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, getServerConnectionErrorMessage, isActiveHomeTokenConnection, isBackendConnectionFailure, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey } from './dashboardRuntime.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
 import { isEngOnboardingModuleSurface } from './onboarding/onboardingModules.js';
 import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
@@ -190,17 +190,17 @@ import {
 import {
     applyLocalGroupPreferences,
     buildGroupId,
-    buildTeamCatalogList,
-    mergeTeamCatalog,
     normalizeGroupsConfig,
     parseTeamIdList,
     resolveInitialGroupId
 } from './settings/groupConfigUtils.js';
 import { validatePresentGroupBoards } from './settings/groupBoardModel.js';
+import { buildTeamAvailability } from './settings/teamAvailability.js';
 import { boardDraftIsDirty, committedSectionLabels, groupConfigConflictMessages, rebaseSharedGroupsPayload } from './settings/groupsConfigConflict.js';
 import { committedWorkspaceSectionLabels, workspaceConfigConflictMessages } from './settings/workspaceConfigConflict.js';
 import { saveSharedExcludedCapacityToggle } from './settings/sharedExcludedCapacityToggle.js';
 import { useGroupVisibilityPreferences } from './settings/useGroupVisibilityPreferences.js';
+import useTeamCatalogLifecycle from './settings/useTeamCatalogLifecycle.js';
 import {
     buildSharedGroupsPayload,
     effectiveVisibleGroupIds,
@@ -228,10 +228,6 @@ import { fetchBurnoutStats as requestBurnoutStats, fetchEpicCohortStats as reque
 import { fetchIssuesLookup as requestIssuesLookup } from './api/issuesApi.js';
 import {
     fetchJiraLabels as requestJiraLabels,
-    fetchTeamCatalog as requestTeamCatalog,
-    saveTeamCatalog as requestSaveTeamCatalog,
-    fetchAllTeams as requestAllTeams,
-    resolveTeams as requestResolveTeams,
     fetchProjects as requestJiraProjects,
     fetchBoards as requestJiraBoards,
     searchProjects as requestProjectSearch,
@@ -354,6 +350,11 @@ import {
 
         function App() {
             const savedPrefsRef = useRef(loadUiPrefs() || {}), sprintCatalogCacheRef = useRef(loadCachedSprintCatalog(savedPrefsRef.current));
+            const sprintCatalogInitialStateRef = useRef(createSprintCatalogState({
+                displaySnapshot: sprintCatalogCacheRef.current.cachedAt ? sprintCatalogCacheRef.current : null,
+                savedSprintId: savedPrefsRef.current.selectedSprint ?? null,
+                savedSprintName: savedPrefsRef.current.sprintName || '',
+            }));
             const perfEnabled = React.useMemo(
                 () => new URLSearchParams(window.location.search).has('perf'),
                 []
@@ -393,8 +394,6 @@ import {
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
             const [sprintError, setSprintError] = useState('');
-            const sprintLoadInFlightRef = useRef(false);
-            const pendingSprintRefreshRef = useRef(false);
             const [serverConnectionError, setServerConnectionError] = useState('');
             // The Status and Priority facets replaced the single statusFilter plus the Done and
             // Killed Display toggles; a payload saved before that still has to land somewhere
@@ -425,7 +424,7 @@ import {
             );
             const showEpmNavigation = authMode === 'basic' || hasActiveHomeTokenConnection;
             const [sprintName, setSprintName] = useState(savedPrefsRef.current.sprintName || '');
-            const [selectedSprint, setSelectedSprint] = useState(savedPrefsRef.current.selectedSprint ?? null); // Sprint ID
+            const [selectedSprint, setSelectedSprint] = useState(null); // Server-validated Sprint ID
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
             const [epmProjectSort, setEpmProjectSort] = useState(normalizeEpmProjectSort(savedPrefsRef.current.epmProjectSort || DEFAULT_EPM_PROJECT_SORT));
             const [engEpicSort, setEngEpicSort] = useState(
@@ -493,13 +492,70 @@ import {
             const [epmSubGoalOpen, setEpmSubGoalOpen] = useState(false);
             const [epmRootGoalIndex, setEpmRootGoalIndex] = useState(0);
             const [epmSubGoalIndex, setEpmSubGoalIndex] = useState(0);
-            const [availableSprints, setAvailableSprints] = useState(sprintCatalogCacheRef.current.sprints), [sprintsLoading, setSprintsLoading] = useState(sprintCatalogCacheRef.current.sprints.length === 0);
+            const [sprintCatalogState, setSprintCatalogState] = useState(sprintCatalogInitialStateRef.current);
+            const sprintCatalogControllerRef = useRef(null);
+            const sprintCatalogPersistedValidationRef = useRef('');
+            if (!sprintCatalogControllerRef.current) {
+                sprintCatalogControllerRef.current = createSprintCatalogController({
+                    initialState: sprintCatalogInitialStateRef.current,
+                    read: async ({ forceRefresh, completionAttemptId, catalogIdentity, signal }) => {
+                        const response = await requestSprints(BACKEND_URL, {
+                            forceRefresh,
+                            completionAttemptId,
+                            catalogIdentity,
+                            signal,
+                        });
+                        const body = await response.json().catch(() => ({}));
+                        return { httpStatus: response.status, ...body };
+                    },
+                    onState: nextState => {
+                        setSprintCatalogState(nextState);
+                        const snapshot = nextState.validatedSnapshot;
+                        if (nextState.authority === 'validated' && snapshot) {
+                            const selected = snapshot.sprints.find(sprint => String(sprint.id) === String(nextState.selectedSprintId));
+                            setSelectedSprint(nextState.selectedSprintId);
+                            if (selected) setSprintName(selected.name);
+                            const validationKey = sprintCatalogValidationKey(snapshot);
+                            if (validationKey && validationKey !== sprintCatalogPersistedValidationRef.current) {
+                                sprintCatalogPersistedValidationRef.current = validationKey;
+                                sprintCatalogCacheRef.current = {
+                                    version: 2,
+                                    identity: snapshot.identity,
+                                    cachedAt: Date.now(),
+                                    validatedAt: snapshot.validatedAt,
+                                    catalogVersion: snapshot.catalogVersion,
+                                    sprints: snapshot.sprints,
+                                };
+                                savedPrefsRef.current = { ...(loadUiPrefs() || {}), sprintCatalog: sprintCatalogCacheRef.current };
+                                saveUiPrefs(savedPrefsRef.current);
+                            }
+                        } else {
+                            setSelectedSprint(null);
+                        }
+                        if (nextState.errorReason === 'sprint_board_required') {
+                            setSprintError('Choose a Jira source Board in Settings.');
+                        } else if (nextState.errorReason === 'catalog_identity_changed') {
+                            setSprintError('Sprint catalog is unavailable. Retry.');
+                        } else if (nextState.status === 'exhausted') {
+                            setSprintError('Sprint refresh is taking longer than expected. Retry.');
+                        } else if (nextState.status === 'error') {
+                            setSprintError(nextState.validatedSnapshot
+                                ? 'Sprint refresh failed. Retry.'
+                                : 'Sprint catalog is unavailable. Retry.');
+                        } else {
+                            setSprintError('');
+                        }
+                    },
+                });
+            }
+            const availableSprints = sprintCatalogState.availableSprints;
+            const sprintsLoading = sprintCatalogState.status === 'loading'
+                || (sprintCatalogState.status === 'unknown' && sprintCatalogState.authority !== 'validated');
             const [groupsConfig, setGroupsConfig] = useState({
                 version: 1,
                 groups: [],
                 defaultGroupId: '',
             });
-            const [teamCatalogState, setTeamCatalogState] = useState({ catalog: {}, meta: {} });
             const [groupsLoading, setGroupsLoading] = useState(true);
             const [groupsError, setGroupsError] = useState('');
             const [boardGroupsReadFailed, setBoardGroupsReadFailed] = useState(false);
@@ -518,6 +574,7 @@ import {
             const [showGroupManage, setShowGroupManage] = useState(false);
             const [groupDraft, setGroupDraft] = useState(null);
             const [groupDraftError, setGroupDraftError] = useState('');
+            const [settingsSaveError, setSettingsSaveError] = useState('');
             const [firstRunSetupChoice, setFirstRunSetupChoice] = useState(null);
             const [firstRunConfigurationTargetGroupId, setFirstRunConfigurationTargetGroupId] = useState(null);
             const [firstRunConfigurationSession, dispatchFirstRunConfigurationSession] = React.useReducer(
@@ -547,12 +604,7 @@ import {
             const [groupSaving, setGroupSaving] = useState(false);
             const [groupTesting, setGroupTesting] = useState(false);
             const [groupTestMessage, setGroupTestMessage] = useState('');
-            const [availableTeams, setAvailableTeams] = useState([]);
-            const [loadingTeams, setLoadingTeams] = useState(false);
-            const [teamCatalogReady, setTeamCatalogReady] = useState(false);
-            const [teamCatalogHydrationNeeded, setTeamCatalogHydrationNeeded] = useState(false);
-            const teamCatalogInitializationGenerationRef = useRef(0);
-            const teamCatalogHydrationInFlightRef = useRef(null);
+            const [teamNameInputs, setTeamNameInputs] = useState([]);
             const [teamSearchQuery, setTeamSearchQuery] = useState({});
             const [teamSearchOpen, setTeamSearchOpen] = useState({});
             const [teamSearchIndex, setTeamSearchIndex] = useState({});
@@ -1052,6 +1104,24 @@ import {
                 if (!selectedSprint) return null;
                 return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
             }, [availableSprints, selectedSprint]);
+            const {
+                teamCatalogState,
+                loadingTeams,
+                teamCatalogReady,
+                teamMembershipState,
+                fetchAllTeamsFromJira,
+                invalidateTeamMembership,
+            } = useTeamCatalogLifecycle({
+                backendUrl: BACKEND_URL,
+                showSettings: showGroupManage,
+                selectedSprintInfo,
+                sprintCatalogIdentity: sprintCatalogState.identity,
+                sprintCatalogGeneration: sprintCatalogState.generation,
+                sprintBrowserContextId: sprintCatalogState.browserContextId,
+                sharedConfigRevision,
+                authResumeStagedRevision,
+                setGroupDraftError,
+            });
             const clearServerConnectionError = React.useCallback(() => {
                 setServerConnectionError('');
             }, []);
@@ -2060,8 +2130,6 @@ import {
             }, [groupsLoading, groupConfigSource]);
 
             useEffect(() => {
-                const initializationGeneration = teamCatalogInitializationGenerationRef.current + 1;
-                teamCatalogInitializationGenerationRef.current = initializationGeneration;
                 if (!showGroupManage) return;
                 const normalized = normalizeGroupsConfig(groupsConfig);
                 const pendingFirstRunConfiguration = pendingFirstRunConfigurationRef.current;
@@ -2109,41 +2177,8 @@ import {
                 }
                 fetchAvailableIssueTypes();
                 if (!jiraProjects.length) fetchJiraProjects();
-                setAvailableTeams(loadTeamsFromCurrentView());
-                setTeamCatalogReady(false);
-                setTeamCatalogHydrationNeeded(false);
-                setLoadingTeams(true);
-                const initializeTeamCatalog = async () => {
-                    const isCurrentInitialization = () => (
-                        teamCatalogInitializationGenerationRef.current === initializationGeneration
-                    );
-                    const data = await loadTeamCatalog({ shouldApplyResult: isCurrentInitialization });
-                    if (!isCurrentInitialization()) return;
-                    if (!data) {
-                        setLoadingTeams(false);
-                        return;
-                    }
-                    if (Object.keys(data.catalog || {}).length > 0) {
-                        setTeamCatalogReady(true);
-                        setLoadingTeams(false);
-                        return;
-                    }
-                    setLoadingTeams(false);
-                    setTeamCatalogHydrationNeeded(true);
-                };
-                void initializeTeamCatalog();
-                return () => {
-                    if (teamCatalogInitializationGenerationRef.current === initializationGeneration) {
-                        teamCatalogInitializationGenerationRef.current += 1;
-                    }
-                };
+                setTeamNameInputs(loadTeamsFromCurrentView());
             }, [showGroupManage]);
-
-            useEffect(() => {
-                if (!showGroupManage || !teamCatalogHydrationNeeded || !selectedSprintInfo) return;
-                setTeamCatalogHydrationNeeded(false);
-                void fetchAllTeamsFromJira();
-            }, [showGroupManage, teamCatalogHydrationNeeded, selectedSprintInfo]);
 
             useEffect(() => {
                 if (!showGroupManage || groupManageTab !== 'epm') return;
@@ -2568,53 +2603,6 @@ import {
                 }
             };
 
-            const loadTeamCatalog = async ({ shouldApplyResult = () => true } = {}) => {
-                try {
-                    const response = await requestTeamCatalog(BACKEND_URL);
-                    if (!response.ok) {
-                        throw new Error(`Team catalog error ${response.status}`);
-                    }
-                    const data = await response.json();
-                    if (shouldApplyResult()) {
-                        setTeamCatalogState({
-                            catalog: data.catalog || {},
-                            meta: data.meta || {}
-                        });
-                        const catalogTeams = buildTeamCatalogList(data.catalog || {});
-                        if (catalogTeams.length) {
-                            setAvailableTeams(catalogTeams);
-                        }
-                    }
-                    return data;
-                } catch (err) {
-                    if (isAuthenticationRequiredError(err)) return;
-                    console.warn('Failed to load team catalog:', err);
-                    if (shouldApplyResult()) {
-                        setGroupDraftError('Failed to load the team cache. Refresh teams to try again.');
-                    }
-                    return null;
-                }
-            };
-
-            const saveTeamCatalog = async (catalog, meta, merge = false) => {
-                try {
-                    const response = await requestSaveTeamCatalog(BACKEND_URL, { catalog, meta, merge });
-                    if (!response.ok) {
-                        throw new Error(`Team catalog save error ${response.status}`);
-                    }
-                    const data = await response.json();
-                    setTeamCatalogState({
-                        catalog: data.catalog || {},
-                        meta: data.meta || {}
-                    });
-                    return data;
-                } catch (err) {
-                    if (isAuthenticationRequiredError(err)) return;
-                    console.warn('Failed to save team catalog:', err);
-                    return null;
-                }
-            };
-
             const handleGroupDraftChange = (updater) => {
                 setGroupDraft(prev => {
                     if (!prev) return prev;
@@ -2630,98 +2618,6 @@ import {
                 return teams;
             };
 
-            const fetchAllTeamsFromJira = async () => {
-                if (!selectedSprintInfo) {
-                    setGroupDraftError('Wait for sprint loading to finish before refreshing teams.');
-                    return false;
-                }
-                const sprintId = String(selectedSprintInfo.id);
-                const inFlightHydration = teamCatalogHydrationInFlightRef.current;
-                if (inFlightHydration?.sprintId === sprintId) {
-                    setLoadingTeams(true);
-                    return inFlightHydration.promise;
-                }
-
-                const hydrationPromise = (async () => {
-                    setLoadingTeams(true);
-                    setGroupDraftError('');
-                    try {
-                        const response = await requestAllTeams(BACKEND_URL, { sprint: selectedSprint });
-
-                        if (!response.ok) {
-                            const errorText = await response.text();
-                            throw new Error(`HTTP ${response.status}: ${errorText}`);
-                        }
-
-                        const data = await response.json();
-                        const fetchedTeams = data.teams || [];
-
-                        if (fetchedTeams.length === 0) {
-                            setGroupDraftError('No teams found in Jira for this sprint.');
-                            return false;
-                        }
-
-                        // Merge with existing teams, avoiding duplicates
-                        setAvailableTeams(prevTeams => {
-                            const existingIds = new Set(prevTeams.map(t => t.id));
-                            const newTeams = fetchedTeams.filter(t => !existingIds.has(t.id));
-                            const merged = [...prevTeams, ...newTeams].sort((a, b) => a.name.localeCompare(b.name));
-                            console.log(`Loaded ${fetchedTeams.length} teams from Jira (${newTeams.length} new)`);
-                            return merged;
-                        });
-                        const mergedCatalog = mergeTeamCatalog(teamCatalogState.catalog, fetchedTeams);
-                        const savedCatalog = await saveTeamCatalog(mergedCatalog, {
-                            updatedAt: new Date().toISOString(),
-                            sprintId: String(selectedSprint || ''),
-                            sprintName: selectedSprintInfo?.name ? String(selectedSprintInfo.name) : '',
-                            source: 'sprint'
-                        });
-                        if (!savedCatalog) {
-                            throw new Error('The refreshed teams could not be saved.');
-                        }
-                        setTeamCatalogReady(true);
-                        return true;
-                    } catch (err) {
-                        if (isAuthenticationRequiredError(err)) return;
-                        console.error('Error fetching teams from Jira:', err);
-                        setGroupDraftError(`Failed to fetch teams: ${err.message}`);
-                        return false;
-                    } finally {
-                        if (teamCatalogHydrationInFlightRef.current?.promise === hydrationPromise) {
-                            teamCatalogHydrationInFlightRef.current = null;
-                        }
-                        setLoadingTeams(false);
-                    }
-                })();
-                teamCatalogHydrationInFlightRef.current = { sprintId, promise: hydrationPromise };
-                return hydrationPromise;
-            };
-
-            const resolveMissingTeamNames = async (teamIds) => {
-                if (!teamIds.length) return;
-                try {
-                    const response = await requestResolveTeams(BACKEND_URL, teamIds);
-                    if (!response.ok) return;
-                    const data = await response.json();
-                    const resolvedTeams = data.teams || [];
-                    if (!resolvedTeams.length) return;
-                    setAvailableTeams(prevTeams => {
-                        const existingIds = new Set(prevTeams.map(t => t.id));
-                        const newTeams = resolvedTeams.filter(t => !existingIds.has(t.id));
-                        const merged = [...prevTeams, ...newTeams].sort((a, b) => a.name.localeCompare(b.name));
-                        return merged;
-                    });
-                    const mergedCatalog = mergeTeamCatalog(teamCatalogState.catalog, resolvedTeams);
-                    saveTeamCatalog(mergedCatalog, {
-                        ...teamCatalogState.meta,
-                        resolvedAt: new Date().toISOString()
-                    }, false);
-                } catch (err) {
-                    if (isAuthenticationRequiredError(err)) return;
-                    console.warn('Failed to resolve team names:', err);
-                }
-            };
-
             const openGroupManage = (tab = preferredSettingsTab) => {
                 setGroupManageTab(tab);
                 setShowGroupManage(true);
@@ -2730,6 +2626,7 @@ import {
             const closeGroupManage = () => {
                 setShowGroupManage(false);
                 setGroupDraftError('');
+                setSettingsSaveError('');
                 setGroupsConfigConflict(null);
                 setGroupImportText('');
                 setShowGroupImport(false);
@@ -3084,12 +2981,11 @@ import {
                 if (groupSaving || epmConfigSaving) return 'Save in progress';
                 if (firstRunConfigurationActive && !firstRunConfigurationSession.guideComplete) return 'Complete the configuration guide before saving';
                 if (authMode === 'atlassian_oauth' && !sharedConfigReady) return 'Shared settings are loading';
-                if (loadingTeams || !teamCatalogReady) return 'Team cache is loading';
                 if (canEditEpmConfiguration && isEpmConfigDirty && epmConfigLoading) return 'EPM settings are loading';
                 if (groupConfigValidationErrors.length > 0) return groupConfigValidationErrors[0];
                 if (!isGroupDraftDirty) return 'No changes to save';
                 return '';
-            }, [groupSaving, epmConfigSaving, firstRunConfigurationActive, firstRunConfigurationSession.guideComplete, authMode, sharedConfigReady, loadingTeams, teamCatalogReady, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
+            }, [groupSaving, epmConfigSaving, firstRunConfigurationActive, firstRunConfigurationSession.guideComplete, authMode, sharedConfigReady, canEditEpmConfiguration, isEpmConfigDirty, epmConfigLoading, groupConfigValidationErrors, isGroupDraftDirty]);
             const onboardingActiveSurface = showGroupManage
                 ? 'settings'
                 : (selectedView === 'eng'
@@ -3426,6 +3322,13 @@ import {
             };
 
             const addTeamToGroup = (groupId, teamId) => {
+                const candidate = availableTeams.find(team => team.id === teamId);
+                if (!candidate?.canAdd) {
+                    setTeamFeedback(groupId, candidate?.availableInSprint === false
+                        ? 'Not in the selected sprint'
+                        : 'Wait for team membership to load', 'warn');
+                    return;
+                }
                 let added = false;
                 let alreadyAdded = false;
                 let limitReached = false;
@@ -3546,29 +3449,37 @@ import {
             const handleTeamSearchKeyDown = (groupId, event, results) => {
                 if (!groupId) return;
                 const value = teamSearchQuery[groupId] || '';
+                const enabledIndexes = results.reduce((indexes, team, index) => {
+                    if (team.canAdd) indexes.push(index);
+                    return indexes;
+                }, []);
                 if (event.key === 'ArrowDown') {
-                    if (!results.length) return;
+                    if (!enabledIndexes.length) return;
                     event.preventDefault();
+                    const current = teamSearchIndex[groupId] || 0;
+                    const currentPosition = enabledIndexes.indexOf(current);
                     setTeamSearchIndex(prev => ({
                         ...prev,
-                        [groupId]: Math.min((prev[groupId] || 0) + 1, results.length - 1)
+                        [groupId]: enabledIndexes[Math.min(currentPosition + 1, enabledIndexes.length - 1)]
                     }));
                     return;
                 }
                 if (event.key === 'ArrowUp') {
-                    if (!results.length) return;
+                    if (!enabledIndexes.length) return;
                     event.preventDefault();
+                    const current = teamSearchIndex[groupId] || 0;
+                    const currentPosition = enabledIndexes.indexOf(current);
                     setTeamSearchIndex(prev => ({
                         ...prev,
-                        [groupId]: Math.max((prev[groupId] || 0) - 1, 0)
+                        [groupId]: enabledIndexes[currentPosition <= 0 ? 0 : currentPosition - 1]
                     }));
                     return;
                 }
                 if (event.key === 'Enter') {
-                    if (!results.length) return;
+                    if (!enabledIndexes.length) return;
                     event.preventDefault();
                     const index = teamSearchIndex[groupId] || 0;
-                    const team = results[index] || results[0];
+                    const team = results[index]?.canAdd ? results[index] : results[enabledIndexes[0]];
                     if (team?.id) {
                         addTeamToGroup(groupId, team.id);
                     }
@@ -3668,12 +3579,32 @@ import {
                 const savingAdminSettings = Object.values(adminSectionsToSave).some(Boolean);
                 const boardAffectingAdminSave = Object.entries(adminSectionsToSave)
                     .some(([section, pending]) => pending && section !== 'adminAccess');
+                if (boardAffectingAdminSave) {
+                    sprintCatalogControllerRef.current.invalidate('settings-save');
+                    invalidateTeamMembership();
+                }
+                const recoverCatalogsAfterRejectedBoardSave = async () => {
+                    if (!boardAffectingAdminSave) return;
+                    setBoardBootstrapStatus('loading');
+                    try {
+                        const config = await fetchAppConfig(BACKEND_URL);
+                        sprintCatalogControllerRef.current.acceptSource(config.sprintCatalogSource || null);
+                        await loadSprints(false);
+                        setBoardBootstrapStatus('ready');
+                    } catch (error) {
+                        if (!isAuthenticationRequiredError(error)) setBoardBootstrapStatus('error');
+                    }
+                };
                 const sharedGroupsChanged = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current);
                 const pendingSections = { admin: savingAdminSettings, groups: sharedGroupsChanged, epm: false, preference: false };
-                if (!groupDraft) return buildSettingsSaveOutcome({ pendingSections, pendingAdminSections: adminSectionsToSave, error: 'Group settings are unavailable.' });
+                if (!groupDraft) {
+                    void recoverCatalogsAfterRejectedBoardSave();
+                    return buildSettingsSaveOutcome({ pendingSections, pendingAdminSections: adminSectionsToSave, error: 'Group settings are unavailable.' });
+                }
                 if (groupConfigValidationErrors.length > 0) {
                     setGroupDraftError(groupConfigValidationErrors[0]);
                     trackSettingsAction(groupManageTab, 'save_result', { result: 'failure', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
+                    void recoverCatalogsAfterRejectedBoardSave();
                     return buildSettingsSaveOutcome({ pendingSections, pendingAdminSections: adminSectionsToSave, error: groupConfigValidationErrors[0] });
                 }
                 const fencesBoardConfigReads = boardAffectingAdminSave || sharedGroupsChanged;
@@ -3703,6 +3634,7 @@ import {
                 };
                 setGroupSaving(true);
                 setGroupDraftError('');
+                setSettingsSaveError('');
                 setGroupsConfigConflict(null);
                 setWorkspaceConfigConflict(null);
                 const committedAdminSections = {};
@@ -3893,8 +3825,10 @@ import {
                                 setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
                                 setBoardAllWorkAvailable(cfg.boardAllWorkAvailable);
                                 setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
+                                sprintCatalogControllerRef.current.acceptSource(cfg.sprintCatalogSource || null);
                                 acceptedBoardConfigRef.current = true;
                                 setBoardBootstrapStatus('ready');
+                                if (boardAffectingAdminSave) await loadSprints(false);
                             }
                         } catch (err) {
                             if (shouldApplyBoardConfigRead()) {
@@ -3908,9 +3842,6 @@ import {
                         invalidateSprintDataForConfigSave(refreshTarget);
                         queueConfigSaveRefresh(refreshTarget);
 
-                        if (boardChanged) {
-                            loadSprints(true, { queueIfBusy: true });
-                        }
                     }
 
                     if (closeOnSuccess) {
@@ -3953,6 +3884,7 @@ import {
                     if (isAuthenticationRequiredError(err)) {
                         return buildSettingsSaveOutcome({ authRequired: true, committedSections, pendingSections: remainingSections, committedAdminSections, pendingAdminSections });
                     }
+                    void recoverCatalogsAfterRejectedBoardSave();
                     const isCapacityConfigConflict = err?.status === 409 && err?.payload?.error === 'capacity_config_conflict';
                     const workspaceConflictPayload = isCapacityConfigConflict ? {
                         error: 'workspace_config_conflict',
@@ -3988,6 +3920,7 @@ import {
                         }
                     }
                     setGroupDraftError(err.message || 'Failed to save groups.');
+                    setSettingsSaveError(err.message || 'Failed to save groups.');
                     if (err?.status !== 409 && !suppressRepeatedAdminAnalytics) {
                         trackSettingsAction(analyticsSection, 'save_result', { result: 'failure' });
                     }
@@ -5341,21 +5274,31 @@ import {
                 }
             };
 
-            const teamNameLookup = React.useMemo(() => {
-                const map = {};
-                (availableTeams || []).forEach(team => {
-                    if (team?.id) {
-                        map[team.id] = team.name || team.id;
+            const configuredTeamIds = React.useMemo(() => (
+                Array.from(new Set((groupDraft?.groups || []).flatMap(group => group.teamIds || [])))
+            ), [groupDraft]);
+            const teamNameDirectory = React.useMemo(() => {
+                const directory = { ...(teamCatalogState?.catalog || {}) };
+                (teamNameInputs || []).forEach(team => {
+                    const teamId = String(team?.id || '').trim();
+                    const name = String(team?.name || '').trim();
+                    if (teamId && name && !directory[teamId]) {
+                        directory[teamId] = { id: teamId, name };
                     }
                 });
-                const catalog = teamCatalogState?.catalog || {};
-                Object.entries(catalog).forEach(([teamId, entry]) => {
-                    if (!map[teamId] && entry?.name) {
-                        map[teamId] = entry.name;
-                    }
-                });
-                return map;
-            }, [availableTeams, teamCatalogState]);
+                return directory;
+            }, [teamCatalogState, teamNameInputs]);
+            const availableTeams = React.useMemo(() => buildTeamAvailability({
+                directory: teamNameDirectory,
+                sprintTeams: teamMembershipState.snapshot,
+                configuredTeamIds,
+                membershipReady: teamMembershipState.status === 'ready'
+                    || teamMembershipState.validated === true,
+                generation: teamMembershipState.generation,
+            }), [teamNameDirectory, teamMembershipState, configuredTeamIds]);
+            const teamNameLookup = React.useMemo(() => Object.fromEntries(
+                availableTeams.map(team => [team.id, team.name || team.id])
+            ), [availableTeams]);
 
             const resolveTeamName = (teamId) => {
                 return teamNameLookup[teamId] || teamId;
@@ -5468,6 +5411,9 @@ import {
                 return getGroupTeamSearchResults(activeGroupDraft, activeTeamQuery);
             }, [activeGroupDraft, activeTeamQuery, availableTeams, groupDraft]);
             const activeTeamResultsLimited = activeTeamResults.slice(0, 10);
+            const activeTeamAvailabilityKey = activeTeamResultsLimited
+                .map(team => `${team.id}:${team.canAdd ? '1' : '0'}`)
+                .join('|');
             const activeTeamIndex = activeGroupDraft ? (teamSearchIndex[activeGroupDraft.id] || 0) : 0;
             useEffect(() => {
                 if (!showGroupManage) return;
@@ -5612,10 +5558,11 @@ import {
                 const maxIndex = activeTeamResultsLimited.length - 1;
                 setTeamSearchIndex(prev => {
                     const current = prev[activeGroupDraft.id] || 0;
-                    if (current <= maxIndex) return prev;
-                    return { ...prev, [activeGroupDraft.id]: 0 };
+                    if (current <= maxIndex && activeTeamResultsLimited[current]?.canAdd) return prev;
+                    const firstEnabled = activeTeamResultsLimited.findIndex(team => team.canAdd);
+                    return { ...prev, [activeGroupDraft.id]: firstEnabled < 0 ? 0 : firstEnabled };
                 });
-            }, [activeTeamResultsLimited.length, activeGroupDraft]);
+            }, [activeTeamResultsLimited.length, activeTeamAvailabilityKey, activeGroupDraft]);
 
             const matchesScenarioSearch = (issue, query) => {
                 if (!query) return true;
@@ -5672,7 +5619,9 @@ import {
                 });
                 return ids;
             }, [activeGroup]);
-            const sprintCatalogReady = !sprintsLoading && availableSprints.length > 0;
+            const sprintCatalogReady = sprintCatalogState.authority === 'validated'
+                && availableSprints.length > 0
+                && availableSprints.some(sprint => String(sprint.id) === String(selectedSprint));
             const engSprintSelectorState = React.useMemo(() => resolveEngSprintSelectorState({
                 boardMode: selectedView === 'eng' && showBoard,
                 catalogReady: sprintCatalogReady,
@@ -6743,11 +6692,34 @@ import {
                 );
                 const shouldPreserveFallbackDraft = section => initiallyDirtyDrafts[section]
                     || draftReadGuard.draftChanged(section);
+                const sprintCatalogGenerationAtStart = sprintCatalogControllerRef.current.getState().generation;
                 setSharedConfigReady(false);
                 setBoardBootstrapStatus('loading');
                 try {
-                    const config = await fetchAppConfig(BACKEND_URL);
+                    let config = await fetchAppConfig(BACKEND_URL);
                     if (!shouldApplyResult()) return false;
+                    const currentSprintCatalogState = sprintCatalogControllerRef.current.getState();
+                    if (shouldReconcileSprintCatalogSource(
+                        sprintCatalogGenerationAtStart,
+                        currentSprintCatalogState,
+                        config.sprintCatalogSource || null,
+                    )) {
+                        try {
+                            config = await fetchAppConfig(BACKEND_URL);
+                        } catch (error) {
+                            sprintCatalogControllerRef.current.invalidate('catalog_identity_changed');
+                            throw error;
+                        }
+                        if (!shouldApplyResult()) return false;
+                        if (!sprintCatalogSourcesEqual(
+                            sprintCatalogControllerRef.current.getState(),
+                            config.sprintCatalogSource || null,
+                        )) {
+                            sprintCatalogControllerRef.current.invalidate('catalog_identity_changed');
+                        }
+                    } else {
+                        sprintCatalogControllerRef.current.acceptSource(config.sprintCatalogSource || null);
+                    }
                     performanceGate.resolve(config.performanceDebugEnabled === true);
                     setPerformanceAdminAvailable(config.performanceAdminAvailable === true);
                     const resumePrincipal = {
@@ -6891,7 +6863,7 @@ import {
             useEffect(() => {
                 if (selectedView !== 'eng' || isStatsSourceOnlyStatsView) return;
                 if (boardScopeRequested) return;
-                if (sprintsLoading || !selectedSprintInfo) return;
+                if (!sprintCatalogReady || sprintsLoading || !selectedSprintInfo) return;
                 // Load tasks when sprint changes (team is filtered client-side)
                 if (selectedSprint === null) {
                     return;
@@ -6974,7 +6946,7 @@ import {
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
-            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
+            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady, sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
@@ -7041,69 +7013,30 @@ import {
                 setScenarioError('');
             }, [selectedSprint, selectedTeams]);
 
-            const loadSprints = async (forceRefresh = false, { queueIfBusy = false } = {}) => {
-                if (sprintLoadInFlightRef.current) {
-                    if (queueIfBusy) pendingSprintRefreshRef.current = true;
-                    return;
-                }
-                sprintLoadInFlightRef.current = true;
-                setSprintsLoading(sprintCatalogCacheRef.current.sprints.length === 0);
-                try {
-                    const response = await requestSprints(BACKEND_URL, { forceRefresh });
+            const loadSprints = (forceRefresh = false, _options = {}) => (
+                forceRefresh
+                    ? sprintCatalogControllerRef.current.refresh()
+                    : sprintCatalogControllerRef.current.readCurrent()
+            );
 
-                    if (!response.ok) {
-                        throw new Error(`Error ${response.status}`);
-                    }
-
-                    const data = await response.json();
-                    const sprints = data.sprints || [];
-                    if (!sprints.length) throw new Error('No sprint values returned by Jira');
-                    sprintCatalogCacheRef.current = { cachedAt: Date.now(), sprints }; savedPrefsRef.current = { ...(loadUiPrefs() || {}), sprintCatalog: sprintCatalogCacheRef.current }; saveUiPrefs(savedPrefsRef.current);
-                    setAvailableSprints(sprints);
-                    setSprintError('');
-
-                    const preferredSprintId = selectedSprint || savedPrefsRef.current.selectedSprint;
-                    const preferredSprint = preferredSprintId ? sprints.find(s => String(s.id) === String(preferredSprintId)) : null;
-
-                    if (preferredSprint) {
-                        setSelectedSprint(preferredSprint.id);
-                        setSprintName(preferredSprint.name);
-                    } else {
-                        // Auto-select current quarter if available
-                        const currentQuarter = getCurrentQuarter();
-                        const currentSprint = sprints.find(s => String(s.state || '').toLowerCase() === 'active') || sprints.find(s => s.name === currentQuarter);
-                        if (currentSprint) {
-                            setSelectedSprint(currentSprint.id);
-                            setSprintName(currentSprint.name);
-                        } else if (sprints.length > 0) {
-                            // If current quarter not found, select the last sprint
-                            const lastSprint = sprints[sprints.length - 1];
-                            setSelectedSprint(lastSprint.id);
-                            setSprintName(lastSprint.name);
-                        }
-                    }
-
-                    console.log('✅ Loaded sprints:', sprints);
-                    clearServerConnectionError();
-                } catch (err) {
-                    if (isAuthenticationRequiredError(err)) return;
-                    if (sprintCatalogCacheRef.current.sprints.length) { console.warn('Sprint refresh failed; using cached catalog:', err); setSprintError(''); return; }
-                    if (reportServerConnectionError(err)) {
-                        setSprintError('');
-                    } else {
-                        console.error('Failed to load sprints:', err);
-                        setSprintError('Failed to load sprints from Jira. Retry, or confirm you can access the configured board.');
-                    }
-                } finally {
-                    sprintLoadInFlightRef.current = false;
-                    if (pendingSprintRefreshRef.current) {
-                        pendingSprintRefreshRef.current = false;
-                        void loadSprints(true, { queueIfBusy: true });
-                    } else {
-                        setSprintsLoading(false);
-                    }
-                }
-            };
+            useEffect(() => {
+                const handlePageHide = () => sprintCatalogControllerRef.current.invalidate('pagehide');
+                const handleAuthenticationRequired = () => sprintCatalogControllerRef.current.authLock();
+                const handlePageShow = event => {
+                    if (!event.persisted) return;
+                    sprintCatalogControllerRef.current.invalidate('pageshow');
+                    void sprintCatalogControllerRef.current.readCurrent();
+                };
+                window.addEventListener('pagehide', handlePageHide);
+                window.addEventListener('pageshow', handlePageShow);
+                window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthenticationRequired);
+                return () => {
+                    window.removeEventListener('pagehide', handlePageHide);
+                    window.removeEventListener('pageshow', handlePageShow);
+                    window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthenticationRequired);
+                    sprintCatalogControllerRef.current.dispose();
+                };
+            }, []);
 
             const priorityOrder = PRIORITY_ORDER;
 
@@ -8056,6 +7989,10 @@ import {
 
             const toggleTeamSelection = (teamId) => {
                 if (teamId === 'all') {
+                    if (teamSelectionScopeKey) {
+                        saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: ['all'] });
+                        teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: ['all'] };
+                    }
                     setSelectedTeams(['all']);
                     trackFilterChanged('team', { selection_count_bucket: '0' });
                     return;
@@ -8068,7 +8005,12 @@ import {
                         next.add(teamId);
                     }
                     trackFilterChanged('team', { selection_count_bucket: bucketCount(next.size) });
-                    return next.size ? Array.from(next) : ['all'];
+                    const nextSelectedTeams = next.size ? Array.from(next) : ['all'];
+                    if (teamSelectionScopeKey) {
+                        saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
+                        teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
+                    }
+                    return nextSelectedTeams;
                 });
             };
 
@@ -11989,7 +11931,10 @@ import {
             // Catch Up is the all-false fallthrough of the ENG mode booleans, so Board has to opt
             // out here explicitly or the whole task list renders underneath the board.
             const shouldRenderEngTaskList = selectedView === 'eng' && !showBoard && !isStatsSourceOnlyStatsView;
-            const displayedEngError = sprintError || error;
+            const sprintCatalogWarning = sprintError && sprintCatalogState.validatedSnapshot
+                ? sprintError
+                : '';
+            const displayedEngError = sprintCatalogWarning ? error : (sprintError || error);
             const onboardingEngReadiness = deriveOnboardingEngReadiness({
                 tasksFetched,
                 loading,
@@ -14050,7 +13995,9 @@ import {
             const renderSprintControl = (surface) => {
                 const boardScopeControl = selectedView === 'eng' && showBoard;
                 const canOpen = engSprintSelectorState.ordinarySelectable;
-                const displayedSprint = boardScopeControl && boardStrictScope ? (boardStrictScope === 'component' ? 'Component' : 'All work') : (!selectedSprint && sprintsLoading ? 'Loading…' : (sprintName || 'Sprint'));
+                const displayedSprint = boardScopeControl && boardStrictScope
+                    ? (boardStrictScope === 'component' ? 'Component' : 'All work')
+                    : (sprintName || (!selectedSprint && sprintsLoading ? 'Loading…' : 'Sprint'));
                 const options = getSprintSelectorOptions(boardScopeControl);
                 const activeIndex = options.length
                     ? Math.min(Math.max(sprintActiveOptionIndex, 0), options.length - 1)
@@ -14780,7 +14727,12 @@ import {
                 return true;
             });
             const settingsSaveHandler = () => {
-                void saveAllSettings({ firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null });
+                setSettingsSaveError('');
+                void saveAllSettings({
+                    firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null,
+                }).then((outcome) => {
+                    if (outcome?.error) setSettingsSaveError(outcome.error);
+                });
             };
             const setTrackedEpmSettingsProjectSort = (sortKey) => {
                 trackSortChanged('epm_settings_projects', sortKey, { sort_direction: 'asc', source_surface: 'epm_settings' });
@@ -14839,6 +14791,10 @@ import {
                     if (selectedScopeReadiness !== 'unsupported') void retryBoardScopeConfiguration();
                     return;
                 }
+                if (!sprintCatalogReady) {
+                    void loadSprints(true, { queueIfBusy: true });
+                    return;
+                }
                 if (activeGroupId) {
                     groupStateRef.current.delete(activeGroupId);
                 }
@@ -14861,7 +14817,7 @@ import {
             };
             const manualRefreshDisabled = selectedView === 'eng' ? (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized'
                 : boardScopeRequested ? ['loading', 'catalog_pending', 'unsupported'].includes(selectedScopeReadiness)
-                : loading || selectedSprint === null)
+                : loading || groupsLoading || groupPreferences.onboardingRequired)
                 : (epmProjectsLoading || epmRollupLoading);
             longAbsenceRefreshRef.current = manualRefreshDisabled ? null : refreshActiveViewFromJira;
             useEffect(() => {
@@ -15082,6 +15038,13 @@ import {
                             </div>
                         </div>
                     </header>
+
+                    {selectedView === 'eng' && sprintCatalogWarning && (
+                        <section className="board-scope-status" role="status" aria-label="Sprint catalog status" aria-live="polite">
+                            <span>{sprintCatalogWarning}</span>
+                            <button type="button" onClick={() => void loadSprints(true)}>Retry</button>
+                        </section>
+                    )}
 
                     <div
                         ref={compactHeaderRef}
@@ -17376,7 +17339,7 @@ import {
                             isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
                             unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
                             onRequestClose={firstRunConfigurationActive ? () => {} : requestCloseGroupManage}
-                            validationMessages={groupManageTab !== 'connections' ? [...workspaceConfigConflictMessages(workspaceConfigConflict), ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...(groupDraftError && SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab) && !workspaceConfigConflict && !groupsConfigConflict ? [groupDraftError] : []), ...groupConfigValidationErrors] : []}
+                            validationMessages={groupManageTab !== 'connections' ? [...workspaceConfigConflictMessages(workspaceConfigConflict), ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...((settingsSaveError || groupDraftError) && SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab) && !workspaceConfigConflict && !groupsConfigConflict ? [settingsSaveError || groupDraftError] : []), ...groupConfigValidationErrors] : []}
                             validationActions={groupManageTab !== 'connections' && workspaceConfigConflict && !firstRunHasCommittedSection ? (
                                 <div className="group-modal-button-row" data-testid="workspace-config-conflict-actions">
                                     <button className="secondary compact" onClick={useLatestWorkspaceConfig} type="button">Use latest</button>

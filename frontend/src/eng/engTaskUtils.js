@@ -43,6 +43,25 @@ export function matchesEngTaskSearch(task, query, epicDetails = {}) {
     ));
 }
 
+export function matchesEngEpicSearch(epic, query) {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (!normalizedQuery) return true;
+
+    const initiative = epic?.initiative || {};
+    const candidates = [
+        epic?.key,
+        epic?.summary,
+        epic?.assignee?.displayName,
+        initiative.key,
+        initiative.summary,
+    ];
+
+    return candidates.some(value => (
+        value != null
+        && String(value).toLowerCase().includes(normalizedQuery)
+    ));
+}
+
 export function getEpicTeamInfo(epic) {
     const teamName = epic?.teamName || epic?.team?.name || epic?.team?.displayName || 'Unknown Team';
     const teamId = epic?.teamId || epic?.team?.id || teamName;

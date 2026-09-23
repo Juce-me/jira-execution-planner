@@ -914,12 +914,29 @@ test('external link metadata builders use explicit safe metadata without hrefs',
     assert.deepEqual(
         buildJiraBrowseLinkAnalytics({
             issueKind: 'epic',
-            sourceSurface: 'epm',
+            sourceSurface: 'catch_up',
         }),
         {
             linkType: 'jira_issue_browse',
             issueKind: 'epic',
-            sourceSurface: 'epm',
+            sourceSurface: 'catch_up',
+            result: 'success',
+        }
+    );
+    assert.deepEqual(
+        buildJiraBrowseLinkAnalytics({
+            issueKind: 'epic',
+            sourceSurface: 'planning',
+            epicKey: 'SENSITIVE-123',
+            teamName: 'Sensitive Team',
+            sprintName: 'Sprint 42',
+            href: 'https://jira.example/browse/SENSITIVE-123',
+            reason: 'no_stories',
+        }),
+        {
+            linkType: 'jira_issue_browse',
+            issueKind: 'epic',
+            sourceSurface: 'planning',
             result: 'success',
         }
     );
@@ -1016,6 +1033,39 @@ test('api result helper emits eng_subtasks surface for story subtask loads', asy
         duration_ms: 1250,
         cache_state: 'hit'
     });
+});
+
+test('api result helper emits only bounded Story readiness success and failure metadata', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    trackApiResult('eng_story_readiness', {
+        featureName: 'eng', method: 'GET', status: 200, durationMs: 1250, cacheState: 'hit',
+        groupId: 'private-group', sprintName: 'Private Sprint', epicKey: 'PRIVATE-1',
+        jiraUrl: 'https://private.invalid', jql: 'project = PRIVATE', reason: 'no_stories',
+    });
+    trackApiResult('eng_story_readiness', {
+        featureName: 'eng', method: 'GET', status: 502, durationMs: 400, cacheState: 'miss',
+        teamName: 'Private Team', labels: ['private-label'],
+    });
+
+    assert.deepEqual(pushed, [
+        {
+            event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'api_result',
+            feature_name: 'eng', api_surface: 'eng_story_readiness', method: 'GET',
+            status_bucket: '2xx', result: 'success', duration_bucket: '1_3s', duration_ms: 1250, cache_state: 'hit',
+        },
+        {
+            event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'api_result',
+            feature_name: 'eng', api_surface: 'eng_story_readiness', method: 'GET',
+            status_bucket: '5xx', result: 'failure', duration_bucket: 'under_1s', duration_ms: 400, cache_state: 'miss',
+        },
+    ]);
 });
 
 test('api result helper emits eng_issue_description and board_config_statuses surfaces', async () => {

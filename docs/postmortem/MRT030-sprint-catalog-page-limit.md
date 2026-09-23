@@ -1,4 +1,4 @@
-# MRT029: Sprint catalog rejected a Jira-capped Board page
+# MRT030: Sprint catalog rejected a Jira-capped Board page
 
 **Date:** 2026-09-23
 **Severity:** High

@@ -40,7 +40,7 @@
             position: relative;
             display: inline-flex;
             align-items: center;
-            border-radius: 8px;
+            border-radius: 10px;
         }
 
         /* The open menu is position:absolute inside its .task-item / .epic-header, whose own

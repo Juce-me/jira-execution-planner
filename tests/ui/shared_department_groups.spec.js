@@ -285,6 +285,9 @@ async function mockFirstRunDashboard(page, options = {}) {
         });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'test-csrf' });
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
+        }
         if (url.pathname === '/api/analytics/context') return json(options.analyticsEnabled ? {
             enabled: true,
             measurementId: 'G-SYNTHETIC',

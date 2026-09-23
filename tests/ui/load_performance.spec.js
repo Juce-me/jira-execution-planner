@@ -60,6 +60,9 @@ async function openMeasuredDashboard(page, { admin = true, delayedConfig = false
         const key = params.project === 'tech' ? 'TEST-2' : 'TEST-1';
         return route.fulfill({ json: { issues: [{ key, fields: { summary: `Sample ${params.project} story`, teamId: 'sample-team', teamName: 'Sample Team', issuetype: { name: 'Story' }, status: { name: 'In Progress' }, priority: { name: 'Medium' }, issuelinks: [] } }], epics: {}, epicsInScope: [], loadMetrics: { completeness: 'unknown', cacheState: 'miss', jiraRequests: 1, jiraPages: 1, jiraRetries: 0 } } });
     });
+    await page.route('**/api/eng/story-readiness?**', route => route.fulfill({
+        json: { schemaVersion: 1, complete: true, scope: {}, epics: [] },
+    }));
     await page.route('**/api/dependencies', async route => {
         dependencyCalls.push(route.request().postDataJSON());
         await gate;

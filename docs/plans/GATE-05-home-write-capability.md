@@ -140,6 +140,7 @@ Required tests after the gate passes:
   probe ran; this read-only Jira catalog plan adds no Home/Townsquare write route or
   mutation and does not depend on this gate. Keep blocked with
   `FAIL insufficient_home_write_probe_input`.
+- 2026-09-16: The missing-story ghost design and implementation planning sweep found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; the planned feature is read-only Jira readiness data plus Jira browse links and adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-14: The ENG Board selector execution found none of the four required
   Home-write probe inputs and no approved disposable Home project. No mutation probe ran;
   this frontend read-path change adds no Home/Townsquare write route or mutation. Keep blocked

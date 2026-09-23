@@ -5,14 +5,17 @@ The dashboard uses alert panels to highlight work that needs attention in the cu
 ## General Behavior
 
 - Alerts are scoped to the currently selected sprint and active team group.
-- Alerts load only in Catch Up. Board, Planning, Statistics, and Scenario do not request or render them.
+- Alert panels load only in Catch Up. Board, Planning, Statistics, and Scenario do not request or render the panels.
 - Catch Up renders Product and Tech tasks first. After both visible task requests finish, alert enrichment, missing-info, ready-to-close, and future-backlog sources load progressively in the background without blocking the task list.
+- Story readiness is a separate progressive read used by both Catch Up and Planning after Product and Tech Stories render. Planning does not start the unrelated Catch Up alert sources.
+- Every Catch Up filter also filters every alert category. Story alerts use the exact visible Story set after Team, Status, Priority, Product/Tech, Project Track, search, and focused-stat filtering. Epic alerts, including Stories Required, apply the equivalent Epic fields and facet rules. Alert rows, category summary chips, and the total count all reflect the filtered result.
 - Task refreshes and status or priority changes invalidate any pending alert cohort in every ENG mode; stale responses are ignored, and the alerts reload after returning to Catch Up.
 - Each panel can be collapsed.
 - Dismissed alert items stay hidden in the browser until the local alert state is reset.
 - Postponed work is routed separately so it does not also appear in ordinary hygiene panels.
 
 Analytics allowlist reason: no analytics event is added because this changes automatic request scheduling, not a user interaction or reportable product action.
+Search-driven alert filtering is covered by the existing privacy-bounded `app_search` event. Other filter changes retain the existing `filter_changed` contract. Alert filtering adds no event and never sends query or alert contents.
 
 ## Current Alert Panels
 
@@ -87,14 +90,13 @@ Shows epics that match the selected future sprint by Jira Sprint value or sprint
 
 This also covers the case where the active group has no label mapping configured for that team yet.
 
-### Needs Stories
+### Stories Required
 
-Shows epics that have both the exact selected-sprint-name label and the configured mapped team label, but still are not sprint-ready because they do not yet have an actionable child story in that sprint.
+Shows one requirement per expected Team on an in-scope Epic that does not have an actionable child Story in the selected active or future sprint. Expected Teams come only from exact configured Epic-label mappings. A raw Jira Team value does not create a requirement.
 
-Each epic row shows the specific reason:
-- `No stories yet for this sprint.` when the epic has no child stories
-- `Only closed stories exist for this epic.` when all child stories are terminal
-- `Open stories exist, but not in the selected sprint.` when stories exist, but none are actionable in the selected future sprint
+The same complete Story-readiness snapshot drives the Catch Up alert and the synthetic `Story required` rows in the Catch Up and Planning hierarchies. `Blocked`, `Done`, `Killed`, and `Incomplete` Stories do not satisfy readiness. A failed, partial, or stale snapshot never produces a requirement.
+
+The alert title is local navigation to the exact `(Department, sprint, Epic, Team)` requirement and reuses the established alert-row title style. Team groups display the configured Team-catalog name, never the internal Team id. Activation clears only target-hiding list state to a truly neutral reveal state, then scrolls, focuses, and highlights the exact ghost. The hierarchy ghost is the Jira-opening action. Dismissing the alert entry does not hide the hierarchy row. The panel's headline count remains a unique-Epic count even when one Epic has requirements for multiple Teams.
 
 ## Alert Precedence
 
@@ -104,6 +106,8 @@ An epic is routed to the first matching planning alert:
 2. Backlog
 3. Missing Team
 4. Missing Labels
-5. Needs Stories
+5. Stories Required
 
 This avoids the same epic showing up in multiple planning panels at once. In practice, an epic with a filled sprint or selected sprint label should bypass Backlog and continue into the later planning checks.
+
+For an active sprint, exact-label Story-readiness failures route to Stories Required after Postponed work; unrelated analysis-waiting candidates remain Waiting, and only remaining empty candidates reach Empty Epic.

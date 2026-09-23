@@ -373,3 +373,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Batch ENG Board Component discovery under the encoded Jira request limit; never concatenate the full Department Component catalog into one JQL.
 - When an authenticated localhost dashboard is already open, reproduce reported UI regressions and verify the fix in that browser before reporting completion.
 - Treat workspace as the shared Jira site/domain identity within the configured environment; persist Sprint catalogs, per-Sprint Team membership, and Team name directories by workspace, never by refreshing user, OAuth connection, or token version.
+- When replacing an ENG alert data source, preserve the existing alert producer as a fallback until the replacement succeeds for the same scope; never remove a working alert solely because a broader endpoint was added.
+- In ENG alert panels, new categories must reuse the existing `.alert-story` title/note/dismiss composition and visual styles; native button semantics must neutralize the global button surface, and no secondary row action may be added unless explicitly requested.
+- ENG alert navigation that promises to reveal a filtered target must clear to a truly neutral facet state, not the normal default-hidden state, and must be tested with that hidden option present in scope.
+- Team-catalog readers must unwrap the persisted `{catalog, meta}` envelope and normalize the inner `catalog`; never pass the envelope to a flat Team-map normalizer or display a Team id as its name.
+- ENG epic-header layout rules must preserve the complete shared `.task-status` presentation—geometry, typography, border, and colors; never add header-specific status-pill restyling.
+- When the user names an existing component as the visual reference, change the compared elements to match that reference; do not restyle the reference component unless explicitly requested.

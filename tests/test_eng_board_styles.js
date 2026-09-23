@@ -7,6 +7,8 @@ const { readDashboardCssSource } = require('./css_source_helpers');
 const repoRoot = path.join(__dirname, '..');
 const boardCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'board.css');
 const issuesCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'issues.css');
+const statusTransitionsCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'status-transitions.css');
+const storyRequirementCardPath = path.join(repoRoot, 'frontend', 'src', 'eng', 'StoryRequirementCard.jsx');
 
 // An undefined custom property silently drops the WHOLE declaration it appears in, and this
 // design's assets have already been caught shipping four variables that exist in no stylesheet
@@ -98,7 +100,7 @@ test('board.css scopes its column classes so the composer preview cannot collide
     });
 });
 
-test('ENG epic headline source keeps the calibrated one-row sizing contract scoped away from EPM', async () => {
+test('ENG epic headline source keeps one-row sizing without restyling the shared status pill', async () => {
     const source = fs.readFileSync(issuesCssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     const scoped = '.task-list:not(.epm-issue-board) .epic-block > .epic-header';
 
@@ -113,11 +115,11 @@ test('ENG epic headline source keeps the calibrated one-row sizing contract scop
     assert.match(source, /\.epic-key[^}]*font-size:\s*14px\s*;[^}]*line-height:\s*24px\s*;/s);
     assert.match(source, /\.epic-meta[^}]*flex:\s*0\s+1\s+auto\s*;[^}]*min-width:\s*0\s*;[^}]*max-width:\s*none\s*;/s);
     assert.match(source, /\.epic-meta[^}]*font-size:\s*14px\s*;[^}]*line-height:\s*24px\s*;/s);
-    assert.match(source, /\.epic-status-pill[^}]*height:\s*24px\s*;/s);
     assert.match(source, /\.epic-story-points[^}]*height:\s*24px\s*;/s);
     assert.match(source, /\.epic-assignee\s+input\.issue-person-editor-trigger[^}]*height:\s*24px\s*;/s);
     assert.match(source, /\.epic-assignee[^}]*min-width:\s*126px\s*;/s);
-    assert.match(source, /\.epic-status-pill[^}]*max-width:\s*140px\s*;[^}]*text-overflow:\s*ellipsis\s*;/s);
+    assert.doesNotMatch(source, /\.epic-status-pill[^}]*(?:height|min-width|max-width|padding|border):/s,
+        'epic header layout must not replace the shared status-pill geometry');
 });
 
 test('ENG epic headline source sizes artwork and keeps focus/readout visible', async () => {
@@ -133,4 +135,32 @@ test('ENG epic headline source sizes artwork and keeps focus/readout visible', a
     assert.match(source, /\.epic-header\s+\.task-assignee-icon\s+svg[^}]*width:\s*21px\s*;[^}]*height:\s*21px\s*;/s);
     assert.match(source, /:is\(button,\s*input,\s*a,\s*\[tabindex\]\):focus-visible[^}]*outline:\s*2px[^}]*outline-offset:\s*-2px\s*;/s);
     assert.match(source, /\.epic-full-value-readout\s*\{[^}]*position:\s*fixed\s*;[^}]*z-index:/s);
+});
+
+test('Story requirement card is one tracked external link with bounded Jira analytics', async () => {
+    const source = fs.readFileSync(storyRequirementCardPath, 'utf8');
+
+    assert.match(source, /<TrackedExternalLink[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"/);
+    assert.match(source, /buildJiraBrowseLinkAnalytics\(\{[\s\S]*issueKind:\s*'epic'[\s\S]*sourceSurface/s);
+    assert.match(source, /aria-label=\{accessibleName\}/);
+    assert.match(source, /data-story-requirement-id/);
+    assert.doesNotMatch(source, /<(?:button|input|select|textarea)\b/);
+    assert.doesNotMatch(source, /requirement-stack|ghost-slot-rail|ghost-action/);
+});
+
+test('Story requirement styles echo ENG Story cards without changing Epic header geometry or EPM', async () => {
+    const source = fs.readFileSync(issuesCssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const statusSource = fs.readFileSync(statusTransitionsCssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const scopedCard = '.task-list:not(.epm-issue-board) .epic-block > .story-requirement-card';
+
+    assert.ok(source.includes(scopedCard));
+    assert.match(source, /\.task-list:not\(\.epm-issue-board\)\s+\.epic-block\s*\{[^}]*border-radius:\s*10px\s*;/s);
+    assert.match(source, /\.epic-block\.epic-block-no-child-stories\s*\{[^}]*border-style:\s*dotted\s*;/s);
+    assert.match(source, /\.story-requirement-card\s*\{[^}]*width:\s*100%\s*;[^}]*padding:\s*0\.72rem\s+0\.95rem\s*;[^}]*border:\s*1px\s+dashed[^}]*border-radius:\s*10px\s*;/s);
+    assert.match(statusSource, /\.status-transition,[^{]*\{[^}]*border-radius:\s*10px\s*;/s);
+    assert.match(source, /\.story-requirement-active\s*\{[^}]*--story-requirement-tone:\s*#a61b13\s*;/s);
+    assert.match(source, /\.story-requirement-card:focus-visible\s*\{[^}]*outline:\s*3px\s+solid\s+#174f82\s*;/s);
+    assert.match(source, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.story-requirement-card\.story-requirement-highlight/s);
+    assert.doesNotMatch(source, /\.epic-header[^}]*border-style:\s*dotted/s);
+    assert.doesNotMatch(source, /(?:^|,)\s*\.epm-issue-board[^{]*\.story-requirement-card/m);
 });

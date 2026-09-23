@@ -45,7 +45,8 @@ Postmortems serve to:
 | [MRT026](./MRT026-issue-137-delivery-scope-deviation.md) | Issue 137 Delivery Scope Deviation | 2026-09-07 | High | In Progress | Recovery now includes accepted in-app measurements and a reviewed gated implementation plan; planning acceptance remains pending |
 | [MRT027](./MRT027-board-catalog-pagination.md) | Board Scope Interpretation and Loading Regressions | 2026-09-09 | High | Monitoring | Unconfirmed UX/data-source assumptions and over-strict Jira projection caused duplicate controls, redundant loading, incomplete ownership discovery, and live Board failures |
 | [MRT028](./MRT028-epic-header-instruction-drift.md) | Epic Header Regression and Instruction Drift | 2026-09-10 | High | Monitoring | A scoped local correction now implements the validated single-row visual/readout contract with painted-item and interaction checks; user acceptance and publication remain pending |
-| [MRT029](./MRT029-sprint-catalog-page-limit.md) | Sprint Catalog Rejected a Jira-Capped Board Page | 2026-09-23 | High | In Progress | Strict DB/OAuth Sprint fetch required response `maxResults` to equal the request, so a valid capped page yielded `catalog_incomplete`; local red/green coverage added while live attribution remains open |
+| [MRT029](./MRT029-eng-alert-style-reinvention.md) | ENG Alert Row Reinvented Existing Styles | 2026-09-16 | High | Resolved | Stories Required reinvented the row, exposed Team UUIDs, and could not reveal targets hidden by the default Killed exclusion; style, catalog, and navigation boundaries were corrected |
+| [MRT030](./MRT030-sprint-catalog-page-limit.md) | Sprint Catalog Rejected a Jira-Capped Board Page | 2026-09-23 | High | In Progress | Strict DB/OAuth Sprint fetch required response `maxResults` to equal the request, so a valid capped page yielded `catalog_incomplete`; local red/green coverage added while live attribution remains open |
 
 ## Postmortem Template
 
@@ -99,8 +100,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 28
-- **Metadata complete (Date/Severity/Status)**: 28 (MRT001-MRT028)
+- **Total postmortems**: 30
+- **Metadata complete (Date/Severity/Status)**: 30 (MRT001-MRT030)
 
 ## Common Themes
 
@@ -112,6 +113,7 @@ Commits, files, documentation
 5. **Plan/Execution Boundary**: Blocked execution was incorrectly treated as permission to omit a requested plan artifact
 6. **Publication Hygiene**: Local cleanliness and successful CLI exits were mistaken for a correct remote commit range and rendered PR
 7. **Strategic Ambiguity**: A detailed plan was treated as permission to choose a new UI/state/data boundary instead of pausing for user confirmation
+8. **Existing UI Reuse**: New behavior repeatedly introduced bespoke composition or overrides instead of preserving an established component's visual contract
 
 ### Action Items Summary
 Across all postmortems, key actions needed:
@@ -162,4 +164,4 @@ For questions about postmortems or to discuss issues, contact the development te
 ---
 
 *Last Updated: 2026-09-23*
-*Total Postmortems: 29*
+*Total Postmortems: 30*

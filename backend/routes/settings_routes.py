@@ -753,50 +753,18 @@ def get_version():
 def get_groups_config():
     """Return the saved team groups configuration."""
     auth_context = _shared_group_db_auth_context()
+    config = shared_group_config.load_effective_groups(
+        auth_context,
+        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        validate_groups_config_fn=validate_groups_config,
+        dashboard_loader=load_dashboard_config,
+        groups_file_loader=lambda: load_groups_config_file(resolve_groups_config_path()),
+        environment_loader=parse_groups_config_env,
+        default_builder=build_default_groups_config,
+    )
     if auth_context is not None:
-        config = shared_group_config.load_shared_groups(
-            auth_context,
-            fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
-            validate_groups_config_fn=validate_groups_config,
-        )
         config['preferences'] = shared_group_config.load_group_preferences(auth_context, config)
         return jsonify(config)
-
-    warnings = []
-    config_source = 'auto'
-
-    # Try unified dashboard config first
-    dashboard_config = load_dashboard_config()
-    if dashboard_config and 'teamGroups' in dashboard_config:
-        config = dashboard_config['teamGroups']
-        config_source = 'file'
-    else:
-        # Fall back to legacy file / env
-        config_path = resolve_groups_config_path()
-        config = load_groups_config_file(config_path)
-        if config:
-            config_source = 'file'
-        else:
-            config = parse_groups_config_env()
-            if config:
-                config_source = 'env'
-
-    if not config:
-        config, auto_warnings = build_default_groups_config()
-        warnings.extend(auto_warnings)
-    else:
-        normalized, errors, validate_warnings = validate_groups_config(config, allow_empty=True)
-        warnings.extend(validate_warnings)
-        if errors:
-            warnings.append('Invalid groups config; falling back to auto Default group.')
-            warnings.extend(errors)
-            normalized, auto_warnings = build_default_groups_config()
-            warnings.extend(auto_warnings)
-        config = normalized
-
-    if warnings:
-        config['warnings'] = warnings
-    config['source'] = config_source
     config['preferences'] = shared_group_config.normalize_group_preferences(
         {},
         config,

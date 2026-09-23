@@ -22,6 +22,10 @@ export default function EngView({
     setGroupByInitiative,
     InitiativeIcon,
     visibleTasksForList = [],
+    hierarchyCounts = null,
+    readinessStatus = 'idle',
+    readinessError = '',
+    onRetryReadiness,
     activeDependencyFocus,
     handleDependencyFocusClick,
     initiativeGroups,
@@ -39,7 +43,15 @@ export default function EngView({
     if (selectedView !== 'eng') {
         return null;
     }
-    const hasNoVisibleTasks = visibleTasksForList.length === 0;
+    const visibleRowCount = Number.isFinite(hierarchyCounts?.visibleRows)
+        ? hierarchyCounts.visibleRows
+        : visibleTasksForList.length;
+    const realStoryCount = Number.isFinite(hierarchyCounts?.realStories)
+        ? hierarchyCounts.realStories
+        : visibleTasksForList.length;
+    const requirementCount = Number(hierarchyCounts?.requirements) || 0;
+    const hasNoVisibleTasks = visibleRowCount === 0;
+    const readinessNeedsAttention = !['idle', 'loading', 'ready'].includes(readinessStatus);
 
     const [showSortDropdown, setShowSortDropdown] = React.useState(false);
     const sortDropdownRef = React.useRef(null);
@@ -117,14 +129,22 @@ export default function EngView({
                         </div>
                     )}
                     {alertsPanel}
+                    {readinessNeedsAttention && (
+                        <div className="story-readiness-notice" role="status">
+                            <span>{readinessError || 'Story readiness is unavailable. Jira Stories remain visible.'}</span>
+                            {readinessStatus === 'unavailable' && onRetryReadiness && (
+                                <button type="button" className="secondary compact" onClick={onRetryReadiness}>Retry</button>
+                            )}
+                        </div>
+                    )}
                     <EngFilterBar
                         facets={engFilters.facets}
                         selection={engFilters.selection}
                         counts={engFilters.counts}
                         scopeTotal={engFilters.scopeTotal}
                         subject={engFilters.subject}
-                        readoutCount={visibleTasksForList.length}
-                        readoutUnit={engFilters.readoutUnit}
+                        readoutCount={realStoryCount}
+                        readoutUnit={requirementCount > 0 ? `stories · ${requirementCount} required` : engFilters.readoutUnit}
                         onChange={onFacetChange}
                         onClearAll={onClearFacets}
                         onHeightChange={onFilterBarHeightChange}

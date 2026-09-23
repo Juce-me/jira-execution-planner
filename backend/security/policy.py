@@ -173,6 +173,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("planned-capacity-read", "/api/planned-capacity", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("test-connection", "/api/test", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("eng-board-read", "/api/eng/board", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("eng-story-readiness", "/api/eng/story-readiness", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("export-excel", "/api/export-excel", frozenset({"POST"}), "user_write"),
     EndpointPolicy("debug-fields", "/api/debug-fields", PUBLIC_METHODS, "dev_local"),
     EndpointPolicy("tasks-fields", "/api/tasks-fields", PUBLIC_METHODS, "dev_local"),

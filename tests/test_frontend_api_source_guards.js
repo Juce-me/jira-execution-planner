@@ -66,6 +66,16 @@ test('the common HTTP boundary does not import the analytics singleton', () => {
     assert.ok(source.includes('globalThis?.JepAnalytics?.trackApiResult?.('));
 });
 
+test('connection recovery state stays tab-local, side-effect free, and separate from auth resume', () => {
+    const recovery = readSource(path.join(frontendSrcPath, 'api', 'connectionRecoveryState.js'));
+    const authResume = readSource(path.join(frontendSrcPath, 'api', 'authResumeState.js'));
+
+    assert.match(recovery, /sessionStorage/);
+    assert.doesNotMatch(recovery, /localStorage|\bfetch\b|addEventListener|JepAnalytics|track[A-Z]/);
+    assert.doesNotMatch(recovery, /apiToken|accessToken|refreshToken|authorization|email/);
+    assert.doesNotMatch(authResume, /configurationDraft|scenarioOverrides|localOverrides/);
+});
+
 function loadApiModule(fileName, exportNames, dependencies = {}) {
     const modulePath = path.join(frontendSrcPath, 'api', fileName);
     assert.ok(fs.existsSync(modulePath), `Expected frontend/src/api/${fileName} to exist`);

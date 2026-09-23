@@ -109,6 +109,40 @@ test('strict stale snapshot is labelled while retryable refresh failure remains 
     assert.match(markup, /class="eng-board"/);
 });
 
+test('strict hard-limit states render exact cold and stale copy without false empty success', () => {
+    const group = { key: 'E-1', epic: { key: 'E-1', summary: 'Retained epic', status: 'In Progress' },
+        tasks: [], storyPoints: 0, childrenIncomplete: true, childrenLoading: false };
+    const populatedColumn = {
+        id: 'active', name: 'Active', colour: '#8c8c8c', star: true, statuses: ['In Progress'],
+        terminal: false, isUnmapped: false, isUnconfigured: false, epicGroups: [group], epicCount: 1,
+        storyPoints: 0, breach: null,
+    };
+    const coldMarkup = renderBoard({
+        strictColumns: [populatedColumn], epicGroups: [group], authorityPending: true,
+        error: 'Board limit reached; this result is incomplete.', onRetry: () => {},
+    });
+    assert.match(coldMarkup, /Loaded so far — Board limit reached; this result is incomplete\./);
+    assert.match(coldMarkup, /Retained epic/);
+    assert.doesNotMatch(coldMarkup, /No epics found/);
+
+    const staleMarkup = renderBoard({
+        strictColumns: [populatedColumn], epicGroups: [group], stale: true,
+        error: 'Refresh reached the Board limit.', onRetry: () => {},
+    });
+    assert.match(staleMarkup, /Showing last complete Board data\. Refresh reached the Board limit\./);
+    assert.doesNotMatch(staleMarkup, /Loaded so far/);
+
+    const emptyColumn = { ...populatedColumn, epicGroups: [], epicCount: 0 };
+    const emptyMarkup = renderBoard({
+        strictColumns: [emptyColumn], epicGroups: [], authorityPending: true,
+        error: 'Board limit reached; this result is incomplete.', onRetry: () => {},
+    });
+    assert.match(emptyMarkup, /class="error"/);
+    assert.match(emptyMarkup, /role="alert"/);
+    assert.match(emptyMarkup, /Board limit reached; this result is incomplete\./);
+    assert.doesNotMatch(emptyMarkup, /Loaded so far|No epics found/);
+});
+
 test('strict structural columns without epics do not masquerade as loaded partial data', () => {
     const strictColumns = [{
         id: 'active', name: 'Active', colour: '#8c8c8c', star: true, statuses: ['In Progress'],
@@ -127,4 +161,19 @@ test('strict structural columns without epics do not masquerade as loaded partia
     assert.match(markup, /Board load failed: partial error/);
     assert.match(markup, />Retry</);
     assert.doesNotMatch(markup, /class="eng-board"/);
+});
+
+test('strict pending cards show provisional work counts and gray placeholders without false zero totals', () => {
+    const group = { key: 'E-1', epic: { key: 'E-1', summary: 'Visible while children load', status: 'In Progress' },
+        tasks: [], storyPoints: 0, childrenIncomplete: true, childrenLoading: true,
+        childProgress: { total: 4, done: 2, inProgress: 1, doneWidth: '50%', inProgressWidth: '25%' } };
+    const column = { id: 'active', name: 'Active', colour: '#597ef7', star: true, statuses: ['In Progress'],
+        epicGroups: [group], epicCount: 1, storyPoints: 0, breach: null };
+    const markup = renderBoard({ strictColumns: [column], epicGroups: [group], loading: true, authorityPending: true });
+    assert.match(markup, /Visible while children load/);
+    assert.match(markup, /2 of 4\+ work items/);
+    assert.match(markup, /board-loading-bar/);
+    assert.match(markup, /SP pending/);
+    assert.doesNotMatch(markup, /0 of 0|0\.0 sp/);
+    assert.match(markup, /aria-busy="true"/);
 });

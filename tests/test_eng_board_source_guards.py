@@ -14,13 +14,15 @@ class EngBoardFrontendIntegrationSourceGuards(unittest.TestCase):
     def test_dashboard_has_one_server_derived_strict_board_seam(self):
         source = (ROOT / 'frontend/src/dashboard.jsx').read_text(encoding='utf-8')
         integration = (ROOT / 'frontend/src/eng/useStrictEngBoardIntegration.js').read_text(encoding='utf-8')
-        self.assertIn('config.boardAllWorkAvailable === true', source)
+        self.assertIn("const strictBoardActive = boardScopeRequested && selectedScopeReadiness === 'ready';", source)
         self.assertIn('const strictBoardActive =', source)
         self.assertIn('useEngBoardData({', integration)
         self.assertIn('buildStrictEngBoardViewModel(', integration)
         self.assertIn('streamEngBoard({ backendUrl, ...options })', integration)
         self.assertIn('const [boardAllWorkAvailable, setBoardAllWorkAvailable] = useState(null);', source)
-        self.assertIn('if (strictBoardActive || (showBoard && boardAllWorkAvailable === null)) return;', source)
+        self.assertIn('if (boardScopeRequested) return;', source)
+        self.assertIn('strictBoardActive: boardScopeRequested,', source)
+        self.assertNotIn('showBoard && boardAllWorkAvailable === null', source)
 
     def test_strict_board_export_uses_authoritative_canonical_work_items(self):
         source = (ROOT / 'frontend/src/dashboard.jsx').read_text(encoding='utf-8')

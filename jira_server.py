@@ -63,7 +63,18 @@ from backend.config.repository import (
     validate_config_storage_startup,
 )
 from backend.config.shared_config import normalize_shared_admin_section
-from backend.services.workspace_dashboard_config import WorkspaceConfigConflict
+from backend.services.workspace_dashboard_config import (
+    WorkspaceConfigConflict,
+    WorkspaceConfigFenceUnavailable,
+    load_workspace_team_catalog as _load_workspace_team_catalog_db,
+)
+from backend.services.workspace_catalog_config import resolve_effective_catalog_config
+from backend.services.catalog_refresh_runtime import (
+    get_catalog_refresh_runtime as _get_catalog_refresh_runtime,
+    read_catalog_completion,
+)
+from backend.services.sprint_teams import fetch_sprint_teams
+from backend.services.catalog_app_adapter import CatalogAppAdapter
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
@@ -195,7 +206,7 @@ EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS = int(os.getenv('EXCLUDED_CAPAC
 EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE = int(os.getenv('EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE', '100'))
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
-TASKS_CACHE = {}
+TASKS_CACHE, SPRINTS_PROCESS_CACHE = {}, {}
 TASKS_CACHE_TTL_SECONDS = 60 * 5
 TASKS_CACHE_SCHEMA_VERSION = 'v2-empty-epic-actionable'
 MISSING_INFO_CACHE = {}
@@ -629,7 +640,8 @@ def current_request_auth_context():
 
 
 def oauth_auth_required_payload():
-    save_oauth_session({})
+    if not database_storage_enabled():
+        save_oauth_session({})
     return {
         'error': 'auth_required',
         'message': 'Your Jira sign-in expired. Sign in again to continue.',
@@ -1773,48 +1785,6 @@ def save_dashboard_config(config, *, source='auto'):
     return _save_dashboard_config_json(config)
 
 
-def resolve_team_catalog_path():
-    return _config_store.resolve_team_catalog_path(TEAM_CATALOG_PATH)
-
-
-def load_team_catalog():
-    return _config_store.load_team_catalog(
-        resolve_team_catalog_path(),
-        normalize_team_catalog_fn=normalize_team_catalog,
-        normalize_team_catalog_meta_fn=normalize_team_catalog_meta,
-        log_warning_fn=log_warning
-    )
-
-
-def save_team_catalog_file(catalog_data):
-    return _config_store.save_team_catalog_file(
-        catalog_data,
-        resolve_team_catalog_path(),
-        normalize_team_catalog_fn=normalize_team_catalog,
-        normalize_team_catalog_meta_fn=normalize_team_catalog_meta
-    )
-
-
-def migrate_team_catalog_from_config():
-    """One-time migration: extract teamCatalog from dashboard-config.json into team-catalog.json."""
-    catalog_path = resolve_team_catalog_path()
-    if os.path.exists(catalog_path):
-        return  # Already migrated or manually created
-    dashboard_config = load_dashboard_config(source='jsonfile')
-    if not dashboard_config:
-        return
-    team_groups = dashboard_config.get('teamGroups')
-    if not isinstance(team_groups, dict):
-        return
-    raw_catalog = team_groups.get('teamCatalog') or {}
-    raw_meta = team_groups.get('teamCatalogMeta') or {}
-    catalog = normalize_team_catalog(raw_catalog)
-    if not catalog:
-        return  # Nothing to migrate
-    save_team_catalog_file({'catalog': catalog, 'meta': raw_meta})
-    log_info('Migrated teamCatalog from dashboard-config.json to team-catalog.json')
-
-
 def resolve_scenario_overrides_path():
     return SCENARIO_OVERRIDES_PATH or './scenario-overrides.json'
 
@@ -2009,7 +1979,7 @@ def clear_auth_sensitive_caches(reason='auth_context_change'):
     global TEAM_FIELD_CACHE, PARENT_NAME_FIELD_CACHE, EPIC_LINK_FIELD_CACHE, CAPACITY_FIELD_CACHE, JIRA_ISSUE_CACHE_GENERATION
     with _cache_lock:
         JIRA_ISSUE_CACHE_GENERATION += 1
-        TASKS_CACHE.clear()
+        for cache in (TASKS_CACHE, SPRINTS_PROCESS_CACHE): cache.clear()
         MISSING_INFO_CACHE.clear()
         DEPENDENCIES_CACHE.clear()
         EPIC_COHORT_CACHE.clear()
@@ -2733,6 +2703,19 @@ def fetch_board_sprint_ids(board_id, headers):
         auth_error_class=AuthError,
         log_warning_fn=log_warning,
     )
+
+
+_catalog_app_adapter = CatalogAppAdapter(globals())
+catalog_runtime_inputs = _catalog_app_adapter.runtime_inputs
+resolve_request_effective_catalog_config = _catalog_app_adapter.resolve_request_config
+catalog_browser_context_id = _catalog_app_adapter.browser_context_id
+resolve_team_catalog_path = _catalog_app_adapter.resolve_team_catalog_path
+load_team_catalog = _catalog_app_adapter.load_team_catalog
+save_team_catalog_file = _catalog_app_adapter.save_team_catalog_file
+migrate_team_catalog_from_config = _catalog_app_adapter.migrate_team_catalog_from_config
+fetch_board_sprints = _catalog_app_adapter.fetch_board_sprints
+fetch_catalog_sprint_teams = _catalog_app_adapter.fetch_catalog_sprint_teams
+catalog_refresh_runtime = _catalog_app_adapter.refresh_runtime
 
 
 def deduplicate_sprints_by_name(sprints, board_sprint_ids=None):
@@ -6182,6 +6165,11 @@ def _save_field_config(config_key, cache_name=None):
             'currentRevision': error.current.config_revision,
             'current': {'section': config_key, 'value': current_value, 'configRevision': error.current.config_revision},
         }), 409
+    except WorkspaceConfigFenceUnavailable:
+        return jsonify({
+            'error': 'config_storage_unavailable',
+            'message': 'Configuration storage is temporarily unavailable.',
+        }), 503
     except Exception as e:
         return jsonify({'error': f'Failed to save {config_key} config', 'message': str(e)}), 500
     result = dict(value)

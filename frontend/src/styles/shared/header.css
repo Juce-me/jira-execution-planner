@@ -139,6 +139,49 @@
             white-space: normal;
         }
 
+        .sprint-selector-control button.sprint-dropdown-toggle,
+        .sprint-selector-control button.sprint-dropdown-option {
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        .sprint-selector-control button.sprint-dropdown-option {
+            width: 100%;
+            border-right: 0;
+            border-bottom: 0;
+            border-left: 0;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+            margin: 0;
+        }
+
+        .sprint-selector-control button.sprint-dropdown-option:hover,
+        .sprint-selector-control button.sprint-dropdown-option.is-active {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            transform: none;
+            box-shadow: inset 2px 0 0 var(--accent);
+        }
+
+        .header-filter-dropdown--sprint .sprint-option-readiness {
+            flex: 0 1 auto;
+            min-width: 0;
+            margin-left: auto;
+            color: var(--text-secondary);
+            font-size: 0.48rem;
+            font-weight: 400;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sprint-selector-control button.sprint-dropdown-option > span:first-child {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         @media (min-width: 1028px) {
             .compact-sticky-header .header-filter-dropdown {
                 width: min(var(--header-filter-dropdown-width), 10.625rem);
@@ -168,6 +211,16 @@
                 text-overflow: clip;
                 white-space: normal;
             }
+        }
+
+        .view-selector .header-filter-dropdown--sprint > .sprint-dropdown-panel,
+        .compact-sticky-header .header-filter-dropdown--sprint > .sprint-dropdown-panel {
+            left: 0;
+            right: auto;
+            width: 100%;
+            min-width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         h1 {

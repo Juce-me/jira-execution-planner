@@ -6,6 +6,7 @@ No application routes, database tables or production workers are created here.
 """
 
 import os
+import inspect
 import pathlib
 import selectors
 import subprocess
@@ -167,6 +168,23 @@ class EngBoardStreamWriterTests(unittest.TestCase):
         encoded = EngBoardStreamWriter().write(start_frame(scope='component'))
         self.assertEqual('component', __import__('json').loads(encoded)['scope'])
 
+    def test_prepare_returns_write_identical_bytes_without_mutating_state(self):
+        writer = EngBoardStreamWriter()
+        frame = start_frame(columns=[{
+            'id': 'todo', 'name': 'Plan 🚀', 'color': '#123456',
+            'statusNames': ['To Do'], 'terminal': True,
+        }])
+        before = (writer.generation_id, writer.sequence, writer.total_bytes, writer.complete)
+
+        prepared = writer.prepare(frame)
+
+        self.assertEqual(before, (
+            writer.generation_id, writer.sequence, writer.total_bytes, writer.complete,
+        ))
+        self.assertEqual(prepared, writer.write(frame))
+        self.assertTrue(prepared.endswith(b'\n'))
+        self.assertIn('Plan 🚀'.encode('utf-8'), prepared)
+
     def test_candidate_ceiling_fixture_fits_selected_limits_with_measured_headroom(self):
         def epic(index):
             return {
@@ -242,6 +260,14 @@ class EngBoardStreamWriterTests(unittest.TestCase):
             'statusNames': ['To Do'], 'terminal': False,
         }]))
         measured_complete = measurement_writer.write(complete_frame())
+        exact_generation = EngBoardStreamWriter(
+            max_generation_bytes=len(measured_first) + len(measured_complete),
+        )
+        self.assertEqual(measured_first, exact_generation.write(start_frame(columns=[{
+            'id': 'todo', 'name': 'Plan 🚀', 'color': '#123456',
+            'statusNames': ['To Do'], 'terminal': False,
+        }])))
+        self.assertEqual(measured_complete, exact_generation.write(complete_frame()))
         writer = EngBoardStreamWriter(
             max_generation_bytes=len(measured_first) + len(measured_complete) - 1,
         )
@@ -251,6 +277,99 @@ class EngBoardStreamWriterTests(unittest.TestCase):
         }]))
         with self.assertRaisesRegex(EngBoardFrameError, 'generation_too_large'):
             writer.write(complete_frame())
+
+    def test_writer_reserves_parseable_terminal_bytes_without_committing_rejected_frame(self):
+        self.assertIn('reserve_bytes', inspect.signature(EngBoardStreamWriter.write).parameters)
+        candidate = {
+            'protocolVersion': 1, 'generationId': 'generation-1', 'sequence': 1,
+            'type': 'index', 'epics': [], 'membership': 'candidate',
+        }
+        terminal_after_candidate = {
+            'protocolVersion': 1, 'generationId': 'generation-1', 'sequence': 2,
+            'type': 'error', 'code': 'scope_too_large',
+        }
+        terminal_after_rejection = {**terminal_after_candidate, 'sequence': 1}
+        measured = EngBoardStreamWriter()
+        start_bytes = measured.write(start_frame())
+        candidate_bytes = measured.write(candidate)
+        terminal_bytes = measured.write(terminal_after_candidate)
+        reserve_bytes = 1024
+        self.assertLessEqual(len(terminal_bytes), reserve_bytes)
+        exact_total = len(start_bytes) + len(candidate_bytes) + reserve_bytes
+
+        exact = EngBoardStreamWriter(max_generation_bytes=exact_total)
+        self.assertEqual(start_bytes, exact.write(start_frame()))
+        self.assertEqual(candidate_bytes, exact.write(candidate, reserve_bytes=reserve_bytes))
+        self.assertEqual(terminal_bytes, exact.write(terminal_after_candidate))
+
+        constrained = EngBoardStreamWriter(max_generation_bytes=exact_total - 1)
+        constrained.write(start_frame())
+        before = (constrained.sequence, constrained.total_bytes, constrained.complete)
+        with self.assertRaisesRegex(EngBoardFrameError, 'generation_too_large'):
+            constrained.write(candidate, reserve_bytes=reserve_bytes)
+        self.assertEqual(before, (constrained.sequence, constrained.total_bytes, constrained.complete))
+        encoded_terminal = constrained.write(terminal_after_rejection)
+        self.assertEqual('scope_too_large', __import__('json').loads(encoded_terminal)['code'])
+
+    def test_reserved_writer_still_rejects_malformed_utf8_and_generation_identity(self):
+        self.assertIn('reserve_bytes', inspect.signature(EngBoardStreamWriter.write).parameters)
+        writer = EngBoardStreamWriter()
+        writer.write(start_frame())
+        before = (writer.sequence, writer.total_bytes, writer.complete)
+        invalid = {
+            'protocolVersion': 1, 'generationId': 'other-generation', 'sequence': 1,
+            'type': 'index', 'epics': [], 'membership': 'candidate',
+        }
+        with self.assertRaisesRegex(EngBoardFrameError, 'invalid_generation'):
+            writer.write(invalid, reserve_bytes=1024)
+        self.assertEqual(before, (writer.sequence, writer.total_bytes, writer.complete))
+        with self.assertRaises(EngBoardFrameError):
+            writer.write(start_frame(sequence=1, scopeVersion='invalid\ud800'), reserve_bytes=1024)
+        self.assertEqual(before, (writer.sequence, writer.total_bytes, writer.complete))
+
+    def test_default_frame_limit_rejects_a_genuinely_oversized_required_column(self):
+        def large_child(index):
+            return {
+                'key': f'STORY-{index}', 'epicKey': 'EPIC-1', 'summary': 'x' * 4096,
+                'status': {'id': '3', 'name': 'In Progress'},
+                'priority': {'id': '2', 'name': 'High'},
+                'issueType': {'id': '10001', 'name': 'Story'},
+                'assignee': None, 'updated': None, 'storyPoints': 5,
+                'team': None, 'project': {'id': 'project-1', 'name': 'Example Project'},
+                'projectClassification': 'product', 'sprintIds': [],
+            }
+
+        frame = {
+            'protocolVersion': 1, 'generationId': 'generation-1', 'sequence': 1,
+            'type': 'column', 'columnId': 'todo', 'epics': [],
+            'children': [large_child(index) for index in range(2500)],
+            'authoritative': True,
+        }
+        writer = EngBoardStreamWriter()
+        writer.write(start_frame())
+        with self.assertRaisesRegex(EngBoardFrameError, 'frame_too_large'):
+            writer.write(frame)
+        self.assertEqual(ENG_BOARD_MAX_FRAME_BYTES, writer.max_frame_bytes)
+
+    def test_default_generation_limit_rejects_repeated_valid_candidate_frames(self):
+        epics = [{
+            'key': f'EPIC-{index}', 'summary': 'x' * 4096,
+            'status': {'id': '3', 'name': 'In Progress'},
+            'priority': None, 'assignee': None, 'deliveryOwner': None,
+            'projectTrack': 'product', 'updated': None, 'parent': None,
+            'columnId': 'todo',
+        } for index in range(1000)]
+        writer = EngBoardStreamWriter()
+        writer.write(start_frame())
+        with self.assertRaisesRegex(EngBoardFrameError, 'generation_too_large'):
+            for sequence in range(1, 20):
+                writer.write({
+                    'protocolVersion': 1, 'generationId': 'generation-1',
+                    'sequence': sequence, 'type': 'index', 'epics': epics,
+                    'membership': 'candidate',
+                })
+        self.assertEqual(ENG_BOARD_MAX_GENERATION_BYTES, writer.max_generation_bytes)
+        self.assertLessEqual(writer.total_bytes, ENG_BOARD_MAX_GENERATION_BYTES)
 
     def test_writer_rejects_unknown_fields_nonfinite_numbers_and_nonmonotonic_sequence(self):
         invalid_frames = [

@@ -186,6 +186,7 @@ class GithubRunnerSourceContractTests(unittest.TestCase):
         for name in ("DATABASE_URL", "TEST_DATABASE_URL"):
             self.assertIn(name, source)
         self.assertIn("REQUIRE_POSTGRES_USER_VIEW_CONCURRENCY=1", source)
+        self.assertIn("REQUIRE_POSTGRES_CATALOG_CONCURRENCY=1", source)
         unittest_command = re.search(
             r"(?m)^python -m unittest -v \\\n"
             r"(?P<module_lines>(?:^.*\\\n)*^.*$)",
@@ -198,6 +199,8 @@ class GithubRunnerSourceContractTests(unittest.TestCase):
         ]
         self.assertEqual(modules, [
             "tests.test_db_migrations",
+            "tests.test_workspace_catalog_migration_postgresql",
+            "tests.test_workspace_catalog_postgresql",
             "tests.test_token_refresh_race",
             "tests.test_user_view_config_concurrency",
         ])

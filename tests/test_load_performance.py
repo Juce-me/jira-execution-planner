@@ -29,7 +29,7 @@ def observation(duration=1000, completeness='complete', outcome='success'):
 
 def board_observation(duration=1000, scope_type='all_work', outcome='success'):
     return dict(schemaVersion=1, loadId=str(uuid.uuid4()), groupId='department-a',
-                sprintId=None if scope_type == 'all_work' else 'sprint-a', surface='eng_board',
+                sprintId='sprint-a' if scope_type == 'sprint' else None, surface='eng_board',
                 scopeType=scope_type, outcome=outcome, durationMs=duration, indexMs=100,
                 firstFocusedContentMs=150, focusedCompleteMs=600, dependencyDurationMs=100,
                 epicCount=12, issueCount=40, payloadBytes=5000, jiraRequests=4,
@@ -190,6 +190,117 @@ class LoadPerformanceTests(unittest.TestCase):
         self.assertEqual(sample['firstFocusedContentMs'], 150)
         self.assertEqual(sample['peakChildSearches'], 2)
         self.assertEqual(sample['scopeCohortDigest'], 'a' * 64)
+
+    def test_board_scope_validation_matches_sprint_ownership(self):
+        for scope_type in ('all_work', 'component'):
+            with self.subTest(scope_type=scope_type):
+                performance.validate_load(board_observation(scope_type=scope_type))
+            for sprint_id in ('sprint-a', '', 0, False, True):
+                payload = board_observation(scope_type=scope_type)
+                payload['sprintId'] = sprint_id
+                with self.subTest(scope_type=scope_type, sprint_id=sprint_id), \
+                     self.assertRaises(ValueError):
+                    performance.validate_load(payload)
+
+        performance.validate_load(board_observation(scope_type='sprint'))
+        for sprint_id in (None, '', 0, False, True):
+            payload = board_observation(scope_type='sprint')
+            payload['sprintId'] = sprint_id
+            with self.subTest(scope_type='sprint', sprint_id=sprint_id), \
+                 self.assertRaises(ValueError):
+                performance.validate_load(payload)
+
+        payload = board_observation()
+        payload['scopeType'] = 'unknown'
+        with self.assertRaises(ValueError):
+            performance.validate_load(payload)
+
+    def test_component_roundtrip_is_committed_and_isolated_by_scope_and_cohort(self):
+        now = datetime.now(timezone.utc)
+        component = board_observation(875, scope_type='component')
+        component.update(indexMs=75, firstFocusedContentMs=125, focusedCompleteMs=550,
+                         dependencyDurationMs=80, epicCount=7, issueCount=23,
+                         payloadBytes=4321, jiraRequests=6, jiraPages=5, jiraRetries=1,
+                         peakChildSearches=1, scopeCohortDigest='c' * 64)
+        self.save(component, now=now - timedelta(minutes=3))
+        self.save(board_observation(900, scope_type='all_work'),
+                  now=now - timedelta(minutes=2))
+        self.save(board_observation(925, scope_type='sprint'),
+                  now=now - timedelta(minutes=1))
+        other_cohort = board_observation(950, scope_type='component')
+        other_cohort['scopeCohortDigest'] = 'd' * 64
+        self.save(other_cohort, now=now)
+        self.save(board_observation(975, scope_type='component'),
+                  workspace='workspace-b', now=now)
+        performance.record_load(
+            self.session, 'workspace-a', board_observation(1000, scope_type='component'),
+            environment='production', revision='abc123', now=now,
+        )
+        self.session.commit()
+        self.session.close()
+
+        with Session(self.engine) as reader:
+            stored = reader.get(performance.LoadPerformance, ('workspace-a', component['loadId']))
+            self.assertIsNone(stored.sprint_id)
+            self.assertEqual(stored.scope_type, 'component')
+            report = performance.load_report(
+                reader, 'workspace-a',
+                {'surface': 'eng_board', 'scopeType': 'component', 'cacheState': 'miss',
+                 'scopeCohortDigest': 'c' * 64},
+                environment='local',
+            )
+
+        self.assertEqual(report['summary']['sampleCount'], 1)
+        self.assertEqual(report['summary']['eligibleCount'], 1)
+        self.assertEqual(report['summary']['avgMs'], 875)
+        self.assertEqual(report['filters']['scopeTypes'], ['all_work', 'component', 'sprint'])
+        self.assertEqual(report['filters']['sprints'], ['sprint-a'])
+        sample = report['samples'][0]
+        self.assertEqual(sample['loadId'], component['loadId'])
+        self.assertEqual(sample['surface'], 'eng_board')
+        self.assertEqual(sample['scopeType'], 'component')
+        self.assertIsNone(sample['sprintId'])
+        self.assertEqual(sample['lanes'], [])
+        self.assertEqual(sample['schemaVersion'], 1)
+        self.assertEqual(sample['outcome'], 'success')
+        self.assertEqual(sample['completeness'], 'complete')
+        self.assertEqual(sample['cacheState'], 'miss')
+        self.assertEqual(
+            {key: sample[key] for key in (
+                'durationMs', 'indexMs', 'firstFocusedContentMs', 'focusedCompleteMs',
+                'dependencyDurationMs', 'epicCount', 'issueCount', 'payloadBytes',
+                'jiraRequests', 'jiraPages', 'jiraRetries', 'peakChildSearches',
+            )},
+            {'durationMs': 875, 'indexMs': 75, 'firstFocusedContentMs': 125,
+             'focusedCompleteMs': 550, 'dependencyDurationMs': 80, 'epicCount': 7,
+             'issueCount': 23, 'payloadBytes': 4321, 'jiraRequests': 6,
+             'jiraPages': 5, 'jiraRetries': 1, 'peakChildSearches': 1},
+        )
+        self.assertEqual(sample['scopeCohortDigest'], 'c' * 64)
+
+    def test_component_scope_filter_is_applied_before_limit_with_or_without_surface(self):
+        now = datetime.now(timezone.utc)
+        component = board_observation(800, scope_type='component')
+        self.save(component, now=now - timedelta(minutes=1))
+        self.save(board_observation(700, scope_type='all_work'), now=now)
+
+        for filters in ({'scopeType': 'component'},
+                        {'surface': 'eng_board', 'scopeType': 'component'}):
+            with self.subTest(filters=filters):
+                report = performance.load_report(
+                    self.session, 'workspace-a', filters, limit=1, environment='local',
+                )
+                self.assertEqual(report['summary']['sampleCount'], 1)
+                self.assertEqual(report['samples'][0]['loadId'], component['loadId'])
+                self.assertEqual(report['filters']['scopeTypes'], ['all_work', 'component'])
+                self.assertEqual(report['filters']['sprints'], [])
+
+        mixed = performance.load_report(
+            self.session, 'workspace-a', {'surface': 'eng_board'}, environment='local',
+        )['summary']
+        self.assertTrue(mixed['mixedCohorts'])
+        self.assertIsNone(mixed['p50Ms'])
+        self.assertIsNone(mixed['p95Ms'])
 
     def test_board_cache_filter_is_applied_before_the_query_limit(self):
         older = board_observation(800)
@@ -403,3 +514,73 @@ class LoadPerformanceSecurityTests(unittest.TestCase):
             self.assertEqual(self.client.post('/api/performance/loads', data='x' * 16385).status_code, 413)
             with patch.dict('os.environ', {'APP_PERFORMANCE_DEBUG': 'false'}):
                 self.assertEqual(self.client.post('/api/performance/loads', json=observation()).status_code, 404)
+
+    def test_oauth_component_ingestion_and_admin_report_use_real_storage(self):
+        from tests.oauth_test_helpers import install_oauth_session
+        from tests.test_endpoint_security_matrix import _verified_context
+        engine = create_engine('sqlite://')
+        self.addCleanup(engine.dispose)
+        Base.metadata.create_all(engine)
+
+        @contextmanager
+        def database_session():
+            with Session(engine) as session:
+                yield session
+                session.commit()
+
+        context = _verified_context(is_admin=True)
+        with patch.object(self.server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.dict('os.environ', {
+                 'APP_ENVIRONMENT_KEY': 'local', 'APP_PERFORMANCE_DEBUG': 'true',
+                 'DATABASE_URL': 'sqlite://',
+             }), \
+             patch.object(self.server, 'current_request_auth_context', return_value=context), \
+             patch('backend.routes.performance_routes.session_scope', database_session):
+            install_oauth_session(self.client, account_id='synthetic-account')
+
+            def csrf_headers():
+                csrf_response = self.client.get('/api/auth/csrf')
+                self.assertEqual(
+                    csrf_response.status_code, 200, csrf_response.get_data(as_text=True),
+                )
+                return {
+                    'X-Requested-With': 'jira-execution-planner',
+                    'X-CSRF-Token': csrf_response.get_json()['csrfToken'],
+                }
+
+            payload = board_observation(825, scope_type='component')
+
+            created = self.client.post(
+                '/api/performance/loads', json=payload, headers=csrf_headers(),
+            )
+            self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+            self.assertEqual(created.get_json(), {'recorded': True})
+            duplicate = self.client.post(
+                '/api/performance/loads', json=payload, headers=csrf_headers(),
+            )
+            self.assertEqual(duplicate.status_code, 200, duplicate.get_data(as_text=True))
+            self.assertEqual(duplicate.get_json(), {'recorded': False})
+
+            for scope_type in ('all_work', 'component'):
+                invalid = board_observation(scope_type=scope_type)
+                invalid['sprintId'] = 'sprint-a'
+                rejected = self.client.post(
+                    '/api/performance/loads', json=invalid, headers=csrf_headers(),
+                )
+                with self.subTest(scope_type=scope_type):
+                    self.assertEqual(rejected.status_code, 400, rejected.get_data(as_text=True))
+                    self.assertEqual(rejected.get_json(), {'error': 'invalid_measurement'})
+
+            response = self.client.get(
+                '/api/admin/performance',
+                query_string={'surface': 'eng_board', 'scopeType': 'component'},
+            )
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            report = response.get_json()
+            self.assertEqual(report['summary']['sampleCount'], 1)
+            self.assertEqual(len(report['samples']), 1)
+            self.assertEqual(report['filters']['scopeTypes'], ['component'])
+            self.assertEqual(report['filters']['sprints'], [])
+            self.assertEqual(report['samples'][0]['loadId'], payload['loadId'])
+            self.assertEqual(report['samples'][0]['scopeType'], 'component')
+            self.assertIsNone(report['samples'][0]['sprintId'])

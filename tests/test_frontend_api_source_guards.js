@@ -1096,6 +1096,111 @@ test('excluded capacity stats source wrapper can request a backend refresh', asy
     });
 });
 
+test('Sprint catalog reads use only contract query parameters and preserve signals', async () => {
+    const engApi = loadApiModule('engApi.js', ['fetchSprints']);
+    const signal = new AbortController().signal;
+    await withMockFetch(async (calls) => {
+        await engApi.fetchSprints('http://backend', { signal });
+        await engApi.fetchSprints('http://backend', { forceRefresh: true, signal });
+        await engApi.fetchSprints('http://backend', {
+            completionAttemptId: '11111111-1111-4111-8111-111111111111',
+            catalogIdentity: 'sc1:catalog',
+            signal,
+        });
+        const ordinaryUrl = new URL(calls[0].url);
+        assert.equal(calls[0].url, 'http://backend/api/sprints');
+        assert.equal(ordinaryUrl.search, '');
+        assert.equal(calls[0].options.cache, 'no-cache');
+        assert.equal(calls[0].options.signal, signal);
+
+        const forcedUrl = new URL(calls[1].url);
+        assert.deepEqual([...forcedUrl.searchParams], [['refresh', 'true']]);
+        assert.equal(forcedUrl.searchParams.has('t'), false);
+        assert.equal(calls[1].options.cache, 'no-cache');
+        assert.equal(calls[1].options.signal, signal);
+
+        const completionUrl = new URL(calls[2].url);
+        assert.deepEqual([...completionUrl.searchParams], [
+            ['completionAttemptId', '11111111-1111-4111-8111-111111111111'],
+            ['catalogIdentity', 'sc1:catalog'],
+        ]);
+        assert.equal(completionUrl.searchParams.has('refresh'), false);
+        assert.equal(completionUrl.searchParams.has('t'), false);
+        assert.equal(calls[2].options.cache, 'no-cache');
+        assert.equal(calls[2].options.signal, signal);
+    });
+});
+
+test('Sprint forced refresh rejects completion parameters', () => {
+    const engApi = loadApiModule('engApi.js', ['fetchSprints']);
+    assert.throws(() => engApi.fetchSprints('http://backend', {
+        forceRefresh: true,
+        completionAttemptId: '11111111-1111-4111-8111-111111111111',
+        catalogIdentity: 'sc1:catalog',
+    }), /completion/i);
+});
+
+test('Sprint completion uses apiFetch global auth protection', async () => {
+    const sentinel = new Error('global auth lock');
+    let called = 0;
+    const engApi = loadApiModule('engApi.js', ['fetchSprints'], {
+        apiFetch: async () => { called += 1; throw sentinel; },
+    });
+    await assert.rejects(engApi.fetchSprints('http://backend', {
+        completionAttemptId: '11111111-1111-4111-8111-111111111111',
+        catalogIdentity: 'sc1:catalog',
+    }), error => error === sentinel);
+    assert.equal(called, 1);
+});
+
+test('config bootstrap preserves exact Sprint catalog source', async () => {
+    const source = { backend: 'postgresql', identity: 'sc1:catalog', boardId: '17', browserContextId: 'bc1:browser' };
+    const configApi = loadApiModule('configApi.js', ['fetchAppConfig', 'normalizeAppConfig'], {
+        getJson: async () => ({ sprintCatalogSource: source }),
+    });
+    const result = await configApi.fetchAppConfig('http://backend');
+    assert.strictEqual(result.sprintCatalogSource, source);
+    assert.strictEqual(configApi.normalizeAppConfig({ sprintCatalogSource: source }).sprintCatalogSource, source);
+});
+
+test('Sprint and Team catalog lifecycle modules add no dataLayer event or analytics identifier', () => {
+    for (const relativePath of [
+        'dashboardRuntime.js',
+        'api/jiraCatalogApi.js',
+        'settings/teamAvailability.js',
+        'settings/useTeamCatalogLifecycle.js',
+    ]) {
+        const source = readSource(path.join(frontendSrcPath, relativePath));
+        assert.doesNotMatch(source, /\bdataLayer\b|event_name|event_type|featureName|pageName|workflow_action|track(?:Event|UserEvent|SettingsAction)/);
+    }
+});
+
+test('dashboard Sprint authority subscribes global auth and guards manual work entry points', () => {
+    const dashboard = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    assert.match(dashboard, /addEventListener\(AUTH_REQUIRED_EVENT,\s*handleAuthenticationRequired\)/);
+    assert.match(dashboard, /handleAuthenticationRequired\s*=\s*\(\)\s*=>\s*sprintCatalogControllerRef\.current\.authLock\(\)/);
+    const refreshStart = dashboard.indexOf('const refreshActiveViewFromJira = () =>');
+    const refreshEnd = dashboard.indexOf('const manualRefreshDisabled', refreshStart);
+    const refreshSource = dashboard.slice(refreshStart, refreshEnd);
+    assert.ok(refreshSource.indexOf('if (!sprintCatalogReady)') < refreshSource.indexOf('loadMeasuredGroupTasks({ forceRefresh: true })'));
+});
+
+test('dashboard Sprint authority reconciles slow config and fences every Board-affecting save attempt', () => {
+    const dashboard = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    assert.match(dashboard, /shouldReconcileSprintCatalogSource\([\s\S]*fetchAppConfig\(BACKEND_URL\)[\s\S]*catalog_identity_changed/);
+    const saveStart = dashboard.indexOf('const saveGroupsConfig = async');
+    const firstEarlyReturn = dashboard.indexOf('if (!groupDraft)', saveStart);
+    const invalidation = dashboard.indexOf("sprintCatalogControllerRef.current.invalidate('settings-save')", saveStart);
+    assert.ok(invalidation > saveStart && invalidation < firstEarlyReturn);
+});
+
+test('dashboard persists Sprint display cache only for a new accepted validation key', () => {
+    const dashboard = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    assert.match(dashboard, /const validationKey = sprintCatalogValidationKey\(snapshot\)/);
+    assert.match(dashboard, /validationKey !== sprintCatalogPersistedValidationRef\.current/);
+    assert.doesNotMatch(dashboard, /status === ['"](?:refreshing|error|exhausted)['"][\s\S]{0,240}cachedAt:\s*Date\.now\(\)/);
+});
+
 test('app config wrapper gives private view EPM precedence and never promotes shared EPM', () => {
     const { getJson } = loadHttpHelpers();
     const configApi = loadApiModule('configApi.js', [
@@ -1145,7 +1250,11 @@ test('Jira catalog API wrappers preserve query params, cache flags, and abort si
             limit: 200,
         });
         await jiraCatalogApi.searchProjects('http://backend', { query: 'ABC Project', signal });
-        await jiraCatalogApi.fetchAllTeams('http://backend', { sprint: '42' });
+        await jiraCatalogApi.fetchAllTeams('http://backend', {
+            sprint: '42/active',
+            refresh: true,
+            signal,
+        });
         await jiraCatalogApi.fetchFields('http://backend', { projectKey: 'ABC DEF' });
         await jiraCatalogApi.saveTeamCatalog('http://backend', {
             catalog: { teams: [] },
@@ -1171,10 +1280,18 @@ test('Jira catalog API wrappers preserve query params, cache flags, and abort si
 
         const teamsUrl = new URL(calls[2].url);
         assert.equal(teamsUrl.pathname, '/api/teams');
-        assert.equal(teamsUrl.searchParams.get('sprint'), '42');
+        assert.equal(teamsUrl.searchParams.get('sprint'), '42/active');
         assert.equal(teamsUrl.searchParams.get('all'), 'true');
-        assert.ok(teamsUrl.searchParams.get('_t'), 'Expected teams cache-busting timestamp');
-        assert.equal(calls[2].options, undefined);
+        assert.equal(teamsUrl.searchParams.get('refresh'), 'true');
+        assert.equal(teamsUrl.searchParams.has('catalogIdentity'), false);
+        assert.equal(teamsUrl.searchParams.has('_t'), false);
+        assert.deepEqual([...teamsUrl.searchParams], [
+            ['sprint', '42/active'],
+            ['all', 'true'],
+            ['refresh', 'true'],
+        ]);
+        assert.equal(calls[2].options.cache, 'no-cache');
+        assert.equal(calls[2].options.signal, signal);
 
         const fieldsUrl = new URL(calls[3].url);
         assert.equal(fieldsUrl.pathname, '/api/fields');
@@ -1198,6 +1315,77 @@ test('Jira catalog API wrappers preserve query params, cache flags, and abort si
             return jsonResponse({ csrfToken: `csrf-token-${index}` });
         }
         return jsonResponse({ ok: true });
+    });
+});
+
+test('Team catalog reads use only contract query parameters and preserve signals', async () => {
+    const { getJson } = loadHttpHelpers();
+    const jiraCatalogApi = loadApiModule('jiraCatalogApi.js', ['fetchAllTeams'], { getJson });
+    const signal = new AbortController().signal;
+
+    await withMockFetch(async (calls) => {
+        await jiraCatalogApi.fetchAllTeams('http://backend', {
+            sprint: '41',
+            signal,
+        });
+        await jiraCatalogApi.fetchAllTeams('http://backend', {
+            sprint: '42',
+            refresh: true,
+            signal,
+        });
+        await jiraCatalogApi.fetchAllTeams('http://backend', {
+            sprint: '43',
+            completionAttemptId: 'attempt/one',
+            catalogIdentity: 'catalog identity',
+            signal,
+        });
+        const ordinaryUrl = new URL(calls[0].url);
+        assert.deepEqual([...ordinaryUrl.searchParams], [
+            ['sprint', '41'],
+            ['all', 'true'],
+        ]);
+        assert.equal(ordinaryUrl.searchParams.has('_t'), false);
+        assert.equal(calls[0].options.cache, 'no-cache');
+        assert.equal(calls[0].options.signal, signal);
+
+        const forcedUrl = new URL(calls[1].url);
+        assert.deepEqual([...forcedUrl.searchParams], [
+            ['sprint', '42'],
+            ['all', 'true'],
+            ['refresh', 'true'],
+        ]);
+        assert.equal(forcedUrl.searchParams.has('_t'), false);
+        assert.equal(calls[1].options.cache, 'no-cache');
+        assert.equal(calls[1].options.signal, signal);
+
+        const completionUrl = new URL(calls[2].url);
+        assert.deepEqual([...completionUrl.searchParams], [
+            ['sprint', '43'],
+            ['all', 'true'],
+            ['completionAttemptId', 'attempt/one'],
+            ['catalogIdentity', 'catalog identity'],
+        ]);
+        assert.equal(completionUrl.searchParams.has('refresh'), false);
+        assert.equal(completionUrl.searchParams.has('_t'), false);
+        assert.equal(calls[2].options.cache, 'no-cache');
+        assert.equal(calls[2].options.signal, signal);
+        await assert.rejects(
+            jiraCatalogApi.fetchAllTeams('http://backend', {
+                sprint: '42',
+                refresh: true,
+                completionAttemptId: 'attempt-two',
+                catalogIdentity: 'catalog-two',
+            }),
+            /completion/i,
+        );
+        await assert.rejects(
+            jiraCatalogApi.fetchAllTeams('http://backend', {
+                sprint: '42',
+                completionAttemptId: 'attempt-without-identity',
+            }),
+            /identity/i,
+        );
+        assert.equal(calls.length, 3);
     });
 });
 

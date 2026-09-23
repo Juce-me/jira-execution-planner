@@ -18,10 +18,13 @@ fail() {
 
 cd "$repo_root"
 export DATABASE_CONNECTION_MODE=url
+export REQUIRE_POSTGRES_CATALOG_CONCURRENCY=1
 export REQUIRE_POSTGRES_USER_VIEW_CONCURRENCY=1
 
 python -m alembic -c backend/db/alembic.ini upgrade head
 python -m unittest -v \
   tests.test_db_migrations \
+  tests.test_workspace_catalog_migration_postgresql \
+  tests.test_workspace_catalog_postgresql \
   tests.test_token_refresh_race \
   tests.test_user_view_config_concurrency

@@ -3,6 +3,7 @@
 // joined by stable column id. No fetch, React state, capability decision or legacy fallback lives
 // in this module.
 
+import { computeEpicStatusCountProgress } from './engBoardCardModel.js';
 import { buildBoardColumns, UNMAPPED_COLUMN_ID, UNCONFIGURED_COLUMN_ID } from './engBoardColumns.js';
 
 function adaptColumn(column, savedById) {
@@ -77,9 +78,18 @@ export function buildStrictEngBoardViewModel(
         if (!childrenByEpic[child.epicKey]) childrenByEpic[child.epicKey] = [];
         childrenByEpic[child.epicKey].push(adaptStrictBoardChild(child, issuePatchesByKey[child.key]));
     });
+    const progressByEpic = Object.fromEntries(Object.values(displayData.progressByColumn || {})
+        .flatMap(column => (column.byEpic || []).map(progress => [progress.epicKey, progress])));
     const epicGroups = Object.values(epicsByKey).map((epic) => {
         const tasks = childrenByEpic[epic.key] || [];
+        const childrenIncomplete = !displayData.childrenAuthoritative
+            && displayData.columnAuthority?.[epic.columnId] !== true;
+        const progress = progressByEpic[epic.key];
         return {
+            childrenIncomplete,
+            childrenLoading: childrenIncomplete && !displayData.terminal && !displayData.columnErrors?.[epic.columnId],
+            childProgress: childrenIncomplete && progress
+                ? computeEpicStatusCountProgress(progress.statusCounts, progress.loadedChildren) : null,
             key: epic.key,
             epic: adaptEpic({ ...epic, ...(issuePatchesByKey[epic.key] || {}) }),
             tasks,

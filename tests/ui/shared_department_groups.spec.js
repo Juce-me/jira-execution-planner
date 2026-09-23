@@ -405,10 +405,16 @@ async function mockFirstRunDashboard(page, options = {}) {
             });
         }
         if (url.pathname === '/api/teams') {
+            if (options.teamsResponse) {
+                return json(options.teamsResponse.body, options.teamsResponse.status || 200);
+            }
             return json({ teams: options.teams || [{ id: 'team-new', name: 'New Team' }] });
         }
         if (url.pathname === '/api/fields') {
             return json({ fields: options.jiraFields || [] });
+        }
+        if (url.pathname === '/api/components') {
+            return json({ components: options.components || [{ id: 'backend', name: 'Backend' }] });
         }
         if (url.pathname === '/api/sprints') {
             const plannedResponse = (options.sprintResponsePlan || [])[sprintRequestCount];
@@ -519,14 +525,19 @@ async function finishFirstRunConfigurationGuideWithTeamRepair(page) {
     const dialog = page.locator('.group-modal');
     const guide = dialog.locator('.first-run-configuration-guide');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    if (await guide.getByRole('button', { name: 'Continue', exact: true }).isDisabled()) {
-        const refreshTeams = dialog.getByRole('button', { name: 'Refresh teams' });
-        if (await refreshTeams.isEnabled()) await refreshTeams.click();
-        await dialog.getByPlaceholder('Search teams to add...').fill('new');
-        await dialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
+    const continueWithoutTeams = guide.getByRole('button', { name: 'Continue without teams', exact: true });
+    if (await continueWithoutTeams.count()) await continueWithoutTeams.click();
+    else await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(guide).toContainText('Choose Jira Components');
+    const continueWithoutComponents = guide.getByRole('button', { name: 'Continue without components', exact: true });
+    if (await continueWithoutComponents.count()) {
+        await dialog.getByPlaceholder('Search components...').fill('backend');
+        const result = dialog.locator('.component-search-result-item', { hasText: 'Backend' });
+        await expect(result).toBeVisible();
+        await result.click();
+        await expect(dialog.locator('.component-chip', { hasText: 'Backend' })).toBeVisible();
     }
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
 }
@@ -677,6 +688,7 @@ test('normal users can edit shared Departments without admin or EPM permission',
         settingsAdminOnly: true,
         userCanEditSettings: false,
         userCanEditEpmConfig: false,
+        teamsResponse: { status: 502, body: { error: 'team_catalog_unavailable' } },
         preferences: defaultGroupPreferences({
             customized: true,
             preferenceExists: true,
@@ -690,6 +702,7 @@ test('normal users can edit shared Departments without admin or EPM permission',
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const dialog = page.locator('.group-modal');
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(1);
     await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: 'EPM', exact: true })).toHaveCount(0);
     await dialog.getByPlaceholder('Group name').fill('Platform Core');
@@ -928,7 +941,7 @@ test('duplicate existing Department stages one cleaned copy and preserves its so
     await expect(settings.locator('.group-list-item')).toHaveCount(2);
     await expect(settings.locator('.group-list-item:has(input[placeholder="Group name"])')).toHaveCount(1);
     await expect(settings.getByText('Teams 0/12')).toBeVisible();
-    await expect(settings.getByText('Add at least one team. Teams define which Jira work appears for this Department.')).toBeVisible();
+    await expect(settings.getByText('Add Teams for Team-scoped Jira work, or use Components below.')).toBeVisible();
     await expect(settings.getByPlaceholder('Search teams to add...')).toBeVisible();
     await expect(settings.getByText('Backend', { exact: true })).toHaveCount(0);
     const sourceRow = settings.locator('.group-list-item', { hasText: 'Source', hasNotText: 'Source Copy' });
@@ -1007,7 +1020,7 @@ test('first-run department selection blocks group-scoped task loads until prefer
     await expect(dialog).toContainText('Next: dashboard');
     await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
     await expect(dialog.getByRole('radio', { name: /Empty/ })).toBeDisabled();
-    await expect(page.getByText('Add at least one team before choosing this Department')).toBeVisible();
+    await expect(page.getByText('Add at least one team or component before choosing this Department')).toBeVisible();
     await dialog.getByRole('radio', { name: /Platform/ }).check();
     await expect(dialog.getByRole('radio', { name: /Platform/ })).toBeChecked();
     await page.getByLabel('Search Departments').fill('growth');
@@ -1390,11 +1403,11 @@ test('first-run Add Department keeps the guide and canonical name keyboard-safe 
     await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="teams"]'), guide);
     await settingsDialog.getByRole('button', { name: 'Refresh teams' }).focus();
     await page.keyboard.press('Enter');
-    await settingsDialog.getByPlaceholder('Search teams to add...').fill('new');
-    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
-    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await guide.getByRole('button', { name: 'Continue without teams', exact: true }).click();
     await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="components"]'), guide);
-    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
+    await settingsDialog.getByPlaceholder('Search components...').fill('backend');
+    await settingsDialog.locator('.component-search-result-item', { hasText: 'Backend' }).click();
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     const favoriteStatus = settingsDialog.locator('[data-first-run-guide-target="favorite"]');
     await expect(favoriteStatus).toHaveCount(1);
     expect(await favoriteStatus.evaluate(node => node.closest('.group-list-item')?.classList.contains('active'))).toBe(true);
@@ -1516,12 +1529,11 @@ test('first-run no-groups configuration recovers from validation, saves a team g
 
     const guide = settingsDialog.locator('.first-run-configuration-guide');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    const teamSearch = settingsDialog.getByPlaceholder('Search teams to add...');
-    await expect(teamSearch).toBeVisible();
-    await teamSearch.fill('new');
-    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
+    await expect(settingsDialog.getByPlaceholder('Search teams to add...')).toBeVisible();
+    await guide.getByRole('button', { name: 'Continue without teams', exact: true }).click();
+    await settingsDialog.getByPlaceholder('Search components...').fill('backend');
+    await settingsDialog.locator('.component-search-result-item', { hasText: 'Backend' }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(settingsDialog.getByRole('button', { name: /favorite group/ })).toHaveCount(0);
@@ -1637,9 +1649,12 @@ test('first-run shared board validation keeps configuration open until corrected
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
 
     await settingsDialog.getByRole('button', { name: '+ Add column' }).click();
+    await expect(settingsDialog.locator('.group-modal-validation')).toHaveCount(0);
+    await settingsDialog.getByRole('button', { name: '+ Add column' }).click();
     await expect(settingsDialog.locator('.group-modal-validation')).toContainText('Platform Copy: “New column” has no statuses. Add a status or delete the column.');
-    await settingsDialog.locator('.board-add-status').click();
+    await settingsDialog.locator('.board-add-status').first().click();
     await settingsDialog.locator('.board-pick').getByRole('button', { name: 'Ready not in a column', exact: true }).click();
+    await settingsDialog.getByRole('button', { name: 'Delete column New column' }).last().click();
     await expect(settingsDialog.locator('.group-modal-validation')).toHaveCount(0);
     await expect(settingsDialog.getByRole('button', { name: 'Save' })).toBeEnabled();
     await settingsDialog.getByRole('button', { name: 'Save' }).click();
@@ -1664,16 +1679,66 @@ test('first-run configuration blocks Save until Done and Cancel restores exact p
     await openFirstRunCreateDepartment(page);
     await expect(settingsDialog.getByPlaceholder('Group name')).toHaveValue('New Department');
     await settingsDialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Continue', exact: true }).click();
-    await settingsDialog.getByPlaceholder('Search teams to add...').fill('new');
-    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
     const guide = settingsDialog.locator('.first-run-configuration-guide');
+    await guide.getByRole('button', { name: 'Continue without teams', exact: true }).click();
+    await settingsDialog.getByPlaceholder('Search components...').fill('backend');
+    await settingsDialog.locator('.component-search-result-item', { hasText: 'Backend' }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
     await settingsDialog.getByRole('button', { name: 'Save' }).click();
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
+    await expect(settingsDialog).toHaveCount(0);
+});
+
+test('component-only first-run saves without Team membership', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig: {
+            version: 1,
+            groups: [{
+                id: 'platform',
+                name: 'Platform',
+                teamIds: ['team-platform'],
+                missingInfoComponents: ['Backend'],
+            }, {
+                id: 'component-only',
+                name: 'Components Only',
+                teamIds: [],
+                missingInfoComponents: ['Frontend'],
+            }],
+            defaultGroupId: 'platform',
+            configRevision: 2,
+            source: 'workspace_db',
+        },
+        teamsResponse: { status: 502, body: { error: 'team_catalog_unavailable' } },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    const picker = page.getByRole('dialog', { name: 'Choose your Department' });
+    const componentOnlyOption = picker.locator('.department-first-run-option', { hasText: 'Components Only' });
+    await expect(componentOnlyOption.getByRole('radio')).toBeEnabled();
+    await expect(componentOnlyOption).toContainText('0 teams · 1 component');
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    const settingsDialog = page.locator('.group-modal');
+    const guide = settingsDialog.locator('.first-run-configuration-guide');
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    expect(calls.filter(call => call.pathname === '/api/teams')).toHaveLength(0);
+    await settingsDialog.locator('.selected-team-chip button.remove-btn').click();
+    await expect(settingsDialog.locator('.selected-team-chip')).toHaveCount(0);
+    await guide.getByRole('button', { name: 'Continue without teams', exact: true }).click();
+    await expect(settingsDialog.locator('.component-chip', { hasText: 'Backend' })).toBeVisible();
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await guide.getByRole('button', { name: 'Done', exact: true }).click();
+    await settingsDialog.getByRole('button', { name: /^Save/ }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    const groupPost = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    const savedGroup = groupPost.body.groups.find(group => group.name === 'Platform Copy');
+    expect(savedGroup).toEqual(expect.objectContaining({ teamIds: [], missingInfoComponents: ['Backend'] }));
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
+    const preferencePost = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-preferences');
+    expect(preferencePost.body.activeGroupId).toBe(savedGroup.id);
+    expect(preferencePost.body.visibleGroupIds).toContain(savedGroup.id);
     await expect(settingsDialog).toHaveCount(0);
 });
 
@@ -1690,10 +1755,10 @@ test('first-run preference pending recovery survives Done and retries only the p
     const settingsDialog = page.locator('.group-modal');
     const guide = settingsDialog.locator('.first-run-configuration-guide');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await settingsDialog.getByPlaceholder('Search teams to add...').fill('new');
-    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
+    await guide.getByRole('button', { name: 'Continue without teams', exact: true }).click();
+    await settingsDialog.getByPlaceholder('Search components...').fill('backend');
+    await settingsDialog.locator('.component-search-result-item', { hasText: 'Backend' }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
     await settingsDialog.getByRole('button', { name: 'Save' }).click();
@@ -2541,6 +2606,7 @@ test('personal favorite star is separate from shared default and temporary group
             { id: 'default', name: 'Default', teamIds: ['team-default'] },
             { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
             { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+            { id: 'components', name: 'Components', teamIds: [], missingInfoComponents: ['Backend'] },
             { id: 'empty', name: 'Empty', teamIds: [] },
         ],
         defaultGroupId: 'default',
@@ -2554,9 +2620,9 @@ test('personal favorite star is separate from shared default and temporary group
             customized: true,
             preferenceExists: true,
             onboardingRequired: false,
-            visibleGroupIds: ['platform', 'growth', 'empty'],
+            visibleGroupIds: ['platform', 'growth', 'components', 'empty'],
             activeGroupId: 'platform',
-            effectiveVisibleGroupIds: ['platform', 'growth', 'empty'],
+            effectiveVisibleGroupIds: ['platform', 'growth', 'components', 'empty'],
         }),
     });
 
@@ -2568,6 +2634,7 @@ test('personal favorite star is separate from shared default and temporary group
         { name: 'Default', pressed: false, disabled: false },
         { name: 'Platform', pressed: true, disabled: false },
         { name: 'Growth', pressed: false, disabled: false },
+        { name: 'Components', pressed: false, disabled: false },
         { name: 'Empty', pressed: false, disabled: true },
     ];
     const rows = dialog.locator('.group-list-item');
@@ -2628,16 +2695,16 @@ test('personal favorite star is separate from shared default and temporary group
         transform: 'none',
     });
 
-    const growthStar = rows.nth(2)
-        .getByRole('button', { name: 'Set Growth as your favorite Department' });
-    await growthStar.click();
+    const componentStar = rows.nth(3)
+        .getByRole('button', { name: 'Set Components as your favorite Department' });
+    await componentStar.click();
     await expect(dialog.locator('.group-list-item.active .group-list-name-input')).toHaveValue('Platform');
     await expect(dialog.locator('.group-editor-name')).toHaveCount(0);
-    await expect(rows.nth(2).getByRole('button', { name: 'Growth is your favorite Department' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(rows.nth(3).getByRole('button', { name: 'Components is your favorite Department' })).toHaveAttribute('aria-pressed', 'true');
     await captureSettledDepartmentScreenshot(page, 'department-row-favorite-ordinary.png');
 
-    await rows.nth(2).click();
-    await expect(dialog.locator('.group-list-item.active .group-list-star')).toHaveAccessibleName('Growth is your favorite Department');
+    await rows.nth(3).click();
+    await expect(dialog.locator('.group-list-item.active .group-list-star')).toHaveAccessibleName('Components is your favorite Department');
     await expect(dialog.getByRole('checkbox', { name: 'Show in Department selector' })).toBeDisabled();
     await expect(dialog.locator('.group-visible-helper')).toHaveCount(1);
     await expect(dialog.locator('.group-visible-favorite-helper')).toHaveText('Favorite Departments are always shown.');
@@ -2661,20 +2728,20 @@ test('personal favorite star is separate from shared default and temporary group
     const preferencePosts = calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences');
     expect(preferencePosts).toHaveLength(1);
     expect(preferencePosts[0].body).toEqual({
-        visibleGroupIds: ['platform', 'growth', 'empty'],
-        activeGroupId: 'growth',
+        visibleGroupIds: ['platform', 'growth', 'components', 'empty'],
+        activeGroupId: 'components',
     });
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
 
     const groupControl = page.getByRole('button', { name: /Select group/ }).first();
     await groupControl.click();
-    await expect(page.locator('.group-dropdown-option', { hasText: 'Growth' }).locator('[title="My favorite group"]')).toBeVisible();
+    await expect(page.locator('.group-dropdown-option', { hasText: 'Components' }).locator('[title="My favorite group"]')).toBeVisible();
     await page.locator('.group-dropdown-option', { hasText: 'Platform' }).click();
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
 
     await page.getByRole('button', { name: 'Manage team groups' }).click();
-    await expect(dialog.locator('.group-list-item', { hasText: 'Growth' }).locator('.group-list-star'))
-        .toHaveAccessibleName('Growth is your favorite Department');
+    await expect(dialog.locator('.group-list-item', { hasText: 'Components' }).locator('.group-list-star'))
+        .toHaveAccessibleName('Components is your favorite Department');
 });
 
 test('first team selection after hydration survives page reload', async ({ page }) => {
@@ -2863,7 +2930,7 @@ test('first-run sprint failure retries sprint discovery and clears the actionabl
     await dialog.getByRole('radio', { name: /Platform/ }).check();
     await page.getByRole('button', { name: 'Continue' }).click();
 
-    const message = 'Failed to load sprints from Jira. Retry, or confirm you can access the configured board.';
+    const message = 'Sprint catalog is unavailable. Retry.';
     await expect(page.getByText(message)).toBeVisible();
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
     await page.getByRole('button', { name: 'Retry' }).click();
@@ -2890,7 +2957,7 @@ test('sprint Retry ignores a second click while recovery is already in flight', 
     await expect(dialog).toBeVisible();
     await dialog.getByRole('radio', { name: /Platform/ }).check();
     await page.getByRole('button', { name: 'Continue' }).click();
-    const message = 'Failed to load sprints from Jira. Retry, or confirm you can access the configured board.';
+    const message = 'Sprint catalog is unavailable. Retry.';
     const retry = page.getByRole('button', { name: 'Retry' });
     await expect(page.getByText(message)).toBeVisible();
 

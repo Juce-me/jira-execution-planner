@@ -249,6 +249,37 @@ function scenarioPayload() {
     };
 }
 
+function recoveryCapsule(overrides = {}) {
+    return {
+        version: 1,
+        capturedAt: Date.now(),
+        principal: { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
+        outage: { id: 'outage-test' },
+        view: {
+            selectedView: 'eng',
+            activeGroupId: 'grp-default',
+            selectedSprint: String(selectedSprintId),
+            engMode: 'scenario',
+            scrollX: 0,
+            scrollY: 0,
+        },
+        droppedSettings: false,
+        scenario: {
+            scopeKey,
+            groupId: 'grp-default',
+            sprintId: String(selectedSprintId),
+            activeDraftId: 'draft-1',
+            baseDraftRevision: 5,
+            savedOverrides: {},
+            localOverrides: { 'PROD-1': { start: '2026-04-12', end: '2026-04-15' } },
+            editMode: true,
+            scrollTop: 0,
+            scrollLeft: 0,
+        },
+        ...overrides,
+    };
+}
+
 async function installDashboardFromSource(page, options = {}) {
     const draftPosts = [];
     const scenarioPosts = [];
@@ -257,6 +288,7 @@ async function installDashboardFromSource(page, options = {}) {
     const unexpectedApiRequests = [];
     unexpectedApiRequestsByPage.set(page, unexpectedApiRequests);
     let csrfCount = 0;
+    let sprintsUnavailable = false;
     let draftMetadata = {
         activeDraft: {
             draftId: 'draft-1',
@@ -396,6 +428,11 @@ async function installDashboardFromSource(page, options = {}) {
                 environmentConfigExists: true,
                 projectsConfigured: true,
                 epm: { version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: '', subGoalKeys: [] }, projects: {} },
+                viewConfig: {
+                    workspaceId: 'workspace-test',
+                    viewConfigId: 'view-test',
+                    view: { epm: { version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: '', subGoalKeys: [] }, projects: {} } },
+                },
             });
         }
         if (url.pathname === '/api/version') return json(route, { enabled: false });
@@ -419,7 +456,10 @@ async function installDashboardFromSource(page, options = {}) {
         if (url.pathname.endsWith('/config') && url.pathname.includes('-field')) return json(route, { fieldId: '', fieldName: '' });
         if (url.pathname === '/api/issue-types/config') return json(route, { issueTypes: ['Epic', 'Story'] });
         if (url.pathname === '/api/issue-types') return json(route, { issueTypes: [{ name: 'Epic' }, { name: 'Story' }] });
-        if (url.pathname === '/api/sprints') return json(route, { sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+        if (url.pathname === '/api/sprints') {
+            if (sprintsUnavailable) return route.abort('connectionrefused');
+            return json(route, { sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
+        }
         if (url.pathname === '/api/tasks-with-team-name') return json(route, { issues: [], epics: {}, epicsInScope: [], names: {} });
         if (url.pathname === '/api/missing-info') return json(route, { issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
@@ -575,6 +615,8 @@ async function installDashboardFromSource(page, options = {}) {
         scenarioPosts,
         versionRequests,
         csrfCount: () => csrfCount,
+        setSprintsUnavailable: value => { sprintsUnavailable = Boolean(value); },
+        setRemoteConflictMetadata,
     };
 }
 
@@ -871,6 +913,107 @@ test('dirty same-scope Run Scenario is blocked and keeps local draft edit', asyn
     await expect(page.getByText('Save or discard scenario draft changes before reloading scenario data.')).toBeVisible();
     await expect(page.getByText('1 override')).toBeVisible();
     expect(scenarioPosts).toHaveLength(1);
+});
+
+test('connection reload restores same-revision Scenario overrides with one fresh compute and no write', async ({ page }) => {
+    const fixture = await installDashboardFromSource(page);
+    await openScenarioWithDirtyDraft(page);
+    expect(fixture.scenarioPosts).toHaveLength(1);
+
+    fixture.setSprintsUnavailable(true);
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Server is not responding' })).toBeVisible();
+    fixture.setSprintsUnavailable(false);
+    await page.getByRole('button', { name: 'Retry connection' }).click();
+
+    await expect(page.getByText('Unsaved Scenario changes were restored after reconnecting.')).toBeVisible();
+    await expect(page.getByText('Your unsaved Scenario changes are still available')).toHaveCount(0);
+    await expect(page.locator('.scenario-dirty-indicator', { hasText: '1 override' })).toBeVisible();
+    await expect.poll(() => fixture.scenarioPosts.length).toBe(2);
+    expect(fixture.draftPosts).toHaveLength(0);
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBeNull();
+    await captureScenarioScreenshot(page, 'connection-recovery-restored-scenario');
+});
+
+test('connection reload restores changed-revision Scenario overrides into conflict_remote', async ({ page }) => {
+    const fixture = await installDashboardFromSource(page);
+    await openScenarioWithDirtyDraft(page);
+    fixture.setRemoteConflictMetadata();
+    fixture.setSprintsUnavailable(true);
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Server is not responding' })).toBeVisible();
+    fixture.setSprintsUnavailable(false);
+    await page.getByRole('button', { name: 'Retry connection' }).click();
+
+    await expect(page.getByRole('alert').filter({ hasText: 'Scenario draft conflict' })).toContainText('revision 6');
+    await expect(page.getByText('The server draft changed while the connection was unavailable.')).toBeVisible();
+    await expect(page.locator('.scenario-dirty-indicator', { hasText: '1 override' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save Draft' })).toBeDisabled();
+    await expect.poll(() => fixture.scenarioPosts.length).toBe(2);
+    expect(fixture.draftPosts).toHaveLength(0);
+});
+
+test('missing recovery scope retains the Scenario capsule until explicit discard', async ({ page }) => {
+    const fixture = await installDashboardFromSource(page);
+    const capsule = recoveryCapsule({
+        view: { ...recoveryCapsule().view, activeGroupId: 'missing-group' },
+        scenario: { ...recoveryCapsule().scenario, scopeKey: `${selectedSprintId}:missing-group`, groupId: 'missing-group' },
+    });
+    await page.addInitScript(value => {
+        sessionStorage.setItem('jira_dashboard_connection_recovery_v1', JSON.stringify(value));
+    }, capsule);
+    await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
+
+    await expect(page.getByText('Your unsaved Scenario changes are still available')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Recover', exact: true })).toBeVisible();
+    await captureScenarioScreenshot(page, 'connection-recovery-blocked-scope');
+    expect(fixture.scenarioPosts).toHaveLength(0);
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).not.toBeNull();
+    await page.getByRole('button', { name: 'Discard recovery copy' }).click();
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBeNull();
+});
+
+test('saved Settings reload cleanly and disclose discarded unsaved configuration', async ({ page }) => {
+    await installDashboardFromSource(page);
+    const capsule = recoveryCapsule({ droppedSettings: true, scenario: null });
+    await page.addInitScript(value => {
+        sessionStorage.setItem('jira_dashboard_connection_recovery_v1', JSON.stringify(value));
+    }, capsule);
+    await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
+
+    await expect(page.getByText('Unsaved configuration changes were discarded while restoring the connection.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBeNull();
+});
+
+test('recovery storage failure blocks reload for dirty Scenario work even after switching modes', async ({ page }) => {
+    const fixture = await installDashboardFromSource(page);
+    let documentRequests = 0;
+    page.on('request', request => {
+        if (request.resourceType() === 'document') documentRequests += 1;
+    });
+    await openScenarioWithDirtyDraft(page);
+    await page.getByRole('radio', { name: 'Catch Up' }).click();
+    await expect(page.getByRole('radio', { name: 'Catch Up' })).toBeChecked();
+    await page.evaluate(() => {
+        const originalSetItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function setItem(key, value) {
+            if (key === 'jira_dashboard_connection_recovery_v1') throw new DOMException('quota', 'QuotaExceededError');
+            return originalSetItem.call(this, key, value);
+        };
+    });
+    fixture.setSprintsUnavailable(true);
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Server is not responding' })).toBeVisible();
+    fixture.setSprintsUnavailable(false);
+    const documentsBefore = documentRequests;
+    await page.getByRole('button', { name: 'Retry connection' }).click();
+
+    await expect(page.getByText('cannot reload safely because your unsaved Scenario changes could not be preserved')).toBeVisible();
+    await page.getByRole('radio', { name: 'Scenario' }).click();
+    await expect(page.locator('.scenario-dirty-indicator', { hasText: '1 override' })).toBeVisible();
+    expect(documentRequests).toBe(documentsBefore);
+    expect(fixture.scenarioPosts).toHaveLength(1);
 });
 
 test('save conflict retries once after csrf_required before surfacing conflict', async ({ page }) => {

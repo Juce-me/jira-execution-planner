@@ -38,8 +38,9 @@ export const normalizeAppConfig = (config) => {
     return normalized;
 };
 
-export const fetchAppConfig = (backendUrl) =>
+export const fetchAppConfig = (backendUrl, options = {}) =>
     getJson(`${backendUrl}/api/config?includeViewConfig=true`, 'Config', {
+        ...options,
         analytics: { apiSurface: 'config_bootstrap', featureName: 'config' },
     }).then(normalizeAppConfig);
 

@@ -2,6 +2,8 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/dashboard.css';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
+import { normalizeScenarioDraftOverrides, scenarioDraftOverridesSignature } from './scenario/scenarioDraftOverrides.js';
+import { applyScenarioConnectionRecovery, useConnectionScenarioRecovery } from './scenario/connectionScenarioRecovery.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
 import { buildLaneIssues } from './scenario/scenarioLaneUtils.js';
 import CohortGrid from './cohort/CohortGrid.jsx';
@@ -15,15 +17,21 @@ import EmptyState from './ui/EmptyState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
-import { getCookie, getCurrentQuarter, getServerConnectionErrorMessage, isActiveHomeTokenConnection, isBackendConnectionFailure, loadUiPrefs, saveUiPrefs, setCookie } from './dashboardRuntime.js';
+import { getCookie, getCurrentQuarter, isActiveHomeTokenConnection, loadUiPrefs, saveUiPrefs, setCookie } from './dashboardRuntime.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
 import { isEngOnboardingModuleSurface } from './onboarding/onboardingModules.js';
 import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
 import { useOnboardingController } from './onboarding/useOnboardingTour.js';
 import AuthRequiredGate from './components/AuthRequiredGate.jsx';
+import ConnectionRecoveryNotice from './components/ConnectionRecoveryNotice.jsx';
 import { AUTH_REQUIRED_EVENT, AUTHENTICATION_REQUIRED_CODE, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './api/authRequired.js';
 import { completeAuthRecovery, getAuthRecoveryStores } from './api/authRecoveryCoordinator.js';
 import { clearAuthResumeState, getAuthResumeStorage, readAuthResumeState, writeAuthResumeState } from './api/authResumeState.js';
+import {
+    clearConnectionRecoveryState,
+    getConnectionRecoveryStorage,
+} from './api/connectionRecoveryState.js';
+import { buildConnectionRecoveryShellState, buildConnectionRecoverySnapshot, settingsDiscardedRecoveryNotice, useConnectionRecovery } from './api/useConnectionRecovery.js';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
@@ -388,6 +396,30 @@ import {
             const sprintLoadInFlightRef = useRef(false);
             const pendingSprintRefreshRef = useRef(false);
             const [serverConnectionError, setServerConnectionError] = useState('');
+            const authResumePrincipalRef = useRef(null);
+            const connectionRecoverySnapshotRef = useRef(null);
+            const {
+                clearServerConnectionError,
+                consume: consumeConnectionRecovery,
+                markBootstrapHealthy: markConnectionBootstrapHealthy,
+                notice: connectionRecoveryNotice,
+                pendingRef: pendingConnectionRecoveryRef,
+                recover: recoverServerConnection,
+                releaseOwnership: releaseConnectionRecoveryOwnership,
+                reportServerConnectionError,
+                scenarioStartedRef: connectionRecoveryScenarioStartedRef,
+                setNotice: setConnectionRecoveryNotice,
+                setStagedRevision: setConnectionRecoveryStagedRevision,
+                setStatus: setConnectionRecoveryStatus,
+                stagedRevision: connectionRecoveryStagedRevision,
+                status: connectionRecoveryStatus,
+                unavailableRef: serverUnavailableRef,
+            } = useConnectionRecovery({
+                backendUrl: BACKEND_URL,
+                principalRef: authResumePrincipalRef,
+                snapshotRef: connectionRecoverySnapshotRef,
+                setServerConnectionError,
+            });
             // The Status and Priority facets replaced the single statusFilter plus the Done and
             // Killed Display toggles; a payload saved before that still has to land somewhere
             // sensible, so the old keys are read once through the §7.4 mapping table.
@@ -726,7 +758,6 @@ import {
             const planningHydratedScopeRef = useRef('');
             const planningLoadedSelectionRef = useRef(null);
             const planningBaselineScopeRef = useRef('');
-            const authResumePrincipalRef = useRef(null);
             const authResumeSnapshotRef = useRef(null);
             const pendingShellAuthResumeRef = useRef(null);
             const pendingPlanningAuthResumeRef = useRef(null);
@@ -1015,14 +1046,6 @@ import {
                 if (!selectedSprint) return null;
                 return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
             }, [availableSprints, selectedSprint]);
-            const clearServerConnectionError = React.useCallback(() => {
-                setServerConnectionError('');
-            }, []);
-            const reportServerConnectionError = React.useCallback((err) => {
-                if (!isBackendConnectionFailure(err)) return false;
-                setServerConnectionError(getServerConnectionErrorMessage(BACKEND_URL));
-                return true;
-            }, []);
             const refreshHomeTokenConnectionStatus = React.useCallback(async () => {
                 try {
                     const payload = await fetchHomeTokenConnection(BACKEND_URL);
@@ -2394,6 +2417,7 @@ import {
                     setGroupPreferences(normalized.preferences);
                     setGroupWarnings(payload.warnings || []);
                     setGroupConfigSource(normalized.source || payload.source || '');
+                    markConnectionBootstrapHealthy('groups');
                     setActiveGroupId(prev => {
                         const effectiveIds = effectiveVisibleGroupIds(normalized, normalized.preferences);
                         const preferred = normalized.preferences?.activeGroupId || savedPrefsRef.current.activeGroupId || prev;
@@ -6411,6 +6435,7 @@ import {
                     const resume = resumeStorage && !planningAuthResumePersistenceFailedRef.current
                         ? readAuthResumeState(resumeStorage, resumePrincipal)
                         : null;
+                    const connectionResume = consumeConnectionRecovery(resumePrincipal);
                     if (resume) {
                         pendingShellAuthResumeRef.current = resume.view;
                         authResumeShellSettledRef.current = new Set();
@@ -6421,7 +6446,12 @@ import {
                             ? resume.planning
                             : null;
                         setAuthResumeStagedRevision(revision => revision + 1);
+                    } else if (connectionResume) {
+                        pendingShellAuthResumeRef.current = buildConnectionRecoveryShellState(connectionResume);
+                        authResumeShellSettledRef.current = new Set();
+                        setAuthResumeStagedRevision(revision => revision + 1);
                     }
+                    markConnectionBootstrapHealthy('config');
                     clearServerConnectionError();
                     setJiraUrl(config.jiraUrl || '');
                     setAuthMode(config.authMode || '');
@@ -6587,6 +6617,8 @@ import {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
                 clearEngGroupScopeData();
                 setActiveGroupId(null);
+                setSprintsLoading(false);
+                markConnectionBootstrapHealthy('sprints');
                 const hasPendingRecovery = pendingShellAuthResumeRef.current || pendingPlanningAuthResumeRef.current;
                 const principal = authResumePrincipalRef.current;
                 if (
@@ -6606,6 +6638,7 @@ import {
             }, [
                 groupsLoading, groupPreferences.onboardingRequired, sharedConfigReady, homeTokenConnectionLoaded,
                 clearEngGroupScopeData, clearAuthResumeWhenSettled, authResumeStagedRevision,
+                markConnectionBootstrapHealthy,
             ]);
 
             useEffect(() => {
@@ -6666,6 +6699,7 @@ import {
                     const sprints = data.sprints || [];
                     setAvailableSprints(sprints);
                     setSprintError('');
+                    markConnectionBootstrapHealthy('sprints');
 
                     const preferredSprintId = savedPrefsRef.current.selectedSprint;
                     const preferredSprint = preferredSprintId ? sprints.find(s => String(s.id) === String(preferredSprintId)) : null;
@@ -6805,27 +6839,6 @@ import {
                 } finally {
                     issueEditStateRef.current.finishRead(readToken); cleanupSprintFetch(controller);
                 }
-            };
-
-            const normalizeScenarioDraftOverrides = (overrides) => {
-                const normalized = {};
-                Object.entries(overrides || {}).forEach(([issueKey, value]) => {
-                    const key = String(issueKey || '').trim();
-                    if (!key || !value || typeof value !== 'object') return;
-                    const start = typeof value.start === 'string' ? value.start : '';
-                    const end = typeof value.end === 'string' ? value.end : '';
-                    if (!start && !end) return;
-                    normalized[key] = { start, end };
-                });
-                return normalized;
-            };
-
-            const scenarioDraftOverridesSignature = (overrides) => {
-                const normalized = normalizeScenarioDraftOverrides(overrides);
-                return Object.keys(normalized)
-                    .sort()
-                    .map(key => `${key}:${normalized[key].start || ''}:${normalized[key].end || ''}`)
-                    .join('|');
             };
 
             const fetchScenarioCsrfToken = () =>
@@ -7093,19 +7106,19 @@ import {
                 writebackBlocked: null
             });
 
-            const runScenario = async () => {
-                trackScenarioAction('compute', { lane_mode: analyticsToken(scenarioLaneMode), team_count_bucket: bucketCount(scenarioTeamIds.length) });
+            const runScenario = async ({ recovery = null } = {}) => {
+                if (!recovery) trackScenarioAction('compute', { lane_mode: analyticsToken(scenarioLaneMode), team_count_bucket: bucketCount(scenarioTeamIds.length) });
                 if (!selectedSprint) {
                     setScenarioError('Select a sprint to build a scenario.');
-                    trackScenarioAction('compute_result', { result: 'failure', blocking_reason: 'missing_sprint' });
+                    if (!recovery) trackScenarioAction('compute_result', { result: 'failure', blocking_reason: 'missing_sprint' });
                     return;
                 }
                 if (isCompletedSprintSelected) {
                     setScenarioError('Scenario planner is disabled for completed sprints.');
-                    trackScenarioAction('compute_result', { result: 'failure', blocking_reason: 'completed_sprint' });
+                    if (!recovery) trackScenarioAction('compute_result', { result: 'failure', blocking_reason: 'completed_sprint' });
                     return;
                 }
-                if (scenarioHasUnsavedChanges) {
+                if (!recovery && scenarioHasUnsavedChanges) {
                     setScenarioDraftMeta(prev => ({
                         ...prev,
                         pendingScopeChange: { scopeKey: scenarioScopeKey },
@@ -7152,14 +7165,24 @@ import {
                     if (scenarioTimelineRef.current) {
                         scenarioTimelineRef.current.scrollTop = 0;
                     }
-                    trackScenarioAction('compute_result', { result: 'success', issue_count_bucket: bucketCount((data?.issues || []).length) });
+                    if (!recovery) trackScenarioAction('compute_result', { result: 'success', issue_count_bucket: bucketCount((data?.issues || []).length) });
                     // Load the active draft for this scope unless the user has dirty edits from another scope.
                     if (scenarioScopeKey) {
                         try {
                             const draftData = await fetchScenarioDraft(scenarioScopeKey, controller.signal);
                             const activeDraft = draftData.activeDraft || null;
                             const versions = Array.isArray(draftData.versions) ? draftData.versions : [];
-                            if (activeDraft) {
+                            if (recovery?.scenario) {
+                                applyScenarioConnectionRecovery({
+                                    activeDraft, idleActionState: scenarioDraftIdleActionState(), recovery,
+                                    releaseOwnership: releaseConnectionRecoveryOwnership,
+                                    scenarioScopeKey, scopePayload, setConnectionRecoveryNotice,
+                                    setScenarioDraftMeta, setScenarioEditMode,
+                                    setScenarioOverrides, setScenarioUndoVersion, scenarioTimelineRef,
+                                    scenarioUndoStackRef, settingsDiscardedNotice: settingsDiscardedRecoveryNotice(), versions,
+                                });
+                                pendingConnectionRecoveryRef.current = null;
+                            } else if (activeDraft) {
                                 const overrides = normalizeScenarioDraftOverrides(activeDraft.overrides || {});
                                 setScenarioOverrides(overrides);
                                 setScenarioDraftMeta(prev => ({
@@ -7230,7 +7253,7 @@ import {
                     }
                     if (isAuthenticationRequiredError(err)) return;
                     setScenarioError(err.message || 'Failed to run scenario.');
-                    trackScenarioAction('compute_result', { result: 'failure' });
+                    if (!recovery) trackScenarioAction('compute_result', { result: 'failure' });
                 } finally {
                     cleanupSprintFetch(controller);
                     setScenarioLoading(false);
@@ -8688,11 +8711,23 @@ import {
             );
             useEffect(() => {
                 const dirtyState = scenarioOverridesSignature === savedScenarioOverridesSignature ? 'clean' : 'dirty';
-                setScenarioDraftMeta(prev => (
-                    prev.dirtyState === dirtyState ? prev : { ...prev, dirtyState }
-                ));
+                setScenarioDraftMeta(prev => {
+                    if (prev.dirtyState === 'conflict_remote' && prev.conflict) return prev;
+                    return prev.dirtyState === dirtyState ? prev : { ...prev, dirtyState };
+                });
             }, [scenarioOverridesSignature, savedScenarioOverridesSignature]);
             const scenarioHasUnsavedChanges = scenarioOverridesSignature !== savedScenarioOverridesSignature;
+            useConnectionScenarioRecovery({
+                activeGroupId, availableSprints, groupsLoading,
+                pendingRecoveryRef: pendingConnectionRecoveryRef,
+                pendingShellRef: pendingShellAuthResumeRef,
+                runScenario, scenarioScopeKey,
+                releaseOwnership: releaseConnectionRecoveryOwnership,
+                scenarioStartedRef: connectionRecoveryScenarioStartedRef,
+                selectedSprint, setNotice: setConnectionRecoveryNotice,
+                setStatus: setConnectionRecoveryStatus, showScenario, sprintsLoading,
+                stagedRevision: connectionRecoveryStagedRevision, visibleControlGroups,
+            });
             const scenarioHasStoredDraftScope = Boolean(
                 scenarioDraftMeta.scopeKey
                 && scenarioDraftMeta.scopePayload
@@ -13944,18 +13979,26 @@ import {
                 onDependencyFocusClick: handleDependencyFocusClick,
             };
 
-            const retryServerConnection = () => {
-                clearServerConnectionError();
-                setError('');
-                void refreshHomeTokenConnectionStatus();
-                void loadConfig();
-                void loadGroupsConfig();
-                void loadSelectedProjects();
-                void loadPriorityWeightsConfig();
-                void loadSprints(true, { queueIfBusy: true });
-                if (selectedView === 'epm') {
-                    void refreshEpmView();
-                }
+            connectionRecoverySnapshotRef.current = () => {
+                const dirtyScenario = scenarioHasUnsavedChanges;
+                return buildConnectionRecoverySnapshot({
+                    activeGroupId, dirtySettings: showGroupManage && isGroupDraftDirty,
+                    principal: authResumePrincipalRef.current,
+                    selectedSprint, selectedView,
+                    scenario: dirtyScenario ? {
+                        scopeKey: scenarioDraftMeta.scopeKey,
+                        groupId: String(scenarioDraftMeta.scopePayload?.groupId || ''),
+                        sprintId: String(scenarioDraftMeta.scopePayload?.sprintId || ''),
+                        activeDraftId: scenarioDraftMeta.activeDraft?.draftId || null,
+                        baseDraftRevision: Number(scenarioDraftMeta.baseDraftRevision || 0),
+                        savedOverrides: normalizeScenarioDraftOverrides(scenarioDraftMeta.savedOverrides),
+                        localOverrides: normalizeScenarioDraftOverrides(scenarioOverrides),
+                        editMode: scenarioEditMode,
+                        scrollTop: Math.max(0, scenarioTimelineRef.current?.scrollTop || 0),
+                        scrollLeft: Math.max(0, scenarioTimelineRef.current?.scrollLeft || 0),
+                    } : null,
+                    viewMode: showPlanning ? 'planning' : showStats ? 'statistics' : showScenario ? 'scenario' : showBoard ? 'board' : 'catch-up',
+                });
             };
 
             const renderEpicBlock = (epicGroup) => {
@@ -14383,8 +14426,8 @@ import {
                 rearmCatchUpAlerts();
                 loadMeasuredGroupTasks({ forceRefresh: true });
             };
-            const manualRefreshDisabled = selectedView === 'eng' ? (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized' : loading || selectedSprint === null)
-                : (epmProjectsLoading || epmRollupLoading);
+            const manualRefreshDisabled = connectionRecoveryStatus !== 'idle' || (selectedView === 'eng' ? (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized' : loading || selectedSprint === null)
+                : (epmProjectsLoading || epmRollupLoading));
             longAbsenceRefreshRef.current = manualRefreshDisabled ? null : refreshActiveViewFromJira;
             useEffect(() => {
                 const handleLongAbsenceReturn = () => {
@@ -14554,7 +14597,24 @@ import {
                         )}
                     </div>
 
-                    <ServerUnavailableBanner message={serverConnectionError} onRetry={retryServerConnection} />
+                    <ServerUnavailableBanner
+                        message={serverConnectionError}
+                        status={connectionRecoveryStatus}
+                        onRetry={() => recoverServerConnection({ manual: true })}
+                    />
+
+                    <ConnectionRecoveryNotice
+                        notice={connectionRecoveryNotice}
+                        onRecover={() => setConnectionRecoveryStagedRevision(revision => revision + 1)}
+                        onDiscard={() => {
+                            clearConnectionRecoveryState(getConnectionRecoveryStorage(window));
+                            pendingConnectionRecoveryRef.current = null;
+                            setConnectionRecoveryNotice(null);
+                            setConnectionRecoveryStatus(serverUnavailableRef.current ? 'unavailable' : 'idle');
+                        }}
+                        onDismiss={() => setConnectionRecoveryNotice(null)}
+                        onReloadDiscard={() => recoverServerConnection({ manual: true, discardSettings: true })}
+                    />
 
                     {selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && (
                         <div className={`capacity-panel ${showPlanning ? 'open' : ''}`}>

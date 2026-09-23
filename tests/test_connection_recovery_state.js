@@ -34,7 +34,8 @@ function recoverySnapshot() {
         },
         droppedSettings: true,
         scenario: {
-            scopeKey: 'sprint-1:group-1', activeDraftId: 'draft-1', baseDraftRevision: 4,
+            scopeKey: 'sprint-1:group-1', groupId: 'group-1', sprintId: 'sprint-1',
+            activeDraftId: 'draft-1', baseDraftRevision: 4,
             savedOverrides: { 'PLAN-1': { start: '2026-09-22', end: '2026-09-23' } },
             localOverrides: { 'PLAN-1': { start: '2026-09-24', end: '2026-09-25' } },
             editMode: true, scrollTop: 45, scrollLeft: 67,

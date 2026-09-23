@@ -12,8 +12,8 @@ const PRINCIPAL_KEYS = ['viewConfigId', 'workspaceId'];
 const OUTAGE_KEYS = ['id'];
 const VIEW_KEYS = ['activeGroupId', 'engMode', 'scrollX', 'scrollY', 'selectedSprint', 'selectedView'];
 const SCENARIO_KEYS = [
-    'activeDraftId', 'baseDraftRevision', 'editMode', 'localOverrides', 'savedOverrides',
-    'scopeKey', 'scrollLeft', 'scrollTop',
+    'activeDraftId', 'baseDraftRevision', 'editMode', 'groupId', 'localOverrides', 'savedOverrides',
+    'scopeKey', 'scrollLeft', 'scrollTop', 'sprintId',
 ];
 const OVERRIDE_KEYS = ['end', 'start'];
 const ATTEMPT_KEYS = ['attemptedAt', 'outageId', 'version'];
@@ -85,17 +85,19 @@ function normalizeScenario(value) {
     if (value === null) return null;
     if (!hasExactKeys(value, SCENARIO_KEYS)) return undefined;
     const scopeKey = boundedString(value.scopeKey, 512);
+    const groupId = boundedString(value.groupId, 256);
+    const sprintId = boundedString(value.sprintId, 256);
     const activeDraftId = boundedString(value.activeDraftId, 256, { nullable: true });
     const baseDraftRevision = nonNegativeInteger(value.baseDraftRevision);
     const savedOverrides = normalizeOverrideMap(value.savedOverrides);
     const localOverrides = normalizeOverrideMap(value.localOverrides);
     const scrollTop = finitePosition(value.scrollTop);
     const scrollLeft = finitePosition(value.scrollLeft);
-    if (!scopeKey || activeDraftId === undefined || baseDraftRevision === undefined
+    if (!scopeKey || !groupId || !sprintId || activeDraftId === undefined || baseDraftRevision === undefined
         || savedOverrides === null || localOverrides === null || typeof value.editMode !== 'boolean'
         || scrollTop === undefined || scrollLeft === undefined) return undefined;
     return {
-        scopeKey, activeDraftId, baseDraftRevision, savedOverrides, localOverrides,
+        scopeKey, groupId, sprintId, activeDraftId, baseDraftRevision, savedOverrides, localOverrides,
         editMode: value.editMode, scrollTop, scrollLeft,
     };
 }

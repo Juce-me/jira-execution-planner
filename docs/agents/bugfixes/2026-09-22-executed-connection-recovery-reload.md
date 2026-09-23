@@ -1,6 +1,6 @@
 # Connection Recovery Reload
 
-Status: planned
+Status: executed
 Type: bugfix
 
 ## Outcome
@@ -27,7 +27,8 @@ Retry and the first hidden-to-visible return while unavailable share one single-
 3. Give any concurrent global auth `401` terminal precedence.
 4. Capture a strict Scenario-only `sessionStorage` capsule when needed.
 5. Persist one automatic-attempt marker for the outage and hard reload once.
-6. Clear the marker only after core config/group/sprint bootstrap is healthy.
+6. Clear the marker after core config/group/sprint bootstrap is healthy, but retain recovery ownership
+   until Scenario restoration reaches a terminal result.
 
 If that document still fails, no second automatic reload occurs. Retry remains an explicit action.
 
@@ -40,7 +41,8 @@ loaded Jira records, arbitrary network payloads, or arbitrary React state. It ex
 and has a strict serialized-size limit.
 
 If dirty Scenario work cannot be stored safely, reload is blocked. If Scenario is clean, storage failure
-does not prevent a clean reload.
+does not prevent a clean reload. Dirty Settings with unavailable storage requires explicit
+`Reload and discard` acknowledgement.
 
 ## Scenario restoration
 
@@ -69,5 +71,8 @@ and error events remain authoritative, and capsule contents never enter analytic
 
 ## Current accuracy
 
-Approved after architecture, Settings, Scenario, and test review. Product implementation is not yet
-applied.
+Implemented and verified locally on 2026-09-23. Retry now performs one exact-principal readiness probe
+and guarded hard reload, preserves principal/scope-bound dirty Scenario deltas, retains the fresh server
+baseline on conflict, and prevents automatic reload or compute loops. Settings/EPM values always reload
+from saved state; discarded Settings work is disclosed. Focus/auth ownership, onboarding, missing scopes,
+storage failures, and terminal recovery outcomes have explicit behavior and regression coverage.

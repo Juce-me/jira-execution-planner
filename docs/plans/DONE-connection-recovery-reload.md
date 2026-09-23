@@ -2,7 +2,7 @@
 
 > **For agentic workers:** use `superpowers:executing-plans` and implement each task test-first.
 
-**Status:** approved for execution
+**Status:** implemented and verified locally on 2026-09-23
 **Branch:** `bugfix/connection-recovery-reload`
 
 ## Goal
@@ -29,7 +29,7 @@ position state. Reload all Settings and EPM data from their saved server version
   the existing `conflict_remote` state, disable direct Save, and require existing conflict resolution.
 - If group/sprint is missing, retain the capsule until its 30-minute expiry and show Recover/Discard.
 - If capsule storage fails and Scenario is dirty, do not reload. If Scenario is clean, reload without a
-  capsule.
+  capsule. If Settings is dirty but the capsule cannot be stored, require explicit `Reload and discard`.
 - Restore scroll only after the target view renders, using the live Scenario timeline element and two
   animation frames with clamping.
 
@@ -58,6 +58,9 @@ Validate auth-resume and connection-recovery capsules independently against the 
 
 - Create `frontend/src/scenario/scenarioDraftOverrides.js` for canonical `{start,end}` normalization.
 - Create `frontend/src/api/connectionRecoveryState.js` for the strict Scenario-only capsule and outage marker.
+- Create `frontend/src/api/useConnectionRecovery.js` for recovery ownership, probing, and reload orchestration.
+- Create `frontend/src/scenario/connectionScenarioRecovery.js` for terminal Scenario restoration.
+- Create `frontend/src/components/ConnectionRecoveryNotice.jsx` for recovery notices and actions.
 - Modify `frontend/src/api/authRefreshContract.js` and `frontend/src/api/authFocusRefresh.js` for suppression.
 - Modify `frontend/src/components/ServerUnavailableBanner.jsx` for recovery states.
 - Modify `frontend/src/dashboard.jsx` for capture, probe, reload, restoration, conflict, notices, and gates.
@@ -69,33 +72,34 @@ Validate auth-resume and connection-recovery capsules independently against the 
 
 ### 1. Pure storage and override contracts
 
-- [ ] Add failing tests for canonical overrides, exact schemas, TTL, principal mismatch,
+- [x] Add failing tests for canonical overrides, exact schemas, TTL, principal mismatch,
   malformed/oversized data, forbidden keys, storage failure, and the persistent outage marker.
-- [ ] Implement both pure modules without network, analytics, credentials, or event listeners.
-- [ ] Run focused Node tests and source guards.
+- [x] Implement both pure modules without network, analytics, credentials, or event listeners.
+- [x] Run focused Node tests and source guards.
 
 ### 2. Recovery ownership and reload guard
 
-- [ ] Add failing cases for focus suppression, one automatic attempt per outage, explicit manual retry,
+- [x] Add failing cases for focus suppression, one automatic attempt per outage, explicit manual retry,
   `401` precedence, duplicate events, and disabled Refresh Jira.
-- [ ] Add shared connection-unavailable events, suppress auth/long-absence refresh, replace retry fan-out
+- [x] Add shared connection-unavailable events, suppress auth/long-absence refresh, replace retry fan-out
   with a single-flight config probe, and hard reload once.
-- [ ] Clear the outage marker only after config, groups, and sprint bootstrap are healthy, or normal
+- [x] Clear the outage marker only after config, groups, and sprint bootstrap are healthy, or normal
   onboarding explicitly makes sprint loading inapplicable.
 
 ### 3. Capture and post-reload restoration
 
-- [ ] Add failing cases for clean reload, discarded Settings notice, same-revision Scenario restoration,
+- [x] Add failing cases for clean reload, discarded Settings notice, same-revision Scenario restoration,
   changed-revision conflict, exact-scope blocking, recover/discard, storage failure, and scroll.
-- [ ] Capture only live view and dirty Scenario fields. After reload, stage shell precedence, run one
+- [x] Capture only live view and dirty Scenario fields. After reload, stage shell precedence, run one
   Scenario compute, load fresh draft history, then apply local overrides or `conflict_remote`.
-- [ ] Gate Scenario polling until recovery settles and prevent every mutation replay.
+- [x] Gate Scenario polling until recovery settles and prevent every mutation replay.
 
 ### 4. Documentation, build, and verification
 
-- [ ] Document the recovery concept and no-new-analytics allowlist decision.
-- [ ] Run focused Node/Playwright suites, build, full tests, inspect the diff, and capture UI evidence.
-- [ ] Update the design record to executed accuracy. Do not push without explicit user confirmation.
+- [x] Document the recovery concept and no-new-analytics allowlist decision.
+- [x] Run focused Node/Playwright suites, build, inspect the diff, and capture UI evidence. The backend
+  suite could not run in this checkout because its Python environment and dependencies are absent.
+- [x] Update the design record to executed accuracy. Do not push without explicit user confirmation.
 
 ## Acceptance criteria
 

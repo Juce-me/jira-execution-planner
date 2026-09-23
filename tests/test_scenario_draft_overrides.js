@@ -31,3 +31,27 @@ test('signature is stable regardless of insertion order', () => {
     const b = { 'PLAN-1': { start: '2026-09-22', end: '' }, 'PLAN-2': { start: '', end: '2026-09-26' } };
     assert.equal(api.scenarioDraftOverridesSignature(a), api.scenarioDraftOverridesSignature(b));
 });
+
+test('recovery overlays only the local delta onto the fresh server baseline', () => {
+    const api = loadModule();
+    assert.deepEqual(api.overlayScenarioDraftDelta(
+        {
+            'KEEP-1': { start: '2026-09-01', end: '2026-09-02' },
+            'REMOTE-2': { start: '2026-09-05', end: '2026-09-06' },
+            'DELETE-3': { start: '2026-09-07', end: '2026-09-08' },
+        },
+        {
+            'KEEP-1': { start: '2026-08-01', end: '2026-08-02' },
+            'LOCAL-4': { start: '2026-08-03', end: '2026-08-04' },
+            'DELETE-3': { start: '2026-08-05', end: '2026-08-06' },
+        },
+        {
+            'KEEP-1': { start: '2026-08-01', end: '2026-08-02' },
+            'LOCAL-4': { start: '2026-09-10', end: '2026-09-11' },
+        },
+    ), {
+        'KEEP-1': { start: '2026-09-01', end: '2026-09-02' },
+        'REMOTE-2': { start: '2026-09-05', end: '2026-09-06' },
+        'LOCAL-4': { start: '2026-09-10', end: '2026-09-11' },
+    });
+});

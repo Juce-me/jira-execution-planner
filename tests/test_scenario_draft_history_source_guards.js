@@ -117,7 +117,7 @@ test('generated frontend dist changes require frontend source changes', () => {
 
 test('dirty scenario draft reruns are blocked before loading new scenario data', () => {
     const dashboardSource = readSource(dashboardPath);
-    const dirtyGuardIndex = dashboardSource.indexOf('if (scenarioHasUnsavedChanges) {');
+    const dirtyGuardIndex = dashboardSource.indexOf('if (!recovery && scenarioHasUnsavedChanges) {');
     const scenarioFetchIndex = dashboardSource.indexOf('requestScenarioRun(BACKEND_URL, buildScenarioPayload(),');
     const setScenarioDataIndex = dashboardSource.indexOf('setScenarioData(data);');
 
@@ -206,7 +206,7 @@ test('scenario draft metadata stores display-safe scope payload without group me
     const dashboardSource = readSource(dashboardPath);
     const stateMatch = dashboardSource.match(/const \[scenarioDraftMeta, setScenarioDraftMeta\] = useState\(\{[\s\S]*?\n\s*\}\);/);
     const scopeBuilderMatch = dashboardSource.match(/const buildScenarioDraftScope = \(\) => \(\{[\s\S]*?\n\s*\}\);/);
-    const runScenarioMatch = dashboardSource.match(/const runScenario = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const toggleScenarioEditMode/);
+    const runScenarioMatch = dashboardSource.match(/const runScenario = async \(\{ recovery = null \} = \{\}\) => \{[\s\S]*?\n\s*\};\n\n\s*const toggleScenarioEditMode/);
 
     assert.ok(stateMatch, 'Expected scenarioDraftMeta state to exist.');
     assert.ok(scopeBuilderMatch, 'Expected buildScenarioDraftScope to exist.');
@@ -269,6 +269,15 @@ test('save and discard use normalized dirty state rather than override count', (
     assert.equal(saveButtonSource.includes('scenarioOverrideCount === 0'), false, 'Save button must not be gated by override count.');
     assert.ok(discardButtonSource.includes('!scenarioHasUnsavedChanges'), 'Discard button must be gated by dirty state.');
     assert.equal(discardButtonSource.includes('scenarioOverrideCount === 0'), false, 'Discard button must not be gated by override count.');
+});
+
+test('connection recovery captures dirty Scenario work even when another ENG mode is visible', () => {
+    const dashboardSource = readSource(dashboardPath);
+    assert.ok(dashboardSource.includes('const dirtyScenario = scenarioHasUnsavedChanges;'));
+    assert.ok(!dashboardSource.includes('const dirtyScenario = showScenario && scenarioHasUnsavedChanges;'));
+    assert.ok(dashboardSource.includes('scopeKey: scenarioDraftMeta.scopeKey'));
+    assert.ok(dashboardSource.includes('groupId: String(scenarioDraftMeta.scopePayload?.groupId'));
+    assert.ok(dashboardSource.includes('sprintId: String(scenarioDraftMeta.scopePayload?.sprintId'));
 });
 
 test('dirty stored draft scope can be saved after current scenario data is cleared', () => {

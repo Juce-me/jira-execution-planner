@@ -13,6 +13,8 @@ const dashboardHtml = fs.readFileSync(path.join(repoRoot, 'jira-dashboard.html')
 // side-effect-free ESM constants file.
 const AUTH_LONG_ABSENCE_EVENT = 'jep:auth-long-absence-return';
 const AUTH_REQUIRED_EVENT = 'jep:authentication-required';
+const CONNECTION_UNAVAILABLE_EVENT = 'jep:connection-unavailable';
+const CONNECTION_AVAILABLE_EVENT = 'jep:connection-available';
 
 // Built once for every test in this file: the same esbuild flags as
 // `npm run build:auth`, minus --minify/--sourcemap, so assertions exercise
@@ -207,6 +209,28 @@ test('one document load produces one auth-script request and one auth POST; a fo
     expect(counters.authScripts.length).toBe(1);
     expect(counters.authPosts.length).toBe(1);
     expect(counters.pageErrors).toEqual([]);
+});
+
+test('connection recovery ownership suppresses auth focus and long-absence refresh until released', async ({ page }) => {
+    await installAuthShell(page);
+    await installClockControl(page);
+    await installVisibilityControl(page);
+    await installLongAbsenceEventCounter(page);
+    const counters = attachCounters(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    expect(counters.authPosts.length).toBe(1);
+
+    await page.evaluate(eventName => window.dispatchEvent(new Event(eventName)), CONNECTION_UNAVAILABLE_EVENT);
+    await setVisibility(page, 'hidden');
+    await advanceClock(page, (13 * 60 * 1000));
+    await setVisibility(page, 'visible');
+    await focusAndVisibilityBurst(page);
+    expect(counters.authPosts.length).toBe(1);
+    expect(await longAbsenceEvents(page)).toEqual([]);
+
+    await page.evaluate(eventName => window.dispatchEvent(new Event(eventName)), CONNECTION_AVAILABLE_EVENT);
+    await focusWindow(page);
+    await expect.poll(() => counters.authPosts.length).toBe(2);
 });
 
 test('blur then focus after 11 minutes stays under the long-absence threshold', async ({ page }) => {

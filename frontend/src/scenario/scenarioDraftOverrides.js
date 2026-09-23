@@ -27,3 +27,18 @@ export function scenarioDraftOverridesSignature(overrides) {
         .map(key => `${key}:${normalized[key].start}:${normalized[key].end}`)
         .join('|');
 }
+
+export function overlayScenarioDraftDelta(freshOverrides, capturedSavedOverrides, capturedLocalOverrides) {
+    const fresh = normalizeScenarioDraftOverrides(freshOverrides);
+    const saved = normalizeScenarioDraftOverrides(capturedSavedOverrides);
+    const local = normalizeScenarioDraftOverrides(capturedLocalOverrides);
+    const merged = { ...fresh };
+    new Set([...Object.keys(saved), ...Object.keys(local)]).forEach(issueKey => {
+        const savedValue = saved[issueKey] || null;
+        const localValue = local[issueKey] || null;
+        if (JSON.stringify(savedValue) === JSON.stringify(localValue)) return;
+        if (localValue) merged[issueKey] = localValue;
+        else delete merged[issueKey];
+    });
+    return merged;
+}

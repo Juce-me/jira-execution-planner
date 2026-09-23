@@ -4,14 +4,18 @@ import {
     AUTH_REFRESH_SHARED_STORAGE_KEY,
     AUTH_LONG_ABSENCE_EVENT,
     AUTH_SESSION_REFRESH_EVENT,
+    CONNECTION_UNAVAILABLE_EVENT,
+    CONNECTION_AVAILABLE_EVENT,
 } from './authRefreshContract.js';
 import { apiFetch } from './http.js';
 import { isAuthenticationRequiredError } from './authRequired.js';
+import { getConnectionRecoveryStorage, readConnectionRecoveryAttempt } from './connectionRecoveryState.js';
 
 let lastAuthRefreshAt = 0;
 let unfocusedSince = null;
 let refreshInFlight = false;
 let listenersInstalled = false;
+let connectionUnavailable = Boolean(readConnectionRecoveryAttempt(getConnectionRecoveryStorage(window)));
 
 function readSharedRefreshAt() {
     try {
@@ -46,6 +50,7 @@ function dispatchAuthSessionRefreshEvent() {
 }
 
 export async function refreshAuthOnFocus({ longAbsence = false, unfocusedMs = 0 } = {}) {
+    if (connectionUnavailable) return;
     if (document.visibilityState && document.visibilityState !== 'visible') return;
     if (refreshInFlight) return;
     const now = Date.now();
@@ -63,7 +68,7 @@ export async function refreshAuthOnFocus({ longAbsence = false, unfocusedMs = 0 
             credentials: 'same-origin',
             headers: { 'X-Requested-With': 'jira-execution-planner' },
         });
-        if (response.ok) {
+        if (response.ok && !connectionUnavailable) {
             // The Jira principal behind the cookie may have changed since this page loaded.
             // Permission-scoped client caches use this event as their partition boundary.
             dispatchAuthSessionRefreshEvent();
@@ -106,6 +111,12 @@ export function installAuthFocusRefresh() {
     window.addEventListener('blur', noteDashboardUnfocused);
     window.addEventListener('focus', handleVisibleReturn);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener(CONNECTION_UNAVAILABLE_EVENT, () => {
+        connectionUnavailable = true;
+    });
+    window.addEventListener(CONNECTION_AVAILABLE_EVENT, () => {
+        connectionUnavailable = false;
+    });
     handleVisibleReturn();
 }
 

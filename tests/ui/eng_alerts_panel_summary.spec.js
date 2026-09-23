@@ -153,6 +153,19 @@ async function installAlertsFixture(page) {
             return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] });
         }
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json({
+                schemaVersion: 1,
+                complete: true,
+                scope: {
+                    groupId: 'grp-default',
+                    sprintId: String(selectedSprintId),
+                    sprintName: selectedSprintName,
+                    sprintState: 'active',
+                },
+                epics: [],
+            });
+        }
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
@@ -357,4 +370,39 @@ test('ENG alerts summary chips open and focus their matching alert section', asy
     expect(blockedViewportPosition.top).toBeLessThan(blockedViewportPosition.viewportHeight * 0.65);
     expect(blockedViewportPosition.titleTop).toBeGreaterThanOrEqual(blockedViewportPosition.top);
     expect(blockedViewportPosition.titleBottom).toBeLessThan(blockedViewportPosition.viewportHeight);
+});
+
+test('ENG search filters alert rows, panels, summary chips, and total count', async ({ page }) => {
+    await openEng(page, { width: 1280, height: 760 }, true);
+
+    await page.getByRole('textbox', { name: 'Search tickets...' }).fill('TECH');
+
+    const summary = page.locator('.alerts-panel-summary');
+    await expect(summary).toContainText('3 total');
+    await expect(summary).toContainText(/2\s+Blocked/);
+    await expect(summary).toContainText(/1\s+Ready to close/);
+    await expect(summary).not.toContainText('Missing info');
+    await expect(summary).not.toContainText('Empty epic');
+    await expect(page.locator('#eng-alert-missing')).toHaveCount(0);
+    await expect(page.locator('#eng-alert-empty')).toHaveCount(0);
+    await expect(page.locator('#eng-alert-blocked .alert-story')).toHaveCount(2);
+    await expect(page.locator('#eng-alert-done .alert-story')).toHaveCount(1);
+
+    await page.getByRole('textbox', { name: 'Search tickets...' }).fill('no matching alert');
+    await expect(page.locator('.alerts-panel-toolbar')).toHaveCount(0);
+});
+
+test('ENG Product-only filter removes Tech stories and epics from every alert count and panel', async ({ page }) => {
+    await openEng(page, { width: 1280, height: 760 }, true);
+
+    await page.locator('.fb-trigger').click();
+    await page.locator('.popover .pop-group[data-facet="projects"] .pop-opt[data-option="tech"]').click();
+
+    const summary = page.locator('.alerts-panel-summary');
+    await expect(summary).toContainText('6 total');
+    await expect(summary).toContainText(/2\s+Missing info/);
+    await expect(summary).toContainText(/2\s+Blocked/);
+    await expect(summary).toContainText(/1\s+Empty epic/);
+    await expect(summary).toContainText(/1\s+Ready to close/);
+    await expect(page.locator('#eng-alert-panels')).not.toContainText('TECH-');
 });

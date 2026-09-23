@@ -211,6 +211,57 @@ def load_shared_groups(context, fallback_loader, validate_groups_config_fn, data
         return _row_to_groups_config(row, validate_groups_config_fn)
 
 
+def load_effective_groups(
+        context, *, fallback_loader, validate_groups_config_fn,
+        dashboard_loader=None, groups_file_loader=None, environment_loader=None,
+        default_builder=None, database_url=None):
+    """Resolve the read-only effective group catalog for the current auth boundary.
+
+    DB/OAuth keeps the workspace-row/legacy-file migration contract. Local Basic
+    mode preserves the public groups endpoint precedence and validation behavior.
+    """
+    if context is not None and is_db_auth_context(context):
+        return load_shared_groups(
+            context,
+            fallback_loader=fallback_loader,
+            validate_groups_config_fn=validate_groups_config_fn,
+            database_url=database_url,
+        )
+
+    warnings = []
+    source = 'auto'
+    dashboard = dashboard_loader() if dashboard_loader is not None else None
+    if isinstance(dashboard, dict) and isinstance(dashboard.get('teamGroups'), dict):
+        config = dashboard['teamGroups']
+        source = 'file'
+    else:
+        config = groups_file_loader() if groups_file_loader is not None else None
+        if config:
+            source = 'file'
+        else:
+            config = environment_loader() if environment_loader is not None else None
+            if config:
+                source = 'env'
+
+    if not config:
+        config, default_warnings = default_builder()
+        warnings.extend(default_warnings or [])
+    else:
+        config, errors, validation_warnings = validate_groups_config_fn(config, allow_empty=True)
+        warnings.extend(validation_warnings or [])
+        if errors:
+            warnings.append('Invalid groups config; falling back to auto Default group.')
+            warnings.extend(errors)
+            config, default_warnings = default_builder()
+            warnings.extend(default_warnings or [])
+
+    config = dict(config or {})
+    if warnings:
+        config['warnings'] = warnings
+    config['source'] = source
+    return config
+
+
 def require_existing_shared_groups_snapshot(context, *, database_url=None, validate_groups_config_fn=None):
     """Read one workspace row without creating, migrating, auditing, or falling back."""
     with db_engine.session_scope(database_url) as session:

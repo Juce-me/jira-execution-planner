@@ -440,6 +440,7 @@ test('ENG API module owns ENG task, backlog, and dependency endpoint constructio
     assert.ok(engApiSource.includes('/api/tasks-with-team-name?${params.toString()}'), 'Expected task URL construction in engApi.js');
     assert.ok(engApiSource.includes('/api/backlog-epics?${params.toString()}'), 'Expected backlog epic URL construction in engApi.js');
     assert.ok(engApiSource.includes('/api/dependencies'), 'Expected dependency URL construction in engApi.js');
+    assert.ok(engApiSource.includes('/api/eng/story-readiness?${params.toString()}'), 'Expected Story readiness URL construction in engApi.js');
     assert.ok(dashboardSource.includes("from './api/engApi.js'"), 'Expected dashboard to import ENG API wrappers');
 });
 

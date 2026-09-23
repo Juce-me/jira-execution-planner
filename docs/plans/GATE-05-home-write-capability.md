@@ -130,6 +130,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-09-16: The missing-story ghost design and implementation planning sweep found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; the planned feature is read-only Jira readiness data plus Jira browse links and adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-10: The Assignee editor latency fix found none of the four required Home-write probe
   inputs and no approved disposable Home project. No mutation probe ran; this change only
   parallelizes authenticated Jira REST reads. Keep blocked with

@@ -10,6 +10,7 @@ const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngVie
 const engSprintDataPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
 const engTaskUtilsPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engTaskUtils.js');
 const engAlertsPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngAlertsPanel.jsx');
+const engWorkHierarchyPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engWorkHierarchy.js');
 const planPath = path.join(__dirname, '..', 'docs', 'plans', 'EXEC-defer-eng-alert-loading.md');
 const stylesDir = path.join(__dirname, '..', 'frontend', 'src', 'styles');
 const cssImportPattern = /@import\s+["'](.+?)["'];/;
@@ -224,8 +225,9 @@ test('backlog alert header chip links to the backlog epic key list in Jira', () 
     );
 });
 
-test('future planning epic alerts group by all matched team labels', () => {
+test('Story readiness alerts use the authoritative composite Team requirements', () => {
     const source = fs.readFileSync(dashboardPath, 'utf8');
+    const hierarchySource = fs.readFileSync(engWorkHierarchyPath, 'utf8');
 
     assert.match(
         source,
@@ -235,25 +237,18 @@ test('future planning epic alerts group by all matched team labels', () => {
         source,
         /const getFuturePlanningTeamInfos = React\.useCallback/
     );
-    // Each epic fans out to every matched team label (so a team missing its own
-    // sprint story is not hidden by a peer team that has one), then groups by the
-    // team carried on each entry.
+    assert.match(source, /buildStoryReadinessAlertModel\(\{/);
+    assert.match(hierarchySource, /alertTargets\.filter/);
     assert.match(
         source,
-        /teamInfos: getFuturePlanningTeamInfos\(epic\)/
-    );
-    assert.match(
-        source,
-        /const needsStoriesTeams = groupAlertsByTeam\(needsStoriesEntries, \(entry\) => entry\.team,/
+        /const needsStoriesTeams = groupAlertsByTeam\(visibleAlertCollections\.needsStoriesEntries, \(entry\) => entry\.team,/
     );
     assert.match(
         source,
         /const epicHasPlanningSprintLabel = React\.useCallback\([\s\S]*epicHasSelectedSprintLabel\(epic, selectedSprintInfo\?\.name \|\| ''\)/
     );
-    assert.match(
-        source,
-        /if \(!teamLabel \|\| !epicHasPlanningSprintLabel\(epic\) \|\| !epicHasLabel\(epic, teamLabel\)\)/
-    );
+    assert.match(source, /dismissedStoryRequirementIds/);
+    assert.match(hierarchySource, /missingLabelEpicKeys\.has\(epicKey\)/);
 });
 
 test('dashboard defines a persisted global alerts panel toggle', () => {
@@ -371,7 +366,7 @@ test('ENG alerts toolbar summary lists every alert category in panel order', () 
         'Backlog',
         'Missing team',
         'Missing labels',
-        'Needs stories',
+        'Stories required',
         'Waiting',
         'Empty epic',
         'Ready to close',

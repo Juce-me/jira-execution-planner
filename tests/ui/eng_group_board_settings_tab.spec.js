@@ -108,6 +108,9 @@ async function mockConfigSettings(page, { groupsConfig = baseGroupsConfig() } = 
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
+        }
         if (url.pathname === '/api/analytics/context') return json({ enabled: false });
         if (url.pathname === '/api/me/connections/home-token') return json({
             connected: true,

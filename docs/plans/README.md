@@ -113,6 +113,11 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      strict expiring tab capsule, reloads Settings/EPM from saved state, and keeps changed revisions in
      the existing conflict workflow without replaying mutations.
 
+0. `EXEC-eng-story-readiness-ghosts.md`
+   - Implemented and locally verified on 2026-09-16; pending acceptance or merge. Catch Up and Planning progressively render one non-Jira `Story required` ghost per uncovered expected Team beneath the correct Epic/Initiative, with current/future urgency, exact local alert navigation, bounded Jira Epic-link analytics, and no contamination of Story/SP/capacity/selection/dependency/export/mutation contracts.
+   - Local PostgreSQL was unavailable, so the real server `/api/test` smoke and live Jira cold/warm timing remain environment-bound; focused backend/frontend/browser verification is recorded in the plan outcome.
+   - Design record: `../agents/features/2026-09-16-executed-eng-story-readiness-ghosts-design.md`.
+
 0. `EXEC-defer-eng-alert-loading.md`
    - Implemented and verified locally on 2026-08-08; pending acceptance or merge. Separates first-screen Product/Tech data from alert enrichment, then starts missing-info and every other alert source only after visible data and only in Catch Up.
 

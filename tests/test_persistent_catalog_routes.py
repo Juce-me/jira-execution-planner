@@ -599,6 +599,30 @@ class PersistentCatalogRouteTests(unittest.TestCase):
         self.assertEqual(failed.get_json()['cache']['state'], 'failed')
         jira_get.assert_not_called()
 
+    def test_capped_board_page_cold_fills_and_caches_sprints(self):
+        page = {
+            'values': [{
+                'id': 101, 'name': '2026Q3', 'state': 'active', 'originBoardId': 17,
+            }],
+            'startAt': 0, 'maxResults': 50, 'isLast': True,
+        }
+        with self._db_catalog(payload=None) as (client, _factory, _context), \
+                patch.object(jira_server.HTTP_SESSION, 'get',
+                             return_value=self._response(200, page)) as jira_get:
+            cold = client.get('/api/sprints')
+            cached = client.get('/api/sprints')
+
+        self.assertEqual(cold.status_code, 200, cold.get_data(as_text=True))
+        self.assertEqual(cold.get_json()['sprints'], [{
+            'id': 101, 'name': '2026Q3', 'state': 'active',
+            'startDate': None, 'endDate': None,
+        }])
+        self.assertEqual(cold.get_json()['cache']['state'], 'fresh')
+        self.assertEqual(cached.status_code, 200, cached.get_data(as_text=True))
+        self.assertEqual(cached.get_json()['cache']['catalogVersion'],
+                         cold.get_json()['cache']['catalogVersion'])
+        self.assertEqual(jira_get.call_count, 1)
+
     def test_force_retry_bypasses_failed_backoff_but_never_active_lease(self):
         release = __import__('threading').Event()
         started = __import__('threading').Event()

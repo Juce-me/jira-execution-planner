@@ -1,6 +1,6 @@
 # Persistent Sprint And Per-Sprint Team Catalogs Runtime Repair Plan
 
-> **Status:** In progress. The source-contract repair and focused verification are complete on `bugfix/board-progressive-loading`; authenticated live acceptance remains open.
+> **Status:** In progress. The source-contract repair and capped-page regression are locally verified on `bugfix/board-progressive-loading`; authenticated live acceptance remains open.
 
 ## Outcome required
 
@@ -25,7 +25,7 @@ At the baseline investigation, no process was listening on ports `5050` or `5432
 
 ## Scope and forbidden changes
 
-Allowed implementation paths:
+Allowed implementation paths for the initial cache-buster repair:
 
 - `frontend/src/api/engApi.js`
 - `frontend/src/api/jiraCatalogApi.js`
@@ -36,6 +36,14 @@ Allowed implementation paths:
 - this plan and the plan index/evidence only
 
 Do not loosen the DB endpoint contract to accept arbitrary cache-busting parameters. Do not change workspace keys, migration schema, refresh leases, OAuth ownership, catalog publication semantics, or the Team directory POST behavior as part of this repair. `cache: 'no-cache'` and explicit `refresh=true` are the cache controls for these catalog wrappers.
+
+## Follow-up: Jira-capped Board page (2026-09-23)
+
+After the request-parameter repair, an authenticated `/api/sprints` response still reported `502 sprint_catalog_unavailable` with `failureCode=catalog_incomplete` and no validated payload. The live response does not identify which strict check failed. A local production-route reproduction isolates one definite defect: the new Board fetcher rejected a successful Jira page whose response reported `maxResults: 50` after the client requested 100. [Atlassian's pagination contract](https://developer.atlassian.com/cloud/jira/software/rest/intro/) permits a resource to return fewer results than requested and to change that limit. The former `main` Board reader did not require response `maxResults` to equal the request.
+
+The scoped repair keeps the DB/OAuth Board-only catalog and workspace authority. For this follow-up, allowed paths are `backend/services/sprints.py`, `tests/test_sprint_service.py`, `tests/test_persistent_catalog_routes.py`, this plan and its index, `docs/ontology.md`, `docs/postmortem/`, and the root learning in `AGENTS.md`. No issue/JQL fallback, browser behavior, schema, or refresh ownership changes are included. The existing analytics allowlist remains unchanged because this corrects a server read validator and introduces no new interaction or event.
+
+Acceptance requires a red/green service test with capped `maxResults` across two pages, a red/green authenticated-route fixture that cold-fills a nonempty catalog and reuses it on the next read, and continued rejection of malformed/incomplete pages. Run the focused and full suites, obtain independent review, inspect the scoped diff, and build the committed revision before push. This is local contract evidence, not proof of the original live Jira page shape. Authenticated browser cold/cached/Team acceptance and the parent plan's two-user and latency gates remain open.
 
 ## Investigation and repair sequence
 
@@ -153,6 +161,15 @@ The implementation is not ready to report as fixed if any of the following remai
   Do not mark the parent plan done from this source repair.
 
 Record the exact commands, counts, skips, warnings, request URLs, response status/cache metadata, Jira-call observations, and screenshots in this plan or the existing execution plan. Do not mark the existing `EXEC-persistent-sprint-team-catalogs.md` done based on its prior local test totals; those checks did not exercise the production query shape shown above, and the plan's authenticated Jira/latency gates remain open.
+
+### 2026-09-23 capped-page local verification
+
+- RED: `.venv/bin/python -m unittest tests.test_sprint_service.TestSprintService.test_db_board_accepts_jira_capped_page_size tests.test_persistent_catalog_routes.PersistentCatalogRouteTests.test_capped_board_page_cold_fills_and_caches_sprints -q` produced one `catalog_incomplete` service error and one route `502` instead of `200`.
+- GREEN: `.venv/bin/python -m unittest tests.test_sprint_service tests.test_persistent_catalog_routes -q` passed 45 tests. The two-page service fixture confirmed `startAt` advances by received rows while the request still asks for 100; the route fixture cold-filled a nonempty catalog from a response capped at 50, then reused its version with one total Jira call. Invalid zero/negative/boolean limits remain rejected.
+- Full backend: `env DATABASE_URL= TEST_DATABASE_URL= CONFIG_STORAGE_BACKEND=jsonfile .venv/bin/python -m unittest discover -s tests -q` passed 1,910 tests with 25 skips. The suite emitted expected mocked error logs and existing resource warnings; there were no test failures.
+- Full frontend: `npm run test:frontend:unit` passed 1,423 tests with no skips or failures under the default Node 22 shell; a pinned Node 20.20.0 `node --test tests/test_*.js` rerun also passed 1,423 with no skips or failures. The first run emitted existing typeless-package warnings.
+- Independent contract and regression reviewers found no actionable scoped defect. One independently reran both new tests against the pre-fix fetcher in memory and reproduced the service error and route `502`, then confirmed current focused tests pass. Both reviewers kept live attribution and authenticated browser acceptance open.
+- No frontend source or generated bundle changed in this follow-up. The server read validator and route fixture are the exercised path. The actual authenticated Jira page, browser cold load, two-user reuse, and latency observations remain unverified here.
 
 ## Residual risks
 

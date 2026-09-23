@@ -45,6 +45,7 @@ Postmortems serve to:
 | [MRT026](./MRT026-issue-137-delivery-scope-deviation.md) | Issue 137 Delivery Scope Deviation | 2026-09-07 | High | In Progress | Recovery now includes accepted in-app measurements and a reviewed gated implementation plan; planning acceptance remains pending |
 | [MRT027](./MRT027-board-catalog-pagination.md) | Board Scope Interpretation and Loading Regressions | 2026-09-09 | High | Monitoring | Unconfirmed UX/data-source assumptions and over-strict Jira projection caused duplicate controls, redundant loading, incomplete ownership discovery, and live Board failures |
 | [MRT028](./MRT028-epic-header-instruction-drift.md) | Epic Header Regression and Instruction Drift | 2026-09-10 | High | Monitoring | A scoped local correction now implements the validated single-row visual/readout contract with painted-item and interaction checks; user acceptance and publication remain pending |
+| [MRT029](./MRT029-sprint-catalog-page-limit.md) | Sprint Catalog Rejected a Jira-Capped Board Page | 2026-09-23 | High | In Progress | Strict DB/OAuth Sprint fetch required response `maxResults` to equal the request, so a valid capped page yielded `catalog_incomplete`; local red/green coverage added while live attribution remains open |
 
 ## Postmortem Template
 
@@ -160,5 +161,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-09-10*
-*Total Postmortems: 28*
+*Last Updated: 2026-09-23*
+*Total Postmortems: 29*

@@ -275,7 +275,7 @@ def fetch_board_sprints(*, board_id, jira_get, auth_error_class, budget):
             or response_start != start_at
             or isinstance(response_max, bool)
             or not isinstance(response_max, int)
-            or response_max != 100
+            or response_max < 1
             or len(values) > response_max
             or any(not isinstance(item, dict) for item in values)
         ):

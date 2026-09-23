@@ -124,9 +124,38 @@ class TestSprintService(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, 'auth_required')
 
+    def test_db_board_accepts_jira_capped_page_size(self):
+        calls = []
+        responses = iter([
+            FakeResponse(200, {
+                'values': [{'id': 101, 'name': '2026Q1', 'state': 'closed'}],
+                'startAt': 0, 'maxResults': 50, 'isLast': False,
+            }),
+            FakeResponse(200, {
+                'values': [{'id': 102, 'name': '2026Q2', 'state': 'active'}],
+                'startAt': 1, 'maxResults': 50, 'isLast': True,
+            }),
+        ])
+
+        def jira_get(_path, **kwargs):
+            calls.append(kwargs['params'])
+            return next(responses)
+
+        result = sprints.fetch_board_sprints(
+            board_id='42', jira_get=jira_get, auth_error_class=AuthError,
+            budget=RecordingBudget(),
+        )
+
+        self.assertEqual([item['id'] for item in result], [102, 101])
+        self.assertEqual([call['startAt'] for call in calls], [0, 1])
+        self.assertTrue(all(call['maxResults'] == 100 for call in calls))
+
     def test_db_board_rejects_nonfinal_empty_and_malformed_values(self):
         invalid_pages = [
             {'values': [], 'startAt': 0, 'maxResults': 100, 'isLast': False},
+            {'values': [], 'startAt': 0, 'maxResults': 0, 'isLast': True},
+            {'values': [], 'startAt': 0, 'maxResults': -1, 'isLast': True},
+            {'values': [], 'startAt': 0, 'maxResults': True, 'isLast': True},
             {'values': {}, 'startAt': 0, 'maxResults': 100, 'isLast': True},
             {'values': [], 'startAt': 0, 'maxResults': 100, 'isLast': 'true'},
             {'values': [None], 'startAt': 0, 'maxResults': 100, 'isLast': True},

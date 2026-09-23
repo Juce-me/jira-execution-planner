@@ -27,7 +27,11 @@ MAX_EPICS = 1000
 MAX_CHILDREN = 10000
 MAX_BATCH_SIZE = 40
 MAX_ENCODED_REQUEST_BYTES = 7000
-COMPONENT_PAGE_TOKEN_HEADROOM_BYTES = 1024
+# Jira returns a continuation token whose size tracks the JQL text rather
+# than a fixed envelope; observed between 1.35x and 1.5x of the query
+# length. A paged GET must budget for that token, not a flat reserve.
+PAGE_TOKEN_BYTES_PER_JQL_CHAR = 1.5
+PAGE_TOKEN_ENVELOPE_BYTES = 256
 CUSTOM_FIELD_RE = re.compile(r'^customfield_(\d+)$')
 
 EPIC_FIELDS = (
@@ -354,6 +358,17 @@ def encoded_search_bytes(jql, fields, next_page_token=None):
     return len(urlencode(params).encode('utf-8'))
 
 
+def paged_search_bytes(jql, fields):
+    """Return the worst-case encoded size of a continuation request for ``jql``.
+
+    Sizing a paged search by its first request alone understates it: Jira's
+    ``nextPageToken`` grows with the query, so a query that fits can still make
+    its own page two unsendable.
+    """
+    token = 'x' * math.ceil(len(jql) * PAGE_TOKEN_BYTES_PER_JQL_CHAR)
+    return encoded_search_bytes(jql, fields, token) + PAGE_TOKEN_ENVELOPE_BYTES
+
+
 def build_team_discovery_jql(projects, issue_type_ids, *, team_ids,
                              team_field_id='customfield_30101'):
     """Discover department work across sprints without requiring Epic ownership."""
@@ -394,24 +409,10 @@ def iter_team_epic_batches(search, *, projects, issue_type_ids, team_ids, existi
     discovery_jql = build_team_discovery_jql(
         projects, issue_type_ids, team_ids=team_ids, team_field_id=team_field_id,
     )
-    # Known component parents add no membership. Skip their stories during the
-    # discovery scan; hydration still fetches every child of the final union.
-    excluded = []
-    base_discovery_jql = discovery_jql
-    for key in sorted({_normalized_key(row.get('key')) for row in existing_epics} - {''}):
-        candidate_keys = excluded + [key]
-        clause = ','.join(_quote(value) for value in candidate_keys)
-        parent_clause = f'(parent NOT IN ({clause}) OR parent IS EMPTY)'
-        if epic_link_field_id:
-            field = f'cf[{_field_number(epic_link_field_id)}]'
-            parent_clause = f'({field} NOT IN ({clause}) OR ({field} IS EMPTY AND {parent_clause}))'
-        candidate = base_discovery_jql + ' AND ' + parent_clause
-        # Leave room for the continuation token; never turn this optimization
-        # into a new request-size failure for large department indexes.
-        if encoded_search_bytes(candidate, story_fields) > MAX_ENCODED_REQUEST_BYTES - 1024:
-            break
-        discovery_jql = candidate
-        excluded = candidate_keys
+    # Stories under known component parents add no membership, but excluding
+    # them by key inflates the query far more than it saves: the continuation
+    # token grows with the JQL, so the scan loses its own page two. Known
+    # parents are dropped from the union below instead.
     stories = strict_search(
         search, discovery_jql,
         story_fields, counters=counters, cancel_check=cancel_check, max_unique_keys=MAX_CHILDREN,
@@ -496,17 +497,16 @@ def split_component_batches(components, build_jql, fields):
     for component in normalized:
         trial = current + [component]
         if (len(trial) <= MAX_BATCH_SIZE
-                and encoded_search_bytes(build_jql(trial), fields)
-                <= MAX_ENCODED_REQUEST_BYTES - COMPONENT_PAGE_TOKEN_HEADROOM_BYTES):
+                and paged_search_bytes(build_jql(trial), fields) <= MAX_ENCODED_REQUEST_BYTES):
             current = trial
             continue
-        request_bytes = encoded_search_bytes(build_jql([component]), fields)
+        request_bytes = paged_search_bytes(build_jql([component]), fields)
         if not current:
             raise EngBoardError('board_scope_too_large', phase='index', limit='url_bytes',
                                 observed=request_bytes)
         batches.append(tuple(current))
         current = [component]
-        if request_bytes > MAX_ENCODED_REQUEST_BYTES - COMPONENT_PAGE_TOKEN_HEADROOM_BYTES:
+        if request_bytes > MAX_ENCODED_REQUEST_BYTES:
             raise EngBoardError('board_scope_too_large', phase='index', limit='url_bytes',
                                 observed=request_bytes)
     if current:
@@ -559,14 +559,14 @@ def split_epic_batches(epic_keys, build_jql, fields):
         if not key:
             raise EngBoardError('board_projection_invalid', phase='remaining')
         trial = current + [key]
-        if len(trial) <= MAX_BATCH_SIZE and encoded_search_bytes(build_jql(trial), fields) <= MAX_ENCODED_REQUEST_BYTES:
+        if len(trial) <= MAX_BATCH_SIZE and paged_search_bytes(build_jql(trial), fields) <= MAX_ENCODED_REQUEST_BYTES:
             current = trial
             continue
         if not current:
             raise EngBoardError('board_scope_too_large', phase='remaining', limit='url_bytes', observed=MAX_ENCODED_REQUEST_BYTES + 1)
         batches.append(tuple(current))
         current = [key]
-        request_bytes = encoded_search_bytes(build_jql(current), fields)
+        request_bytes = paged_search_bytes(build_jql(current), fields)
         if request_bytes > MAX_ENCODED_REQUEST_BYTES:
             raise EngBoardError('board_scope_too_large', phase='remaining', limit='url_bytes', observed=request_bytes)
     if current:

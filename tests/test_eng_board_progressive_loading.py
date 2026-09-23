@@ -795,71 +795,67 @@ class EngBoardProgressiveLoadingTests(unittest.TestCase):
         self.assertEqual(2, last_progress['loadedChildren'])
         self.assertEqual({'In Progress': 2}, last_progress['byEpic'][0]['statusCounts'])
 
-    def test_discovery_excludes_known_parents_but_keeps_null_fallback(self):
-        for legacy in (None, 'customfield_10014'):
-            queries = []
-            def search(payload):
-                queries.append(payload)
+    def test_discovery_paging_survives_page_tokens_that_scale_with_the_jql(self):
+        pages = []
+
+        def search(payload):
+            if 'issuetype = Epic' in payload['jql']:
                 return {'issues': [], 'isLast': True}
-            rows = eng_board.discover_team_epics(
-                search, projects=(('ABC', 'product'),), issue_type_ids=('10001',),
-                team_ids=('team-a',), existing_epics=[epic('ABC-1', 'To Do')],
-                epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=('Done',),
-                epic_link_field_id=legacy,
-            )
-            self.assertEqual(1, len(rows))
-            jql = queries[0]['jql']
-            self.assertIn('(parent NOT IN ("ABC-1") OR parent IS EMPTY)', jql)
-            if legacy:
-                self.assertIn('cf[10014] NOT IN ("ABC-1") OR (cf[10014] IS EMPTY AND', jql)
-            self.assertLess(eng_board.encoded_search_bytes(jql, queries[0]['fields']),
-                            eng_board.MAX_ENCODED_REQUEST_BYTES - 1024)
+            pages.append(payload)
+            if len(pages) > 1:
+                return {'issues': [], 'isLast': True}
+            # Jira Cloud returns a continuation token that scales with the JQL
+            # text; observed between 1.35x and 1.5x of the query length.
+            return {
+                'issues': [child(f'ABC-{900 + index}', 'ABC-1') for index in range(100)],
+                'isLast': False, 'nextPageToken': 'T' * round(len(payload['jql']) * 1.5),
+            }
 
-    def test_discovery_exclusion_leaves_token_headroom_for_large_indexes(self):
-        queries = []
         eng_board.discover_team_epics(
-            lambda payload: queries.append(payload) or {'issues': [], 'isLast': True},
-            projects=(('ABC', 'product'),), issue_type_ids=('10001',), team_ids=('team-a',),
-            existing_epics=[epic(f'ABC-{index}', 'To Do') for index in range(1000)],
+            search, projects=(('ABC', 'product'),), issue_type_ids=('10001',),
+            team_ids=('team-a',),
+            existing_epics=[epic(f'ABC-{index}', 'To Do') for index in range(160)],
             epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=('Done',),
+            epic_link_field_id='customfield_10014',
         )
-        self.assertLessEqual(eng_board.encoded_search_bytes(queries[0]['jql'], queries[0]['fields']),
-                             eng_board.MAX_ENCODED_REQUEST_BYTES - 1024)
+        self.assertEqual(2, len(pages))
 
-    def test_synthetic_discovery_exclusion_reduces_pages_without_changing_union(self):
-        def measure(disable_exclusion):
-            discovery_pages = 0
-            def search(payload):
-                nonlocal discovery_pages
-                if 'issuetype = Epic' in payload['jql']:
-                    return {'issues': [epic('ABC-2', 'To Do')], 'isLast': True}
-                discovery_pages += 1
-                excluded = 'parent NOT IN ("ABC-1")' in payload['jql']
-                if excluded or payload.get('nextPageToken') == 'last':
-                    return {'issues': [child('ABC-999', 'ABC-2')], 'isLast': True}
-                return {
-                    'issues': [child(f'ABC-{100 + index}', 'ABC-1') for index in range(100)],
-                    'isLast': False, 'nextPageToken': 'last',
-                }
-            # Baseline disables only exclusion construction; component membership
-            # still reaches the real discovery/union/paging implementation.
-            if disable_exclusion:
-                context = patch.object(eng_board, 'MAX_ENCODED_REQUEST_BYTES', 1024)
-            else:
-                from contextlib import nullcontext
-                context = nullcontext()
-            with context:
-                result = eng_board.discover_team_epics(
-                    search, projects=(('ABC', 'product'),), issue_type_ids=('10001',),
-                    team_ids=('team-a',), existing_epics=[epic('ABC-1', 'To Do')],
-                    epic_fields=eng_board.EPIC_FIELDS, terminal_statuses=('Done',),
-                )
-            return sorted(row['key'] for row in result), discovery_pages
-        baseline, baseline_pages = measure(True)
-        optimized, optimized_pages = measure(False)
-        self.assertEqual(['ABC-1', 'ABC-2'], baseline)
-        self.assertEqual(baseline, optimized)
-        self.assertEqual((2, 1), (baseline_pages, optimized_pages))
+    def test_paged_search_bytes_budgets_for_a_jql_proportional_page_token(self):
+        jql = 'project in ("ABC") AND issuetype = Epic AND ' + ' AND '.join(
+            f'labels = "value-{index}"' for index in range(50)
+        )
+        fields = ('summary', 'status')
+        self.assertGreaterEqual(
+            eng_board.paged_search_bytes(jql, fields),
+            eng_board.encoded_search_bytes(jql, fields, 'T' * round(len(jql) * 1.5)),
+        )
+
+    def test_batch_splitters_keep_their_continuation_requests_within_budget(self):
+        def child_jql(keys):
+            return eng_board.build_child_jql(
+                (('ABCDEFGH', 'product'),), ('10001',), keys,
+                epic_link_field_id='customfield_10014',
+            )
+
+        keys = [f'ABCDEFGH-{100000 + index}' for index in range(400)]
+        fields = eng_board.CHILD_BASE_FIELDS
+        for batch in eng_board.split_epic_batches(keys, child_jql, fields):
+            self.assertLessEqual(
+                eng_board.paged_search_bytes(child_jql(list(batch)), fields),
+                eng_board.MAX_ENCODED_REQUEST_BYTES,
+            )
+
+        def component_jql(batch):
+            return eng_board.build_epic_index_jql(
+                (('ABCDEFGH', 'product'),), batch, ('Done',), 28,
+            )
+
+        components = [f'Platform Component Number {index:03d}' for index in range(60)]
+        for batch in eng_board.split_component_batches(components, component_jql, fields):
+            self.assertLessEqual(
+                eng_board.paged_search_bytes(component_jql(list(batch)), fields),
+                eng_board.MAX_ENCODED_REQUEST_BYTES,
+            )
 
     def test_slow_consumer_keeps_progress_queue_bounded_and_final_children_complete(self):
         import queue

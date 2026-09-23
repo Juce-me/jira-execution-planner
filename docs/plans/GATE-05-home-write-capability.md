@@ -16,7 +16,7 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | --- | --- |
 | Status | Blocked |
 | Checked on | 2026-09-23 |
-| Last result | Not run — the required four Home-write probe inputs and an approved disposable target are still unavailable. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. The persistent Sprint/Team catalog investigation is read-only and does not depend on Home write capability. |
+| Last result | Not run — the candidate-sprint-label execution session found 0 of 4 Home-write probe inputs in the process environment and no approved disposable Home-write target. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. |
 | Next review | 2026-09-28 (Europe/Berlin) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
@@ -130,6 +130,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-09-23: Candidate-sprint-label execution found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; this implementation changes read-only Jira Epic discovery and client classification only. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-21: Persistent Sprint/Team catalog Task 0 baseline review found none of the
   four required Home-write probe inputs and no approved disposable Home project. No
   mutation probe ran; this read-only Jira catalog plan adds no Home/Townsquare

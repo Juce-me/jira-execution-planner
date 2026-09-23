@@ -408,6 +408,7 @@ class OAuthEngRouteTests(unittest.TestCase):
             False,
             "dashboard",
             [],
+            sprint_name="",
         )
         partitioned_key = build_jira_home_process_cache_key(auth_context, raw_key)
         jira_server.TASKS_CACHE[raw_key] = {

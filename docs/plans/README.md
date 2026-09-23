@@ -113,6 +113,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Frontend Planning Workflow
 
+- [`EXEC-candidate-sprint-label.md`](EXEC-candidate-sprint-label.md): implemented and locally verified on 2026-09-23; pending acceptance or merge. The plain sprint-name label and its `_candidate` form count equally for Epic discovery and Story readiness in active/future sprints, and for Backlog/Missing Labels precedence in future sprints. Live Jira case behavior and timing remain unverified.
+
 0. `EXEC-eng-story-readiness-ghosts.md`
    - Implemented and locally verified on 2026-09-16; pending acceptance or merge. Catch Up and Planning progressively render one non-Jira `Story required` ghost per uncovered expected Team beneath the correct Epic/Initiative, with current/future urgency, exact local alert navigation, bounded Jira Epic-link analytics, and no contamination of Story/SP/capacity/selection/dependency/export/mutation contracts.
    - Local PostgreSQL was unavailable, so the real server `/api/test` smoke and live Jira cold/warm timing remain environment-bound; focused backend/frontend/browser verification is recorded in the plan outcome.

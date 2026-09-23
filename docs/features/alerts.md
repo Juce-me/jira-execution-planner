@@ -14,7 +14,7 @@ The dashboard uses alert panels to highlight work that needs attention in the cu
 - Dismissed alert items stay hidden in the browser until the local alert state is reset.
 - Postponed work is routed separately so it does not also appear in ordinary hygiene panels.
 
-Analytics allowlist reason: no analytics event is added because this changes automatic request scheduling, not a user interaction or reportable product action.
+Analytics allowlist reason: no analytics event is added for automatic request scheduling or Epic classification guidance; neither is a new user action. Existing alert and filter events retain their current contract.
 Search-driven alert filtering is covered by the existing privacy-bounded `app_search` event. Other filter changes retain the existing `filter_changed` contract. Alert filtering adds no event and never sends query or alert contents.
 
 ## Current Alert Panels
@@ -71,10 +71,10 @@ Team grouping for these alerts is driven by configured team-label mappings. If a
 
 ### Backlog
 
-Shows epics whose epic-level sprint field is explicitly empty and that are not already marked with the selected sprint label.
+Shows epics whose epic-level sprint field is explicitly empty and that have neither the selected sprint-name label nor its `_candidate` form.
 
 Important:
-- selected-sprint labels are treated as future-planning scope, so labeled epics continue to Missing Labels or Needs Stories
+- either accepted selected-sprint label form is treated as future-planning scope, so labeled epics continue to Missing Labels or Stories Required
 - an epic with a concrete sprint value must not appear here, even if that sprint is not the selected future sprint
 - backlog is reserved for true unsprinted epic backlog, not for “wrong sprint” or “needs story follow-up” cases
 
@@ -86,7 +86,7 @@ If the team is missing, unknown, or cannot be matched, the epic stops here and d
 
 ### Missing Labels
 
-Shows epics that match the selected future sprint by Jira Sprint value or sprint-name label but are still missing either the exact selected-sprint-name label or the configured team-specific epic label.
+Shows epics that match the selected future sprint by Jira Sprint value or either accepted sprint label but are missing both accepted sprint label forms or the configured mapped Team label. A Jira Sprint value alone does not satisfy the label requirement.
 
 This also covers the case where the active group has no label mapping configured for that team yet.
 
@@ -108,6 +108,6 @@ An epic is routed to the first matching planning alert:
 4. Missing Labels
 5. Stories Required
 
-This avoids the same epic showing up in multiple planning panels at once. In practice, an epic with a filled sprint or selected sprint label should bypass Backlog and continue into the later planning checks.
+This avoids the same epic showing up in multiple planning panels at once. In practice, an epic with a filled sprint or either accepted selected-sprint label should bypass Backlog and continue into the later planning checks.
 
-For an active sprint, exact-label Story-readiness failures route to Stories Required after Postponed work; unrelated analysis-waiting candidates remain Waiting, and only remaining empty candidates reach Empty Epic.
+For an active sprint, Story-readiness failures on Epics with either accepted sprint label route to Stories Required after Postponed work; unrelated analysis-waiting candidates remain Waiting, and only remaining empty candidates reach Empty Epic.

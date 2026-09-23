@@ -33,8 +33,8 @@ Outside first run, commit Settings changes with the footer **Save** button. Firs
 At least one configured Team or Jira Component is required for first-run eligibility. After that, Jira work can enter the UI through three distinct shipped discovery paths:
 
 1. **Main Initiative/Epic/Story hierarchy:** a Story in the selected sprint whose Jira Team matches a configured Department Team is included, and its parent Epic is brought into the hierarchy.
-2. **Epic-only and empty-Epic discovery:** the Epic must match either its Jira Team or the Department's exact mapped team label, and it must match either its Jira Sprint value or the exact selected-sprint-name label.
-3. **Future sprint ready path:** the Epic requires both the configured mapped team label and the exact selected-sprint-name label. One does not replace the other.
+2. **Epic-only and empty-Epic discovery:** the Epic must match either its Jira Team or the Department's exact mapped team label, and it must match either its Jira Sprint value, the exact selected-sprint-name label, or that label's `_candidate` form. The suffix comparison ignores case but requires the whole label.
+3. **Future sprint ready path:** the Epic requires both the configured mapped Team label and either the exact selected-sprint-name label or its `_candidate` form. One does not replace the other.
 
 Configured Jira Components broaden Missing Information and Lead Times through configured-Team or Component matching. They also define Board's cross-sprint **Component** choice and the Component-owned half of **All work**, at the Epic boundary only. They never make Stories appear in the main Product/Tech list.
 
@@ -43,7 +43,7 @@ If expected work is missing, check in this order:
 1. Confirm the active Department and selected sprint.
 2. Clear search, facet filters, and the Product/Tech display filters.
 3. Verify the Jira Story Team and sprint.
-4. For Epic-only discovery, verify the Epic Team or the exact team-label mapping, then verify the Epic sprint or exact sprint-name label.
+4. For Epic-only discovery, verify the Epic Team or the exact team-label mapping, then verify the Epic sprint or either accepted whole sprint label.
 5. Save the Department configuration.
 6. Choose **Refresh** to load the Jira scope again.
 

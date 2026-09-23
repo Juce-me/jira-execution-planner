@@ -84,7 +84,10 @@ export function epicHasExplicitlyEmptySprintValue(epic) {
 export function epicHasSelectedSprintLabel(epic, selectedSprintName) {
     const target = String(selectedSprintName || '').trim().toLowerCase();
     if (!target) return false;
-    return (epic?.labels || []).some((label) => String(label || '').trim().toLowerCase() === target);
+    return (epic?.labels || []).some((label) => {
+        const normalizedLabel = String(label || '').trim().toLowerCase();
+        return normalizedLabel === target || normalizedLabel === `${target}_candidate`;
+    });
 }
 
 export function filterExplicitBacklogEpics(epics, options = {}) {

@@ -213,7 +213,8 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         epics = payload.get('epicsInScope') or []
         self.assertEqual(len(epics), 1)
         self.assertEqual(epics[0].get('openStoriesOutsideSelected'), 2)
-        self.assertEqual(epics_fetch.call_args.args[-1], '2026Q3')
+        self.assertEqual(epics_fetch.call_args.args[-2], '2026Q3')
+        self.assertTrue(epics_fetch.call_args.args[-1])
 
     def test_story_distribution_breaks_selected_actionable_down_by_team(self):
         jira_payload = {
@@ -332,7 +333,7 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
             response = client.get('/api/tasks-with-team-name?sprint=123&team=all&teamIds=team-a,team-b&teamLabels=team_alpha_label,team_beta_label')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(epics_fetch.call_args.args[-2], ['team_alpha_label', 'team_beta_label'])
+        self.assertEqual(epics_fetch.call_args.args[-3], ['team_alpha_label', 'team_beta_label'])
 
     def test_ready_to_close_fetch_scans_non_epic_child_work_and_explicit_epic_keys(self):
         app = jira_server.app
@@ -653,8 +654,155 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
             )
 
         epic_jql = search_mock.call_args.args[0].get('jql', '')
-        self.assertIn('(Sprint = 123 OR labels = "2026Q3")', epic_jql)
+        self.assertIn('(Sprint = 123 OR labels in ("2026Q3", "2026Q3_candidate"))', epic_jql)
         self.assertIn('type = "Epic"', epic_jql)
+
+    def test_alert_epic_scope_follows_pages_and_deduplicates_candidate(self):
+        first = {'issues': [{'key': 'EPIC-1', 'fields': {'labels': ['2026Q3']}}],
+                 'isLast': False, 'nextPageToken': 'page-2'}
+        second = {'issues': [
+            {'key': 'EPIC-1', 'fields': {'labels': ['2026Q3']}},
+            {'key': 'EPIC-2', 'fields': {'labels': ['2026Q3_Candidate', 'team_alpha_label'],
+                                         'customfield_sprint': None}},
+        ], 'isLast': True}
+        with patch.object(jira_server, 'jira_search_request', side_effect=[
+            _mock_response(200, first), _mock_response(200, second)
+        ]) as search_mock:
+            epics = jira_server.fetch_epics_for_empty_alert(
+                'project = TEST AND Sprint = 123 AND type = "Story"', {},
+                'customfield_team', 'customfield_epic_name', 'customfield_sprint',
+                ['team-a'], ['team_alpha_label'], '2026Q3', complete_alert_scope=True
+            )
+        self.assertEqual([epic['key'] for epic in epics], ['EPIC-1', 'EPIC-2'])
+        self.assertEqual(epics[1]['labels'], ['2026Q3_Candidate', 'team_alpha_label'])
+        self.assertIsNone(epics[1]['fields']['customfield_10101'])
+        self.assertEqual(search_mock.call_args_list[0].args[0]['maxResults'], 100)
+        self.assertEqual(search_mock.call_args_list[1].args[0]['nextPageToken'], 'page-2')
+        self.assertIn('(Sprint = 123 OR labels in ("2026Q3", "2026Q3_candidate"))',
+                      search_mock.call_args_list[0].args[0]['jql'])
+        self.assertIn('("Team[Team]" = "team-a" OR labels = "team_alpha_label")',
+                      search_mock.call_args_list[0].args[0]['jql'])
+
+    def test_alert_epic_scope_rejects_failed_or_incomplete_pages(self):
+        malformed_pages = [
+            _mock_response(503),
+            _mock_response(200, {'issues': None, 'isLast': True}),
+            _mock_response(200, {'issues': [], 'isLast': False}),
+            _mock_response(200, {'issues': [], 'isLast': False, 'nextPageToken': 'again'}),
+        ]
+        for first_response in malformed_pages:
+            with self.subTest(first_response=first_response.json()), \
+                 patch.object(jira_server, 'jira_search_request', return_value=first_response):
+                with self.assertRaises(RuntimeError):
+                    jira_server.fetch_epics_for_empty_alert(
+                        'project = TEST', {}, None, None, complete_alert_scope=True
+                    )
+        repeated = {'issues': [], 'isLast': False, 'nextPageToken': 'again'}
+        with patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, repeated)) as search_mock:
+            with self.assertRaises(RuntimeError):
+                jira_server.fetch_epics_for_empty_alert('project = TEST', {}, None, None, complete_alert_scope=True)
+        self.assertEqual(search_mock.call_count, 2)
+
+    def test_alert_epic_scope_enforces_unique_epic_and_page_limits(self):
+        def over_epics(payload):
+            page = int(str(payload.get('nextPageToken') or '0'))
+            return _mock_response(200, {
+                'issues': [{'key': f'EPIC-{page * 100 + index}', 'fields': {}}
+                           for index in range(100 if page < 20 else 1)],
+                'isLast': page == 20,
+                'nextPageToken': str(page + 1) if page < 20 else None,
+            })
+        with patch.object(jira_server, 'jira_search_request', side_effect=over_epics):
+            with self.assertRaisesRegex(RuntimeError, 'Epic limit'):
+                jira_server.fetch_epics_for_empty_alert('project = TEST', {}, None, None, complete_alert_scope=True)
+        page = {'issues': [], 'isLast': False}
+        tokens = iter(f'page-{index}' for index in range(102))
+        def search(_payload):
+            return _mock_response(200, {**page, 'nextPageToken': next(tokens)})
+        with patch.object(jira_server, 'jira_search_request', side_effect=search) as search_mock:
+            with self.assertRaisesRegex(RuntimeError, 'page limit'):
+                jira_server.fetch_epics_for_empty_alert('project = TEST', {}, None, None, complete_alert_scope=True)
+        self.assertEqual(search_mock.call_count, 101)
+
+    def test_ordinary_epic_scope_keeps_single_page(self):
+        page = {'issues': [], 'isLast': False, 'nextPageToken': 'another-page'}
+        with patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, page)) as search_mock:
+            self.assertEqual(jira_server.fetch_epics_for_empty_alert('project = TEST', {}, None, None), [])
+        self.assertEqual(search_mock.call_count, 1)
+        self.assertEqual(search_mock.call_args.args[0]['maxResults'], 250)
+
+    def test_failed_alert_epic_scan_does_not_publish_or_cache_empty_scope(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+        task_page = {'issues': [], 'names': {'customfield_team': 'Team[Team]'},
+                     'total': 0, 'isLast': True}
+        responses = [_mock_response(200, task_page), _mock_response(503)]
+        before_cache = dict(jira_server.TASKS_CACHE)
+        try:
+            jira_server.TASKS_CACHE.clear()
+            with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+                 patch.object(jira_server, 'get_selected_projects_typed', return_value=[]), \
+                 patch.object(jira_server, 'get_configured_issue_types', return_value=['Story']), \
+                 patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+                 patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+                 patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+                 patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_story_points'), \
+                 patch.object(jira_server, 'fetch_epic_details_bulk', return_value={}), \
+                 patch.object(jira_server, 'jira_home_partitioned_process_cache_enabled', return_value=True), \
+                 patch.object(jira_server, 'build_jira_home_process_cache_key', side_effect=lambda _context, key: key), \
+                 patch.object(jira_server, 'build_tasks_cache_key', wraps=jira_server.build_tasks_cache_key) as cache_key_mock, \
+                 patch.object(jira_server, 'jira_search_request', side_effect=responses):
+                response = client.get('/api/tasks-with-team-name?sprint=123&sprintName=2026Q3&purpose=alerts&refresh=true')
+            self.assertEqual(response.status_code, 500)
+            self.assertNotIn('epicsInScope', response.get_json() or {})
+            self.assertEqual(cache_key_mock.call_count, 1)
+            # The route-generated key must have no successful cached response.
+            alert_key = jira_server.build_tasks_cache_key(*cache_key_mock.call_args.args, **cache_key_mock.call_args.kwargs)
+            self.assertNotIn(alert_key, jira_server.TASKS_CACHE)
+        finally:
+            jira_server.TASKS_CACHE.clear()
+            jira_server.TASKS_CACHE.update(before_cache)
+
+    def test_task_route_cache_separates_sprint_name_for_same_sprint_id(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+        task_page = {'issues': [], 'names': {'customfield_team': 'Team[Team]'},
+                     'total': 0, 'isLast': True}
+        before_cache = dict(jira_server.TASKS_CACHE)
+        try:
+            jira_server.TASKS_CACHE.clear()
+            with patch.object(jira_server, 'build_base_jql', return_value='project = TEST'), \
+                 patch.object(jira_server, 'get_selected_projects_typed', return_value=[]), \
+                 patch.object(jira_server, 'get_configured_issue_types', return_value=['Story']), \
+                 patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+                 patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+                 patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'), \
+                 patch.object(jira_server, 'get_story_points_field_id', return_value='customfield_story_points'), \
+                 patch.object(jira_server, 'fetch_epic_details_bulk', return_value={}), \
+                 patch.object(jira_server, 'fetch_story_counts_for_epics', return_value={}), \
+                 patch.object(jira_server, 'fetch_story_distribution_for_epics', return_value={}), \
+                 patch.object(jira_server, 'jira_home_partitioned_process_cache_enabled', return_value=True), \
+                 patch.object(jira_server, 'build_jira_home_process_cache_key', side_effect=lambda _context, key: key), \
+                 patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, task_page)), \
+                 patch.object(jira_server, 'fetch_epics_for_empty_alert', side_effect=lambda *args: [{'key': args[-2]}]) as epic_fetch:
+                first = client.get('/api/tasks-with-team-name?sprint=123&sprintName=2026Q3&purpose=alerts')
+                second = client.get('/api/tasks-with-team-name?sprint=123&sprintName=2026Q4&purpose=alerts')
+            self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+            self.assertEqual(second.status_code, 200, second.get_data(as_text=True))
+            self.assertEqual(first.get_json()['epicsInScope'][0]['key'], '2026Q3')
+            self.assertEqual(second.get_json()['epicsInScope'][0]['key'], '2026Q4')
+            self.assertEqual(epic_fetch.call_count, 2)
+        finally:
+            jira_server.TASKS_CACHE.clear()
+            jira_server.TASKS_CACHE.update(before_cache)
+
+    def test_task_cache_key_distinguishes_normalized_sprint_names(self):
+        args = ('123', 'default', 'all', [], [], True, False)
+        first = jira_server.build_tasks_cache_key(*args, sprint_name=' 2026Q3 ')
+        self.assertEqual(first, jira_server.build_tasks_cache_key(*args, sprint_name='2026q3'))
+        self.assertNotEqual(first, jira_server.build_tasks_cache_key(*args, sprint_name='2026Q4'))
 
     def test_fetch_backlog_epics_for_alert_returns_cleanup_story_count(self):
         fetcher = getattr(jira_server, 'fetch_backlog_epics_for_alert', None)
@@ -711,6 +859,7 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         self.assertEqual(epics[0].get('components'), ['BidSwitch'])
         self.assertEqual(epics[0].get('assignee', {}).get('displayName'), 'Alice')
         self.assertEqual(epics[0].get('teamId'), 'team-a')
+        self.assertEqual(epics[0].get('labels'), [])
         self.assertEqual(epics[0].get('cleanupStoryCount'), 1)
 
     def test_fetch_backlog_epics_for_alert_preserves_explicit_sprint_field_for_client_recheck(self):
@@ -747,6 +896,17 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
             )
 
         self.assertEqual(epics[0].get('fields', {}).get('customfield_10101'), sprint_value)
+
+    def test_backlog_epic_response_preserves_both_sprint_label_forms(self):
+        issues = [
+            {'key': 'EPIC-1', 'fields': {'labels': ['2026Q3']}},
+            {'key': 'EPIC-2', 'fields': {'labels': ['2026Q3_Candidate']}},
+            {'key': 'EPIC-3', 'fields': {}},
+        ]
+        with patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, {'issues': issues})) as search_mock:
+            epics = jira_server.fetch_backlog_epics_for_alert('project = TEST', {}, None, None, None)
+        self.assertEqual([epic['labels'] for epic in epics], [['2026Q3'], ['2026Q3_Candidate'], []])
+        self.assertIn('labels', search_mock.call_args.args[0]['fields'])
 
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')

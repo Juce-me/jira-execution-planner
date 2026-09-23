@@ -367,7 +367,8 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
     discovery_jql = (
         f'project in ({project_jql}) AND issuetype = Epic '
         f'AND status not in (Done, Killed, Incomplete, Postponed) '
-        f'AND ({sprint_field} = {sprint_id} OR labels = {_story_readiness_quote(sprint_name)}) '
+        f'AND ({sprint_field} = {sprint_id} OR labels in '
+        f'({_story_readiness_quote(sprint_name)}, {_story_readiness_quote(sprint_name + "_candidate")})) '
         f'AND labels in ({label_jql}) ORDER BY key ASC'
     )
     discovery_started = time.monotonic()

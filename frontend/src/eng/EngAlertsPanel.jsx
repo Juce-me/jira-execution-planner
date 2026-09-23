@@ -683,7 +683,7 @@ export default function EngAlertsPanel({
                                                         <span className="alert-toggle-label">{showMissingLabelsAlert ? 'Hide' : 'Show'}</span>
                                                     </button>
                                                     <div className="alert-title">🏷️ Missing Labels</div>
-                                                    <div className="alert-subtitle">These epics need both the selected sprint label and the mapped team label.</div>
+                                                    <div className="alert-subtitle">These epics need the selected sprint label or its _candidate form, plus the mapped team label.</div>
                                                     <div className="alert-chip">{missingLabelEpics.length} {missingLabelEpics.length === 1 ? 'epic' : 'epics'}</div>
                                                 </div>
                                                 <div className={`alert-card-body ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
@@ -710,7 +710,7 @@ export default function EngAlertsPanel({
                                                                         <div key={epic.key} className="alert-story">
                                                                             <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
                                                                                 <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
-                                                                                <div className="alert-story-note">Add the selected sprint label and the mapped team label on the epic.</div>
+                                                                                <div className="alert-story-note">Add the selected sprint label or its _candidate form, plus the mapped team label on the epic.</div>
                                                                             </div>
                                                                             <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
                                                                         </div>

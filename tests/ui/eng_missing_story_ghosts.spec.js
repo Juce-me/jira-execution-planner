@@ -58,14 +58,14 @@ function readinessEpic(key, {
     };
 }
 
-function snapshot(epics, sprintState = 'active') {
+function snapshot(epics, sprintState = 'active', selectedId = sprintId, selectedName = sprintName) {
     return {
         schemaVersion: 1,
         complete: true,
         scope: {
             groupId: 'grp-default',
-            sprintId: String(sprintId),
-            sprintName,
+            sprintId: String(selectedId),
+            sprintName: selectedName,
             sprintState,
         },
         epics,
@@ -80,6 +80,10 @@ async function installFixture(page, {
     techIssues = [],
     techEpics = {},
     readinessEpics = [],
+    alertPurposeEpics = [],
+    backlogEpics = [],
+    alertGate = null,
+    secondSprint = null,
     primaryGates = {},
     readinessGate = null,
     groupByInitiativeChoice = null,
@@ -138,13 +142,18 @@ async function installFixture(page, {
             source: 'test',
         });
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
-        if (url.pathname === '/api/sprints') return json({ sprints: [{ id: sprintId, name: sprintName, state: sprintState }] });
+        if (url.pathname === '/api/sprints') return json({ sprints: [{ id: sprintId, name: sprintName, state: sprintState }, ...(secondSprint ? [secondSprint] : [])] });
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose');
+            const isSecondSprint = secondSprint && url.searchParams.get('sprint') === String(secondSprint.id);
             if (!purpose && primaryGates[project]) await primaryGates[project].promise;
-            if (purpose) return json({ issues: [], epics: {}, epicsInScope: [], names: {} });
+            if (purpose) {
+                if (alertGate && !isSecondSprint) await alertGate.promise;
+                return json({ issues: [], epics: {}, epicsInScope: project === 'product' && !isSecondSprint ? alertPurposeEpics : [], names: {} });
+            }
+            if (isSecondSprint) return json({ issues: [], epics: {}, epicsInScope: [], names: {} });
             if (project === 'product') {
                 return json({ issues: productIssues, epics: productEpics, epicsInScope: Object.values(productEpics), names: {} });
             }
@@ -152,10 +161,13 @@ async function installFixture(page, {
         }
         if (url.pathname === '/api/eng/story-readiness') {
             if (readinessGate) await readinessGate.promise;
-            return json(snapshot(readinessEpics, sprintState));
+            const isSecondSprint = secondSprint && url.searchParams.get('sprint') === String(secondSprint.id);
+            return json(isSecondSprint
+                ? snapshot([], secondSprint.state, secondSprint.id, secondSprint.name)
+                : snapshot(readinessEpics, sprintState));
         }
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
-        if (url.pathname === '/api/backlog-epics') return json({ epics: [] });
+        if (url.pathname === '/api/backlog-epics') return json({ epics: url.searchParams.get('project') === 'product' && (!secondSprint || url.searchParams.get('sprint') !== String(secondSprint.id)) ? backlogEpics : [] });
         if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
         return json({});
@@ -180,6 +192,103 @@ function productEpic(key = 'MIX-EPIC', summary = 'Mixed coverage epic') {
         sprint: [{ id: sprintId, name: sprintName, state: 'active' }],
     };
 }
+
+function planningEpic(key, labels, { teamId = 'team-beta', teamName = 'Beta Team' } = {}) {
+    return {
+        ...productEpic(key, `${key} planning epic`),
+        labels,
+        teamId,
+        teamName,
+        sprint: null,
+        fields: { customfield_10101: null },
+    };
+}
+
+async function expectOnlyAlertCategory(page, key, sectionId) {
+    const sections = ['eng-alert-backlog', 'eng-alert-missing-team', 'eng-alert-missing-labels', 'eng-alert-needs-stories'];
+    for (const section of sections) {
+        const rows = page.locator(`#${section} .alert-story`).filter({ hasText: key });
+        await expect(rows).toHaveCount(section === sectionId ? 1 : 0);
+    }
+}
+
+for (const [description, labels, expectedSection, team] of [
+    ['lowercase candidate', [`${sprintName}_candidate`, 'Beta Team'], 'eng-alert-needs-stories', {}],
+    ['capitalized candidate', [`${sprintName}_Candidate`, 'Beta Team'], 'eng-alert-needs-stories', {}],
+    ['plain selected sprint label', [sprintName, 'Beta Team'], 'eng-alert-needs-stories', {}],
+    ['both accepted sprint labels', [sprintName, `${sprintName}_candidate`, 'Beta Team'], 'eng-alert-needs-stories', {}],
+    ['candidate with missing Jira Team', [`${sprintName}_candidate`, 'Beta Team'], 'eng-alert-missing-team', { teamId: '', teamName: '' }],
+    ['candidate with missing mapped Team label', [`${sprintName}_candidate`], 'eng-alert-missing-labels', {}],
+    ['near-match candidate suffix', [`${sprintName}_candidate_extra`, 'Beta Team'], 'eng-alert-backlog', {}],
+]) {
+    test(`future alert classifies ${description} once across alert and remote Backlog sources`, async ({ page }) => {
+        const key = 'CAND-EPIC';
+        const epic = planningEpic(key, labels, team);
+        const calls = await installFixture(page, {
+            sprintState: 'future',
+            alertPurposeEpics: [epic],
+            backlogEpics: [epic],
+            readinessEpics: [readinessEpic(key)],
+        });
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+        await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts').length).toBe(2);
+        await expectOnlyAlertCategory(page, key, expectedSection);
+        if (description === 'candidate with missing mapped Team label') {
+            await page.locator('#eng-alert-missing-labels').screenshot({ path: 'test-results/candidate-missing-labels-after.png', animations: 'disabled' });
+        }
+    });
+}
+
+test('future alert settles to Stories Required after its Epic response arrives later than readiness', async ({ page }) => {
+    const alertGate = deferred();
+    const key = 'DELAY-EPIC';
+    const epic = planningEpic(key, [`${sprintName}_candidate`, 'Beta Team']);
+    const calls = await installFixture(page, {
+        sprintState: 'future', alertPurposeEpics: [epic], backlogEpics: [epic],
+        readinessEpics: [readinessEpic(key)], alertGate,
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await waitForCall(calls, '/api/eng/story-readiness');
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts').length).toBe(2);
+    alertGate.resolve();
+    await page.waitForLoadState('networkidle');
+    await expectOnlyAlertCategory(page, key, 'eng-alert-needs-stories');
+});
+
+test('active candidate Epic contributes a Story requirement without a Missing Labels alert', async ({ page }) => {
+    const key = 'ACTIVE-CAND-EPIC';
+    await installFixture(page, {
+        sprintState: 'active',
+        alertPurposeEpics: [planningEpic(key, [`${sprintName}_candidate`, 'Beta Team'])],
+        readinessEpics: [readinessEpic(key)],
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator(`.story-requirement-card[data-epic-key="${key}"]`)).toHaveCount(1);
+    await expectOnlyAlertCategory(page, key, 'eng-alert-needs-stories');
+});
+
+test('late candidate alert response from prior sprint cannot enter the new sprint', async ({ page }) => {
+    const alertGate = deferred();
+    const key = 'OLD-CAND-EPIC';
+    const epic = planningEpic(key, [`${sprintName}_candidate`, 'Beta Team']);
+    const nextSprint = { id: sprintId + 1, name: '2026Q3 Sprint 43', state: 'future' };
+    const calls = await installFixture(page, {
+        sprintState: 'future', alertPurposeEpics: [epic],
+        readinessEpics: [readinessEpic(key)], alertGate, secondSprint: nextSprint,
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts' && call.params.sprint === String(sprintId)).length).toBe(2);
+    const sprintToggle = page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle');
+    await sprintToggle.click();
+    await page.locator('.sprint-dropdown-option', { hasText: nextSprint.name }).click();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts' && call.params.sprint === String(nextSprint.id)).length).toBe(2);
+    alertGate.resolve();
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator(`.story-requirement-card[data-epic-key="${key}"]`)).toHaveCount(0);
+    for (const section of ['eng-alert-backlog', 'eng-alert-missing-team', 'eng-alert-missing-labels', 'eng-alert-needs-stories']) {
+        await expect(page.locator(`#${section} .alert-story`).filter({ hasText: key })).toHaveCount(0);
+    }
+});
 
 test('defers readiness until both primary task responses paint in Catch Up', async ({ page }) => {
     const productGate = deferred();

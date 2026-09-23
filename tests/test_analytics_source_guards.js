@@ -402,8 +402,8 @@ test('onboarding operational guidance documents the shipped workflow boundaries'
         assert.ok(guide.includes(required), `Expected operational guidance for: ${required}`);
     }
     assert.ok(
-        guide.includes('requires both the configured mapped team label and the exact selected-sprint-name label'),
-        'Expected future sprint-ready guidance to require both the mapped team label and selected-sprint-name label',
+        guide.includes('requires both the configured mapped Team label and either the exact selected-sprint-name label or its `_candidate` form'),
+        'Expected future sprint-ready guidance to require the mapped Team label and either accepted sprint label',
     );
     assert.doesNotMatch(
         guide,

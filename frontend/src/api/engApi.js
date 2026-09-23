@@ -29,9 +29,7 @@ export const fetchSprints = (backendUrl, {
     if (forceRefresh && hasCompletion) {
         throw new Error('Sprint forced refresh cannot be combined with completion parameters.');
     }
-    const params = new URLSearchParams({
-        t: Date.now().toString()
-    });
+    const params = new URLSearchParams();
     if (forceRefresh) {
         params.append('refresh', 'true');
     }
@@ -39,7 +37,8 @@ export const fetchSprints = (backendUrl, {
         params.set('completionAttemptId', String(completionAttemptId));
         params.set('catalogIdentity', String(catalogIdentity));
     }
-    return apiFetch(`${backendUrl}/api/sprints?${params}`, {
+    const query = params.toString();
+    return apiFetch(`${backendUrl}/api/sprints${query ? `?${query}` : ''}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',

@@ -293,7 +293,7 @@ class PersistentCatalogRouteTests(unittest.TestCase):
         unsupported = (
             'workspaceId=w', 'userId=u', 'boardId=17', 'projects=DEMO',
             'field=customfield_1', 'jql=project%20%3D%20DEMO', 'source=db',
-            'unknown=value',
+            'unknown=value', 't=1790149010531',
         )
         invalid_refresh = ('refresh=', 'refresh=false', 'refresh=TRUE', 'refresh=1')
         with self._db_catalog(payload=[{'id': 101, 'name': '2026Q3'}]) as (client, _factory, _context):
@@ -309,6 +309,13 @@ class PersistentCatalogRouteTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 400)
                     self.assertEqual(response.get_json(), {'error': 'invalid_catalog_completion'})
                     self._assert_catalog_headers(response)
+
+    def test_teams_rejects_legacy_cache_busting_parameter(self):
+        with self._db_catalog(payload=[{'id': 101, 'name': '2026Q3'}]) as (client, _factory, _context):
+            response = client.get('/api/teams?sprint=101&all=true&_t=1790149010531')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json(), {'error': 'unsupported_catalog_parameter'})
+        self._assert_catalog_headers(response)
 
     def test_outer_db_auth_failure_uses_global_recovery_without_catalog_work(self):
         failure = jira_server.AuthError('auth_required', 'raw upstream detail')

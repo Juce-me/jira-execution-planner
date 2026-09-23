@@ -1,6 +1,6 @@
 # Persistent Sprint And Per-Sprint Team Catalogs Runtime Repair Plan
 
-> **Status:** Planned. This is a repair and verification plan for the implementation on `bugfix/board-progressive-loading`; it does not claim that the feature is working or accepted.
+> **Status:** In progress. The source-contract repair and focused verification are complete on `bugfix/board-progressive-loading`; authenticated live acceptance remains open.
 
 ## Outcome required
 
@@ -12,7 +12,7 @@ The release-blocking symptom is reproducible from the supplied browser evidence:
 GET /api/sprints?t=<timestamp> 400
 ```
 
-The DB route rejects that request before auth, PostgreSQL, or Jira work. [`frontend/src/api/engApi.js`](../frontend/src/api/engApi.js) still adds `t` to `fetchSprints`, while [`backend/routes/settings_routes.py`](../backend/routes/settings_routes.py) allows only `refresh`, `completionAttemptId`, and `catalogIdentity`. The same mismatch exists for Team refresh: [`frontend/src/api/jiraCatalogApi.js`](../frontend/src/api/jiraCatalogApi.js) adds `_t`, while [`backend/routes/eng_routes.py`](../backend/routes/eng_routes.py) rejects it in the DB branch.
+At the baseline, [`frontend/src/api/engApi.js`](../../frontend/src/api/engApi.js) added `t` to `fetchSprints`, while [`backend/routes/settings_routes.py`](../../backend/routes/settings_routes.py) allowed only `refresh`, `completionAttemptId`, and `catalogIdentity`. The same mismatch affected Team refresh: [`frontend/src/api/jiraCatalogApi.js`](../../frontend/src/api/jiraCatalogApi.js) added `_t`, while [`backend/routes/eng_routes.py`](../../backend/routes/eng_routes.py) rejected it in the DB branch. The Sprint route rejects unsupported parameters before auth; the Team DB branch validates them after auth context resolution. Both reject them before catalog or Jira work.
 
 Direct route probes on this checkout produced:
 
@@ -21,7 +21,7 @@ GET /api/sprints?t=1790149010531  -> 400 {"error":"unsupported_catalog_parameter
 GET /api/teams?sprint=42&all=true&_t=1790149010531 -> 400 {"error":"unsupported_catalog_parameter"}
 ```
 
-The current environment is a separate blocker: no process is listening on ports `5050` or `5432`, and `scripts/check_startup_preflight.py` reports `FAIL migrations: Database is unavailable or migrations are not at head`.
+At the baseline investigation, no process was listening on ports `5050` or `5432`, and `scripts/check_startup_preflight.py` reported `FAIL migrations: Database is unavailable or migrations are not at head`. The supported local runner subsequently passed PostgreSQL health, migrations, preflight, and Flask startup, as recorded below.
 
 ## Scope and forbidden changes
 
@@ -123,10 +123,39 @@ The implementation is not ready to report as fixed if any of the following remai
 
 ## Verification record to update
 
+### 2026-09-23 source-contract repair
+
+- Pulled baseline: `7008bbebd70f6883eeb135b1a0b012f34bfedb06` on
+  `bugfix/board-progressive-loading`.
+- RED: `node --test tests/test_frontend_api_source_guards.js` failed the three
+  new exact-query assertions because Sprint reads emitted `t` and Team reads
+  emitted `_t`.
+- GREEN: the requested focused Node command passed 93 tests under Node 20.20.0;
+  the requested focused Python command passed 50 tests. The backend cases retain
+  sanitized `400 unsupported_catalog_parameter` responses for manual `t` and
+  `_t` queries. The full frontend unit suite passed 1,423 tests under Node
+  20.20.0. The full Python suite passed 1,908 tests with 25 skips under a
+  non-DB test-process profile. Its first run under local `.env` settings had one connection
+  error because the command sandbox could not reach PostgreSQL on port `5432`.
+- `npm run build` passed under Node 20.20.0. Inspection of the generated
+  dashboard bundle confirmed that ordinary Sprint reads have no query, forced
+  Sprint reads add only
+  `refresh=true`, and Team reads begin with `sprint` plus `all=true`; unrelated
+  endpoints retain their existing cache-busters.
+- The supported local runner started PostgreSQL, applied migrations to head,
+  passed startup preflight, and reached the Flask startup banner without an
+  unexpected pre-banner warning. Positive authenticated HTTP/browser acceptance
+  remains open: no authenticated browser was available, and the runner's host
+  network was not reachable from the command sandbox used for follow-up curls.
+- Two-user same-workspace reuse, cross-workspace isolation, five-sample cached
+  latency/metadata checks, zero-Jira-call observation, Sprint switching, Team
+  refresh behavior, persistence, and open-menu completion remain unverified.
+  Do not mark the parent plan done from this source repair.
+
 Record the exact commands, counts, skips, warnings, request URLs, response status/cache metadata, Jira-call observations, and screenshots in this plan or the existing execution plan. Do not mark the existing `EXEC-persistent-sprint-team-catalogs.md` done based on its prior local test totals; those checks did not exercise the production query shape shown above, and the plan's authenticated Jira/latency gates remain open.
 
 ## Residual risks
 
-- The current checkout cannot complete live acceptance until the local PostgreSQL runner is available and migrations are at head.
+- The supported local PostgreSQL runner reached migrations at head and Flask startup. Authenticated browser access and follow-up HTTP access from this command sandbox remain unavailable, so live acceptance is still open.
 - A source-only fix is insufficient if the Flask-served generated bundle is not rebuilt or the browser is serving an older asset; production-bundle verification is mandatory.
 - The screenshot’s CSP inline-script warning and third-party cookie warning are not the cause of the observed catalog `400`, but they should be recorded separately if they remain after the catalog request is fixed.

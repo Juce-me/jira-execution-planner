@@ -43,7 +43,6 @@ export const fetchAllTeams = (backendUrl, {
         return Promise.reject(new Error('Team completion reads cannot force a refresh.'));
     }
     const params = new URLSearchParams({
-        _t: Date.now().toString(),
         sprint: String(sprint || ''),
         all: 'true',
     });

@@ -1095,20 +1095,38 @@ test('excluded capacity stats source wrapper can request a backend refresh', asy
     });
 });
 
-test('Sprint completion reads pass signal and attempt identity without refresh', async () => {
+test('Sprint catalog reads use only contract query parameters and preserve signals', async () => {
     const engApi = loadApiModule('engApi.js', ['fetchSprints']);
     const signal = new AbortController().signal;
     await withMockFetch(async (calls) => {
+        await engApi.fetchSprints('http://backend', { signal });
+        await engApi.fetchSprints('http://backend', { forceRefresh: true, signal });
         await engApi.fetchSprints('http://backend', {
             completionAttemptId: '11111111-1111-4111-8111-111111111111',
             catalogIdentity: 'sc1:catalog',
             signal,
         });
-        const url = new URL(calls[0].url);
-        assert.equal(url.searchParams.get('completionAttemptId'), '11111111-1111-4111-8111-111111111111');
-        assert.equal(url.searchParams.get('catalogIdentity'), 'sc1:catalog');
-        assert.equal(url.searchParams.has('refresh'), false);
+        const ordinaryUrl = new URL(calls[0].url);
+        assert.equal(calls[0].url, 'http://backend/api/sprints');
+        assert.equal(ordinaryUrl.search, '');
+        assert.equal(calls[0].options.cache, 'no-cache');
         assert.equal(calls[0].options.signal, signal);
+
+        const forcedUrl = new URL(calls[1].url);
+        assert.deepEqual([...forcedUrl.searchParams], [['refresh', 'true']]);
+        assert.equal(forcedUrl.searchParams.has('t'), false);
+        assert.equal(calls[1].options.cache, 'no-cache');
+        assert.equal(calls[1].options.signal, signal);
+
+        const completionUrl = new URL(calls[2].url);
+        assert.deepEqual([...completionUrl.searchParams], [
+            ['completionAttemptId', '11111111-1111-4111-8111-111111111111'],
+            ['catalogIdentity', 'sc1:catalog'],
+        ]);
+        assert.equal(completionUrl.searchParams.has('refresh'), false);
+        assert.equal(completionUrl.searchParams.has('t'), false);
+        assert.equal(calls[2].options.cache, 'no-cache');
+        assert.equal(calls[2].options.signal, signal);
     });
 });
 
@@ -1265,7 +1283,12 @@ test('Jira catalog API wrappers preserve query params, cache flags, and abort si
         assert.equal(teamsUrl.searchParams.get('all'), 'true');
         assert.equal(teamsUrl.searchParams.get('refresh'), 'true');
         assert.equal(teamsUrl.searchParams.has('catalogIdentity'), false);
-        assert.ok(teamsUrl.searchParams.get('_t'), 'Expected teams cache-busting timestamp');
+        assert.equal(teamsUrl.searchParams.has('_t'), false);
+        assert.deepEqual([...teamsUrl.searchParams], [
+            ['sprint', '42/active'],
+            ['all', 'true'],
+            ['refresh', 'true'],
+        ]);
         assert.equal(calls[2].options.cache, 'no-cache');
         assert.equal(calls[2].options.signal, signal);
 
@@ -1294,28 +1317,63 @@ test('Jira catalog API wrappers preserve query params, cache flags, and abort si
     });
 });
 
-test('Team completion reads carry attempt identity without forcing and reject mixed force', async () => {
+test('Team catalog reads use only contract query parameters and preserve signals', async () => {
     const { getJson } = loadHttpHelpers();
     const jiraCatalogApi = loadApiModule('jiraCatalogApi.js', ['fetchAllTeams'], { getJson });
     const signal = new AbortController().signal;
 
     await withMockFetch(async (calls) => {
         await jiraCatalogApi.fetchAllTeams('http://backend', {
+            sprint: '41',
+            signal,
+        });
+        await jiraCatalogApi.fetchAllTeams('http://backend', {
             sprint: '42',
+            refresh: true,
+            signal,
+        });
+        await jiraCatalogApi.fetchAllTeams('http://backend', {
+            sprint: '43',
             completionAttemptId: 'attempt/one',
             catalogIdentity: 'catalog identity',
             signal,
         });
-        const url = new URL(calls[0].url);
-        assert.equal(url.searchParams.get('completionAttemptId'), 'attempt/one');
-        assert.equal(url.searchParams.get('catalogIdentity'), 'catalog identity');
-        assert.equal(url.searchParams.has('refresh'), false);
+        const ordinaryUrl = new URL(calls[0].url);
+        assert.deepEqual([...ordinaryUrl.searchParams], [
+            ['sprint', '41'],
+            ['all', 'true'],
+        ]);
+        assert.equal(ordinaryUrl.searchParams.has('_t'), false);
+        assert.equal(calls[0].options.cache, 'no-cache');
         assert.equal(calls[0].options.signal, signal);
+
+        const forcedUrl = new URL(calls[1].url);
+        assert.deepEqual([...forcedUrl.searchParams], [
+            ['sprint', '42'],
+            ['all', 'true'],
+            ['refresh', 'true'],
+        ]);
+        assert.equal(forcedUrl.searchParams.has('_t'), false);
+        assert.equal(calls[1].options.cache, 'no-cache');
+        assert.equal(calls[1].options.signal, signal);
+
+        const completionUrl = new URL(calls[2].url);
+        assert.deepEqual([...completionUrl.searchParams], [
+            ['sprint', '43'],
+            ['all', 'true'],
+            ['completionAttemptId', 'attempt/one'],
+            ['catalogIdentity', 'catalog identity'],
+        ]);
+        assert.equal(completionUrl.searchParams.has('refresh'), false);
+        assert.equal(completionUrl.searchParams.has('_t'), false);
+        assert.equal(calls[2].options.cache, 'no-cache');
+        assert.equal(calls[2].options.signal, signal);
         await assert.rejects(
             jiraCatalogApi.fetchAllTeams('http://backend', {
                 sprint: '42',
                 refresh: true,
                 completionAttemptId: 'attempt-two',
+                catalogIdentity: 'catalog-two',
             }),
             /completion/i,
         );
@@ -1326,6 +1384,7 @@ test('Team completion reads carry attempt identity without forcing and reject mi
             }),
             /identity/i,
         );
+        assert.equal(calls.length, 3);
     });
 });
 

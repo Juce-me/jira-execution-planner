@@ -7,6 +7,7 @@ import json
 import re
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint
 
@@ -62,6 +63,19 @@ from backend.services.jira_issue_transitions import (
     load_transition_options,
     transition_issues,
 )
+from backend.auth.db_context import is_db_auth_context
+from backend.config.repository import ConfigStorageError, config_storage_db_enabled
+from backend.db.engine import DatabaseConfigurationError
+from backend.services.catalog_refresh_runtime import CatalogCompletionError
+from backend.services.workspace_catalog_cache import (
+    load_sprint_catalog,
+    load_sprint_team_catalog,
+)
+from backend.services.workspace_catalog_config import (
+    build_team_catalog_identity,
+    build_team_scope_digest,
+)
+from backend.services.workspace_dashboard_config import load_workspace_team_catalog
 
 from . import bind_server_globals
 
@@ -1512,14 +1526,241 @@ def get_tasks_with_team_name():
     return fetch_tasks(include_team_name=True)
 
 
+def _team_catalog_timestamp(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def _team_catalog_cache(context, config, snapshot, *, refresh_started=False):
+    now = datetime.now(timezone.utc)
+    deadline = snapshot.attempt_deadline_at
+    if deadline is not None and deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    retry_at = snapshot.retry_at
+    failure_code = snapshot.failure_code
+    refresh_status = snapshot.refresh_status
+    if refresh_status == 'pending' and deadline is not None and deadline <= now:
+        refresh_status = 'failed'
+        failure_code = 'refresh_budget_exhausted'
+        retry_at = deadline + timedelta(seconds=300)
+    if refresh_status == 'failed':
+        state = 'failed'
+    elif refresh_status == 'pending' and deadline is not None and deadline > now:
+        state = 'refreshing'
+    elif snapshot.payload is None:
+        state = 'missing'
+    else:
+        state = 'fresh'
+    scope_digest = build_team_scope_digest(
+        board_id=config.board_id, projects=config.projects,
+        team_field_id=config.team_field_id, base_jql=config.base_jql,
+    )
+    return {
+        'backend': 'postgresql',
+        'identity': snapshot.identity,
+        'browserContextId': catalog_browser_context_id(context),
+        'boardId': config.board_id,
+        'scopeDigest': scope_digest,
+        'catalogVersion': snapshot.catalog_version,
+        'validatedAt': _team_catalog_timestamp(snapshot.validated_at),
+        'state': state,
+        'refreshStarted': bool(refresh_started),
+        'refreshFailed': refresh_status == 'failed',
+        'refreshAttemptId': snapshot.refresh_attempt_id,
+        'refreshStatus': refresh_status,
+        'refreshDeadlineAt': _team_catalog_timestamp(snapshot.attempt_deadline_at),
+        'failureCode': failure_code,
+        'retryAt': _team_catalog_timestamp(retry_at),
+    }
+
+
+def _team_catalog_response(payload, status, started_at, *, retry_after=False):
+    response = jsonify(payload)
+    response.status_code = status
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Server-Timing'] = (
+        f'catalog_db;dur={round((time.perf_counter() - started_at) * 1000, 1)}'
+    )
+    if retry_after:
+        response.headers['Retry-After'] = '1'
+    return response
+
+
+def _current_team_names(context):
+    payload = load_workspace_team_catalog(context) or {}
+    catalog = payload.get('catalog') if isinstance(payload, dict) else {}
+    return {
+        str(team_id): str(value.get('name') or '').strip()
+        for team_id, value in (catalog or {}).items()
+        if isinstance(value, dict) and str(value.get('name') or '').strip()
+    }
+
+
+def _db_team_response(context, config, sprint_id, snapshot, *, team_ids,
+                      refresh_started, started_at):
+    cache = _team_catalog_cache(
+        context, config, snapshot, refresh_started=refresh_started,
+    )
+    if snapshot.payload is not None:
+        directory = _current_team_names(context)
+        teams = []
+        for item in snapshot.payload:
+            if not isinstance(item, dict):
+                continue
+            team_id = str(item.get('id') or '').strip()
+            if not team_id or team_ids and team_id not in team_ids:
+                continue
+            name = directory.get(team_id) or str(item.get('name') or '').strip() or team_id
+            teams.append({'id': team_id, 'name': name})
+        teams.sort(key=lambda item: (item['name'].casefold(), item['id']))
+        return _team_catalog_response(
+            {'teams': teams, 'sprintId': sprint_id, 'cache': cache},
+            200, started_at,
+        )
+    if cache['refreshStatus'] == 'failed':
+        return _team_catalog_response(
+            {'error': 'team_catalog_unavailable', 'cache': cache},
+            502, started_at,
+        )
+    return _team_catalog_response(
+        {'error': 'catalog_refresh_pending', 'cache': cache},
+        503, started_at, retry_after=bool(cache['refreshAttemptId']),
+    )
+
+
+def _get_db_teams(context, *, sprint_id, team_ids, force_refresh,
+                  completion_attempt_id, expected_identity, started_at):
+    with session_scope() as catalog_session:
+        config = resolve_request_effective_catalog_config(catalog_session, context)
+    if not config.board_id or not config.sprint_identity:
+        return _team_catalog_response({'error': 'sprint_board_required'}, 409, started_at)
+    if config.team_scope_error:
+        return _team_catalog_response({'error': config.team_scope_error}, 409, started_at)
+
+    sprint_snapshot = load_sprint_catalog(context, config=config)
+    if sprint_snapshot.payload is None:
+        return _team_catalog_response({'error': 'sprint_catalog_pending'}, 503, started_at)
+    if not any(
+        isinstance(item, dict) and str(item.get('id') or '').strip() == sprint_id
+        for item in sprint_snapshot.payload
+    ):
+        return _team_catalog_response({'error': 'sprint_not_in_catalog'}, 404, started_at)
+
+    if completion_attempt_id is not None:
+        try:
+            snapshot = read_catalog_completion(
+                context, kind='teams', sprint_id=sprint_id,
+                attempt_id=completion_attempt_id,
+                expected_identity=expected_identity,
+                resolve_config=resolve_request_effective_catalog_config,
+            )
+        except CatalogCompletionError as error:
+            if error.code == 'invalid_catalog_completion':
+                return _team_catalog_response({'error': error.code}, 400, started_at)
+            scope_digest = build_team_scope_digest(
+                board_id=config.board_id, projects=config.projects,
+                team_field_id=config.team_field_id, base_jql=config.base_jql,
+            )
+            source = {
+                'backend': 'postgresql',
+                'identity': build_team_catalog_identity(
+                    context.workspace_id, sprint_id, scope_digest,
+                ),
+                'boardId': config.board_id,
+                'browserContextId': catalog_browser_context_id(context),
+            }
+            return _team_catalog_response(
+                {
+                    'error': error.code,
+                    'teamCatalogSource': source,
+                    'scopeDigest': scope_digest,
+                }, 409, started_at,
+            )
+        return _db_team_response(
+            context, config, sprint_id, snapshot, team_ids=team_ids,
+            refresh_started=False, started_at=started_at,
+        )
+
+    snapshot = load_sprint_team_catalog(context, sprint_id=sprint_id, config=config)
+    now = datetime.now(timezone.utc)
+    deadline = snapshot.attempt_deadline_at
+    if deadline is not None and deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    live_attempt = (
+        snapshot.refresh_status == 'pending' and deadline is not None and deadline > now
+    )
+    retry_at = snapshot.retry_at
+    if retry_at is not None and retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    should_refresh = (
+        not live_attempt
+        and (force_refresh or snapshot.payload is None)
+        and (force_refresh or retry_at is None or retry_at <= now)
+    )
+    refresh_started = False
+    if should_refresh:
+        claim = catalog_refresh_runtime().refresh(
+            context, kind='teams', sprint_id=sprint_id, config=config,
+            background=False, resolve_config=resolve_request_effective_catalog_config,
+        )
+        refresh_started = claim is not None
+        snapshot = load_sprint_team_catalog(context, sprint_id=sprint_id, config=config)
+    return _db_team_response(
+        context, config, sprint_id, snapshot, team_ids=team_ids,
+        refresh_started=refresh_started, started_at=started_at,
+    )
+
+
 @bp.route('/api/teams', methods=['GET'])
 def get_teams():
     """Fetch all unique teams from the current sprint."""
+    started_at = time.perf_counter()
     try:
         sprint = request.args.get('sprint', '')
         team_ids_param = request.args.get('teamIds', '').strip()
         fetch_all = request.args.get('all', '').lower() == 'true'
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
+        auth_context = current_request_auth_context()
+        if config_storage_db_enabled() and is_db_auth_context(auth_context):
+            allowed_parameters = {
+                'sprint', 'teamIds', 'all', 'refresh',
+                'completionAttemptId', 'catalogIdentity',
+            }
+            if any(key not in allowed_parameters for key in request.args):
+                return _team_catalog_response(
+                    {'error': 'unsupported_catalog_parameter'}, 400, started_at,
+                )
+            force_value = request.args.get('refresh')
+            completion_attempt_id = request.args.get('completionAttemptId')
+            expected_identity = request.args.get('catalogIdentity')
+            has_completion = completion_attempt_id is not None or expected_identity is not None
+            if not sprint:
+                return _team_catalog_response({'error': 'sprint_required'}, 400, started_at)
+            sprint_key = str(sprint).strip()
+            if re.fullmatch(r'[1-9][0-9]*', sprint_key) is None:
+                return _team_catalog_response({'error': 'invalid_sprint'}, 400, started_at)
+            if (
+                any(len(request.args.getlist(key)) != 1 for key in request.args)
+                or request.args.get('all') is not None and request.args.get('all') != 'true'
+                or force_value is not None and force_value != 'true'
+                or has_completion and (
+                    force_value == 'true' or not completion_attempt_id or not expected_identity
+                )
+            ):
+                return _team_catalog_response(
+                    {'error': 'invalid_catalog_completion'}, 400, started_at,
+                )
+            return _get_db_teams(
+                auth_context, sprint_id=sprint_key,
+                team_ids=set() if fetch_all else set(team_ids),
+                force_refresh=force_value == 'true',
+                completion_attempt_id=completion_attempt_id,
+                expected_identity=expected_identity,
+                started_at=started_at,
+            )
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE) and not fetch_all
 
         # Build JQL query from env or dashboard config
@@ -1543,7 +1784,6 @@ def get_teams():
         elif sprint:
             jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
 
-        auth_context = current_request_auth_context()
         team_field_id = resolve_team_field_id(None, context=auth_context)
 
         # Fetch tasks - paginate through all issues
@@ -1646,7 +1886,16 @@ def get_teams():
 
     except AuthError as error:
         return _eng_auth_error_response(error)
+    except (ConfigStorageError, DatabaseConfigurationError):
+        return _team_catalog_response(
+            {'error': 'catalog_storage_unavailable'}, 503, started_at,
+        )
     except Exception as e:
+        if config_storage_db_enabled():
+            logger.exception('Team catalog request failed')
+            return _team_catalog_response(
+                {'error': 'catalog_storage_unavailable'}, 503, started_at,
+            )
         return jsonify({'error': 'Failed to fetch teams', 'details': str(e)}), 500
 
 

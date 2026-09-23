@@ -77,29 +77,41 @@ test('first lane render is separate from complete group render', async () => {
     assert.equal(samples[0].durationMs, 500);
 });
 
-test('Board measurement emits one closed global observation after paint', async () => {
-    let now = 0;
-    const samples = [];
-    const measurement = createBoardLoadMeasurement({ enabled: true, groupId: 'synthetic',
-        scopeType: 'all_work', now: () => now, afterPaint: async () => {}, emit: sample => samples.push(sample) });
-    measurement.start({ type: 'start', scopeCohortDigest: 'a'.repeat(64) });
-    measurement.addPayloadBytes(120);
-    now = 80;
-    await measurement.focusedContentReady();
-    now = 700;
-    await measurement.finish({ outcome: 'success', epicCount: 3, issueCount: 7,
-        dependencyDurationMs: 50, diagnostics: { indexMs: 40, focusedCompleteMs: 400,
-            jiraRequests: 5, jiraPages: 5, jiraRetries: 0, cacheState: 'miss', peakChildSearches: 2 } });
-    await measurement.finish({ outcome: 'error' });
-    assert.equal(samples.length, 1);
-    assert.deepEqual(samples[0], { schemaVersion: 1, loadId: samples[0].loadId,
-        groupId: 'synthetic', sprintId: null, surface: 'eng_board', scopeType: 'all_work',
-        outcome: 'success', durationMs: 700, indexMs: 40, firstFocusedContentMs: 80,
-        focusedCompleteMs: 400, dependencyDurationMs: 50, epicCount: 3, issueCount: 7,
-        payloadBytes: 120, jiraRequests: 5, jiraPages: 5, jiraRetries: 0,
-        completeness: 'complete', cacheState: 'miss', peakChildSearches: 2,
-        scopeCohortDigest: 'a'.repeat(64) });
-});
+for (const scopeType of ['all_work', 'component']) {
+    test(`Board ${scopeType} measurement emits one closed global observation after paint`, async () => {
+        let now = 0;
+        const paints = [];
+        const samples = [];
+        const measurement = createBoardLoadMeasurement({ enabled: true, groupId: 'synthetic',
+            scopeType, sprintId: 42, now: () => now,
+            afterPaint: () => new Promise(resolve => paints.push(resolve)),
+            emit: sample => samples.push(sample) });
+        measurement.start({ type: 'start', scopeCohortDigest: 'a'.repeat(64) });
+        measurement.addPayloadBytes(120);
+        const focusedContent = measurement.focusedContentReady();
+        assert.equal(paints.length, 1);
+        now = 80;
+        paints.shift()();
+        await focusedContent;
+        now = 700;
+        const finishing = measurement.finish({ outcome: 'success', epicCount: 3, issueCount: 7,
+            dependencyDurationMs: 50, diagnostics: { indexMs: 40, focusedCompleteMs: 400,
+                jiraRequests: 5, jiraPages: 5, jiraRetries: 0, cacheState: 'miss', peakChildSearches: 2 } });
+        assert.equal(samples.length, 0);
+        assert.equal(paints.length, 1);
+        paints.shift()();
+        await finishing;
+        await measurement.finish({ outcome: 'error' });
+        assert.equal(samples.length, 1);
+        assert.deepEqual(samples[0], { schemaVersion: 1, loadId: samples[0].loadId,
+            groupId: 'synthetic', sprintId: null, surface: 'eng_board', scopeType,
+            outcome: 'success', durationMs: 700, indexMs: 40, firstFocusedContentMs: 80,
+            focusedCompleteMs: 400, dependencyDurationMs: 50, epicCount: 3, issueCount: 7,
+            payloadBytes: 120, jiraRequests: 5, jiraPages: 5, jiraRetries: 0,
+            completeness: 'complete', cacheState: 'miss', peakChildSearches: 2,
+            scopeCohortDigest: 'a'.repeat(64) });
+    });
+}
 
 test('cancelled Board measurement keeps unavailable diagnostics null and unknown', async () => {
     const samples = [];
@@ -139,6 +151,46 @@ test('Board render and terminal races emit one final observation', async () => {
     assert.equal(samples.length, 1);
     assert.equal(samples[0].outcome, 'cancelled');
     assert.equal(samples[0].firstFocusedContentMs, 80);
+});
+
+test('retiring a Component Board measurement silently suppresses a finish waiting for paint', async () => {
+    const paints = [];
+    const samples = [];
+    const measurement = createBoardLoadMeasurement({ enabled: true, groupId: 'synthetic',
+        scopeType: 'component', afterPaint: () => new Promise(resolve => paints.push(resolve)),
+        emit: sample => samples.push(sample) });
+    const finishing = measurement.finish({ outcome: 'success', epicCount: 1, issueCount: 0 });
+    assert.equal(paints.length, 1);
+    measurement.retire();
+    paints.shift()();
+    await finishing;
+    assert.deepEqual(samples, []);
+});
+
+test('Component Board measurement stays optional when disabled or telemetry fails', async () => {
+    let disabledPaints = 0;
+    let disabledEmissions = 0;
+    const disabled = createBoardLoadMeasurement({ enabled: false, scopeType: 'component', sprintId: 42,
+        afterPaint: async () => { disabledPaints++; }, emit: () => { disabledEmissions++; } });
+    disabled.start({ type: 'start', scopeCohortDigest: 'a'.repeat(64) });
+    disabled.addPayloadBytes(120);
+    await disabled.focusedContentReady();
+    await disabled.finish({ outcome: 'success', epicCount: 1, issueCount: 0 });
+    await disabled.cancel();
+    disabled.retire();
+    assert.equal(disabledPaints, 0);
+    assert.equal(disabledEmissions, 0);
+
+    for (const emit of [
+        () => Promise.reject(new Error('offline')),
+        () => { throw new Error('offline'); },
+    ]) {
+        let attempts = 0;
+        const measurement = createBoardLoadMeasurement({ enabled: true, scopeType: 'component',
+            afterPaint: async () => {}, emit: sample => { attempts++; return emit(sample); } });
+        await assert.doesNotReject(measurement.finish({ outcome: 'success', epicCount: 1, issueCount: 0 }));
+        assert.equal(attempts, 1);
+    }
 });
 
 test('only accepted Board terminal samples qualify for api_result', () => {

@@ -36,7 +36,9 @@ export default function EngBoardEpicCard({
     const assigneeName = epic.assignee?.displayName || 'Unassigned';
     const deliveryOwnerName = epic.deliveryOwner?.displayName || null;
     const tasks = (epicGroup && epicGroup.tasks) || [];
-    const progress = computeEpicStoryProgress(tasks);
+    const progress = epicGroup.childProgress || computeEpicStoryProgress(tasks);
+    const incomplete = Boolean(epicGroup.childrenIncomplete);
+    const loading = Boolean(epicGroup.childrenLoading);
     // One decimal, matching the app's own story-point convention (e.g. dashboard.jsx's epic
     // header `epicTotalSp.toFixed(1)`) and the column header (EngBoardView.jsx) — not
     // Math.round(), which could round a column's summed total to a different whole number than
@@ -96,9 +98,9 @@ export default function EngBoardEpicCard({
                 <span className="etitle">{summary}</span>
                 <span className="ekey">{key}</span>
             </div>
-            <div className="erow2">
+            <div className="erow2" aria-busy={loading}>
                 <span className="story-subtasks-progress" aria-hidden="true">
-                    <span className="story-subtasks-progress-track">
+                    <span className={`story-subtasks-progress-track${loading ? ' board-loading-bar' : ''}`}>
                         <span
                             className="story-subtasks-progress-segment story-subtasks-progress-done"
                             style={{ width: progress.doneWidth }}
@@ -109,8 +111,14 @@ export default function EngBoardEpicCard({
                         />
                     </span>
                 </span>
-                <span>{progress.done} of {progress.total} {workItemLabel}</span>
-                <span className="push">{storyPoints} sp</span>
+                <span>{incomplete
+                    ? epicGroup.childProgress
+                        ? `${progress.done} of ${progress.total}+ ${workItemLabel} · loaded so far`
+                        : loading ? `Loading ${workItemLabel}…` : `${workItemLabel} unavailable`
+                    : `${progress.done} of ${progress.total} ${workItemLabel}`}</span>
+                <span className="push">{incomplete
+                    ? <span className={loading ? 'board-loading-bar board-loading-value' : ''}>{loading ? '' : '— SP'}</span>
+                    : `${storyPoints} sp`}</span>
                 {epic.updated ? (
                     <time dateTime={epic.updated}>{formatSubtaskUpdatedDate(epic.updated)}</time>
                 ) : (

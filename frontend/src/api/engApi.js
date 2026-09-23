@@ -16,19 +16,33 @@ export const fetchMissingPlanningInfo = (backendUrl, { sprintId, teamIds = [], c
     });
 };
 
-export const fetchSprints = (backendUrl, { forceRefresh = false } = {}) => {
-    const params = new URLSearchParams({
-        t: Date.now().toString()
-    });
+export const fetchSprints = (backendUrl, {
+    forceRefresh = false,
+    completionAttemptId = null,
+    catalogIdentity = null,
+    signal,
+} = {}) => {
+    const hasCompletion = Boolean(completionAttemptId || catalogIdentity);
+    if (hasCompletion && (!completionAttemptId || !catalogIdentity)) {
+        throw new Error('Sprint completion requires both attempt identity fields.');
+    }
+    if (forceRefresh && hasCompletion) {
+        throw new Error('Sprint forced refresh cannot be combined with completion parameters.');
+    }
+    const params = new URLSearchParams();
     if (forceRefresh) {
         params.append('refresh', 'true');
     }
-    return apiFetch(`${backendUrl}/api/sprints?${params}`, {
+    if (hasCompletion) {
+        params.set('completionAttemptId', String(completionAttemptId));
+        params.set('catalogIdentity', String(catalogIdentity));
+    }
+    const query = params.toString();
+    return apiFetch(`${backendUrl}/api/sprints${query ? `?${query}` : ''}`, {
         method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        cache: 'no-cache'
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal,
     });
 };
 

@@ -205,7 +205,7 @@ export const canAdvanceFirstRunConfigurationGuide = (step, group, groups = []) =
             && String(candidate?.name || '').trim().toLowerCase() === name.toLowerCase());
     }
     if (step === 'teams') {
-        return (group?.teamIds || []).some(teamId => String(teamId || '').trim());
+        return true;
     }
     return FIRST_RUN_CONFIGURATION_GUIDE_STEPS.includes(step);
 };
@@ -220,7 +220,10 @@ export const validateFirstRunPendingGroup = (groups = [], pendingGroupId = null)
         && String(candidate?.name || '').trim().toLowerCase() === name.toLowerCase());
     if (duplicate) return { ok: false, step: 'name', error: 'Department names must be unique.' };
     const hasTeam = (group.teamIds || []).some(teamId => String(teamId || '').trim());
-    if (!hasTeam) return { ok: false, step: 'teams', error: 'Add at least one team before saving.' };
+    const hasComponent = (group.missingInfoComponents || []).some(component => String(component || '').trim());
+    if (!hasTeam && !hasComponent) {
+        return { ok: false, step: 'teams', error: 'Add at least one team or component before saving.' };
+    }
     return { ok: true, step: null, error: '' };
 };
 
@@ -230,8 +233,8 @@ const COPY = {
         body: 'Use a short, unique name. This name appears everywhere the Department is selected.',
     },
     teams: {
-        title: 'Choose at least one team',
-        body: 'Teams define which Jira work appears for this Department. Add one or more teams to continue.',
+        title: 'Choose Teams (optional)',
+        body: 'Teams define which Jira work appears for this Department. You can continue and use Jira Components instead.',
     },
     components: {
         title: 'Choose Jira Components (optional)',
@@ -394,9 +397,11 @@ export default function FirstRunGroupConfigurationGuide({
     }, [descriptionId, interactionReady, step]);
 
     const copy = COPY[step] || COPY.name;
-    const continueLabel = step === 'components' && !(group?.missingInfoComponents || []).length
-        ? 'Continue without components'
-        : (isLast ? 'Done' : 'Continue');
+    const continueLabel = step === 'teams' && !(group?.teamIds || []).length
+        ? 'Continue without teams'
+        : (step === 'components' && !(group?.missingInfoComponents || []).length
+            ? 'Continue without components'
+            : (isLast ? 'Done' : 'Continue'));
     const recoveryVisible = targetMissing || status === 'sections_pending' || (status === 'preference_pending' && error);
     const visibleError = targetMissing
         ? 'The configuration target is no longer available. Return and choose the Department again.'

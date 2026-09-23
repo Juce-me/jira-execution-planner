@@ -100,3 +100,35 @@ test('strict adapter translates mixed work items, retains other, and keeps zero-
     assert.equal(groups['E-MIXED'].tasks[1].fields.teamName, 'Core');
     assert.equal(model.authoritative, false);
 });
+
+test('pending child pages expose provisional counts and stop loading after availability failure', async () => {
+    const { buildStrictEngBoardViewModel } = await loadModule();
+    const data = {
+        columns: [{ id: 'todo', name: 'Todo', color: '#aaa', statusNames: ['Todo'] }],
+        epicsByKey: { 'E-1': { key: 'E-1', columnId: 'todo', status: { name: 'Todo' } } },
+        progressByColumn: { todo: { byEpic: [{ epicKey: 'E-1', loadedChildren: 4, statusCounts: { Done: 2, 'In Progress': 1, Killed: 1 } }] } },
+    };
+    const group = buildStrictEngBoardViewModel(data).epicGroups[0];
+    assert.equal(group.childrenLoading, true);
+    assert.equal(group.childProgress.total, 4);
+    assert.equal(group.childProgress.done, 2);
+    assert.equal(group.childProgress.inProgress, 1);
+    const failed = buildStrictEngBoardViewModel({ ...data, terminal: { type: 'error' } }).epicGroups[0];
+    assert.equal(failed.childrenLoading, false);
+    assert.equal(failed.childrenIncomplete, true);
+});
+
+test('completed column keeps final counts while another column still hydrates', async () => {
+    const { buildStrictEngBoardViewModel } = await loadModule();
+    const model = buildStrictEngBoardViewModel({
+        columns: ['todo', 'done'].map(id => ({ id, name: id, color: '#aaa', statusNames: [id] })),
+        epicsByKey: {
+            'E-1': { key: 'E-1', columnId: 'todo', status: { name: 'Todo' } },
+            'E-2': { key: 'E-2', columnId: 'done', status: { name: 'Done' } },
+        },
+        columnAuthority: { done: true },
+    });
+    assert.equal(model.epicGroups.find(group => group.key === 'E-1').childrenLoading, true);
+    assert.equal(model.epicGroups.find(group => group.key === 'E-2').childrenIncomplete, false);
+    assert.equal(model.epicGroups.find(group => group.key === 'E-2').childrenLoading, false);
+});

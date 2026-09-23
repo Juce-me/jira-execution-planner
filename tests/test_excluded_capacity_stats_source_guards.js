@@ -521,7 +521,7 @@ test('excluded-capacity stats source loads progressively and source-only tabs sk
         'Expected source-only stats tabs to be identified explicitly'
     );
     assert.ok(
-        dashboardSource.includes('if (isStatsSourceOnlyStatsView) return;'),
+        dashboardSource.includes("if (selectedView !== 'eng' || isStatsSourceOnlyStatsView) return;"),
         'Expected ENG task fetch effect to skip source-only stats tabs'
     );
     assert.ok(

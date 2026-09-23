@@ -67,11 +67,11 @@ def _validate_board_load(payload):
     except (TypeError, AttributeError):
         raise ValueError('Invalid load id') from None
     _scope(payload['groupId'])
-    if payload['scopeType'] not in ('all_work', 'sprint'):
+    if payload['scopeType'] not in ('all_work', 'component', 'sprint'):
         raise ValueError('Invalid Board scope')
-    if payload['scopeType'] == 'all_work':
+    if payload['scopeType'] in ('all_work', 'component'):
         if payload['sprintId'] is not None:
-            raise ValueError('All work must not fabricate a sprint')
+            raise ValueError('Cross-sprint Board scope must not fabricate a sprint')
     else:
         _scope(payload['sprintId'])
     if payload['outcome'] not in ('success', 'error', 'cancelled'):
@@ -256,7 +256,7 @@ def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, envir
             raise ValueError('Invalid cache state')
         if key == 'surface' and value not in ('eng_sprint', 'eng_board'):
             raise ValueError('Invalid surface')
-        if key == 'scopeType' and value not in ('all_work', 'sprint'):
+        if key == 'scopeType' and value not in ('all_work', 'component', 'sprint'):
             raise ValueError('Invalid scope type')
         if key == 'scopeCohortDigest' and (len(value) != 64
                                            or any(character not in '0123456789abcdef' for character in value)):

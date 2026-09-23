@@ -14,7 +14,7 @@ from backend.auth.key_provider import key_provider_from_env
 from backend.db import engine as db_engine, models
 from backend.services import eng_board
 from backend.services.eng_board import build_scope_version
-from backend.services.eng_board_stream import EngBoardRequestTransport
+from backend.services.eng_board_stream import EngBoardRequestTransport, EngBoardStreamWriter
 from backend.services.shared_group_config import ExistingSharedGroupsSnapshot
 from backend.services.workspace_dashboard_config import WorkspaceConfigSnapshot
 from backend.routes import eng_board_routes
@@ -183,6 +183,69 @@ class EngBoardRouteContractTests(unittest.TestCase):
         self.assertEqual(200, response.status_code, response.get_data(as_text=True))
         self.assertEqual('application/x-ndjson', response.mimetype)
         self.assertEqual('no-store', response.headers['Cache-Control'])
+        self.assertEqual('no', response.headers['X-Accel-Buffering'])
+
+    def test_preflight_and_stream_share_one_generated_identity(self):
+        install_oauth_session(self.client)
+        observed = []
+        real_preflight = eng_board_routes._preflight_stream
+
+        def preflight(snapshot, generation_id):
+            observed.append(('preflight', generation_id))
+            return real_preflight(snapshot, generation_id)
+
+        def stream(_server, _snapshot, _transport, *, generation_id=None):
+            observed.append(('stream', generation_id))
+            return iter((b'{"type":"start"}\n',))
+
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), patch.object(
+            eng_board_routes, 'database_storage_enabled', return_value=True,
+        ), patch.object(
+            eng_board_routes, '_capture_snapshot', return_value=board_snapshot(),
+        ), patch.object(
+            eng_board_routes.secrets, 'token_urlsafe', return_value='shared-generation',
+        ), patch.object(
+            eng_board_routes, '_preflight_stream', side_effect=preflight,
+        ), patch.object(eng_board_routes, '_frame_stream', side_effect=stream):
+            response = self.client.get(BOARD_PATH, query_string=VALID_QUERY)
+
+        self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+        self.assertEqual([
+            ('preflight', 'shared-generation'), ('stream', 'shared-generation'),
+        ], observed)
+
+    def test_oversized_start_is_sanitized_before_ndjson_headers(self):
+        install_oauth_session(self.client)
+        real_writer = EngBoardStreamWriter
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), patch.object(
+            eng_board_routes, 'database_storage_enabled', return_value=True,
+        ), patch.object(
+            eng_board_routes, '_capture_snapshot', return_value=board_snapshot(),
+        ), patch.object(
+            eng_board_routes, 'EngBoardStreamWriter',
+            side_effect=lambda: real_writer(max_frame_bytes=64),
+        ), patch.object(eng_board_routes, '_frame_stream') as frame_stream:
+            response = self.client.get(BOARD_PATH, query_string=VALID_QUERY)
+
+        self.assertEqual(422, response.status_code, response.get_data(as_text=True))
+        self.assertEqual('application/json', response.mimetype)
+        self.assertEqual('scope_too_large', response.get_json()['error'])
+        frame_stream.assert_not_called()
+
+    def test_malformed_start_metadata_is_sanitized_before_ndjson_headers(self):
+        install_oauth_session(self.client)
+        malformed = board_snapshot(scope_version='invalid\ud800')
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), patch.object(
+            eng_board_routes, 'database_storage_enabled', return_value=True,
+        ), patch.object(
+            eng_board_routes, '_capture_snapshot', return_value=malformed,
+        ), patch.object(eng_board_routes, '_frame_stream') as frame_stream:
+            response = self.client.get(BOARD_PATH, query_string=VALID_QUERY)
+
+        self.assertEqual(409, response.status_code, response.get_data(as_text=True))
+        self.assertEqual('application/json', response.mimetype)
+        self.assertEqual('board_config_invalid', response.get_json()['error'])
+        frame_stream.assert_not_called()
 
     def test_basic_mode_cannot_enter_db_oauth_candidate(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), patch.dict(
@@ -303,6 +366,161 @@ class EngBoardRouteContractTests(unittest.TestCase):
 
         self.assertEqual('board_permission_denied', raised.exception.code)
         self.assertEqual(403, raised.exception.status)
+
+    def _request_with_real_project_resolution(self, scope, dashboard, *, accessible=('ABC',),
+                                              saved_board=None):
+        context = db_context()
+        group = {'id': 'department-a', 'missingInfoComponents': ['Component A'], 'board': {
+            'columns': [
+                {'id': 'col-11111111', 'name': 'To do', 'statuses': ['To Do'], 'colour': '#597ef7'},
+                {'id': 'col-22222222', 'name': 'Done', 'statuses': ['Done'], 'colour': '#52c41a'},
+            ], 'doneEpicRetentionDays': 28,
+        }}
+        metadata_paths = []
+
+        def metadata(path, **_kwargs):
+            metadata_paths.append(path)
+            if path.startswith('/rest/agile/1.0/board/'):
+                return FakeResponse(saved_board or {})
+            if path == '/rest/api/3/project/search':
+                return FakeResponse({
+                    'values': [{'key': key} for key in accessible], 'isLast': True,
+                })
+            if path == '/rest/api/3/issuetype':
+                return FakeResponse([
+                    {'id': '10001', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False},
+                ])
+            self.assertEqual('/rest/api/3/field', path)
+            return FakeResponse([])
+
+        def search(payload, **_kwargs):
+            rows = ([epic('ABC-1', 'To Do')] if 'issuetype = Epic' in payload['jql']
+                    else [child('ABC-11', 'ABC-1')])
+            return FakeResponse({'issues': rows, 'isLast': True})
+
+        with patch.object(jira_server, 'ATLASSIAN_SCOPES', 'read:jira-work'), patch.object(
+            jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth',
+        ), patch.object(
+            eng_board_routes, 'database_storage_enabled', return_value=True,
+        ), patch.object(
+            jira_server, 'current_request_auth_context', return_value=context,
+        ), patch.object(
+            jira_server, 'current_jira_session_data', return_value={},
+        ), patch.object(
+            eng_board_routes, '_load_authority', return_value=({}, dashboard, group, group, 1, 1),
+        ), patch.object(
+            eng_board_routes, '_context_from_browser_session', return_value=context,
+        ), patch.object(
+            jira_server, 'current_jira_get', side_effect=metadata,
+        ) as jira_get, patch.object(
+            jira_server, 'current_jira_search', side_effect=search,
+        ) as jira_search:
+            response = self.client.get(BOARD_PATH, query_string={
+                'departmentId': 'department-a', 'scope': scope, 'refresh': '0',
+            })
+            response.get_data()
+        return response, metadata_paths, jira_get, jira_search
+
+    def test_selected_projects_take_precedence_without_saved_board_lookup(self):
+        install_oauth_session(self.client)
+        dashboard = {
+            'projects': {'selected': [{'key': 'ABC', 'type': 'product'}]},
+            'board': {'boardId': '17'},
+        }
+        for scope in ('component', 'all_work'):
+            with self.subTest(scope=scope):
+                response, metadata_paths, _jira_get, jira_search = (
+                    self._request_with_real_project_resolution(
+                        scope, dashboard, accessible=('ABC',),
+                        saved_board={'location': {'projectKey': 'FOREIGN'}},
+                    )
+                )
+                self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+                self.assertNotIn('/rest/agile/1.0/board/17', metadata_paths)
+                self.assertIn('/rest/api/3/project/search', metadata_paths)
+                self.assertTrue(jira_search.called)
+                self.assertTrue(all('project in ("ABC")' in request.args[0]['jql']
+                                    for request in jira_search.call_args_list))
+
+    def test_saved_board_project_is_resolved_before_accessible_catalog(self):
+        install_oauth_session(self.client)
+        dashboard = {'projects': {'selected': []}, 'board': {'boardId': '17'}}
+        for scope in ('component', 'all_work'):
+            with self.subTest(scope=scope):
+                response, metadata_paths, _jira_get, jira_search = (
+                    self._request_with_real_project_resolution(
+                        scope, dashboard, accessible=('ABC',),
+                        saved_board={'location': {'projectKey': 'ABC'}},
+                    )
+                )
+                self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+                self.assertLess(
+                    metadata_paths.index('/rest/agile/1.0/board/17'),
+                    metadata_paths.index('/rest/api/3/project/search'),
+                )
+                self.assertTrue(jira_search.called)
+                self.assertTrue(all('project in ("ABC")' in request.args[0]['jql']
+                                    for request in jira_search.call_args_list))
+
+    def test_missing_project_authority_rejects_before_issue_search(self):
+        install_oauth_session(self.client)
+        cases = (
+            ('no_board', {'projects': {'selected': []}}, None),
+            ('saved_board_without_project',
+             {'projects': {'selected': []}, 'board': {'boardId': '17'}}, {}),
+        )
+        for scope in ('component', 'all_work'):
+            for label, dashboard, saved_board in cases:
+                with self.subTest(scope=scope, case=label):
+                    response, metadata_paths, _jira_get, jira_search = (
+                        self._request_with_real_project_resolution(
+                            scope, dashboard, saved_board=saved_board,
+                        )
+                    )
+                    self.assertEqual(409, response.status_code, response.get_data(as_text=True))
+                    self.assertEqual('board_config_invalid', response.get_json()['error'])
+                    jira_search.assert_not_called()
+                    self.assertNotIn('/rest/api/3/project/search', metadata_paths)
+
+    def test_inaccessible_saved_board_project_rejects_before_issue_search(self):
+        install_oauth_session(self.client)
+        dashboard = {'projects': {'selected': []}, 'board': {'boardId': '17'}}
+        for scope in ('component', 'all_work'):
+            with self.subTest(scope=scope):
+                response, metadata_paths, _jira_get, jira_search = (
+                    self._request_with_real_project_resolution(
+                        scope, dashboard, accessible=('OTHER',),
+                        saved_board={'location': {'projectKey': 'ABC'}},
+                    )
+                )
+                self.assertEqual(403, response.status_code, response.get_data(as_text=True))
+                self.assertEqual('board_permission_denied', response.get_json()['error'])
+                jira_search.assert_not_called()
+                self.assertIn('/rest/api/3/project/search', metadata_paths)
+
+    def test_invalid_selected_projects_do_not_fall_back_to_saved_board(self):
+        install_oauth_session(self.client)
+        cases = (
+            ('invalid', [{'key': '', 'type': 'product'}]),
+            ('conflicting', [
+                {'key': 'ABC', 'type': 'product'}, {'key': 'abc', 'type': 'tech'},
+            ]),
+        )
+        for scope in ('component', 'all_work'):
+            for label, selected in cases:
+                with self.subTest(scope=scope, case=label):
+                    response, metadata_paths, _jira_get, jira_search = (
+                        self._request_with_real_project_resolution(
+                            scope,
+                            {'projects': {'selected': selected}, 'board': {'boardId': '17'}},
+                            accessible=('ABC',), saved_board={'location': {'projectKey': 'ABC'}},
+                        )
+                    )
+                    self.assertEqual(409, response.status_code, response.get_data(as_text=True))
+                    self.assertEqual('board_config_invalid', response.get_json()['error'])
+                    jira_search.assert_not_called()
+                    self.assertNotIn('/rest/agile/1.0/board/17', metadata_paths)
+                    self.assertNotIn('/rest/api/3/project/search', metadata_paths)
 
     def test_metadata_pagination_reaches_complete_board_for_both_scopes(self):
         install_oauth_session(self.client)
@@ -541,6 +759,8 @@ class EngBoardRouteContractTests(unittest.TestCase):
             start = json.loads(next(frames))
             index = json.loads(next(frames))
             focused = json.loads(next(frames))
+            while focused['type'] == 'progress':
+                focused = json.loads(next(frames))
             self.assertEqual(('start', 'index', 'column'), (start['type'], index['type'], focused['type']))
             self.assertEqual('todo', focused['columnId'])
             self.assertFalse(release_later.is_set())

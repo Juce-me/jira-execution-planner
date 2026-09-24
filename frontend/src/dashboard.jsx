@@ -28,10 +28,7 @@ import ConnectionRecoveryNotice from './components/ConnectionRecoveryNotice.jsx'
 import { AUTH_REQUIRED_EVENT, AUTHENTICATION_REQUIRED_CODE, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './api/authRequired.js';
 import { completeAuthRecovery, getAuthRecoveryStores } from './api/authRecoveryCoordinator.js';
 import { clearAuthResumeState, getAuthResumeStorage, readAuthResumeState, writeAuthResumeState } from './api/authResumeState.js';
-import {
-    clearConnectionRecoveryState,
-    getConnectionRecoveryStorage,
-} from './api/connectionRecoveryState.js';
+import { connectionRecoveryPrincipalFromConfig } from './api/connectionRecoveryState.js';
 import { buildConnectionRecoveryShellState, buildConnectionRecoverySnapshot, settingsDiscardedRecoveryNotice, useConnectionRecovery } from './api/useConnectionRecovery.js';
 import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
@@ -409,10 +406,13 @@ import {
             const [sprintError, setSprintError] = useState('');
             const [serverConnectionError, setServerConnectionError] = useState('');
             const authResumePrincipalRef = useRef(null);
+            const connectionRecoveryPrincipalRef = useRef(null);
             const connectionRecoverySnapshotRef = useRef(null);
             const {
+                blocksManualRefresh: connectionRecoveryBlocksRefresh,
                 clearServerConnectionError,
                 consume: consumeConnectionRecovery,
+                discardRecovery: discardConnectionRecovery,
                 markBootstrapHealthy: markConnectionBootstrapHealthy,
                 notice: connectionRecoveryNotice,
                 pendingRef: pendingConnectionRecoveryRef,
@@ -425,10 +425,9 @@ import {
                 setStatus: setConnectionRecoveryStatus,
                 stagedRevision: connectionRecoveryStagedRevision,
                 status: connectionRecoveryStatus,
-                unavailableRef: serverUnavailableRef,
             } = useConnectionRecovery({
                 backendUrl: BACKEND_URL,
-                principalRef: authResumePrincipalRef,
+                principalRef: connectionRecoveryPrincipalRef,
                 snapshotRef: connectionRecoverySnapshotRef,
                 setServerConnectionError,
             });
@@ -545,6 +544,7 @@ import {
                             reportServerConnectionError(err);
                             throw err;
                         });
+                        markConnectionBootstrapHealthy('sprints');
                         const body = await response.json().catch(() => ({}));
                         return { httpStatus: response.status, ...body };
                     },
@@ -555,7 +555,6 @@ import {
                             const selected = snapshot.sprints.find(sprint => String(sprint.id) === String(nextState.selectedSprintId));
                             setSelectedSprint(nextState.selectedSprintId);
                             if (selected) setSprintName(selected.name);
-                            markConnectionBootstrapHealthy('sprints');
                             const validationKey = sprintCatalogValidationKey(snapshot);
                             if (validationKey && validationKey !== sprintCatalogPersistedValidationRef.current) {
                                 sprintCatalogPersistedValidationRef.current = validationKey;
@@ -2628,7 +2627,7 @@ import {
                     acceptedGroupsConfigRef.current = false;
                     setBoardGroupsReadFailed(true);
                     if (isAuthenticationRequiredError(err)) return false;
-                    if (reportServerConnectionError(err)) {
+                    if (reportServerConnectionError(err, { bootstrapPart: 'groups' })) {
                         setGroupsError('');
                     } else {
                         setGroupsError(err.message || 'Failed to load groups config.');
@@ -6776,11 +6775,12 @@ import {
                     }
                     if (!shouldApplyResult()) return false;
                     authResumePrincipalRef.current = resumePrincipal;
+                    connectionRecoveryPrincipalRef.current = connectionRecoveryPrincipalFromConfig(config);
                     const resumeStorage = getAuthResumeStorage(window);
                     const resume = resumeStorage && !planningAuthResumePersistenceFailedRef.current
                         ? readAuthResumeState(resumeStorage, resumePrincipal)
                         : null;
-                    const connectionResume = consumeConnectionRecovery(resumePrincipal);
+                    const connectionResume = consumeConnectionRecovery(connectionRecoveryPrincipalRef.current);
                     if (resume) {
                         pendingShellAuthResumeRef.current = resume.view;
                         authResumeShellSettledRef.current = new Set();
@@ -6892,7 +6892,7 @@ import {
                     performanceGate.resolve(false);
                     setBoardBootstrapStatus('error');
                     if (isAuthenticationRequiredError(err)) return false;
-                    if (!reportServerConnectionError(err)) {
+                    if (!reportServerConnectionError(err, { bootstrapPart: 'config' })) {
                         console.error('Failed to load config:', err);
                     }
                     if (!shouldPreserveEpmDraft()) applySavedEpmConfig(createEmptyEpmConfigDraft());
@@ -14370,7 +14370,7 @@ import {
                 const dirtyScenario = scenarioHasUnsavedChanges;
                 return buildConnectionRecoverySnapshot({
                     activeGroupId, dirtySettings: showGroupManage && isGroupDraftDirty,
-                    principal: authResumePrincipalRef.current,
+                    principal: connectionRecoveryPrincipalRef.current,
                     selectedSprint, selectedView,
                     scenario: dirtyScenario ? {
                         scopeKey: scenarioDraftMeta.scopeKey,
@@ -14846,7 +14846,7 @@ import {
                 rearmCatchUpAlerts();
                 loadMeasuredGroupTasks({ forceRefresh: true });
             };
-            const manualRefreshDisabled = connectionRecoveryStatus !== 'idle' || (selectedView === 'eng' ? (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized'
+            const manualRefreshDisabled = connectionRecoveryBlocksRefresh || (selectedView === 'eng' ? (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized'
                 : boardScopeRequested ? ['loading', 'catalog_pending', 'unsupported'].includes(selectedScopeReadiness)
                 : loading || groupsLoading || groupPreferences.onboardingRequired)
                 : (epmProjectsLoading || epmRollupLoading));
@@ -15115,14 +15115,9 @@ import {
                     <ConnectionRecoveryNotice
                         notice={connectionRecoveryNotice}
                         onRecover={() => setConnectionRecoveryStagedRevision(revision => revision + 1)}
-                        onDiscard={() => {
-                            clearConnectionRecoveryState(getConnectionRecoveryStorage(window));
-                            pendingConnectionRecoveryRef.current = null;
-                            setConnectionRecoveryNotice(null);
-                            setConnectionRecoveryStatus(serverUnavailableRef.current ? 'unavailable' : 'idle');
-                        }}
+                        onDiscard={discardConnectionRecovery}
                         onDismiss={() => setConnectionRecoveryNotice(null)}
-                        onReloadDiscard={() => recoverServerConnection({ manual: true, discardSettings: true })}
+                        onReloadDiscard={() => recoverServerConnection({ manual: true, discardUnsaved: true })}
                     />
 
                     {selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && (

@@ -123,6 +123,28 @@ function encodedBytes(value) {
     return new TextEncoder().encode(value).byteLength;
 }
 
+// Recovery identity for the mounted page. DB mode uses the exact workspace/private view. JSON mode has
+// no view config, so the configured Jira site scopes the tab capsule. DB mode without a resolved view
+// config has no safe identity and reloads without a capsule.
+export function connectionRecoveryPrincipalFromConfig(config) {
+    if (!isRecord(config)) return null;
+    if (config.viewConfig) {
+        return normalizePrincipal({
+            workspaceId: String(config.viewConfig.workspaceId || ''),
+            viewConfigId: String(config.viewConfig.viewConfigId || ''),
+        });
+    }
+    if (config.sharedConfig !== undefined) return null;
+    const site = boundedString(config.jiraUrl, 200);
+    return site ? { workspaceId: `local:${site}`, viewConfigId: 'local' } : null;
+}
+
+export function sameConnectionRecoveryPrincipal(left, right) {
+    const a = normalizePrincipal(left);
+    const b = normalizePrincipal(right);
+    return Boolean(a && b && a.workspaceId === b.workspaceId && a.viewConfigId === b.viewConfigId);
+}
+
 export function getConnectionRecoveryStorage(win = globalThis.window) {
     try {
         return win?.sessionStorage || null;

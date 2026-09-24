@@ -128,7 +128,7 @@ test('dashboard source adds EPM rollup loading state and refresh-button branchin
     assert.ok(epmViewDataSource.includes('setEpmRollupTree(null);'), 'Expected EPM rollup to clear before reload');
     assert.ok(dashboardSource.includes("if (selectedView === 'epm') {"), 'Expected refresh button EPM branch');
     assert.ok(dashboardSource.includes('void refreshEpmView();'), 'Expected refresh button to call EPM refresh path');
-    assert.ok(dashboardSource.includes("const manualRefreshDisabled = connectionRecoveryStatus !== 'idle' || (selectedView === 'eng'")
+    assert.ok(dashboardSource.includes("const manualRefreshDisabled = connectionRecoveryBlocksRefresh || (selectedView === 'eng'")
         && dashboardSource.includes(': loading || groupsLoading || groupPreferences.onboardingRequired)')
         && dashboardSource.includes(': (epmProjectsLoading || epmRollupLoading));'),
     'Expected refresh button disable logic to preserve the EPM branch while allowing Board-owned loading');

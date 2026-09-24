@@ -35,9 +35,51 @@ export function requireAuthentication(payload = {}, status = 401) {
     throw new AuthenticationRequiredError(state, status);
 }
 
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+let pendingMutationCount = 0;
+let pendingMutationWaiters = [];
+
+function settleMutation() {
+    pendingMutationCount -= 1;
+    if (pendingMutationCount > 0) return;
+    const waiters = pendingMutationWaiters;
+    pendingMutationWaiters = [];
+    waiters.forEach(resolve => resolve(true));
+}
+
+export function hasPendingMutations() {
+    return pendingMutationCount > 0;
+}
+
+// Resolves true once no write request is in flight, or false when the timeout elapses first.
+export function waitForPendingMutations(timeoutMs) {
+    if (pendingMutationCount === 0) return Promise.resolve(true);
+    return new Promise(resolve => {
+        const waiter = settled => {
+            clearTimeout(timer);
+            resolve(settled);
+        };
+        const timer = setTimeout(() => {
+            pendingMutationWaiters = pendingMutationWaiters.filter(entry => entry !== waiter);
+            resolve(false);
+        }, timeoutMs);
+        pendingMutationWaiters.push(waiter);
+    });
+}
+
 export async function apiFetch(url, options = {}) {
     const pending = readPendingAuthenticationRequired();
     if (pending) throw new AuthenticationRequiredError(pending);
+    if (READ_METHODS.has(String(options.method || 'GET').toUpperCase())) return performApiFetch(url, options);
+    pendingMutationCount += 1;
+    try {
+        return await performApiFetch(url, options);
+    } finally {
+        settleMutation();
+    }
+}
+
+async function performApiFetch(url, options) {
     let response;
     const requestStartedAt = Date.now();
     try {

@@ -152,3 +152,39 @@ test('blocked sessionStorage and repeated clears are fail-soft', () => {
     assert.equal(api.writeConnectionRecoveryState(null, recoverySnapshot(), 1_000), false);
     assert.equal(api.readConnectionRecoveryState(null, recoverySnapshot().principal, 1_000), null);
 });
+
+test('recovery principal uses the exact view config, a site-scoped local principal, or none', () => {
+    const api = loadModule();
+    assert.deepEqual(JSON.parse(JSON.stringify(api.connectionRecoveryPrincipalFromConfig({
+        jiraUrl: 'https://jira.example.test',
+        sharedConfig: {},
+        viewConfig: { workspaceId: 'workspace-1', viewConfigId: 'view-1' },
+    }))), { workspaceId: 'workspace-1', viewConfigId: 'view-1' });
+    assert.deepEqual(JSON.parse(JSON.stringify(api.connectionRecoveryPrincipalFromConfig({
+        jiraUrl: 'https://jira.example.test',
+    }))), { workspaceId: 'local:https://jira.example.test', viewConfigId: 'local' });
+    assert.equal(api.connectionRecoveryPrincipalFromConfig({ jiraUrl: 'https://jira.example.test', sharedConfig: {} }), null);
+    assert.equal(api.connectionRecoveryPrincipalFromConfig({ jiraUrl: '' }), null);
+    assert.equal(api.connectionRecoveryPrincipalFromConfig(null), null);
+    assert.equal(api.sameConnectionRecoveryPrincipal(
+        { workspaceId: 'local:https://jira.example.test', viewConfigId: 'local' },
+        { workspaceId: 'local:https://jira.example.test', viewConfigId: 'local' },
+    ), true);
+    assert.equal(api.sameConnectionRecoveryPrincipal(
+        { workspaceId: 'workspace-1', viewConfigId: 'view-1' },
+        { workspaceId: 'workspace-1', viewConfigId: 'view-2' },
+    ), false);
+    assert.equal(api.sameConnectionRecoveryPrincipal(null, null), false);
+});
+
+test('local JSON-mode principal round-trips a recovery capsule for the same Jira site only', () => {
+    const api = loadModule();
+    const storage = createStorage();
+    const principal = api.connectionRecoveryPrincipalFromConfig({ jiraUrl: 'https://jira.example.test' });
+    assert.equal(api.writeConnectionRecoveryState(storage, { ...recoverySnapshot(), principal }, 1_000), true);
+    assert.equal(api.readConnectionRecoveryState(storage, principal, 1_001)?.principal.workspaceId,
+        'local:https://jira.example.test');
+    assert.equal(api.writeConnectionRecoveryState(storage, { ...recoverySnapshot(), principal }, 1_000), true);
+    assert.equal(api.readConnectionRecoveryState(storage,
+        api.connectionRecoveryPrincipalFromConfig({ jiraUrl: 'https://other.example.test' }), 1_001), null);
+});

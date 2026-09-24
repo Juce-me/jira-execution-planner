@@ -22,13 +22,16 @@ because it rebuilds the document and executes the normal ordered bootstrap.
 Retry and the first hidden-to-visible return while unavailable share one single-flight action:
 
 1. Suppress auth-focus and long-absence Jira refresh while recovery owns the tab.
-2. Fetch fresh `/api/config?includeViewConfig=true` and compare its exact workspace/private-view
-   principal with the mounted principal.
-3. Give any concurrent global auth `401` terminal precedence.
-4. Capture a strict Scenario-only `sessionStorage` capsule when needed.
-5. Persist one automatic-attempt marker for the outage and hard reload once.
-6. Clear the marker after core config/group/sprint bootstrap is healthy, but retain recovery ownership
-   until Scenario restoration reaches a terminal result.
+2. Fetch fresh `/api/config?includeViewConfig=true` within a 10-second bound and compare its recovery
+   principal with the mounted one: the exact workspace/private view, a Jira-site-scoped local principal
+   in JSON mode, or none. No mounted principal or a changed principal reloads without a capsule; a
+   changed principal with dirty Scenario work first requires `Reload and discard`.
+3. Wait, bounded, for in-flight write requests before capturing the page.
+4. Give any concurrent global auth `401` terminal precedence.
+5. Capture a strict Scenario-only `sessionStorage` capsule when needed.
+6. Persist one automatic-attempt marker for the outage and hard reload once.
+7. Clear the marker once config, group, and sprint bootstrap reads each receive an HTTP response, but
+   retain recovery ownership until Scenario restoration reaches a terminal result.
 
 If that document still fails, no second automatic reload occurs. Retry remains an explicit action.
 
@@ -71,7 +74,9 @@ and error events remain authoritative, and capsule contents never enter analytic
 
 ## Current accuracy
 
-Implemented and verified locally on 2026-09-23. Retry now performs one exact-principal readiness probe
+Implemented and verified locally on 2026-09-23; review follow-up for identity-less modes, probe timeout,
+Refresh Jira gating, identity change, reachable-server outage end, and in-flight saves implemented on
+2026-09-24 (see the plan's review follow-up). Retry now performs one exact-principal readiness probe
 and guarded hard reload, preserves principal/scope-bound dirty Scenario deltas, retains the fresh server
 baseline on conflict, and prevents automatic reload or compute loops. Settings/EPM values always reload
 from saved state; discarded Settings work is disclosed. Focus/auth ownership, onboarding, missing scopes,

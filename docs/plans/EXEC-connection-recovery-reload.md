@@ -2,7 +2,7 @@
 
 > **For agentic workers:** use `superpowers:executing-plans` and implement each task test-first.
 
-**Status:** implemented and verified locally on 2026-09-23
+**Status:** implemented and verified locally on 2026-09-23; review follow-up implemented on 2026-09-24; pending acceptance or merge
 **Branch:** `bugfix/connection-recovery-reload`
 
 ## Goal
@@ -13,12 +13,24 @@ position state. Reload all Settings and EPM data from their saved server version
 
 ## Resolved contract
 
-- Probe `/api/config?includeViewConfig=true` once through the existing authenticated client. Reload
-  only when its exact `{workspaceId, viewConfigId}` matches the mounted principal.
+- Probe `/api/config?includeViewConfig=true` once through the existing authenticated client, bounded
+  by a 10-second timeout. A timeout or a still-refused connection keeps the page, re-enables Retry, and
+  says why; it never reloads.
+- The recovery principal is the exact `{workspaceId, viewConfigId}` when `viewConfig` is present. JSON
+  mode (no `sharedConfig`) uses a local principal scoped to the configured Jira site. DB mode without a
+  resolved view config, or a page that never bootstrapped, has no principal and reloads without a capsule.
+- If the fresh principal differs from the mounted one, reload without a capsule. When dirty Scenario work
+  would be lost, require explicit `Reload and discard` first.
+- Before capturing the capsule, wait (bounded by the probe timeout) for in-flight write requests tracked
+  by `apiFetch`, so a save that lands during the outage is not reported as a remote conflict.
 - A `401` always wins: do not write a connection capsule or reload after the global auth lock is set.
 - While connection recovery is active, suppress auth-focus refresh and the long-absence Jira refresh.
 - Persist a session-scoped outage attempt marker across documents. One automatic reload is allowed per
-  outage. A later attempt for that outage requires the explicit Retry button.
+  outage. A later attempt for that outage requires the explicit Retry button. The outage ends once the
+  config, groups, and Sprint bootstrap reads each receive any HTTP response; a Jira/HTTP error from a
+  reachable server does not keep the marker alive.
+- Refresh Jira is disabled only while the server is unavailable or recovery is checking, waiting for a
+  save, or reloading/restoring. Terminal `blocked_scope` and `failed` states leave it enabled.
 - Store no Settings values. If Settings was dirty, store only `droppedSettings: true` and show a notice
   after reload that unsaved configuration was discarded.
 - Store no EPM draft state. EPM always reloads fresh.
@@ -114,3 +126,26 @@ Validate auth-resume and connection-recovery capsules independently against the 
 - Missing scope and failed restoration retain the capsule to TTL with explicit Recover/Discard.
 - Storage failure blocks reload only when dirty Scenario work would be lost.
 - No reload loop occurs when bootstrap remains broken.
+
+## Review follow-up (2026-09-24)
+
+A branch review found cases where Retry still did not hard refresh, or the refresh was unsafe.
+
+- [x] Retry never reloaded without a mounted workspace/private-view identity (JSON mode, DB mode without
+  a view config, or a page that never bootstrapped). Covered by the Board Retry tests in
+  `tests/ui/eng_group_board_view.spec.js`, whose fixture has no `viewConfig`.
+- [x] The probe had no timeout and could leave Retry stuck on "Checking connection…". Covered in
+  `tests/ui/server_unavailable_ui.spec.js`.
+- [x] Refresh Jira stayed disabled in terminal recovery states. Covered by the blocked-scope test in
+  `tests/ui/scenario_draft_history.spec.js`.
+- [x] A changed workspace/private view told the user to reload by hand. Covered by the changed-view tests
+  in `tests/ui/scenario_draft_history.spec.js`.
+- [x] A non-network bootstrap failure kept the outage marker for its full TTL. Covered by the
+  reachable-server test in `tests/ui/server_unavailable_ui.spec.js`.
+- [x] Reload did not wait for an in-flight save. Covered by `tests/test_http_pending_mutations.js` and
+  the Board in-flight Department save test.
+- [x] Merging `main` replaced `loadSprints` with the Sprint catalog controller. The controller now reports
+  backend connection failures and marks the Sprint bootstrap healthy. Board selector-scheduling tests from
+  `main` that used Retry for in-place rereads are rewritten to the reload contract.
+- [x] Each new browser test was checked to fail with its fix disabled.
+

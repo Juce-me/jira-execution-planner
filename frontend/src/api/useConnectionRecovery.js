@@ -2,17 +2,27 @@ import * as React from 'react';
 import { fetchAppConfig } from './configApi.js';
 import { CONNECTION_AVAILABLE_EVENT, CONNECTION_UNAVAILABLE_EVENT } from './authRefreshContract.js';
 import { isAuthenticationRequiredError, readPendingAuthenticationRequired } from './authRequired.js';
+import { hasPendingMutations, waitForPendingMutations } from './http.js';
 import {
     canAutomaticallyRecoverConnection,
     clearConnectionRecoveryAttempt,
     clearConnectionRecoveryState,
+    connectionRecoveryPrincipalFromConfig,
     getConnectionRecoveryStorage,
     markConnectionRecoveryAttempt,
     readConnectionRecoveryAttempt,
     readConnectionRecoveryState,
+    sameConnectionRecoveryPrincipal,
     writeConnectionRecoveryState,
 } from './connectionRecoveryState.js';
 import { getServerConnectionErrorMessage, isBackendConnectionFailure } from '../dashboardRuntime.js';
+
+export const CONNECTION_PROBE_TIMEOUT_MS = 10_000;
+
+// Statuses during which the server is unreachable or recovery owns the page; Refresh Jira waits.
+const REFRESH_BLOCKING_STATUSES = new Set([
+    'unavailable', 'manual_required', 'discard_required', 'checking', 'waiting_for_save', 'restoring',
+]);
 
 const settingsDiscardedNotice = {
     kind: 'settings_discarded',
@@ -59,8 +69,15 @@ export function useConnectionRecovery({
         if (!pendingRef.current) releaseOwnership('idle');
     }, [releaseOwnership, setServerConnectionError]);
 
-    const reportServerConnectionError = React.useCallback((err) => {
-        if (!isBackendConnectionFailure(err)) return false;
+    // A bootstrap read that received any HTTP response proves the server is reachable, so it counts
+    // toward ending the outage even when that read failed for another reason.
+    const reportServerConnectionError = React.useCallback((err, { bootstrapPart = '' } = {}) => {
+        if (!isBackendConnectionFailure(err)) {
+            if (bootstrapPart && !isAuthenticationRequiredError(err) && err?.name !== 'AbortError') {
+                markBootstrapHealthy(bootstrapPart);
+            }
+            return false;
+        }
         if (!unavailableRef.current) {
             bootstrapHealthRef.current.clear();
             outageIdRef.current = outageIdRef.current
@@ -71,7 +88,7 @@ export function useConnectionRecovery({
         setStatus(current => current === 'checking' ? current : 'unavailable');
         window.dispatchEvent(new Event(CONNECTION_UNAVAILABLE_EVENT));
         return true;
-    }, [backendUrl, setServerConnectionError]);
+    }, [backendUrl, markBootstrapHealthy, setServerConnectionError]);
 
     const consume = React.useCallback((principal) => {
         const recovery = readConnectionRecoveryState(getConnectionRecoveryStorage(window), principal);
@@ -81,7 +98,7 @@ export function useConnectionRecovery({
         return recovery;
     }, []);
 
-    const recover = React.useCallback(async ({ manual = false, discardSettings = false } = {}) => {
+    const recover = React.useCallback(async ({ manual = false, discardUnsaved = false } = {}) => {
         if (!unavailableRef.current || inFlightRef.current || reloadStartedRef.current) return;
         const storage = getConnectionRecoveryStorage(window);
         const outageId = outageIdRef.current;
@@ -91,29 +108,43 @@ export function useConnectionRecovery({
         }
         inFlightRef.current = true;
         setStatus('checking');
+        const probe = new AbortController();
+        const probeTimer = window.setTimeout(() => probe.abort(), CONNECTION_PROBE_TIMEOUT_MS);
         try {
-            const mountedPrincipal = principalRef.current;
-            if (!mountedPrincipal?.workspaceId || !mountedPrincipal?.viewConfigId) {
-                throw new Error('Connection recovery is waiting for the current workspace identity.');
+            let config;
+            try {
+                config = await fetchAppConfig(backendUrl, { cache: 'no-cache', signal: probe.signal });
+            } finally {
+                window.clearTimeout(probeTimer);
             }
-            const config = await fetchAppConfig(backendUrl, { cache: 'no-cache' });
             if (readPendingAuthenticationRequired()) return;
-            const freshPrincipal = {
-                workspaceId: String(config.viewConfig?.workspaceId || ''),
-                viewConfigId: String(config.viewConfig?.viewConfigId || ''),
-            };
-            if (freshPrincipal.workspaceId !== mountedPrincipal.workspaceId
-                || freshPrincipal.viewConfigId !== mountedPrincipal.viewConfigId) {
-                setStatus('unavailable');
+            // Without a mounted identity (the page never bootstrapped, or DB mode has no view config)
+            // nothing can be matched safely, so the reload starts clean.
+            const mountedPrincipal = principalRef.current;
+            const identityChanged = Boolean(mountedPrincipal)
+                && !sameConnectionRecoveryPrincipal(mountedPrincipal, connectionRecoveryPrincipalFromConfig(config));
+            // A write sent during the outage may still land; reloading first would report the user's own
+            // save as a remote conflict. Capture the page only after it settles. The wait is bounded so a
+            // hung request cannot block recovery.
+            if (hasPendingMutations()) {
+                setStatus('waiting_for_save');
+                setNotice({ kind: 'waiting_for_save', message: 'Waiting for a pending save to finish before reloading.' });
+                await waitForPendingMutations(CONNECTION_PROBE_TIMEOUT_MS);
+                setNotice(null);
+                if (readPendingAuthenticationRequired()) return;
+            }
+            const captured = mountedPrincipal ? snapshotRef.current?.() : null;
+            if (identityChanged && captured?.scenario && !discardUnsaved) {
+                setStatus('discard_required');
                 setNotice({
-                    kind: 'identity_changed',
-                    message: 'The active workspace or private view changed. Reload the page normally before continuing.',
+                    kind: 'discard_required',
+                    message: 'The active workspace or private view changed. Reloading will discard your unsaved Scenario changes.',
                 });
                 return;
             }
-            const captured = snapshotRef.current?.();
-            const snapshot = captured ? { ...captured, outage: { id: outageId } } : captured;
-            const capsuleWritten = writeConnectionRecoveryState(storage, snapshot);
+            const snapshot = captured && !identityChanged ? { ...captured, outage: { id: outageId } } : null;
+            const capsuleWritten = snapshot ? writeConnectionRecoveryState(storage, snapshot) : false;
+            if (!capsuleWritten) clearConnectionRecoveryState(storage);
             if (!capsuleWritten && snapshot?.scenario) {
                 setStatus('unavailable');
                 setNotice({
@@ -122,10 +153,10 @@ export function useConnectionRecovery({
                 });
                 return;
             }
-            if (!capsuleWritten && snapshot?.droppedSettings && !discardSettings) {
-                setStatus('settings_discard_required');
+            if (!capsuleWritten && snapshot?.droppedSettings && !discardUnsaved) {
+                setStatus('discard_required');
                 setNotice({
-                    kind: 'settings_discard_required',
+                    kind: 'discard_required',
                     message: 'Unsaved configuration cannot be preserved in this tab. Reloading will discard it.',
                 });
                 return;
@@ -151,13 +182,24 @@ export function useConnectionRecovery({
         } catch (err) {
             if (isAuthenticationRequiredError(err) || readPendingAuthenticationRequired()) return;
             setStatus('unavailable');
-            if (!reportServerConnectionError(err)) {
+            if (probe.signal.aborted) {
+                setNotice({ kind: 'probe_failed', message: 'The server did not answer within 10 seconds. Retry when it is available.' });
+            } else if (reportServerConnectionError(err)) {
+                setNotice({ kind: 'probe_failed', message: 'The server is still unreachable. Retry when it is available.' });
+            } else {
                 setNotice({ kind: 'probe_failed', message: err.message || 'The server is still unavailable.' });
             }
         } finally {
             inFlightRef.current = false;
         }
     }, [backendUrl, principalRef, reportServerConnectionError, snapshotRef]);
+
+    const discardRecovery = React.useCallback(() => {
+        clearConnectionRecoveryState(getConnectionRecoveryStorage(window));
+        pendingRef.current = null;
+        setNotice(null);
+        setStatus(unavailableRef.current ? 'unavailable' : 'idle');
+    }, []);
 
     const recoverRef = React.useRef(recover);
     recoverRef.current = recover;
@@ -175,8 +217,10 @@ export function useConnectionRecovery({
     }, []);
 
     return {
+        blocksManualRefresh: REFRESH_BLOCKING_STATUSES.has(status),
         clearServerConnectionError,
         consume,
+        discardRecovery,
         markBootstrapHealthy,
         notice,
         pendingRef,

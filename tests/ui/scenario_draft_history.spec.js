@@ -289,6 +289,7 @@ async function installDashboardFromSource(page, options = {}) {
     unexpectedApiRequestsByPage.set(page, unexpectedApiRequests);
     let csrfCount = 0;
     let sprintsUnavailable = false;
+    let viewConfigId = 'view-test';
     let draftMetadata = {
         activeDraft: {
             draftId: 'draft-1',
@@ -433,7 +434,7 @@ async function installDashboardFromSource(page, options = {}) {
                 epm: { version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: '', subGoalKeys: [] }, projects: {} },
                 viewConfig: {
                     workspaceId: 'workspace-test',
-                    viewConfigId: 'view-test',
+                    viewConfigId,
                     view: { epm: { version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: '', subGoalKeys: [] }, projects: {} } },
                 },
             });
@@ -619,6 +620,7 @@ async function installDashboardFromSource(page, options = {}) {
         versionRequests,
         csrfCount: () => csrfCount,
         setSprintsUnavailable: value => { sprintsUnavailable = Boolean(value); },
+        setViewConfigId: value => { viewConfigId = value; },
         setRemoteConflictMetadata,
     };
 }
@@ -969,6 +971,7 @@ test('missing recovery scope retains the Scenario capsule until explicit discard
 
     await expect(page.getByText('Your unsaved Scenario changes are still available')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Recover', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' })).toBeEnabled();
     await captureScenarioScreenshot(page, 'connection-recovery-blocked-scope');
     expect(fixture.scenarioPosts).toHaveLength(0);
     await expect.poll(() => page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).not.toBeNull();
@@ -1036,4 +1039,52 @@ test('save conflict retries once after csrf_required before surfacing conflict',
     expect(draftPosts[1].body.scope_key).toBe(scopeKey);
     expect(draftPosts[1].body.baseDraftRevision).toBe(5);
     expect(draftPosts[1].body.overrides).toHaveProperty('PROD-1');
+});
+
+test('changed private view reloads only after explicit discard of dirty Scenario work', async ({ page }) => {
+    let documents = 0;
+    page.on('request', request => {
+        if (request.resourceType() === 'document') documents += 1;
+    });
+    const fixture = await installDashboardFromSource(page);
+    await openScenarioWithDirtyDraft(page);
+
+    fixture.setSprintsUnavailable(true);
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Server is not responding' })).toBeVisible();
+    fixture.setSprintsUnavailable(false);
+    fixture.setViewConfigId('view-other');
+    const documentsBefore = documents;
+    await page.getByRole('button', { name: 'Retry connection' }).click();
+
+    await expect(page.getByText('Reloading will discard your unsaved Scenario changes.')).toBeVisible();
+    expect(documents).toBe(documentsBefore);
+    await expect(page.locator('.scenario-dirty-indicator', { hasText: '1 override' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Reload and discard' }).click();
+    await expect.poll(() => documents).toBe(documentsBefore + 1);
+    await expect(page.locator('.scenario-dirty-indicator', { hasText: '1 override' })).toHaveCount(0);
+    expect(fixture.draftPosts).toHaveLength(0);
+    expect(await page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBeNull();
+});
+
+test('changed private view reloads clean immediately when nothing unsaved would be lost', async ({ page }) => {
+    let documents = 0;
+    page.on('request', request => {
+        if (request.resourceType() === 'document') documents += 1;
+    });
+    const fixture = await installDashboardFromSource(page);
+    await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
+
+    fixture.setSprintsUnavailable(true);
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Server is not responding' })).toBeVisible();
+    fixture.setSprintsUnavailable(false);
+    fixture.setViewConfigId('view-other');
+    const documentsBefore = documents;
+    await page.getByRole('button', { name: 'Retry connection' }).click();
+
+    await expect.poll(() => documents).toBe(documentsBefore + 1);
+    await expect(page.getByText('The active workspace or private view changed')).toHaveCount(0);
+    expect(await page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBeNull();
 });

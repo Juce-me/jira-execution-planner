@@ -2116,7 +2116,8 @@ test('connection Retry uses an exact config probe and hard reload instead of the
     const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
     const recoverySource = readSource(path.join(frontendSrcPath, 'api', 'useConnectionRecovery.js'));
 
-    assert.ok(recoverySource.includes("fetchAppConfig(backendUrl, { cache: 'no-cache' })"));
+    assert.ok(recoverySource.includes("fetchAppConfig(backendUrl, { cache: 'no-cache', signal: probe.signal })"));
+    assert.ok(recoverySource.includes('probe.abort(), CONNECTION_PROBE_TIMEOUT_MS'), 'Expected the Retry probe to be bounded');
     assert.ok(recoverySource.includes('window.location.reload()'));
     assert.ok(recoverySource.includes('writeConnectionRecoveryState'));
     assert.ok(recoverySource.includes('markConnectionRecoveryAttempt'));

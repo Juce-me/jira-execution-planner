@@ -2826,9 +2826,65 @@ test('selector scheduling: Retry connection probes config once and hard reloads 
 
     await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
     await expect.poll(() => documents).toBe(documentsBefore + 1);
-    expect(requests[requestsBefore]).toBe('/api/config');
+    expect(requests.slice(requestsBefore)).toContain('/api/config');
     await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_attempt_v1'))).toBeNull();
+});
+
+test('selector scheduling: Retry waits for an in-flight Department save before reloading once', async ({ page }) => {
+    let releaseGroupSave;
+    const groupSaveGate = new Promise(resolve => { releaseGroupSave = resolve; });
+    const requests = [];
+    const requestLog = [];
+    let documents = 0;
+    page.on('request', request => {
+        if (request.resourceType() === 'document') documents += 1;
+    });
+    await openBoard(page, {
+        requests,
+        requestLog,
+        sourceBundle: true,
+        strictBoard: true,
+        groupsSource: 'workspace_db',
+        groupPreferences: {
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            onboardingDone: true,
+            visibleGroupIds: ['grp-default'],
+            effectiveVisibleGroupIds: ['grp-default'],
+            activeGroupId: 'grp-default',
+        },
+        groupsResponseGate: ({ requestIndex }) => requestIndex === 2 ? groupSaveGate : null,
+        homeTokenDelayMs: 1500,
+        homeTokenFailureCount: 1,
+    });
+    const groupSaves = () => requestLog.filter(entry => (
+        entry.method === 'POST' && new URL(entry.url).pathname === '/api/groups-config'
+    ));
+
+    try {
+        await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+        const dialog = page.getByRole('dialog').first();
+        await dialog.getByRole('tab', { name: 'Boards', exact: true }).click();
+        await dialog.locator('.board-column-name').first().fill('Pending save backlog');
+        await dialog.getByRole('button', { name: /^Save$/ }).click();
+        await expect.poll(() => groupSaves().length).toBe(1);
+        const documentsBefore = documents;
+
+        await page.getByRole('button', { name: 'Retry connection', exact: true }).evaluate(button => button.click());
+        await expect(page.getByText('Waiting for a pending save to finish before reloading.')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Waiting for save…', exact: true })).toBeDisabled();
+        expect(documents).toBe(documentsBefore);
+
+        releaseGroupSave();
+        releaseGroupSave = null;
+        await expect.poll(() => documents).toBe(documentsBefore + 1);
+        expect(groupSaves()).toHaveLength(1);
+    } finally {
+        releaseGroupSave?.();
+    }
 });
 
 for (const probeFailure of [

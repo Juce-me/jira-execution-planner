@@ -184,7 +184,7 @@ class StoryReadinessRouteTests(unittest.TestCase):
         self.assertEqual(response.headers["Cache-Control"], "private, no-store")
         auth.assert_not_called()
 
-    def test_strict_producer_paginates_candidates_and_batches_children(self):
+    def test_strict_producer_paginates_candidate_epics_for_active_and_future_sprints(self):
         eng_routes.bind_server_globals(vars(eng_routes))
         context = SimpleNamespace(auth_mode='basic')
         group = {
@@ -200,10 +200,11 @@ class StoryReadinessRouteTests(unittest.TestCase):
             'projectTrackField': {'fieldId': 'customfield_track'},
         }
         search_calls = []
+        sprint_state = 'active'
 
         def jira_get(path, **_kwargs):
             if path.startswith('/rest/agile/1.0/sprint/'):
-                return _FakeResponse(200, {'id': 42, 'name': 'Sprint 42', 'state': 'active'})
+                return _FakeResponse(200, {'id': 42, 'name': 'Sprint 42', 'state': sprint_state})
             if path == '/rest/api/3/field':
                 return _FakeResponse(200, [{'id': 'customfield_epic', 'name': 'Epic Link'}])
             raise AssertionError(path)
@@ -235,26 +236,37 @@ class StoryReadinessRouteTests(unittest.TestCase):
                     'fields': {
                         'summary': 'Checkout', 'status': {'name': 'In Progress'},
                         'priority': {'name': 'High'}, 'assignee': None,
-                        'labels': ['team_alpha', 'team_beta'], 'parent': None,
+                        'labels': ['team_alpha', 'team_beta', 'Sprint 42_Candidate'], 'parent': None,
                         'project': {'key': 'PROD'}, 'customfield_track': {'value': 'Committed'},
                     },
                 }], 'isLast': True})
             raise AssertionError(jql)
 
-        transport = EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25))
-        with patch.object(eng_routes, 'current_jira_get', side_effect=jira_get), \
-             patch.object(eng_routes, 'current_jira_search', side_effect=jira_search):
-            result, timing = eng_routes._story_readiness_compute(
-                context, ('42', 'Sprint 42', 'active'), group,
-                [{'key': 'PROD', 'type': 'product'}], config, transport,
-            )
+        for sprint_state in ('active', 'future'):
+            with self.subTest(sprint_state=sprint_state):
+                search_calls.clear()
+                transport = EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25))
+                with patch.object(eng_routes, 'current_jira_get', side_effect=jira_get), \
+                     patch.object(eng_routes, 'current_jira_search', side_effect=jira_search):
+                    result, timing = eng_routes._story_readiness_compute(
+                        context, ('42', 'Sprint 42', sprint_state), group,
+                        [{'key': 'PROD', 'type': 'product'}], config, transport,
+                    )
 
-        self.assertEqual(result['epics'][0]['missingTeams'], [
-            {'id': 'team-b', 'name': 'Beta', 'reason': 'team_uncovered'},
-        ])
-        self.assertEqual(result['epics'][0]['projectTrack'], 'Committed')
-        self.assertEqual(len(search_calls), 4)
-        self.assertIn('discovery;dur=', timing)
+                discovery_jql = search_calls[0]['jql']
+                self.assertIn('project in ("PROD") AND issuetype = Epic', discovery_jql)
+                self.assertIn(
+                    'AND (customfield_sprint = 42 OR labels in '
+                    '("Sprint 42", "Sprint 42_candidate")) '
+                    'AND labels in ("team_alpha", "team_beta")', discovery_jql,
+                )
+                self.assertEqual(result['scope']['sprintState'], sprint_state)
+                self.assertEqual(result['epics'][0]['missingTeams'], [
+                    {'id': 'team-b', 'name': 'Beta', 'reason': 'team_uncovered'},
+                ])
+                self.assertEqual(result['epics'][0]['projectTrack'], 'Committed')
+                self.assertEqual(len(search_calls), 4)
+                self.assertIn('discovery;dur=', timing)
 
 
 if __name__ == "__main__":

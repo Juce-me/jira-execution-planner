@@ -66,3 +66,15 @@ export function computeEpicStoryProgress(tasks = []) {
     });
     return buildStorySubtaskProgress({ total: list.length, done, inProgress });
 }
+
+export function computeEpicStatusCountProgress(statusCounts = {}, total = 0) {
+    let done = 0;
+    let inProgress = 0;
+    for (const [name, count] of Object.entries(statusCounts)) {
+        if (ABANDONED_STATUS_NAMES.has(name.trim().toLowerCase())) continue;
+        const rank = getStatusPhaseRank(name);
+        if (rank === DONE_PHASE_RANK) done += count;
+        else if (rank === IN_PROGRESS_PHASE_RANK) inProgress += count;
+    }
+    return buildStorySubtaskProgress({ total, done, inProgress });
+}

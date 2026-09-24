@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from backend.config.shared_config import normalize_shared_admin_section
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.services.workspace_dashboard_config import acquire_workspace_config_fence
 
 
 CAPACITY_SOURCE_DB = 'workspace_db'
@@ -175,6 +176,7 @@ def save_shared_capacity_config(context, payload, base_revision, field_catalog, 
     site_url, cloud_id = _context_identity(context)
     now = models._utcnow()
     with db_engine.session_scope(database_url) as session:
+        acquire_workspace_config_fence(session, context.workspace_id)
         row = session.execute(
             select(models.WorkspaceDashboardConfig).where(
                 models.WorkspaceDashboardConfig.workspace_id == context.workspace_id,

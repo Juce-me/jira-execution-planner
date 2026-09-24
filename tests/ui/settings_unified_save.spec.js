@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
@@ -19,10 +20,19 @@ const administratorConfigPaths = new Set([
 ]);
 
 let fixture;
+let sourceDashboardJs;
 
 test.beforeAll(async () => {
     fs.mkdirSync(screenshotDir, { recursive: true });
     fixture = await import('../fixtures/groupBoardReference.mjs');
+    sourceDashboardJs = esbuild.buildSync({
+        entryPoints: [path.join(__dirname, '..', '..', 'frontend', 'src', 'dashboard.jsx')],
+        bundle: true,
+        write: false,
+        format: 'iife',
+        loader: { '.css': 'empty' },
+        define: { 'process.env.NODE_ENV': '"test"' },
+    }).outputFiles[0].text;
 });
 
 function requestBody(request) {
@@ -37,6 +47,29 @@ function deferred() {
     let resolve;
     const promise = new Promise(next => { resolve = next; });
     return { promise, resolve };
+}
+
+function dbTeamEnvelope({
+    teams = [],
+    state = 'fresh',
+    refreshStatus = 'completed',
+    refreshAttemptId = null,
+    identity = 'tc1:workspace:42:scope',
+    browserContextId = 'bc1:test',
+    scopeDigest = 'scope',
+} = {}) {
+    return {
+        teams,
+        cache: {
+            backend: 'postgresql',
+            state,
+            refreshStatus,
+            refreshAttemptId,
+            identity,
+            browserContextId,
+            scopeDigest,
+        },
+    };
 }
 
 // Expands a { statusName: count } map into synthetic sprint-scoped epics, the shape the dashboard
@@ -86,6 +119,7 @@ function conflictingServerConfig() {
 }
 
 async function mockConfigSettings(page, {
+    sourceBundle = false,
     groupsConfig = baseGroupsConfig(),
     conflictCurrents = [],
     failGroupsSaveOnce = null,
@@ -103,6 +137,8 @@ async function mockConfigSettings(page, {
     epmLoadGate = null,
     workspaceLoadGate = null,
     workspaceLoadResponse = null,
+    fallbackSectionLoadGate = null,
+    fallbackSectionResponses = {},
     configRetryAuthRequired = false,
     failFirstGroupsConnection = false,
     keepServerConnectionError = false,
@@ -115,16 +151,24 @@ async function mockConfigSettings(page, {
     teamCatalogLoadGate = null,
     teamCatalogSaveGate = null,
     sprintsLoadGate = null,
+    teamsLoadGate = null,
+    teamsResponse = null,
+    teamsResponsePlan = null,
+    teamCatalogLoadResponse = null,
+    sprints = [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }],
     refreshedTeams = [
         { id: 'team-platform', name: 'Platform Team' },
         { id: 'team-data', name: 'Data Team' },
     ],
+    analyticsEnabled = false,
+    userCanEditSettings = true,
 } = {}) {
     const calls = [];
     const epicsInScope = epicsFromCounts(fixture.REFERENCE_EPICS_BY_STATUS);
     let groupsPostCount = 0;
     let configGetCount = 0;
     let teamCatalogGetCount = 0;
+    let teamsGetCount = 0;
     let persistedTeamCatalog = JSON.parse(JSON.stringify(initialTeamCatalog));
     const workspaceResponseQueues = Object.fromEntries(
         Object.entries(workspaceSaveResponses).map(([pathname, responses]) => [pathname, [...responses]])
@@ -137,6 +181,13 @@ async function mockConfigSettings(page, {
     };
 
     await installDashboardShell(page);
+    if (sourceBundle) {
+        await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
+            status: 200,
+            contentType: 'application/javascript',
+            body: sourceDashboardJs,
+        }));
+    }
     await page.addInitScript(() => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
             selectedView: 'eng',
@@ -160,7 +211,12 @@ async function mockConfigSettings(page, {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
-        if (url.pathname === '/api/analytics/context') return json({ enabled: false });
+        if (url.pathname === '/api/analytics/context') return json(analyticsEnabled ? {
+            enabled: true,
+            measurementId: 'G-SYNTHETIC',
+            ga4UserId: 'synthetic-user',
+            debugMode: false,
+        } : { enabled: false });
         if (url.pathname === '/api/me/connections/home-token') return json({
             connected: true,
             provider: 'atlassian_user_api_token',
@@ -191,7 +247,7 @@ async function mockConfigSettings(page, {
             authMode: workspaceSnapshot ? 'atlassian_oauth' : '',
             projectsConfigured: true,
             settingsAdminOnly: false,
-            userCanEditSettings: true,
+            userCanEditSettings,
             userCanEditEpmConfig: true,
             epm: workspaceSnapshot?.sharedConfig?.epm || epmConfig,
             viewConfig: {
@@ -261,12 +317,15 @@ async function mockConfigSettings(page, {
         if (url.pathname === '/api/sprints') {
             if (keepServerConnectionError) return json({ error: 'unavailable' }, 500);
             if (sprintsLoadGate) await sprintsLoadGate.promise;
-            return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
+            return json({ sprints });
         }
         if (url.pathname === '/api/team-catalog' && request.method() === 'GET') {
             teamCatalogGetCount += 1;
             const catalogSnapshot = JSON.parse(JSON.stringify(persistedTeamCatalog));
             if (teamCatalogLoadGate && teamCatalogGetCount === 1) await teamCatalogLoadGate.promise;
+            if (teamCatalogLoadResponse) {
+                return json(teamCatalogLoadResponse.body, teamCatalogLoadResponse.status || 200);
+            }
             return json(catalogSnapshot);
         }
         if (url.pathname === '/api/team-catalog' && request.method() === 'POST') {
@@ -275,7 +334,18 @@ async function mockConfigSettings(page, {
             persistedTeamCatalog = { catalog: body.catalog || {}, meta: body.meta || {} };
             return json(persistedTeamCatalog);
         }
-        if (url.pathname === '/api/teams') return json({ teams: refreshedTeams });
+        if (url.pathname === '/api/teams') {
+            const plannedResponse = teamsResponsePlan?.[
+                Math.min(teamsGetCount, teamsResponsePlan.length - 1)
+            ];
+            teamsGetCount += 1;
+            if (plannedResponse?.gate) await plannedResponse.gate.promise;
+            if (plannedResponse?.delayMs) await new Promise(resolve => setTimeout(resolve, plannedResponse.delayMs));
+            if (plannedResponse) return json(plannedResponse.body, plannedResponse.status || 200);
+            if (teamsLoadGate) await teamsLoadGate.promise;
+            if (teamsResponse) return json(teamsResponse.body, teamsResponse.status || 200);
+            return json({ teams: refreshedTeams });
+        }
         if (url.pathname === '/api/tasks-with-team-name') return json({ issues: [], epics: {}, epicsInScope });
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [] });
         if (url.pathname === '/api/projects/selected') {
@@ -285,7 +355,8 @@ async function mockConfigSettings(page, {
                 return route.abort('connectionrefused');
             }
             if (keepServerConnectionError) return json({ error: 'unavailable' }, 500);
-            return json({ selected: [{ key: 'DEMO', type: 'product' }] });
+            if (fallbackSectionLoadGate) await fallbackSectionLoadGate.promise;
+            return json(fallbackSectionResponses[url.pathname] || { selected: [{ key: 'DEMO', type: 'product' }] });
         }
         if (url.pathname === '/api/projects') return json({ projects: [{ key: 'DEMO', name: 'Demo' }, { key: 'EXTRA', name: 'Extra' }] });
         if (url.pathname === '/api/fields') {
@@ -303,19 +374,32 @@ async function mockConfigSettings(page, {
                 scoped: false,
             });
         }
-        if (url.pathname === '/api/board-config') return json({ boardId: fixture.REFERENCE_BOARD_ID, boardName: 'Synthetic Board' });
+        if (url.pathname === '/api/board-config') {
+            if (fallbackSectionLoadGate) await fallbackSectionLoadGate.promise;
+            return json(fallbackSectionResponses[url.pathname] || { boardId: fixture.REFERENCE_BOARD_ID, boardName: 'Synthetic Board' });
+        }
         if (url.pathname === '/api/board-config/statuses') return json(fixture.referenceStatusesResponse());
         if (url.pathname === '/api/stats/priority-weights-config') {
             if (keepServerConnectionError) return json({ error: 'unavailable' }, 500);
-            return json({ weights: priorityWeights });
+            if (fallbackSectionLoadGate) await fallbackSectionLoadGate.promise;
+            return json(fallbackSectionResponses[url.pathname] || { weights: priorityWeights });
         }
-        if (url.pathname === '/api/capacity/config') return json(capacityConfig);
-        if (url.pathname === '/api/sprint-field/config') return json({ fieldId: 'customfield_10020', fieldName: 'Sprint' });
-        if (url.pathname === '/api/parent-name-field/config') return json({ fieldId: 'customfield_10021', fieldName: 'Parent Link' });
-        if (url.pathname === '/api/story-points-field/config') return json({ fieldId: 'customfield_10022', fieldName: 'Story points' });
-        if (url.pathname === '/api/team-field/config') return json({ fieldId: 'customfield_10023', fieldName: 'Team' });
-        if (url.pathname === '/api/delivery-owner-field/config') return json(deliveryOwnerFieldConfig);
-        if (url.pathname === '/api/issue-types/config') return json({ issueTypes: ['Story'] });
+        if (url.pathname === '/api/capacity/config') {
+            if (fallbackSectionLoadGate) await fallbackSectionLoadGate.promise;
+            return json(fallbackSectionResponses[url.pathname] || capacityConfig);
+        }
+        if (administratorConfigPaths.has(url.pathname)) {
+            if (fallbackSectionLoadGate) await fallbackSectionLoadGate.promise;
+            const defaults = {
+                '/api/sprint-field/config': { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+                '/api/parent-name-field/config': { fieldId: 'customfield_10021', fieldName: 'Parent Link' },
+                '/api/story-points-field/config': { fieldId: 'customfield_10022', fieldName: 'Story points' },
+                '/api/team-field/config': { fieldId: 'customfield_10023', fieldName: 'Team' },
+                '/api/delivery-owner-field/config': deliveryOwnerFieldConfig,
+                '/api/issue-types/config': { issueTypes: ['Story'] },
+            };
+            return json(fallbackSectionResponses[url.pathname] || defaults[url.pathname] || {});
+        }
         return json({});
     });
 
@@ -377,55 +461,429 @@ function workspacePosts(calls, pathname) {
     return calls.filter(call => call.method === 'POST' && call.pathname === pathname);
 }
 
-test('empty team catalog locks editing, auto-refreshes once, and reuses the saved cache on reopen', async ({ page }) => {
-    const sprintsLoadGate = deferred();
-    const teamCatalogSaveGate = deferred();
+function catalogStateGroupConfig() {
+    return {
+        ...baseGroupsConfig(),
+        groups: [{
+            id: 'platform',
+            name: 'Platform',
+            teamIds: ['team-platform'],
+            teamLabels: { 'team-platform': 'platform-label' },
+            missingInfoComponents: ['Backend', 'Frontend'],
+            excludedCapacityEpics: ['DEMO-99'],
+            board: fixture.referenceBoard(),
+        }],
+    };
+}
+
+async function editEveryDepartmentFieldAndSave(page, calls, stateName) {
+    const dialog = page.getByRole('dialog').first();
+    const save = dialog.getByRole('button', { name: /^Save$/ });
+
+    await dialog.getByRole('tab', { name: 'Group labels' }).click();
+    const removeLabel = dialog.getByTitle('Remove label');
+    await expect(removeLabel).toBeEnabled();
+    await removeLabel.click();
+
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    const name = dialog.getByPlaceholder('Group name');
+    await expect(name).toBeEnabled();
+    await name.fill(`Platform ${stateName}`);
+    await expect(save).toBeEnabled();
+
+    const removeComponent = dialog.getByTitle('Remove Backend');
+    const removeExclusion = dialog.getByTitle('Remove DEMO-99');
+    const removeTeam = dialog.locator('.selected-team-chip', { hasText: 'Platform Team' }).getByTitle('Remove team');
+    await expect(removeComponent).toBeEnabled();
+    await expect(removeExclusion).toBeEnabled();
+    await expect(removeTeam).toBeEnabled();
+    await removeComponent.click();
+    await removeExclusion.click();
+    await removeTeam.click();
+    await expect(dialog.locator('.selected-team-chip')).toHaveCount(0);
+    await expect(save).toBeEnabled();
+
+    await save.click();
+    await expect.poll(() => groupsPosts(calls).length).toBe(1);
+    expect(groupsPosts(calls)[0].body.groups[0]).toEqual(expect.objectContaining({
+        name: `Platform ${stateName}`,
+        teamIds: [],
+        teamLabels: {},
+        missingInfoComponents: ['Frontend'],
+        excludedCapacityEpics: [],
+    }));
+}
+
+for (const catalogState of ['unknown', 'refreshing', 'error', 'validated empty']) {
+    test(`Team catalog ${catalogState} keeps every unrelated Department edit and footer Save available`, async ({ page }) => {
+        const completionGate = deferred();
+        const options = {
+            sourceBundle: true,
+            groupsConfig: catalogStateGroupConfig(),
+        };
+        if (catalogState === 'unknown') options.sprintsLoadGate = completionGate;
+        if (catalogState === 'refreshing') {
+            options.teamsResponsePlan = [{
+                body: dbTeamEnvelope({
+                    state: 'refreshing',
+                    refreshStatus: 'pending',
+                    refreshAttemptId: 'attempt-state-matrix',
+                }),
+            }, {
+                gate: completionGate,
+                body: dbTeamEnvelope({
+                    state: 'refreshing',
+                    refreshStatus: 'pending',
+                    refreshAttemptId: 'attempt-state-matrix',
+                }),
+            }];
+        }
+        if (catalogState === 'error') {
+            options.teamsResponse = { status: 502, body: { error: 'team_catalog_unavailable' } };
+        }
+        if (catalogState === 'validated empty') {
+            options.teamsResponse = { body: dbTeamEnvelope({ teams: [] }) };
+        }
+
+        const calls = await mockConfigSettings(page, options);
+        await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+        await page.getByRole('button', { name: 'Manage team groups' }).click();
+        if (catalogState === 'unknown') {
+            await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBe(1);
+        } else {
+            await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBeGreaterThanOrEqual(1);
+        }
+        if (catalogState === 'refreshing') {
+            await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBeGreaterThanOrEqual(2);
+        }
+        await editEveryDepartmentFieldAndSave(page, calls, catalogState.replace(' ', '-'));
+    });
+}
+
+test('catalog failure leaves unrelated dirty sections saveable', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
-        initialTeamCatalog: { catalog: {}, meta: {} },
-        sprintsLoadGate,
-        teamCatalogSaveGate,
+        teamsResponse: { status: 502, body: { error: 'team_catalog_unavailable' } },
     });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const dialog = page.getByRole('dialog').first();
-    const groupName = dialog.getByPlaceholder('Group name');
-    const addGroup = dialog.getByRole('button', { name: '+ Add group' });
     const save = dialog.getByRole('button', { name: /^Save$/ });
 
-    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(1);
-    await expect(groupName).toBeDisabled();
-    await expect(addGroup).toBeDisabled();
-    await expect(save).toBeDisabled();
-    await expect(save).toHaveAttribute('title', 'Team cache is loading');
-    await expect(dialog).toContainText('Waiting for sprint data...');
-    expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/teams')).toHaveLength(0);
-    await dialog.screenshot({ path: `${screenshotDir}/team-catalog-auto-refresh-loading.png`, animations: 'disabled' });
-
-    sprintsLoadGate.resolve();
-    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/team-catalog').length).toBe(1);
-    await expect(groupName).toBeDisabled();
-    await dialog.getByRole('tab', { name: 'Boards' }).click();
-    await expect(save).toHaveAttribute('title', 'Team cache is loading');
-    await dialog.getByRole('tab', { name: 'Team groups' }).click();
-    await expect(groupName).toBeDisabled();
-
-    teamCatalogSaveGate.resolve();
-    await expect(dialog).toContainText('Teams: Cached');
-    await expect(groupName).toBeEnabled();
-    await expect(addGroup).toBeEnabled();
-    await dialog.screenshot({ path: `${screenshotDir}/team-catalog-auto-refresh-ready.png`, animations: 'disabled' });
-
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await page.getByRole('button', { name: 'Manage team groups' }).click();
-    await expect(dialog).toContainText('Teams: Cached');
-    await expect(groupName).toBeEnabled();
-    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(2);
-    expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/teams')).toHaveLength(1);
-    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/team-catalog')).toHaveLength(1);
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/teams').length).toBe(1);
+    await dialog.getByPlaceholder('Group name').fill('Platform Core');
+    await expect(save).toBeEnabled();
+    await expect(save).not.toHaveAttribute('title', 'Team cache is loading');
+    await dialog.screenshot({ path: `${screenshotDir}/team-catalog-failure-dirty-save.png`, animations: 'disabled' });
+    await save.click();
+    await expect.poll(() => groupsPosts(calls).length).toBe(1);
+    expect(groupsPosts(calls)[0].body.groups[0].name).toBe('Platform Core');
 });
 
-test('stale cache load after cancel and reopen cannot trigger a duplicate refresh', async ({ page }) => {
+test('team membership: empty is ready and does not refill', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        initialTeamCatalog: {
+            catalog: { 'team-data': { id: 'team-data', name: 'Data Team' } },
+            meta: {},
+        },
+        teamsResponse: { body: dbTeamEnvelope({ teams: [] }) },
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(1);
+    await expect(dialog.getByText('Loading teams...')).toHaveCount(0);
+    await dialog.getByPlaceholder('Search teams to add...').fill('Data');
+    await expect(dialog.getByRole('button', { name: 'Data Team' })).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: 'Data Team' })).toHaveAttribute('title', 'Not in the selected sprint');
+    await page.waitForTimeout(250);
+    expect(calls.filter(call => call.pathname === '/api/teams')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/team-catalog')).toHaveLength(0);
+});
+
+test('team membership: source lifecycle masks reopen A to B to A and ignores late error/finally', async ({ page }) => {
+    const reopenedAGate = deferred();
+    const staleBGate = deferred();
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
+        sprints: [
+            { id: 42, name: '2026Q2 Sprint 42', state: 'active' },
+            { id: 43, name: '2026Q2 Sprint 43', state: 'future' },
+        ],
+        initialTeamCatalog: {
+            catalog: {
+                'team-alpha': { id: 'team-alpha', name: 'Alpha Team' },
+                'team-beta': { id: 'team-beta', name: 'Beta Team' },
+            },
+            meta: {},
+        },
+        teamsResponsePlan: [
+            {
+                body: dbTeamEnvelope({
+                    teams: [{ id: 'team-alpha', name: 'Alpha Team' }],
+                    identity: 'tc1:workspace:42:scope',
+                }),
+            },
+            {
+                gate: reopenedAGate,
+                body: dbTeamEnvelope({
+                    teams: [{ id: 'team-alpha', name: 'Alpha Team' }],
+                    identity: 'tc1:workspace:42:scope',
+                }),
+            },
+            {
+                gate: staleBGate,
+                status: 502,
+                body: { error: 'team_catalog_unavailable' },
+            },
+            {
+                body: dbTeamEnvelope({
+                    teams: [{ id: 'team-alpha', name: 'Alpha Team' }],
+                    identity: 'tc1:workspace:42:scope',
+                }),
+            },
+        ],
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    let dialog = page.getByRole('dialog').first();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(1);
+    await dialog.getByPlaceholder('Search teams to add...').fill('Alpha');
+    await expect(dialog.getByRole('button', { name: 'Alpha Team' })).toBeEnabled();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    dialog = page.getByRole('dialog').first();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(2);
+    await dialog.getByPlaceholder('Search teams to add...').fill('Alpha');
+    await expect(dialog.getByRole('button', { name: 'Alpha Team' })).toBeDisabled();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+    const sprintSelector = page.locator('.sprint-dropdown.header-filter-dropdown').first();
+    await sprintSelector.locator('.sprint-dropdown-toggle').click();
+    await page.getByRole('option', { name: '2026Q2 Sprint 43', exact: true }).click();
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    dialog = page.getByRole('dialog').first();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(3);
+    await dialog.getByPlaceholder('Search teams to add...').fill('Beta');
+    await expect(dialog.getByRole('button', { name: 'Beta Team' })).toBeDisabled();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+    await sprintSelector.locator('.sprint-dropdown-toggle').click();
+    await page.getByRole('option', { name: '2026Q2 Sprint 42', exact: true }).click();
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    dialog = page.getByRole('dialog').first();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(4);
+    await dialog.getByPlaceholder('Search teams to add...').fill('Alpha');
+    await expect(dialog.getByRole('button', { name: 'Alpha Team' })).toBeEnabled();
+
+    reopenedAGate.resolve();
+    staleBGate.resolve();
+    await page.waitForTimeout(150);
+    await expect(dialog.getByRole('button', { name: 'Alpha Team' })).toBeEnabled();
+    await expect(dialog.getByText('Team refresh failed. Retry.')).toHaveCount(0);
+    await expect(dialog.getByText('Loading teams...')).toHaveCount(0);
+    expect(calls.filter(call => call.pathname === '/api/teams').map(call => (
+        new URLSearchParams(call.search).get('sprint')
+    ))).toEqual(['42', '42', '43', '42']);
+});
+
+test('team membership: failed directory does not block membership', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        teamCatalogLoadResponse: { status: 503, body: { error: 'catalog_unavailable' } },
+        initialTeamCatalog: { catalog: {}, meta: {} },
+        teamsResponse: {
+            body: dbTeamEnvelope({ teams: [{ id: 'team-data', name: 'Data Team' }] }),
+        },
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(1);
+    await dialog.getByPlaceholder('Search teams to add...').fill('Data');
+    await expect(dialog.getByRole('button', { name: 'Data Team' })).toBeEnabled();
+    await expect(dialog.getByPlaceholder('Group name')).toBeEnabled();
+});
+
+test('team membership: DB refresh commits without client POST', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        analyticsEnabled: true,
+        teamsResponsePlan: [
+            { body: dbTeamEnvelope({ teams: [{ id: 'team-platform', name: 'Platform Team' }] }) },
+            { body: dbTeamEnvelope({ teams: [{ id: 'team-data', name: 'Data Team' }] }) },
+        ],
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(1);
+    const analyticsBaseline = await page.evaluate(() => (window.dataLayer || []).length);
+    await dialog.getByRole('button', { name: 'Refresh teams' }).click();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(2);
+    const refreshCall = calls.filter(call => call.pathname === '/api/teams')[1];
+    expect(new URLSearchParams(refreshCall.search).get('refresh')).toBe('true');
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/team-catalog')).toHaveLength(0);
+    expect(await page.evaluate(start => (window.dataLayer || []).slice(start), analyticsBaseline)).toEqual([]);
+});
+
+test('team membership: legacy refresh retains directory save', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        initialTeamCatalog: { catalog: {}, meta: {} },
+        refreshedTeams: [{ id: 'team-data', name: 'Data Team' }],
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/team-catalog').length).toBe(1);
+    expect(calls.find(call => call.method === 'POST' && call.pathname === '/api/team-catalog').body.catalog['team-data'].name).toBe('Data Team');
+});
+
+test('team membership: competing attempt reads are bounded', async ({ page }) => {
+    const pending = dbTeamEnvelope({
+        state: 'refreshing',
+        refreshStatus: 'pending',
+        refreshAttemptId: 'attempt-1',
+    });
+    const calls = await mockConfigSettings(page, {
+        teamsResponsePlan: Array.from({ length: 6 }, () => ({ body: pending })),
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await expect(dialog.getByText('Team refresh is taking longer than expected. Retry.')).toBeVisible({ timeout: 10000 });
+    const teamCalls = calls.filter(call => call.pathname === '/api/teams');
+    expect(teamCalls).toHaveLength(6);
+    expect(teamCalls.slice(1).every(call => {
+        const params = new URLSearchParams(call.search);
+        return params.get('completionAttemptId') === 'attempt-1'
+            && params.get('catalogIdentity') === 'tc1:workspace:42:scope'
+            && params.get('refresh') === null;
+    })).toBe(true);
+});
+
+test('team membership: manual refresh does not reuse a held ordinary read', async ({ page }) => {
+    const ordinaryGate = deferred();
+    const calls = await mockConfigSettings(page, {
+        teamsResponsePlan: [
+            {
+                gate: ordinaryGate,
+                body: dbTeamEnvelope({ teams: [{ id: 'team-platform', name: 'Platform Team' }] }),
+            },
+            {
+                body: dbTeamEnvelope({ teams: [{ id: 'team-data', name: 'Data Team' }] }),
+            },
+        ],
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(1);
+    const refresh = dialog.getByRole('button', { name: 'Refresh teams' });
+    await expect(refresh).toBeEnabled();
+    await refresh.click();
+    ordinaryGate.resolve();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(2);
+    const teamCalls = calls.filter(call => call.pathname === '/api/teams');
+    expect(new URLSearchParams(teamCalls[0].search).get('refresh')).toBe(null);
+    expect(new URLSearchParams(teamCalls[1].search).get('refresh')).toBe('true');
+});
+
+test('team membership: 401 locks the document', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        teamsResponse: {
+            status: 401,
+            body: { error: 'auth_required', loginUrl: '/login?reason=session_expired' },
+        },
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(1);
+    const authDialog = page.getByRole('alertdialog');
+    await expect(authDialog).toBeVisible();
+    await expect(authDialog.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await expect(page.locator('.group-modal')).toHaveCount(1);
+});
+
+test('unavailable Team rejects pointer and keyboard but remains removable', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        groupsConfig: {
+            ...baseGroupsConfig(),
+            groups: [{ id: 'platform', name: 'Platform', teamIds: ['team-data'], board: fixture.referenceBoard() }],
+        },
+        initialTeamCatalog: {
+            catalog: {
+                'team-platform': { id: 'team-platform', name: 'Platform Team' },
+                'team-data': { id: 'team-data', name: 'Data Team' },
+                'team-archived': { id: 'team-archived', name: 'Archived Team' },
+            },
+            meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: '42', source: 'sprint' },
+        },
+        teamsResponse: {
+            body: {
+                teams: [{ id: 'team-platform', name: 'Platform Team' }],
+                cache: {
+                    backend: 'postgresql', state: 'fresh', refreshStatus: 'completed',
+                    identity: 'tc1:workspace:42:scope', browserContextId: 'bc1:test', scopeDigest: 'scope',
+                },
+            },
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    const search = dialog.getByPlaceholder('Search teams to add...');
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(1);
+    await search.fill('Archived');
+    const unavailable = dialog.getByRole('button', { name: 'Archived Team' });
+    await expect(unavailable).toBeDisabled();
+    await expect(unavailable).toHaveAttribute('title', 'Not in the selected sprint');
+    await unavailable.click({ force: true });
+    await search.press('Enter');
+    await expect(dialog.locator('.selected-team-chip', { hasText: 'Archived Team' })).toHaveCount(0);
+
+    const configured = dialog.locator('.selected-team-chip').first();
+    const remove = configured.locator('button.remove-btn');
+    await expect(remove).toBeEnabled();
+    await expect(remove).toHaveAttribute('title', 'Remove team');
+    await dialog.screenshot({ path: `${screenshotDir}/team-unavailable-removable.png`, animations: 'disabled' });
+    await remove.click();
+    await expect(configured).toHaveCount(0);
+});
+
+test('catalog refresh preserves revision conflict drafts', async ({ page }) => {
+    const teamsLoadGate = deferred();
+    const calls = await mockConfigSettings(page, {
+        conflictCurrents: [conflictingServerConfig()],
+        teamsLoadGate,
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await makeBoardDraftDirty(page, dialog, 'Local Column');
+    const save = dialog.getByRole('button', { name: /^Save$/ });
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect(dialog.getByText('Team groups changed while you were editing.')).toBeVisible();
+    teamsLoadGate.resolve();
+    await expect(dialog.locator('.board-column-name').first()).toHaveValue('Local Column');
+    expect(groupsPosts(calls)).toHaveLength(1);
+    expect(groupsPosts(calls)[0].body.baseRevision).toBe(2);
+    await dialog.locator('.group-modal-validation').getByRole('button', { name: 'Discard mine' }).click();
+    await expect(dialog.locator('.board-column-name').first()).toHaveValue('Server Column');
+});
+
+test('unrelated save gates remain enforced', async ({ page }) => {
+    const calls = await mockConfigSettings(page);
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    const save = dialog.getByRole('button', { name: /^Save$/ });
+    await expect(save).toBeDisabled();
+    await expect(save).toHaveAttribute('title', 'No changes to save');
+    expect(groupsPosts(calls)).toHaveLength(0);
+});
+
+test('stale cache load after cancel and reopen cannot commit the retired modal result', async ({ page }) => {
     const teamCatalogLoadGate = deferred();
     const calls = await mockConfigSettings(page, {
         initialTeamCatalog: { catalog: {}, meta: {} },
@@ -444,13 +902,14 @@ test('stale cache load after cancel and reopen cannot trigger a duplicate refres
 
     teamCatalogLoadGate.resolve();
     await page.waitForTimeout(100);
-    expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/teams')).toHaveLength(1);
-    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/team-catalog')).toHaveLength(1);
+    expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/teams')).toHaveLength(2);
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/team-catalog')).toHaveLength(2);
     await expect(dialog.getByPlaceholder('Group name')).toBeEnabled();
 });
 
 test('workspace conflict preserves later drafts and Keep mine rebases onto the server revision', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         workspaceSnapshots: [sharedWorkspaceSnapshot()],
         workspaceSaveResponses: {
             '/api/projects/selected': [{ body: { selected: [{ key: 'DEMO', type: 'product' }, { key: 'EXTRA', type: 'product' }], configRevision: 4 } }],
@@ -469,6 +928,12 @@ test('workspace conflict preserves later drafts and Keep mine rebases onto the s
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const dialog = page.getByRole('dialog').first();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBeGreaterThanOrEqual(1);
+    const catalogReadsBeforeSave = {
+        config: calls.filter(call => call.pathname === '/api/config').length,
+        sprints: calls.filter(call => call.pathname === '/api/sprints').length,
+        teams: calls.filter(call => call.pathname === '/api/teams').length,
+    };
     await makeTwoWorkspaceSectionsDirty(dialog);
     await dialog.getByRole('button', { name: /^Save$/ }).click();
     await expect.poll(() => workspacePosts(calls, '/api/projects/selected').length).toBe(1);
@@ -481,6 +946,9 @@ test('workspace conflict preserves later drafts and Keep mine rebases onto the s
     await expect(banner.getByRole('button', { name: 'Use latest' })).toBeVisible();
     await expect(banner.getByRole('button', { name: 'Keep mine' })).toBeVisible();
     await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/config').length).toBeGreaterThan(catalogReadsBeforeSave.config);
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBeGreaterThan(catalogReadsBeforeSave.sprints);
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBeGreaterThan(catalogReadsBeforeSave.teams);
 
     const geometry = await banner.locator(':scope > div, :scope button').evaluateAll((nodes) => nodes.map((node) => {
         const box = node.getBoundingClientRect();
@@ -541,8 +1009,90 @@ test('Use latest replaces workspace drafts without touching a dirty private EPM 
     await dialog.getByRole('tab', { name: 'Scope' }).click();
     await expect(dialog.locator('[data-epm-scope-field="labelPrefix"]')).toHaveValue('rnd_project_private_');
     await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeEnabled();
-    expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/config')).toHaveLength(2);
+    expect(calls.filter(call => call.method === 'GET' && call.pathname === '/api/config')).toHaveLength(3);
     expect(workspacePosts(calls, '/api/epm/config')).toHaveLength(0);
+});
+
+test('fallback completion recomputes aggregate Save eligibility from accepted remote baselines', async ({ page }) => {
+    const workspaceLoadGate = deferred();
+    const fallbackSectionLoadGate = deferred();
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
+        workspaceSnapshots: [sharedWorkspaceSnapshot()],
+        workspaceLoadGate,
+        workspaceLoadResponse: {
+            body: {
+                jiraUrl: 'https://jira.example',
+                authMode: 'atlassian_oauth',
+                projectsConfigured: true,
+                settingsAdminOnly: false,
+                userCanEditSettings: true,
+                userCanEditEpmConfig: true,
+                boardAllWorkAvailable: true,
+            },
+        },
+        fallbackSectionLoadGate,
+        fallbackSectionResponses: {
+            '/api/projects/selected': {
+                selected: [{ key: 'DEMO', type: 'product' }, { key: 'EXTRA', type: 'product' }],
+            },
+            '/api/board-config': { boardId: '9', boardName: 'Remote Board' },
+            '/api/sprint-field/config': { fieldId: 'customfield_10020', fieldName: 'Sprint' },
+        },
+        workspaceSaveResponses: {
+            '/api/board-config': [{ status: 409, body: {
+                error: 'workspace_config_conflict',
+                message: 'Shared settings changed while you were editing. Your changes are still unsaved.',
+                currentRevision: 5,
+                current: { section: 'board', value: { boardId: '9', boardName: 'Remote Board' }, configRevision: 5 },
+            } }],
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Jira source' }).click();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBeGreaterThanOrEqual(1);
+    const recoveryCounts = {
+        config: calls.filter(call => call.pathname === '/api/config').length,
+        sprints: calls.filter(call => call.pathname === '/api/sprints').length,
+        teams: calls.filter(call => call.pathname === '/api/teams').length,
+    };
+    await dialog.getByRole('button', { name: 'Clear sprint board' }).click();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    const banner = dialog.locator('.group-modal-validation');
+    await expect(banner.getByRole('button', { name: 'Use latest' })).toBeVisible();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/config').length).toBeGreaterThan(recoveryCounts.config);
+    await banner.getByRole('button', { name: 'Use latest' }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/config').length).toBe(3);
+
+    await dialog.getByRole('button', { name: 'Remove sprint field' }).click();
+    await dialog.getByPlaceholder('Search fields...').fill('Sprint (new)');
+    await dialog.locator('.team-search-result-item', { hasText: 'Sprint (new)' }).click();
+    await dialog.getByRole('tab', { name: 'Scope projects' }).click();
+    await dialog.getByPlaceholder('Search projects to add...').fill('EXTRA');
+    await dialog.locator('.team-search-result-item', { hasText: 'EXTRA' }).getByRole('button', { name: 'Product' }).click();
+
+    workspaceLoadGate.resolve();
+    await expect.poll(() => calls.filter(call => (
+        call.method === 'GET' && administratorConfigPaths.has(call.pathname)
+    )).length).toBe(administratorConfigPaths.size);
+    const fallbackResponses = Promise.all([...administratorConfigPaths].map(pathname => page.waitForResponse(response => (
+        response.request().method() === 'GET' && new URL(response.url()).pathname === pathname
+    ))));
+    fallbackSectionLoadGate.resolve();
+    await fallbackResponses;
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBeGreaterThan(recoveryCounts.sprints);
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBeGreaterThan(recoveryCounts.teams);
+
+    await expect(dialog.locator('.group-modal-dirty')).toHaveText('Unsaved changes · 2');
+    await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeEnabled();
+    await expect(dialog.locator('#admin-settings-scope-panel')).toContainText('EXTRA');
+    await dialog.getByRole('tab', { name: 'Jira source' }).click();
+    await expect(dialog.locator('#admin-settings-source-panel')).toContainText('Sprint (new)');
+    await expect(dialog.locator('#admin-settings-source-panel')).toContainText('No board selected');
 });
 
 for (const workspaceResult of [
@@ -575,7 +1125,7 @@ for (const workspaceResult of [
         const banner = dialog.locator('.group-modal-validation');
         await expect(banner.getByRole('button', { name: 'Use latest' })).toBeVisible();
         await banner.getByRole('button', { name: 'Use latest' }).click();
-        await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/config').length).toBe(2);
+        await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/config').length).toBe(3);
 
         await dialog.getByRole('button', { name: 'EPM' }).click();
         await dialog.getByRole('tab', { name: 'Scope' }).click();

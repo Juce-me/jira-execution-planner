@@ -57,7 +57,7 @@ export function useStrictEngBoardPresentation({ active, owner, savedBoard, legac
     const filterState = useEngBoardFilters({ ...legacyFilterInput,
         isTechTask: active ? strictProjectClassifier : legacyFilterInput.isTechTask,
         strictEpicGroups: active ? model.epicGroups : null,
-        filtersEnabled: !active || model.membershipAuthoritative,
+        filtersEnabled: !active || model.authoritative,
     });
     React.useEffect(() => {
         if (active && !model.membershipAuthoritative) return;
@@ -74,12 +74,18 @@ export function useStrictEngBoardPresentation({ active, owner, savedBoard, legac
 }
 
 export function strictEngBoardViewProps({ active, owner, model, legacyLoading, legacyError, legacyRetry }) {
+    const errorCode = owner.data.error?.code;
+    const strictError = errorCode === 'scope_too_large'
+        ? model.stale
+            ? 'Refresh reached the Board limit.'
+            : 'Board limit reached; this result is incomplete.'
+        : owner.data.error
+            ? `Board load failed: ${String(errorCode || 'jira_unavailable').replaceAll('_', ' ')}.`
+            : null;
     return {
         strictColumns: active ? model.columns : null,
         loading: active ? owner.data.status === 'loading' : legacyLoading,
-        error: active && owner.data.error
-            ? `Board load failed: ${String(owner.data.error.code || 'jira_unavailable').replaceAll('_', ' ')}.`
-            : legacyError,
+        error: active ? strictError : legacyError,
         onRetry: active ? owner.data.retry : legacyRetry,
         authorityPending: active && !model.authoritative,
         stale: active && model.stale,

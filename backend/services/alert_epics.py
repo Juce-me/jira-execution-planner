@@ -6,6 +6,41 @@ def quote_jql_value(value):
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def fetch_complete_alert_epic_issues(payload, search_request):
+    """Read a complete bounded Epic scope; never return a partial result."""
+    issues = []
+    seen_keys = set()
+    seen_tokens = set()
+    next_page_token = None
+    for _ in range(101):
+        if next_page_token:
+            payload['nextPageToken'] = next_page_token
+        response = search_request(payload)
+        if response.status_code != 200:
+            raise RuntimeError(f'Alert Epic search failed: status={response.status_code}')
+        try:
+            data = response.json()
+        except (TypeError, ValueError) as error:
+            raise RuntimeError('Alert Epic search returned malformed JSON') from error
+        if not isinstance(data, dict) or not isinstance(data.get('issues'), list) or len(data['issues']) > 100 or not isinstance(data.get('isLast'), bool):
+            raise RuntimeError('Alert Epic search returned a malformed page')
+        for issue in data['issues']:
+            if not isinstance(issue, dict) or not isinstance(issue.get('key'), str) or not issue['key'] or not isinstance(issue.get('fields'), dict):
+                raise RuntimeError('Alert Epic search returned a malformed issue')
+            if issue['key'] not in seen_keys:
+                seen_keys.add(issue['key'])
+                issues.append(issue)
+                if len(seen_keys) > 2000:
+                    raise RuntimeError('Alert Epic search exceeded the Epic limit')
+        if data['isLast']:
+            return issues
+        next_page_token = data.get('nextPageToken')
+        if not isinstance(next_page_token, str) or not next_page_token or next_page_token in seen_tokens:
+            raise RuntimeError('Alert Epic search returned an invalid continuation token')
+        seen_tokens.add(next_page_token)
+    raise RuntimeError('Alert Epic search exceeded the page limit')
+
+
 def build_alert_epic_payloads(issues, team_field_id, sprint_field_id=None, *, build_team_value, extract_team_name):
     epics = []
     for issue in issues or []:
@@ -31,6 +66,37 @@ def build_alert_epic_payloads(issues, team_field_id, sprint_field_id=None, *, bu
             },
         })
     return epics
+
+
+def fetch_epics_for_alert_scope(
+    epic_jql, team_field_id, epic_name_field, sprint_field_id, *,
+    search_request, parent_name_field_default, build_team_value,
+    extract_team_name, complete_alert_scope=False, log_warning_fn=None,
+):
+    fields_list = ['summary', 'status', 'assignee', 'labels', epic_name_field or parent_name_field_default]
+    if team_field_id and team_field_id not in fields_list:
+        fields_list.append(team_field_id)
+    if sprint_field_id and sprint_field_id not in fields_list:
+        fields_list.append(sprint_field_id)
+    payload = {
+        'jql': epic_jql,
+        'maxResults': 100 if complete_alert_scope else 250,
+        'fields': fields_list,
+    }
+    if complete_alert_scope:
+        issues = fetch_complete_alert_epic_issues(payload, search_request)
+    else:
+        response = search_request(payload)
+        if response.status_code != 200:
+            if log_warning_fn:
+                log_warning_fn(f'Epic empty-state fetch failed: status={response.status_code}')
+            return []
+        issues = (response.json() or {}).get('issues', []) or []
+    return build_alert_epic_payloads(
+        issues, team_field_id, sprint_field_id,
+        build_team_value=build_team_value,
+        extract_team_name=extract_team_name,
+    )
 
 
 def fetch_epics_by_keys_for_alert(

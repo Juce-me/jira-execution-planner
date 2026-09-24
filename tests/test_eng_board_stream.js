@@ -182,6 +182,23 @@ test('frame and generation byte ceilings accept the exact bound and reject one b
     }), error => error.code === 'generation_too_large');
 });
 
+test('scope_too_large terminal remains parseable at an exact generation boundary', async () => {
+    const terminal = frame('error', 1, { code: 'scope_too_large' });
+    const first = encoded(start());
+    const last = encoded(terminal);
+    const delivered = [];
+    const result = await harness(() => { throw new Error('fetch must not run'); }).exports.consumeEngBoardResponse(
+        streamedResponse([first, last]).response,
+        {
+            maxFrameBytes: Math.max(first.byteLength, last.byteLength),
+            maxTotalBytes: first.byteLength + last.byteLength,
+            onFrame: value => delivered.push(value),
+        },
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(result)), terminal);
+    assert.deepEqual(delivered.map(value => value.sequence), [0, 1]);
+});
+
 test('abort cancels the reader and prevents later frame delivery', async () => {
     let cancelled = false;
     const stream = streamedResponse([encoded(start())], { holdOpen: true, onCancel: () => { cancelled = true; } });

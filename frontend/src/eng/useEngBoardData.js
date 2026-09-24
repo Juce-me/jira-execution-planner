@@ -106,12 +106,16 @@ function withTerminalError(state, code, terminal = null) {
     if (code === 'auth_required') {
         return { ...state, authLocked: true, status: 'auth_locked', error: { code }, refreshing: false };
     }
+    const retainContent = ['deadline_exceeded', 'jira_unavailable', 'unexpected_eof', 'scope_too_large'].includes(code)
+        && state.working.indexReceived;
     return {
         ...state,
         status: 'error',
         error: { code },
         refreshing: false,
-        working: { ...emptyWorking(), columns: state.working.columns, terminal },
+        working: retainContent
+            ? { ...state.working, childrenAuthoritative: false, terminal: terminal || { type: 'error', code } }
+            : { ...emptyWorking(), columns: state.working.columns, terminal },
     };
 }
 
@@ -146,10 +150,15 @@ function applyFrame(state, frame) {
         const staleSnapshot = state.staleSnapshot?.scopeVersion === frame.scopeVersion
             ? state.staleSnapshot
             : null;
+        const snapshots = staleSnapshot || !state.staleSnapshot
+            ? state.snapshots
+            : { ...state.snapshots };
+        if (!staleSnapshot && state.staleSnapshot) delete snapshots[state.activeKey];
         return {
             ...state,
             generationId: frame.generationId,
             staleSnapshot,
+            snapshots,
             working: {
                 ...emptyWorking(),
                 columns: frame.columns,
@@ -161,7 +170,8 @@ function applyFrame(state, frame) {
     }
 
     if (frame.type === 'index') {
-        if (state.working.indexReceived
+        if ((state.working.indexReceived && (state.working.membershipAuthoritative
+                || !hasAuthoritativeIndexScope(state.scopesByGroup[state.activeGroupId])))
             || frame.epics.some(epic => !knowsColumn(state.working, epic.columnId))) {
             return invalidFrame(state, frame);
         }
@@ -180,7 +190,9 @@ function applyFrame(state, frame) {
     }
 
     if (frame.type === 'progress') {
-        if (!knowsColumn(state.working, frame.columnId)) return invalidFrame(state, frame);
+        const scope = state.scopesByGroup[state.activeGroupId];
+        if ((hasAuthoritativeIndexScope(scope) && !state.working.membershipAuthoritative)
+            || !knowsColumn(state.working, frame.columnId)) return invalidFrame(state, frame);
         return {
             ...state,
             working: {
@@ -194,13 +206,14 @@ function applyFrame(state, frame) {
     }
 
     if (frame.type === 'column') {
+        const scope = state.scopesByGroup[state.activeGroupId];
         if (!state.working.indexReceived
+            || (hasAuthoritativeIndexScope(scope) && !state.working.membershipAuthoritative)
             || !knowsColumn(state.working, frame.columnId)
             || frame.epics.some(epic => epic.columnId !== frame.columnId)
             || Object.prototype.hasOwnProperty.call(state.working.columnAuthority, frame.columnId)) {
             return invalidFrame(state, frame);
         }
-        const scope = state.scopesByGroup[state.activeGroupId];
         const incomingEpics = mapByKey(frame.epics);
         const epicsByKey = { ...state.working.epicsByKey };
         if (hasAuthoritativeIndexScope(scope) && state.working.membershipAuthoritative) {
@@ -239,7 +252,9 @@ function applyFrame(state, frame) {
     }
 
     if (frame.type === 'column_error') {
+        const scope = state.scopesByGroup[state.activeGroupId];
         if (!state.working.indexReceived
+            || (hasAuthoritativeIndexScope(scope) && !state.working.membershipAuthoritative)
             || !knowsColumn(state.working, frame.columnId)
             || Object.prototype.hasOwnProperty.call(state.working.columnAuthority, frame.columnId)) {
             return invalidFrame(state, frame);
@@ -266,7 +281,7 @@ function applyFrame(state, frame) {
             status: 'partial_error',
             refreshing: false,
             error: { code: 'partial_error', failedColumnIds: frame.failedColumnIds },
-            working: { ...state.working, childrenAuthoritative: false, progressByColumn: {}, terminal: frame },
+            working: { ...state.working, childrenAuthoritative: false, terminal: frame },
         };
     }
 
@@ -448,8 +463,7 @@ export function createEngBoardDataOwner({
 }) {
     let state = createEngBoardDataState();
     let requestSequence = 0;
-    let activeController = null;
-    let activeMeasurement = null;
+    let activeEntry = null;
     let resolvedFocusColumnId = null;
     let listeners = new Set();
 
@@ -460,11 +474,33 @@ export function createEngBoardDataOwner({
         for (const listener of listeners) listener();
     };
 
+    const observe = (callback, onSettled = null) => {
+        const settle = () => {
+            if (!onSettled) return;
+            try { onSettled(); } catch (_) { /* optional observer cleanup */ }
+        };
+        try {
+            void Promise.resolve(callback()).then(settle, settle);
+        } catch (_) {
+            // Optional Board measurement must not fail or delay Board data.
+            settle();
+        }
+    };
+
+    const retireMeasurement = entry => {
+        if (!entry?.measurement || !['active', 'finishing'].includes(entry.measurementState)) return;
+        entry.measurementState = 'retired';
+        observe(() => (typeof entry.measurement.retire === 'function'
+            ? entry.measurement.retire()
+            : entry.measurement.cancel?.()));
+    };
+
     const cancelActive = () => {
-        activeController?.abort();
-        activeController = null;
-        activeMeasurement?.cancel?.();
-        activeMeasurement = null;
+        const entry = activeEntry;
+        if (!entry) return;
+        entry.controller.abort();
+        retireMeasurement(entry);
+        if (activeEntry === entry) activeEntry = null;
     };
 
     const load = async ({ refresh = false } = {}) => {
@@ -473,22 +509,35 @@ export function createEngBoardDataOwner({
         cancelActive();
         const requestId = ++requestSequence;
         const controller = new AbortController();
-        activeController = controller;
         emit({ type: 'start_load', requestId, refresh });
         const groupId = state.activeGroupId;
         const scope = state.scopesByGroup[groupId];
         const initialFocus = resolvedFocusColumnId;
-        const measurement = createMeasurement?.({
-            groupId,
-            scopeType: scope.type,
-            sprintId: scope.type === 'sprint' ? scope.sprintId : null,
-        }) || null;
-        activeMeasurement = measurement;
+        let measurement = null;
+        if (createMeasurement) {
+            try {
+                measurement = createMeasurement({
+                    groupId,
+                    scopeType: scope.type,
+                    sprintId: scope.type === 'sprint' ? scope.sprintId : null,
+                }) || null;
+            } catch (_) {
+                measurement = null;
+            }
+        }
+        const entry = {
+            requestId, controller, measurement, measurementState: 'active', streamSettled: false,
+        };
+        activeEntry = entry;
         let measuredFocusColumnId = initialFocus || null;
-        const finishMeasurement = async terminal => {
-            if (!measurement || activeMeasurement !== measurement) return;
-            await measurement.finish?.(terminal);
-            if (activeMeasurement === measurement) activeMeasurement = null;
+        const finishMeasurement = terminal => {
+            if (!measurement || entry.measurementState !== 'active' || activeEntry !== entry
+                || !state.mounted || state.authLocked) return;
+            entry.measurementState = 'finishing';
+            observe(() => measurement.finish?.(terminal), () => {
+                if (entry.measurementState === 'finishing') entry.measurementState = 'settled';
+                if (entry.streamSettled && activeEntry === entry) activeEntry = null;
+            });
         };
         try {
             await streamBoard({
@@ -498,11 +547,12 @@ export function createEngBoardDataOwner({
                 focusedColumnId: initialFocus || undefined,
                 refresh,
                 signal: controller.signal,
-                onFrame: async (nextFrame, frameMeta = {}) => {
-                    if (!state.mounted || state.requestId !== requestId || controller.signal.aborted) return;
-                    measurement?.addPayloadBytes?.(frameMeta.payloadBytes);
+                onFrame: (nextFrame, frameMeta = {}) => {
+                    if (!state.mounted || state.requestId !== requestId || controller.signal.aborted
+                        || activeEntry !== entry) return;
+                    observe(() => measurement?.addPayloadBytes?.(frameMeta.payloadBytes));
                     if (nextFrame.type === 'start') {
-                        measurement?.start?.(nextFrame);
+                        observe(() => measurement?.start?.(nextFrame));
                         if (!nextFrame.columns.some(column => column.id === measuredFocusColumnId)) {
                             measuredFocusColumnId = nextFrame.columns[0]?.id || null;
                         }
@@ -510,18 +560,22 @@ export function createEngBoardDataOwner({
                     emit({ type: 'frame', requestId, frame: nextFrame });
                     if (state.status === 'error' && state.error?.code === 'invalid_frame') {
                         controller.abort();
-                        await finishMeasurement({ outcome: 'error' });
+                        finishMeasurement({ outcome: 'error' });
                         return;
                     }
                     if (nextFrame.type === 'column' && nextFrame.columnId === measuredFocusColumnId
                         && state.working.columnAuthority[nextFrame.columnId] === true) {
-                        await measurement?.focusedContentReady?.();
+                        observe(() => measurement?.focusedContentReady?.());
                     }
                     if (nextFrame.type === 'complete' || nextFrame.type === 'error') {
                         if (nextFrame.type === 'error' && nextFrame.code === 'auth_required') onAuthRequired();
+                        if (state.authLocked) {
+                            retireMeasurement(entry);
+                            return;
+                        }
                         const success = nextFrame.type === 'complete'
                             && nextFrame.outcome === 'success' && state.status === 'success';
-                        await finishMeasurement({
+                        finishMeasurement({
                             outcome: success ? 'success' : 'error',
                             diagnostics: nextFrame.diagnostics || null,
                             epicCount: success ? Object.keys(state.working.epicsByKey).length : null,
@@ -537,14 +591,15 @@ export function createEngBoardDataOwner({
             if (isAuthError(error)) {
                 emit({ type: 'auth_lock' });
                 onAuthRequired(error);
-                await finishMeasurement({ outcome: 'error' });
+                retireMeasurement(entry);
                 return 'auth_locked';
             }
             emit({ type: 'load_failed', requestId, code: error?.code || 'jira_unavailable' });
-            await finishMeasurement({ outcome: 'error' });
+            finishMeasurement({ outcome: 'error' });
             return 'error';
         } finally {
-            if (activeController === controller) activeController = null;
+            entry.streamSettled = true;
+            if (entry.measurementState !== 'finishing' && activeEntry === entry) activeEntry = null;
         }
     };
 

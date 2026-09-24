@@ -63,7 +63,18 @@ from backend.config.repository import (
     validate_config_storage_startup,
 )
 from backend.config.shared_config import normalize_shared_admin_section
-from backend.services.workspace_dashboard_config import WorkspaceConfigConflict
+from backend.services.workspace_dashboard_config import (
+    WorkspaceConfigConflict,
+    WorkspaceConfigFenceUnavailable,
+    load_workspace_team_catalog as _load_workspace_team_catalog_db,
+)
+from backend.services.workspace_catalog_config import resolve_effective_catalog_config
+from backend.services.catalog_refresh_runtime import (
+    get_catalog_refresh_runtime as _get_catalog_refresh_runtime,
+    read_catalog_completion,
+)
+from backend.services.sprint_teams import fetch_sprint_teams
+from backend.services.catalog_app_adapter import CatalogAppAdapter
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
@@ -97,6 +108,7 @@ from backend.services import sprints as _sprints_service
 from backend.services import stats_cache as _stats_cache_service
 from backend.services.alert_epics import (
     build_alert_epic_payloads as build_alert_epic_payloads_service,
+    fetch_epics_for_alert_scope as fetch_epics_for_alert_scope_service,
     fetch_epics_by_keys_for_alert as fetch_epics_by_keys_for_alert_service,
 )
 from backend.services import update_check as _update_check_service
@@ -195,7 +207,7 @@ EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS = int(os.getenv('EXCLUDED_CAPAC
 EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE = int(os.getenv('EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE', '100'))
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
-TASKS_CACHE = {}
+TASKS_CACHE, SPRINTS_PROCESS_CACHE = {}, {}
 TASKS_CACHE_TTL_SECONDS = 60 * 5
 TASKS_CACHE_SCHEMA_VERSION = 'v2-empty-epic-actionable'
 MISSING_INFO_CACHE = {}
@@ -629,7 +641,8 @@ def current_request_auth_context():
 
 
 def oauth_auth_required_payload():
-    save_oauth_session({})
+    if not database_storage_enabled():
+        save_oauth_session({})
     return {
         'error': 'auth_required',
         'message': 'Your Jira sign-in expired. Sign in again to continue.',
@@ -1617,7 +1630,7 @@ def add_sprint_label_alternative_to_jql(jql, sprint_label):
     label = str(sprint_label or '').strip()
     if not label:
         return jql
-    label_clause = f'labels = "{_escape_jql_literal(label)}"'
+    label_clause = f'labels in ("{_escape_jql_literal(label)}", "{_escape_jql_literal(label + "_candidate")}")'
     sprint_clause = r'(?P<prefix>^|\s+AND\s+)(?P<clause>Sprint\s*=\s*(?:"[^"]+"|\'[^\']+\'|[^\s)]+))'
     replacement = lambda match: f'{match.group("prefix")}({match.group("clause")} OR {label_clause})'
     updated, count = re.subn(sprint_clause, replacement, jql, count=1, flags=re.IGNORECASE)
@@ -1771,48 +1784,6 @@ def save_dashboard_config(config, *, source='auto'):
     if source == 'db' or config_storage_db_enabled():
         raise ConfigStorageError('full workspace dashboard replacement is forbidden in DB mode')
     return _save_dashboard_config_json(config)
-
-
-def resolve_team_catalog_path():
-    return _config_store.resolve_team_catalog_path(TEAM_CATALOG_PATH)
-
-
-def load_team_catalog():
-    return _config_store.load_team_catalog(
-        resolve_team_catalog_path(),
-        normalize_team_catalog_fn=normalize_team_catalog,
-        normalize_team_catalog_meta_fn=normalize_team_catalog_meta,
-        log_warning_fn=log_warning
-    )
-
-
-def save_team_catalog_file(catalog_data):
-    return _config_store.save_team_catalog_file(
-        catalog_data,
-        resolve_team_catalog_path(),
-        normalize_team_catalog_fn=normalize_team_catalog,
-        normalize_team_catalog_meta_fn=normalize_team_catalog_meta
-    )
-
-
-def migrate_team_catalog_from_config():
-    """One-time migration: extract teamCatalog from dashboard-config.json into team-catalog.json."""
-    catalog_path = resolve_team_catalog_path()
-    if os.path.exists(catalog_path):
-        return  # Already migrated or manually created
-    dashboard_config = load_dashboard_config(source='jsonfile')
-    if not dashboard_config:
-        return
-    team_groups = dashboard_config.get('teamGroups')
-    if not isinstance(team_groups, dict):
-        return
-    raw_catalog = team_groups.get('teamCatalog') or {}
-    raw_meta = team_groups.get('teamCatalogMeta') or {}
-    catalog = normalize_team_catalog(raw_catalog)
-    if not catalog:
-        return  # Nothing to migrate
-    save_team_catalog_file({'catalog': catalog, 'meta': raw_meta})
-    log_info('Migrated teamCatalog from dashboard-config.json to team-catalog.json')
 
 
 def resolve_scenario_overrides_path():
@@ -2009,7 +1980,7 @@ def clear_auth_sensitive_caches(reason='auth_context_change'):
     global TEAM_FIELD_CACHE, PARENT_NAME_FIELD_CACHE, EPIC_LINK_FIELD_CACHE, CAPACITY_FIELD_CACHE, JIRA_ISSUE_CACHE_GENERATION
     with _cache_lock:
         JIRA_ISSUE_CACHE_GENERATION += 1
-        TASKS_CACHE.clear()
+        for cache in (TASKS_CACHE, SPRINTS_PROCESS_CACHE): cache.clear()
         MISSING_INFO_CACHE.clear()
         DEPENDENCIES_CACHE.clear()
         EPIC_COHORT_CACHE.clear()
@@ -2695,10 +2666,10 @@ def apply_team_ids_to_template(team_ids):
     return JQL_QUERY_TEMPLATE.replace('{TEAM_IDS}', quoted)
 
 
-def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_labels, include_team_name, use_template, purpose='dashboard', epic_keys=None):
+def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_labels, include_team_name, use_template, purpose='dashboard', epic_keys=None, sprint_name=''):
     epic_signature = ','.join(sorted({str(k).strip() for k in (epic_keys or []) if str(k).strip()}))
     label_signature = ','.join(sorted({str(v).strip() for v in (team_labels or []) if str(v).strip()}))
-    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{purpose}::{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{label_signature}::{include_team_name}::{use_template}::{epic_signature}"
+    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{purpose}::{sprint}::{str(sprint_name or '').strip().casefold()}::{group_id}::{project_filter}::{','.join(team_ids)}::{label_signature}::{include_team_name}::{use_template}::{epic_signature}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"tasks:{digest}"
 
@@ -2733,6 +2704,19 @@ def fetch_board_sprint_ids(board_id, headers):
         auth_error_class=AuthError,
         log_warning_fn=log_warning,
     )
+
+
+_catalog_app_adapter = CatalogAppAdapter(globals())
+catalog_runtime_inputs = _catalog_app_adapter.runtime_inputs
+resolve_request_effective_catalog_config = _catalog_app_adapter.resolve_request_config
+catalog_browser_context_id = _catalog_app_adapter.browser_context_id
+resolve_team_catalog_path = _catalog_app_adapter.resolve_team_catalog_path
+load_team_catalog = _catalog_app_adapter.load_team_catalog
+save_team_catalog_file = _catalog_app_adapter.save_team_catalog_file
+migrate_team_catalog_from_config = _catalog_app_adapter.migrate_team_catalog_from_config
+fetch_board_sprints = _catalog_app_adapter.fetch_board_sprints
+fetch_catalog_sprint_teams = _catalog_app_adapter.fetch_catalog_sprint_teams
+catalog_refresh_runtime = _catalog_app_adapter.refresh_runtime
 
 
 def deduplicate_sprints_by_name(sprints, board_sprint_ids=None):
@@ -2871,39 +2855,21 @@ def issue_has_sprint(value):
     return True
 
 
-def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None, scope_sprint_label=None):
+def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None, scope_sprint_label=None, complete_alert_scope=False):
     """Fetch epics matching the current sprint/team filters so UI can flag epics with 0 stories."""
     epic_jql = derive_epic_jql(remove_team_filter_from_jql(jql), EPIC_EMPTY_TEAM_IDS)
     epic_jql = add_sprint_label_alternative_to_jql(epic_jql, scope_sprint_label)
     scope_clause = _group_config_service.build_epic_alert_scope_clause(scope_team_ids, scope_team_labels, normalize_team_ids)
     if scope_clause:
         epic_jql = add_clause_to_jql(epic_jql, scope_clause)
-    epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
-
-    fields_list = ['summary', 'status', 'assignee', 'labels', epic_field]
-    if team_field_id and team_field_id not in fields_list:
-        fields_list.append(team_field_id)
-    if sprint_field_id and sprint_field_id not in fields_list:
-        fields_list.append(sprint_field_id)
-
-    payload = {
-        'jql': epic_jql,
-        'maxResults': 250,
-        'fields': fields_list
-    }
-    resp = jira_search_request(payload)
-    if resp.status_code != 200:
-        log_warning(f'Epic empty-state fetch failed: status={resp.status_code}')
-        return []
-
-    data = resp.json() or {}
-    issues = data.get('issues', []) or []
-    return build_alert_epic_payloads_service(
-        issues,
-        team_field_id,
-        sprint_field_id,
+    return fetch_epics_for_alert_scope_service(
+        epic_jql, team_field_id, epic_name_field, sprint_field_id,
+        search_request=jira_search_request,
+        parent_name_field_default=PARENT_NAME_FIELD_DEFAULT,
         build_team_value=build_team_value,
         extract_team_name=extract_team_name,
+        complete_alert_scope=complete_alert_scope,
+        log_warning_fn=log_warning,
     )
 
 
@@ -2915,7 +2881,7 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
     if sprint_field_id:
         epic_jql = add_clause_to_jql(epic_jql, f'"{sprint_field_id}" is EMPTY')
 
-    epic_fields = ['summary', 'status', 'assignee', 'components']
+    epic_fields = ['summary', 'status', 'assignee', 'components', 'labels']
     if team_field_id and team_field_id not in epic_fields:
         epic_fields.append(team_field_id)
     if sprint_field_id and sprint_field_id not in epic_fields:
@@ -2947,6 +2913,7 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
             'status': {'name': status.get('name')} if status else None,
             'assignee': shape_jira_person(assignee),
             'components': [c.get('name') for c in (fields.get('components') or []) if c.get('name')],
+            'labels': fields.get('labels') or [],
             'team': team_value,
             'teamName': team_name,
             'teamId': team_value.get('id') if isinstance(team_value, dict) else None,
@@ -3232,7 +3199,7 @@ def fetch_tasks(include_team_name=False):
         lightweight_ready_to_close = request_purpose == 'ready-to-close'
         raw_cache_key = build_tasks_cache_key(
             sprint, group_id, project_filter, team_ids, team_label_values,
-            include_team_name, use_template, request_purpose, epic_keys_filter
+            include_team_name, use_template, request_purpose, epic_keys_filter, sprint_name=sprint_name
         )
         record_timing('parse_params', parse_started)
         auth_context = current_request_auth_context()
@@ -3498,15 +3465,15 @@ def fetch_tasks(include_team_name=False):
                     counts = open_child_distribution.get(epic.get('key')) or {}
                     epic['openChildCount'] = int(counts.get('openStoriesOutsideSelected', 0) or 0)
             else:
-                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
+                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name, complete_alert_scope=(request_purpose == 'alerts'))
         else:
             if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
                 epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
-                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
+                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name, complete_alert_scope=(request_purpose == 'alerts'))
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     future_epic_details = submit_with_performance(pool, fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                    future_epics_in_scope = submit_with_performance(pool, fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
+                    future_epics_in_scope = submit_with_performance(pool, fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name, request_purpose == 'alerts')
                     epic_details = future_epic_details.result()
                     epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)
@@ -6182,6 +6149,11 @@ def _save_field_config(config_key, cache_name=None):
             'currentRevision': error.current.config_revision,
             'current': {'section': config_key, 'value': current_value, 'configRevision': error.current.config_revision},
         }), 409
+    except WorkspaceConfigFenceUnavailable:
+        return jsonify({
+            'error': 'config_storage_unavailable',
+            'message': 'Configuration storage is temporarily unavailable.',
+        }), 503
     except Exception as e:
         return jsonify({'error': f'Failed to save {config_key} config', 'message': str(e)}), 500
     result = dict(value)

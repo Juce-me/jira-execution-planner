@@ -203,7 +203,8 @@ On first launch (or when local config files do not exist), open **Dashboard Sett
    - Add Jira projects and assign each to **Product** or **Tech**
 2. **Jira source**
    - Select **Sprint Field**
-   - Optionally select **Sprint Board** (faster sprint loading)
+   - In DB/OAuth mode, select **Sprint Board**; the persisted Sprint catalog is Board-backed and returns `409 sprint_board_required` when no effective Board is configured
+   - In legacy Basic/local mode, **Sprint Board** is optional; omitting it retains the Issues API fallback
 3. **Field mapping**
    - Set **Issue Type**, **Parent Name Field**, **Story Points Field**, **Team Field**
 4. **Capacity** (used by the Planning module)
@@ -222,7 +223,7 @@ The app now relies on Dashboard Settings for supported runtime configuration. Ke
 
 In OAuth mode, Dashboard Settings → **Admin → Access** lists users already known from Atlassian sign-in and stores app-admin membership against their stable Atlassian account identity. `SETTINGS_ADMIN_ONLY=true` restricts Admin settings and membership changes to app admins; `false` lets every authenticated OAuth user edit and save them. Basic mode treats the local user as an administrator.
 
-In DB/OAuth mode, administrator settings are shared once per workspace and use administrator writes. Department groups and their board layouts are also workspace-shared, but every authenticated user may configure them. Group visibility, favorite/active group, and EPM settings are private to the current user. EPM scope, label prefix, issue types, and project-label mappings live in that user's default private saved view; EPM tab and selected sprint remain private UI state. See [backend/security/CONFIGURATION_OWNERSHIP.md](backend/security/CONFIGURATION_OWNERSHIP.md) for the complete ownership and access contract.
+In DB/OAuth mode, administrator settings are shared once per workspace and use administrator writes. Department groups and their board layouts are also workspace-shared, but every authenticated user may configure them. Group visibility, favorite/active group, and EPM settings are private to the current user. EPM scope, label prefix, issue types, and project-label mappings live in that user's default private saved view; EPM tab and selected sprint remain private UI state. Derived Sprint catalogs persist per workspace and Jira source Board; Sprint-Team membership persists per workspace and Sprint and is accepted only for the current effective scope. The workspace Team-name directory is separate from membership. See [backend/security/CONFIGURATION_OWNERSHIP.md](backend/security/CONFIGURATION_OWNERSHIP.md) for the complete ownership and access contract.
 
 ## EPM View
 
@@ -382,11 +383,11 @@ The dashboard supports dynamic sprint selection:
 
 1. **Auto-detection**: Automatically selects current quarter (e.g., 2025Q4)
 2. **Dropdown**: Choose from available sprints starting from 2025Q1
-3. **Caching**: Sprint list cached for 24 hours for fast loading
+3. **Caching**: In DB/OAuth mode, the validated Sprint list is shared per workspace and source Board and refreshed after 24 hours; Basic/local mode keeps its compatible file cache
 4. **Refresh button**: Manually update sprint list from Jira
 5. **Two fetch methods**:
-   - Fast: Via Board API (set Sprint Board in Dashboard Settings → Jira source)
-   - Fallback: Via Issues API (uses your dashboard configuration and selected projects)
+   - DB/OAuth: Board API only (set Sprint Board in Dashboard Settings → Jira source); no effective Board returns `409 sprint_board_required`
+   - Legacy Basic/local: Board API when configured, otherwise the Issues API fallback uses the dashboard configuration and selected projects
 
 ## 📊 Sprint Statistics
 
@@ -463,10 +464,10 @@ See the full guide:
 - Open Dashboard Settings → **Field mapping** and set the **Team Field** to your Jira Team[Team] custom field
 
 **"No sprints available" in dropdown:**
-- Option 1: Set **Sprint Board** in Dashboard Settings → **Jira source** (faster method)
+- In DB/OAuth mode, set **Sprint Board** in Dashboard Settings → **Jira source**; it is required for the Board-backed Sprint catalog, and an absent effective Board returns `409 sprint_board_required`
   - Find your board ID: go to `/api/boards` endpoint or check Jira board URL
-- Option 2: Leave Sprint Board empty (fallback method works automatically)
-- Check that your selected projects return tasks with sprint information
+- In legacy Basic/local mode, set **Sprint Board** for the Board API path or leave it empty to use the Issues API fallback
+- For the legacy fallback, check that your selected projects return tasks with sprint information
 
 **Planning panel shows no capacity / capacity comparison looks wrong:**
 - Open Dashboard Settings → **Capacity**
@@ -542,7 +543,9 @@ jira-dashboard/
 
 The dashboard uses a few different cache layers to keep Jira traffic reasonable:
 
-- **Sprint list**: cached on disk in `sprints_cache.json` for 24 hours. Use **Refresh Sprints** or `?refresh=true` to force a reload from Jira.
+- **Basic/local Sprint list**: cached on disk in `sprints_cache.json` for 24 hours. Use **Refresh Sprints** or `?refresh=true` to force a reload from Jira.
+- **DB/OAuth Sprint and Team catalogs**: Sprint values persist in `workspace_sprint_catalogs` per workspace/source Board. Team availability persists in `workspace_sprint_team_catalogs` per workspace/Sprint and is bound to the effective Board/project/base-JQL/Team-field scope digest; names remain in the separate `workspace_team_catalogs` directory. A complete validated empty result replaces older choices. A matching failed refresh retains the last validated result with a warning instead of publishing partial discovery.
+- **Catalog browser lifecycle**: Restored Sprint labels are display-only until the current server identity and browser context validate them. Pending refresh completion is bound to one attempt/identity, bounded by hard server and browser deadlines, and cancelled on auth, configuration, or document-lifetime changes. Manual refresh coalesces with an ordinary pending attempt; Retry forces only when no such attempt exists.
 - **Tasks and epics**: cached in server memory for 5 minutes for repeated requests with the same sprint/group/project scope. The refresh button bypasses the server cache and also clears browser-side group state, so changes made in Jira appear immediately after clicking refresh.
 - **Statistics**:
   - Teams and Priority views are computed from the currently loaded sprint tasks in the browser.

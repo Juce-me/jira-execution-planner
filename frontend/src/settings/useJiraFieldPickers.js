@@ -40,17 +40,66 @@ export const makeFieldKeyDown = (results, indexState, setIndex, setId, setName, 
     }
 };
 
+export const applyAcceptedFieldConfig = ({
+    value, requestDraft, currentDraft, preserveDraft = false,
+    setId, setName, baselineRef, onBaselineAccepted = () => {},
+}) => {
+    const normalized = { fieldId: value?.fieldId || '', fieldName: value?.fieldName || '' };
+    const baseline = JSON.stringify(normalized);
+    const baselineChanged = baselineRef.current !== baseline;
+    baselineRef.current = baseline;
+    if (baselineChanged) onBaselineAccepted();
+    const draftApplied = !preserveDraft && currentDraft === requestDraft;
+    if (draftApplied) {
+        setId(normalized.fieldId);
+        setName(normalized.fieldName);
+    }
+    return { baseline, baselineChanged, draftApplied };
+};
+
+export const applyAcceptedFieldConfigs = (
+    entries,
+    { shouldPreserveDraft = () => false, onBaselineAccepted = () => {} } = {},
+) => entries.map(({ section, value, setId, setName, baselineRef, readCurrentDraft }) => {
+    const currentDraft = readCurrentDraft();
+    return applyAcceptedFieldConfig({
+        value,
+        requestDraft: currentDraft,
+        currentDraft,
+        preserveDraft: shouldPreserveDraft(section),
+        setId,
+        setName,
+        baselineRef,
+        onBaselineAccepted,
+    });
+});
+
 // Generic load/save helpers for custom field pickers.
-const loadFieldConfig = async (backendUrl, endpoint, setId, setName, baselineRef) => {
+const loadFieldConfig = async (
+    backendUrl, endpoint, setId, setName, baselineRef,
+    preserveDraft = false, shouldApplyResult = () => true, readCurrentDraft = () => '',
+    onBaselineAccepted = () => {}, requestDraftOverride,
+) => {
+    const requestDraft = requestDraftOverride === undefined ? readCurrentDraft() : requestDraftOverride;
     try {
         const response = await requestFieldConfig(backendUrl, endpoint);
-        if (!response.ok) return;
+        if (!response.ok) return false;
         const data = await response.json();
-        setId(data.fieldId || '');
-        setName(data.fieldName || '');
-        baselineRef.current = JSON.stringify({ fieldId: data.fieldId || '', fieldName: data.fieldName || '' });
+        if (!shouldApplyResult()) return false;
+        applyAcceptedFieldConfig({
+            value: data,
+            requestDraft,
+            currentDraft: readCurrentDraft(),
+            preserveDraft,
+            setId,
+            setName,
+            baselineRef,
+            onBaselineAccepted,
+        });
+        return true;
     } catch (err) {
         console.error(`Failed to load ${endpoint} config:`, err);
+        return false;
     }
 };
 
@@ -65,6 +114,10 @@ const saveFieldConfig = async (backendUrl, endpoint, fieldId, fieldName, baselin
 // from dashboard.jsx to keep that file inside its line budget — see
 // docs/plans/EXEC-eng-group-board.md §6.5.7 and §14.
 export function useJiraFieldPickers({ backendUrl, jiraFields }) {
+    const [fieldBaselineRevision, setFieldBaselineRevision] = React.useState(0);
+    const markBaselineAccepted = React.useCallback(() => {
+        setFieldBaselineRevision(revision => revision + 1);
+    }, []);
     // Sprint field picker state
     const [sprintFieldIdDraft, setSprintFieldIdDraft] = React.useState('');
     const [sprintFieldNameDraft, setSprintFieldNameDraft] = React.useState('');
@@ -105,36 +158,70 @@ export function useJiraFieldPickers({ backendUrl, jiraFields }) {
     const [deliveryOwnerFieldSearchOpen, setDeliveryOwnerFieldSearchOpen] = React.useState(false);
     const [deliveryOwnerFieldSearchIndex, setDeliveryOwnerFieldSearchIndex] = React.useState(0);
     const deliveryOwnerFieldSearchInputRef = React.useRef(null);
+    const fieldDraftSnapshotRef = React.useRef({});
+    fieldDraftSnapshotRef.current = {
+        sprint: JSON.stringify({ fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft }),
+        parentName: JSON.stringify({ fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft }),
+        storyPoints: JSON.stringify({ fieldId: storyPointsFieldIdDraft, fieldName: storyPointsFieldNameDraft }),
+        team: JSON.stringify({ fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft }),
+        deliveryOwner: JSON.stringify({ fieldId: deliveryOwnerFieldIdDraft, fieldName: deliveryOwnerFieldNameDraft }),
+    };
 
-    const isSprintFieldDirty = React.useMemo(() => Boolean(sprintFieldBaselineRef.current) && JSON.stringify({ fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft }) !== sprintFieldBaselineRef.current, [sprintFieldIdDraft, sprintFieldNameDraft]);
-    const isParentNameFieldDirty = React.useMemo(() => Boolean(parentNameFieldBaselineRef.current) && JSON.stringify({ fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft }) !== parentNameFieldBaselineRef.current, [parentNameFieldIdDraft, parentNameFieldNameDraft]);
-    const isStoryPointsFieldDirty = React.useMemo(() => Boolean(storyPointsFieldBaselineRef.current) && JSON.stringify({ fieldId: storyPointsFieldIdDraft, fieldName: storyPointsFieldNameDraft }) !== storyPointsFieldBaselineRef.current, [storyPointsFieldIdDraft, storyPointsFieldNameDraft]);
-    const isTeamFieldDirty = React.useMemo(() => Boolean(teamFieldBaselineRef.current) && JSON.stringify({ fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft }) !== teamFieldBaselineRef.current, [teamFieldIdDraft, teamFieldNameDraft]);
-    const isDeliveryOwnerFieldDirty = React.useMemo(() => Boolean(deliveryOwnerFieldBaselineRef.current) && JSON.stringify({ fieldId: deliveryOwnerFieldIdDraft, fieldName: deliveryOwnerFieldNameDraft }) !== deliveryOwnerFieldBaselineRef.current, [deliveryOwnerFieldIdDraft, deliveryOwnerFieldNameDraft]);
+    const isSprintFieldDirty = React.useMemo(() => Boolean(sprintFieldBaselineRef.current) && JSON.stringify({ fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft }) !== sprintFieldBaselineRef.current, [sprintFieldIdDraft, sprintFieldNameDraft, fieldBaselineRevision]);
+    const isParentNameFieldDirty = React.useMemo(() => Boolean(parentNameFieldBaselineRef.current) && JSON.stringify({ fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft }) !== parentNameFieldBaselineRef.current, [parentNameFieldIdDraft, parentNameFieldNameDraft, fieldBaselineRevision]);
+    const isStoryPointsFieldDirty = React.useMemo(() => Boolean(storyPointsFieldBaselineRef.current) && JSON.stringify({ fieldId: storyPointsFieldIdDraft, fieldName: storyPointsFieldNameDraft }) !== storyPointsFieldBaselineRef.current, [storyPointsFieldIdDraft, storyPointsFieldNameDraft, fieldBaselineRevision]);
+    const isTeamFieldDirty = React.useMemo(() => Boolean(teamFieldBaselineRef.current) && JSON.stringify({ fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft }) !== teamFieldBaselineRef.current, [teamFieldIdDraft, teamFieldNameDraft, fieldBaselineRevision]);
+    const isDeliveryOwnerFieldDirty = React.useMemo(() => Boolean(deliveryOwnerFieldBaselineRef.current) && JSON.stringify({ fieldId: deliveryOwnerFieldIdDraft, fieldName: deliveryOwnerFieldNameDraft }) !== deliveryOwnerFieldBaselineRef.current, [deliveryOwnerFieldIdDraft, deliveryOwnerFieldNameDraft, fieldBaselineRevision]);
 
-    const loadSprintFieldConfig = () => loadFieldConfig(backendUrl, 'sprint-field', setSprintFieldIdDraft, setSprintFieldNameDraft, sprintFieldBaselineRef);
+    const loadSprintFieldConfig = ({ shouldApplyResult = () => true, preserveDraft: preserveParentDraft = false, requestDraft } = {}) => {
+        const preserveDraft = isSprintFieldDirty || preserveParentDraft;
+        return loadFieldConfig(
+            backendUrl, 'sprint-field', setSprintFieldIdDraft, setSprintFieldNameDraft, sprintFieldBaselineRef,
+            preserveDraft, shouldApplyResult, () => fieldDraftSnapshotRef.current.sprint, markBaselineAccepted, requestDraft,
+        );
+    };
     const saveSprintFieldConfig = (baseRevision) => saveFieldConfig(backendUrl, 'sprint-field', sprintFieldIdDraft, sprintFieldNameDraft, sprintFieldBaselineRef, baseRevision);
-    const loadParentNameFieldConfig = () => loadFieldConfig(backendUrl, 'parent-name-field', setParentNameFieldIdDraft, setParentNameFieldNameDraft, parentNameFieldBaselineRef);
+    const loadParentNameFieldConfig = ({ shouldApplyResult = () => true, preserveDraft: preserveParentDraft = false, requestDraft } = {}) => {
+        const preserveDraft = isParentNameFieldDirty || preserveParentDraft;
+        return loadFieldConfig(
+            backendUrl, 'parent-name-field', setParentNameFieldIdDraft, setParentNameFieldNameDraft, parentNameFieldBaselineRef,
+            preserveDraft, shouldApplyResult, () => fieldDraftSnapshotRef.current.parentName, markBaselineAccepted, requestDraft,
+        );
+    };
     const saveParentNameFieldConfig = (baseRevision) => saveFieldConfig(backendUrl, 'parent-name-field', parentNameFieldIdDraft, parentNameFieldNameDraft, parentNameFieldBaselineRef, baseRevision);
-    const loadStoryPointsFieldConfig = () => loadFieldConfig(backendUrl, 'story-points-field', setStoryPointsFieldIdDraft, setStoryPointsFieldNameDraft, storyPointsFieldBaselineRef);
+    const loadStoryPointsFieldConfig = ({ shouldApplyResult = () => true, preserveDraft: preserveParentDraft = false, requestDraft } = {}) => {
+        const preserveDraft = isStoryPointsFieldDirty || preserveParentDraft;
+        return loadFieldConfig(
+            backendUrl, 'story-points-field', setStoryPointsFieldIdDraft, setStoryPointsFieldNameDraft, storyPointsFieldBaselineRef,
+            preserveDraft, shouldApplyResult, () => fieldDraftSnapshotRef.current.storyPoints, markBaselineAccepted, requestDraft,
+        );
+    };
     const saveStoryPointsFieldConfig = (baseRevision) => saveFieldConfig(backendUrl, 'story-points-field', storyPointsFieldIdDraft, storyPointsFieldNameDraft, storyPointsFieldBaselineRef, baseRevision);
-    const loadTeamFieldConfig = () => loadFieldConfig(backendUrl, 'team-field', setTeamFieldIdDraft, setTeamFieldNameDraft, teamFieldBaselineRef);
+    const loadTeamFieldConfig = ({ shouldApplyResult = () => true, preserveDraft: preserveParentDraft = false, requestDraft } = {}) => {
+        const preserveDraft = isTeamFieldDirty || preserveParentDraft;
+        return loadFieldConfig(
+            backendUrl, 'team-field', setTeamFieldIdDraft, setTeamFieldNameDraft, teamFieldBaselineRef,
+            preserveDraft, shouldApplyResult, () => fieldDraftSnapshotRef.current.team, markBaselineAccepted, requestDraft,
+        );
+    };
     const saveTeamFieldConfig = (baseRevision) => saveFieldConfig(backendUrl, 'team-field', teamFieldIdDraft, teamFieldNameDraft, teamFieldBaselineRef, baseRevision);
-    const loadDeliveryOwnerFieldConfig = () => loadFieldConfig(backendUrl, 'delivery-owner-field', setDeliveryOwnerFieldIdDraft, setDeliveryOwnerFieldNameDraft, deliveryOwnerFieldBaselineRef);
+    const loadDeliveryOwnerFieldConfig = ({ shouldApplyResult = () => true, preserveDraft: preserveParentDraft = false, requestDraft } = {}) => {
+        const preserveDraft = isDeliveryOwnerFieldDirty || preserveParentDraft;
+        return loadFieldConfig(
+            backendUrl, 'delivery-owner-field', setDeliveryOwnerFieldIdDraft, setDeliveryOwnerFieldNameDraft, deliveryOwnerFieldBaselineRef,
+            preserveDraft, shouldApplyResult, () => fieldDraftSnapshotRef.current.deliveryOwner, markBaselineAccepted, requestDraft,
+        );
+    };
     const saveDeliveryOwnerFieldConfig = (baseRevision) => saveFieldConfig(backendUrl, 'delivery-owner-field', deliveryOwnerFieldIdDraft, deliveryOwnerFieldNameDraft, deliveryOwnerFieldBaselineRef, baseRevision);
 
-    const seedSharedFieldConfigs = (sharedConfig = {}) => {
-        const apply = (value, setId, setName, baselineRef) => {
-            const normalized = { fieldId: value?.fieldId || '', fieldName: value?.fieldName || '' };
-            setId(normalized.fieldId);
-            setName(normalized.fieldName);
-            baselineRef.current = JSON.stringify(normalized);
-        };
-        apply(sharedConfig.sprintField, setSprintFieldIdDraft, setSprintFieldNameDraft, sprintFieldBaselineRef);
-        apply(sharedConfig.parentNameField, setParentNameFieldIdDraft, setParentNameFieldNameDraft, parentNameFieldBaselineRef);
-        apply(sharedConfig.storyPointsField, setStoryPointsFieldIdDraft, setStoryPointsFieldNameDraft, storyPointsFieldBaselineRef);
-        apply(sharedConfig.teamField, setTeamFieldIdDraft, setTeamFieldNameDraft, teamFieldBaselineRef);
-        apply(sharedConfig.deliveryOwnerField, setDeliveryOwnerFieldIdDraft, setDeliveryOwnerFieldNameDraft, deliveryOwnerFieldBaselineRef);
+    const seedSharedFieldConfigs = (sharedConfig = {}, { shouldPreserveDraft = () => false } = {}) => {
+        applyAcceptedFieldConfigs([
+            { section: 'sprintField', value: sharedConfig.sprintField, setId: setSprintFieldIdDraft, setName: setSprintFieldNameDraft, baselineRef: sprintFieldBaselineRef, readCurrentDraft: () => fieldDraftSnapshotRef.current.sprint },
+            { section: 'parentNameField', value: sharedConfig.parentNameField, setId: setParentNameFieldIdDraft, setName: setParentNameFieldNameDraft, baselineRef: parentNameFieldBaselineRef, readCurrentDraft: () => fieldDraftSnapshotRef.current.parentName },
+            { section: 'storyPointsField', value: sharedConfig.storyPointsField, setId: setStoryPointsFieldIdDraft, setName: setStoryPointsFieldNameDraft, baselineRef: storyPointsFieldBaselineRef, readCurrentDraft: () => fieldDraftSnapshotRef.current.storyPoints },
+            { section: 'teamField', value: sharedConfig.teamField, setId: setTeamFieldIdDraft, setName: setTeamFieldNameDraft, baselineRef: teamFieldBaselineRef, readCurrentDraft: () => fieldDraftSnapshotRef.current.team },
+            { section: 'deliveryOwnerField', value: sharedConfig.deliveryOwnerField, setId: setDeliveryOwnerFieldIdDraft, setName: setDeliveryOwnerFieldNameDraft, baselineRef: deliveryOwnerFieldBaselineRef, readCurrentDraft: () => fieldDraftSnapshotRef.current.deliveryOwner },
+        ], { shouldPreserveDraft, onBaselineAccepted: markBaselineAccepted });
     };
 
     const sprintFieldSearch = React.useMemo(() => makeFieldSearchResults(sprintFieldSearchQuery, jiraFields), [sprintFieldSearchQuery, jiraFields]);
@@ -167,13 +254,13 @@ export function useJiraFieldPickers({ backendUrl, jiraFields }) {
     React.useEffect(() => { if (deliveryOwnerFieldSearchIndex >= deliveryOwnerFieldSearchResults.length) setDeliveryOwnerFieldSearchIndex(0); }, [deliveryOwnerFieldSearchResults.length]);
     const handleDeliveryOwnerFieldSearchKeyDown = makeFieldKeyDown(deliveryOwnerFieldSearchResults, deliveryOwnerFieldSearchIndex, setDeliveryOwnerFieldSearchIndex, setDeliveryOwnerFieldIdDraft, setDeliveryOwnerFieldNameDraft, setDeliveryOwnerFieldSearchQuery, setDeliveryOwnerFieldSearchOpen);
 
-    const loadAllFieldConfigs = () => {
-        loadSprintFieldConfig();
-        loadParentNameFieldConfig();
-        loadStoryPointsFieldConfig();
-        loadTeamFieldConfig();
-        loadDeliveryOwnerFieldConfig();
-    };
+    const loadAllFieldConfigs = ({ shouldApplyResult, readOptionsForField = () => ({}) } = {}) => Promise.all([
+        loadSprintFieldConfig({ ...readOptionsForField('sprintField'), shouldApplyResult }),
+        loadParentNameFieldConfig({ ...readOptionsForField('parentNameField'), shouldApplyResult }),
+        loadStoryPointsFieldConfig({ ...readOptionsForField('storyPointsField'), shouldApplyResult }),
+        loadTeamFieldConfig({ ...readOptionsForField('teamField'), shouldApplyResult }),
+        loadDeliveryOwnerFieldConfig({ ...readOptionsForField('deliveryOwnerField'), shouldApplyResult }),
+    ]);
 
     const anyFieldConfigDirty = React.useMemo(
         () => isSprintFieldDirty || isParentNameFieldDirty || isStoryPointsFieldDirty || isTeamFieldDirty || isDeliveryOwnerFieldDirty,

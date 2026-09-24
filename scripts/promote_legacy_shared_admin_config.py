@@ -12,6 +12,10 @@ from sqlalchemy import select
 from backend.config.shared_config import normalize_workspace_admin_payload
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.services.workspace_dashboard_config import (
+    WorkspaceConfigFenceUnavailable,
+    acquire_workspace_config_fence,
+)
 
 
 def _fingerprint(payload):
@@ -60,6 +64,11 @@ def main(argv=None):
         raise ValueError('--expected-sha256 is required with --apply')
     database_url = db_engine.resolve_database_url(required=True)
     with db_engine.session_scope(database_url) as session:
+        if args.apply:
+            try:
+                acquire_workspace_config_fence(session, args.workspace_id)
+            except WorkspaceConfigFenceUnavailable:
+                return 2
         _view, owner, payload = _candidate(
             session,
             workspace_id=args.workspace_id,

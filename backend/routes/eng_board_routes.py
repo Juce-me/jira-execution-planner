@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
+import json
 import logging
 import secrets
+import queue
 import time
 
 from flask import Blueprint, Response, current_app, jsonify, request
@@ -17,7 +20,7 @@ from backend.db.engine import DatabaseConfigurationError, database_storage_enabl
 from backend.services import eng_board, eng_board_basic, shared_group_config, workspace_dashboard_config
 from backend.services.eng_board_stream import (
     ENG_BOARD_PROTOCOL_VERSION, EngBoardChildScheduler, EngBoardRequestDeadline,
-    EngBoardRequestTransport, EngBoardStreamWriter,
+    EngBoardFrameError, EngBoardRequestTransport, EngBoardStreamWriter,
 )
 
 from . import get_jira_server
@@ -28,6 +31,12 @@ LOGGER = logging.getLogger(__name__)
 _QUERY_KEYS = {'departmentId', 'scope', 'sprintId', 'focusedColumnId', 'refresh'}
 _PROJECT_CATALOG_PAGE_SIZE = 100
 _PROJECT_CATALOG_MAX_PAGES = 101
+_CANDIDATE_INDEX_BYTES = 8 * 1024 * 1024
+_TERMINAL_RESERVE_BYTES = 1024
+_MAX_ROUTE_SEQUENCE = (
+    _CANDIDATE_INDEX_BYTES + eng_board.MAX_PAGES_PER_GENERATION
+    + (2 * 100) + 4
+)
 
 
 class BoardRouteError(RuntimeError):
@@ -455,6 +464,150 @@ def _shells(projection):
     return [{key: value for key, value in epic.items() if key != 'children'} for epic in projection['epics']]
 
 
+def _start_frame(snapshot, generation_id):
+    return {
+        'protocolVersion': ENG_BOARD_PROTOCOL_VERSION, 'generationId': generation_id,
+        'sequence': 0, 'type': 'start', 'scope': snapshot.query.scope,
+        'scopeVersion': snapshot.scope_version,
+        'scopeCohortDigest': snapshot.scope_cohort_digest,
+        'columns': _wire_columns(snapshot.board),
+    }
+
+
+def _minimal_error_frame(generation_id, sequence, code):
+    return {
+        'protocolVersion': ENG_BOARD_PROTOCOL_VERSION, 'generationId': generation_id,
+        'sequence': sequence, 'type': 'error', 'code': code,
+    }
+
+
+if len(json.dumps(
+        _minimal_error_frame('x' * 32, _MAX_ROUTE_SEQUENCE, 'scope_too_large'),
+        ensure_ascii=False, allow_nan=False, separators=(',', ':'),
+).encode('utf-8')) + 1 > _TERMINAL_RESERVE_BYTES:
+    raise RuntimeError('ENG Board terminal reserve is smaller than the route envelope')
+
+
+def _preflight_stream(snapshot, generation_id):
+    """Validate the exact first frame and a reserved terminal before headers."""
+    writer = EngBoardStreamWriter()
+    writer.write(
+        _start_frame(snapshot, generation_id), reserve_bytes=_TERMINAL_RESERVE_BYTES,
+    )
+    terminal = writer.write(_minimal_error_frame(generation_id, 1, 'scope_too_large'))
+    if len(terminal) > _TERMINAL_RESERVE_BYTES:
+        raise EngBoardFrameError(
+            'generation_too_large', limit=_TERMINAL_RESERVE_BYTES,
+            observed=len(terminal),
+        )
+
+
+class _CandidateIndexPolicy:
+    """Bound cumulative candidate indexes across discovery phases."""
+
+    def __init__(self, snapshot, emit, validate_shells):
+        self.snapshot = snapshot
+        self.emit = emit
+        self.validate_shells = validate_shells
+        self.raw_by_key = {}
+        self.shell_by_key = {}
+        self.latest_membership = frozenset()
+        self.last_emitted_membership = frozenset()
+        self.last_emitted_count = 0
+        self.dirty_phases = set()
+        self.team_candidate_emitted = False
+        self.candidate_bytes = 0
+
+    @property
+    def latest_epics(self):
+        return [self.raw_by_key[key] for key in sorted(self.raw_by_key)]
+
+    def _admit(self, epics):
+        offered_by_key = {}
+        for row in epics:
+            key = eng_board._normalized_key(row.get('key') if isinstance(row, dict) else None)
+            if not key or key in offered_by_key:
+                raise eng_board.EngBoardError(
+                    'board_projection_invalid', phase='shape', reason='candidate.key',
+                )
+            offered_by_key[key] = row
+        membership = frozenset(offered_by_key)
+        if not self.latest_membership <= membership:
+            raise eng_board.EngBoardError(
+                'board_projection_invalid', phase='shape', reason='candidate.membership',
+            )
+        new_keys = membership - self.latest_membership
+        changed_keys = {
+            key for key in self.latest_membership
+            if offered_by_key[key] != self.raw_by_key[key]
+        }
+        delta_keys = new_keys | changed_keys
+        if not delta_keys:
+            return membership, False
+
+        delta_rows = [offered_by_key[key] for key in sorted(delta_keys)]
+        projection = eng_board.project_board(
+            delta_rows, [], project_map=self.snapshot.projects,
+            columns=self.snapshot.board['columns'],
+            project_track_field_id=self.snapshot.project_track_field_id,
+            delivery_owner_field_id=self.snapshot.delivery_owner_field_id,
+        )
+        delta_shells = _shells(projection)
+        if frozenset(row['key'] for row in delta_shells) != delta_keys:
+            raise eng_board.EngBoardError(
+                'board_projection_invalid', phase='shape', reason='candidate.membership',
+            )
+        self.validate_shells(delta_shells)
+
+        owned_raw = {
+            key: copy.deepcopy(offered_by_key[key]) for key in delta_keys
+        }
+        owned_shells = {row['key']: row for row in delta_shells}
+        self.raw_by_key.update(owned_raw)
+        self.shell_by_key.update(owned_shells)
+        self.latest_membership = membership
+        return membership, bool(new_keys)
+
+    def _candidate_shells(self):
+        return [self.shell_by_key[key] for key in sorted(self.shell_by_key)]
+
+    def offer(self, epics, *, phase, phase_complete=False, final=False, retain=False):
+        if phase not in {'component', 'team', 'failure'}:
+            raise eng_board.EngBoardError(
+                'board_projection_invalid', phase='shape', reason='candidate.phase',
+            )
+        membership, changed = self._admit(epics)
+        if changed:
+            self.dirty_phases.add(phase)
+        if final or not membership:
+            return None
+
+        first_nonempty = not self.last_emitted_membership
+        first_team_addition = phase == 'team' and changed and not self.team_candidate_emitted
+        phase_dirty_complete = phase_complete and phase in self.dirty_phases
+        doubled = bool(self.last_emitted_count and len(membership) >= self.last_emitted_count * 2)
+        if not (first_nonempty or first_team_addition or phase_dirty_complete or doubled or retain):
+            return None
+        if membership == self.last_emitted_membership:
+            return None
+
+        shells = self._candidate_shells()
+        remaining = _CANDIDATE_INDEX_BYTES - self.candidate_bytes
+        line = self.emit(
+            'index', epics=shells, membership='candidate',
+            optional_candidate_bytes=max(0, remaining),
+        )
+        if line is None:
+            return None
+        self.candidate_bytes += len(line)
+        self.last_emitted_membership = membership
+        self.last_emitted_count = len(membership)
+        self.dirty_phases.discard(phase)
+        if phase == 'team':
+            self.team_candidate_emitted = True
+        return line
+
+
 def _diagnostics(transport, counters, started, index_ms, focused_ms, peak, completeness):
     observed = transport.diagnostics()
     return {
@@ -489,9 +642,10 @@ def _search_page(server, snapshot, transport, payload, timeout):
         raise eng_board.EngBoardError('board_projection_invalid', phase='index') from None
 
 
-def _frame_stream(server, snapshot, transport):
+def _frame_stream(server, snapshot, transport, *, generation_id=None,
+                  _candidate_updates=None):
     writer = EngBoardStreamWriter()
-    generation_id = secrets.token_urlsafe(24)
+    generation_id = secrets.token_urlsafe(24) if generation_id is None else generation_id
     sequence = 0
     started = time.monotonic()
     counters = eng_board.PagerCounters()
@@ -499,45 +653,149 @@ def _frame_stream(server, snapshot, transport):
     index_ms = 0.0
     focused_ms = None
     peak = 0
+    candidate_policy = None
+    discovery_complete = False
 
-    def emit(frame_type, **payload):
+    def emit(frame_type, *, optional_candidate_bytes=None, **payload):
         nonlocal sequence
         frame = {
             'protocolVersion': ENG_BOARD_PROTOCOL_VERSION, 'generationId': generation_id,
             'sequence': sequence, 'type': frame_type, **payload,
         }
+        terminal = frame_type in {'complete', 'error'}
+        if optional_candidate_bytes is not None:
+            try:
+                prepared = writer.prepare(frame)
+            except EngBoardFrameError as error:
+                if error.code in {'frame_too_large', 'generation_too_large'}:
+                    return None
+                raise
+            if len(prepared) > optional_candidate_bytes:
+                return None
+            try:
+                line = writer.write(frame, reserve_bytes=_TERMINAL_RESERVE_BYTES)
+            except EngBoardFrameError as error:
+                if error.code in {'frame_too_large', 'generation_too_large'}:
+                    return None
+                raise
+        else:
+            line = writer.write(
+                frame, reserve_bytes=0 if terminal else _TERMINAL_RESERVE_BYTES,
+            )
         sequence += 1
-        return writer.write(frame)
+        return line
+
+    def emit_terminal(code, *, diagnostics=None):
+        payload = {'code': code}
+        if diagnostics is not None:
+            payload['diagnostics'] = diagnostics
+        try:
+            return emit('error', **payload)
+        except EngBoardFrameError as error:
+            if diagnostics is None:
+                raise
+            return emit(
+                'error', code=(code if error.code in {
+                    'frame_too_large', 'generation_too_large',
+                } else 'board_data_invalid'),
+            )
+
+    def offer_retained_candidate():
+        if candidate_policy is None or discovery_complete:
+            return None
+        return candidate_policy.offer(
+            candidate_policy.latest_epics, phase='failure', retain=True,
+        )
+
+    def validate_candidate_shells(shells):
+        for shell in shells:
+            writer.prepare({
+                'protocolVersion': ENG_BOARD_PROTOCOL_VERSION,
+                'generationId': generation_id, 'sequence': sequence, 'type': 'index',
+                'epics': [shell], 'membership': 'candidate',
+            })
 
     try:
-        yield emit(
-            'start', scope=snapshot.query.scope, scopeVersion=snapshot.scope_version,
-            scopeCohortDigest=snapshot.scope_cohort_digest, columns=_wire_columns(snapshot.board),
-        )
+        yield emit('start', **{
+            key: value for key, value in _start_frame(snapshot, generation_id).items()
+            if key not in {'protocolVersion', 'generationId', 'sequence', 'type'}
+        })
         index_started = time.monotonic()
         terminal_statuses = snapshot.board['columns'][-1]['statuses']
-        index_jql = eng_board.build_epic_index_jql(
-            snapshot.projects, snapshot.components if snapshot.components else (), terminal_statuses,
-            snapshot.board['doneEpicRetentionDays'] or 28,
-        )
         epic_fields = tuple(dict.fromkeys(eng_board.EPIC_FIELDS + tuple(
             value for value in (snapshot.project_track_field_id, snapshot.delivery_owner_field_id) if value
         )))
-        epics = eng_board.strict_search(
-            lambda payload: _search_page(server, snapshot, transport, payload, transport.budget.jira_retry_timeout()),
-            index_jql, epic_fields, counters=counters, cancel_check=lambda: _assert_current(snapshot),
-            max_unique_keys=eng_board.MAX_EPICS,
-        ) if snapshot.components or snapshot.query.scope == 'sprint' else []
-        if snapshot.query.scope == 'all_work' and snapshot.teams:
-            epics = eng_board.discover_team_epics(
-                lambda payload: _search_page(server, snapshot, transport, payload, transport.budget.jira_retry_timeout()),
-                projects=snapshot.projects, issue_type_ids=snapshot.issue_type_ids,
-                team_ids=snapshot.teams, existing_epics=epics, epic_fields=epic_fields,
-                terminal_statuses=terminal_statuses,
-                retention_days=snapshot.board['doneEpicRetentionDays'] or 28,
-                team_field_id=snapshot.team_field_id, epic_link_field_id=snapshot.epic_link_field_id,
-                counters=counters, cancel_check=lambda: _assert_current(snapshot),
+        search_page = lambda payload: _search_page(
+            server, snapshot, transport, payload, transport.budget.jira_retry_timeout(),
+        )
+        candidate_policy = _CandidateIndexPolicy(snapshot, emit, validate_candidate_shells)
+        if _candidate_updates is not None:
+            epics = []
+            for update in _candidate_updates:
+                if not isinstance(update, dict):
+                    raise eng_board.EngBoardError(
+                        'board_projection_invalid', phase='shape',
+                        reason='candidate.update',
+                    )
+                epics = update.get('epics')
+                if not isinstance(epics, (list, tuple)):
+                    raise eng_board.EngBoardError(
+                        'board_projection_invalid', phase='shape',
+                        reason='candidate.update',
+                    )
+                line = candidate_policy.offer(
+                    epics, phase=update.get('phase'),
+                    phase_complete=update.get('phaseComplete') is True,
+                    final=update.get('final') is True,
+                    retain=update.get('retain') is True,
+                )
+                if line is not None:
+                    yield line
+        elif snapshot.components:
+            epics = []
+            for epics, component_index_complete in eng_board.iter_component_epic_batches(
+                    search_page, projects=snapshot.projects, components=snapshot.components,
+                    epic_fields=epic_fields, terminal_statuses=terminal_statuses,
+                    retention_days=snapshot.board['doneEpicRetentionDays'] or 28,
+                    counters=counters, cancel_check=lambda: _assert_current(snapshot)):
+                final_membership = component_index_complete and not (
+                    snapshot.query.scope == 'all_work' and snapshot.teams
+                )
+                line = candidate_policy.offer(
+                    epics, phase='component', phase_complete=component_index_complete,
+                    final=final_membership,
+                )
+                if line is not None:
+                    yield line
+        elif snapshot.query.scope == 'sprint':
+            index_jql = eng_board.build_epic_index_jql(
+                snapshot.projects, (), terminal_statuses,
+                snapshot.board['doneEpicRetentionDays'] or 28,
             )
+            epics = eng_board.strict_search(
+                search_page, index_jql, epic_fields, counters=counters,
+                cancel_check=lambda: _assert_current(snapshot), max_unique_keys=eng_board.MAX_EPICS,
+            )
+        else:
+            epics = []
+        if _candidate_updates is None and snapshot.query.scope == 'all_work' and snapshot.teams:
+            for epics, team_index_complete in eng_board.iter_team_epic_batches(
+                    search_page, projects=snapshot.projects,
+                    issue_type_ids=snapshot.issue_type_ids, team_ids=snapshot.teams,
+                    existing_epics=epics, epic_fields=epic_fields,
+                    terminal_statuses=terminal_statuses,
+                    retention_days=snapshot.board['doneEpicRetentionDays'] or 28,
+                    team_field_id=snapshot.team_field_id,
+                    epic_link_field_id=snapshot.epic_link_field_id,
+                    counters=counters, cancel_check=lambda: _assert_current(snapshot)):
+                line = candidate_policy.offer(
+                    epics, phase='team', phase_complete=team_index_complete,
+                    final=team_index_complete,
+                )
+                if line is not None:
+                    yield line
+        if snapshot.query.scope in {'all_work', 'component'}:
+            epics = candidate_policy.latest_epics
         index_ms = round((time.monotonic() - index_started) * 1000, 1)
         index_projection = eng_board.project_board(
             epics, [], project_map=snapshot.projects, columns=snapshot.board['columns'],
@@ -548,6 +806,7 @@ def _frame_stream(server, snapshot, transport):
         yield emit('index', epics=index_shells,
                    membership='authoritative'
                    if snapshot.query.scope in {'all_work', 'component'} else 'candidate')
+        discovery_complete = True
         raw_by_key = {str(row['key']).strip().upper(): row for row in epics}
         column_keys = {
             column['id']: [row['key'] for row in index_shells if row['columnId'] == column['id']]
@@ -572,9 +831,44 @@ def _frame_stream(server, snapshot, transport):
                 team_field_id=snapshot.team_field_id, team_ids=team_ids,
             )
 
+        progress_queue = queue.Queue(maxsize=2)
+
         def column_search(column_id, keys):
             def run(timeout):
                 children = []
+                progress_by_epic = {key: {'epicKey': key, 'loadedChildren': 0, 'statusCounts': {}} for key in keys}
+                def publish_page(rows):
+                    projection = eng_board.project_board(
+                        [raw_by_key[key] for key in keys], rows,
+                        project_map=snapshot.projects, columns=snapshot.board['columns'],
+                        epic_link_field_id=snapshot.epic_link_field_id,
+                        story_points_field_id=snapshot.story_points_field_id,
+                        team_field_id=snapshot.team_field_id, sprint_field_id=snapshot.sprint_field_id,
+                        project_track_field_id=snapshot.project_track_field_id,
+                        delivery_owner_field_id=snapshot.delivery_owner_field_id,
+                    )
+                    for row in projection['epics']:
+                        progress = progress_by_epic[row['key']]
+                        for child in row['children']:
+                            status = child['status']['name']
+                            progress['statusCounts'][status] = progress['statusCounts'].get(status, 0) + 1
+                            progress['loadedChildren'] += 1
+                    by_epic = [{**row, 'statusCounts': dict(row['statusCounts'])}
+                               for row in progress_by_epic.values()]
+                    update = (column_id, None, {
+                        'loadedChildren': sum(row['loadedChildren'] for row in by_epic), 'byEpic': by_epic,
+                    })
+                    # Progress is replaceable; final column frames carry every
+                    # child. A slow client must not accumulate a page backlog.
+                    while True:
+                        try:
+                            progress_queue.put_nowait(update)
+                            break
+                        except queue.Full:
+                            try:
+                                progress_queue.get_nowait()
+                            except queue.Empty:
+                                pass
                 try:
                     for batch in eng_board.split_epic_batches(keys, child_jql, child_fields):
                         _assert_current(snapshot)
@@ -582,6 +876,7 @@ def _frame_stream(server, snapshot, transport):
                             lambda payload: _search_page(server, snapshot, transport, payload, timeout),
                             child_jql(batch), child_fields, counters=counters,
                             cancel_check=lambda: _assert_current(snapshot), key_budget=child_budget,
+                            on_rows=publish_page,
                         ))
                     return column_id, children, None
                 except BoardJiraUnavailable:
@@ -591,13 +886,16 @@ def _frame_stream(server, snapshot, transport):
         searches = [column_search(column_id, column_keys[column_id])
                     for column_id in ordered_ids if column_keys[column_id]]
         scheduler = EngBoardChildScheduler(searches, budget=transport.budget) if searches else None
-        result_iterator = scheduler.results() if scheduler is not None else iter(())
+        result_iterator = scheduler.results(progress_queue=progress_queue) if scheduler is not None else iter(())
         emitted_epics = 0
         emitted_children = 0
         failed = []
         for column_id in ordered_ids:
             if column_keys[column_id]:
                 result_column_id, children, error = next(result_iterator)
+                while isinstance(error, dict):
+                    yield emit('progress', columnId=result_column_id, **error)
+                    result_column_id, children, error = next(result_iterator)
                 if result_column_id != column_id:
                     raise eng_board.EngBoardError(
                         'board_projection_invalid', phase='shape', reason='scheduler.order',
@@ -652,29 +950,61 @@ def _frame_stream(server, snapshot, transport):
         raise
     except AuthError:
         if not writer.complete:
-            yield emit('error', code='auth_required')
+            yield emit_terminal('auth_required')
     except BoardScopeChanged:
         if not writer.complete:
-            yield emit('error', code='scope_changed', diagnostics=_diagnostics(
+            yield emit_terminal('scope_changed', diagnostics=_diagnostics(
                 transport, counters, started, index_ms, focused_ms, peak, 'partial'))
     except EngBoardRequestDeadline:
         if not writer.complete:
-            yield emit('error', code='deadline_exceeded', diagnostics=_diagnostics(
+            retained = offer_retained_candidate()
+            if retained is not None:
+                yield retained
+            yield emit_terminal('deadline_exceeded', diagnostics=_diagnostics(
                 transport, counters, started, index_ms, focused_ms, peak, 'partial'))
+    except EngBoardFrameError as error:
+        if writer.sequence is None:
+            raise
+        if scheduler is not None:
+            scheduler.retire()
+        if error.code in {'frame_too_large', 'generation_too_large'}:
+            LOGGER.warning(
+                'ENG Board frame rejected operation=required_frame code=%s limit=%s observed=%s',
+                error.code, error.limit, error.observed,
+            )
+            if not writer.complete:
+                retained = offer_retained_candidate()
+                if retained is not None:
+                    yield retained
+                yield emit_terminal('scope_too_large')
+        else:
+            LOGGER.warning(
+                'ENG Board frame rejected operation=required_frame code=%s limit=%s observed=%s',
+                error.code, error.limit, error.observed,
+            )
+            if not writer.complete:
+                yield emit_terminal('board_data_invalid')
     except eng_board.EngBoardError as error:
         code = _public_eng_board_error(error)
         LOGGER.warning('ENG Board stream rejected code=%s phase=%s reason=%s limit=%s observed=%s',
                        error.code, error.phase, error.reason, error.limit, error.observed)
         if not writer.complete:
-            yield emit('error', code=code, diagnostics=_diagnostics(
+            if code == 'scope_too_large':
+                retained = offer_retained_candidate()
+                if retained is not None:
+                    yield retained
+            yield emit_terminal(code, diagnostics=_diagnostics(
                 transport, counters, started, index_ms, focused_ms, peak, 'partial'))
     except BoardJiraUnavailable:
         if not writer.complete:
-            yield emit('error', code='jira_unavailable', diagnostics=_diagnostics(
+            retained = offer_retained_candidate()
+            if retained is not None:
+                yield retained
+            yield emit_terminal('jira_unavailable', diagnostics=_diagnostics(
                 transport, counters, started, index_ms, focused_ms, peak, 'partial'))
     except (ConfigStorageError, DatabaseConfigurationError, SQLAlchemyError):
         if not writer.complete:
-            yield emit('error', code='storage_unavailable', diagnostics=_diagnostics(
+            yield emit_terminal('storage_unavailable', diagnostics=_diagnostics(
                 transport, counters, started, index_ms, focused_ms, peak, 'partial'))
     finally:
         if scheduler is not None:
@@ -696,6 +1026,8 @@ def get_eng_board():
             snapshot = _capture_snapshot(server, query, transport, secret_key)
         else:
             return _unavailable()
+        generation_id = secrets.token_urlsafe(24)
+        _preflight_stream(snapshot, generation_id)
     except BoardRouteError as error:
         return _unavailable() if error.code == 'board_unavailable' else _error(error.code, error.status)
     except AuthError:
@@ -710,10 +1042,23 @@ def get_eng_board():
         return _error(code, 422 if code == 'scope_too_large' else 409)
     except EngBoardRequestDeadline:
         return _error('deadline_exceeded', 503)
+    except EngBoardFrameError as error:
+        code = ('scope_too_large'
+                if error.code in {'frame_too_large', 'generation_too_large'}
+                else 'board_config_invalid')
+        LOGGER.warning(
+            'ENG Board preflight rejected operation=start_envelope code=%s limit=%s observed=%s',
+            error.code, error.limit, error.observed,
+        )
+        return _error(code, 422 if code == 'scope_too_large' else 409)
     except BoardJiraUnavailable:
         return _error('jira_unavailable', 503)
     except (ConfigStorageError, DatabaseConfigurationError, SQLAlchemyError):
         return _error('storage_unavailable', 503)
-    response = Response(_frame_stream(server, snapshot, transport), content_type='application/x-ndjson')
+    response = Response(
+        _frame_stream(server, snapshot, transport, generation_id=generation_id),
+        content_type='application/x-ndjson',
+    )
     response.headers['Cache-Control'] = 'no-store'
+    response.headers['X-Accel-Buffering'] = 'no'
     return response

@@ -120,10 +120,12 @@ test('real dashboard emits one measured load after both lanes and delayed depend
     const performancePanel = dialog.locator('.performance-settings');
     const controls = await performancePanel.locator('.stats-control-group').evaluateAll(groups => groups.map(group => {
         const label = group.querySelector('label');
-        return { right: label.getBoundingClientRect().right, groupRight: group.getBoundingClientRect().right,
+        return { label: label.textContent.trim(), right: label.getBoundingClientRect().right, groupRight: group.getBoundingClientRect().right,
             scrollWidth: label.scrollWidth, clientWidth: label.clientWidth };
     }));
-    expect(controls).toHaveLength(4);
+    expect(controls.map(control => control.label)).toEqual([
+        'Group', 'Sprint', 'Surface', 'Scope', 'Cache', 'Revision', 'Configuration cohort',
+    ]);
     for (const control of controls) {
         expect(control.right).toBeLessThanOrEqual(control.groupRight);
         expect(control.scrollWidth).toBeLessThanOrEqual(control.clientWidth);
@@ -160,6 +162,27 @@ async function openPanel(page, response = payload) {
     await page.route(`${origin}/`, route => route.fulfill({ contentType: 'text/html', body: `<html><head><style>${css}</style></head><body><main style="max-width:900px;margin:20px auto;padding:20px;background:white" id="root"></main><script>${script}</script></body></html>` }));
     await page.goto(origin);
 }
+
+test('component report omits the blank Sprint filter', async ({ page }) => {
+    const response = { ...payload, filters: {
+        groups: ['sample-group'], sprints: ['42'], surfaces: ['eng_sprint', 'eng_board'],
+        scopeTypes: ['all_work', 'component', 'sprint'], cacheStates: ['miss'],
+        revisions: ['test-revision'], scopeCohortDigests: ['sample-cohort'],
+    } };
+    await openPanel(page, response);
+
+    await expect(page.getByLabel('Performance sprint', { exact: true })).toHaveValue('');
+    const reportRequest = page.waitForRequest(request => {
+        const url = new URL(request.url());
+        return url.pathname === '/api/admin/performance' && url.searchParams.get('scopeType') === 'component';
+    });
+    await page.getByLabel('Performance scope', { exact: true }).selectOption('component');
+
+    const query = new URL((await reportRequest).url()).searchParams;
+    expect(query.get('scopeType')).toBe('component');
+    expect(query.has('sprintId')).toBe(false);
+    expect(query.get('sprintId')).toBeNull();
+});
 
 test('admin chart retains a 12-second spike and exposes scoped lane evidence', async ({ page }) => {
     await openPanel(page);
